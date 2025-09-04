@@ -171,16 +171,18 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
 
         // Remove width constraints from all wrappers
         const wrappers = containerRef.current.querySelectorAll(
-          '.docx, .docx-wrapper, .docx-preview-wrapper'
+          '.docx, .docx-wrapper, .docx-preview-wrapper, .docx-preview'
         );
         wrappers.forEach((el) => {
           const wrapper = el as HTMLElement;
           wrapper.style.removeProperty('width');
           wrapper.style.removeProperty('max-width');
           wrapper.style.removeProperty('min-width');
+          wrapper.style.removeProperty('padding');
           wrapper.style.width = '100%';
           wrapper.style.maxWidth = '100%';
           wrapper.style.minWidth = 'auto';
+          wrapper.style.padding = '12%';
         });
 
         // Make tables responsive
@@ -229,9 +231,7 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
       className={`enhanced-docx-viewer ${className}`}
       style={{
         backgroundColor: "white",
-        minHeight: "100%",
-        height: "auto",
-        width: "100%",
+        minHeight: "100vh",
         ...style,
       }}
     >
@@ -261,7 +261,7 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
       <style
         dangerouslySetInnerHTML={{
           __html: `
-         .enhanced-docx-viewer {
+          .enhanced-docx-viewer {
            background: white !important;
            min-height: 100% !important;
            height: auto !important;
@@ -270,22 +270,21 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
          
          .docx-preview-wrapper { 
            background: white !important; 
-           padding: 0; 
+           padding: 0 !important; 
            display: flex; 
            flex-flow: column; 
-           align-items: center; 
+           align-items: center;
            min-height: 100% !important;
            height: auto !important;
            width: 100% !important;
          }
          
-         .docx-preview-wrapper > section.docx-preview, 
-         section.docx-viewer { 
+         .docx-preview-wrapper > section.docx-preview { 
            background: white; 
            box-shadow: none !important; 
            padding-top: 40px !important;
            margin: 0;
-           padding: 40px 60px;
+           padding: 20px;
            /* Make it fully responsive */
            width: auto !important;
            max-width: none !important;

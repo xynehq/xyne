@@ -562,8 +562,9 @@ const constructCollectionFileContext = (
   relevance: number,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
+  isMsgWithSources?: boolean,
 ): string => {
-  if (!maxSummaryChunks && !isSelectedFiles) {
+  if ((!maxSummaryChunks && !isSelectedFiles) || isMsgWithSources) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
 
@@ -583,7 +584,16 @@ const constructCollectionFileContext = (
   }
 
   let content = ""
-  if (isSelectedFiles && fields?.matchfeatures) {
+  if (isMsgWithSources && fields.chunks_pos_summary) {
+    // When user has selected one file to chat with, use original chunk positions
+    content = chunks
+      .map((v) => {
+        const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
+        return `[${originalIndex}] ${v.chunk}`
+      })
+      .slice(0, maxSummaryChunks)
+      .join("\n")
+  } else if (isSelectedFiles && fields?.matchfeatures) {
     content = chunks
       .slice(0, maxSummaryChunks)
       .sort((a, b) => a.index - b.index)
@@ -674,6 +684,7 @@ export const answerContextMap = (
   searchResult: VespaSearchResults,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
+  isMsgWithSources?: boolean,
 ): AiContext => {
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileContext(
@@ -723,6 +734,7 @@ export const answerContextMap = (
       searchResult.relevance,
       maxSummaryChunks,
       isSelectedFiles,
+      isMsgWithSources,
     )
   } else {
     throw new Error(

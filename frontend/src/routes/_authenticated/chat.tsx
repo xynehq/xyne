@@ -316,7 +316,7 @@ const jsonToHtmlMessage = (jsonString: string): string => {
   }
 }
 
-const REASONING_STATE_KEY = "isReasoningGlobalState"
+export const REASONING_STATE_KEY = "isReasoningGlobalState"
 const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
@@ -1420,7 +1420,7 @@ interface ImageCitationComponentProps {
   className?: string
 }
 
-const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
+export const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   citationKey,
   imageCitations,
   className = "",

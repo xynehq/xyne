@@ -152,6 +152,7 @@ interface ChatBoxProps {
   ) => void
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
+  hideButtons?: boolean // Add prop to hide mark step as done section
 }
 
 const availableSources: SourceItem[] = [
@@ -263,39 +264,39 @@ export interface ChatBoxRef {
   sendMessage: (message: string) => void
 }
 
-export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
-  (props, ref) => {
-    const {
-      role,
-      query,
-      setQuery,
-      handleSend,
-      isStreaming = false,
-      retryIsStreaming = false,
-      allCitations,
-      handleStop,
-      chatId,
-      agentIdFromChatData, // Destructure new prop
-      isReasoningActive,
-      setIsReasoningActive,
-      user, // Destructure user prop
-      setIsAgenticMode,
-      isAgenticMode = false,
-      overrideIsRagOn,
-    } = props
-    // Interface for fetched tools
-    interface FetchedTool {
-      id: number
-      workspaceId: number
-      connectorId: number
-      toolName: string
-      toolSchema: string // Assuming schema is a JSON string
-      description: string | null
-      enabled: boolean // Added enabled field
-      createdAt: string
-      updatedAt: string
-      externalId: string // This is the externalId from the backend
-    }
+export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>((props, ref) => {
+  const {
+    role,
+    query,
+    setQuery,
+    handleSend,
+    isStreaming = false,
+    retryIsStreaming = false,
+    allCitations,
+    handleStop,
+    chatId,
+    agentIdFromChatData, // Destructure new prop
+    isReasoningActive,
+    setIsReasoningActive,
+    user, // Destructure user prop
+    setIsAgenticMode,
+    isAgenticMode = false,
+    overrideIsRagOn,
+    hideButtons = false, // Destructure new prop with default value
+  } = props
+  // Interface for fetched tools
+  interface FetchedTool {
+    id: number
+    workspaceId: number
+    connectorId: number
+    toolName: string
+    toolSchema: string // Assuming schema is a JSON string
+    description: string | null
+    enabled: boolean // Added enabled field
+    createdAt: string
+    updatedAt: string
+    externalId: string // This is the externalId from the backend
+  }
 
     // Interface for fetched connectors
     interface FetchedConnector {
@@ -451,8 +452,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return saved !== null ? JSON.parse(saved) : false
     })
     const showAdvancedOptions =
-      overrideIsRagOn ??
-      (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
+    !hideButtons &&
+    (overrideIsRagOn ??
+      (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
 
     // Persist enableWebSearch state to localStorage when it changes
     useEffect(() => {
@@ -2249,17 +2251,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 let shouldTriggerBox = false
                 let newActiveMentionIndex = -1
 
-                // Check if the character right before the cursor is an '@' and if it's validly placed
-                const atCharIndex = cursorPosition - 1
-                if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
-                  const isFirstCharacter = atCharIndex === 0
-                  const isPrecededBySpace =
-                    atCharIndex > 0 &&
-                    (newValue[atCharIndex - 1] === " " ||
-                      newValue[atCharIndex - 1] === "\u00A0")
-                  if (isFirstCharacter || isPrecededBySpace) {
-                    shouldTriggerBox = true
-                    newActiveMentionIndex = atCharIndex
+                // Disable @ mention functionality when autoAddDocumentPill is provided
+                if (!hideButtons) {
+                  // Check if the character right before the cursor is an '@' and if it's validly placed
+                  const atCharIndex = cursorPosition - 1
+                  if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
+                    const isFirstCharacter = atCharIndex === 0
+                    const isPrecededBySpace =
+                      atCharIndex > 0 &&
+                      (newValue[atCharIndex - 1] === " " ||
+                        newValue[atCharIndex - 1] === "\u00A0")
+                    if (isFirstCharacter || isPrecededBySpace) {
+                      shouldTriggerBox = true
+                      newActiveMentionIndex = atCharIndex
+                    }
                   }
                 }
 

@@ -226,7 +226,8 @@ import {
   getPublicAgentsByUser,
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
-import type {GroundingSupport } from "@google/genai"
+import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
+import type { GroundingSupport } from "@google/genai"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -480,6 +481,7 @@ const checkAndYieldCitations = async function* (
   baseIndex: number = 0,
   email: string,
   yieldedImageCitations: Set<number>,
+  isMsgWithSources?: boolean,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
@@ -491,7 +493,7 @@ const checkAndYieldCitations = async function* (
     if (match) {
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - baseIndex]
+        const item = isMsgWithSources ? results[baseIndex]: results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
           if (item.fields.sddocname === dataSourceFileSchema) {
@@ -501,7 +503,7 @@ const checkAndYieldCitations = async function* (
           yield {
             citation: {
               index: citationIndex,
-              item: searchToCitation(item as VespaSearchResults),
+              item: isMsgWithSources ? searchToCitation(item as VespaSearchResults, citationIndex) : searchToCitation(item as VespaSearchResults),
             },
           }
           yieldedCitations.add(citationIndex)
@@ -602,6 +604,7 @@ async function* processIterator(
   previousResultsLength: number = 0,
   userRequestsReasoning?: boolean,
   email?: string,
+  isMsgWithSources?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -630,6 +633,7 @@ async function* processIterator(
             previousResultsLength,
             email!,
             yieldedImageCitations,
+            isMsgWithSources,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -655,6 +659,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
+              isMsgWithSources,
             )
             yield { text: token, reasoning }
           }
@@ -692,6 +697,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
+              isMsgWithSources,
             )
             currentAnswer = parsed.answer
           }
@@ -1939,6 +1945,7 @@ async function* generateAnswerFromGivenContext(
   passedSpan?: Span,
   threadIds?: string[],
   attachmentFileIds?: string[],
+  isMsgWithSources?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2106,6 +2113,7 @@ async function* generateAnswerFromGivenContext(
       v as z.infer<typeof VespaSearchResultsSchema>,
       0,
       true,
+      isMsgWithSources,
     )
     if (
       v.fields &&
@@ -2128,7 +2136,7 @@ async function* generateAnswerFromGivenContext(
         )
       }
     }
-    return `Index ${i + startIndex} \n ${content}`
+    return isMsgWithSources ? content : `Index ${i + startIndex} \n ${content}`
   })
 
   const resolvedContexts = contextPromises
@@ -2180,9 +2188,10 @@ async function* generateAnswerFromGivenContext(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
-      imageFileNames,
+      imageFileNames: finalImageFileNames,
     },
     true,
+    isMsgWithSources,
   )
 
   const answer = yield* processIterator(
@@ -2191,12 +2200,21 @@ async function* generateAnswerFromGivenContext(
     previousResultsLength,
     userRequestsReasoning,
     email,
+    isMsgWithSources,
   )
   if (answer) {
     generateAnswerSpan?.setAttribute("answer_found", true)
     generateAnswerSpan?.end()
     return
   } else if (!answer) {
+    if (isMsgWithSources) {
+      yield {
+        text: "From the selected context, I could not find any information to answer it, please change your query",
+      }
+      generateAnswerSpan?.setAttribute("answer_found", false)
+      generateAnswerSpan?.end()
+      return
+    }
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
     loggerWithChild({ email: email }).info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
@@ -3842,6 +3860,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
   agentPrompt?: string,
+  isMsgWithSources?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3871,6 +3890,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     passedSpan,
     threadIds,
     attachmentFileIds,
+    isMsgWithSources,
   )
 }
 
@@ -4119,6 +4139,19 @@ export const MessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
+    // Extract sources from search parameters
+    const sources = c.req.query("selectedSources")
+    const isMsgWithSources = !!sources
+    let fileIds: string[] = []
+    if (sources) {
+      try {
+        const resp = await getCollectionFilesVespaIds(JSON.parse(sources), db)
+        fileIds = resp.map((file) => file.vespaDocId || "").filter((id) => id !== "")
+      } catch {
+        fileIds = []
+      }
+    }
+
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
@@ -4127,7 +4160,9 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    const fileIds = extractedInfo?.fileIds
+    if(extractedInfo?.fileIds.length > 0) {
+      fileIds = extractedInfo?.fileIds
+    }
     const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
@@ -4337,7 +4372,7 @@ export const MessageApi = async (c: Context) => {
             })
           }
           if (
-            (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+            ((isMsgWithContext || isMsgWithSources) && fileIds && fileIds?.length > 0) ||
             (attachmentFileIds && attachmentFileIds?.length > 0)
           ) {
             let answer = ""
@@ -4366,6 +4401,8 @@ export const MessageApi = async (c: Context) => {
               understandSpan,
               threadIds,
               attachmentFileIds,
+              undefined,
+              isMsgWithSources,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,

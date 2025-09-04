@@ -422,7 +422,7 @@ async function* getToolContinuationIterator(
       ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
     )
   }
-
+  
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -3337,7 +3337,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           finalImageFileNames.push(
             ...attachmentFileIds.map(
               (fileid, index) => `${index}_${fileid}_${0}`,
-            ),
+            )
           )
         }
 
