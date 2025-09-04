@@ -1594,45 +1594,66 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               case "assistant_message": {
                 const content = evt.data.message.content || ""
-                if (content && content.length) {
-                  // Chunk and stream answer updates; also detect citations on the fly
-                  const chunkSize = 200
-                  for (let i = 0; i < content.length; i += chunkSize) {
-                    const chunk = content.slice(i, i + chunkSize)
-                    answer += chunk
-                    await stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: chunk,
-                    })
+                const hasToolCalls = Array.isArray(evt.data.message?.tool_calls) &&
+                  (evt.data.message.tool_calls?.length ?? 0) > 0
 
-                    // Yield citations as they appear
-                    for await (const cit of checkAndYieldCitationsForAgent(
-                      answer,
-                      yieldedCitations,
-                      gatheredFragments,
-                      yieldedImageCitations,
-                      email ?? "",
-                    )) {
-                      if (cit.citation) {
-                        const { index, item } = cit.citation as any
-                        citations.push(item)
-                        citationMap[index] = citations.length - 1
-                        await stream.writeSSE({
-                          event: ChatSSEvents.CitationsUpdate,
-                          data: JSON.stringify({
-                            contextChunks: citations,
-                            citationMap,
-                          }),
-                        })
-                        citationValues[index] = item
-                      }
-                      if (cit.imageCitation) {
-                        imageCitations.push(cit.imageCitation)
-                        await stream.writeSSE({
-                          event: ChatSSEvents.ImageCitationUpdate,
-                          data: JSON.stringify(cit.imageCitation),
-                        })
-                      }
+                if (!content || content.length === 0) {
+                  break
+                }
+
+                if (hasToolCalls) {
+                  // Treat assistant content that accompanies tool calls as planning/reasoning,
+                  // not as final answer text. Emit as a reasoning step and do not send 'u' updates.
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: JSON.stringify({
+                      text: content,
+                      step: {
+                        type: AgentReasoningStepType.LogMessage,
+                        status: "in_progress",
+                        stepSummary: "Model planned tool usage",
+                      },
+                    }),
+                  })
+                  break
+                }
+
+                // No tool calls: stream as user-visible answer text, with on-the-fly citations
+                const chunkSize = 200
+                for (let i = 0; i < content.length; i += chunkSize) {
+                  const chunk = content.slice(i, i + chunkSize)
+                  answer += chunk
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk,
+                  })
+
+                  for await (const cit of checkAndYieldCitationsForAgent(
+                    answer,
+                    yieldedCitations,
+                    gatheredFragments,
+                    yieldedImageCitations,
+                    email ?? "",
+                  )) {
+                    if (cit.citation) {
+                      const { index, item } = cit.citation as any
+                      citations.push(item)
+                      citationMap[index] = citations.length - 1
+                      await stream.writeSSE({
+                        event: ChatSSEvents.CitationsUpdate,
+                        data: JSON.stringify({
+                          contextChunks: citations,
+                          citationMap,
+                        }),
+                      })
+                      citationValues[index] = item
+                    }
+                    if (cit.imageCitation) {
+                      imageCitations.push(cit.imageCitation)
+                      await stream.writeSSE({
+                        event: ChatSSEvents.ImageCitationUpdate,
+                        data: JSON.stringify(cit.imageCitation),
+                      })
                     }
                   }
                 }
