@@ -10,6 +10,7 @@ import { getErrorMessage } from "@/utils"
 import type { Message, ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import { Subsystem, MessageRole } from "@/types"
 import { ragPipelineConfig, RagPipelineStages } from "../chat/types"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -17,11 +18,11 @@ const Logger = getLogger(Subsystem.Server)
 export const executeAgentSchema = z.object({
   agentId: z.string().min(1, "Agent ID is required"),
   userQuery: z.string().min(1, "User query is required"),
-  isStreamable: z.boolean().optional().default(true),
-  temperature: z.number().min(0).max(2).optional(),
-  max_new_tokens: z.number().positive().optional(),
   workspaceId: z.string().min(1, "Workspace ID is required"),
   userEmail: z.string().email("Valid email is required"),
+  isStreamable: z.boolean().optional().default(false),
+  temperature: z.number().min(0).max(2).optional(),
+  max_new_tokens: z.number().positive().optional(),
 })
 
 export type ExecuteAgentParams = z.infer<typeof executeAgentSchema>
@@ -81,10 +82,16 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
     } = validatedParams
 
     Logger.info(`Executing agent ${agentId} for user ${userEmail}`)
-
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+          db,
+          workspaceId, // This workspaceId is the externalId string
+          userEmail,
+        )
+     const { user, workspace } = userAndWorkspace
+     Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
     // Step 1: Fetch agent details (including model)
     Logger.info(`Fetching agent details for ${agentId}...`)
-    const agent = await getAgentByExternalId(db, agentId, 1) // Using 1 as placeholder workspace
+    const agent = await getAgentByExternalId(db, agentId, Number(workspace.id)) // Using 1 as placeholder workspace
 
     if (!agent) {
       return {
@@ -134,14 +141,15 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         content: [{ text: userQuery }],
       }
     ]
-
+    
     Logger.info(`Calling LLM with model ${agent.model}...`)
+
 
     // Step 5: Create chat and initial user message in DB
     const insertedChat = await insertChat(db, {
-      workspaceId: 1, // Placeholder
+      workspaceId: workspace.id,
       workspaceExternalId: workspaceId,
-      userId: 1, // Placeholder
+      userId: user.id,
       email: userEmail,
       title,
       attachments: [],
@@ -150,7 +158,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
 
     await insertMessage(db, {
       chatId: insertedChat.id,
-      userId: 1,
+      userId: user.id,
       chatExternalId: insertedChat.externalId,
       workspaceExternalId: workspaceId,
       messageRole: MessageRole.User,
