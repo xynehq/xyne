@@ -209,3 +209,7 @@ server/.venv/*
 
 deployment/grafana/grafana-storage
 deployment/loki/*
+deployment/xyne-portable-*
+deployment/portable/gcp-credentials.json
+
+data/app-assets/

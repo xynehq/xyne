@@ -73,6 +73,11 @@
       "group": "Deployment",
       "pages": [
         {
+          "group": "Advanced Deployment",
+          "icon": "rocket",
+          "pages": ["deployment/advanced/portable-deployment"]
+        },
+        {
           "group": "Cloud Deployment",
           "icon": "cloud",
           "pages": [

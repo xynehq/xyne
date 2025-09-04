@@ -53,8 +53,8 @@ fi
 
 
 echo "Deploying vespa..."
-vespa deploy --wait 960
+vespa deploy --wait 960 --target http://${VESPA_HOST}:19071
 echo "Restarting vespa...."
 docker restart vespa
 # vespa destroy
-vespa status --wait 75
+vespa status --wait 75 --target http://${VESPA_HOST}:19071

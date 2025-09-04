@@ -29,6 +29,6 @@ else
     curl -L -o "$MODEL_FILE" "$MODEL_URL"
 fi
 
-vespa deploy
+vespa deploy --target $VESPA_URL
 # vespa destroy
-vespa status --wait 55
+vespa status --wait 55 --target $VESPA_URL

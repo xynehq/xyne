@@ -1,0 +1,14 @@
+# ./grafana/provisioning/datasources/prometheus-datasource.yml
+apiVersion: 1
+
+datasources:
+- name: PrometheusLocal # Or any name you prefer
+  type: prometheus
+  access: proxy        # Server access mode is generally recommended
+  url: http://xyne-prometheus:9090 # Use the service name from docker-compose
+  isDefault: true
+  editable: false      # Set to true if you want to allow UI edits
+  # jsonData:
+  #   httpMethod: POST # Example if your prometheus needs it
+  # basicAuth: false
+

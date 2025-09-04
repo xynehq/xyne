@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: PostgreSQLLocal
+    type: postgres
+    access: proxy
+    url: xyne-db:5432     #add the hostname:port where the pg db is deployed
+    database: xyne
+    user: xyne
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      sslmode: disable
+    isDefault: false
+    editable: false
