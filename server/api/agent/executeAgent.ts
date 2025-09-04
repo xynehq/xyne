@@ -91,7 +91,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
      Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
 
     Logger.info(`Fetching agent details for ${agentId}...`)
-    const agent = await getAgentByExternalId(db, agentId, Number(workspace.id)) // Using 1 as placeholder workspace
+    const agent = await getAgentByExternalId(db, agentId, Number(workspace.id))
 
     if (!agent) {
       return {
