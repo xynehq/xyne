@@ -83,6 +83,7 @@ import {
   withToolQueryPrompt,
   ragOffPromptJson,
   nameToEmailResolutionPrompt,
+  webSearchSystemPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1496,7 +1497,11 @@ export function generateSearchQueryOrAnswerFromConversation(
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext, previousClassification, chainBreakClassifications)
+    params.systemPrompt = searchQueryPrompt(
+      userContext,
+      previousClassification,
+      chainBreakClassifications,
+    )
   }
 
   const baseMessage = {
@@ -1820,14 +1825,14 @@ export const webSearchQuestion = (
     if (!params.modelId) {
       params.modelId = defaultBestModel
     }
-    const webSearchSystemPrompt =
-      "You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately."
     params.webSearch = true
-    
+
     if (!params.systemPrompt) {
       params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
-        ? webSearchSystemPrompt + "\n\n" + parseAgentPrompt(params.agentPrompt)
-        : webSearchSystemPrompt
+        ? webSearchSystemPrompt(userCtx) +
+          "\n\n" +
+          parseAgentPrompt(params.agentPrompt)
+        : webSearchSystemPrompt(userCtx)
     }
 
     const baseMessage: Message = {

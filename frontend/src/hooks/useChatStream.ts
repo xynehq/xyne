@@ -25,6 +25,7 @@ interface StreamState {
   isStreaming: boolean
   isRetrying?: boolean
   subscribers: Set<() => void>
+  response?: string
 }
 
 interface StreamInfo {
@@ -329,6 +330,7 @@ export const startStream = async (
     isStreaming: true,
     isRetrying: false,
     subscribers: new Set(),
+    response: ""
   }
 
   activeStreams.set(streamKey, streamState)
@@ -344,9 +346,11 @@ export const startStream = async (
   })
 
   streamState.es.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-    const { contextChunks, citationMap } = JSON.parse(event.data)
+    const { contextChunks, citationMap, updatedResponse } = JSON.parse(event.data)
     streamState.sources = contextChunks
     streamState.citationMap = citationMap
+    streamState.response = updatedResponse
+
     notifySubscribers(streamKey)
   })
 
@@ -435,8 +439,35 @@ export const startStream = async (
     streamState.isStreaming = false
     streamState.es.close()
 
-    if (streamKey && queryClient) {
-      queryClient.invalidateQueries({ queryKey: ["chatHistory", streamKey] })
+    // Create new complete message with accumulated text and citations
+    if (streamKey && queryClient && streamState.chatId && streamState.messageId) {
+      queryClient.setQueryData(["chatHistory", streamState.chatId], (old: any) => {
+        if (!old?.messages) return old
+        
+        // When streaming completes, consolidate all accumulated data (response, citations, thinking) into a final message object
+        // Save the complete assistant message to React Query cache to persist the conversation history
+        // Use streamState.response if available (from CitationsUpdate for web search), otherwise use streamState.partial (from ResponseUpdate for regular chat)
+        const finalMessage = streamState.response || streamState.partial
+        
+        const newAssistantMessage = {
+          externalId: streamState.messageId,
+          messageRole: "assistant",
+          message: finalMessage,
+          sources: streamState.sources,
+          citationMap: streamState.citationMap,
+          thinking: streamState.thinking,
+          imageCitations: streamState.imageCitations,
+          isStreaming: false,
+          attachments: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+        
+        return {
+          ...old,
+          messages: [...old.messages, newAssistantMessage],
+        }
+      })
     }
     notifySubscribers(streamKey)
   })
