@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { api } from "@/api"
+
 import { getErrorMessage } from "@/lib/utils"
-import { Apps, ConnectorType } from "shared/types" // Added ConnectorType
+import { Apps, ConnectorType, McpScope, UserRole } from "shared/types"
 import { PublicUser, PublicWorkspace } from "shared/types"
+import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { RefreshCw, X, PlusCircle, Check, RotateCcw } from "lucide-react" // Added PlusCircle, Check, RotateCcw
@@ -21,6 +23,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import {
   Card,
@@ -63,10 +66,11 @@ interface FetchedTool {
 // Function to submit the MCP client connector details
 const submitMCPClient = async (
   value: {
-    name: string;
-    url: string;
-    mode: "sse" | "streamable-http";
-    headers: Record<string, string>;
+    url: string,
+    name : string,
+    mode: "sse" | "streamable-http"
+    headers: Record<string, string>
+    scope: McpScope
   },
   navigate: ReturnType<typeof useNavigate>,
 ) => {
@@ -76,8 +80,10 @@ const submitMCPClient = async (
       name: value.name,
       mode: value.mode,
       headers: value.headers,
+      scope: value.scope,
     },
   })
+
   if (!response.ok) {
     if (response.status === 401) {
       navigate({ to: "/auth" })
@@ -133,17 +139,7 @@ const deleteMCPClient = async (connectorId: string) => {
   return res.json()
 }
 
-// Get all connectors
-export const getConnectors = async (): Promise<any> => {
-  const res = await api.admin.connectors.all.$get()
-  if (!res.ok) {
-    if (res.status === 401) {
-      throw new Error("Unauthorized")
-    }
-    throw new Error("Could not get connectors")
-  }
-  return res.json()
-}
+
 
 // MCP Client Form Component
 export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
@@ -154,12 +150,14 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
     url: string;
     mode: "sse" | "streamable-http";
     headers: { u_id: number; key: string; value: string }[];
+    isPublic: boolean
   }>({
     defaultValues: {
       name: "",
       url: "",
       mode: "sse",
       headers: [{ u_id: Date.now(), key: "", value: "" }],
+      isPublic: false,
     },
     onSubmit: async ({ value }) => {
       try {
@@ -180,6 +178,7 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
             url: value.url,
             mode: value.mode,
             headers: headersObject,
+            scope: value.isPublic ? McpScope.Global : McpScope.Private,
           },
           navigate,
         );
@@ -345,6 +344,27 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
           }}
         />
       </>
+
+      <form.Field
+        name="isPublic"
+        children={(field) => (
+          <div className="flex items-center space-x-2 mt-4">
+            <Checkbox
+              id={field.name}
+              checked={field.state.value}
+              onCheckedChange={(checked: boolean | "indeterminate") => field.handleChange(!!checked)}
+            />
+            <label
+              htmlFor={field.name}
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Make MCP public
+            </label>
+          </div>
+        )}
+      />
+
+
 
       <Button
         type="submit"
@@ -520,10 +540,12 @@ const MCPClientsList = ({
   clients,
   onDelete,
   onRefresh,
+  canManage,
 }: {
   clients: any[]
   onDelete: (id: string) => Promise<void>
   onRefresh: () => void
+  canManage: boolean
 }) => {
   const { toast } = useToast()
   const [isToolModalOpen, setIsToolModalOpen] = useState(false)
@@ -693,6 +715,7 @@ const MCPClientsList = ({
             <TableHead>Type</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Tools</TableHead> {/* New Column for Tools */}
+            <TableHead>Scope</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -721,45 +744,57 @@ const MCPClientsList = ({
                 >
                   {client.status}
                 </span>
-</TableCell>
+              </TableCell>
               <TableCell>
-                {(client.type === ConnectorType.MCP ||
-                  client.app === Apps.MCP ||
-                  client.app === Apps.Github) && (
-                <Button
-                    variant="ghost"
-                    size="icon"
-                  onClick={() => handleManageTools(client)}
-                    title="Manage Tools"
+                {canManage &&
+                  (client.type === ConnectorType.MCP ||
+                    client.app === Apps.MCP ||
+                    client.app === Apps.Github) && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleManageTools(client)}
+                      title="Manage Tools"
+                    >
+                      <PlusCircle className="h-4 w-4" />
+                    </Button>
+                  )}
+              </TableCell>
+              <TableCell>
+                <Badge
+                  variant={
+                    client.scope === McpScope.Global ? 'default' : 'secondary'
+                  }
                 >
-                    <PlusCircle className="h-4 w-4" />
-                </Button>
-                )}
+                  {client.scope}
+                </Badge>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
-                <Button
-                    variant="ghost"
-                  size="icon"
-                  onClick={async () => {
-                    try {
-                        await onDelete(client.id)
-                      toast({
-                        title: "Client Removed",
-                          description:
-                            "MCP Client has been removed successfully",
-                        })
-                    } catch (error) {
-                      toast({
-                        title: "Removal Failed",
-                        description: getErrorMessage(error),
-                        variant: "destructive",
-                        })
-                    }
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                  {canManage && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={async () => {
+                        try {
+                          await onDelete(client.id)
+                          toast({
+                            title: "Client Removed",
+                            description:
+                              "MCP Client has been removed successfully",
+                          })
+                        } catch (error) {
+                          toast({
+                            title: "Removal Failed",
+                            description: getErrorMessage(error),
+                            variant: "destructive",
+                          })
+                        }
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </TableCell>
             </TableRow>
@@ -922,13 +957,16 @@ export const MCPClient = ({
   agentWhiteList: boolean
 }) => {
   const navigate = useNavigate()
+  const isAdmin = user.role === UserRole.Admin || user.role === UserRole.SuperAdmin
 
   // Get all connectors
   const { isPending, error, data, refetch } = useQuery<any[]>({
-    queryKey: ["all-connectors"],
+    queryKey: ["all-connectors", user.role],
     queryFn: async (): Promise<any> => {
       try {
-        const res = await api.admin.connectors.all.$get()
+        const res = isAdmin
+          ? await api.admin.connectors.all.$get()
+          : await api.connectors.all.$get()
         if (!res.ok) {
           if (res.status === 401) {
             throw new Error("Unauthorized")
@@ -965,62 +1003,64 @@ export const MCPClient = ({
         <div className="flex flex-col items-center">
           <h1 className="text-2xl font-bold mb-6">MCP Client Connectors</h1>
 
-          {/* Add New Client Card */}
-          <Card className="mb-6 w-[400px] min-h-[320px]">
-            <CardHeader>
-              <CardTitle>Add New MCP Client</CardTitle>
-              <CardDescription>
-                Connect to an MCP client using API key or stdio
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isPending ? (
-                <div className="flex justify-center">
-                  <svg
-                    className="animate-spin h-5 w-5 text-primary"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                </div>
-              ) : (
-                <Tabs defaultValue="apikey">
-                  <TabsList className="mb-4">
-                    <TabsTrigger value="apikey">API Key</TabsTrigger>
-                    <TabsTrigger value="stdio">Stdio</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="apikey">
-                    <MCPClientForm
-                      onSuccess={() => {
-                        refetch()
-                      }}
-                    />
-                  </TabsContent>
-                  <TabsContent value="stdio">
-                    <MCPStdioForm
-                      onSuccess={() => {
-                        refetch()
-                      }}
-                    />
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
+          {/* Only Admins are able to add new MCPs */}
+          {isAdmin && (
+            <Card className="mb-6 w-[400px] min-h-[320px]">
+              <CardHeader>
+                <CardTitle>Add New MCP Client</CardTitle>
+                <CardDescription>
+                  Connect to an MCP client using API key or stdio
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isPending ? (
+                  <div className="flex justify-center">
+                    <svg
+                      className="animate-spin h-5 w-5 text-primary"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                  </div>
+                ) : (
+                  <Tabs defaultValue="apikey">
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="apikey">API Key</TabsTrigger>
+                      <TabsTrigger value="stdio">Stdio</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="apikey">
+                      <MCPClientForm
+                        onSuccess={() => {
+                          refetch()
+                        }}
+                      />
+                    </TabsContent>
+                    <TabsContent value="stdio">
+                      <MCPStdioForm
+                        onSuccess={() => {
+                          refetch()
+                        }}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Existing Clients Card */}
           <Card className="w-[400px]">
@@ -1064,6 +1104,7 @@ export const MCPClient = ({
                   clients={mcpConnectors}
                   onDelete={handleDeleteClient}
                   onRefresh={refetch}
+                  canManage={isAdmin}
                 />
               )}
             </CardContent>
