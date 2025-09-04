@@ -30,7 +30,9 @@ echo "Vespa config server is ready!"
 # Load environment variables
 if [ -f /usr/src/app/server/.env ]; then
   echo "📄 Loading environment variables..."
-  export $(grep -v "^#" /usr/src/app/server/.env | sed "s/#.*$//" | grep -v "^$" | xargs)
+  set -o allexport
+  source /usr/src/app/server/.env
+  set +o allexport
 fi
 
 # Check if this is the first run (no init marker exists)

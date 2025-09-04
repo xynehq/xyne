@@ -23,7 +23,6 @@ COPY shared/ /usr/src/app/shared/
 
 # Copy other necessary files
 COPY biome.json /usr/src/app/
-COPY .env* /usr/src/app/server/
 
 # Make scripts executable
 WORKDIR /usr/src/app/server

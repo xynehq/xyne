@@ -82,7 +82,12 @@ export class VertexAiProvider extends BaseProvider {
     if (provider === VertexProvider.GOOGLE) {
       client = new VertexAI({ project: projectId, location: region })
     } else {
-      client = new AnthropicVertex({ projectId, region })
+      client = new AnthropicVertex({ 
+        projectId, 
+        region,
+        timeout: 4 * 60 * 1000, // 4 minutes timeout
+        maxRetries: 3
+      })
     }
 
     super(client, AIProviders.VertexAI)
@@ -123,23 +128,33 @@ export class VertexAiProvider extends BaseProvider {
       : []
     const transformedMessages = this.injectImages(messages, imageParts)
 
-    const client = this.client as AnthropicVertex
-    const response = await client.beta.messages.create({
-      model: modelId,
-      max_tokens: maxTokens,
-      temperature,
-      system: systemPrompt,
-      messages: transformedMessages,
-    })
+    try {
+      Logger.info(`Starting VertexAI Anthropic request with model: ${modelId}`)
+      const client = this.client as AnthropicVertex
+      const response = await client.beta.messages.create({
+        model: modelId,
+        max_tokens: maxTokens,
+        temperature,
+        system: systemPrompt,
+        messages: transformedMessages,
+      })
+      Logger.info(`VertexAI Anthropic request completed successfully`)
 
-    const text = response.content
-      .filter((c: any) => c.type === "text")
-      .map((c: any) => c.text)
-      .join("")
-    const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-    const cost = 0
+      const text = response.content
+        .filter((c: any) => c.type === "text")
+        .map((c: any) => c.text)
+        .join("")
+      const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
+      const cost = 0
 
-    return { text, cost }
+      return { text, cost }
+    } catch (error) {
+      Logger.error(`VertexAI Anthropic request failed:`, error)
+      if (error.message?.includes('timeout')) {
+        throw new Error(`VertexAI request timed out after 4 minutes`)
+      }
+      throw error
+    }
   }
 
   private async *converseStreamAnthropic(
