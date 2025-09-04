@@ -4633,6 +4633,7 @@ export const MessageApi = async (c: Context) => {
                       data: JSON.stringify({
                         contextChunks: citations,
                         citationMap: citationMap,
+                        updatedResponse: answer,
                       }),
                     })
                   }
@@ -4723,7 +4724,7 @@ export const MessageApi = async (c: Context) => {
                     data: JSON.stringify({
                       contextChunks: citations,
                       citationMap: citationMap,
-                      updatedResponse: answer
+                      updatedResponse: answer,
                     }),
                   })
                 }
