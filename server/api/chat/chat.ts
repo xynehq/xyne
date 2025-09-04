@@ -4506,7 +4506,6 @@ export const MessageApi = async (c: Context) => {
               // to one of the citations what do we do?
               // somehow hide that citation and change
               // the answer to reflect that
-              console.log(webSearchEnabled)
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
