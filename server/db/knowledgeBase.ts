@@ -16,17 +16,20 @@ import { and, asc, desc, eq, isNull, sql, or, inArray } from "drizzle-orm"
 // Collection CRUD operations
 export const createCollection = async (
   trx: TxnOrClient,
-  collection: Omit<NewCollection, 'vespaDocId'>,
+  collection: Omit<NewCollection, "vespaDocId">,
 ): Promise<Collection> => {
   // Generate vespa doc ID for the collection
   const vespaDocId = generateCollectionVespaDocId()
-  
+
   const collectionData: NewCollection = {
     ...collection,
     vespaDocId,
   }
 
-  const [result] = await trx.insert(collections).values(collectionData).returning()
+  const [result] = await trx
+    .insert(collections)
+    .values(collectionData)
+    .returning()
   if (!result) {
     throw new Error("Failed to create collection")
   }
@@ -51,12 +54,7 @@ export const getCollectionsByOwner = async (
   const results = await trx
     .select()
     .from(collections)
-    .where(
-      and(
-        eq(collections.ownerId, ownerId),
-        isNull(collections.deletedAt),
-      ),
-    )
+    .where(and(eq(collections.ownerId, ownerId), isNull(collections.deletedAt)))
     .orderBy(desc(collections.updatedAt))
   return results
 }
@@ -135,7 +133,9 @@ export const getCollectionItemById = async (
   const [result] = await trx
     .select()
     .from(collectionItems)
-    .where(and(eq(collectionItems.id, itemId), isNull(collectionItems.deletedAt)))
+    .where(
+      and(eq(collectionItems.id, itemId), isNull(collectionItems.deletedAt)),
+    )
   return result || null
 }
 
@@ -150,11 +150,17 @@ export const getCollectionItemsByParent = async (
     .where(
       and(
         eq(collectionItems.collectionId, collectionId),
-        parentId ? eq(collectionItems.parentId, parentId) : isNull(collectionItems.parentId),
-        isNull(collectionItems.deletedAt)
-      )
+        parentId
+          ? eq(collectionItems.parentId, parentId)
+          : isNull(collectionItems.parentId),
+        isNull(collectionItems.deletedAt),
+      ),
     )
-    .orderBy(desc(collectionItems.type), asc(collectionItems.position), asc(collectionItems.name))
+    .orderBy(
+      desc(collectionItems.type),
+      asc(collectionItems.position),
+      asc(collectionItems.name),
+    )
 }
 
 export const getCollectionItemByPath = async (
@@ -213,7 +219,12 @@ export const softDeleteCollectionItem = async (
       const children = await trx
         .select()
         .from(collectionItems)
-        .where(and(eq(collectionItems.parentId, parentId), isNull(collectionItems.deletedAt)))
+        .where(
+          and(
+            eq(collectionItems.parentId, parentId),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
 
       // We only want to decrement file counts for parents
       let filesDeleted = children.filter((c) => c.type === "file").length
@@ -226,7 +237,12 @@ export const softDeleteCollectionItem = async (
             deletedAt: sql`NOW()`,
             updatedAt: sql`NOW()`,
           })
-          .where(and(eq(collectionItems.parentId, parentId), isNull(collectionItems.deletedAt)))
+          .where(
+            and(
+              eq(collectionItems.parentId, parentId),
+              isNull(collectionItems.deletedAt),
+            ),
+          )
 
         // Recursively delete descendants of folder children
         for (const child of children) {
@@ -255,11 +271,20 @@ export const softDeleteCollectionItem = async (
     const directChildren = await trx
       .select()
       .from(collectionItems)
-      .where(and(eq(collectionItems.parentId, itemId), isNull(collectionItems.deletedAt)))
+      .where(
+        and(
+          eq(collectionItems.parentId, itemId),
+          isNull(collectionItems.deletedAt),
+        ),
+      )
 
     // Update collection total count (all descendants + the folder itself)
-    await updateCollectionTotalCount(trx, item.collectionId, -(directChildren.length + 1))
-    
+    await updateCollectionTotalCount(
+      trx,
+      item.collectionId,
+      -(directChildren.length + 1),
+    )
+
     // Update parent folder counts (decrement only file count from parent)
     if (item.parentId) {
       await updateParentFolderCounts(trx, item.parentId, -descendantFilesCount)
@@ -276,7 +301,7 @@ export const softDeleteCollectionItem = async (
 
     // Update collection total count
     await updateCollectionTotalCount(trx, item.collectionId, -1)
-    
+
     // Update parent folder counts (decrement 1 file from parent)
     if (item.parentId) {
       await updateParentFolderCounts(trx, item.parentId, -1)
@@ -319,7 +344,9 @@ export const updateFolderTotalCount = async (
       totalFileCount: sql`${collectionItems.totalFileCount} + ${delta}`,
       updatedAt: sql`NOW()`,
     })
-    .where(and(eq(collectionItems.id, folderId), eq(collectionItems.type, "folder")))
+    .where(
+      and(eq(collectionItems.id, folderId), eq(collectionItems.type, "folder")),
+    )
 }
 
 // Helper function to update all parent folders' totalFileCount count recursively
@@ -329,10 +356,10 @@ export const updateParentFolderCounts = async (
   delta: number,
 ): Promise<void> => {
   if (!parentId) return
-  
+
   // Update the immediate parent folder
   await updateFolderTotalCount(trx, parentId, delta)
-  
+
   // Get the parent folder to check if it has a parent
   const parentFolder = await getCollectionItemById(trx, parentId)
   if (parentFolder && parentFolder.parentId) {
@@ -493,7 +520,7 @@ export const createFileItem = async (
 
   // Update collection total count
   await updateCollectionTotalCount(trx, collectionId, 1)
-  
+
   // Update parent folder counts (if the file is in a folder)
   if (parentId) {
     await updateParentFolderCounts(trx, parentId, 1)
@@ -511,8 +538,17 @@ export const getAllCollectionItems = async (
   const items = await trx
     .select()
     .from(collectionItems)
-    .where(and(eq(collectionItems.collectionId, collectionId), isNull(collectionItems.deletedAt)))
-    .orderBy(desc(collectionItems.type), asc(collectionItems.position), asc(collectionItems.name))
+    .where(
+      and(
+        eq(collectionItems.collectionId, collectionId),
+        isNull(collectionItems.deletedAt),
+      ),
+    )
+    .orderBy(
+      desc(collectionItems.type),
+      asc(collectionItems.position),
+      asc(collectionItems.name),
+    )
 
   return items
 }
@@ -525,7 +561,12 @@ export const getParentItems = async (
   const results = await trx
     .select()
     .from(collectionItems)
-    .where(and(eq(collectionItems.parentId, parentId), isNull(collectionItems.deletedAt)))
+    .where(
+      and(
+        eq(collectionItems.parentId, parentId),
+        isNull(collectionItems.deletedAt),
+      ),
+    )
   return results
 }
 
@@ -544,20 +585,44 @@ export const getAllCollectionAndFolderItems = async (
       const [col] = await trx
         .select({ id: collections.id })
         .from(collections)
-        .where(and(eq(collections.vespaDocId, input), isNull(collections.deletedAt)))
+        .where(
+          and(eq(collections.vespaDocId, input), isNull(collections.deletedAt)),
+        )
       if (!col) continue
       const roots = await trx
         .select({ id: collectionItems.id })
         .from(collectionItems)
-        .where(and(eq(collectionItems.collectionId, col.id), isNull(collectionItems.parentId), isNull(collectionItems.deletedAt)))
+        .where(
+          and(
+            eq(collectionItems.collectionId, col.id),
+            isNull(collectionItems.parentId),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
       roots.forEach((r) => queue.push({ itemId: r.id }))
     } else if (input.startsWith("clfd-")) {
       // Folder vespa docId -> resolve to item id
       const [folder] = await trx
         .select({ id: collectionItems.id })
         .from(collectionItems)
-        .where(and(eq(collectionItems.vespaDocId, input), isNull(collectionItems.deletedAt)))
+        .where(
+          and(
+            eq(collectionItems.vespaDocId, input),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
       if (folder) queue.push({ itemId: folder.id })
+    } else if (input.startsWith("clf-")) {
+      const fileid = await trx
+        .select({ id: collectionItems.id })
+        .from(collectionItems)
+        .where(
+          and(
+            eq(collectionItems.vespaDocId, input),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
+      if (fileid.length) result.push(fileid[0].id)
     } else {
       // Assume it's a DB item id (UUID)
       queue.push({ itemId: input })
@@ -570,7 +635,12 @@ export const getAllCollectionAndFolderItems = async (
     const children = await trx
       .select()
       .from(collectionItems)
-      .where(and(eq(collectionItems.parentId, itemId), isNull(collectionItems.deletedAt)))
+      .where(
+        and(
+          eq(collectionItems.parentId, itemId),
+          isNull(collectionItems.deletedAt),
+        ),
+      )
     if (children.length === 0) {
       // If no children: either this is a file leaf or an invalid id; only push if it's a file
       const node = await getCollectionItemById(trx, itemId)
@@ -634,8 +704,8 @@ export const getCollectionFilesVespaIds = async (
       and(
         inArray(collectionItems.id, collectionFileIds),
         eq(collectionItems.type, "file"),
-        isNull(collectionItems.deletedAt)
-      )
+        isNull(collectionItems.deletedAt),
+      ),
     )
 
   return resp
@@ -653,8 +723,8 @@ export const getCollectionFileByItemId = async (
       and(
         eq(collectionItems.id, itemId),
         eq(collectionItems.type, "file"),
-        isNull(collectionItems.deletedAt)
-      )
+        isNull(collectionItems.deletedAt),
+      ),
     )
   return (result as File) || null
 }
@@ -707,4 +777,66 @@ export const generateFolderVespaDocId = (): string => {
 // Generate Vespa document ID for collections
 export const generateCollectionVespaDocId = (): string => {
   return `cl-${createId()}`
+}
+
+export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
+  let collectionName: string
+  let directoryPath: string
+  let currItem: string
+
+  // Remove leading slash if present
+  const cleanPath = path.startsWith("/") ? path.substring(1) : path
+  const segments = cleanPath.split("/")
+
+  if (segments.length === 0) {
+    throw new Error("Invalid path")
+  }
+
+  if (segments.length === 1) {
+    // Only collection name
+    collectionName = segments[0]
+    directoryPath = "/"
+    currItem = ""
+  } else if (segments.length === 2) {
+    // Collection and item (no intermediate directories)
+    collectionName = segments[0]
+    directoryPath = "/"
+    currItem = segments[1]
+  } else {
+    // Collection, directories, and item
+    collectionName = segments[0]
+    // Everything between collection and last segment becomes the directory path
+    const middleSegments = segments.slice(1, -1)
+    directoryPath = "/" + middleSegments.join("/") + "/"
+    currItem = segments[segments.length - 1]
+  }
+
+  // First, get the collection by name to get its ID
+  const [collection] = await trx
+    .select({ id: collections.id })
+    .from(collections)
+    .where(
+      and(eq(collections.name, collectionName), isNull(collections.deletedAt)),
+    )
+
+  if (!collection) {
+    return null // Collection not found
+  }
+
+  const whereConditions = [
+    eq(collectionItems.collectionId, collection.id),
+    eq(collectionItems.path, directoryPath),
+    isNull(collectionItems.deletedAt),
+  ]
+
+  if (currItem !== "") {
+    whereConditions.push(eq(collectionItems.name, currItem))
+  }
+
+  let result = await trx
+    .select({ docId: collectionItems.vespaDocId })
+    .from(collectionItems)
+    .where(and(...whereConditions))
+
+  return result.length > 0 ? result[0].docId : null
 }

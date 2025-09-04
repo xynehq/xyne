@@ -728,7 +728,7 @@ export const AppRoutes = app
   .post(
     "/agent/chat",
     ApiKeyMiddleware,
-    zValidator("query", agentChatMessageSchema),
+    zValidator("json", agentChatMessageSchema),
     AgentMessageApi,
   )
   .post(

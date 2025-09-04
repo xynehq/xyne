@@ -227,8 +227,7 @@ import {
   getPublicAgentsByUser,
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
-import type { GroundingSupport } from "@google/genai"
-import { composer } from "googleapis/build/src/apis/composer"
+import type {GroundingSupport } from "@google/genai"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -413,6 +412,64 @@ export const processMessage = (
 
     return typeof index === "number" ? `[${index + 1}]` : ""
   })
+}
+
+export const processWebSearchMessage = (
+  text: string,
+  citationMap: Record<number, number>,
+  email?: string,
+) => {
+  if (!text) {
+    return ""
+  }
+
+  text = splitGroupedCitationsWithSpaces(text)
+
+  // Track citations used in current line to deduplicate
+  let currentLineCitations = new Set<number>()
+  let result = ""
+  let currentLine = ""
+
+  const lines = text.split(/(\r?\n)/)
+
+  for (let i = 0; i < lines.length; i++) {
+    const segment = lines[i]
+
+    if (segment.match(/\r?\n/)) {
+      // End of line - add deduplicated citations and reset
+      const uniqueCitations = Array.from(currentLineCitations)
+        .sort((a, b) => a - b)
+        .map((index) => ` [${index}]`)
+        .join("")
+      result += currentLine + uniqueCitations + segment
+      currentLine = ""
+      currentLineCitations.clear()
+    } else {
+      // Process current line segment
+      const processedSegment = segment.replace(
+        textToCitationIndex,
+        (match, num) => {
+          const index = citationMap[num]
+          if (typeof index === "number") {
+            currentLineCitations.add(index + 1)
+          }
+          return "" // Remove citation from text, will be added at line end
+        },
+      )
+      currentLine += processedSegment
+    }
+  }
+
+  // Handle final line if no newline at end
+  if (currentLine || currentLineCitations.size > 0) {
+    const uniqueCitations = Array.from(currentLineCitations)
+      .sort((a, b) => a - b)
+      .map((index) => ` [${index}]`)
+      .join("")
+    result += currentLine + uniqueCitations
+  }
+
+  return result
 }
 
 // the Set is passed by reference so that singular object will get updated
@@ -3942,7 +3999,7 @@ function processWebSearchCitations(
       const segment = support.segment
       const groundingChunkIndices = support.groundingChunkIndices || []
 
-      let citationText = ""
+      let citationIndices = new Set<number>()
       for (const chunkIndex of groundingChunkIndices) {
         if (allSources[chunkIndex]) {
           const source = allSources[chunkIndex]
@@ -3968,9 +4025,14 @@ function processWebSearchCitations(
             sourceIndex++
           }
 
-          citationText += ` [${citationIndex}]`
+          citationIndices.add(citationIndex)
         }
       }
+
+      const citationText = Array.from(citationIndices)
+        .sort((a, b) => a - b)
+        .map((index) => ` [${index}]`)
+        .join("")
 
       if (
         citationText &&
@@ -4104,6 +4166,7 @@ export const MessageApi = async (c: Context) => {
         actualModelId = modelId // fallback to using the label as-is
       }
     }
+    const webSearchEnabled = enableWebSearch ?? false
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch) {
       Logger.info(`Routing to MessageWithToolsApi`)
@@ -4507,7 +4570,9 @@ export const MessageApi = async (c: Context) => {
             const answerSpan = streamSpan.startSpan("process_final_answer")
             answerSpan.setAttribute(
               "final_answer",
-              processMessage(answer, citationMap, email),
+              webSearchEnabled
+                ? processWebSearchMessage(answer, citationMap, email)
+                : processMessage(answer, citationMap, email),
             )
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
@@ -4537,7 +4602,9 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 imageCitations: imageCitations,
-                message: processMessage(answer, citationMap, email),
+                message: webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
                 thinking: thinking,
                 modelId: actualModelId,
                 cost: totalCost.toString(),
@@ -4677,7 +4744,6 @@ export const MessageApi = async (c: Context) => {
               `Found ${chainBreakClassifications.length} chain break classifications for context`,
             )
 
-            const webSearchEnabled = enableWebSearch ?? false
             let searchOrAnswerIterator
             if (webSearchEnabled) {
               loggerWithChild({ email: email }).info(
@@ -4844,6 +4910,7 @@ export const MessageApi = async (c: Context) => {
                     data: JSON.stringify({
                       contextChunks: citations,
                       citationMap: citationMap,
+                      updatedResponse: answer,
                     }),
                   })
                 }
@@ -5179,7 +5246,9 @@ export const MessageApi = async (c: Context) => {
               const answerSpan = ragSpan.startSpan("process_final_answer")
               answerSpan.setAttribute(
                 "final_answer",
-                processMessage(answer, citationMap, email),
+                webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
               )
               answerSpan.setAttribute("actual_answer", answer)
               answerSpan.setAttribute("final_answer_length", answer.length)
@@ -5248,7 +5317,9 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 imageCitations: imageCitations,
-                message: processMessage(answer, citationMap, email),
+                message: webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
                 thinking: thinking,
                 modelId: actualModelId || config.defaultBestModel,
                 cost: totalCost.toString(),

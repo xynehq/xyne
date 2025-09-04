@@ -157,7 +157,8 @@ export const sharedAgentUsageSchema = z.object({
 export const agentChatMessageSchema = z.object({
   message: z.string(),
   chatId: z.string().optional(),
-  modelId: z.string().optional(),
+  path: z.string().optional(),
+  modelId: z.string().min(1),
   isReasoningEnabled: z
     .string()
     .optional()
@@ -177,6 +178,7 @@ export const agentChatMessageSchema = z.object({
 
 export const messageSchema = z.object({
   message: z.string().min(1),
+  path: z.string().optional(),
   chatId: z.string().optional(),
   selectedModelConfig: z.string().optional(), // JSON string containing model config
   agentId: z.string().optional(),
