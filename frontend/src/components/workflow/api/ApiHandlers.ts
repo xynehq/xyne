@@ -112,23 +112,28 @@ interface WorkflowExecutionsResponse {
 
 
 
+// Centralized backend URL configuration from environment
+const BACKEND_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+
 // Base URL for workflow service
-const WORKFLOW_BASE_URL = 'https://2f66b479bc76.ngrok-free.app/v1';
+const WORKFLOW_BASE_URL = `${BACKEND_BASE_URL}/v1`;
 
 // Base URL for workflow templates
-const WORKFLOW_TEMPLATES_BASE_URL = 'https://2f66b479bc76.ngrok-free.app/api/v1';
+const WORKFLOW_TEMPLATES_BASE_URL = `${BACKEND_BASE_URL}/api/v1`;
 
 // Base URL for user service  
-const USER_SERVICE_BASE_URL = 'https://2f66b479bc76.ngrok-free.app';
+const USER_SERVICE_BASE_URL = BACKEND_BASE_URL;
 
 // Base URL for workflow execution
-const WORKFLOW_EXECUTION_BASE_URL = 'https://2f66b479bc76.ngrok-free.app/api/v1';
+const WORKFLOW_EXECUTION_BASE_URL = `${BACKEND_BASE_URL}/api/v1`;
 
 async function apiRequest<T>(
   url: string,
   options?: RequestInit
 ): Promise<T> {
   try {
+    const token = localStorage.getItem('authToken');
+    
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -136,6 +141,7 @@ async function apiRequest<T>(
         'Accept': 'application/json',
         'ngrok-skip-browser-warning': 'true',
         'Access-Control-Allow-Origin': '*',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
         ...options?.headers,
       },
       mode: 'cors',

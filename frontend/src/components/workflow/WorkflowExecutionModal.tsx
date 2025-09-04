@@ -285,12 +285,16 @@ export function WorkflowExecutionModal({
     
     const checkStatus = async () => {
       try {
-        const response = await fetch(`https://2f66b479bc76.ngrok-free.app/api/v1/workflow/executions/${executionId}/status`, {
+        const BACKEND_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+        const token = localStorage.getItem('authToken');
+        
+        const response = await fetch(`${BACKEND_BASE_URL}/api/v1/workflow/executions/${executionId}/status`, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'ngrok-skip-browser-warning': 'true',
             'Access-Control-Allow-Origin': '*',
+            ...(token && { 'Authorization': `Bearer ${token}` }),
           },
           mode: 'cors',
         })
