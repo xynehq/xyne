@@ -16,6 +16,15 @@ export * from "@/db/schema/sharedChats"
 export * from "@/db/schema/knowledgeBase"
 export * from "@/db/schema/apiKey"
 
+// Export workflow system tables
+export * from "@/db/schema/workflowEnums"
+export * from "@/db/schema/workflowServiceConfig"
+export * from "@/db/schema/workflowTemplate"
+export * from "@/db/schema/workflowExecution"
+export * from "@/db/schema/workflowTools"
+export * from "@/db/schema/workflowAudit"
+export * from "@/db/schema/workflowApi"
+
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"
 import type { PublicWorkspace, SelectWorkspace } from "@/db/schema/workspaces"
