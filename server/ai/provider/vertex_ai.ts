@@ -150,7 +150,7 @@ export class VertexAiProvider extends BaseProvider {
       return { text, cost }
     } catch (error) {
       Logger.error(`VertexAI Anthropic request failed:`, error)
-      if (error.message?.includes('timeout')) {
+      if (error instanceof Error && error.message?.includes('timeout')) {
         throw new Error(`VertexAI request timed out after 4 minutes`)
       }
       throw error
