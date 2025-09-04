@@ -38,7 +38,7 @@ type ExecuteAgentSuccess = {
 
 type StreamingExecuteAgentResponse = ExecuteAgentSuccess & {
   type: 'streaming'
-  iterator: AsyncIterableIterator<ConverseResponse> 
+  iterator: AsyncIterableIterator<ConverseResponse>
 }
 
 type NonStreamingExecuteAgentResponse = ExecuteAgentSuccess & {
@@ -56,6 +56,89 @@ export type ExecuteAgentResponse =
   | StreamingExecuteAgentResponse
   | NonStreamingExecuteAgentResponse
   | ExecuteAgentErrorResponse
+
+
+
+
+
+async function* createStreamingWithDBSave(
+  originalIterator: AsyncIterableIterator<ConverseResponse>,
+  dbSaveParams: {
+    chatId: number
+    userId: number
+    chatExternalId: string
+    workspaceExternalId: string
+    email: string
+    modelId: string
+  }
+): AsyncIterableIterator<ConverseResponse> {
+
+  // Same accumulation pattern as AgentMessageApi
+  Logger.info("🌊 createStreamingWithDBSave: Starting...")
+  let answer = ""
+  let costArr: number[] = []
+  let tokenArr: { inputTokens: number; outputTokens: number }[] = []
+  let wasStreamClosedPrematurely = false
+
+  try {
+    Logger.info("🌊 createStreamingWithDBSave: About to start for-await loop...")
+    // Forward chunks while accumulating (same as AgentMessageApi)
+    for await (const chunk of originalIterator) {
+      if (chunk.text) {
+        answer += chunk.text  // Accumulate full response
+        yield { text: chunk.text }  // Forward to client
+      }
+      Logger.info("🌊 createStreamingWithDBSave: Forwarded chunk to client:", chunk.text)
+
+      if (chunk.cost) {
+        costArr.push(chunk.cost)  // Accumulate costs
+        yield { cost: chunk.cost }
+      }
+
+      if (chunk.metadata?.usage) {
+        tokenArr.push({  // Accumulate token usage
+          inputTokens: chunk.metadata.usage.inputTokens,
+          outputTokens: chunk.metadata.usage.outputTokens,
+        })
+        yield { metadata: chunk.metadata }
+      }
+    }
+
+
+    Logger.info("🌊 createStreamingWithDBSave: Iterator completed, saving to DB...")
+
+    // Save to DB after stream completes (same pattern as AgentMessageApi)
+    if (answer || wasStreamClosedPrematurely) {
+      const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+      const totalTokens = tokenArr.reduce(
+        (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+        0,
+      )
+
+      // Save assistant message to database
+      await insertMessage(db, {
+        chatId: dbSaveParams.chatId,
+        userId: dbSaveParams.userId,
+        chatExternalId: dbSaveParams.chatExternalId,
+        workspaceExternalId: dbSaveParams.workspaceExternalId,
+        messageRole: MessageRole.Assistant,
+        email: dbSaveParams.email,
+        sources: [],
+        message: answer,  // Full accumulated text
+        modelId: dbSaveParams.modelId,
+        cost: totalCost.toString(),
+        tokensUsed: totalTokens,
+      })
+
+      Logger.info("Assistant message saved to database after streaming")
+    }
+
+  } catch (error) {
+    Logger.error(error, "Error during streaming or DB save")
+    throw error
+  }
+}
+
 
 /**
  * ExecuteAgent - Simplified agent execution function
@@ -83,12 +166,12 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
 
     Logger.info(`Executing agent ${agentId} for user ${userEmail}`)
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
-          db,
-          workspaceId, 
-          userEmail,
-        )
-     const { user, workspace } = userAndWorkspace
-     Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
+      db,
+      workspaceId,
+      userEmail,
+    )
+    const { user, workspace } = userAndWorkspace
+    Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
 
     Logger.info(`Fetching agent details for ${agentId}...`)
     const agent = await getAgentByExternalId(db, agentId, Number(workspace.id))
@@ -136,7 +219,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         content: [{ text: userQuery }],
       }
     ]
-    
+
     Logger.info(`Calling LLM with model ${agent.model}...`)
 
 
@@ -164,20 +247,40 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
 
     // Step 6: Call LLM and return based on streaming preference
     if (isStreamable) {
-      // Return streaming iterator
-      const responseIterator = getProviderByModel(agent.model as Models).converseStream(
-        messages,
-        modelParams
-      )
+      Logger.info("Agent execution started (streaming............)")
 
-      return {
-        success: true,
-        type: 'streaming',
-        iterator: responseIterator,
-        chatId: insertedChat.externalId,
-        title,
-        agentName: agent.name,
-        modelId: agent.model,
+      // Add provider debugging
+      const provider = getProviderByModel(agent.model as Models)
+      Logger.info(`Provider for model ${agent.model}:`, typeof provider)
+
+      try {
+        Logger.info("Creating original iterator...")
+        const originalIterator = provider.converseStream(messages, modelParams)
+        Logger.info("Original iterator created, starting wrapper...")
+
+        const wrappedIterator = createStreamingWithDBSave(originalIterator, {
+          chatId: insertedChat.id,
+          userId: user.id,
+          chatExternalId: insertedChat.externalId,
+          workspaceExternalId: workspaceId,
+          email: userEmail,
+          modelId: agent.model,
+        })
+
+        Logger.info("Wrapper created successfully")
+
+        return {
+          success: true,
+          type: 'streaming',
+          iterator: wrappedIterator,
+          chatId: insertedChat.externalId,
+          title,
+          agentName: agent.name,
+          modelId: agent.model,
+        }
+      } catch (providerError) {
+        Logger.error(providerError, "Error creating streaming iterator")
+        throw providerError
       }
     } else {
       // Get non-streaming response
@@ -185,6 +288,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         messages,
         modelParams
       )
+
 
       if (!response.text) {
         return {
@@ -196,7 +300,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
 
       await insertMessage(db, {
         chatId: insertedChat.id,
-        userId: 1,
+        userId: user.id,
         chatExternalId: insertedChat.externalId,
         workspaceExternalId: workspaceId,
         messageRole: MessageRole.Assistant,
@@ -214,7 +318,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         type: 'non-streaming',
         chatId: insertedChat.externalId,
         title,
-        response: response, 
+        response: response,
         agentName: agent.name,
         modelId: agent.model,
       }
