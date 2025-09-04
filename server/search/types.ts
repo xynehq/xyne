@@ -177,6 +177,7 @@ export enum KnowledgeBaseEntity {
   Folder = "folder", // Folders within collections
   Collection = "collection", // Collections (main containers)
   KnowledgeBase = "knowledgebase", // Legacy alias for collection
+  Attachment = "attachment",
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>
@@ -196,6 +197,7 @@ export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
+export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
@@ -225,6 +227,7 @@ export const entitySchema = z.union([
   ChatEntitySchema,
   DataSourceEntitySchema,
   WebSearchEntitySchema,
+  KnowledgeBaseEntitySchema,
 ])
 
 export type Entity =
@@ -238,6 +241,7 @@ export type Entity =
   | SlackEntity
   | DataSourceEntity
   | WebSearchEntity
+  | KnowledgeBaseEntity
 
 export type WorkspaceEntity = DriveEntity
 

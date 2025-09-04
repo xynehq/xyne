@@ -155,6 +155,7 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
+  KnowledgeBaseEntity,
 } from "@/search/types"
 import { APIError } from "openai"
 import { SearchVespaThreads } from "@/search/vespa"
@@ -494,8 +495,8 @@ const checkAndYieldCitations = async function* (
         const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
-          if (item.fields.sddocname === dataSourceFileSchema) {
-            // Skip datasource and collection files from citations
+          if (item.fields.sddocname === dataSourceFileSchema || item.fields.entity === KnowledgeBaseEntity.Attachment) {
+            // Skip datasource and attachment files from citations
             continue
           }
           yield {
@@ -2180,7 +2181,7 @@ async function* generateAnswerFromGivenContext(
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
-      imageFileNames,
+      imageFileNames: finalImageFileNames,
     },
     true,
   )
@@ -2197,6 +2198,12 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.end()
     return
   } else if (!answer) {
+    if(attachmentFileIds && attachmentFileIds.length > 0) {
+      yield {
+        text: "From the selected context, I could not find any information to answer it, please change your query",
+      }
+      return
+    }
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
     loggerWithChild({ email: email }).info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
@@ -4088,9 +4095,8 @@ export const MessageApi = async (c: Context) => {
       return MessageWithToolsApi(c)
     }
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.fileId,
-    )
+    const ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const NonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -4120,7 +4126,7 @@ export const MessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
-    const isMsgWithContext = isMessageWithContext(message)
+    let isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
@@ -4128,7 +4134,11 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    const fileIds = extractedInfo?.fileIds
+    isMsgWithContext = isMsgWithContext || (NonImageAttachmentFileIds && NonImageAttachmentFileIds.length > 0)
+    let fileIds = extractedInfo?.fileIds
+    if (NonImageAttachmentFileIds && NonImageAttachmentFileIds.length > 0) {
+      fileIds = fileIds.concat(NonImageAttachmentFileIds)
+    }
     const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
@@ -4339,7 +4349,7 @@ export const MessageApi = async (c: Context) => {
           }
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
-            (attachmentFileIds && attachmentFileIds?.length > 0)
+            (ImageAttachmentFileIds && ImageAttachmentFileIds?.length > 0)
           ) {
             let answer = ""
             let citations = []
@@ -4366,7 +4376,7 @@ export const MessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              attachmentFileIds,
+              ImageAttachmentFileIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -5523,14 +5533,12 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If it's an assistant message, we need to get attachments from the previous user message
     let attachmentMetadata: AttachmentMetadata[] = []
-    let attachmentFileIds: string[] = []
+    let ImageAttachmentFileIds: string[] = []
 
     if (isUserMessage) {
       // If retrying a user message, get attachments from that message
       attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
-      attachmentFileIds = attachmentMetadata.map(
-        (m: AttachmentMetadata) => m.fileId,
-      )
+      ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
     }
 
     rootSpan.setAttribute("email", email)
@@ -5584,9 +5592,9 @@ export const MessageRetryApi = async (c: Context) => {
           prevUserMessage.externalId,
           email,
         )
-        attachmentFileIds = attachmentMetadata.map(
-          (m: AttachmentMetadata) => m.fileId,
-        )
+        ImageAttachmentFileIds = attachmentMetadata.map(
+          (m: AttachmentMetadata) => m.isImage ? m.fileId : null,
+        ).filter((m: string | null) => m !== null)
       }
     }
 
@@ -5664,7 +5672,7 @@ export const MessageRetryApi = async (c: Context) => {
           let message = prevUserMessage.message
           if (
             (fileIds && fileIds?.length > 0) ||
-            (attachmentFileIds && attachmentFileIds?.length > 0)
+            (ImageAttachmentFileIds && ImageAttachmentFileIds?.length > 0)
           ) {
             loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
@@ -5695,7 +5703,7 @@ export const MessageRetryApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              attachmentFileIds,
+              ImageAttachmentFileIds,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,

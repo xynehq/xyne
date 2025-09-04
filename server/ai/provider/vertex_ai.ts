@@ -32,20 +32,51 @@ const buildVertexAIImageParts = async (imagePaths: string[]) => {
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    const match = imgPath.match(/^(.+)_([0-9]+)$/)
-    if (!match) throw new Error(`Invalid image path: ${imgPath}`)
-    const docId = match[1]
+    //  format: docIndex_docId_imageNumber
+    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
+    if (!match) {
+      Logger.error(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
+      throw new Error(`Invalid image path: ${imgPath}`)
+    }
+
+    const docIndex = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
+
+    if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
+      Logger.error(`Invalid docId containing path traversal: ${docId}`)
+      throw new Error(`Invalid docId: ${docId}`)
+    }
+
     const imageDir = path.join(baseDir, docId)
-    const absolutePath = findImageByName(imageDir, match[2])
-    const ext = path.extname(absolutePath).toLowerCase()
-    const mimeMap: Record<string, string> = {
+    const absolutePath = findImageByName(imageDir, imageNumber)
+    const extension = path.extname(absolutePath).toLowerCase()
+
+    // Map file extensions to Bedrock format values
+    const formatMap: Record<string, string> = {
       ".png": "image/png",
       ".jpg": "image/jpeg",
       ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
       ".webp": "image/webp",
     }
-    const mimeType = mimeMap[ext]
-    if (!mimeType) return null
+
+    const format = formatMap[extension]
+    if (!format) {
+      Logger.warn(
+        `Unsupported image format: ${extension}. Skipping image: ${absolutePath}`,
+      )
+      return null
+    }
+
+    // Ensure the resolved path is within baseDir
+    const resolvedPath = path.resolve(imageDir)
+    if (!resolvedPath.startsWith(baseDir)) {
+      Logger.error(`Path traversal attempt detected: ${imageDir}`)
+      throw new Error(`Invalid path: ${imageDir}`)
+    }
 
     try {
       await fs.promises.access(absolutePath, fs.constants.F_OK)
@@ -54,7 +85,7 @@ const buildVertexAIImageParts = async (imagePaths: string[]) => {
       const base64 = imgBuffer.toString("base64")
       return {
         type: "image",
-        source: { type: "base64", media_type: mimeType, data: base64 },
+        source: { type: "base64", media_type: format, data: base64 },
       }
     } catch (err) {
       Logger.error(`Failed to read image: ${absolutePath}`)

@@ -2413,6 +2413,7 @@ export async function extractTextAndImagesWithChunksFromDocx(
   data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
+  describeImages: boolean = true,
   logWarnings: boolean = false,
 ): Promise<DocxProcessingResult> {
   Logger.info(`Starting DOCX processing for document: ${docid}`)
@@ -2623,7 +2624,11 @@ export async function extractTextAndImagesWithChunksFromDocx(
                   `Reusing description for repeated image ${imagePath}`,
                 )
               } else {
-                description = await describeImageWithllm(imageBuffer)
+                if(describeImages) {
+                  description = await describeImageWithllm(imageBuffer)
+                } else {
+                  description = "This is an image."
+                }
                 if (
                   description === "No description returned." ||
                   description === "Image is not worth describing."
