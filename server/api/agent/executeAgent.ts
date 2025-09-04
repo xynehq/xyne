@@ -14,7 +14,7 @@ import { getUserAndWorkspaceByEmail } from "@/db/user"
 
 const Logger = getLogger(Subsystem.Server)
 
-// Simplified schema - no modelId (we get it from agent)
+
 export const executeAgentSchema = z.object({
   agentId: z.string().min(1, "Agent ID is required"),
   userQuery: z.string().min(1, "User query is required"),
@@ -27,7 +27,7 @@ export const executeAgentSchema = z.object({
 
 export type ExecuteAgentParams = z.infer<typeof executeAgentSchema>
 
-// Reuse existing types instead of creating new ones
+
 type ExecuteAgentSuccess = {
   success: true
   chatId: string
@@ -38,12 +38,12 @@ type ExecuteAgentSuccess = {
 
 type StreamingExecuteAgentResponse = ExecuteAgentSuccess & {
   type: 'streaming'
-  iterator: AsyncIterableIterator<ConverseResponse>  // Reuse existing ConverseResponse
+  iterator: AsyncIterableIterator<ConverseResponse> 
 }
 
 type NonStreamingExecuteAgentResponse = ExecuteAgentSuccess & {
   type: 'non-streaming'
-  response: ConverseResponse  // Reuse existing ConverseResponse
+  response: ConverseResponse
 }
 
 type ExecuteAgentErrorResponse = {
@@ -84,12 +84,12 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
     Logger.info(`Executing agent ${agentId} for user ${userEmail}`)
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
           db,
-          workspaceId, // This workspaceId is the externalId string
+          workspaceId, 
           userEmail,
         )
      const { user, workspace } = userAndWorkspace
      Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
-    // Step 1: Fetch agent details (including model)
+
     Logger.info(`Fetching agent details for ${agentId}...`)
     const agent = await getAgentByExternalId(db, agentId, Number(workspace.id)) // Using 1 as placeholder workspace
 
@@ -109,12 +109,8 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
 
     Logger.info(`Found agent: ${agent.name} with model: ${agent.model}`)
 
-    // Step 2: Generate chat title using agent's model (not pipeline config)
+
     Logger.info("Generating chat title...")
-    //  const titleResp = await generateTitleUsingQuery(userQuery, {
-    //          modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-    //          stream: false,
-    //        })
 
     const titleResp = await generateTitleUsingQuery(userQuery, {
       modelId: agent.model as Models,
@@ -123,7 +119,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
     const title = titleResp.title
     Logger.info(`Generated title: ${title}`)
 
-    // Step 3: Prepare model parameters
+
     const modelParams = {
       modelId: agent.model as Models,
       stream: isStreamable,
@@ -134,7 +130,6 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
       ...(max_new_tokens && { max_new_tokens }),
     }
 
-    // Step 4: Prepare messages for LLM
     const messages: Message[] = [
       {
         role: "user" as ConversationRole,
@@ -145,7 +140,6 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
     Logger.info(`Calling LLM with model ${agent.model}...`)
 
 
-    // Step 5: Create chat and initial user message in DB
     const insertedChat = await insertChat(db, {
       workspaceId: workspace.id,
       workspaceExternalId: workspaceId,
@@ -199,7 +193,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         }
       }
 
-      // Insert assistant message
+
       await insertMessage(db, {
         chatId: insertedChat.id,
         userId: 1,
@@ -220,7 +214,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         type: 'non-streaming',
         chatId: insertedChat.externalId,
         title,
-        response: response,  // Return full ConverseResponse object
+        response: response, 
         agentName: agent.name,
         modelId: agent.model,
       }
