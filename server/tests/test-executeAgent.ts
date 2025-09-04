@@ -1,4 +1,4 @@
-import { executeAgent } from "./api/agent/executeAgent"
+import { executeAgent } from "../api/agent/executeAgent"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 const Logger = getLogger(Subsystem.AI)
