@@ -431,11 +431,14 @@ export const startStream = async (
         if (!old?.messages) return old
         
         // When streaming completes, consolidate all accumulated data (response, citations, thinking) into a final message object
-       // Save the complete assistant message to React Query cache to persist the conversation history
+        // Save the complete assistant message to React Query cache to persist the conversation history
+        // Use streamState.response if available (from CitationsUpdate for web search), otherwise use streamState.partial (from ResponseUpdate for regular chat)
+        const finalMessage = streamState.response || streamState.partial
+        
         const newAssistantMessage = {
           externalId: streamState.messageId,
           messageRole: "assistant",
-          message: streamState.response,
+          message: finalMessage,
           sources: streamState.sources,
           citationMap: streamState.citationMap,
           thinking: streamState.thinking,
