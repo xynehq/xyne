@@ -275,7 +275,7 @@ export class OpenAIProvider extends BaseProvider {
         },
         ...transformedMessages,
       ],
-      ...(!isDeepResearchModel(modelParams.modelId) &&
+      ...(!isDeepResearchModel(modelParams.modelId as Models) &&
       !params.deepResearchEnabled
         ? {
             stream: true,
@@ -484,7 +484,6 @@ export class OpenAIProvider extends BaseProvider {
             completedResponse.output.forEach((item: any, index: number) => {
               if (item.type === "reasoning") {
                 if (item.content || item.text || item.reasoning) {
-              
                 }
               }
             })

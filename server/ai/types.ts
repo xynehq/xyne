@@ -21,34 +21,34 @@ export enum AwsBedrockModels {
   Claude_3_7_Sonnet = "aws-claude-3-7-sonnet",
   Claude_Opus_4 = "aws-claude-opus-4",
   Claude_Sonnet_4 = "aws-claude-sonnet-4",
-  
+
   // Llama Models
   Llama_3_1_405B = "aws-llama-3-1-405b",
   Llama_3_1_70B = "aws-llama-3-1-70b",
   Llama_3_1_8B = "aws-llama-3-1-8b",
   Llama_3_2_1B = "aws-llama-3-2-1b",
   Llama_3_2_3B = "aws-llama-3-2-3b",
-  
+
   // Amazon Nova Models
   Amazon_Nova_Micro = "aws-nova-micro",
   Amazon_Nova_Lite = "aws-nova-lite",
   Amazon_Nova_Pro = "aws-nova-pro",
-  
+
   // Cohere Models
   CohereCmdR = "aws-cohere-cmd-r",
   CohereCmdRPlus = "aws-cohere-cmd-r-plus",
-  
+
   // Other Models
   DeepSeek_R1 = "aws-deepseek-r1",
   Mistral_Large = "aws-mistral-large",
 }
 
 export enum OpenAIModels {
-  Gpt_4o = "openai-gpt-4o",
-  Gpt_4o_mini = "openai-gpt-4o-mini",
-  Gpt_4 = "openai-gpt-4",
-  O3_Deep_Research = "openai-o3-deep-research",
-  O4_Mini_Deep_Research = "openai-o4-mini-deep-research",
+  Gpt_4o = "gpt-4o",
+  Gpt_4o_mini = "gpt-4o-mini",
+  Gpt_4 = "gpt-4",
+  o3_Deep_Research = "o3-deep-research",
+  o4_Mini_Deep_Research = "o4-mini-deep-research",
 }
 
 export enum GoogleAIModels {
@@ -67,16 +67,16 @@ export enum VertexAIModels {
   // Claude_3_5_Haiku = "vertex-claude-3-5-haiku",
   // Claude_3_Opus = "vertex-claude-3-opus",
   // Claude_3_Haiku = "vertex-claude-3-haiku",
-  
+
   // Mistral Models
   // Mistral_Large_2411 = "vertex-mistral-large-2411",
   // Mistral_Small_2503 = "vertex-mistral-small-2503",
   // Codestral_2501 = "vertex-codestral-2501",
-  
+
   // Llama Models
   // Llama_4_Maverick_17b = "vertex-llama-4-maverick-17b",
   // Llama_4_Scout_17b = "vertex-llama-4-scout-17b",
-  
+
   // Gemini Models (different from Google AI)
   // Gemini_2_0_Flash_001 = "vertex-gemini-2-0-flash-001", // Flash 2.0
   // Gemini_2_0_Flash_Lite_001 = "vertex-gemini-2-0-flash-lite-001", // Flash Lite 2.0
@@ -116,18 +116,18 @@ export enum Models {
   CohereCmdRPlus = AwsBedrockModels.CohereCmdRPlus,
   DeepSeek_R1 = AwsBedrockModels.DeepSeek_R1,
   Mistral_Large = AwsBedrockModels.Mistral_Large,
-  
+
   // OpenAI Models
   Gpt_4o = OpenAIModels.Gpt_4o,
   Gpt_4o_mini = OpenAIModels.Gpt_4o_mini,
   Gpt_4 = OpenAIModels.Gpt_4,
-  O3_Deep_Research = OpenAIModels.O3_Deep_Research,
-  O4_Mini_Deep_Research = OpenAIModels.O4_Mini_Deep_Research,
-  
+  o3_Deep_Research = OpenAIModels.o3_Deep_Research,
+  o4_Mini_Deep_Research = OpenAIModels.o4_Mini_Deep_Research,
+
   // Google AI Models
   Gemini_2_5_Flash = GoogleAIModels.Gemini_2_5_Flash,
   Gemini_2_0_Flash_Thinking = GoogleAIModels.Gemini_2_0_Flash_Thinking,
-  
+
   // Vertex AI Models
   Vertex_Claude_Sonnet_4 = VertexAIModels.Claude_Sonnet_4,
   // Vertex_Claude_Opus_4_1 = VertexAIModels.Claude_Opus_4_1,
@@ -170,7 +170,7 @@ export const ModelProviderAvailability: Record<string, AIProviders[]> = {
   "Claude Opus 4": [AIProviders.AwsBedrock, AIProviders.VertexAI],
   "Claude Sonnet 4": [AIProviders.AwsBedrock, AIProviders.VertexAI],
   "Gemini 2.5 Flash": [AIProviders.GoogleAI, AIProviders.VertexAI],
-  
+
   // Provider-specific models
   "Llama 3.1 405B Instruct": [AIProviders.AwsBedrock],
   "Llama 3.1 70B Instruct": [AIProviders.AwsBedrock],
@@ -194,7 +194,7 @@ export const ModelProviderAvailability: Record<string, AIProviders[]> = {
 export enum ModelDisplayNames {
   // AWS Bedrock Models
   AWS_CLAUDE_3_5_HAIKU = "Claude 3.5 Haiku",
-  AWS_CLAUDE_3_5_SONNET = "Claude 3.5 Sonnet", 
+  AWS_CLAUDE_3_5_SONNET = "Claude 3.5 Sonnet",
   AWS_CLAUDE_3_5_SONNET_V2 = "Claude 3.5 Sonnet V2",
   AWS_CLAUDE_3_7_SONNET = "Claude 3.7 Sonnet",
   AWS_CLAUDE_OPUS_4 = "Claude Opus 4",
@@ -211,18 +211,18 @@ export enum ModelDisplayNames {
   AWS_COHERE_CMD_R_PLUS = "Cohere Command R+",
   AWS_DEEPSEEK_R1 = "DeepSeek R1",
   AWS_MISTRAL_LARGE = "Mistral Large",
-  
+
   // OpenAI Models
   OPENAI_GPT_4O = "GPT-4o",
   OPENAI_GPT_4O_MINI = "GPT-4o Mini",
   OPENAI_GPT_4 = "GPT-4",
-  OPENAI_O3_DEEP_RESEARCH = "O3 Deep Research",
-  OPENAI_O4_MINI_DEEP_RESEARCH = "O4 Mini Deep Research",
-  
+  OPENAI_o3_DEEP_RESEARCH = "o3 Deep Research",
+  OPENAI_o4_MINI_DEEP_RESEARCH = "o4 Mini Deep Research",
+
   // Google AI Models
   GOOGLEAI_GEMINI_2_5_FLASH = "Gemini 2.5 Flash",
   GOOGLEAI_GEMINI_2_0_FLASH_THINKING = "Gemini 2.0 Flash Thinking",
-  
+
   // Vertex AI Models
   VERTEX_CLAUDE_SONNET_4 = "Claude Sonnet 4",
   // VERTEX_CLAUDE_OPUS_4_1 = "Claude Opus 4.1",
@@ -428,12 +428,12 @@ export type QueryRouterLLMResponse = z.infer<typeof QueryRouterResponseSchema>
 
 export interface ChainBreakClassifications {
   availableChainBreaks: Array<{
-    chainIndex: number;
-    messageIndex: number;
-    originalQuery: string;
-    classification: QueryRouterLLMResponse;
-  }>;
-  usage: string;
+    chainIndex: number
+    messageIndex: number
+    originalQuery: string
+    classification: QueryRouterLLMResponse
+  }>
+  usage: string
 }
 
 export const QueryContextRank = z.object({

@@ -110,8 +110,8 @@ export const modelDetailsMap: Record<
     },
   },
 
-  [Models.O3_Deep_Research]: {
-    name: "O3 Deep Research",
+  [Models.o3_Deep_Research]: {
+    name: "o3 Deep Research",
     cost: {
       // TODO: get actual price
       onDemand: {
@@ -124,8 +124,8 @@ export const modelDetailsMap: Record<
       },
     },
   },
-  [Models.O4_Mini_Deep_Research]: {
-    name: "O4 Mini Deep Research",
+  [Models.o4_Mini_Deep_Research]: {
+    name: "o4 Mini Deep Research",
     cost: {
       // TODO: get actual price
       onDemand: {
@@ -294,8 +294,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Gpt_4o]: AIProviders.OpenAI,
   [Models.Gpt_4o_mini]: AIProviders.OpenAI,
   [Models.Gpt_4]: AIProviders.OpenAI,
-  [Models.O3_Deep_Research]: AIProviders.OpenAI,
-  [Models.O4_Mini_Deep_Research]: AIProviders.OpenAI,
+  [Models.o3_Deep_Research]: AIProviders.OpenAI,
+  [Models.o4_Mini_Deep_Research]: AIProviders.OpenAI,
   [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
   [Models.CohereCmdR]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
@@ -311,7 +311,7 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.DeepSeek_R1]: AIProviders.AwsBedrock,
   [Models.Gemini_2_5_Flash]: AIProviders.GoogleAI,
   [Models.Gemini_2_0_Flash_Thinking]: AIProviders.GoogleAI,
-  
+
   // Vertex AI Claude Models
   [Models.Vertex_Claude_Sonnet_4]: AIProviders.VertexAI,
   // [Models.Vertex_Claude_Opus_4_1]: AIProviders.VertexAI,
@@ -352,7 +352,7 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
 
 export const isDeepResearchModel = (modelId: Models): boolean => {
   return (
-    modelId === Models.O3_Deep_Research ||
-    modelId === Models.O4_Mini_Deep_Research
+    modelId === Models.o3_Deep_Research ||
+    modelId === Models.o4_Mini_Deep_Research
   )
 }

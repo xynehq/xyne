@@ -4052,7 +4052,7 @@ export const MessageApi = async (c: Context) => {
       }
     }
     const webSearchEnabled = enableWebSearch ?? false
-    const deepResearchEnabled = false
+    const deepResearchEnabled = isDeepResearchEnabled ?? false
     let agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
       Logger.info(`Routing to MessageWithToolsApi`)
@@ -4641,7 +4641,7 @@ export const MessageApi = async (c: Context) => {
                 "Using deep research for the question",
               )
               searchOrAnswerIterator = getDeepResearchResponse(message, ctx, {
-                modelId: Models.O3_Deep_Research,
+                modelId: Models.o3_Deep_Research,
                 stream: true,
                 json: false,
                 agentPrompt: agentPromptValue,
