@@ -22,6 +22,7 @@ import {
 } from "@/db/userAgentPermission"
 import { db } from "./client"
 import { getLoggerWithChild } from "@/logger"
+import { getUserByEmail } from "./user"
 
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
@@ -350,10 +351,19 @@ export const cleanUpAgentDb = async (
       `Starting agent cleanup for deleted item IDs: ${deletedItemIds.join(", ")} requested by ${userEmail}`,
     )
 
+    // Get the user by email to get their userId
+    const users = await getUserByEmail(trx, userEmail)
+    if (!users || users.length === 0) {
+      loggerWithChild().warn(`User not found for email: ${userEmail}`)
+      return
+    }
+    const userId = users[0].id
+
+    // Only fetch agents created by this specific user
     const allActiveAgents = await trx
       .select()
       .from(agents)
-      .where(isNull(agents.deletedAt))
+      .where(and(isNull(agents.deletedAt), eq(agents.userId, userId)))
 
     const agentsToUpdate = allActiveAgents.filter((agent) => {
       const currentIntegrations = agent.appIntegrations as any
