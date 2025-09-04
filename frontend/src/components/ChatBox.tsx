@@ -3512,13 +3512,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     style={{ marginLeft: "auto" }}
                   >
                     <span 
-                      className={`truncate max-w-[100px] transition-all duration-300 ease-in-out ${
+                      className={`font-semibold whitespace-nowrap transition-all duration-300 ease-in ${
                         isModelTextAnimating 
                           ? 'transform scale-105' 
                           : 'transform scale-100'
                       }`}
                       style={{
-                        animation: isModelTextAnimating ? 'modelTextChange 0.3s ease-in-out' : 'none'
+                        animation: isModelTextAnimating ? 'modelTextChange 0.3s ease-in' : 'none'
                       }}
                     >
                       {isModelsLoading 
@@ -3649,9 +3649,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                     }`}
                                     disabled={isDisabled}
                                   >
-                                    <div className="flex items-center w-full py-2 gap-2">
-                                      {/* Checkmark in same position as provider icon */}
-                                      <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
+                                    <div className="flex items-baseline w-full py-2 gap-2">
+                                      {/* Checkmark aligned with model name baseline */}
+                                      <div className="w-4 h-4 flex items-center justify-center flex-shrink-0 pt-2">
                                         {isSelected && (
                                           <Check size={12} strokeWidth={2.5} className="text-gray-700 dark:text-gray-300" />
                                         )}
