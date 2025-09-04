@@ -415,15 +415,12 @@ async function* getToolContinuationIterator(
         }) as any,
     ),
   )
-  const finalImageFileNames: string[] = []
+  const finalImageFileNames = imageFileNames || []
 
   if (attachmentFileIds?.length) {
     finalImageFileNames.push(
       ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
     )
-  }
-  else if(imageFileNames?.length && imageFileNames.length > 0) {
-    finalImageFileNames.push(...imageFileNames)
   }
   
   const continuationIterator = generateAnswerBasedOnToolOutput(
@@ -3337,11 +3334,11 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           finalImageFileNames = imageFileNames || []
         }
         if (attachmentFileIds?.length) {
-          finalImageFileNames = [
+          finalImageFileNames.push(
             ...attachmentFileIds.map(
               (fileid, index) => `${index}_${fileid}_${0}`,
-            ),
-          ]
+            )
+          )
         }
 
         // Helper: persist & return JSON once ----------------------------------------

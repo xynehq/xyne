@@ -2149,15 +2149,12 @@ async function* generateAnswerFromGivenContext(
     combinedSearchResponse,
   )
 
-  const finalImageFileNames: string[] = []
+  const finalImageFileNames = imageFileNames || []
 
   if (attachmentFileIds?.length) {
     finalImageFileNames.push(
       ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
     )
-  }
-  else if(imageFileNames?.length && imageFileNames.length > 0) {
-    finalImageFileNames.push(...imageFileNames)
   }
 
   const initialContextSpan = generateAnswerSpan?.startSpan("initialContext")
