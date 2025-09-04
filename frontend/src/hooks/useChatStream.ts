@@ -508,6 +508,7 @@ export const startStream = async (
           citationMap: streamState.citationMap,
           thinking: streamState.thinking,
           imageCitations: streamState.imageCitations,
+          deepResearchSteps: streamState.deepResearchSteps,
           isStreaming: false,
           attachments: [],
           createdAt: new Date().toISOString(),
