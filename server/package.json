@@ -2,18 +2,21 @@
   "name": "xyne",
   "module": "server/server.ts",
   "type": "module",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
     "@faker-js/faker": "^9.3.0",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/npm": "^12.0.2",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
     "cz-conventional-changelog": "^3.3.0",
     "drizzle-kit": "^0.24.2",
     "husky": "^9.1.7",
-    "p-queue": "^8.0.1"
+    "p-queue": "^8.0.1",
+    "semantic-release": "^24.2.7"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -27,7 +30,8 @@
     "preview": "vite preview",
     "format": "bunx biome format --write ../",
     "prepare": "cd .. && husky .husky",
-    "commit": "cz"
+    "commit": "cz",
+    "release": "semantic-release"
   },
   "dependencies": {
     "@anthropic-ai/vertex-sdk": "^0.13.1",
