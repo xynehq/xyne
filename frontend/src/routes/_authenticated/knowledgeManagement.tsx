@@ -443,26 +443,47 @@ function RouteComponent() {
         const response = await api.cl.$get()
         if (response.ok) {
           const data = await response.json()
-            setCollections(
-              data.map((collection: CollectionType) => ({
-                id: collection.id,
-                name: collection.name,
-                description: collection.description,
-                files: collection.totalItems || 0,
-                items: [],
-                isOpen: false,
-                lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                }),
-                updatedBy: collection.lastUpdatedByEmail || "Unknown",
-                totalCount: collection.totalItems,
-                isPrivate: collection.isPrivate,
-              })),
-            )
+          const fetchedCollections = data.map((collection: CollectionType) => ({
+            id: collection.id,
+            name: collection.name,
+            description: collection.description,
+            files: collection.totalItems || 0,
+            items: [],
+            isOpen: false,
+            lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            updatedBy: collection.lastUpdatedByEmail || "Unknown",
+            totalCount: collection.totalItems,
+            isPrivate: collection.isPrivate,
+          }))
+          
+          // Use Map to deduplicate by ID, then convert back to array
+          const collectionsMap = new Map()
+          
+          // First add existing collections (to preserve any state like isOpen)
+          collections.forEach(col => collectionsMap.set(col.id, col))
+          
+          // Then add/update with fetched collections
+          fetchedCollections.forEach((col:any) => {
+            const existing = collectionsMap.get(col.id)
+            if (existing) {
+              // Preserve certain states while updating data
+              collectionsMap.set(col.id, {
+                ...col,
+                isOpen: existing.isOpen,
+                items: existing.items
+              })
+            } else {
+              collectionsMap.set(col.id, col)
+            }
+          })
+          
+          setCollections(Array.from(collectionsMap.values()))
         } else {
           showToast("Error", "Failed to fetch knowledge bases.", true)
         }
@@ -564,7 +585,19 @@ function RouteComponent() {
         isPrivate: updatedCl.isPrivate,
       }
 
-      setCollections((prev) => [newCollection, ...prev])
+      // Use Set-based approach to prevent duplicates
+      setCollections((prev) => {
+        const collectionsMap = new Map()
+        
+        // Add existing collections
+        prev.forEach(col => collectionsMap.set(col.id, col))
+        
+        // Add/update new collection
+        collectionsMap.set(newCollection.id, newCollection)
+        
+        return Array.from(collectionsMap.values())
+      })
+      
       handleCloseModal()
       showToast(
         "Knowledge Base Created",
@@ -661,39 +694,44 @@ function RouteComponent() {
       })
       const items = await itemsResponse.json()
 
-      setCollections((prev) =>
-        prev.map((c) => {
-          if (c.id === addingToCollection.id) {
-            return {
-              ...c,
-              files: updatedCl.totalCount || 0,
-              items: buildFileTree(
-                items.map((item: CollectionItem) => ({
-                  name: item.name,
-                  type: item.type as "file" | "folder",
-                  totalFileCount: item.totalFileCount,
-                  updatedAt: item.updatedAt,
-                  id: item.id,
-                  updatedBy:
-                    item.lastUpdatedByEmail || user?.email || "Unknown",
-                })),
-              ),
-              lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
-                "en-GB",
-                {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                },
-              ),
-              updatedBy: updatedCl.lastUpdatedByEmail || "Unknown",
-            }
-          }
-          return c
-        }),
-      )
+      setCollections((prev) => {
+        const collectionsMap = new Map()
+        
+        // Add existing collections
+        prev.forEach(col => collectionsMap.set(col.id, col))
+        
+        // Update the specific collection
+        const updatedCollection = {
+          ...collectionsMap.get(addingToCollection.id),
+          files: updatedCl.totalCount || 0,
+          items: buildFileTree(
+            items.map((item: CollectionItem) => ({
+              name: item.name,
+              type: item.type as "file" | "folder",
+              totalFileCount: item.totalFileCount,
+              updatedAt: item.updatedAt,
+              id: item.id,
+              updatedBy:
+                item.lastUpdatedByEmail || user?.email || "Unknown",
+            })),
+          ),
+          lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
+            "en-GB",
+            {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            },
+          ),
+          updatedBy: updatedCl.lastUpdatedByEmail || "Unknown",
+        }
+        
+        collectionsMap.set(addingToCollection.id, updatedCollection)
+        
+        return Array.from(collectionsMap.values())
+      })
 
       showToast(
         "Files Added",
