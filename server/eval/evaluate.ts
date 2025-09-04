@@ -93,5 +93,5 @@ try {
     Logger.info(`Evaluation completed in ${timeTaken.toFixed(2)} seconds`)
   })
 } catch (error) {
-  console.error(error)
+  console.error("Found Error : ", error)
 }
