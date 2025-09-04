@@ -155,6 +155,7 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
+  KnowledgeBaseEntity,
 } from "@/search/types"
 import { APIError } from "openai"
 import { SearchVespaThreads } from "@/search/vespa"
@@ -436,8 +437,8 @@ const checkAndYieldCitations = async function* (
         const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
-          if (item.fields.sddocname === dataSourceFileSchema) {
-            // Skip datasource and collection files from citations
+          if (item.fields.sddocname === dataSourceFileSchema || item.fields.entity === KnowledgeBaseEntity.Attachment) {
+            // Skip datasource and attachment files from citations
             continue
           }
           yield {

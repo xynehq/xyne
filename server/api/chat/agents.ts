@@ -142,6 +142,7 @@ import {
   SystemEntity,
   VespaSearchResultsSchema,
   type VespaSearchResult,
+  KnowledgeBaseEntity,
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -291,6 +292,11 @@ const checkAndYieldCitationsForAgent = async function* (
           Logger.info(
             "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
           )
+          continue
+        }
+
+        // we dont want citations for attachments in the chat
+        if(item.source.entity === KnowledgeBaseEntity.Attachment) {
           continue
         }
 

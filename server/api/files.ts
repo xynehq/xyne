@@ -22,9 +22,8 @@ import { isValidFile } from "../../shared/filesutils"
 import { generateThumbnail, isImageFile, getThumbnailPath } from "@/utils/image"
 import type { AttachmentMetadata } from "@/shared/types"
 import { FileProcessorService } from "@/services/fileProcessor"
-import { Apps, dataSourceFileSchema, datasourceSchema } from "@/search/types"
-import type { VespaDataSourceFile } from "@/search/types"
-import { createFileMetadata } from "@/integrations/dataSource"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
+import { getBaseMimeType } from "@/integrations/dataSource/config"
 
 const { JwtPayloadKey } = config
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
@@ -264,30 +263,36 @@ export const handleAttachmentUpload = async (c: Context) => {
 
           const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
           
-          const vespaDoc: VespaDataSourceFile = {
+          const vespaDoc = {
             docId: fileId,
-            description: `File: ${file.name} for Attachment`,
-            app: Apps.DataSource,
+            clId: "attachment",
+            itemId: fileId,
             fileName: file.name,
-            fileSize: file.size,
+            app: Apps.KnowledgeBase as const,
+            entity: KnowledgeBaseEntity.Attachment,
+            description: "",
+            storagePath: "",
             chunks: chunks,
-            image_chunks: image_chunks || [],
-            chunks_pos: chunks_pos || [],
-            image_chunks_pos: image_chunks_pos || [],
-            uploadedBy: email,
-            mimeType: file.type,
+            chunks_pos: chunks_pos,
+            image_chunks: image_chunks,
+            image_chunks_pos: image_chunks_pos,
+            metadata: JSON.stringify({
+              originalFileName: file.name,
+              uploadedBy: email,
+              chunksCount: chunks.length,
+              imageChunksCount: image_chunks.length,
+              processingMethod: getBaseMimeType(file.type || "text/plain"),
+              lastModified: Date.now(),
+            }),
+            createdBy: email,
+            duration: 0,
+            mimeType: getBaseMimeType(file.type || "text/plain"),
+            fileSize: file.size,
             createdAt: Date.now(),
             updatedAt: Date.now(),
-            dataSourceRef: `id:${NAMESPACE}:${datasourceSchema}::${fileId}`,
-            metadata: createFileMetadata(
-              file.name,
-              email,
-              chunks.length,
-              "file",
-            ),
           }
 
-          await insert(vespaDoc, dataSourceFileSchema)
+          await insert(vespaDoc, KbItemsSchema)
         }
 
         // Create attachment metadata
