@@ -69,8 +69,7 @@ RUN apt-get update && apt-get install -y \
 # Set ownership for bun user
 RUN chown -R bun:bun /usr/src/app
 
-# Expose the application port
-EXPOSE 80/tcp
+# Note: Application ports are exposed below
 
 WORKDIR /usr/src/app/server
 
@@ -82,8 +81,9 @@ RUN chmod +x /usr/src/app/start.sh
 
 USER bun
 
-# Expose port 3000 (will be mapped to 80 in docker-compose)
+# Expose application ports
 EXPOSE 3000
+EXPOSE 3001
 
 CMD ["/usr/src/app/start.sh"]
 

@@ -24,6 +24,7 @@ services:
     user: "${DOCKER_UID}:${DOCKER_GID}"
     ports:
       - "3000:80"
+      - "3001:3001"
     depends_on:
       app-storage-init:
         condition: service_completed_successfully

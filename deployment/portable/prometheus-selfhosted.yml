@@ -9,7 +9,7 @@ scrape_configs:
     metrics_path: /metrics  # default path in your Hono app
     scrape_interval: 2s
     static_configs:
-      - targets: ['host.docker.internal:3000'] #replace  with your application's service name e.g. 'xyne-app:3000' or the host-name:port where your server is hosted
+      - targets: ['xyne-app:3001'] #replace  with your application's service name e.g. 'xyne-app:3000' or the host-name:port where your server is hosted
   # - job_name: 'pm2'
   #   metrics_path: /
   #   scrape_interval: 2s
