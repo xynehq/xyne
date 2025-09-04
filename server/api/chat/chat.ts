@@ -226,7 +226,7 @@ import {
   getPublicAgentsByUser,
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
-import type {GroundingSupport } from "@google/genai"
+import type { GroundingSupport } from "@google/genai"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -4082,7 +4082,7 @@ export const MessageApi = async (c: Context) => {
       enableWebSearch,
     }: MessageReqType = body
     const webSearchEnabled = enableWebSearch ?? false
-    const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
+    let agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch) {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
@@ -4103,6 +4103,7 @@ export const MessageApi = async (c: Context) => {
         agentPromptValue,
         userAndWorkspaceCheck.workspace.id,
       )
+      agentPromptValue = agentDetails?.prompt || agentPromptValue
       if (!isAgentic && !enableWebSearch && agentDetails) {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
