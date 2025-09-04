@@ -423,48 +423,51 @@ export const processWebSearchMessage = (
   }
 
   text = splitGroupedCitationsWithSpaces(text)
-  
+
   // Track citations used in current line to deduplicate
   let currentLineCitations = new Set<number>()
   let result = ""
   let currentLine = ""
-  
+
   const lines = text.split(/(\r?\n)/)
-  
+
   for (let i = 0; i < lines.length; i++) {
     const segment = lines[i]
-    
+
     if (segment.match(/\r?\n/)) {
       // End of line - add deduplicated citations and reset
       const uniqueCitations = Array.from(currentLineCitations)
         .sort((a, b) => a - b)
-        .map(index => ` [${index}]`)
-        .join('')
+        .map((index) => ` [${index}]`)
+        .join("")
       result += currentLine + uniqueCitations + segment
       currentLine = ""
       currentLineCitations.clear()
     } else {
       // Process current line segment
-      const processedSegment = segment.replace(textToCitationIndex, (match, num) => {
-        const index = citationMap[num]
-        if (typeof index === "number") {
-          currentLineCitations.add(index + 1)
-        }
-        return "" // Remove citation from text, will be added at line end
-      })
+      const processedSegment = segment.replace(
+        textToCitationIndex,
+        (match, num) => {
+          const index = citationMap[num]
+          if (typeof index === "number") {
+            currentLineCitations.add(index + 1)
+          }
+          return "" // Remove citation from text, will be added at line end
+        },
+      )
       currentLine += processedSegment
     }
   }
-  
+
   // Handle final line if no newline at end
   if (currentLine || currentLineCitations.size > 0) {
     const uniqueCitations = Array.from(currentLineCitations)
       .sort((a, b) => a - b)
-      .map(index => ` [${index}]`)
-      .join('')
+      .map((index) => ` [${index}]`)
+      .join("")
     result += currentLine + uniqueCitations
   }
-  
+
   return result
 }
 
@@ -4013,12 +4016,11 @@ function processWebSearchCitations(
           citationIndices.add(citationIndex)
         }
       }
-      
 
       const citationText = Array.from(citationIndices)
         .sort((a, b) => a - b)
-        .map(index => ` [${index}]`)
-        .join('')
+        .map((index) => ` [${index}]`)
+        .join("")
 
       if (
         citationText &&
@@ -4481,7 +4483,9 @@ export const MessageApi = async (c: Context) => {
             const answerSpan = streamSpan.startSpan("process_final_answer")
             answerSpan.setAttribute(
               "final_answer",
-              webSearchEnabled ? processWebSearchMessage(answer, citationMap, email) : processMessage(answer, citationMap, email),
+              webSearchEnabled
+                ? processWebSearchMessage(answer, citationMap, email)
+                : processMessage(answer, citationMap, email),
             )
             answerSpan.setAttribute("actual_answer", answer)
             answerSpan.setAttribute("final_answer_length", answer.length)
@@ -4502,7 +4506,7 @@ export const MessageApi = async (c: Context) => {
               // to one of the citations what do we do?
               // somehow hide that citation and change
               // the answer to reflect that
-              console.log(webSearchEnabled);
+              console.log(webSearchEnabled)
               const msg = await insertMessage(db, {
                 chatId: chat.id,
                 userId: user.id,
@@ -4512,7 +4516,9 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 imageCitations: imageCitations,
-                message: webSearchEnabled ? processWebSearchMessage(answer, citationMap, email) : processMessage(answer, citationMap, email),
+                message: webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
@@ -4819,7 +4825,7 @@ export const MessageApi = async (c: Context) => {
                     data: JSON.stringify({
                       contextChunks: citations,
                       citationMap: citationMap,
-                      updatedResponse: answer
+                      updatedResponse: answer,
                     }),
                   })
                 }
@@ -5150,7 +5156,9 @@ export const MessageApi = async (c: Context) => {
               const answerSpan = ragSpan.startSpan("process_final_answer")
               answerSpan.setAttribute(
                 "final_answer",
-                webSearchEnabled ? processWebSearchMessage(answer, citationMap, email) : processMessage(answer, citationMap, email),
+                webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
               )
               answerSpan.setAttribute("actual_answer", answer)
               answerSpan.setAttribute("final_answer_length", answer.length)
@@ -5219,7 +5227,9 @@ export const MessageApi = async (c: Context) => {
                 email: user.email,
                 sources: citations,
                 imageCitations: imageCitations,
-                message: webSearchEnabled ? processWebSearchMessage(answer, citationMap, email) : processMessage(answer, citationMap, email),
+                message: webSearchEnabled
+                  ? processWebSearchMessage(answer, citationMap, email)
+                  : processMessage(answer, citationMap, email),
                 thinking: thinking,
                 modelId:
                   ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
