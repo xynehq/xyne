@@ -5,9 +5,12 @@
   "version": "0.3.0",
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
     "@faker-js/faker": "^9.3.0",
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
+    "cz-conventional-changelog": "^3.3.0",
     "drizzle-kit": "^0.24.2",
     "husky": "^9.1.7",
     "p-queue": "^8.0.1"
@@ -23,7 +26,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../",
-    "prepare": "cd .. && husky .husky"
+    "prepare": "cd .. && husky .husky",
+    "commit": "cz"
   },
   "dependencies": {
     "@anthropic-ai/vertex-sdk": "^0.13.1",
@@ -49,6 +53,7 @@
     "async-mutex": "^0.5.0",
     "autoevals": "^0.0.119",
     "canvas": "^3.1.0",
+    "commitizen": "^4.3.1",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.33.0",
     "drizzle-zod": "^0.5.1",
@@ -85,5 +90,10 @@
     "uuid": "^11.0.0",
     "xlsx": "^0.18.5",
     "zod": "^3.24.1"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
   }
 }
