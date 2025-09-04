@@ -9,7 +9,7 @@ import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
 import type { Message, ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import { Subsystem, MessageRole } from "@/types"
-import { ragPipelineConfig, RagPipelineStages } from "../chat/types"
+// import { ragPipelineConfig, RagPipelineStages } from "../chat/types"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 
 const Logger = getLogger(Subsystem.Server)
@@ -209,8 +209,8 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
       json: false,
       reasoning: false,
       systemPrompt: agent.prompt || "You are a helpful assistant.",
-      ...(temperature && { temperature }),
-      ...(max_new_tokens && { max_new_tokens }),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(max_new_tokens !== undefined ? { max_new_tokens } : {}),
     }
 
     const messages: Message[] = [
