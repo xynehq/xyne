@@ -1,3 +1,4 @@
+import { z } from "zod"
 import { Models } from "@/ai/types"
 import fs from "fs"
 import path from "path"
@@ -492,51 +493,53 @@ function saveEvalTextLog(
   }
 }
 
+// Mirror the paramsToZod function from jaf-adapter.ts for consistent schema conversion
+function paramsToZod(parameters: Record<string, any>): z.ZodObject<any> {
+  const shape: Record<string, z.ZodTypeAny> = {}
+  for (const [key, spec] of Object.entries(parameters || {})) {
+    let schema: z.ZodTypeAny
+    switch ((spec.type || "string").toLowerCase()) {
+      case "string":
+        schema = z.string()
+        break
+      case "number":
+        schema = z.number()
+        break
+      case "boolean":
+        schema = z.boolean()
+        break
+      case "array":
+        schema = z.array(z.any())
+        break
+      case "object":
+        // Ensure top-level parameter properties that are objects are valid JSON Schema objects
+        schema = z.object({}).passthrough()
+        break
+      default:
+        schema = z.any()
+    }
+    if (!spec.required) schema = schema.optional()
+    shape[key] = schema.describe(spec.description || "")
+  }
+  return z.object(shape)
+}
+
 // Mock tool builder function that prevents actual database queries, we don't want to hit the DB during evals
 function buildMockJAFTools(baseCtx: JAFAdapterCtx): Tool<any, JAFAdapterCtx>[] {
   const tools: Tool<any, JAFAdapterCtx>[] = []
 
   // Create mock versions of all agent tools
   for (const [name, at] of Object.entries(agentTools)) {
+    // Skip the fallbackTool and get_user_info as it's no longer needed (same filtering as buildInternalJAFTools)
+    if (name === "fall_back" || name === "get_user_info") {
+      continue
+    }
+    
     tools.push({
       schema: {
         name,
         description: at.description,
-        parameters: at.parameters
-          ? (() => {
-              // Convert agent tool parameters to Zod schema (simplified version)
-              const { z } = require("zod")
-              const shape: Record<string, any> = {}
-              for (const [key, spec] of Object.entries(at.parameters || {})) {
-                let schema: any
-                switch ((spec.type || "string").toLowerCase()) {
-                  case "string":
-                    schema = z.string()
-                    break
-                  case "number":
-                    schema = z.number()
-                    break
-                  case "boolean":
-                    schema = z.boolean()
-                    break
-                  case "array":
-                    schema = z.array(z.any())
-                    break
-                  case "object":
-                    schema = z.object({}).passthrough()
-                    break
-                  default:
-                    schema = z.any()
-                }
-                if (!spec.required) schema = schema.optional()
-                shape[key] = schema.describe(spec.description || "")
-              }
-              return z.object(shape)
-            })()
-          : (() => {
-              const { z } = require("zod")
-              return z.object({}).passthrough()
-            })(),
+        parameters: paramsToZod(at.parameters || {}),
       },
       async execute(args, context) {
         // Log the tool call for debugging but don't execute
