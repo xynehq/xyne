@@ -1,14 +1,19 @@
 #!/bin/bash
-set -xe
+set -euo pipefail
+
+# Enable tracing only when DEBUG is explicitly set
+if [ "${DEBUG:-}" = "1" ] || [ "${DEBUG:-}" = "true" ]; then
+  set -x
+fi
 
 echo "Starting Xyne application..."
 
-# Restore sample data if needed (before services start)
-echo "🔄 Checking for data restoration..."
-if [ -f /usr/src/app/deployment/restore-data.sh ]; then
-  /usr/src/app/deployment/restore-data.sh
-else
-  echo "   ⚠️  No restore script found, starting with empty data"
+# Load environment variables
+if [ -f /usr/src/app/server/.env ]; then
+  echo "📄 Loading environment variables..."
+  set -o allexport
+  source /usr/src/app/server/.env
+  set +o allexport
 fi
 
 # Wait for PostgreSQL to be ready
@@ -27,14 +32,6 @@ until curl -f http://vespa:19071/state/v1/health 2>/dev/null; do
 done
 echo "Vespa config server is ready!"
 
-# Load environment variables
-if [ -f /usr/src/app/server/.env ]; then
-  echo "📄 Loading environment variables..."
-  set -o allexport
-  source /usr/src/app/server/.env
-  set +o allexport
-fi
-
 # Check if this is the first run (no init marker exists)
 INIT_MARKER_FILE="/usr/src/app/server/storage/.xyne_initialized"
 if [ ! -f "$INIT_MARKER_FILE" ]; then
@@ -43,9 +40,9 @@ if [ ! -f "$INIT_MARKER_FILE" ]; then
   # Run database migrations
   echo "Running database setup..."
   # Try to generate migrations, but don't fail if none exist
-  bun run generate
+  bun run generate || true
   # Try to run migrations, but don't fail if none exist
-  bun run migrate
+  bun run migrate || true
   
   # Deploy Vespa schema and models
   echo "Deploying Vespa..."

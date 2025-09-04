@@ -10,6 +10,9 @@ node_modules
 .env.test
 .env.production
 
+# Credentials files
+deployment/portable/gcp-credentials.json
+
 # Development files
 .git
 .github/

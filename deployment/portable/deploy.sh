@@ -332,8 +332,8 @@ db_studio() {
         exit 1
     fi
     
-    # Run drizzle studio inside the container with port forwarding
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml exec -p 4983:4983 app bun drizzle-kit studio
+    # Run drizzle studio in a new container with port forwarding
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml run -p 4983:4983 app bun drizzle-kit studio
 }
 
 # Main script logic
