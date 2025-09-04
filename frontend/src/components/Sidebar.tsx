@@ -171,7 +171,7 @@ export const Sidebar = ({
             </Tooltip>
           </div>
 
-           <Link
+          <Link
             to="/workflow"
             className={cn(
               "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
@@ -237,7 +237,8 @@ export const Sidebar = ({
           </Link>
 
           <Link
-            to="/knowledgeManagement"            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
+            to="/knowledgeManagement"
+            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
               location.pathname.includes("/knowledgeManagement")
                 ? "bg-[#D8DFE680] dark:bg-gray-700"
                 : ""
@@ -254,7 +255,6 @@ export const Sidebar = ({
               <Tip side="right" info="Collections" />
             </Tooltip>
           </Link>
-
 
           <Link
             to="/dashboard"

@@ -1,86 +1,88 @@
-import React from 'react';
-import { 
-  Bot, 
-  Mail, 
-  Globe, 
-  GitBranch, 
-  Code, 
-  Users, 
+import React from "react"
+import {
+  Bot,
+  Mail,
+  Globe,
+  GitBranch,
+  Code,
+  Users,
   ChevronRight,
-  X 
-} from 'lucide-react';
+  X,
+} from "lucide-react"
 
 interface WhatHappensNextUIProps {
-  isVisible: boolean;
-  onClose: () => void;
-  onSelectAction: (actionId: string) => void;
+  isVisible: boolean
+  onClose: () => void
+  onSelectAction: (actionId: string) => void
 }
 
 interface NextAction {
-  id: string;
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  isComingSoon?: boolean;
+  id: string
+  name: string
+  description: string
+  icon: React.ReactNode
+  isComingSoon?: boolean
 }
 
-const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({ 
-  isVisible, 
-  onClose, 
-  onSelectAction 
+const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
+  isVisible,
+  onClose,
+  onSelectAction,
 }) => {
   // Available actions (currently functional)
   const availableActions: NextAction[] = [
     {
-      id: 'ai_agent',
-      name: 'AI Agent',
-      description: 'Build autonomous agents, summarise or search documents etc',
-      icon: <Bot className="w-5 h-5" />
+      id: "ai_agent",
+      name: "AI Agent",
+      description: "Build autonomous agents, summarise or search documents etc",
+      icon: <Bot className="w-5 h-5" />,
     },
     {
-      id: 'email',
-      name: 'Email',
-      description: 'Send emails to added mails',
-      icon: <Mail className="w-5 h-5" />
-    }
-  ];
+      id: "email",
+      name: "Email",
+      description: "Send emails to added mails",
+      icon: <Mail className="w-5 h-5" />,
+    },
+  ]
 
   // Coming soon actions (upcoming features)
   const comingSoonActions: NextAction[] = [
     {
-      id: 'http_requests',
-      name: 'HTTP Requests',
-      description: 'HTTP requests, set webhooks',
+      id: "http_requests",
+      name: "HTTP Requests",
+      description: "HTTP requests, set webhooks",
       icon: <Globe className="w-5 h-5" />,
-      isComingSoon: true
+      isComingSoon: true,
     },
     {
-      id: 'conditionals',
-      name: 'Conditionals',
-      description: 'Branch, merge or loop the flow etc',
+      id: "conditionals",
+      name: "Conditionals",
+      description: "Branch, merge or loop the flow etc",
       icon: <GitBranch className="w-5 h-5" />,
-      isComingSoon: true
+      isComingSoon: true,
     },
     {
-      id: 'run_script',
-      name: 'Run Script/Code',
-      description: 'Run code or scripts',
+      id: "run_script",
+      name: "Run Script/Code",
+      description: "Run code or scripts",
       icon: <Code className="w-5 h-5" />,
-      isComingSoon: true
+      isComingSoon: true,
     },
     {
-      id: 'human_loop',
-      name: 'Human in the loop',
-      description: 'Wait for approval or human input before continuing',
+      id: "human_loop",
+      name: "Human in the loop",
+      description: "Wait for approval or human input before continuing",
       icon: <Users className="w-5 h-5" />,
-      isComingSoon: true
-    }
-  ];
+      isComingSoon: true,
+    },
+  ]
 
   return (
-    <div className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
-      isVisible ? 'translate-x-0 w-[380px]' : 'translate-x-full w-0'
-    }`}>
+    <div
+      className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
+      }`}
+    >
       {/* Header */}
       <div className="px-6 pt-5 pb-4 border-b border-slate-200">
         <div className="flex items-center justify-between mb-1.5">
@@ -148,7 +150,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
         ))}
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default WhatHappensNextUI;
+export default WhatHappensNextUI

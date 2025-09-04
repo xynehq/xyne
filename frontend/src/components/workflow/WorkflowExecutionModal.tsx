@@ -14,22 +14,24 @@ interface WorkflowExecutionModalProps {
 
 const SUPPORTED_FILE_TYPES = {
   // Text files
-  'text/plain': 'text',
-  'text/csv': 'text',
+  "text/plain": "text",
+  "text/csv": "text",
   // Images
-  'image/jpeg': 'image',
-  'image/jpg': 'image', 
-  'image/png': 'image',
-  'image/gif': 'image',
-  'image/webp': 'image',
+  "image/jpeg": "image",
+  "image/jpg": "image",
+  "image/png": "image",
+  "image/gif": "image",
+  "image/webp": "image",
   // Documents
-  'application/pdf': 'PDF',
-  'application/msword': 'Word',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
-  'application/vnd.ms-excel': 'Excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
-  'application/vnd.ms-powerpoint': 'PowerPoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
+  "application/pdf": "PDF",
+  "application/msword": "Word",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    "Word",
+  "application/vnd.ms-excel": "Excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+  "application/vnd.ms-powerpoint": "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+    "PowerPoint",
 }
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024 // 40MB
@@ -38,7 +40,7 @@ export function WorkflowExecutionModal({
   isOpen,
   onClose,
   workflowName,
-  workflowDescription
+  workflowDescription,
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [, setIsUploading] = useState(false)
@@ -61,7 +63,7 @@ export function WorkflowExecutionModal({
       setStopPolling(null)
     }
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+      fileInputRef.current.value = ""
     }
   }
 
@@ -105,7 +107,7 @@ export function WorkflowExecutionModal({
     try {
       const response = await workflowsAPI.uploadFile(file)
 
-      console.log('Upload response status:', response.status)
+      console.log("Upload response status:", response.status)
 
       if (response.data && response.status === 200) {
         setIsUploaded(true)
@@ -114,14 +116,21 @@ export function WorkflowExecutionModal({
       } else {
         setIsUploaded(false)
         setIsProcessing(false)
-        console.error('Upload failed with status:', response.status, 'Error:', response.error)
-        setUploadError(response.error || 'Upload failed. Please try again.')
+        console.error(
+          "Upload failed with status:",
+          response.status,
+          "Error:",
+          response.error,
+        )
+        setUploadError(response.error || "Upload failed. Please try again.")
       }
     } catch (error) {
-      console.error('Upload error:', error)
+      console.error("Upload error:", error)
       setIsUploaded(false)
       setIsProcessing(false)
-      setUploadError(`Upload failed: ${error instanceof Error ? error.message : 'Please check your connection and try again.'}`)
+      setUploadError(
+        `Upload failed: ${error instanceof Error ? error.message : "Please check your connection and try again."}`,
+      )
     } finally {
       setIsUploading(false)
     }
@@ -148,12 +157,12 @@ export function WorkflowExecutionModal({
 
   const handleStartExecution = async () => {
     if (!selectedFile) return
-    
-    console.log('Starting execution for workflow:', workflowName)
-    console.log('Selected file:', selectedFile.name)
-    console.log('File size:', selectedFile.size, 'bytes')
-    console.log('File type:', selectedFile.type)
-    
+
+    console.log("Starting execution for workflow:", workflowName)
+    console.log("Selected file:", selectedFile.name)
+    console.log("File size:", selectedFile.size, "bytes")
+    console.log("File type:", selectedFile.type)
+
     setIsProcessing(true)
     await uploadFile(selectedFile)
   }
@@ -162,7 +171,7 @@ export function WorkflowExecutionModal({
     setSelectedFile(null)
     setUploadError(null)
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+      fileInputRef.current.value = ""
     }
   }
 
@@ -177,7 +186,7 @@ export function WorkflowExecutionModal({
       setStopPolling(null)
     }
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+      fileInputRef.current.value = ""
     }
   }
 
@@ -189,10 +198,10 @@ export function WorkflowExecutionModal({
         setIsCompleted(true)
       },
       (error) => {
-        console.error('Polling error:', error)
-      }
+        console.error("Polling error:", error)
+      },
     )
-    
+
     setStopPolling(() => stopPollingFn)
   }
 
@@ -215,9 +224,7 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">
-                {workflowDescription}
-              </p>
+              <p className="text-gray-600 text-base">{workflowDescription}</p>
             </div>
 
             {/* Completion Content */}
@@ -225,13 +232,19 @@ export function WorkflowExecutionModal({
               <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
                 {/* Success Icon */}
                 <div className="w-16 h-16 flex items-center justify-center mb-6">
-                  <img src={checkCircleIcon} alt="Success" className="w-16 h-16" />
+                  <img
+                    src={checkCircleIcon}
+                    alt="Success"
+                    className="w-16 h-16"
+                  />
                 </div>
-                
+
                 {/* Success Message */}
-                <p className="text-gray-900 text-lg font-medium">Process completed successfully!</p>
+                <p className="text-gray-900 text-lg font-medium">
+                  Process completed successfully!
+                </p>
               </div>
-              
+
               {/* Upload Another Button */}
               <div className="flex justify-end mt-6">
                 <Button
@@ -251,18 +264,18 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">
-                {workflowDescription}
-              </p>
+              <p className="text-gray-600 text-base">{workflowDescription}</p>
             </div>
 
             {/* Processing Content */}
             <div className="px-8 pb-8">
               <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
                 <div className="w-12 h-12 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin mb-6"></div>
-                <p className="text-gray-900 text-lg font-medium mb-2">Processing the File</p>
+                <p className="text-gray-900 text-lg font-medium mb-2">
+                  Processing the File
+                </p>
               </div>
-              
+
               {/* Executing Button */}
               <div className="flex justify-end mt-6">
                 <Button
@@ -282,84 +295,106 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">
-                {workflowDescription}
-              </p>
+              <p className="text-gray-600 text-base">{workflowDescription}</p>
             </div>
 
-        {/* File Upload Area */}
-        <div className="px-8 pb-6">
-          {selectedFile ? (
-            // Selected File Display
-            <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
-              <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
-                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span className="text-gray-900 font-medium">{selectedFile.name}</span>
-                <button
-                  onClick={handleDiscardFile}
-                  className="ml-2 text-gray-400 hover:text-gray-600 transition-colors"
+            {/* File Upload Area */}
+            <div className="px-8 pb-6">
+              {selectedFile ? (
+                // Selected File Display
+                <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
+                  <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
+                    <svg
+                      className="w-6 h-6 text-gray-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    <span className="text-gray-900 font-medium">
+                      {selectedFile.name}
+                    </span>
+                    <button
+                      onClick={handleDiscardFile}
+                      className="ml-2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // Upload Area
+                <div
+                  className="border border-dashed border-gray-300 rounded-xl px-6 py-10 text-center cursor-pointer hover:border-gray-400 transition-colors bg-gray-50 w-full min-h-[280px]"
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onClick={() => fileInputRef.current?.click()}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+                  <div className="flex flex-col items-center space-y-4">
+                    {/* File Icon */}
+                    <div className="w-16 h-16 flex items-center justify-center">
+                      <img src={fileUpIcon} alt="Upload" className="w-8 h-8" />
+                    </div>
+
+                    {/* Upload Button */}
+                    <Button
+                      className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded-full font-mono font-medium text-xs leading-none tracking-wider uppercase"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      UPLOAD FILE
+                    </Button>
+
+                    {/* Or text */}
+                    <p className="text-gray-600">or drag & drop files</p>
+
+                    {/* Supported formats */}
+                    <p className="text-gray-500 text-sm text-center leading-relaxed">
+                      Supported formats include text, image, CSV, PDF, Word,
+                      Excel, and PowerPoint files
+                      <br />
+                      (max 40MB per file).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                className="hidden"
+                accept=".txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              />
+
+              {/* Error Display */}
+              {uploadError && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800">{uploadError}</p>
+                </div>
+              )}
             </div>
-          ) : (
-            // Upload Area
-            <div
-              className="border border-dashed border-gray-300 rounded-xl px-6 py-10 text-center cursor-pointer hover:border-gray-400 transition-colors bg-gray-50 w-full min-h-[280px]"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onClick={() => fileInputRef.current?.click()}
-            >
-            <div className="flex flex-col items-center space-y-4">
-              {/* File Icon */}
-              <div className="w-16 h-16 flex items-center justify-center">
-                <img src={fileUpIcon} alt="Upload" className="w-8 h-8" />
-              </div>
-
-              {/* Upload Button */}
-              <Button 
-                className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded-full font-mono font-medium text-xs leading-none tracking-wider uppercase"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  fileInputRef.current?.click()
-                }}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                UPLOAD FILE
-              </Button>
-
-              {/* Or text */}
-              <p className="text-gray-600">or drag & drop files</p>
-
-              {/* Supported formats */}
-              <p className="text-gray-500 text-sm text-center leading-relaxed">
-                Supported formats include text, image, CSV, PDF, Word, Excel, and PowerPoint files<br />
-                (max 40MB per file).
-              </p>
-            </div>
-          </div>
-          )}
-          
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleFileSelect}
-            className="hidden"
-            accept=".txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-          />
-
-          {/* Error Display */}
-          {uploadError && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{uploadError}</p>
-            </div>
-          )}
-        </div>
 
             {/* Action Button */}
             <div className="px-8 pb-8">
@@ -368,9 +403,9 @@ export function WorkflowExecutionModal({
                   onClick={handleStartExecution}
                   disabled={!selectedFile}
                   className={`px-6 py-2 rounded-full font-medium transition-all ${
-                    selectedFile 
-                      ? 'bg-black hover:bg-gray-800 text-white' 
-                      : 'bg-gray-400 cursor-not-allowed text-gray-600'
+                    selectedFile
+                      ? "bg-black hover:bg-gray-800 text-white"
+                      : "bg-gray-400 cursor-not-allowed text-gray-600"
                   }`}
                 >
                   Start Execution

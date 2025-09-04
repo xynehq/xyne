@@ -1018,7 +1018,7 @@ export function findOptimalCitationInsertionPoint(
 
   // Look for the next newline after the target index
   for (let i = targetIndex; i < text.length; i++) {
-    if (text[i] === '\n' || text[i] === '\r') {
+    if (text[i] === "\n" || text[i] === "\r") {
       return i // Place citation just before the newline
     }
   }
@@ -1027,21 +1027,21 @@ export function findOptimalCitationInsertionPoint(
   for (let i = targetIndex; i < text.length; i++) {
     if (/[.!?]/.test(text[i])) {
       // Check if it's a real sentence ending (not decimal number)
-      const prevChar = i > 0 ? text[i - 1] : ''
-      const nextChar = i < text.length - 1 ? text[i + 1] : ''
-      
+      const prevChar = i > 0 ? text[i - 1] : ""
+      const nextChar = i < text.length - 1 ? text[i + 1] : ""
+
       // Skip if it's a decimal number
-      if (text[i] === '.' && /\d/.test(prevChar) && /\d/.test(nextChar)) {
+      if (text[i] === "." && /\d/.test(prevChar) && /\d/.test(nextChar)) {
         continue
       }
-      
+
       return i + 1 // Place after the sentence ending
     }
   }
 
   // Fallback: find the next space
   for (let i = targetIndex; i < text.length; i++) {
-    if (text[i] === ' ') {
+    if (text[i] === " ") {
       return i + 1 // Place after the space
     }
   }

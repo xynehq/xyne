@@ -1227,8 +1227,11 @@ app.get(
       )
       // save refresh token generated in user schema
       await saveRefreshTokenToDB(db, email, refreshToken)
-      const emailSent = await emailService.sendWelcomeEmail(user.email, user.name)
-      if(emailSent) {
+      const emailSent = await emailService.sendWelcomeEmail(
+        user.email,
+        user.name,
+      )
+      if (emailSent) {
         Logger.info(`Welcome email sent to ${user.email} and ${user.name}`)
       }
       const opts = {
@@ -1272,9 +1275,14 @@ app.get(
     )
     // save refresh token generated in user schema
     await saveRefreshTokenToDB(db, email, refreshToken)
-    const emailSent = await emailService.sendWelcomeEmail(userAcc.email, userAcc.name)
-    if(emailSent) {
-      Logger.info(`Welcome email sent to new workspace creator ${userAcc.email}`)
+    const emailSent = await emailService.sendWelcomeEmail(
+      userAcc.email,
+      userAcc.name,
+    )
+    if (emailSent) {
+      Logger.info(
+        `Welcome email sent to new workspace creator ${userAcc.email}`,
+      )
     }
     const opts = {
       secure: true,
