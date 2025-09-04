@@ -1,4 +1,5 @@
 import { type Context, Hono, type Next } from "hono"
+import { cors } from "hono/cors"
 import {
   AnswerApi,
   AutocompleteApi,
@@ -255,6 +256,15 @@ const Logger = getLogger(Subsystem.Server)
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
 const app = new Hono<{ Variables: Variables }>()
+
+// Global CORS middleware for all routes
+app.use('*', cors({
+  origin: (origin) => origin || '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'Accept', 'Origin', 'X-Requested-With'],
+  credentials: true,
+  maxAge: 86400
+}))
 
 const internalMetricRouter = new Hono<{ Variables: Variables }>()
 
