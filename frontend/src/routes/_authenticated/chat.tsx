@@ -2645,14 +2645,17 @@ export const ChatMessage = ({
                       navigator.clipboard.writeText(processMessage(message))
                     }
                   />
-                  <img
-                    className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
-                    src={Retry}
-                    onClick={() =>
-                      messageId && !disableRetry && handleRetry(messageId)
-                    }
-                    title="Retry"
-                  />
+                  {/* Retry button temporarily hidden */}
+                  {false && (
+                    <img
+                      className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
+                      src={Retry}
+                      onClick={() =>
+                        messageId && !disableRetry && handleRetry(messageId)
+                      }
+                      title="Retry"
+                    />
+                  )}
                   {messageId && (
                     <>
                       <ThumbsUp

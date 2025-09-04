@@ -1,4 +1,5 @@
 import { Models, AIProviders, ModelDisplayNames } from "@/ai/types"
+import config from "@/config"
 
 export interface ModelConfiguration {
   actualName: string           // The actual model identifier used in API calls
@@ -17,7 +18,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: true,
     websearch: true,
-    deepResearch: false, // Lighter model, less suitable for deep research
+    deepResearch: false,
   },
   [Models.Claude_3_5_Sonnet]: {
     actualName: "anthropic.claude-3-5-sonnet-20240620-v1:0",
@@ -25,7 +26,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: true,
     websearch: true,
-    deepResearch: true, // Advanced model with good research capabilities
+    deepResearch: true,
   },
   [Models.Claude_3_5_SonnetV2]: {
     actualName: "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -33,7 +34,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: true,
     websearch: true,
-    deepResearch: true, // Latest Sonnet version with enhanced capabilities
+    deepResearch: true,
   },
   [Models.Claude_3_7_Sonnet]: {
     actualName: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
@@ -41,7 +42,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: true,
     websearch: true,
-    deepResearch: true, // Advanced model version
+    deepResearch: true,
   },
   [Models.Claude_Opus_4]: {
     actualName: "us.anthropic.claude-opus-4-20250514-v1:0",
@@ -49,7 +50,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: true,
     websearch: true,
-    deepResearch: true, // Opus models are top-tier for complex research
+    deepResearch: true,
   },
   [Models.Claude_Sonnet_4]: {
     actualName: "us.anthropic.claude-sonnet-4-20250514-v1:0",
@@ -57,7 +58,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: true,
     websearch: true,
-    deepResearch: true, // Latest Sonnet 4 with advanced capabilities
+    deepResearch: true,
   },
 
   // AWS Bedrock - Meta Llama Models
@@ -67,7 +68,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: true, // Large 405B model with extensive capabilities
+    deepResearch: true,
   },
   [Models.Llama_3_1_70B]: {
     actualName: "meta.llama3-1-70b-instruct-v1:0",
@@ -75,7 +76,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: true, // Good balance of size and capability for research
+    deepResearch: true,
   },
   [Models.Llama_3_1_8B]: {
     actualName: "meta.llama3-1-8b-instruct-v1:0",
@@ -83,7 +84,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: false, // Smaller model, less suitable for deep research
+    deepResearch: false,
   },
   [Models.Llama_3_2_1B]: {
     actualName: "us.meta.llama3-2-1b-instruct-v1:0",
@@ -91,7 +92,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: false, // Very small model, not suitable for deep research
+    deepResearch: false,
   },
   [Models.Llama_3_2_3B]: {
     actualName: "us.meta.llama3-2-3b-instruct-v1:0",
@@ -99,7 +100,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: false, // Small model, limited research capabilities
+    deepResearch: false,
   },
 
   // AWS Bedrock - Amazon Nova Models
@@ -109,7 +110,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: false, // Micro model, limited capabilities for deep research
+    deepResearch: false,
   },
   [Models.Amazon_Nova_Lite]: {
     actualName: "amazon.nova-lite-v1:0",
@@ -117,7 +118,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: false, // Lite model, basic research capabilities
+    deepResearch: false,
   },
   [Models.Amazon_Nova_Pro]: {
     actualName: "amazon.nova-pro-v1:0",
@@ -125,7 +126,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: true, // Pro model with advanced capabilities for research
+    deepResearch: true,
   },
 
   // AWS Bedrock - Cohere Models
@@ -135,7 +136,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: true, // Command R is designed for complex tasks and research
+    deepResearch: true,
   },
   [Models.CohereCmdRPlus]: {
     actualName: "cohere.command-r-plus-v1:0",
@@ -143,7 +144,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: true, // Command R+ is the enhanced version for complex research
+    deepResearch: true,
   },
 
   // AWS Bedrock - Other Models
@@ -151,9 +152,9 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     actualName: "us.deepseek.r1-v1:0",
     labelName: ModelDisplayNames.AWS_DEEPSEEK_R1,
     provider: AIProviders.AwsBedrock,
-    reasoning: true, // DeepSeek R1 specifically supports reasoning
+    reasoning: true,
     websearch: true,
-    deepResearch: true, // R1 is designed for deep reasoning and research
+    deepResearch: true,
   },
   [Models.Mistral_Large]: {
     actualName: "mistral.mistral-large-2402-v1:0",
@@ -161,7 +162,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.AwsBedrock,
     reasoning: false,
     websearch: true,
-    deepResearch: true, // Large model suitable for comprehensive research
+    deepResearch: true,
   },
 
   // OpenAI Models
@@ -171,7 +172,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.OpenAI,
     reasoning: true,
     websearch: true,
-    deepResearch: true, // GPT-4o is a flagship model with excellent research capabilities
+    deepResearch: true,
   },
   [Models.Gpt_4o_mini]: {
     actualName: "gpt-4o-mini",
@@ -179,7 +180,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.OpenAI,
     reasoning: true,
     websearch: true,
-    deepResearch: false, // Mini version with reduced capabilities for deep research
+    deepResearch: false,
   },
   [Models.Gpt_4]: {
     actualName: "gpt-4",
@@ -187,7 +188,23 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.OpenAI,
     reasoning: false,
     websearch: true,
-    deepResearch: true, // GPT-4 has strong research capabilities
+    deepResearch: true,
+  },
+  [Models.O3_Deep_Research]: {
+    actualName: "o3-deep-research",
+    labelName: ModelDisplayNames.OPENAI_O3_DEEP_RESEARCH,
+    provider: AIProviders.OpenAI,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
+  },
+  [Models.O4_Mini_Deep_Research]: {
+    actualName: "o4-mini-deep-research",
+    labelName: ModelDisplayNames.OPENAI_O4_MINI_DEEP_RESEARCH,
+    provider: AIProviders.OpenAI,
+    reasoning: true,
+    websearch: true,
+    deepResearch: true,
   },
 
   // Google AI Models
@@ -197,15 +214,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.GoogleAI,
     reasoning: false,
     websearch: true,
-    deepResearch: true, // Advanced Gemini 2.5 model with strong capabilities
+    deepResearch: true,
   },
   [Models.Gemini_2_0_Flash_Thinking]: {
     actualName: "gemini-2.0-flash-thinking-exp",
     labelName: ModelDisplayNames.GOOGLEAI_GEMINI_2_0_FLASH_THINKING,
     provider: AIProviders.GoogleAI,
-    reasoning: true, // This is specifically a thinking/reasoning model
+    reasoning: true,
     websearch: true,
-    deepResearch: true, // Thinking models excel at deep research tasks
+    deepResearch: true,
   },
 
   // Vertex AI Claude Models
@@ -216,7 +233,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.VertexAI,
     reasoning: true,
     websearch: true,
-    deepResearch: false,
+    deepResearch: true,
   },
   // [Models.Vertex_Claude_Opus_4_1]: {
   //   actualName: "claude-opus-4-1@20250805",
@@ -240,7 +257,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.VertexAI,
     reasoning: true,
     websearch: true,
-    deepResearch: false,
+    deepResearch: true,
   },
   // [Models.Vertex_Claude_3_5_Sonnet_V2]: {
   //   actualName: "claude-3-5-sonnet-v2@20241022",
@@ -251,12 +268,12 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   deepResearch: true,
   // },
   [Models.Vertex_Claude_3_5_Sonnet]: {
-    actualName: "claude-3-5-sonnet@20240620",
+    actualName: "claude-3-5-sonnet-v2@20241022",
     labelName: ModelDisplayNames.VERTEX_CLAUDE_3_5_SONNET,
     provider: AIProviders.VertexAI,
     reasoning: false,
     websearch: true,
-    deepResearch: false,
+    deepResearch: true,
   },
   // [Models.Vertex_Claude_3_5_Haiku]: {
   //   actualName: "claude-3-5-haiku@20241022",
@@ -328,22 +345,22 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   // },
 
   // Vertex AI Gemini Models
-  [Models.Vertex_Gemini_2_0_Flash_001]: {
-    actualName: "gemini-2.0-flash-001",
-    labelName: ModelDisplayNames.VERTEX_GEMINI_2_0_FLASH_001,
-    provider: AIProviders.VertexAI,
-    reasoning: false,
-    websearch: true,
-    deepResearch: false, // Advanced Gemini 2.0 model with good research capabilities
-  },
-  [Models.Vertex_Gemini_2_0_Flash_Lite_001]: {
-    actualName: "gemini-2.0-flash-lite-001",
-    labelName: ModelDisplayNames.VERTEX_GEMINI_2_0_FLASH_LITE_001,
-    provider: AIProviders.VertexAI,
-    reasoning: false,
-    websearch: true,
-    deepResearch: false, // Lite version with reduced capabilities
-  },
+  // [Models.Vertex_Gemini_2_0_Flash_001]: {
+  //   actualName: "gemini-2.0-flash-001",
+  //   labelName: ModelDisplayNames.VERTEX_GEMINI_2_0_FLASH_001,
+  //   provider: AIProviders.VertexAI,
+  //   reasoning: false,
+  //   websearch: true,
+  //   deepResearch: true, // Advanced Gemini 2.0 model with good research capabilities
+  // },
+  // [Models.Vertex_Gemini_2_0_Flash_Lite_001]: {
+  //   actualName: "gemini-2.0-flash-lite-001",
+  //   labelName: ModelDisplayNames.VERTEX_GEMINI_2_0_FLASH_LITE_001,
+  //   provider: AIProviders.VertexAI,
+  //   reasoning: false,
+  //   websearch: true,
+  //   deepResearch: true, // Lite version with reduced capabilities
+  // },
   // [Models.Vertex_Gemini_2_0_Flash_Thinking_Exp_1219]: {
   //   actualName: "gemini-2.0-flash-thinking-exp-1219",
   //   labelName: ModelDisplayNames.VERTEX_GEMINI_2_0_FLASH_THINKING_EXP_1219,
@@ -374,7 +391,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.VertexAI,
     reasoning: true,
     websearch: true,
-    deepResearch: false, // Pro model with excellent research capabilities
+    deepResearch: true,
   },
   [Models.Vertex_Gemini_2_5_Flash]: {
     actualName: "gemini-2.5-flash",
@@ -382,7 +399,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     provider: AIProviders.VertexAI,
     reasoning: true,
     websearch: true,
-    deepResearch: false, // Advanced 2.5 Flash model
+    deepResearch: true,
   },
   // [Models.Vertex_Gemini_2_5_Flash_Lite_Preview]: {
   //   actualName: "gemini-2.5-flash-lite-preview-06-17",
@@ -451,10 +468,21 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
 
 }
 
-// Helper function to get all available models based on configured providers
-// Using if-else logic to ensure only ONE provider is active at a time (matching config.ts priority)
-export const getAvailableModelsNew = (config: {
-  AwsAccessKey?: string 
+// Model display name mappings - using the new enum-based approach
+export const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  // Build from ModelDisplayNames enum
+  ...Object.fromEntries(
+    Object.values(ModelDisplayNames).map(displayName => [
+      // Find the corresponding actualName from MODEL_CONFIGURATIONS
+      Object.values(MODEL_CONFIGURATIONS).find(config => config.labelName === displayName)?.actualName || '',
+      displayName
+    ]).filter(([key]) => key !== '') // Remove empty keys
+  )
+}
+
+// Main function to get available models - moved from config.ts for centralization
+export const getAvailableModels = (config: {
+  AwsAccessKey?: string
   AwsSecretKey?: string
   OpenAIKey?: string
   OllamaModel?: string
@@ -511,11 +539,11 @@ export const getAvailableModelsNew = (config: {
     // Add only Ollama model
     availableModels.push({
       actualName: config.OllamaModel,
-      labelName: config.OllamaModel, // Use the model name as display name for custom models
+      labelName: config.OllamaModel,
       provider: "Ollama",
-      reasoning: false, // Most Ollama models don't have reasoning by default
+      reasoning: false,
       websearch: true,
-      deepResearch: false, // Most Ollama models don't support deep research by default
+      deepResearch: false,
     })
   } else if (config.TogetherAIModel && config.TogetherApiKey) {
     // Add only Together AI model
@@ -523,9 +551,9 @@ export const getAvailableModelsNew = (config: {
       actualName: config.TogetherAIModel,
       labelName: config.TogetherAIModel,
       provider: "Together AI",
-      reasoning: false, // Most Together AI models don't have reasoning by default
+      reasoning: false,
       websearch: true,
-      deepResearch: false, // Most Together AI models don't support deep research by default
+      deepResearch: false,
     })
   } else if (config.FireworksAIModel && config.FireworksApiKey) {
     // Add only Fireworks AI model
@@ -533,9 +561,9 @@ export const getAvailableModelsNew = (config: {
       actualName: config.FireworksAIModel,
       labelName: config.FireworksAIModel,
       provider: "Fireworks AI",
-      reasoning: false, // Most Fireworks AI models don't have reasoning by default
+      reasoning: false,
       websearch: true,
-      deepResearch: false, // Most Fireworks AI models don't support deep research by default
+      deepResearch: false,
     })
   } else if (config.GeminiAIModel && config.GeminiApiKey) {
     // Add all Google AI models
@@ -570,76 +598,6 @@ export const getAvailableModelsNew = (config: {
   return availableModels
 }
 
-// Helper function to get model configuration by actual name
-export const getModelConfigByName = (modelName: string): ModelConfiguration | null => {
-  return Object.values(MODEL_CONFIGURATIONS).find(
-    config => config.actualName === modelName
-  ) || null
-}
-
-// Helper function to get model configuration by label name
-export const getModelConfigByLabel = (labelName: string): ModelConfiguration | null => {
-  return Object.values(MODEL_CONFIGURATIONS).find(
-    config => config.labelName === labelName
-  ) || null
-}
-
-// Helper function to check if a model supports reasoning
-export const modelSupportsReasoning = (modelName: string): boolean => {
-  const config = getModelConfigByName(modelName)
-  return config?.reasoning || false
-}
-
-// Helper function to check if a model supports web search
-export const modelSupportsWebsearch = (modelName: string): boolean => {
-  const config = getModelConfigByName(modelName)
-  return config?.websearch || false
-}
-
-// Helper function to check if a model supports deep research
-export const modelSupportsDeepResearch = (modelName: string): boolean => {
-  const config = getModelConfigByName(modelName)
-  return config?.deepResearch || false
-}
-
-// Helper function to get all models for a specific provider
-export const getModelsByProvider = (provider: AIProviders): ModelConfiguration[] => {
-  return Object.values(MODEL_CONFIGURATIONS).filter(
-    config => config.provider === provider
-  )
-}
-
-// Model display name mappings - using the new enum-based approach
-export const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  // Build from ModelDisplayNames enum
-  ...Object.fromEntries(
-    Object.values(ModelDisplayNames).map(displayName => [
-      // Find the corresponding actualName from MODEL_CONFIGURATIONS
-      Object.values(MODEL_CONFIGURATIONS).find(config => config.labelName === displayName)?.actualName || '',
-      displayName
-    ]).filter(([key]) => key !== '') // Remove empty keys
-  )
-}
-
-// Main function to get available models - moved from config.ts for centralization
-export const getAvailableModels = (config: {
-  AwsAccessKey?: string
-  AwsSecretKey?: string
-  OpenAIKey?: string
-  OllamaModel?: string
-  TogetherAIModel?: string
-  TogetherApiKey?: string
-  FireworksAIModel?: string
-  FireworksApiKey?: string
-  GeminiAIModel?: string
-  GeminiApiKey?: string
-  VertexAIModel?: string
-  VertexProjectId?: string
-  VertexRegion?: string
-}) => {
-  return getAvailableModelsNew(config)
-}
-
 // Legacy function for backward compatibility (returns old format)
 export const getAvailableModelsLegacy = (config: {
   AwsAccessKey?: string
@@ -657,7 +615,14 @@ export const getAvailableModelsLegacy = (config: {
   VertexRegion?: string
 }) => {
   const newModels = getAvailableModels(config)
-  return newModels.map(model => ({
+  return newModels.map((model: {
+    actualName: string
+    labelName: string
+    provider: string
+    reasoning: boolean
+    websearch: boolean
+    deepResearch: boolean
+  }) => ({
     label: model.labelName,
     provider: model.provider
   }))
@@ -665,8 +630,6 @@ export const getAvailableModelsLegacy = (config: {
 
 // Function to determine the currently active provider based on configuration
 export const getActiveProvider = (): AIProviders | null => {
-  const config = require("@/config").default
-  
   // Priority order: AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex
   if (config.AwsAccessKey && config.AwsSecretKey) {
     return AIProviders.AwsBedrock
@@ -688,7 +651,7 @@ export const getActiveProvider = (): AIProviders | null => {
 }
 
 // Function to convert friendly model label back to the correct provider-specific model enum
-export const getModelValueFromLabel = (label: string): Models | null => {
+export const getModelValueFromLabel = (label: string): Models | string | null => {
   const activeProvider = getActiveProvider()
 
   
@@ -708,32 +671,30 @@ export const getModelValueFromLabel = (label: string): Models | null => {
   }
   
   // Handle special cases for dynamic models (Ollama, Together AI, etc.)
-  const config = require("@/config").default
-  
   switch (activeProvider) {
     case AIProviders.Ollama:
       if (config.OllamaModel && label === config.OllamaModel) {
-        return config.OllamaModel as Models
+        return config.OllamaModel
       }
       break
     case AIProviders.Together:
       if (config.TogetherAIModel && label === config.TogetherAIModel) {
-        return config.TogetherAIModel as Models
+        return config.TogetherAIModel
       }
       break
     case AIProviders.Fireworks:
       if (config.FireworksAIModel && label === config.FireworksAIModel) {
-        return config.FireworksAIModel as Models
+        return config.FireworksAIModel
       }
       break
     case AIProviders.GoogleAI:
       if (config.GeminiAIModel && label === config.GeminiAIModel) {
-        return config.GeminiAIModel as Models
+        return config.GeminiAIModel
       }
       break
     case AIProviders.VertexAI:
       if (config.VertexAIModel && label === config.VertexAIModel) {
-        return config.VertexAIModel as Models
+        return config.VertexAIModel
       }
       break
   }

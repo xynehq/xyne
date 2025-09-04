@@ -651,31 +651,58 @@ export const MessageWithToolsApi = async (c: Context) => {
     // Parse the model configuration JSON
     let modelId: string | null = null
     let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
     
     if (selectedModelConfig) {
       try {
         const modelConfig = JSON.parse(selectedModelConfig)
         modelId = modelConfig.model || null
         
-        // Check capabilities - handle both array and object formats
-        if (modelConfig.capabilities) {
+        // Handle new direct boolean format
+        isReasoningEnabled = modelConfig.reasoning === true
+        enableWebSearch = modelConfig.websearch === true
+        isDeepResearchEnabled = modelConfig.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `[MessageWithToolsApi] Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (modelConfig.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
           if (Array.isArray(modelConfig.capabilities)) {
             isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+            enableWebSearch = modelConfig.capabilities.includes('websearch')
+            isDeepResearchEnabled = modelConfig.capabilities.includes('deepResearch')
           } else if (typeof modelConfig.capabilities === 'object') {
             isReasoningEnabled = modelConfig.capabilities.reasoning === true
+            enableWebSearch = modelConfig.capabilities.websearch === true
+            isDeepResearchEnabled = modelConfig.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
           }
         }
+        
+        loggerWithChild({ email: email }).info(
+          `[MessageWithToolsApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+        )
       } catch (error) {
         console.error('Failed to parse selectedModelConfig:', error)
       }
     }
     
     // Convert friendly model label to actual model value
-    const actualModelId = modelId ? getModelValueFromLabel(modelId) : null
-    if (modelId && !actualModelId) {
-      throw new HTTPException(400, {
-        message: `Invalid model: ${modelId}`,
-      })
+    let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
+    // If label lookup failed, treat input as a concrete model id
+    if (!actualModelId && modelId) {
+      actualModelId = modelId as Models
     }
     
     const attachmentMetadata = parseAttachmentMetadata(c)
@@ -2855,11 +2882,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     }
     
     // Convert friendly model label to actual model value
-    const actualModelId = modelId ? getModelValueFromLabel(modelId) : null
-    if (modelId && !actualModelId) {
-      throw new HTTPException(400, {
-        message: `Invalid model: ${modelId}`,
-      })
+    let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
+    // If label lookup failed, treat input as a concrete model id
+    if (!actualModelId && modelId) {
+      actualModelId = modelId as Models
     }
     
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -3567,27 +3593,48 @@ export const AgentMessageApi = async (c: Context) => {
     let modelId: string | undefined = undefined
     let isReasoningEnabled = false
     let enableWebSearch = false
+    let isDeepResearchEnabled = false
     
     if (selectedModelConfig) {
       try {
         const config = JSON.parse(selectedModelConfig)
         modelId = config.model
         
-        // Check capabilities - handle both array and object formats
-        if (config.capabilities) {
+        // Handle new direct boolean format
+        isReasoningEnabled = config.reasoning === true
+        enableWebSearch = config.websearch === true
+        isDeepResearchEnabled = config.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `[AgentMessageApi] Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (config.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
           if (Array.isArray(config.capabilities)) {
             // Array format: ["reasoning", "websearch"]
             isReasoningEnabled = config.capabilities.includes('reasoning')
             enableWebSearch = config.capabilities.includes('websearch')
+            isDeepResearchEnabled = config.capabilities.includes('deepResearch')
           } else if (typeof config.capabilities === 'object') {
             // Object format: { reasoning: true, websearch: false }
             isReasoningEnabled = config.capabilities.reasoning === true
             enableWebSearch = config.capabilities.websearch === true
+            isDeepResearchEnabled = config.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
           }
         }
         
         loggerWithChild({ email: email }).info(
-          `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}`
+          `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
         )
       } catch (e) {
         loggerWithChild({ email: email }).warn(
@@ -3606,7 +3653,7 @@ export const AgentMessageApi = async (c: Context) => {
     if (modelId) {
       const convertedModelId = getModelValueFromLabel(modelId)
       if (convertedModelId) {
-        actualModelId = convertedModelId
+        actualModelId = convertedModelId as string // Can be Models enum or string
         loggerWithChild({ email: email }).info(
           `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`
         )

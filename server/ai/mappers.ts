@@ -265,6 +265,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   [Models.Gpt_4o]: AIProviders.OpenAI,
   [Models.Gpt_4o_mini]: AIProviders.OpenAI,
   [Models.Gpt_4]: AIProviders.OpenAI,
+  [Models.O3_Deep_Research]: AIProviders.OpenAI,
+  [Models.O4_Mini_Deep_Research]: AIProviders.OpenAI,
   [Models.CohereCmdRPlus]: AIProviders.AwsBedrock,
   [Models.CohereCmdR]: AIProviders.AwsBedrock,
   [Models.Claude_3_5_SonnetV2]: AIProviders.AwsBedrock,
@@ -302,8 +304,8 @@ export const ModelToProviderMap: Record<Models, AIProviders> = {
   // [Models.Vertex_Llama_4_Scout_17b]: AIProviders.VertexAI,
 
   // Vertex AI Gemini Models
-  [Models.Vertex_Gemini_2_0_Flash_001]: AIProviders.VertexAI, // Flash 2.0
-  [Models.Vertex_Gemini_2_0_Flash_Lite_001]: AIProviders.VertexAI, // Flash Lite 2.0
+  // [Models.Vertex_Gemini_2_0_Flash_001]: AIProviders.VertexAI, // Flash 2.0
+  // [Models.Vertex_Gemini_2_0_Flash_Lite_001]: AIProviders.VertexAI, // Flash Lite 2.0
   // [Models.Vertex_Gemini_2_0_Flash_Thinking_Exp_1219]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_2_0_Flash_Exp]: AIProviders.VertexAI,
   // [Models.Vertex_Gemini_2_5_Pro_Exp_03_25]: AIProviders.VertexAI,

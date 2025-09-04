@@ -274,10 +274,9 @@ export const startStream = async (
   }
   // Parse selectedModel JSON configuration
   let modelConfig = {
-    model: "gemini-2-5-pro", // default fallback
+    model: "Claude sonnet 4",
     capabilities: []
   }
-  
   if (selectedModel) {
     try {
       modelConfig = JSON.parse(selectedModel)

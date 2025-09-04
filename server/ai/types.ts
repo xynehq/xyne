@@ -47,6 +47,8 @@ export enum OpenAIModels {
   Gpt_4o = "openai-gpt-4o",
   Gpt_4o_mini = "openai-gpt-4o-mini",
   Gpt_4 = "openai-gpt-4",
+  O3_Deep_Research = "openai-o3-deep-research",
+  O4_Mini_Deep_Research = "openai-o4-mini-deep-research",
 }
 
 export enum GoogleAIModels {
@@ -76,8 +78,8 @@ export enum VertexAIModels {
   // Llama_4_Scout_17b = "vertex-llama-4-scout-17b",
   
   // Gemini Models (different from Google AI)
-  Gemini_2_0_Flash_001 = "vertex-gemini-2-0-flash-001", // Flash 2.0
-  Gemini_2_0_Flash_Lite_001 = "vertex-gemini-2-0-flash-lite-001", // Flash Lite 2.0
+  // Gemini_2_0_Flash_001 = "vertex-gemini-2-0-flash-001", // Flash 2.0
+  // Gemini_2_0_Flash_Lite_001 = "vertex-gemini-2-0-flash-lite-001", // Flash Lite 2.0
   // Gemini_2_0_Flash_Thinking_Exp_1219 = "vertex-gemini-2-0-flash-thinking-exp-1219",
   // Gemini_2_0_Flash_Exp = "vertex-gemini-2-0-flash-exp",
   // Gemini_2_5_Pro_Exp_03_25 = "vertex-gemini-2-5-pro-exp-03-25",
@@ -119,6 +121,8 @@ export enum Models {
   Gpt_4o = OpenAIModels.Gpt_4o,
   Gpt_4o_mini = OpenAIModels.Gpt_4o_mini,
   Gpt_4 = OpenAIModels.Gpt_4,
+  O3_Deep_Research = OpenAIModels.O3_Deep_Research,
+  O4_Mini_Deep_Research = OpenAIModels.O4_Mini_Deep_Research,
   
   // Google AI Models
   Gemini_2_5_Flash = GoogleAIModels.Gemini_2_5_Flash,
@@ -139,8 +143,8 @@ export enum Models {
   // Vertex_Codestral_2501 = VertexAIModels.Codestral_2501,
   // Vertex_Llama_4_Maverick_17b = VertexAIModels.Llama_4_Maverick_17b,
   // Vertex_Llama_4_Scout_17b = VertexAIModels.Llama_4_Scout_17b,
-  Vertex_Gemini_2_0_Flash_001 = VertexAIModels.Gemini_2_0_Flash_001,
-  Vertex_Gemini_2_0_Flash_Lite_001 = VertexAIModels.Gemini_2_0_Flash_Lite_001,
+  // Vertex_Gemini_2_0_Flash_001 = VertexAIModels.Gemini_2_0_Flash_001,
+  // Vertex_Gemini_2_0_Flash_Lite_001 = VertexAIModels.Gemini_2_0_Flash_Lite_001,
   // Vertex_Gemini_2_0_Flash_Thinking_Exp_1219 = VertexAIModels.Gemini_2_0_Flash_Thinking_Exp_1219,
   // Vertex_Gemini_2_0_Flash_Exp = VertexAIModels.Gemini_2_0_Flash_Exp,
   // Vertex_Gemini_2_5_Pro_Exp_03_25 = VertexAIModels.Gemini_2_5_Pro_Exp_03_25,
@@ -212,6 +216,8 @@ export enum ModelDisplayNames {
   OPENAI_GPT_4O = "GPT-4o",
   OPENAI_GPT_4O_MINI = "GPT-4o Mini",
   OPENAI_GPT_4 = "GPT-4",
+  OPENAI_O3_DEEP_RESEARCH = "O3 Deep Research",
+  OPENAI_O4_MINI_DEEP_RESEARCH = "O4 Mini Deep Research",
   
   // Google AI Models
   GOOGLEAI_GEMINI_2_5_FLASH = "Gemini 2.5 Flash",
@@ -232,8 +238,8 @@ export enum ModelDisplayNames {
   // VERTEX_CODESTRAL_2501 = "Codestral 2501",
   // VERTEX_LLAMA_4_MAVERICK_17B = "Llama 4 Maverick 17B",
   // VERTEX_LLAMA_4_SCOUT_17B = "Llama 4 Scout 17B",
-  VERTEX_GEMINI_2_0_FLASH_001 = "Gemini 2.0 Flash 001", // Flash 2.0
-  VERTEX_GEMINI_2_0_FLASH_LITE_001 = "Gemini 2.0 Flash Lite 001", // Flash Lite 2.0
+  // VERTEX_GEMINI_2_0_FLASH_001 = "Gemini 2.0 Flash 001", // Flash 2.0
+  // VERTEX_GEMINI_2_0_FLASH_LITE_001 = "Gemini 2.0 Flash Lite 001", // Flash Lite 2.0
   // VERTEX_GEMINI_2_0_FLASH_THINKING_EXP_1219 = "Gemini 2.0 Flash Thinking Exp 1219",
   // VERTEX_GEMINI_2_0_FLASH_EXP = "Gemini 2.0 Flash Exp",
   // VERTEX_GEMINI_2_5_PRO_EXP_03_25 = "Gemini 2.5 Pro Exp 03-25",

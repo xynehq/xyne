@@ -21,6 +21,7 @@ import {
   Search,
   RotateCcw,
   Atom,
+  Brain, // Add Brain icon for deep research
   Bot, // Import Bot icon
   PlusCircle,
   Gavel, // For MCP connector tools
@@ -29,6 +30,7 @@ import {
   Loader2,
   Globe,
 } from "lucide-react"
+import { siOpenai, siClaude, siGooglegemini } from "simple-icons"
 import Attach from "@/assets/attach.svg?react"
 import {
   Citation,
@@ -449,88 +451,101 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       websearch: boolean
       deepResearch: boolean
     }>>([])
-    const [selectedModel, setSelectedModel] = useState<string>(() => {
-      // Initialize from localStorage if available
+    
+    // State for mode-specific model selections
+    const [reasoningModeModel, setReasoningModeModel] = useState<string>(() => {
       try {
-        return localStorage.getItem("selectedModel") || ""
+        return localStorage.getItem("reasoningModeModel") || ""
       } catch {
         return ""
       }
     })
+    
+    const [selectedModel, setSelectedModel] = useState<string>(() => {
+      // Initialize based on current mode and localStorage
+      try {
+        const savedCapability = localStorage.getItem("selectedCapability") as 'reasoning' | 'websearch' | 'deepResearch' | null
+        if (savedCapability === 'reasoning') {
+          return localStorage.getItem("reasoningModeModel") || ""
+        } else if (savedCapability === 'websearch') {
+          return "Gemini 2.5 Flash" // Auto-select for web search
+        } else if (savedCapability === 'deepResearch') {
+          return "GPT O3 Research" // Auto-select for deep research
+        }
+        return localStorage.getItem("reasoningModeModel") || ""
+      } catch {
+        return ""
+      }
+    })
+    
     const [isModelsLoading, setIsModelsLoading] = useState(false)
     
-    // Model filtering state
-    const [modelFilters, setModelFilters] = useState({
+
+
+    // Selected model capabilities state - now single selection
+    const [selectedCapability, setSelectedCapability] = useState<'reasoning' | 'websearch' | 'deepResearch' | null>(() => {
+      // Initialize from localStorage if available, default to null (no selection)
+      try {
+        const saved = localStorage.getItem("selectedCapability")
+        if (saved) {
+          const capability = saved as 'reasoning' | 'websearch' | 'deepResearch'
+          return capability
+        }
+        return null // Default to no selection
+      } catch (error) {
+        console.warn("Failed to load capability from localStorage:", error)
+        return null
+      }
+    })
+
+    // Hardcoded O3 model for deep research
+    const O3_RESEARCH_MODEL = {
+      labelName: "GPT O3 Research",
       reasoning: false,
       websearch: false,
-      deepResearch: false,
-    })
+      deepResearch: true
+    }
 
-    // Selected model capabilities state
-    const [selectedCapabilities, setSelectedCapabilities] = useState(() => {
-      // Initialize from localStorage if available
-      try {
-        const saved = localStorage.getItem("selectedCapabilities")
-        if (saved) {
-          return JSON.parse(saved)
-        }
-      } catch (error) {
-        console.warn("Failed to load capabilities from localStorage:", error)
-      }
-      return {
-        reasoning: false,
-        websearch: false,
-        deepResearch: false,
-      }
-    })
+    // Get all models including O3 for deep research mode
+    const allModelsWithO3 = useMemo(() => {
+      return [...availableModels, O3_RESEARCH_MODEL]
+    }, [availableModels])
 
-    // UI state for capability slider
-    const [showCapabilitySlider, setShowCapabilitySlider] = useState(false)
-
-    // Get the currently selected model's capabilities
+    // Get the currently selected model's data
     const selectedModelData = useMemo(() => {
-      return availableModels.find(m => m.labelName === selectedModel)
-    }, [availableModels, selectedModel])
+      return allModelsWithO3.find(m => m.labelName === selectedModel)
+    }, [allModelsWithO3, selectedModel])
 
-    // Get available capabilities for the selected model
-    const availableCapabilities = useMemo(() => {
-      if (!selectedModelData) return []
-      
-      const capabilities = []
-      if (selectedModelData.reasoning) capabilities.push('reasoning')
-      if (selectedModelData.websearch) capabilities.push('websearch')
-      if (selectedModelData.deepResearch) capabilities.push('deepResearch')
-      
-      return capabilities
-    }, [selectedModelData])
-
-    // Auto-show capability slider when model is selected and has capabilities
-    useEffect(() => {
-      if (selectedModelData && availableCapabilities.length > 0) {
-        // Small delay to allow smooth transition when switching models
-        const timer = setTimeout(() => {
-          setShowCapabilitySlider(true)
-        }, 100)
-        return () => clearTimeout(timer)
+    // Get models available for current mode
+    const availableModelsForMode = useMemo(() => {
+      if (selectedCapability === 'deepResearch') {
+        // Show all models including O3, but only O3 is enabled
+        return allModelsWithO3
       } else {
-        setShowCapabilitySlider(false)
+        // For reasoning and websearch modes, show all API models + O3 (but O3 disabled in non-deep-research)
+        return allModelsWithO3
       }
-    }, [selectedModelData, availableCapabilities])
+    }, [selectedCapability, allModelsWithO3])
+
+    // Check if a model is disabled in current mode
+    const isModelDisabled = useCallback((model: { labelName: string; reasoning: boolean; websearch: boolean; deepResearch: boolean }) => {
+      if (selectedCapability === 'websearch') {
+        return model.labelName !== 'Gemini 2.5 Flash'
+      } else if (selectedCapability === 'deepResearch') {
+        return model.labelName !== 'GPT O3 Research'
+      } else if (selectedCapability === 'reasoning') {
+        // Reasoning mode: disable O3 Research
+        return model.labelName === 'GPT O3 Research'
+      } else {
+        // No capability selected: disable O3 Research only
+        return model.labelName === 'GPT O3 Research'
+      }
+    }, [selectedCapability])
 
     // Filter models based on selected filters
     const filteredModels = useMemo(() => {
-      if (!modelFilters.reasoning && !modelFilters.websearch && !modelFilters.deepResearch) {
-        return availableModels // Return all models if no filters are active
-      }
-      
-      return availableModels.filter(model => {
-        const matchesReasoning = !modelFilters.reasoning || model.reasoning
-        const matchesWebsearch = !modelFilters.websearch || model.websearch
-        const matchesDeepResearch = !modelFilters.deepResearch || model.deepResearch
-        
-        return matchesReasoning && matchesWebsearch && matchesDeepResearch
-      })
-    }, [availableModels, modelFilters])
+      return availableModelsForMode
+    }, [availableModelsForMode])
     
     const showAdvancedOptions =
       overrideIsRagOn ??
@@ -540,25 +555,69 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
     const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId"
 
-    // Effect to persist selected model to localStorage
+    // Effect to persist reasoning mode model selection
     useEffect(() => {
-      if (selectedModel) {
+      if (selectedCapability === 'reasoning' && selectedModel) {
         try {
-          localStorage.setItem("selectedModel", selectedModel)
+          localStorage.setItem("reasoningModeModel", selectedModel)
+          setReasoningModeModel(selectedModel)
         } catch (error) {
-          console.warn("Failed to save selected model to localStorage:", error)
+          console.warn("Failed to save reasoning mode model to localStorage:", error)
         }
       }
-    }, [selectedModel])
+    }, [selectedModel, selectedCapability])
 
-    // Effect to persist selected capabilities to localStorage
+    // Effect to persist selected capability to localStorage
     useEffect(() => {
       try {
-        localStorage.setItem("selectedCapabilities", JSON.stringify(selectedCapabilities))
+        if (selectedCapability) {
+          localStorage.setItem("selectedCapability", selectedCapability)
+        } else {
+          localStorage.removeItem("selectedCapability")
+        }
       } catch (error) {
-        console.warn("Failed to save capabilities to localStorage:", error)
+        console.warn("Failed to save capability to localStorage:", error)
       }
-    }, [selectedCapabilities])
+    }, [selectedCapability])
+
+    // Handle capability mode switching
+    const handleCapabilityChange = useCallback((newCapability: 'reasoning' | 'websearch' | 'deepResearch' | null) => {
+      if (newCapability === selectedCapability) {
+        // Clicking the same capability toggles it off (deselects)
+        setSelectedCapability(null)
+        // When deselected, restore reasoning mode model or default
+        if (reasoningModeModel) {
+          setSelectedModel(reasoningModeModel)
+        } else if (availableModels.length > 0) {
+          const defaultModel = availableModels.find((m: any) => m.labelName === 'Claude Sonnet 4') || availableModels[0]
+          setSelectedModel(defaultModel.labelName)
+        }
+        return
+      }
+
+      setSelectedCapability(newCapability)
+      
+      if (newCapability === 'reasoning') {
+        // Switch to reasoning mode - restore previous reasoning model or default
+        const storedReasoningModel = reasoningModeModel || localStorage.getItem("reasoningModeModel")
+        if (storedReasoningModel && availableModels.find((m: any) => m.labelName === storedReasoningModel)) {
+          setSelectedModel(storedReasoningModel)
+        } else if (availableModels.length > 0) {
+          // Default to Claude Sonnet 4 or first available model
+          const defaultModel = availableModels.find((m: any) => m.labelName === 'Claude Sonnet 4') || availableModels[0]
+          setSelectedModel(defaultModel.labelName)
+        }
+      } else if (newCapability === 'websearch') {
+        // Auto-select Gemini 2.5 Flash for web search
+        const geminiModel = availableModels.find((m: any) => m.labelName === 'Gemini 2.5 Flash')
+        if (geminiModel) {
+          setSelectedModel(geminiModel.labelName)
+        }
+      } else if (newCapability === 'deepResearch') {
+        // Auto-select O3 Research for deep research
+        setSelectedModel('GPT O3 Research')
+      }
+    }, [selectedCapability, reasoningModeModel, availableModels])
 
     // Fetch available models on component mount
     useEffect(() => {
@@ -569,9 +628,26 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           const data = await response.json()
           setAvailableModels(data.models)
           
-          // Set first model as default if none selected
+          // Set default model based on current mode
           if (data.models.length > 0 && !selectedModel) {
-            setSelectedModel(data.models[0].labelName)
+            if (selectedCapability === 'reasoning') {
+              // Default to Claude Sonnet 4 or first available
+              const defaultModel = data.models.find((m: any) => m.labelName === 'Claude Sonnet 4') || data.models[0]
+              setSelectedModel(defaultModel.labelName)
+              setReasoningModeModel(defaultModel.labelName)
+            } else if (selectedCapability === 'websearch') {
+              const geminiModel = data.models.find((m: any) => m.labelName === 'Gemini 2.5 Flash')
+              if (geminiModel) {
+                setSelectedModel(geminiModel.labelName)
+              }
+            } else if (selectedCapability === 'deepResearch') {
+              setSelectedModel('GPT O3 Research')
+            } else {
+              // No capability selected - default to Claude Sonnet 4 or first available
+              const defaultModel = data.models.find((m: any) => m.labelName === 'Claude Sonnet 4') || data.models[0]
+              setSelectedModel(defaultModel.labelName)
+              setReasoningModeModel(defaultModel.labelName)
+            }
           }
         } catch (error) {
           console.error("Failed to fetch available models:", error)
@@ -581,7 +657,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       }
 
       fetchAvailableModels()
-    }, [selectedModel])
+    }, [selectedModel, selectedCapability])
 
     // File upload utility functions
     const showToast = createToastNotifier(toast)
@@ -1846,10 +1922,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
       htmlMessage = tempDiv.innerHTML
       
-      // Prepare model configuration with capabilities
+      // Prepare model configuration with capability flags
       const modelConfig = {
         model: selectedModel,
-        capabilities: selectedCapabilities
+        reasoning: selectedCapability === 'reasoning',
+        websearch: selectedCapability === 'websearch', 
+        deepResearch: selectedCapability === 'deepResearch'
       }
       
       handleSend(
@@ -1881,7 +1959,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       selectedFiles,
       persistedAgentId,
       selectedModel,
-      selectedCapabilities,
+      selectedCapability,
       handleSend,
       uploadFiles,
       user,
@@ -1970,7 +2048,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         getCurrentModelConfig: () => {
           const modelConfig = {
             model: selectedModel,
-            capabilities: selectedCapabilities
+            capability: selectedCapability
           }
           return JSON.stringify(modelConfig)
         },
@@ -1983,7 +2061,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         selectedSources,
         selectedFiles,
         selectedModel,
-        selectedCapabilities,
+        selectedCapability,
         handleSendMessage,
       ],
     )
@@ -2718,6 +2796,55 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     input.focus()
                   }}
                 />
+                
+                {/* Capability Selector with Slider Animation */}
+                <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
+                  {/* Slider Background */}
+                  <div 
+                    className="absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out"
+                    style={{
+                      width: '28px', // Same as button width
+                      left: selectedCapability === 'reasoning' ? '4px' :   // Centered on first button
+                             selectedCapability === 'websearch' ? '36px' :   // Centered on second button  
+                             selectedCapability === 'deepResearch' ? '68px' : '4px', // Centered on third button
+                      opacity: selectedCapability ? 1 : 0
+                    }}
+                  />
+                  
+                  {/* Always show all three capability buttons */}
+                  <button
+                    onClick={() => handleCapabilityChange('reasoning')}
+                    className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                      selectedCapability === 'reasoning'
+                        ? 'text-gray-900 dark:text-gray-100'
+                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
+                    }`}
+                  >
+                    <Atom size={14} />
+                  </button>
+                  
+                  <button
+                    onClick={() => handleCapabilityChange('websearch')}
+                    className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                      selectedCapability === 'websearch'
+                        ? 'text-gray-900 dark:text-gray-100'
+                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
+                    }`}
+                  >
+                    <Globe size={14} />
+                  </button>
+                  
+                  <button
+                    onClick={() => handleCapabilityChange('deepResearch')}
+                    className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                      selectedCapability === 'deepResearch'
+                        ? 'text-gray-900 dark:text-gray-100'
+                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
+                    }`}
+                  >
+                    <Brain size={14} />
+                  </button>
+                </div>
               </>
             )}
             {/* Dropdown for All Connectors */}
@@ -3355,216 +3482,193 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </span>
               </button>
             )}
-            {/* Model Selection with Capability Slider */}
+
+            {/* Model Selection Dropdown */}
             {showAdvancedOptions && (
-              <div className="flex items-center mr-3">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button 
-                      className="flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-sm text-gray-700 dark:text-gray-300 cursor-pointer mr-2"
-                      onClick={() => setShowCapabilitySlider(false)}
-                    >
-                      <span className="truncate max-w-[100px]">
-                        {isModelsLoading 
-                          ? "Loading..." 
-                          : selectedModelData?.labelName || "Select Model"
-                        }
-                      </span>
-                      <ChevronDown size={14} className="ml-1" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent 
-                    className="w-64 max-h-96 p-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-                    align="start"
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button 
+                    className="flex items-center gap-1 px-3 py-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer mr-2"
+                    style={{ marginLeft: "auto" }}
                   >
-                    {/* Model Filters */}
-                    <div className="px-3 py-3 border-b border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center justify-between">
-                        <span className="text-base font-medium text-gray-600 dark:text-gray-400">
-                          Filters
-                        </span>
-                        <div className="flex items-center gap-2">
-                        <TooltipProvider delayDuration={100}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                onClick={() => setModelFilters(prev => ({ ...prev, reasoning: !prev.reasoning }))}
-                                className={`p-2 rounded-full transition-all duration-200 ${
-                                  modelFilters.reasoning
-                                    ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400 shadow-md'
-                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                } hover:scale-110`}
-                              >
-                                <Atom size={14} />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="bg-black text-white text-xs rounded-sm">
-                              <p>Reasoning</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                    <span className="truncate max-w-[100px]">
+                      {isModelsLoading 
+                        ? "Loading..." 
+                        : selectedModelData?.labelName || "Select Model"
+                      }
+                    </span>
+                    <ChevronDown size={14} className="ml-1" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent 
+                  className="w-80 max-h-96 p-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg"
+                  align="start"
+                  side="bottom"
+                >
+                  {/* Models list with provider grouping */}
+                  <div className="max-h-80 overflow-y-auto py-2">
+                    {filteredModels.length > 0 ? (
+                      (() => {
+                        // Group models by provider
+                        const modelsByProvider = filteredModels.reduce((acc, model) => {
+                          let provider = 'Other'
+                          if (model.labelName.includes('Claude') || model.labelName.includes('Sonnet') || model.labelName.includes('Opus')) {
+                            provider = 'Claude'
+                          } else if (model.labelName.includes('GPT') || model.labelName.includes('OpenAI')) {
+                            provider = 'OpenAI'
+                          } else if (model.labelName.includes('Gemini')) {
+                            provider = 'Gemini'
+                          }
+                          
+                          if (!acc[provider]) acc[provider] = []
+                          acc[provider].push(model)
+                          return acc
+                        }, {} as Record<string, typeof filteredModels>)
 
-                        <TooltipProvider delayDuration={100}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                onClick={() => setModelFilters(prev => ({ ...prev, websearch: !prev.websearch }))}
-                                className={`p-2 rounded-full transition-all duration-200 ${
-                                  modelFilters.websearch
-                                    ? 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400 shadow-md'
-                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                } hover:scale-110`}
-                              >
-                                <Globe size={14} />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="bg-black text-white text-xs rounded-sm">
-                              <p>Web Search</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        // Define provider order and icons
+                        const providerOrder = ['Claude', 'OpenAI', 'Gemini', 'Other'] as const
+                        
+                        // Provider icon components
+                        const ProviderIcon = ({ provider }: { provider: string }) => {
+                          switch (provider) {
+                            case 'Claude':
+                              return (
+                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
+                                  <path 
+                                    fill="currentColor" 
+                                    d={siClaude.path}
+                                  />
+                                </svg>
+                              )
+                            case 'OpenAI':
+                              return (
+                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
+                                  <path 
+                                    fill="currentColor" 
+                                    d={siOpenai.path}
+                                  />
+                                </svg>
+                              )
+                            case 'Gemini':
+                              return (
+                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
+                                  <path 
+                                    fill="currentColor" 
+                                    d={siGooglegemini.path}
+                                  />
+                                </svg>
+                              )
+                            default:
+                              return <span className="text-sm text-gray-600 dark:text-gray-400">⚡</span>
+                          }
+                        }
 
-                        <TooltipProvider delayDuration={100}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                onClick={() => setModelFilters(prev => ({ ...prev, deepResearch: !prev.deepResearch }))}
-                                className={`p-2 rounded-full transition-all duration-200 ${
-                                  modelFilters.deepResearch
-                                    ? 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-400 shadow-md'
-                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                } hover:scale-110`}
-                              >
-                                <Search size={14} />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="bg-black text-white text-xs rounded-sm">
-                              <p>Deep Research</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Models list with its own scroll */}
-                    <div className="max-h-72 overflow-y-auto pb-2">
-                      {filteredModels.length > 0 ? (
-                        filteredModels.map((model) => (
-                          <DropdownMenuItem
-                            key={model.labelName}
-                            onClick={() => {
-                              setSelectedModel(model.labelName)
-                              setShowCapabilitySlider(true)
-                              // Keep existing capabilities if the new model supports them
-                              setSelectedCapabilities((prev: typeof selectedCapabilities) => ({
-                                reasoning: prev.reasoning && model.reasoning,
-                                websearch: prev.websearch && model.websearch,
-                                deepResearch: prev.deepResearch && model.deepResearch,
-                              }))
-                            }}
-                            className="flex items-center justify-between px-3 py-1.5"
-                          >
-                            <div className="flex flex-col flex-1 min-w-0">
-                              <span className="font-medium truncate">{model.labelName}</span>
+                        return providerOrder.map((provider, providerIndex) => {
+                          const models = modelsByProvider[provider]
+                          if (!models || models.length === 0) return null
+
+                          return (
+                            <div key={provider}>
+                              {/* Provider Header */}
+                              <div className="px-4 py-2 flex items-center gap-2">
+                                <ProviderIcon provider={provider} />
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                                  {provider}
+                                </span>
+                              </div>
+                              
+                              {/* Provider Models */}
+                              {models.map((model) => {
+                                const isDisabled = isModelDisabled(model)
+                                const isSelected = selectedModel === model.labelName
+                                
+                                return (
+                                  <DropdownMenuItem
+                                    key={model.labelName}
+                                    onClick={() => {
+                                      if (!isDisabled) {
+                                        setSelectedModel(model.labelName)
+                                        // Update reasoning mode model if in reasoning mode
+                                        if (selectedCapability === 'reasoning') {
+                                          setReasoningModeModel(model.labelName)
+                                        }
+                                      }
+                                    }}
+                                    className={`mx-2 mb-1 rounded-lg ${
+                                      isDisabled 
+                                        ? 'opacity-50 cursor-not-allowed' 
+                                        : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700'
+                                    } ${isSelected ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                                    disabled={isDisabled}
+                                  >
+                                    <div className="flex items-center justify-between w-full px-2 py-2">
+                                      <div className="flex flex-col flex-1 min-w-0">
+                                        <span className={`font-medium text-sm ${
+                                          isDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'
+                                        }`}>
+                                          {model.labelName.replace(/^(Claude |GPT |Gemini )/i, '')}
+                                        </span>
+                                        
+                                        {/* Model description based on name */}
+                                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                          {(model.labelName.includes('Sonnet 3.7') || model.labelName.includes('3.7 Sonnet') || model.labelName.includes('3.7 sonnet')) && 'Advanced reasoning with enhanced performance and longer context.'}
+                                          {(model.labelName.includes('Sonnet 3.5') || model.labelName.includes('3.5 Sonnet') || model.labelName.includes('3.5 sonnet')) && 'Designed for quick responses while ensuring solid reasoning.'}
+                                          {(model.labelName.includes('Sonnet 4') || model.labelName.includes('4 Sonnet') || model.labelName.includes('4 sonnet')) && 'Balanced for reasoning, long context windows.'}
+                                          {model.labelName.includes('Opus') && 'Ideal for in-depth research and thorough analysis.'}
+                                          {model.labelName.includes('GPT 5') && 'Features enhanced reasoning, creativity, and better multi-step planning.'}
+                                          {model.labelName.includes('GPT 4') && 'Great for programming, content generation, and logical structuring.'}
+                                          {model.labelName.includes('GPT O3') && 'Advanced research model with deep analysis capabilities.'}
+                                          {model.labelName.includes('Gemini 2.5 Pro') && 'Proficient in reasoning across text, visuals, and programming.'}
+                                          {model.labelName.includes('Gemini 2.5 Flash') && 'Tailored for cost-effectiveness and rapid response times.'}
+                                        </span>
+                                        
+                                        {/* Disabled state messages */}
+                                        {isDisabled && selectedCapability === 'websearch' && model.labelName !== 'Gemini 2.5 Flash' && (
+                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                            Not available in Web Search mode
+                                          </span>
+                                        )}
+                                        {isDisabled && selectedCapability === 'deepResearch' && model.labelName !== 'GPT O3 Research' && (
+                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                            Not available in Deep Research mode
+                                          </span>
+                                        )}
+                                        {isDisabled && selectedCapability === 'reasoning' && model.labelName === 'GPT O3 Research' && (
+                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                            Only available in Deep Research mode
+                                          </span>
+                                        )}
+                                      </div>
+                                      
+                                      {isSelected && (
+                                        <Check size={16} className="text-green-500 flex-shrink-0 ml-3" />
+                                      )}
+                                    </div>
+                                  </DropdownMenuItem>
+                                )
+                              })}
+                              
+                              {/* Separator between providers (except last) */}
+                              {providerIndex < providerOrder.length - 1 && modelsByProvider[providerOrder[providerIndex + 1]]?.length > 0 && (
+                                <div className="my-2 mx-4 border-t border-gray-200 dark:border-gray-600" />
+                              )}
                             </div>
-                            {selectedModel === model.labelName && (
-                              <Check size={14} className="text-green-500 flex-shrink-0 ml-2" />
-                            )}
-                          </DropdownMenuItem>
-                        ))
-                      ) : (
-                        <DropdownMenuItem disabled className="px-3 py-1.5">
-                          No models match selected filters
-                        </DropdownMenuItem>
-                      )}
-                    </div>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                {/* Capability Slider */}
-                <div className={`flex items-center transition-all duration-500 ease-in-out overflow-hidden ${
-                  showCapabilitySlider && selectedModelData && availableCapabilities.length > 0
-                    ? 'max-w-[200px] opacity-100' 
-                    : 'max-w-0 opacity-0'
-                }`}>
-                  <div className="flex items-center gap-1 pl-2">
-                    <div className={`transition-all duration-300 ${
-                      availableCapabilities.includes('reasoning') 
-                        ? 'transform translate-x-0 opacity-100 scale-100' 
-                        : 'transform -translate-x-4 opacity-0 scale-75'
-                    }`}>
-                      {availableCapabilities.includes('reasoning') && (
-                        <button
-                          onClick={() => setSelectedCapabilities((prev: typeof selectedCapabilities) => ({ 
-                            ...prev, 
-                            reasoning: !prev.reasoning 
-                          }))}
-                          className={`p-1.5 rounded-full transition-all duration-200 ${
-                            selectedCapabilities.reasoning
-                              ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400 shadow-md'
-                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                          } hover:scale-110`}
-                          title="Reasoning"
-                        >
-                          <Atom size={14} />
-                        </button>
-                      )}
-                    </div>
-                    
-                    <div className={`transition-all duration-300 delay-75 ${
-                      availableCapabilities.includes('websearch') 
-                        ? 'transform translate-x-0 opacity-100 scale-100' 
-                        : 'transform -translate-x-4 opacity-0 scale-75'
-                    }`}>
-                      {availableCapabilities.includes('websearch') && (
-                        <button
-                          onClick={() => setSelectedCapabilities((prev: typeof selectedCapabilities) => ({ 
-                            ...prev, 
-                            websearch: !prev.websearch 
-                          }))}
-                          className={`p-1.5 rounded-full transition-all duration-200 ${
-                            selectedCapabilities.websearch
-                              ? 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400 shadow-md'
-                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                          } hover:scale-110`}
-                          title="Web Search"
-                        >
-                          <Globe size={14} />
-                        </button>
-                      )}
-                    </div>
-                    
-                    <div className={`transition-all duration-300 delay-150 ${
-                      availableCapabilities.includes('deepResearch') 
-                        ? 'transform translate-x-0 opacity-100 scale-100' 
-                        : 'transform -translate-x-4 opacity-0 scale-75'
-                    }`}>
-                      {availableCapabilities.includes('deepResearch') && (
-                        <button
-                          onClick={() => setSelectedCapabilities((prev: typeof selectedCapabilities) => ({ 
-                            ...prev, 
-                            deepResearch: !prev.deepResearch 
-                          }))}
-                          className={`p-1.5 rounded-full transition-all duration-200 ${
-                            selectedCapabilities.deepResearch
-                              ? 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-400 shadow-md'
-                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                          } hover:scale-110`}
-                          title="Deep Research"
-                        >
-                          <Search size={14} />
-                        </button>
-                      )}
-                    </div>
+                          )
+                        })
+                      })()
+                    ) : (
+                      <DropdownMenuItem disabled className="px-4 py-3 text-center">
+                        <span className="text-gray-500 dark:text-gray-400">No models available</span>
+                      </DropdownMenuItem>
+                    )}
                   </div>
-                </div>
-              </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
+            
             {(isStreaming || retryIsStreaming) && chatId ? (
               <button
                 onClick={handleStop}
-                style={{ marginLeft: "auto" }}
                 className="flex mr-6 bg-[#464B53] dark:bg-gray-700 text-white dark:text-gray-200 hover:bg-[#5a5f66] dark:hover:bg-gray-600 rounded-full w-[32px] h-[32px] items-center justify-center"
               >
                 <Square className="text-white dark:text-gray-200" size={16} />
@@ -3573,7 +3677,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               <button
                 disabled={isStreaming || retryIsStreaming || isUploadingFiles}
                 onClick={() => handleSendMessage()}
-                style={{ marginLeft: "auto" }}
                 className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
               >
                 {isUploadingFiles ? (

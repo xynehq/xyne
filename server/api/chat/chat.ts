@@ -2122,7 +2122,7 @@ async function* generateAnswerFromGivenContext(
     initialContext,
     {
       stream: true,
-      modelId: (modelId as Models) || defaultBestModel,
+      modelId: modelId ? (modelId as Models) : defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
       imageFileNames,
@@ -2895,7 +2895,7 @@ async function* processResultsForMetadata(
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
-    modelId: (modelId as Models) || defaultBestModel,
+    modelId: modelId ? (modelId as Models) : defaultBestModel,
     reasoning: config.isReasoning && userRequestsReasoning,
     imageFileNames,
     agentPrompt: agentContext,
@@ -4034,45 +4034,66 @@ export const MessageApi = async (c: Context) => {
     let modelId: string | undefined = undefined
     let isReasoningEnabled = false
     let enableWebSearch = false
+    let isDeepResearchEnabled = false
 
     if (selectedModelConfig) {
       try {
         const config = JSON.parse(selectedModelConfig)
         modelId = config.model
         
-        // Check capabilities - handle both array and object formats
-        if (config.capabilities) {
+        // Handle new direct boolean format
+        isReasoningEnabled = config.reasoning === true
+        enableWebSearch = config.websearch === true
+        isDeepResearchEnabled = config.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (config.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
           if (Array.isArray(config.capabilities)) {
             // Array format: ["reasoning", "websearch"]
             isReasoningEnabled = config.capabilities.includes('reasoning')
             enableWebSearch = config.capabilities.includes('websearch')
+            isDeepResearchEnabled = config.capabilities.includes('deepResearch')
           } else if (typeof config.capabilities === 'object') {
             // Object format: { reasoning: true, websearch: false }
             isReasoningEnabled = config.capabilities.reasoning === true
             enableWebSearch = config.capabilities.websearch === true
+            isDeepResearchEnabled = config.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
           }
         }
         
         loggerWithChild({ email: email }).info(
-          `Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}`
+          `Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
         )
       } catch (e) {
         loggerWithChild({ email: email }).warn(
           `Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
         )
-        modelId = "gemini-2-5-pro" // fallback
+        modelId = config.defaultBestModel // fallback
       }
     } else {
       // Fallback if no model config provided
-      modelId = "gemini-2-5-pro"
+      modelId = config.defaultBestModel
       loggerWithChild({ email: email }).info("No model config provided, using default")
     }
     // Convert modelId from friendly label to actual model value
-    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    let actualModelId: string = modelId || config.defaultBestModel // Ensure we always have a string
     if (modelId) {
       const convertedModelId = getModelValueFromLabel(modelId)
       if (convertedModelId) {
-        actualModelId = convertedModelId
+        actualModelId = convertedModelId as string // Can be Models enum or string
         loggerWithChild({ email: email }).info(
           `Converted model label "${modelId}" to value "${actualModelId}"`
         )
@@ -4680,8 +4701,9 @@ export const MessageApi = async (c: Context) => {
                   message,
                   ctx,
                   {
-                    modelId:
-                      (actualModelId as Models) || config.defaultBestModel,
+                    modelId: actualModelId
+                      ? (actualModelId as Models)
+                      : config.defaultBestModel,
                     stream: true,
                     json: true,
                     agentPrompt: agentPromptValue,
@@ -5610,7 +5632,12 @@ export const MessageRetryApi = async (c: Context) => {
     }
 
     // Use the extracted modelId if provided, otherwise use the original message's modelId
-    const modelId = extractedModelId ? getModelValueFromLabel(extractedModelId) || originalMessage.modelId as Models : originalMessage.modelId as Models
+    let convertedModelId = extractedModelId ? getModelValueFromLabel(extractedModelId) : null
+    // If label lookup failed, treat input as a concrete model id
+    if (!convertedModelId && extractedModelId) {
+      convertedModelId = extractedModelId as Models
+    }
+    const modelId = convertedModelId ? (convertedModelId as Models) : (originalMessage.modelId as Models)
 
     // Get user and workspace
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -6043,8 +6070,9 @@ export const MessageRetryApi = async (c: Context) => {
                 message,
                 ctx,
                 {
-                  modelId:
-                    (modelId as Models) || config.defaultBestModel,
+                  modelId: modelId
+                    ? (modelId as Models)
+                    : config.defaultBestModel,
                   stream: true,
                   json: true,
                   reasoning:
@@ -6945,7 +6973,15 @@ The follow-up questions should be specific to this conversation and help the use
 }
 
 export const GetAvailableModelsApi = async (c: Context) => {
+  let email = ""
   try {
+    const { sub } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
+    
+    if (!email) {
+      throw new HTTPException(401, { message: "Unauthorized" })
+    }
+    
     const availableModels = getAvailableModels({
       AwsAccessKey: config.AwsAccessKey,
       AwsSecretKey: config.AwsSecretKey,
@@ -6961,7 +6997,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
       VertexProjectId: config.VertexProjectId,
       VertexRegion: config.VertexRegion,
     })
-    
+
     // Filter out actualName and provider fields before sending to frontend
     const filteredModels = availableModels.map(model => ({
       labelName: model.labelName,
@@ -6969,12 +7005,17 @@ export const GetAvailableModelsApi = async (c: Context) => {
       websearch: model.websearch,
       deepResearch: model.deepResearch,
     }))
-    
+
     return c.json({ models: filteredModels })
   } catch (error) {
     const errMsg = getErrorMessage(error)
+    loggerWithChild({ email }).error(
+      error,
+      `Get Available Models Error: ${errMsg}`,
+    )
+    if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
-      message: "Could not fetch available models",
+      message: "Could not fetch available models"
     })
   }
 }
