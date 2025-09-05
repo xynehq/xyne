@@ -2,12 +2,12 @@ import { Models, AIProviders, ModelDisplayNames } from "@/ai/types"
 import config from "@/config"
 
 export interface ModelConfiguration {
-  actualName: string           // The actual model identifier used in API calls
-  labelName: string           // Display name for frontend
-  provider: AIProviders       // Which provider this model belongs to
-  reasoning: boolean          // Whether the model supports reasoning capabilities
-  websearch: boolean          // Whether the model supports web search capabilities
-  deepResearch: boolean       // Whether the model supports deep research capabilities
+  actualName: string // The actual model identifier used in API calls
+  labelName: string // Display name for frontend
+  provider: AIProviders // Which provider this model belongs to
+  reasoning: boolean // Whether the model supports reasoning capabilities
+  websearch: boolean // Whether the model supports web search capabilities
+  deepResearch: boolean // Whether the model supports deep research capabilities
 }
 
 export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
@@ -190,17 +190,17 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     websearch: true,
     deepResearch: true,
   },
-  [Models.O3_Deep_Research]: {
+  [Models.o3_Deep_Research]: {
     actualName: "o3-deep-research",
-    labelName: ModelDisplayNames.OPENAI_O3_DEEP_RESEARCH,
+    labelName: ModelDisplayNames.OPENAI_o3_DEEP_RESEARCH,
     provider: AIProviders.OpenAI,
     reasoning: true,
     websearch: true,
     deepResearch: true,
   },
-  [Models.O4_Mini_Deep_Research]: {
+  [Models.o4_Mini_Deep_Research]: {
     actualName: "o4-mini-deep-research",
-    labelName: ModelDisplayNames.OPENAI_O4_MINI_DEEP_RESEARCH,
+    labelName: ModelDisplayNames.OPENAI_o4_MINI_DEEP_RESEARCH,
     provider: AIProviders.OpenAI,
     reasoning: true,
     websearch: true,
@@ -226,7 +226,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   },
 
   // Vertex AI Claude Models
-    // Vertex AI Claude Models
+  // Vertex AI Claude Models
   [Models.Vertex_Claude_Sonnet_4]: {
     actualName: "claude-sonnet-4@20250514",
     labelName: ModelDisplayNames.VERTEX_CLAUDE_SONNET_4,
@@ -465,19 +465,22 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   websearch: true,
   //   deepResearch: true, // Pro experimental, good research capabilities
   // },
-
 }
 
 // Model display name mappings - using the new enum-based approach
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // Build from ModelDisplayNames enum
   ...Object.fromEntries(
-    Object.values(ModelDisplayNames).map(displayName => [
-      // Find the corresponding actualName from MODEL_CONFIGURATIONS
-      Object.values(MODEL_CONFIGURATIONS).find(config => config.labelName === displayName)?.actualName || '',
-      displayName
-    ]).filter(([key]) => key !== '') // Remove empty keys
-  )
+    Object.values(ModelDisplayNames)
+      .map((displayName) => [
+        // Find the corresponding actualName from MODEL_CONFIGURATIONS
+        Object.values(MODEL_CONFIGURATIONS).find(
+          (config) => config.labelName === displayName,
+        )?.actualName || "",
+        displayName,
+      ])
+      .filter(([key]) => key !== ""), // Remove empty keys
+  ),
 }
 
 // Main function to get available models - moved from config.ts for centralization
@@ -510,8 +513,8 @@ export const getAvailableModels = (config: {
   if (config.AwsAccessKey && config.AwsSecretKey) {
     // Add only AWS Bedrock models
     Object.values(MODEL_CONFIGURATIONS)
-      .filter(model => model.provider === AIProviders.AwsBedrock)
-      .forEach(model => {
+      .filter((model) => model.provider === AIProviders.AwsBedrock)
+      .forEach((model) => {
         availableModels.push({
           actualName: model.actualName,
           labelName: model.labelName,
@@ -524,8 +527,8 @@ export const getAvailableModels = (config: {
   } else if (config.OpenAIKey) {
     // Add only OpenAI models
     Object.values(MODEL_CONFIGURATIONS)
-      .filter(model => model.provider === AIProviders.OpenAI)
-      .forEach(model => {
+      .filter((model) => model.provider === AIProviders.OpenAI)
+      .forEach((model) => {
         availableModels.push({
           actualName: model.actualName,
           labelName: model.labelName,
@@ -568,8 +571,8 @@ export const getAvailableModels = (config: {
   } else if (config.GeminiAIModel && config.GeminiApiKey) {
     // Add all Google AI models
     Object.values(MODEL_CONFIGURATIONS)
-      .filter(model => model.provider === AIProviders.GoogleAI)
-      .forEach(model => {
+      .filter((model) => model.provider === AIProviders.GoogleAI)
+      .forEach((model) => {
         availableModels.push({
           actualName: model.actualName,
           labelName: model.labelName,
@@ -582,8 +585,8 @@ export const getAvailableModels = (config: {
   } else if (config.VertexProjectId && config.VertexRegion) {
     // Add all Vertex AI models - no longer dependent on VERTEX_AI_MODEL being set
     Object.values(MODEL_CONFIGURATIONS)
-      .filter(model => model.provider === AIProviders.VertexAI)
-      .forEach(model => {
+      .filter((model) => model.provider === AIProviders.VertexAI)
+      .forEach((model) => {
         availableModels.push({
           actualName: model.actualName,
           labelName: model.labelName,
@@ -615,17 +618,19 @@ export const getAvailableModelsLegacy = (config: {
   VertexRegion?: string
 }) => {
   const newModels = getAvailableModels(config)
-  return newModels.map((model: {
-    actualName: string
-    labelName: string
-    provider: string
-    reasoning: boolean
-    websearch: boolean
-    deepResearch: boolean
-  }) => ({
-    label: model.labelName,
-    provider: model.provider
-  }))
+  return newModels.map(
+    (model: {
+      actualName: string
+      labelName: string
+      provider: string
+      reasoning: boolean
+      websearch: boolean
+      deepResearch: boolean
+    }) => ({
+      label: model.labelName,
+      provider: model.provider,
+    }),
+  )
 }
 
 // Function to determine the currently active provider based on configuration
@@ -646,30 +651,34 @@ export const getActiveProvider = (): AIProviders | null => {
   } else if (config.VertexProjectId && config.VertexRegion) {
     return AIProviders.VertexAI
   }
-  
+
   return null
 }
 
 // Function to convert friendly model label back to the correct provider-specific model enum
-export const getModelValueFromLabel = (label: string): Models | string | null => {
+export const getModelValueFromLabel = (
+  label: string,
+): Models | string | null => {
   const activeProvider = getActiveProvider()
 
-  
   if (!activeProvider) {
     return null
   }
-  
+
   // First, try to find the model by matching labelName in MODEL_CONFIGURATIONS
-  const modelEntry = Object.entries(MODEL_CONFIGURATIONS).find(([modelKey, config]) => {
-    const matches = config.labelName === label && config.provider === activeProvider
-    return matches
-  })
-  
+  const modelEntry = Object.entries(MODEL_CONFIGURATIONS).find(
+    ([modelKey, config]) => {
+      const matches =
+        config.labelName === label && config.provider === activeProvider
+      return matches
+    },
+  )
+
   if (modelEntry) {
     return modelEntry[0] as Models
   } else {
   }
-  
+
   // Handle special cases for dynamic models (Ollama, Together AI, etc.)
   switch (activeProvider) {
     case AIProviders.Ollama:
@@ -698,52 +707,80 @@ export const getModelValueFromLabel = (label: string): Models | string | null =>
       }
       break
   }
-  
+
   return null
 }
 
 // Legacy function to convert friendly model label back to actual model value (for backward compatibility)
-export const getModelValueFromLabelLegacy = (label: string, config: {
-  OllamaModel?: string
-  TogetherAIModel?: string
-  FireworksAIModel?: string
-  GeminiAIModel?: string
-  VertexAIModel?: string
-}): string | null => {
+export const getModelValueFromLabelLegacy = (
+  label: string,
+  config: {
+    OllamaModel?: string
+    TogetherAIModel?: string
+    FireworksAIModel?: string
+    GeminiAIModel?: string
+    VertexAIModel?: string
+  },
+): string | null => {
   // Create reverse mapping from display names to actual model values
   const labelToValueMap: Record<string, string> = {}
-  
+
   // Build the reverse mapping
   for (const [modelValue, displayName] of Object.entries(MODEL_DISPLAY_NAMES)) {
     labelToValueMap[displayName] = modelValue
   }
-  
+
   // Check if the label exists in our mapping
   if (labelToValueMap[label]) {
     return labelToValueMap[label]
   }
-  
+
   // For dynamic models (Ollama, Together AI, etc.) that might not be in MODEL_DISPLAY_NAMES
   // Check against configured model values directly
-  if (config.OllamaModel && (label === config.OllamaModel || label === (MODEL_DISPLAY_NAMES[config.OllamaModel] || config.OllamaModel))) {
+  if (
+    config.OllamaModel &&
+    (label === config.OllamaModel ||
+      label === (MODEL_DISPLAY_NAMES[config.OllamaModel] || config.OllamaModel))
+  ) {
     return config.OllamaModel
   }
-  
-  if (config.TogetherAIModel && (label === config.TogetherAIModel || label === (MODEL_DISPLAY_NAMES[config.TogetherAIModel] || config.TogetherAIModel))) {
+
+  if (
+    config.TogetherAIModel &&
+    (label === config.TogetherAIModel ||
+      label ===
+        (MODEL_DISPLAY_NAMES[config.TogetherAIModel] || config.TogetherAIModel))
+  ) {
     return config.TogetherAIModel
   }
-  
-  if (config.FireworksAIModel && (label === config.FireworksAIModel || label === (MODEL_DISPLAY_NAMES[config.FireworksAIModel] || config.FireworksAIModel))) {
+
+  if (
+    config.FireworksAIModel &&
+    (label === config.FireworksAIModel ||
+      label ===
+        (MODEL_DISPLAY_NAMES[config.FireworksAIModel] ||
+          config.FireworksAIModel))
+  ) {
     return config.FireworksAIModel
   }
-  
-  if (config.GeminiAIModel && (label === config.GeminiAIModel || label === (MODEL_DISPLAY_NAMES[config.GeminiAIModel] || config.GeminiAIModel))) {
+
+  if (
+    config.GeminiAIModel &&
+    (label === config.GeminiAIModel ||
+      label ===
+        (MODEL_DISPLAY_NAMES[config.GeminiAIModel] || config.GeminiAIModel))
+  ) {
     return config.GeminiAIModel
   }
-  
-  if (config.VertexAIModel && (label === config.VertexAIModel || label === (MODEL_DISPLAY_NAMES[config.VertexAIModel] || config.VertexAIModel))) {
+
+  if (
+    config.VertexAIModel &&
+    (label === config.VertexAIModel ||
+      label ===
+        (MODEL_DISPLAY_NAMES[config.VertexAIModel] || config.VertexAIModel))
+  ) {
     return config.VertexAIModel
   }
-  
+
   return null
 }

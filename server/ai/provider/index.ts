@@ -83,6 +83,7 @@ import {
   withToolQueryPrompt,
   ragOffPromptJson,
   nameToEmailResolutionPrompt,
+  deepResearchPrompt,
   webSearchSystemPrompt,
 } from "@/ai/prompts"
 
@@ -1860,6 +1861,54 @@ export const webSearchQuestion = (
     })
 
     return vertexGoogleProvider.converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const getDeepResearchResponse = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = Models.o3_Deep_Research
+    }
+
+    params.webSearch = true
+
+    if (!params.systemPrompt) {
+      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
+        ? deepResearchPrompt(userCtx) +
+          "\n\n" +
+          parseAgentPrompt(params.agentPrompt)
+        : deepResearchPrompt(userCtx)
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    const openAIKey = process.env["DS_OPENAI_API_KEY"]
+    const baseUrl = process.env["DS_BASE_URL"]
+    if (!openAIKey) {
+      Logger.warn("OpenAIKey not configured, moving with default provider.")
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
+
+    const openAIClient = new OpenAI({
+      apiKey: openAIKey,
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
+    })
+    const openaiProvider = new OpenAIProvider(openAIClient)
+
+    return openaiProvider.converseStream(messages, params)
   } catch (error) {
     Logger.error(error, "Error in webSearchQuestion")
     throw error
