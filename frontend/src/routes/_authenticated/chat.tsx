@@ -119,6 +119,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { EnhancedReasoning } from "@/components/EnhancedReasoning"
+import { DeepResearchReasoning } from "@/components/DeepResearchReasoning"
 import { Tip } from "@/components/Tooltip"
 import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
@@ -316,7 +317,6 @@ const jsonToHtmlMessage = (jsonString: string): string => {
   }
 }
 
-const REASONING_STATE_KEY = "isReasoningGlobalState"
 const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
@@ -371,6 +371,7 @@ export const ChatPage = ({
   const {
     partial,
     thinking,
+    deepResearchSteps,
     sources,
     imageCitations,
     citationMap,
@@ -401,6 +402,7 @@ export const ChatPage = ({
     ? {
         resp: partial,
         thinking,
+        deepResearchSteps,
         sources,
         imageCitations,
         citationMap,
@@ -441,10 +443,6 @@ export const ChatPage = ({
     type: MessageFeedback
   } | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
-  const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
-    return storedValue ? JSON.parse(storedValue) : true
-  })
 
   // Add state for citation preview
   const [isCitationPreviewOpen, setIsCitationPreviewOpen] = useState(false)
@@ -485,9 +483,6 @@ export const ChatPage = ({
     }
   }, [chatParams.shareToken])
 
-  useEffect(() => {
-    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
-  }, [isReasoningActive])
   useEffect(() => {
     localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
   }, [isAgenticMode])
@@ -703,10 +698,6 @@ export const ChatPage = ({
           .filter((s) => s.length > 0)
       }
 
-      if (typeof chatParams.reasoning === "boolean") {
-        setIsReasoningActive(chatParams.reasoning)
-      }
-
       // Call handleSend, passing agentId from chatParams if available
       handleSend(
         messageToSend,
@@ -714,7 +705,7 @@ export const ChatPage = ({
         sourcesArray,
         chatParams.agentId,
         chatParams.toolsList,
-        chatParams.enableWebSearch,
+        chatParams.selectedModel, // Use selectedModel from URL params
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -722,7 +713,6 @@ export const ChatPage = ({
         search: (prev) => ({
           ...prev,
           q: undefined,
-          reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
           toolsList: undefined, // Clear toolsList from URL after processing
@@ -733,7 +723,6 @@ export const ChatPage = ({
     }
   }, [
     chatParams.q,
-    chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
     chatParams.toolsList,
@@ -747,7 +736,7 @@ export const ChatPage = ({
     selectedSources?: string[],
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
-    enableWebSearch?: boolean,
+    selectedModel?: string,
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -777,12 +766,11 @@ export const ChatPage = ({
       await startStream(
         messageToSend,
         selectedSources || [],
-        isReasoningActive,
         isAgenticMode,
         agentIdToUse,
         toolsList,
         metadata,
-        enableWebSearch,
+        selectedModel,
       )
     } catch (error) {
       // If there's an error, clear the optimistically added message from cache
@@ -881,7 +869,11 @@ export const ChatPage = ({
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
     setRetryIsStreaming(true)
-    await retryMessage(messageId, isReasoningActive, isAgenticMode)
+    
+    // Get current model configuration from ChatBox
+    const currentModelConfig = chatBoxRef.current?.getCurrentModelConfig() || null
+    
+    await retryMessage(messageId, isAgenticMode, undefined, currentModelConfig)
   }
 
   const bookmarkChatMutation = useMutation<
@@ -1221,8 +1213,6 @@ export const ChatPage = ({
                       isAgenticMode={isAgenticMode}
                       chatId={chatId}
                       agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
-                      isReasoningActive={isReasoningActive}
-                      setIsReasoningActive={setIsReasoningActive}
                       user={user} // Pass user prop
                     />
                   </div>
@@ -2056,6 +2046,7 @@ interface VirtualizedMessagesProps {
     sources?: Citation[]
     imageCitations?: any[]
     thinking?: string
+    deepResearchSteps?: any[]
     messageId?: string | null
     citationMap?: any
   } | null
@@ -2141,6 +2132,7 @@ const VirtualizedMessages = React.forwardRef<
           sources: currentResp.sources || [],
           imageCitations: currentResp.imageCitations || [],
           thinking: currentResp.thinking || "",
+          deepResearchSteps: currentResp.deepResearchSteps || [],
           citationMap: currentResp.citationMap,
           isStreaming: true,
           attachments: [],
@@ -2281,6 +2273,7 @@ const VirtualizedMessages = React.forwardRef<
                       isUser={message.messageRole === "user"}
                       responseDone={message.externalId !== "current-resp"}
                       thinking={message.thinking}
+                      deepResearchSteps={message.deepResearchSteps}
                       citations={message.sources}
                       imageCitations={message.imageCitations || []}
                       messageId={message.externalId}
@@ -2340,6 +2333,7 @@ const VirtualizedMessages = React.forwardRef<
                         }
                         message={message.errorMessage}
                         thinking={message.thinking}
+                        deepResearchSteps={message.deepResearchSteps}
                         isUser={false}
                         responseDone={true}
                         citations={message.sources}
@@ -2416,6 +2410,7 @@ VirtualizedMessages.displayName = "VirtualizedMessages"
 export const ChatMessage = ({
   message,
   thinking,
+  deepResearchSteps = [],
   isUser,
   responseDone,
   isRetrying,
@@ -2440,6 +2435,7 @@ export const ChatMessage = ({
 }: {
   message: string
   thinking: string
+  deepResearchSteps?: any[]
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
@@ -2534,6 +2530,15 @@ export const ChatMessage = ({
                 src={logo}
               />
               <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
+                {deepResearchSteps && deepResearchSteps.length > 0 && (
+                  <>
+                    <DeepResearchReasoning
+                      steps={deepResearchSteps}
+                      isStreaming={!responseDone}
+                      className="mb-4"
+                    />
+                  </>
+                )}
                 {thinking && (
                   <>
                     <EnhancedReasoning
@@ -2545,7 +2550,9 @@ export const ChatMessage = ({
                     />
                   </>
                 )}
-                {message === "" && (!responseDone || isRetrying) ? (
+                {message === "" &&
+                (!responseDone || isRetrying) &&
+                !deepResearchSteps.length ? (
                   <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
                     {`${THINKING_PLACEHOLDER}${dots}`}
                   </div>
@@ -2658,14 +2665,17 @@ export const ChatMessage = ({
                       navigator.clipboard.writeText(processMessage(message))
                     }
                   />
-                  <img
-                    className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
-                    src={Retry}
-                    onClick={() =>
-                      messageId && !disableRetry && handleRetry(messageId)
-                    }
-                    title="Retry"
-                  />
+                  {/* Retry button temporarily hidden */}
+                  {false && (
+                    <img
+                      className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
+                      src={Retry}
+                      onClick={() =>
+                        messageId && !disableRetry && handleRetry(messageId)
+                      }
+                      title="Retry"
+                    />
+                  )}
                   {messageId && (
                     <>
                       <ThumbsUp
@@ -2737,7 +2747,6 @@ const chatParams = z.object({
     .transform((val) => val === "true")
     .optional()
     .default("false"),
-  reasoning: z.boolean().optional(),
   agentic: z
     .string()
     .transform((val) => val === "true")
@@ -2763,6 +2772,7 @@ const chatParams = z.object({
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
+  selectedModel: z.string().optional(), // Added selectedModel to Zod schema
   toolsList: z
     .any()
     .optional()
@@ -2793,11 +2803,6 @@ const chatParams = z.object({
   shareToken: z.string().optional(), // Added shareToken for shared chats
   // @ts-ignore
   metadata: z.array(attachmentMetadataSchema).optional(),
-  enableWebSearch: z
-    .string()
-    .transform((val) => val === "false")
-    .optional()
-    .default("false"),
 })
 
 type XyneChat = z.infer<typeof chatParams>
