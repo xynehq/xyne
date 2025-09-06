@@ -52,6 +52,11 @@ export enum Apps {
   // Notion = "notion",  // Notion is not yet supported
   GoogleCalendar = "google-calendar",
 
+  // Microsoft apps (mirroring Google structure)
+  MicrosoftDrive = "microsoft-drive",
+  MicrosoftOutlook = "microsoft-outlook",
+  MicrosoftCalendar = "microsoft-calendar",
+
   Slack = "slack",
 
   MCP = "mcp",
@@ -88,6 +93,9 @@ export const isValidEntity = (entity: string): boolean => {
         Object.values(GooglePeopleEntity)
           .map((v) => v.toLowerCase())
           .includes(normalizedEntity) ||
+        Object.values(MicrosoftPeopleEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
         Object.values(SlackEntity)
           .map((v) => v.toLowerCase())
           .includes(normalizedEntity) ||
@@ -102,6 +110,12 @@ export enum GooglePeopleEntity {
   Contacts = "Contacts",
   OtherContacts = "OtherContacts",
   AdminDirectory = "AdminDirectory",
+}
+
+// Microsoft entities (mirroring Google structure)
+export enum MicrosoftPeopleEntity {
+  Contacts = "Contacts",
+  OtherContacts = "OtherContacts",
 }
 
 // the vespa schemas
@@ -183,9 +197,13 @@ export const isMailAttachment = (entity: Entity): boolean =>
   Object.values(MailAttachmentEntity).includes(entity as MailAttachmentEntity)
 
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
+export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
 
 export type PeopleEntity = z.infer<typeof PeopleEntitySchema>
+export type MicrosoftPeopleEntityType = z.infer<
+  typeof MicrosoftPeopleEntitySchema
+>
 
 export enum NotionEntity {
   Page = "page",
@@ -217,6 +235,7 @@ export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
+  MicrosoftPeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
   MailEntitySchema,
@@ -230,6 +249,7 @@ export const entitySchema = z.union([
 export type Entity =
   | SystemEntity
   | PeopleEntity
+  | MicrosoftPeopleEntityType
   | DriveEntity
   | NotionEntity
   | MailEntity
@@ -485,7 +505,10 @@ export const VespaUserSchema = z
     name: z.string().optional(), //.min(1),
     email: z.string().min(1).email(),
     app: z.nativeEnum(Apps),
-    entity: z.nativeEnum(GooglePeopleEntity),
+    entity: z.union([
+      z.nativeEnum(GooglePeopleEntity),
+      z.nativeEnum(MicrosoftPeopleEntity),
+    ]),
     gender: z.string().optional(),
     photoLink: z.string().optional(),
     aliases: z.array(z.string()).optional(),
@@ -1213,6 +1236,12 @@ export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
   drive: Apps.GoogleDrive,
   googledrive: Apps.GoogleDrive,
   googlecalendar: Apps.GoogleCalendar,
+  // Microsoft mappings (mirroring Google structure)
+  outlook: Apps.MicrosoftOutlook,
+  microsoftoutlook: Apps.MicrosoftOutlook,
+  onedrive: Apps.MicrosoftDrive,
+  microsoftdrive: Apps.MicrosoftDrive,
+  microsoftcalendar: Apps.MicrosoftCalendar,
   slack: Apps.Slack,
   datasource: Apps.DataSource,
   "google-workspace": Apps.GoogleWorkspace,

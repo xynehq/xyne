@@ -8,16 +8,16 @@ import { boss, SaaSQueue } from "@/queue"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Apps, ConnectorStatus, type AuthType } from "@/shared/types"
 import { type OAuthCredentials, type SaaSOAuthJob, Subsystem } from "@/types"
-import { Google, Slack } from "arctic"
+import { Google, MicrosoftEntraId } from "arctic"
 import type { Context } from "hono"
 import { getCookie } from "hono/cookie"
 import { HTTPException } from "hono/http-exception"
 import { handleGoogleOAuthIngestion } from "@/integrations/google"
+import { handleMicrosoftOAuthIngestion } from "@/integrations/microsoft"
 
 const { JwtPayloadKey, JobExpiryHours, slackHost } = config
-import { IsGoogleApp } from "@/utils"
+import { IsGoogleApp, IsMicrosoftApp } from "@/utils"
 import { getUserByEmail } from "@/db/user"
-import { handleSlackIngestion } from "@/integrations/slack"
 import { globalAbortControllers } from "@/integrations/abortManager"
 import { getErrorMessage } from "@/utils"
 
@@ -59,7 +59,7 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     const codeVerifier = getCookie(c, `${app}-code-verifier`)
-    if (!codeVerifier && app === Apps.GoogleDrive) {
+    if (!codeVerifier && (IsGoogleApp(app) || IsMicrosoftApp(app))) {
       throw new HTTPException(500, { message: "Could not verify the code" })
     }
     let tokens: SlackOAuthResp | OAuthCredentials
@@ -113,6 +113,19 @@ export const OAuthCallback = async (c: Context) => {
       )
       tokens = oauthTokens as OAuthCredentials
       tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
+    } else if (IsMicrosoftApp(app)) {
+      const microsoft = new MicrosoftEntraId(
+        "common",
+        clientId as string,
+        clientSecret,
+        `${config.host}/oauth/callback`,
+      )
+      const oauthTokens = await microsoft.validateAuthorizationCode(
+        code,
+        codeVerifier as string,
+      )
+      tokens = oauthTokens as OAuthCredentials
+      tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
     } else {
       throw new HTTPException(500, { message: "Invalid App" })
     }
@@ -136,6 +149,13 @@ export const OAuthCallback = async (c: Context) => {
         loggerWithChild({ email: email }).error(
           error,
           `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+        )
+      })
+    } else if (IsMicrosoftApp(app)) {
+      handleMicrosoftOAuthIngestion(SaasJobPayload).catch((error) => {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Background Microsoft OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
         )
       })
     } else if (app === Apps.Slack) {

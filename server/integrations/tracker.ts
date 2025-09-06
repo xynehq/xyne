@@ -1,5 +1,5 @@
 import { Apps, AuthType } from "@/shared/types"
-import { IsGoogleApp } from "@/utils"
+import { IsGoogleApp, IsMicrosoftApp } from "@/utils"
 
 type Email = string
 type WorkspaceStats = Record<Email, UserStats>
@@ -11,6 +11,11 @@ interface GoogleTotalStats {
 interface SlackTotalStats {
   totalMessages: number
   totalConversations: number
+}
+
+interface MicrosoftTotalStats {
+  totalMail: number
+  totalDrive: number
 }
 
 export enum StatType {
@@ -46,9 +51,18 @@ interface SlackStats {
   slackMessageReplyCount: number
 }
 
+interface MicrosoftStats {
+  gmailCount: number
+  driveCount: number
+  contactsCount: number
+  eventsCount: number
+  mailAttachmentCount: number
+}
+
 type UserStats = (
   | (GoogleStats & Partial<GoogleTotalStats>)
   | (SlackStats & Partial<SlackTotalStats>)
+  | (MicrosoftStats & Partial<MicrosoftTotalStats>)
 ) &
   StatMetadata
 
@@ -98,7 +112,7 @@ export class Tracker {
 
   public updateTotal(
     email: string,
-    appSpecificTotals: GoogleTotalStats | SlackTotalStats,
+    appSpecificTotals: GoogleTotalStats | SlackTotalStats | MicrosoftTotalStats,
   ) {
     this.initializeUserStats(email)
 
@@ -117,6 +131,20 @@ export class Tracker {
         ;(oAuthStats as GoogleStats & GoogleTotalStats).totalMail =
           totals.totalMail
         ;(oAuthStats as GoogleStats & GoogleTotalStats).totalDrive =
+          totals.totalDrive
+      }
+    } else if (IsMicrosoftApp(this.app)) {
+      const totals = appSpecificTotals as MicrosoftTotalStats
+      if ("totalMail" in serviceStats) {
+        ;(serviceStats as MicrosoftStats & MicrosoftTotalStats).totalMail =
+          totals.totalMail
+        ;(serviceStats as MicrosoftStats & MicrosoftTotalStats).totalDrive =
+          totals.totalDrive
+      }
+      if ("totalMail" in oAuthStats) {
+        ;(oAuthStats as MicrosoftStats & MicrosoftTotalStats).totalMail =
+          totals.totalMail
+        ;(oAuthStats as MicrosoftStats & MicrosoftTotalStats).totalDrive =
           totals.totalDrive
       }
     } else if (this.app === Apps.Slack) {
@@ -162,6 +190,17 @@ export class Tracker {
           totalDrive: 0,
           ...baseStats,
         }
+      } else if (IsMicrosoftApp(this.app)) {
+        this.serviceAccountProgress.userStats[email] = {
+          gmailCount: 0,
+          driveCount: 0,
+          contactsCount: 0,
+          eventsCount: 0,
+          mailAttachmentCount: 0,
+          totalMail: 0,
+          totalDrive: 0,
+          ...baseStats,
+        }
       } else if (this.app === Apps.Slack) {
         this.serviceAccountProgress.userStats[email] = {
           slackMessageCount: 0,
@@ -177,6 +216,17 @@ export class Tracker {
 
     if (!this.oAuthProgress.userStats[email]) {
       if (IsGoogleApp(this.app)) {
+        this.oAuthProgress.userStats[email] = {
+          gmailCount: 0,
+          driveCount: 0,
+          contactsCount: 0,
+          eventsCount: 0,
+          mailAttachmentCount: 0,
+          totalMail: 0,
+          totalDrive: 0,
+          ...baseOAuthStats,
+        }
+      } else if (IsMicrosoftApp(this.app)) {
         this.oAuthProgress.userStats[email] = {
           gmailCount: 0,
           driveCount: 0,
@@ -239,6 +289,9 @@ export class Tracker {
       } else {
         return 0
       }
+    } else if (IsMicrosoftApp(this.app)) {
+      // Microsoft apps use OAuth, so return 0 for now (similar to Google OAuth)
+      return 0
     } else if (this.app === Apps.Slack) {
       return Math.floor(this.oAuthProgress.current / this.oAuthProgress.total)
       // return Math.floor(this.oAuthProgress.userStats[this.oAuthProgress.user].slackConversationCount/)
