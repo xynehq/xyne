@@ -23,6 +23,7 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
+  agentWithNoIntegrationsQuestion,
 } from "@/ai/provider"
 import {
   getConnectorByExternalId,
@@ -268,6 +269,22 @@ const generateFallbackSummary = (step: AgentReasoningStep): string => {
     default:
       return "Processing step"
   }
+}
+
+// Check if agent has no app integrations and should use the no-integrations flow
+export const checkAgentWithNoIntegrations = (agentForDb: SelectAgent | null): boolean => {
+  if (!agentForDb?.appIntegrations) return true
+
+  if (typeof agentForDb.appIntegrations === "object") {
+    if (Object.keys(agentForDb.appIntegrations).length === 0) return true
+
+    return Object.values(agentForDb.appIntegrations).every(
+      (config) =>
+        !config.selectedAll && (!config.itemIds || config.itemIds.length === 0),
+    )
+  }
+
+  return false
 }
 
 const checkAndYieldCitationsForAgent = async function* (
@@ -2831,6 +2848,7 @@ async function* nonRagIterator(
   }
 }
 
+
 export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
@@ -4239,27 +4257,48 @@ export const AgentMessageApi = async (c: Context) => {
                   }
                 }
               }
-
-              const searchOrAnswerIterator =
-                generateSearchQueryOrAnswerFromConversation(
-                  message,
-                  ctx,
-                  {
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .modelId,
-                    stream: true,
-                    json: true,
-                    reasoning:
-                      userRequestsReasoning &&
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .reasoning,
-                    messages: limitedMessages,
-                    agentPrompt: agentPromptForLLM,
-                  },
-                  undefined,
-                  previousClassification,
+              const agentWithNoIntegrations = checkAgentWithNoIntegrations(agentForDb)
+              let searchOrAnswerIterator
+              
+              if (agentWithNoIntegrations) {
+                loggerWithChild({ email: email }).info(
+                  "Using agent with no integrations for the question",
                 )
+
+                searchOrAnswerIterator = agentWithNoIntegrationsQuestion(message, ctx, {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: false,
+                  agentPrompt: agentPromptForLLM,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                  messages: limitedMessages,
+                  agentWithNoIntegrations: true,
+                })
+              } else {
+                searchOrAnswerIterator =
+                  generateSearchQueryOrAnswerFromConversation(
+                    message,
+                    ctx,
+                    {
+                      modelId:
+                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                          .modelId,
+                      stream: true,
+                      json: true,
+                      reasoning:
+                        userRequestsReasoning &&
+                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                          .reasoning,
+                      messages: limitedMessages,
+                      agentPrompt: agentPromptForLLM,
+                    },
+                    undefined,
+                    previousClassification,
+                  )
+              }
 
               // TODO: for now if the answer is from the conversation itself we don't
               // add any citations for it, we can refer to the original message for citations
@@ -4298,91 +4337,133 @@ export const AgentMessageApi = async (c: Context) => {
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
-              for await (const chunk of searchOrAnswerIterator) {
-                if (stream.closed) {
-                  Logger.info(
-                    "[AgentMessageApi] Stream closed during conversation search loop. Breaking.",
-                  )
-                  wasStreamClosedPrematurely = true
-                  break
+
+              if (agentWithNoIntegrations) {
+                loggerWithChild({ email: email }).info(
+                  "Processing agent with no integrations response",
+                )
+
+                stream.writeSSE({
+                  event: ChatSSEvents.Start,
+                  data: "",
+                })
+
+                for await (const chunk of searchOrAnswerIterator) {
+                  if (stream.closed) {
+                    Logger.info(
+                      "[AgentMessageApi] Stream closed during agent no integrations loop. Breaking.",
+                    )
+                    wasStreamClosedPrematurely = true
+                    break
+                  }
+                  
+                  if (chunk.text) {
+                    answer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
+                  }
+
+                  if (chunk.cost) {
+                    costArr.push(chunk.cost)
+                  }
+                  if (chunk.metadata?.usage) {
+                    tokenArr.push({
+                      inputTokens: chunk.metadata.usage.inputTokens || 0,
+                      outputTokens: chunk.metadata.usage.outputTokens || 0,
+                    })
+                  }
                 }
-                if (chunk.text) {
-                  if (reasoning) {
-                    if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                      thinking += chunk.text
-                      stream.writeSSE({
-                        event: ChatSSEvents.Reasoning,
-                        data: chunk.text,
-                      })
-                    } else {
-                      // first time
-                      if (!chunk.text.includes(StartThinkingToken)) {
-                        let token = chunk.text
-                        if (chunk.text.includes(EndThinkingToken)) {
-                          token = chunk.text.split(EndThinkingToken)[0]
-                          thinking += token
-                        } else {
-                          thinking += token
-                        }
+
+                parsed.answer = answer
+              } else {
+                for await (const chunk of searchOrAnswerIterator) {
+                  if (stream.closed) {
+                    Logger.info(
+                      "[AgentMessageApi] Stream closed during conversation search loop. Breaking.",
+                    )
+                    wasStreamClosedPrematurely = true
+                    break
+                  }
+                  if (chunk.text) {
+                    if (reasoning) {
+                      if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                        thinking += chunk.text
                         stream.writeSSE({
                           event: ChatSSEvents.Reasoning,
-                          data: token,
+                          data: chunk.text,
                         })
-                      }
-                    }
-                  }
-                  if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                    reasoning = false
-                    chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                  }
-                  if (!reasoning) {
-                    buffer += chunk.text
-                    try {
-                      parsed = jsonParseLLMOutput(buffer) || {}
-                      if (parsed.answer && currentAnswer !== parsed.answer) {
-                        if (currentAnswer === "") {
-                          Logger.info(
-                            "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                          )
+                      } else {
+                        // first time
+                        if (!chunk.text.includes(StartThinkingToken)) {
+                          let token = chunk.text
+                          if (chunk.text.includes(EndThinkingToken)) {
+                            token = chunk.text.split(EndThinkingToken)[0]
+                            thinking += token
+                          } else {
+                            thinking += token
+                          }
                           stream.writeSSE({
-                            event: ChatSSEvents.Start,
-                            data: "",
-                          })
-                          // First valid answer - send the whole thing
-                          stream.writeSSE({
-                            event: ChatSSEvents.ResponseUpdate,
-                            data: parsed.answer,
-                          })
-                        } else {
-                          // Subsequent chunks - send only the new part
-                          const newText = parsed.answer.slice(
-                            currentAnswer.length,
-                          )
-                          stream.writeSSE({
-                            event: ChatSSEvents.ResponseUpdate,
-                            data: newText,
+                            event: ChatSSEvents.Reasoning,
+                            data: token,
                           })
                         }
-                        currentAnswer = parsed.answer
                       }
-                    } catch (err) {
-                      const errMessage = (err as Error).message
-                      Logger.error(
-                        err,
-                        `Error while parsing LLM output ${errMessage}`,
-                      )
-                      continue
+                    }
+                    if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                      reasoning = false
+                      chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                    }
+                    if (!reasoning) {
+                      buffer += chunk.text
+                      try {
+                        parsed = jsonParseLLMOutput(buffer) || {}
+                        if (parsed.answer && currentAnswer !== parsed.answer) {
+                          if (currentAnswer === "") {
+                            Logger.info(
+                              "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                            )
+                            stream.writeSSE({
+                              event: ChatSSEvents.Start,
+                              data: "",
+                            })
+                            // First valid answer - send the whole thing
+                            stream.writeSSE({
+                              event: ChatSSEvents.ResponseUpdate,
+                              data: parsed.answer,
+                            })
+                          } else {
+                            // Subsequent chunks - send only the new part
+                            const newText = parsed.answer.slice(
+                              currentAnswer.length,
+                            )
+                            stream.writeSSE({
+                              event: ChatSSEvents.ResponseUpdate,
+                              data: newText,
+                            })
+                          }
+                          currentAnswer = parsed.answer
+                        }
+                      } catch (err) {
+                        const errMessage = (err as Error).message
+                        Logger.error(
+                          err,
+                          `Error while parsing LLM output ${errMessage}`,
+                        )
+                        continue
+                      }
                     }
                   }
-                }
-                if (chunk.cost) {
-                  costArr.push(chunk.cost)
-                }
-                if (chunk.metadata?.usage) {
-                  tokenArr.push({
-                    inputTokens: chunk.metadata.usage.inputTokens,
-                    outputTokens: chunk.metadata.usage.outputTokens,
-                  })
+                  if (chunk.cost) {
+                    costArr.push(chunk.cost)
+                  }
+                  if (chunk.metadata?.usage) {
+                    tokenArr.push({
+                      inputTokens: chunk.metadata.usage.inputTokens,
+                      outputTokens: chunk.metadata.usage.outputTokens,
+                    })
+                  }
                 }
               }
 
@@ -4936,156 +5017,6 @@ export const AgentMessageApi = async (c: Context) => {
           }
         }
 
-        // Path B: try "answer from conversation OR rewrite then RAG"
-        const searchOrAnswerIterator =
-          generateSearchQueryOrAnswerFromConversation(
-            message,
-            ctx,
-            {
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-              stream: true,
-              json: true,
-              reasoning:
-                userRequestsReasoning &&
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: limitedMessages,
-              agentPrompt: agentPromptForLLM,
-            },
-            undefined,
-            previousClassification,
-          )
-
-        // Buffer the JSON-ish control stream
-        let buffer = ""
-        let queryFilters = {
-          apps: [],
-          entities: [],
-          startTime: "",
-          endTime: "",
-          count: 0,
-          sortDirection: "",
-          intent: {},
-          offset: 0,
-        }
-        let parsed = {
-          answer: "",
-          queryRewrite: "",
-          temporalDirection: null,
-          filter_query: "",
-          type: "",
-          intent: {},
-          filters: queryFilters,
-        }
-        let costArrA: number[] = []
-        let tokenArrA: { inputTokens: number; outputTokens: number }[] = []
-
-        for await (const chunk of searchOrAnswerIterator) {
-          if (chunk.text) {
-            buffer += chunk.text
-            try {
-              parsed = jsonParseLLMOutput(buffer) || parsed
-            } catch {
-              // keep buffering until valid
-            }
-          }
-          if (chunk.cost) costArrA.push(chunk.cost)
-          if (chunk.metadata?.usage) {
-            tokenArrA.push({
-              inputTokens: chunk.metadata.usage.inputTokens,
-              outputTokens: chunk.metadata.usage.outputTokens,
-            })
-          }
-        }
-
-        if (parsed.answer) {
-          // Found direct answer from conversation; persist/return
-          return await finalizeAndRespond({
-            answer: parsed.answer,
-            thinking: "",
-            citations: [],
-            imageCitations: [],
-            citationMap: {},
-            costArr: costArrA,
-            tokenArr: tokenArrA,
-          })
-        }
-
-        // No direct answer -> do full RAG
-        const classification: TemporalClassifier & QueryRouterResponse = {
-          direction: parsed.temporalDirection,
-          type: parsed.type as QueryType,
-          filterQuery: parsed.filter_query,
-          filters: {
-            ...(parsed?.filters ?? {}),
-            apps: parsed.filters?.apps || [],
-            entities: (parsed.filters?.entities as any) || [],
-            intent: parsed.intent || {},
-          },
-        }
-
-        if (parsed.queryRewrite) {
-          message = parsed.queryRewrite
-        }
-
-        const ragSpan = streamSpan.startSpan("rag_processing")
-        const understandSpan = ragSpan.startSpan("understand_message")
-        const iterator = UnderstandMessageAndAnswer(
-          email,
-          ctx,
-          message,
-          classification,
-          limitedMessages,
-          0.5,
-          userRequestsReasoning,
-          understandSpan,
-          agentPromptForLLM,
-        )
-
-        const {
-          answer,
-          thinking,
-          citations,
-          imageCitations,
-          citationMap,
-          costArr,
-          tokenArr,
-        } = await collectIterator(iterator)
-
-        understandSpan.end()
-        ragSpan.end()
-
-        if (answer || wasStreamClosedPrematurely) {
-          return await finalizeAndRespond({
-            answer,
-            thinking,
-            citations,
-            imageCitations,
-            citationMap,
-            costArr: costArrA.concat(costArr),
-            tokenArr: tokenArrA.concat(tokenArr),
-          })
-        } else {
-          const allMessages = await getChatMessagesWithAuth(
-            db,
-            chat?.externalId,
-            email,
-          )
-          const lastMessage = allMessages[allMessages.length - 1]
-          const msg =
-            "Oops, something went wrong. Please try rephrasing your question or ask something else."
-          await addErrMessageToMessage(lastMessage, msg)
-          streamSpan.end()
-          rootSpan.end()
-          return c.json(
-            {
-              chatId: chat.externalId,
-              messageId: lastMessage.externalId,
-              error: msg,
-            },
-            400,
-          )
-        }
       } catch (error) {
         const streamErrorSpan = streamSpan.startSpan("handle_nonstream_error")
         streamErrorSpan.addEvent("error", {

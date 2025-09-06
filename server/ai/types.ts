@@ -295,6 +295,7 @@ export interface ModelParams {
   agentPrompt?: string
   imageFileNames?: string[]
   webSearch?: boolean
+  agentWithNoIntegrations?: boolean
   deepResearchEnabled?: boolean
 }
 
