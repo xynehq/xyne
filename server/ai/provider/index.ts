@@ -84,6 +84,7 @@ import {
   ragOffPromptJson,
   nameToEmailResolutionPrompt,
   webSearchSystemPrompt,
+  agentWithNoIntegrationsSystemPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -1841,6 +1842,41 @@ export const webSearchQuestion = (
     return vertexGoogleProvider.converseStream(messages, params)
   } catch (error) {
     Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const agentWithNoIntegrationsQuestion = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+    if (!params.systemPrompt) {
+      if (!isAgentPromptEmpty(params.agentPrompt)) {
+        const agentPromptData = parseAgentPrompt(params.agentPrompt)
+        params.systemPrompt = askQuestionSystemPrompt + "\n\n" + agentPromptData.prompt
+      } else {
+        params.systemPrompt = agentWithNoIntegrationsSystemPrompt
+      }
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+
+    return getProviderByModel(params.modelId).converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in agentWithNoIntegrationsQuestion")
     throw error
   }
 }

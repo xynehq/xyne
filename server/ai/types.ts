@@ -81,6 +81,7 @@ export interface ModelParams {
   agentPrompt?: string
   imageFileNames?: string[]
   webSearch?: boolean
+  agentWithNoIntegrations?: boolean
 }
 
 export interface ConverseResponse {
@@ -213,12 +214,12 @@ export type QueryRouterLLMResponse = z.infer<typeof QueryRouterResponseSchema>
 
 export interface ChainBreakClassifications {
   availableChainBreaks: Array<{
-    chainIndex: number;
-    messageIndex: number;
-    originalQuery: string;
-    classification: QueryRouterLLMResponse;
-  }>;
-  usage: string;
+    chainIndex: number
+    messageIndex: number
+    originalQuery: string
+    classification: QueryRouterLLMResponse
+  }>
+  usage: string
 }
 
 export const QueryContextRank = z.object({
