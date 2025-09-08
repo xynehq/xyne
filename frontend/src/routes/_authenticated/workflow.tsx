@@ -31,7 +31,7 @@ export const Route = createFileRoute("/_authenticated/workflow")({
 
 function WorkflowComponent() {
   const matches = useRouterState({ select: (s) => s.matches })
-  const { user } = matches[matches.length - 1].context
+  const { user, agentWhiteList } = matches[matches.length - 1].context
   const [activeTab, setActiveTab] = useState<"workflow" | "templates" | "executions">("workflow")
   const [viewMode, setViewMode] = useState<"list" | "builder">("list")
   const [workflows, setWorkflows] = useState<WorkflowData[]>([])
@@ -87,7 +87,7 @@ function WorkflowComponent() {
       <Sidebar
         photoLink={user?.photoLink}
         role={user?.role}
-        isAgentMode={false}
+        isAgentMode={agentWhiteList}
       />
       
       <div className="flex flex-col flex-1 h-full md:ml-[60px]">

@@ -122,6 +122,7 @@ import {
   GetChatTraceApi,
   StopStreamingApi,
   GenerateFollowUpQuestionsApi,
+  GetAvailableModelsApi,
 } from "@/api/chat/chat"
 import {
   CreateSharedChatApi,
@@ -781,6 +782,7 @@ export const AppRoutes = app
     zValidator("json", followUpQuestionsSchema),
     GenerateFollowUpQuestionsApi,
   )
+  .get("/chat/models", GetAvailableModelsApi)
   // Shared chat routes
   .post(
     "/chat/share/create",
