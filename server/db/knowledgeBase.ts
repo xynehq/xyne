@@ -612,6 +612,17 @@ export const getAllCollectionAndFolderItems = async (
           ),
         )
       if (folder) queue.push({ itemId: folder.id })
+    } else if (input.startsWith("clf-")) {
+      const fileid = await trx
+        .select({ id: collectionItems.id })
+        .from(collectionItems)
+        .where(
+          and(
+            eq(collectionItems.vespaDocId, input),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
+      if (fileid.length) result.push(fileid[0].id)
     } else {
       // Assume it's a DB item id (UUID)
       queue.push({ itemId: input })
@@ -766,4 +777,66 @@ export const generateFolderVespaDocId = (): string => {
 // Generate Vespa document ID for collections
 export const generateCollectionVespaDocId = (): string => {
   return `cl-${createId()}`
+}
+
+export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
+  let collectionName: string
+  let directoryPath: string
+  let currItem: string
+
+  // Remove leading slash if present
+  const cleanPath = path.startsWith("/") ? path.substring(1) : path
+  const segments = cleanPath.split("/")
+
+  if (segments.length === 0) {
+    throw new Error("Invalid path")
+  }
+
+  if (segments.length === 1) {
+    // Only collection name
+    collectionName = segments[0]
+    directoryPath = "/"
+    currItem = ""
+  } else if (segments.length === 2) {
+    // Collection and item (no intermediate directories)
+    collectionName = segments[0]
+    directoryPath = "/"
+    currItem = segments[1]
+  } else {
+    // Collection, directories, and item
+    collectionName = segments[0]
+    // Everything between collection and last segment becomes the directory path
+    const middleSegments = segments.slice(1, -1)
+    directoryPath = "/" + middleSegments.join("/") + "/"
+    currItem = segments[segments.length - 1]
+  }
+
+  // First, get the collection by name to get its ID
+  const [collection] = await trx
+    .select({ id: collections.id })
+    .from(collections)
+    .where(
+      and(eq(collections.name, collectionName), isNull(collections.deletedAt)),
+    )
+
+  if (!collection) {
+    return null // Collection not found
+  }
+
+  const whereConditions = [
+    eq(collectionItems.collectionId, collection.id),
+    eq(collectionItems.path, directoryPath),
+    isNull(collectionItems.deletedAt),
+  ]
+
+  if (currItem !== "") {
+    whereConditions.push(eq(collectionItems.name, currItem))
+  }
+
+  let result = await trx
+    .select({ docId: collectionItems.vespaDocId })
+    .from(collectionItems)
+    .where(and(...whereConditions))
+
+  return result.length > 0 ? result[0].docId : null
 }

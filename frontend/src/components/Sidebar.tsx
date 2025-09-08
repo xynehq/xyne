@@ -12,6 +12,7 @@ import {
   Key,
   BarChart3,
   BookOpen,
+  Workflow,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -169,6 +170,26 @@ export const Sidebar = ({
               <Tip side="right" info="History" />
             </Tooltip>
           </div>
+
+           <Link
+            to="/workflow"
+            className={cn(
+              "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+              location.pathname.includes("/workflow") &&
+                "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Workflow
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Workflow Builder" />
+            </Tooltip>
+          </Link>
 
           {/* TODO: Add appropriate Link destination and Tooltip info for the Bot icon */}
           {isAgentMode && (

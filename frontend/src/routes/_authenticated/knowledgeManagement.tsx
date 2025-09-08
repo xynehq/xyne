@@ -255,6 +255,8 @@ function RouteComponent() {
     savedState.uploadingCollectionName,
   )
 
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
+
   // Save upload state to localStorage whenever it changes
   useEffect(() => {
     saveUploadState({
@@ -500,6 +502,7 @@ function RouteComponent() {
     setTargetFolder(null)
     setCollectionName("")
     setSelectedFiles([])
+    setOpenDropdown(null)
   }
 
   const handleUpload = async () => {
@@ -1191,7 +1194,10 @@ function RouteComponent() {
                             !isUploading && handleOpenAddFilesModal(collection)
                           }}
                         />
-                        <DropdownMenu>
+                        <DropdownMenu
+                          open={openDropdown === collection.id}
+                          onOpenChange={(open) => setOpenDropdown(open ? collection.id : null)}
+                        >
                           <DropdownMenuTrigger asChild>
                             <MoreHorizontal
                               size={16}
@@ -1213,8 +1219,10 @@ function RouteComponent() {
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
-                                !isUploading &&
+                                if (!isUploading) {
                                   setDeletingCollection(collection)
+                                  setOpenDropdown(null)
+                                }
                               }}
                               disabled={isUploading}
                             >
