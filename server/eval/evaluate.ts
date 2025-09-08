@@ -95,6 +95,3 @@ try {
 } catch (error) {
   console.error("Found Error : ", error)
 }
-
-
-// Adding test comment
