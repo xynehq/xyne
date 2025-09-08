@@ -93,6 +93,7 @@ import {
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,
+  DeleteDocument,
 } from "@/search/vespa"
 import {
   Apps,
@@ -119,6 +120,7 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   KnowledgeBaseEntity,
+  KbItemsSchema,
 } from "@/search/types"
 import { APIError } from "openai"
 import { SearchVespaThreads } from "@/search/vespa"
@@ -763,11 +765,7 @@ export const ChatDeleteApi = async (c: Context) => {
                 if (isImageAttachment) {
                   imageAttachmentFileIds.push(attachment.fileId)
                 } else {
-                  // TODO: Handle non-image attachments in future implementation
                   nonImageAttachmentFileIds.push(attachment.fileId)
-                  loggerWithChild({ email: email }).info(
-                    `Non-image attachment ${attachment.fileId} (${attachment.fileType}) found - TODO: implement deletion logic for non-image attachments`,
-                  )
                 }
               }
             }
@@ -819,20 +817,33 @@ export const ChatDeleteApi = async (c: Context) => {
         }
       }
 
-      // TODO: Implement deletion logic for non-image attachments
+      // Delete non-image attachments from Vespa kb_items schema
       if (nonImageAttachmentFileIds.length > 0) {
         loggerWithChild({ email: email }).info(
-          `Found ${nonImageAttachmentFileIds.length} non-image attachments that need deletion logic implementation`,
+          `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa kb_items schema for chat ${chatId}`,
         )
-        // TODO: Add specific deletion logic for different types of non-image attachments
-        // This could include:
-        // - PDFs: Delete from document storage directories
-        // - Documents (DOCX, DOC): Delete from document storage directories
-        // - Spreadsheets (XLSX, XLS): Delete from document storage directories
-        // - Presentations (PPTX, PPT): Delete from document storage directories
-        // - Text files: Delete from text storage directories
-        // - Other file types: Implement based on file type and storage location
-        // For now, we just log that we found them but don't delete them to avoid data loss
+
+        for (const fileId of nonImageAttachmentFileIds) {
+          try {
+            // Delete from Vespa kb_items schema using the proper Vespa function
+            await DeleteDocument(fileId, KbItemsSchema)
+            loggerWithChild({ email: email }).info(
+              `Successfully deleted non-image attachment ${fileId} from Vespa kb_items schema`,
+            )
+          } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            if (errorMessage.includes("404 Not Found")) {
+              loggerWithChild({ email: email }).warn(
+                `Non-image attachment ${fileId} not found in Vespa kb_items schema (may have been already deleted)`,
+              )
+            } else {
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to delete non-image attachment ${fileId} from Vespa kb_items schema: ${errorMessage}`,
+              )
+            }
+          }
+        }
       }
 
       // Delete shared chats associated with this chat
