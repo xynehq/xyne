@@ -32,4 +32,5 @@ jobs:
 
       - name: Run semantic-release
         working-directory: ./server
-        run: bunx release --no-ci
+        run: bunx semantic-release --no-ci
+
