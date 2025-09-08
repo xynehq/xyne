@@ -792,6 +792,7 @@ export const useChatStream = (
       isAgenticMode: boolean = false,
       attachmentFileIds?: string[],
       selectedModelConfig?: string | null,
+      selectedSources: string[] = [],
     ) => {
       if (!messageId) return
 
@@ -898,6 +899,10 @@ export const useChatStream = (
           "attachmentFileIds",
           attachmentFileIds.join(","),
         )
+      }
+      // Add selectedSources parameter if provided
+      if (selectedSources && selectedSources.length > 0) {
+        url.searchParams.append("selectedSources", JSON.stringify(selectedSources))
       }
 
       let eventSource: EventSource

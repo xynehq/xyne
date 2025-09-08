@@ -4140,7 +4140,7 @@ export const MessageApi = async (c: Context) => {
       }
     }
 
-    let isMsgWithContext = isMessageWithContext(message)
+    const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
@@ -4151,7 +4151,6 @@ export const MessageApi = async (c: Context) => {
     if(extractedInfo?.fileIds.length > 0) {
       fileIds = fileIds.concat(extractedInfo?.fileIds)
     }
-    isMsgWithContext = isMsgWithContext || (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0)
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = fileIds.concat(nonImageAttachmentFileIds)
     }
@@ -4364,7 +4363,7 @@ export const MessageApi = async (c: Context) => {
             })
           }
           if (
-            ((isMsgWithContext || isMsgWithSources) && fileIds && fileIds?.length > 0) ||
+            (fileIds && fileIds?.length > 0) ||
             (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
           ) {
             let answer = ""
@@ -5127,6 +5126,7 @@ export const MessageApi = async (c: Context) => {
                     undefined,
                     undefined,
                     agentPromptValue,
+                    undefined,
                     actualModelId || config.defaultBestModel,
                   )
                 } else {
@@ -5735,6 +5735,10 @@ export const MessageRetryApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
 
+    // Extract sources from search parameters
+    const sources = c.req.query("selectedSources")
+    const isMsgWithSources = !!sources
+
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
     const prevUserMessage = isUserMessage
@@ -5830,6 +5834,7 @@ export const MessageRetryApi = async (c: Context) => {
               threadIds,
               ImageAttachmentFileIds,
               undefined,
+              isMsgWithSources,
               modelId,
             )
             stream.writeSSE({

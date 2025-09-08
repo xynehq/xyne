@@ -3718,7 +3718,7 @@ export const AgentMessageApi = async (c: Context) => {
     if (path) {
       ids = await getRecordBypath(path, db)
     }
-    let isMsgWithContext = isMessageWithContext(message)
+    const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
       isMsgWithContext || (path && ids)
       ? await extractFileIdsFromMessage(message, email, ids)
@@ -3726,7 +3726,6 @@ export const AgentMessageApi = async (c: Context) => {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
         }
-    isMsgWithContext = isMsgWithContext || (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0)
     let fileIds = extractedInfo?.fileIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
@@ -3921,7 +3920,7 @@ export const AgentMessageApi = async (c: Context) => {
             }
 
             if (
-              (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+              (fileIds && fileIds?.length > 0) ||
               (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
             ) {
               Logger.info(
@@ -4924,7 +4923,7 @@ export const AgentMessageApi = async (c: Context) => {
 
         // Path A: user provided explicit context (fileIds / attachments)
         if (
-          (isMsgWithContext && fileIds && fileIds.length > 0) ||
+          (fileIds && fileIds.length > 0) ||
           (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
         ) {
           const ragSpan = streamSpan.startSpan("rag_processing")

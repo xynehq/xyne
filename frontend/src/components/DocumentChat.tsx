@@ -28,7 +28,7 @@ import React, {
   import { AttachmentGallery } from "@/components/AttachmentGallery"
   import { renderToStaticMarkup } from "react-dom/server"
   import { Pill } from "@/components/Pill"
-  import { Reference } from "@/types"
+  import { Reference, ToolsListItem } from "@/types"
   import {
     textToImageCitationIndex,
     ImageCitationComponent,
@@ -689,6 +689,9 @@ import React, {
       messageToSend: string,
       metadata?: AttachmentMetadata[],
       selectedSources: string[] = [],
+      agentIdFromChatBox?: string | null,
+      toolsList?: ToolsListItem[] | null,
+      selectedModel?: string,
     ) => {
       if (!messageToSend || isStreaming || retryIsStreaming) return
   
@@ -725,6 +728,7 @@ import React, {
           null,
           [],
           metadata,
+          selectedModel,
         )
       } catch (error) {
         // If there's an error, clear the optimistically added message from cache
@@ -756,10 +760,15 @@ import React, {
       }
     }
 
-    const handleRetry = async (messageId: string) => {
+    const handleRetry = async (messageId: string, selectedSources: string[] = [],) => {
       if (!messageId || isStreaming) return
       setRetryIsStreaming(true)
-      await retryMessage(messageId, false)
+      // Automatically add the document ID to selected sources
+      const sourcesWithDocument = [...selectedSources]
+      if (!sourcesWithDocument.includes(documentId)) {
+        sourcesWithDocument.push(documentId)
+      }
+      await retryMessage(messageId, false, undefined, undefined, sourcesWithDocument)
     }
   
     // Handle feedback
@@ -878,7 +887,7 @@ import React, {
                   onFeedback={handleFeedback}
                   attachments={message.attachments || []}
                   citations={message.sources || []}
-                  citationMap={undefined}
+                  citationMap={message.citationMap || {}}
                   onCitationClick={handleCitationClick}
                   disableRetry={disableRetry}
                 />
@@ -925,6 +934,7 @@ import React, {
             isAgenticMode={false}
             user={user}
             hideButtons={true}
+            chatId={chatId}
           />
         </div>
       </div>

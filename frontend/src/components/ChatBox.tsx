@@ -3549,7 +3549,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             )}
 
             {/* Model Selection Dropdown */}
-            {showAdvancedOptions && (
+            {(showAdvancedOptions || hideButtons) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button 
