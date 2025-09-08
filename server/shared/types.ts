@@ -109,6 +109,58 @@ export enum OpenAIError {
   InvalidAPIKey = "invalid_api_key",
 }
 
+// File type categories enum for better type safety and consistency
+export enum FileType {
+  IMAGE = "Image",
+  DOCUMENT = "Document", 
+  SPREADSHEET = "Spreadsheet",
+  PRESENTATION = "Presentation",
+  PDF = "PDF",
+  TEXT = "Text",
+  FILE = "File" // Default fallback
+}
+
+// MIME type mappings for better organization
+export const MIME_TYPE_MAPPINGS = {
+  [FileType.IMAGE]: [
+    "image/jpeg",
+    "image/jpg", 
+    "image/png",
+    "image/gif",
+    "image/webp"
+  ],
+  [FileType.DOCUMENT]: [
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ],
+  [FileType.SPREADSHEET]: [
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv"
+  ],
+  [FileType.PRESENTATION]: [
+    "application/vnd.ms-powerpoint", 
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ],
+  [FileType.PDF]: [
+    "application/pdf"
+  ],
+  [FileType.TEXT]: [
+    "text/plain",
+    "text/markdown"
+  ]
+} as const;
+
+// File extension mappings for fallback detection
+export const EXTENSION_MAPPINGS = {
+  [FileType.IMAGE]: [".jpg", ".jpeg", ".png", ".gif", ".webp"],
+  [FileType.DOCUMENT]: [".doc", ".docx"],
+  [FileType.SPREADSHEET]: [".xls", ".xlsx", ".csv"],
+  [FileType.PRESENTATION]: [".ppt", ".pptx"],
+  [FileType.PDF]: [".pdf"],
+  [FileType.TEXT]: [".txt", ".md"]
+} as const;
+
 export const AutocompleteFileSchema = z
   .object({
     type: z.literal(fileSchema),

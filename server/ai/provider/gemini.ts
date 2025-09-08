@@ -4,7 +4,7 @@ import {
   type GenerateContentConfig,
   type ThinkingConfig,
 } from "@google/genai"
-import BaseProvider from "@/ai/provider/base"
+import BaseProvider, { regex } from "@/ai/provider/base"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import {
   type ModelParams,
@@ -31,7 +31,7 @@ async function buildGeminiImageParts(
 
   const imagePromises = imagePaths.map(async (imgPath) => {
     // Check if the file already has an extension, if not add .png
-    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
+    const match = imgPath.match(regex)
     if (!match) {
       Logger.error(`Invalid image path: ${imgPath}`)
       throw new Error(`Invalid image path: ${imgPath}`)

@@ -28,6 +28,10 @@ import {
   X,
   File,
   Loader2,
+  FileText,
+  FileSpreadsheet,
+  Presentation,
+  FileImage,
   Globe,
 } from "lucide-react"
 import { siOpenai, siClaude, siGooglegemini } from "simple-icons"
@@ -43,6 +47,7 @@ import {
   UserRole,
   DataSourceEntity,
   AttachmentMetadata,
+  FileType,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -74,6 +79,7 @@ import {
   createToastNotifier,
   createImagePreview,
   cleanupPreviewUrls,
+  getFileType,
 } from "@/utils/fileUtils"
 import { authFetch } from "@/utils/authFetch"
 
@@ -84,6 +90,26 @@ interface SelectedFile {
   uploading?: boolean
   uploadError?: string
   preview?: string // URL for image preview
+  fileType?: FileType
+}
+
+export const getFileIcon = (fileType: FileType | string | undefined) => {
+  switch (fileType) {
+    case FileType.IMAGE:
+      return <FileImage size={24} className="text-blue-500 dark:text-blue-400 flex-shrink-0" />
+    case FileType.DOCUMENT:
+      return <FileText size={24} className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
+    case FileType.SPREADSHEET:
+      return <FileSpreadsheet size={24} className="text-green-600 dark:text-green-400 flex-shrink-0" />
+    case FileType.PRESENTATION:
+      return <Presentation size={24} className="text-orange-600 dark:text-orange-400 flex-shrink-0" />
+    case FileType.PDF:
+      return <FileText size={24} className="text-red-600 dark:text-red-400 flex-shrink-0" />
+    case FileType.TEXT:
+      return <FileText size={24} className="text-gray-600 dark:text-gray-400 flex-shrink-0" />
+    default:
+      return <File size={24} className="text-gray-500 dark:text-gray-400 flex-shrink-0" />
+  }
 }
 
 // Add attachment limit constant
@@ -708,6 +734,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           id: generateFileId(),
           uploading: false,
           preview: createImagePreview(file),
+          fileType: getFileType({ type: file.type, name: file.name }),
         }))
 
         setSelectedFiles((prev) => {
@@ -2325,10 +2352,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                 const items = e.clipboardData?.items
                 if (items) {
-                  // Handle image paste
+                  // Handle file paste (all supported file types)
                   for (let i = 0; i < items.length; i++) {
                     const item = items[i]
-                    if (item.type.indexOf("image") !== -1) {
+                    if (item.kind === "file") {
                       // Check attachment limit before processing
                       if (selectedFiles.length >= MAX_ATTACHMENTS) {
                         showToast(
@@ -2341,15 +2368,27 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                       const file = item.getAsFile()
                       if (file) {
-                        // Process the pasted image file directly
-                        // The file will be processed with a default name by the processFiles function
-                        processFiles([file])
-                        showToast(
-                          "Image pasted",
-                          "Image has been added to your message.",
-                          false,
-                        )
-                        return // Exit early since we handled the image
+                        // Check if the file type is supported
+                        const isValid = validateAndDeduplicateFiles([file], showToast)
+                        if (isValid.length > 0) {
+                          // Process the pasted file
+                          processFiles([file])
+                          const fileType = getFileType({ type: file.type, name: file.name })
+
+                          showToast(
+                            "File pasted",
+                            `${fileType} has been added to your message.`,
+                            false,
+                          )
+                          return // Exit early since we handled the file
+                        } else {
+                          showToast(
+                            "Unsupported file type",
+                            "This file type is not supported for attachments.",
+                            true,
+                          )
+                          return
+                        }
                       }
                     }
                   }
@@ -2678,14 +2717,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                               ? `${selectedFile.file.name.substring(0, 9)}...`
                               : selectedFile.file.name}
                           </span>
+                          <span className="text-white text-xs opacity-80 block">
+                            {selectedFile.fileType}
+                          </span>
                         </div>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-colors min-w-0">
-                        <File
-                          size={24}
-                          className="text-gray-500 dark:text-gray-400 flex-shrink-0"
-                        />
+                        {getFileIcon(selectedFile.fileType)}
                         <div className="flex-1 min-w-0">
                           <span
                             className="text-sm text-gray-700 dark:text-gray-300 truncate block max-w-[120px]"
@@ -2697,7 +2736,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                             className="text-xs text-gray-500 dark:text-gray-400 truncate block max-w-[120px]"
                             title={getExtension(selectedFile.file)}
                           >
-                            {getExtension(selectedFile.file)}
+                            {selectedFile.fileType}
                           </span>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
@@ -2761,7 +2800,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               title={
                 selectedFiles.length >= MAX_ATTACHMENTS
                   ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
-                  : "Attach files"
+                  : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
               }
             />
             
@@ -3746,7 +3785,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           multiple
           className="hidden"
           onChange={handleFileChange}
-          accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+          accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,text/plain,text/csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/markdown,.txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md"
+          title="Supported file types: Images (JPEG, PNG, GIF, WebP), Documents (DOC, DOCX), Spreadsheets (XLS, XLSX, CSV), Presentations (PPT, PPTX), PDFs, and Text files (TXT, MD)"
         />
       </div>
     )

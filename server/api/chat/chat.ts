@@ -93,6 +93,7 @@ import {
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,
+  DeleteDocument,
 } from "@/search/vespa"
 import {
   Apps,
@@ -118,6 +119,8 @@ import {
   type VespaSearchResult,
   type VespaSearchResults,
   type VespaSearchResultsSchema,
+  KnowledgeBaseEntity,
+  KbItemsSchema,
 } from "@/search/types"
 import { APIError } from "openai"
 import { SearchVespaThreads } from "@/search/vespa"
@@ -177,7 +180,7 @@ import {
 } from "@/db/attachment"
 import type { AttachmentMetadata } from "@/shared/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
-import { isImageFile } from "@/utils/image"
+import { isImageFile } from "shared/fileUtils"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import {
@@ -461,8 +464,9 @@ const checkAndYieldCitations = async function* (
         const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
-          if (item.fields.sddocname === dataSourceFileSchema) {
-            // Skip datasource and collection files from citations
+          const f = (item as any)?.fields
+          if (f?.sddocname === dataSourceFileSchema || f?.entity === KnowledgeBaseEntity.Attachment) {
+            // Skip datasource and attachment files from citations
             continue
           }
           yield {
@@ -761,11 +765,7 @@ export const ChatDeleteApi = async (c: Context) => {
                 if (isImageAttachment) {
                   imageAttachmentFileIds.push(attachment.fileId)
                 } else {
-                  // TODO: Handle non-image attachments in future implementation
                   nonImageAttachmentFileIds.push(attachment.fileId)
-                  loggerWithChild({ email: email }).info(
-                    `Non-image attachment ${attachment.fileId} (${attachment.fileType}) found - TODO: implement deletion logic for non-image attachments`,
-                  )
                 }
               }
             }
@@ -817,20 +817,33 @@ export const ChatDeleteApi = async (c: Context) => {
         }
       }
 
-      // TODO: Implement deletion logic for non-image attachments
+      // Delete non-image attachments from Vespa kb_items schema
       if (nonImageAttachmentFileIds.length > 0) {
         loggerWithChild({ email: email }).info(
-          `Found ${nonImageAttachmentFileIds.length} non-image attachments that need deletion logic implementation`,
+          `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa kb_items schema for chat ${chatId}`,
         )
-        // TODO: Add specific deletion logic for different types of non-image attachments
-        // This could include:
-        // - PDFs: Delete from document storage directories
-        // - Documents (DOCX, DOC): Delete from document storage directories
-        // - Spreadsheets (XLSX, XLS): Delete from document storage directories
-        // - Presentations (PPTX, PPT): Delete from document storage directories
-        // - Text files: Delete from text storage directories
-        // - Other file types: Implement based on file type and storage location
-        // For now, we just log that we found them but don't delete them to avoid data loss
+
+        for (const fileId of nonImageAttachmentFileIds) {
+          try {
+            // Delete from Vespa kb_items schema using the proper Vespa function
+            await DeleteDocument(fileId, KbItemsSchema)
+            loggerWithChild({ email: email }).info(
+              `Successfully deleted non-image attachment ${fileId} from Vespa kb_items schema`,
+            )
+          } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            if (errorMessage.includes("404 Not Found")) {
+              loggerWithChild({ email: email }).warn(
+                `Non-image attachment ${fileId} not found in Vespa kb_items schema (may have been already deleted)`,
+              )
+            } else {
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to delete non-image attachment ${fileId} from Vespa kb_items schema: ${errorMessage}`,
+              )
+            }
+          }
+        }
       }
 
       // Delete shared chats associated with this chat
@@ -2148,7 +2161,7 @@ async function* generateAnswerFromGivenContext(
       modelId: modelId ? (modelId as Models) : defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
-      imageFileNames,
+      imageFileNames: finalImageFileNames,
     },
     true,
   )
@@ -2165,6 +2178,14 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.end()
     return
   } else if (!answer) {
+    if(attachmentFileIds && attachmentFileIds.length > 0) {
+      yield {
+        text: "From the selected context, I could not find any information to answer it, please change your query",
+      }
+      generateAnswerSpan?.setAttribute("answer_found", false)
+      generateAnswerSpan?.end()
+      return
+    }
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
     loggerWithChild({ email: email }).info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
@@ -4059,9 +4080,8 @@ export const MessageApi = async (c: Context) => {
       return MessageWithToolsApi(c)
     }
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.fileId,
-    )
+    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -4095,7 +4115,7 @@ export const MessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
-    const isMsgWithContext = isMessageWithContext(message)
+    let isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
@@ -4103,7 +4123,11 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    const fileIds = extractedInfo?.fileIds
+    isMsgWithContext = isMsgWithContext || (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0)
+    let fileIds = extractedInfo?.fileIds
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = fileIds.concat(nonImageAttachmentFileIds)
+    }
     const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
@@ -4314,7 +4338,7 @@ export const MessageApi = async (c: Context) => {
           }
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
-            (attachmentFileIds && attachmentFileIds?.length > 0)
+            (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
           ) {
             let answer = ""
             let citations = []
@@ -4341,7 +4365,7 @@ export const MessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              attachmentFileIds,
+              imageAttachmentFileIds,
               agentPromptValue,
               actualModelId || config.defaultBestModel,
             )
@@ -5598,14 +5622,12 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If it's an assistant message, we need to get attachments from the previous user message
     let attachmentMetadata: AttachmentMetadata[] = []
-    let attachmentFileIds: string[] = []
+    let ImageAttachmentFileIds: string[] = []
 
     if (isUserMessage) {
       // If retrying a user message, get attachments from that message
       attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
-      attachmentFileIds = attachmentMetadata.map(
-        (m: AttachmentMetadata) => m.fileId,
-      )
+      ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
     }
 
     rootSpan.setAttribute("email", email)
@@ -5659,9 +5681,9 @@ export const MessageRetryApi = async (c: Context) => {
           prevUserMessage.externalId,
           email,
         )
-        attachmentFileIds = attachmentMetadata.map(
-          (m: AttachmentMetadata) => m.fileId,
-        )
+        ImageAttachmentFileIds = attachmentMetadata.map(
+          (m: AttachmentMetadata) => m.isImage ? m.fileId : null,
+        ).filter((m: string | null) => m !== null)
       }
     }
 
@@ -5747,7 +5769,7 @@ export const MessageRetryApi = async (c: Context) => {
           let message = prevUserMessage.message
           if (
             (fileIds && fileIds?.length > 0) ||
-            (attachmentFileIds && attachmentFileIds?.length > 0)
+            (ImageAttachmentFileIds && ImageAttachmentFileIds?.length > 0)
           ) {
             loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
@@ -5778,7 +5800,7 @@ export const MessageRetryApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              attachmentFileIds,
+              ImageAttachmentFileIds,
               undefined,
               modelId,
             )
