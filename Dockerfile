@@ -19,7 +19,6 @@ RUN bun install
 WORKDIR /usr/src/app
 COPY server/ /usr/src/app/server/
 COPY frontend/ /usr/src/app/frontend/
-COPY shared/ /usr/src/app/shared/
 
 # Copy other necessary files
 COPY biome.json /usr/src/app/
