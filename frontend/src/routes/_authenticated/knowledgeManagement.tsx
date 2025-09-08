@@ -327,6 +327,8 @@ function RouteComponent() {
   useEffect(() => {
     //"Zoom level changed, hide chat
   }, [isChatHidden])
+          
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
 
   // Save upload state to localStorage whenever it changes
   useEffect(() => {
@@ -564,6 +566,7 @@ function RouteComponent() {
     setTargetFolder(null)
     setCollectionName("")
     setSelectedFiles([])
+    setOpenDropdown(null)
   }
 
   const handleUpload = async () => {
@@ -1444,12 +1447,15 @@ function RouteComponent() {
                             onClick={(e) => {
                               e.stopPropagation()
                             !isUploading && handleOpenAddFilesModal(collection)
-                            }}
-                          />
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <MoreHorizontal
-                                size={16}
+                          }}
+                        />
+                        <DropdownMenu
+                          open={openDropdown === collection.id}
+                          onOpenChange={(open) => setOpenDropdown(open ? collection.id : null)}
+                        >
+                          <DropdownMenuTrigger asChild>
+                            <MoreHorizontal
+                              size={16}
                               className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
                                 onClick={(e) => e.stopPropagation()}
                               />
@@ -1459,25 +1465,27 @@ function RouteComponent() {
                                 onClick={(e) => {
                                   e.stopPropagation()
                                 !isUploading && handleEditCollection(collection)
-                                }}
-                                disabled={isUploading}
-                              >
-                                <Edit className="mr-2 h-4 w-4" />
-                                <span>Edit</span>
-                              </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                !isUploading &&
-                                      setDeletingCollection(collection)
-                                  }}
-                                  disabled={isUploading}
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  <span>Delete</span>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                              }}
+                              disabled={isUploading}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              <span>Edit</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (!isUploading) {
+                                  setDeletingCollection(collection)
+                                  setOpenDropdown(null)
+                                }
+                              }}
+                              disabled={isUploading}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Delete</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                     {collection.isOpen && (
