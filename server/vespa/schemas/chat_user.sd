@@ -152,25 +152,35 @@ schema chat_user {
             }
         }
 
+        function matchedFieldCount() {
+            expression {
+                matches(name) + matches(email) + matches(statusText) + matches(title)
+            }
+        }
+
         function combined_nativeRank(){
             expression {
-                nativeRank(name) + 
-                nativeRank(email) + 
-                nativeRank(statusText) + 
-                nativeRank(title)
+                (
+                  nativeRank(name) + 
+                  nativeRank(email) + 
+                  nativeRank(statusText) + 
+                  nativeRank(title)
+                ) / if(matchedFieldCount == 0, 1, matchedFieldCount)
             }
         }
     }
 
     # Ranking profiles
     rank-profile default_native inherits initial {
-        
+        constants {
+          PEOPLE_VECTOR_DECAY: 0.75
+        }
         first-phase {
-          expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+          expression: (query(alpha) * (PEOPLE_VECTOR_DECAY * vector_score)) + ((1 - query(alpha)) *  combined_nativeRank)
         }
 
         global-phase {
-          expression : (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+          expression : (query(alpha) * (PEOPLE_VECTOR_DECAY * vector_score)) + ((1 - query(alpha)) *  combined_nativeRank)
           rerank-count: 1000
         }
 
