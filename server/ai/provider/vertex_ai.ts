@@ -167,17 +167,33 @@ export class VertexAiProvider extends BaseProvider {
         temperature,
         system: systemPrompt,
         messages: transformedMessages,
+        tools: params.tools && params.tools.length
+          ? params.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters || { type: 'object', properties: {} },
+            }))
+          : undefined,
       })
-      Logger.info(`VertexAI Anthropic request completed successfully`)
 
       const text = response.content
         .filter((c: any) => c.type === "text")
         .map((c: any) => c.text)
         .join("")
+      const toolCalls = response.content
+        .filter((c: any) => c.type === 'tool_use')
+        .map((c: any) => ({
+          id: c.id || '',
+          type: 'function' as const,
+          function: {
+            name: c.name || '',
+            arguments: c.input ? JSON.stringify(c.input) : '{}',
+          },
+        }))
       const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
       const cost = 0
 
-      return { text, cost }
+      return { text, cost, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }
     } catch (error) {
       Logger.error(`VertexAI Anthropic request failed:`, error)
       if (error instanceof Error && error.message?.includes('timeout')) {
@@ -206,6 +222,13 @@ export class VertexAiProvider extends BaseProvider {
       system: systemPrompt,
       messages: transformedMessages,
       stream: true,
+      tools: params.tools && params.tools.length
+        ? params.tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            input_schema: t.parameters || { type: 'object', properties: {} },
+          }))
+        : undefined,
     })
 
     let totalInputTokens = 0
@@ -213,6 +236,8 @@ export class VertexAiProvider extends BaseProvider {
     let accumulatedText = ""
     let costYielded = false
 
+    // Track current tool_use block
+    let currentTool: { id: string; name: string; args: string } | null = null
     for await (const chunk of stream) {
       if (chunk?.type === "message_start") {
         const usage = chunk.message.usage
@@ -225,11 +250,43 @@ export class VertexAiProvider extends BaseProvider {
         yield { text: chunk.content_block.text }
         accumulatedText += chunk.content_block.text
       } else if (
+        chunk?.type === "content_block_start" &&
+        (chunk as any).content_block?.type === "tool_use"
+      ) {
+        const tb: any = (chunk as any).content_block
+        currentTool = { id: tb?.id || "", name: tb?.name || "", args: "" }
+      } else if (
         chunk?.type === "content_block_delta" &&
         chunk.delta?.type === "text_delta"
       ) {
         yield { text: chunk.delta.text }
         accumulatedText += chunk.delta.text
+      } else if (
+        chunk?.type === "content_block_delta" &&
+        (chunk as any).delta?.type === "input_json_delta" &&
+        currentTool
+      ) {
+        const d: any = (chunk as any).delta
+        if (typeof d.partial_json === "string") {
+          currentTool.args += d.partial_json
+        }
+      } else if (
+        chunk?.type === "content_block_stop" &&
+        currentTool
+      ) {
+        // Flush tool call
+        const toolCalls = [
+          {
+            id: currentTool.id,
+            type: "function" as const,
+            function: {
+              name: currentTool.name,
+              arguments: currentTool.args || "{}",
+            },
+          },
+        ]
+        yield { tool_calls: toolCalls }
+        currentTool = null
       } else if (chunk?.type === "message_stop" && !costYielded) {
         const usage = {
           inputTokens: totalInputTokens,
