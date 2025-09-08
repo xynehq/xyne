@@ -81,8 +81,6 @@ type CurrentResp = {
   thinking?: string
 }
 
-const REASONING_STATE_KEY = "isAgentReasoningGlobalState"
-
 export const Route = createFileRoute("/_authenticated/agent")({
   validateSearch: z.object({
     agentId: z.string().optional(),
@@ -405,15 +403,6 @@ function AgentComponent() {
   const [confirmAction, setConfirmAction] = useState<
     (() => Promise<void>) | null
   >(null)
-
-  const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
-    return storedValue ? JSON.parse(storedValue) : false
-  })
-
-  useEffect(() => {
-    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
-  }, [isReasoningActive])
 
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
@@ -1479,6 +1468,12 @@ function AgentComponent() {
     // Collect data source IDs
     const dataSourceIds: string[] = []
     let hasDataSourceSelections = false
+
+    // Check for Slack channels in selected entities
+    const slackChannels = selectedEntities.filter(
+      (entity) =>
+        entity.app === Apps.Slack && entity.entity === SlackEntity.Channel,
+    )
     // Process each selected integration
     for (const [integrationId, isSelected] of Object.entries(
       selectedIntegrations,
@@ -1531,6 +1526,14 @@ function AgentComponent() {
             selectedAll: true,
           }
         }
+      }
+    }
+
+    // Handle Slack channels from selected entities
+    if (slackChannels.length > 0) {
+      appIntegrationsObject["slack"] = {
+        itemIds: slackChannels.map((channel) => channel.docId),
+        selectedAll: false,
       }
     }
 
@@ -1951,9 +1954,6 @@ function AgentComponent() {
       finalModelForChat === "Auto" ? "gpt-4o-mini" : finalModelForChat,
     )
     url.searchParams.append("message", encodeURIComponent(messageToSend))
-    if (isReasoningActive) {
-      url.searchParams.append("isReasoningEnabled", "true")
-    }
     url.searchParams.append("agentPrompt", JSON.stringify(agentPromptPayload))
 
     if (metadata && metadata.length > 0) {
@@ -3944,7 +3944,7 @@ function AgentComponent() {
                 {isRagOn && (
                   <div>
                     <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
-                      Specific Entites
+                      Specific Entities
                     </Label>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
                       Search for and select specific entities for your agent to
@@ -3965,7 +3965,7 @@ function AgentComponent() {
                         ))
                       ) : (
                         <span className="text-sm text-gray-500 dark:text-gray-300">
-                          Selected entites will be shown here
+                          Selected entities will be shown here
                         </span>
                       )}
                     </div>
@@ -4255,8 +4255,6 @@ function AgentComponent() {
                 isAgenticMode={isAgenticMode}
                 isStreaming={isStreaming}
                 allCitations={allCitations}
-                isReasoningActive={isReasoningActive}
-                setIsReasoningActive={setIsReasoningActive}
                 overrideIsRagOn={testAgentIsRagOn}
               />
             </div>

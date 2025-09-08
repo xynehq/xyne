@@ -124,7 +124,8 @@ function processTextParagraphs(
 export async function extractTextAndImagesWithChunksFromPDF(
   data: Uint8Array,
   docid: string = crypto.randomUUID(),
-  extractImages: boolean = true,
+  extractImages: boolean = false,
+  describeImages: boolean = true,
 ): Promise<{
   text_chunks: string[]
   image_chunks: string[]
@@ -457,7 +458,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       `Reusing description for repeated image ${imageName} on page ${pageNum}`,
                     )
                   } else {
-                    description = await describeImageWithllm(buffer)
+                    if(describeImages) {
+                      description = await describeImageWithllm(buffer)
+                    } else {
+                      description = "This is an image."
+                    }
                     if (
                       description === "No description returned." ||
                       description === "Image is not worth describing."

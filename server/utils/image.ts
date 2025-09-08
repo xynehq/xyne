@@ -46,17 +46,6 @@ export const generateThumbnail = async (
   }
 }
 
-export const isImageFile = (mimeType: string): boolean => {
-  const imageTypes = [
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-  ]
-  return imageTypes.includes(mimeType)
-}
-
 export const getThumbnailPath = (baseDir: string, fileId: string): string => {
   return path.join(baseDir, `${fileId}_thumbnail.jpeg`)
 }
