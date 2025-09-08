@@ -170,15 +170,19 @@ setup_environment() {
 setup_permissions() {
     echo -e "${YELLOW}📋 Setting directory permissions using Docker containers...${NC}"
     
+    # Set UID and GID to 1000 to avoid permission issues
+    USER_UID="1000"
+    USER_GID="1000"
+    
     # Use busybox containers to set permissions without requiring sudo
-    docker run --rm -v "$(pwd)/data/postgres-data:/data" busybox chown -R 1000:1000 /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/vespa-data:/data" busybox chown -R 1000:1000 /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-uploads:/data" busybox chown -R 1000:1000 /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-logs:/data" busybox chown -R 1000:1000 /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-assets:/data" busybox chown -R 1000:1000 /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-migrations:/data" busybox chown -R 1000:1000 /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/grafana-storage:/data" busybox chown -R 1000:1000 /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/ollama-data:/data" busybox chown -R 1000:1000 /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/data/postgres-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/data/vespa-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/data/app-uploads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/data/app-logs:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/data/app-assets:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/data/app-migrations:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/data/grafana-storage:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/data/ollama-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     
     # Initialize prometheus and loki directories with correct permissions
     docker run --rm -v "$(pwd)/data/prometheus-data:/data" busybox sh -c 'mkdir -p /data && chown -R 65534:65534 /data' 2>/dev/null || true
@@ -370,7 +374,7 @@ case $COMMAND in
         show_status
         ;;
     logs)
-        show_logs $2
+        show_logs $1
         ;;
     status)
         show_status

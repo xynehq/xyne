@@ -85,7 +85,7 @@ export class VertexAiProvider extends BaseProvider {
       client = new AnthropicVertex({ 
         projectId, 
         region,
-        timeout: 4 * 60 * 1000, // 4 minutes timeout
+        timeout: parseInt(process.env.VERTEX_AI_TIMEOUT || '240000'), // Default 4 minutes timeout
         maxRetries: 3
       })
     }

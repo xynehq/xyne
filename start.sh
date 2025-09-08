@@ -18,7 +18,8 @@ fi
 
 # Wait for PostgreSQL to be ready
 echo "Waiting for PostgreSQL..."
-until bun run -e "import postgres from 'postgres'; const sql = postgres({host: process.env.DATABASE_HOST || 'xyne-db', port: 5432, database: 'xyne', username: 'xyne', password: 'xyne'}); await sql\`SELECT 1\`; await sql.end();" 2>/dev/null; do
+cd /usr/src/app/server
+until bun -e "import postgres from 'postgres'; const sql = postgres(process.env.DATABASE_URL); await sql\`SELECT 1\`; await sql.end();" 2>/dev/null; do
   echo "PostgreSQL is unavailable - sleeping"
   sleep 2
 done
@@ -26,7 +27,7 @@ echo "PostgreSQL is ready!"
 
 # Wait for Vespa to be ready
 echo "Waiting for Vespa config server..."
-until curl -f http://vespa:19071/state/v1/health 2>/dev/null; do
+until curl -f http://${VESPA_HOST:-vespa}:19071/state/v1/health 2>/dev/null; do
   echo "Vespa config server is unavailable - sleeping"
   sleep 2
 done
@@ -39,6 +40,7 @@ if [ ! -f "$INIT_MARKER_FILE" ]; then
   
   # Run database migrations
   echo "Running database setup..."
+  cd /usr/src/app/server
   # Try to generate migrations, but don't fail if none exist
   bun run generate || true
   # Try to run migrations, but don't fail if none exist
