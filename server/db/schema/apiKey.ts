@@ -1,5 +1,11 @@
-import { pgTable, serial, integer, timestamp, text } from "drizzle-orm/pg-core"
-import { agents } from "./agents" // your existing agents table
+import {
+  pgTable,
+  serial,
+  timestamp,
+  text,
+  json,
+  jsonb,
+} from "drizzle-orm/pg-core"
 import { oneWayEncryption } from "../customType"
 import { Encryption } from "@/utils/encryption"
 import { users } from "./users"
@@ -18,4 +24,5 @@ export const apiKeys = pgTable("api_keys", {
   key: oneWayEncryption(apiKeyEncryption)("key").notNull(), // encrypted key
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  config: jsonb("config").notNull(),
 })
