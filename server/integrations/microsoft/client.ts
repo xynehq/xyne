@@ -28,7 +28,11 @@ export interface MicrosoftGraphClient {
   betaClient: Client
   authProvider: CustomAuthProvider
   // Helper methods to get updated tokens after refresh
-  getCurrentTokens(): { accessToken: string; refreshToken: string; expiresAt?: Date }
+  getCurrentTokens(): {
+    accessToken: string
+    refreshToken: string
+    expiresAt?: Date
+  }
 }
 
 // Create Microsoft Graph client similar to Google's pattern

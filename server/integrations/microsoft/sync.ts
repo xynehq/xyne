@@ -54,7 +54,11 @@ import {
   loggerWithChild,
 } from "./index"
 import { MAX_ONEDRIVE_FILE_SIZE, skipMailExistCheck } from "./config"
-import { microsoftMimeTypeMap, type OneDriveFile } from "./utils"
+import {
+  MicrosoftMimeType,
+  microsoftMimeTypeMap,
+  type OneDriveFile,
+} from "./utils"
 import { chunkDocument } from "@/chunks"
 import fs from "node:fs/promises"
 import path from "path"
@@ -250,15 +254,12 @@ const extractOneDriveFileContent = async (
     if (!mimeType) return []
 
     // For PDF files, download and extract text
-    if (mimeType === "application/pdf") {
+    if (mimeType === MicrosoftMimeType.PDF) {
       return await extractPDFContent(graphClient, file)
     }
 
     // For DOCX files, download and extract using docxChunks helper
-    if (
-      mimeType ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ) {
+    if (mimeType === MicrosoftMimeType.WordDocumentModern) {
       try {
         Logger.info(`Processing DOCX file: ${file.name}`)
         const fileBuffer = await downloadFileFromGraph(
@@ -278,10 +279,7 @@ const extractOneDriveFileContent = async (
     }
 
     // For XLSX files, download and extract using spreadsheet helper
-    if (
-      mimeType ===
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    ) {
+    if (mimeType === MicrosoftMimeType.ExcelSpreadsheetModern) {
       try {
         Logger.info(`Processing XLSX file: ${file.name}`)
         const fileBuffer = await downloadFileFromGraph(
@@ -313,8 +311,8 @@ const extractOneDriveFileContent = async (
     // For Office documents, try to get content via Graph API
     if (
       mimeType.includes("officedocument") ||
-      mimeType === "text/plain" ||
-      mimeType === "text/csv"
+      mimeType === MicrosoftMimeType.PlainText ||
+      mimeType === MicrosoftMimeType.CSV
     ) {
       try {
         // Try to get the content as text
@@ -395,7 +393,10 @@ export const handleOneDriveChange = async (
       const doc = await getDocumentOrSpreadsheet(docId)
       if (doc) {
         // Check if its spreadsheet
-        if ((doc?.fields as VespaFile).mimeType === DriveMime.Sheets) {
+        if (
+          (doc?.fields as VespaFile).mimeType ===
+          MicrosoftMimeType.ExcelSpreadsheetModern
+        ) {
           await deleteWholeSpreadsheet(
             doc?.fields as VespaFile,
             docId,

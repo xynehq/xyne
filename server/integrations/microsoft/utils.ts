@@ -9,17 +9,32 @@ import { MAX_ONEDRIVE_FILE_SIZE } from "./config"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 
+export enum MicrosoftMimeType {
+  WordDocumentModern = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ExcelSpreadsheetModern = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  PowerPointPresentationModern = "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  PDF = "application/pdf",
+  PlainText = "text/plain",
+  JPEG = "image/jpeg",
+  PNG = "image/png",
+  Zip = "application/zip",
+  WordDocumentLegacy = "application/msword",
+  ExcelSpreadsheetLegacy = "application/vnd.ms-excel",
+  PowerPointPresentationLegacy = "application/vnd.ms-powerpoint",
+  CSV = "text/csv",
+}
+
 // Microsoft OneDrive MIME types that support content extraction
 export const MimeMapForContent: Record<string, boolean> = {
-  "application/pdf": true,
-  "text/plain": true,
-  "text/csv": true,
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": true,
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation": true,
-  "application/msword": true,
-  "application/vnd.ms-excel": true,
-  "application/vnd.ms-powerpoint": true,
+  [MicrosoftMimeType.PDF]: true,
+  [MicrosoftMimeType.PlainText]: true,
+  [MicrosoftMimeType.CSV]: true,
+  [MicrosoftMimeType.WordDocumentModern]: true,
+  [MicrosoftMimeType.ExcelSpreadsheetModern]: true,
+  [MicrosoftMimeType.PowerPointPresentationModern]: true,
+  [MicrosoftMimeType.WordDocumentLegacy]: true,
+  [MicrosoftMimeType.ExcelSpreadsheetLegacy]: true,
+  [MicrosoftMimeType.PowerPointPresentationLegacy]: true,
 }
 
 // Get OneDrive file metadata
@@ -110,25 +125,7 @@ export const getEntityFromMimeType = (
 ): DriveEntity => {
   if (!mimeType) return DriveEntity.Misc
 
-  const mimeTypeMap: Record<string, DriveEntity> = {
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-      DriveEntity.WordDocument,
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-      DriveEntity.ExcelSpreadsheet,
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-      DriveEntity.PowerPointPresentation,
-    "application/pdf": DriveEntity.PDF,
-    "text/plain": DriveEntity.Text,
-    "image/jpeg": DriveEntity.Image,
-    "image/png": DriveEntity.Image,
-    "application/zip": DriveEntity.Zip,
-    "application/msword": DriveEntity.WordDocument,
-    "application/vnd.ms-excel": DriveEntity.ExcelSpreadsheet,
-    "application/vnd.ms-powerpoint": DriveEntity.PowerPointPresentation,
-    "text/csv": DriveEntity.CSV,
-  }
-
-  return mimeTypeMap[mimeType] ?? DriveEntity.Misc
+  return microsoftMimeTypeMap[mimeType] ?? DriveEntity.Misc
 }
 
 // Format OneDrive file metadata for Vespa
@@ -246,19 +243,18 @@ export interface OneDriveFile {
 
 // Microsoft OneDrive MIME types mapping
 export const microsoftMimeTypeMap: Record<string, DriveEntity> = {
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    DriveEntity.WordDocument,
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-    DriveEntity.ExcelSpreadsheet,
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+  [MicrosoftMimeType.WordDocumentModern]: DriveEntity.WordDocument,
+  [MicrosoftMimeType.ExcelSpreadsheetModern]: DriveEntity.ExcelSpreadsheet,
+  [MicrosoftMimeType.PowerPointPresentationModern]:
     DriveEntity.PowerPointPresentation,
-  "application/pdf": DriveEntity.PDF,
-  "text/plain": DriveEntity.Text,
-  "image/jpeg": DriveEntity.Image,
-  "image/png": DriveEntity.Image,
-  "application/zip": DriveEntity.Zip,
-  "application/msword": DriveEntity.WordDocument,
-  "application/vnd.ms-excel": DriveEntity.ExcelSpreadsheet,
-  "application/vnd.ms-powerpoint": DriveEntity.PowerPointPresentation,
-  "text/csv": DriveEntity.CSV,
+  [MicrosoftMimeType.PDF]: DriveEntity.PDF,
+  [MicrosoftMimeType.PlainText]: DriveEntity.Text,
+  [MicrosoftMimeType.JPEG]: DriveEntity.Image,
+  [MicrosoftMimeType.PNG]: DriveEntity.Image,
+  [MicrosoftMimeType.Zip]: DriveEntity.Zip,
+  [MicrosoftMimeType.WordDocumentLegacy]: DriveEntity.WordDocument,
+  [MicrosoftMimeType.ExcelSpreadsheetLegacy]: DriveEntity.ExcelSpreadsheet,
+  [MicrosoftMimeType.PowerPointPresentationLegacy]:
+    DriveEntity.PowerPointPresentation,
+  [MicrosoftMimeType.CSV]: DriveEntity.CSV,
 }

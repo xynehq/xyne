@@ -680,7 +680,7 @@ const insertFilesForUser = async (
             size: file.size,
             downloadUrl: file["@microsoft.graph.downloadUrl"],
             parentFolderType: file.parentReference?.driveType ?? "personal",
-            parentId: file.parentReference?.driveId ?? "",
+            parentId: file.parentReference?.id ?? "",
             parentPath: file.parentReference?.path ?? "/",
             siteId: file.parentReference?.siteId ?? "",
             eTag: file.eTag ?? "",
@@ -823,7 +823,6 @@ async function getAllOneDriveFiles(
     // Select only the fields we need for Vespa insertion based on the actual API response structure
     const deltaParams = new URLSearchParams({
       $select:
-        queryParams.$select ||
         "id,name,size,createdDateTime,lastModifiedDateTime,webUrl,file,folder,parentReference,createdBy,lastModifiedBy,@microsoft.graph.downloadUrl",
       $top: (queryParams.$top || 1000).toString(),
     })
