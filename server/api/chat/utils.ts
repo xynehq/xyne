@@ -41,7 +41,7 @@ import {
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { Intent, UserQuery } from "@/ai/types"
+import type { Intent, UserQuery, QueryRouterLLMResponse } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,
@@ -49,9 +49,10 @@ import {
 } from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
 import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
-import { getLoggerWithChild } from "@/logger"
+import { getLoggerWithChild, getLogger } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
+import type { SelectMessage } from "@/db/schema"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
@@ -60,6 +61,7 @@ import {
   getCollectionFilesVespaIds,
 } from "@/db/knowledgeBase"
 import { db } from "@/db/client"
+import { get } from "http"
 
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
@@ -316,31 +318,33 @@ export const extractImageFileNames = (
     let imageContent = match[1].trim()
     try {
       if (imageContent) {
-        const docId = imageContent.split("_")[0]
-        // const docIndex =
-        //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
-        const docIndex =
-          results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
-
-        if (docIndex === -1) {
-          console.warn(
-            `No matching document found for docId: ${docId} in results for image content extraction.`,
-          )
-          continue
-        }
-
-        // Split by newlines and filter out empty strings
-        const fileNames = imageContent
-          .split("\n")
+        // Split by newlines and spaces to handle various formatting
+        const individualFileNames = imageContent
+          .split(/\s+/)
           .map((name) => name.trim())
           .filter((name) => name.length > 0)
-          // Additional safety: split by spaces and filter out empty strings
-          // in case multiple filenames are on the same line
-          .flatMap((name) =>
-            name.split(/\s+/).filter((part) => part.length > 0),
-          )
-          .map((name) => `${docIndex}_${name}`)
-        imageFileNames.push(...fileNames)
+
+        for (const fileName of individualFileNames) {
+          const lastUnderscoreIndex = fileName.lastIndexOf("_")
+          if (lastUnderscoreIndex === -1) {
+            console.warn(`Invalid image file name format: ${fileName}`)
+            continue
+          }
+
+          const docId = fileName.substring(0, lastUnderscoreIndex)
+
+          const docIndex =
+            results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
+
+          if (docIndex === -1) {
+            console.warn(
+              `No matching document found for docId: ${docId} in results for image content extraction.`,
+            )
+            continue
+          }
+
+          imageFileNames.push(`${docIndex}_${fileName}`)
+        }
       }
     } catch (error) {
       console.error(
@@ -432,7 +436,7 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       title: clFields.fileName || "Collection File",
       url: `/cl/${clFields.clId}`,
       app: Apps.KnowledgeBase,
-      entity: SystemEntity.SystemInfo,
+      entity: clFields.entity,
       itemId: clFields.itemId,
       clId: clFields.clId,
     }
@@ -503,6 +507,7 @@ export const getFileIdFromLink = (link: string) => {
 export const extractFileIdsFromMessage = async (
   message: string,
   email?: string,
+  pathRefId?: any,
 ): Promise<{
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
@@ -512,88 +517,92 @@ export const extractFileIdsFromMessage = async (
   const threadIds: string[] = []
   const driveItem: string[] = []
   const collectionFolderIds: string[] = []
-  const jsonMessage = JSON.parse(message) as UserQuery
+  if (pathRefId) {
+    collectionFolderIds.push(pathRefId)
+  }
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
+  try {
+    const jsonMessage = JSON.parse(message) as UserQuery
+    for (const obj of jsonMessage) {
+      if (obj?.type === "pill") {
+        if (
+          obj?.value &&
+          obj?.value?.entity &&
+          obj?.value?.entity == DriveEntity.Folder
+        ) {
+          driveItem.push(obj?.value?.docId)
+        } else fileIds.push(obj?.value?.docId)
+        // Check if this pill has a threadId (for email threads)
+        if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
+          threadIds.push(obj?.value?.threadId)
+        }
 
-  for (const obj of jsonMessage) {
-    if (obj?.type === "pill") {
-      if (
-        obj?.value &&
-        obj?.value?.entity &&
-        obj?.value?.entity == DriveEntity.Folder
-      ) {
-        driveItem.push(obj?.value?.docId)
-      } else fileIds.push(obj?.value?.docId)
-      // Check if this pill has a threadId (for email threads)
-      if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
-        threadIds.push(obj?.value?.threadId)
-      }
+        const pillValue = obj.value
+        const docId = pillValue.docId
 
-      const pillValue = obj.value
-      const docId = pillValue.docId
+        // Check if this is a Google Sheets reference with wholeSheet: true
+        if (pillValue.wholeSheet === true) {
+          // Extract the base docId (remove the "_X" suffix if present)
+          const baseDocId = docId.replace(/_\d+$/, "")
 
-      // Check if this is a Google Sheets reference with wholeSheet: true
-      if (pillValue.wholeSheet === true) {
-        // Extract the base docId (remove the "_X" suffix if present)
-        const baseDocId = docId.replace(/_\d+$/, "")
-
-        // Get the spreadsheet metadata to find all sub-sheets
-        const validFile = await getDocumentOrSpreadsheet(baseDocId)
-        if (validFile) {
-          const fields = validFile?.fields as VespaFile
-          if (
-            fields?.app === Apps.GoogleDrive &&
-            fields?.entity === DriveEntity.Sheets
-          ) {
-            const sheetsMetadata = JSON.parse(fields?.metadata as string)
-            const totalSheets = sheetsMetadata?.totalSheets
-            // Add all sub-sheet IDs
-            for (let i = 0; i < totalSheets; i++) {
-              fileIds.push(`${baseDocId}_${i}`)
+          // Get the spreadsheet metadata to find all sub-sheets
+          const validFile = await getDocumentOrSpreadsheet(baseDocId)
+          if (validFile) {
+            const fields = validFile?.fields as VespaFile
+            if (
+              fields?.app === Apps.GoogleDrive &&
+              fields?.entity === DriveEntity.Sheets
+            ) {
+              const sheetsMetadata = JSON.parse(fields?.metadata as string)
+              const totalSheets = sheetsMetadata?.totalSheets
+              // Add all sub-sheet IDs
+              for (let i = 0; i < totalSheets; i++) {
+                fileIds.push(`${baseDocId}_${i}`)
+              }
+            } else {
+              // Fallback: just add the docId if it's not a spreadsheet
+              fileIds.push(docId)
             }
           } else {
-            // Fallback: just add the docId if it's not a spreadsheet
+            // Fallback: just add the docId if we can't get metadata
             fileIds.push(docId)
           }
         } else {
-          // Fallback: just add the docId if we can't get metadata
+          // Regular pill behavior: just add the docId
           fileIds.push(docId)
         }
-      } else {
-        // Regular pill behavior: just add the docId
-        fileIds.push(docId)
-      }
-    } else if (obj?.type === "link") {
-      const fileId = getFileIdFromLink(obj?.value)
-      if (fileId) {
-        // Check if it's a valid Drive File Id ingested in Vespa
-        // Only works for fileSchema
-        const validFile = await getDocumentOrSpreadsheet(fileId)
-        if (validFile) {
-          totalValidFileIdsFromLinkCount++
-          if (validFileIdsFromLinkCount >= maxValidLinks) {
-            continue
-          }
-          const fields = validFile?.fields as VespaFile
-          // If any of them happens to a spreadsheet, add all its subsheet ids also here
-          if (
-            fields?.app === Apps.GoogleDrive &&
-            fields?.entity === DriveEntity.Sheets
-          ) {
-            const sheetsMetadata = JSON.parse(fields?.metadata as string)
-            const totalSheets = sheetsMetadata?.totalSheets
-            for (let i = 0; i < totalSheets; i++) {
-              fileIds.push(`${fileId}_${i}`)
+      } else if (obj?.type === "link") {
+        const fileId = getFileIdFromLink(obj?.value)
+        if (fileId) {
+          // Check if it's a valid Drive File Id ingested in Vespa
+          // Only works for fileSchema
+          const validFile = await getDocumentOrSpreadsheet(fileId)
+          if (validFile) {
+            totalValidFileIdsFromLinkCount++
+            if (validFileIdsFromLinkCount >= maxValidLinks) {
+              continue
             }
-          } else {
-            fileIds.push(fileId)
+            const fields = validFile?.fields as VespaFile
+            // If any of them happens to a spreadsheet, add all its subsheet ids also here
+            if (
+              fields?.app === Apps.GoogleDrive &&
+              fields?.entity === DriveEntity.Sheets
+            ) {
+              const sheetsMetadata = JSON.parse(fields?.metadata as string)
+              const totalSheets = sheetsMetadata?.totalSheets
+              for (let i = 0; i < totalSheets; i++) {
+                fileIds.push(`${fileId}_${i}`)
+              }
+            } else {
+              fileIds.push(fileId)
+            }
+            validFileIdsFromLinkCount++
           }
-          validFileIdsFromLinkCount++
         }
       }
     }
-  }
+  } catch (error) {}
 
   while (driveItem.length) {
     let curr = driveItem.shift()
@@ -635,6 +644,7 @@ export const extractFileIdsFromMessage = async (
     collectionFolderIds,
     db,
   )
+
   if (collectionFolderIds.length > 0) {
     const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
     const vespaIds = ids
@@ -881,4 +891,163 @@ function isValidAppSelection(value: any): value is AppSelection {
     value.itemIds.every((id: any) => typeof id === "string") &&
     typeof value.selectedAll === "boolean"
   )
+}
+
+export interface ChainBreakClassification {
+  messageIndex: number
+  classification: QueryRouterLLMResponse
+  query: string
+}
+
+function parseQueryRouterClassification(
+  queryRouterClassification: any,
+  messageIndex: number,
+): QueryRouterLLMResponse | null {
+  if (queryRouterClassification == null) return null
+  try {
+    const parsed =
+      typeof queryRouterClassification === "string"
+        ? JSON.parse(queryRouterClassification)
+        : queryRouterClassification
+    if (
+      Array.isArray(parsed) ||
+      typeof parsed !== "object" ||
+      parsed === null
+    ) {
+      return null
+    }
+    return parsed as QueryRouterLLMResponse
+  } catch (error) {
+    getLoggerWithChild(Subsystem.Chat)().warn(
+      `Failed to parse classification for message ${messageIndex}:`,
+      error,
+    )
+    return null
+  }
+}
+
+export function getRecentChainBreakClassifications(
+  messages: SelectMessage[],
+): ChainBreakClassification[] {
+  const chainBreaks = extractChainBreakClassifications(messages)
+  const recentChainBreaks = chainBreaks.slice(0, 2) // limit to the last 2 chain breaks
+  getLoggerWithChild(Subsystem.Chat)().info(
+    `[ChainBreak] Found ${recentChainBreaks.length} recent chain breaks`,
+  )
+  return recentChainBreaks
+}
+
+export function extractChainBreakClassifications(
+  messages: SelectMessage[],
+): ChainBreakClassification[] {
+  const chainBreaks: ChainBreakClassification[] = []
+
+  messages.forEach((message, index) => {
+    // Only process user messages with classifications
+    if (message.messageRole === "user" && message.queryRouterClassification) {
+      const currentClassification = parseQueryRouterClassification(
+        message.queryRouterClassification,
+        index,
+      )
+      if (!currentClassification) return
+
+      // Skip if this is the first user message (no previous user message available)
+      if (index < 2) return
+
+      // Get the previous user message
+      const previousUserMessage = messages[index - 2]
+      if (
+        !previousUserMessage ||
+        previousUserMessage.messageRole !== "user" ||
+        !previousUserMessage.queryRouterClassification
+      )
+        return
+
+      const prevClassification = parseQueryRouterClassification(
+        previousUserMessage.queryRouterClassification,
+        index - 2,
+      )
+      if (!prevClassification) return
+
+      // If the current message is NOT a follow-up, store the previous user message's classification as a chain break
+      if (currentClassification.isFollowUp === false) {
+        chainBreaks.push({
+          messageIndex: index - 2,
+          classification: prevClassification,
+          query: previousUserMessage.message || "",
+        })
+        getLoggerWithChild(Subsystem.Chat)().info(
+          `[ChainBreak] Chain break detected: "${previousUserMessage.message}" → "${message.message}"`,
+        )
+      }
+    }
+  })
+
+  return chainBreaks.reverse()
+}
+
+export function formatChainBreaksForPrompt(
+  chainBreaks: ChainBreakClassification[],
+) {
+  if (chainBreaks.length === 0) {
+    return null
+  }
+
+  const formatted = {
+    availableChainBreaks: chainBreaks.map((chainBreak, index) => ({
+      chainIndex: index + 1,
+      messageIndex: chainBreak.messageIndex,
+      originalQuery: chainBreak.query,
+      classification: chainBreak.classification,
+    })),
+    usage:
+      "These are previous conversation chains that were broken. The current query might relate to one of these earlier topics.",
+  }
+  return formatted
+}
+
+export function findOptimalCitationInsertionPoint(
+  text: string,
+  targetIndex: number,
+): number {
+  if (targetIndex >= text.length) {
+    return text.length
+  }
+
+  if (targetIndex <= 0) {
+    return 0
+  }
+
+  // Look for the next newline after the target index
+  for (let i = targetIndex; i < text.length; i++) {
+    if (text[i] === '\n' || text[i] === '\r') {
+      return i // Place citation just before the newline
+    }
+  }
+
+  // If no newline found, look for sentence endings (., !, ?)
+  for (let i = targetIndex; i < text.length; i++) {
+    if (/[.!?]/.test(text[i])) {
+      // Check if it's a real sentence ending (not decimal number)
+      const prevChar = i > 0 ? text[i - 1] : ''
+      const nextChar = i < text.length - 1 ? text[i + 1] : ''
+      
+      // Skip if it's a decimal number
+      if (text[i] === '.' && /\d/.test(prevChar) && /\d/.test(nextChar)) {
+        continue
+      }
+      
+      return i + 1 // Place after the sentence ending
+    }
+  }
+
+  // Fallback: find the next space
+  for (let i = targetIndex; i < text.length; i++) {
+    if (text[i] === ' ') {
+      return i + 1 // Place after the space
+    }
+  }
+
+  // Final fallback: end of text
+  return text.length
 }

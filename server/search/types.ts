@@ -59,6 +59,7 @@ export enum Apps {
   Xyne = "xyne",
   DataSource = "data-source",
   KnowledgeBase = "KnowledgeBase",
+  WebSearch = "web-search",
 }
 
 export const isValidApp = (app: string): boolean => {
@@ -88,6 +89,9 @@ export const isValidEntity = (entity: string): boolean => {
           .map((v) => v.toLowerCase())
           .includes(normalizedEntity) ||
         Object.values(SlackEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(WebSearchEntity)
           .map((v) => v.toLowerCase())
           .includes(normalizedEntity)
     : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
@@ -169,10 +173,11 @@ export enum MailAttachmentEntity {
   NotValid = "notvalid",
 }
 export enum KnowledgeBaseEntity {
-  File = "file",                    // Files within collections
-  Folder = 'folder',               // Folders within collections  
-  Collection = 'collection',       // Collections (main containers)
-  KnowledgeBase = 'knowledgebase', // Legacy alias for collection
+  File = "file", // Files within collections
+  Folder = "folder", // Folders within collections
+  Collection = "collection", // Collections (main containers)
+  KnowledgeBase = "knowledgebase", // Legacy alias for collection
+  Attachment = "attachment",
 }
 
 export const isMailAttachment = (entity: Entity): boolean =>
@@ -192,6 +197,7 @@ export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
+export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
@@ -202,8 +208,14 @@ export enum SystemEntity {
 export enum DataSourceEntity {
   DataSourceFile = "data_source_file",
 }
+
+export enum WebSearchEntity {
+  WebSearch = "websearch",
+}
+
 export const SystemEntitySchema = z.nativeEnum(SystemEntity)
 export const DataSourceEntitySchema = z.nativeEnum(DataSourceEntity)
+export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
@@ -214,6 +226,8 @@ export const entitySchema = z.union([
   MailAttachmentEntitySchema,
   ChatEntitySchema,
   DataSourceEntitySchema,
+  WebSearchEntitySchema,
+  KnowledgeBaseEntitySchema,
 ])
 
 export type Entity =
@@ -226,6 +240,8 @@ export type Entity =
   | MailAttachmentEntity
   | SlackEntity
   | DataSourceEntity
+  | WebSearchEntity
+  | KnowledgeBaseEntity
 
 export type WorkspaceEntity = DriveEntity
 

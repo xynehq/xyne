@@ -41,11 +41,14 @@ let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
+const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - generous limit for service account JSON files
+
 // TODO:
 // instead of TOGETHER_MODEL, OLLAMA_MODEL we should just have MODEL if present means they are selecting the model
 // since even docs have to be updated we can make this change in one go including that, so will be done later
 
-// Priority (AWS > OpenAI > Ollama > Together > Fireworks > Gemini)
+// Priority (AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
+// Using if-else logic to ensure only ONE provider is active at a time
 if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsAccessKey = process.env["AWS_ACCESS_KEY"]
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
@@ -63,6 +66,13 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultFastModel = Models.Gpt_4o_mini
   defaultBestModel = Models.Gpt_4o
 } else if (process.env["OLLAMA_MODEL"]) {
+  if (process.env["BASE_URL"]) {
+    if (!isURLValid(process.env["BASE_URL"])) {
+      console.warn(`Configuration Warning : Encountered invalid base url`)
+    } else {
+      aiProviderBaseUrl = process.env["BASE_URL"]
+    }
+  }
   OllamaModel = process.env["OLLAMA_MODEL"]
   defaultFastModel = process.env["OLLAMA_FAST_MODEL"]
     ? (process.env["OLLAMA_FAST_MODEL"] as Models)
@@ -97,13 +107,15 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
     : (GeminiAIModel as Models)
   defaultBestModel = GeminiAIModel as Models
 } else if (process.env["VERTEX_PROJECT_ID"] && process.env["VERTEX_REGION"]) {
-  VertexAIModel = process.env["VERTEX_AI_MODEL"] as Models
   VertexProjectId = process.env["VERTEX_PROJECT_ID"]
   VertexRegion = process.env["VERTEX_REGION"]
+  // Set default models for Vertex AI (no longer requiring VERTEX_AI_MODEL to be set)
   defaultFastModel = process.env["VERTEX_FAST_MODEL"]
     ? (process.env["VERTEX_FAST_MODEL"] as Models)
-    : (VertexAIModel as Models)
-  defaultBestModel = VertexAIModel as Models
+    : Models.Vertex_Claude_Sonnet_4 // Default fast model
+  defaultBestModel = process.env["VERTEX_BEST_MODEL"]
+    ? (process.env["VERTEX_BEST_MODEL"] as Models)
+    : Models.Vertex_Claude_Sonnet_4 // Default best model
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
@@ -126,7 +138,6 @@ if (
 if (!slackHost) {
   slackHost = host
 }
-
 export default {
   // default page size for regular search
   page: 8,
@@ -185,6 +196,7 @@ export default {
   llmTimeFormat: "YYYY-MM-DDTHH:mm:ss.SSS+05:30",
   ragOffFeature,
   AccessTokenTTL: 60 * 60, // Access token expires in 1 hour
-  RefreshTokenTTL: 60 * 60 * 24 * 30, 
-  MAX_IMAGE_SIZE_BYTES,// Refresh token expires in 30 days
+  RefreshTokenTTL: 60 * 60 * 24 * 30, // Refresh token expires in 30 days
+  MAX_IMAGE_SIZE_BYTES,
+  MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
 }
