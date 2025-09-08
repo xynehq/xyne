@@ -27,7 +27,7 @@ import { getUserByEmail } from "./user"
 import { createAgentSchema } from "@/api/agent"
 import { getErrorMessage } from "@/utils"
 import type { CreateAgentPayload } from "@/api/agent"
-import type { Agent } from "openai/_shims/index.mjs"
+
 
 export { getAgentsMadeByMe, getAgentsSharedToMe }
 
@@ -341,6 +341,153 @@ export const getAgentsByDataSourceId = async (
   }
 }
 
+export const cleanUpAgentDb = async (
+  trx: TxnOrClient,
+  deletedItemIds: string[],
+  userEmail: string,
+): Promise<void> => {
+  if (!deletedItemIds || deletedItemIds.length === 0) {
+    loggerWithChild().info("No item IDs provided for agent cleanup")
+    return
+  }
+
+  try {
+    loggerWithChild().info(
+      `Starting agent cleanup for deleted item IDs: ${deletedItemIds.join(", ")} requested by ${userEmail}`,
+    )
+
+    // Get the user by email to get their userId
+    const users = await getUserByEmail(trx, userEmail)
+    if (!users || users.length === 0) {
+      loggerWithChild().warn(`User not found for email: ${userEmail}`)
+      return
+    }
+    const userId = users[0].id
+
+    // Only fetch agents created by this specific user
+    const allActiveAgents = await trx
+      .select()
+      .from(agents)
+      .where(and(isNull(agents.deletedAt), eq(agents.userId, userId)))
+
+    const agentsToUpdate = allActiveAgents.filter((agent) => {
+      const currentIntegrations = agent.appIntegrations as any
+      
+      if (Array.isArray(currentIntegrations)) {
+        return currentIntegrations.some((integration: string) => 
+          deletedItemIds.includes(integration)
+        )
+      } else if (currentIntegrations && typeof currentIntegrations === 'object') {
+        if (currentIntegrations.knowledge_base?.itemIds) {
+          return currentIntegrations.knowledge_base.itemIds.some((id: string) => 
+            deletedItemIds.includes(id)
+          )
+        }
+      }
+      return false
+    })
+
+    loggerWithChild().info(
+      `Found ${agentsToUpdate.length} agents with references to deleted items`,
+    )
+
+    if (agentsToUpdate.length === 0) {
+      return
+    }
+    let updatedAgentsCount = 0
+    for (const agent of agentsToUpdate) {
+      const currentIntegrations = agent.appIntegrations as any
+      let updatedIntegrations
+
+      loggerWithChild().info(
+        `Processing agent ${agent.name} (${agent.externalId}) with integrations: ${JSON.stringify(currentIntegrations)}`,
+      )
+
+      if (Array.isArray(currentIntegrations)) {
+        updatedIntegrations = currentIntegrations.filter(
+          (integration: string) => !deletedItemIds.includes(integration),
+        )
+      } else if (currentIntegrations && typeof currentIntegrations === 'object') {
+        
+        updatedIntegrations = JSON.parse(JSON.stringify(currentIntegrations))
+        
+        if (updatedIntegrations.knowledge_base?.itemIds) {
+          const originalItemIds = [...updatedIntegrations.knowledge_base.itemIds]
+          updatedIntegrations.knowledge_base.itemIds = updatedIntegrations.knowledge_base.itemIds.filter(
+            (id: string) => !deletedItemIds.includes(id),
+          )
+          loggerWithChild().info(
+            `Agent ${agent.name}: original itemIds: ${JSON.stringify(originalItemIds)}, after filtering: ${JSON.stringify(updatedIntegrations.knowledge_base.itemIds)}`,
+          )
+          if (updatedIntegrations.knowledge_base.itemIds.length === 0) {
+            delete updatedIntegrations.knowledge_base
+            loggerWithChild().info(
+              `Agent ${agent.name}: removed entire knowledge_base key as no itemIds left`,
+            )
+          }
+        }
+      } else {
+        loggerWithChild().warn(
+          `Unrecognized app_integrations format for agent ${agent.id}: ${JSON.stringify(currentIntegrations)}`,
+        )
+        continue
+      }
+
+      loggerWithChild().info(
+        `Agent ${agent.name}: final updatedIntegrations: ${JSON.stringify(updatedIntegrations)}`,
+      )
+      
+      console.log("DEBUG: About to check update condition for agent:", agent.name)
+
+      const originalCount = Array.isArray(currentIntegrations) 
+        ? currentIntegrations.length 
+        : currentIntegrations?.knowledge_base?.itemIds?.length || 0
+      const newCount = Array.isArray(updatedIntegrations)
+        ? updatedIntegrations.length
+        : updatedIntegrations?.knowledge_base?.itemIds?.length || 0
+
+      const originalHasKnowledgeBase = currentIntegrations?.knowledge_base !== undefined
+      const updatedHasKnowledgeBase = updatedIntegrations?.knowledge_base !== undefined
+      const knowledgeBaseStructureChanged = originalHasKnowledgeBase !== updatedHasKnowledgeBase
+
+      loggerWithChild().info(
+        `Agent ${agent.name}: originalCount=${originalCount}, newCount=${newCount}, countChanged=${originalCount !== newCount}, knowledgeBaseStructureChanged=${knowledgeBaseStructureChanged}`,
+      )
+
+      const hasChanges = originalCount !== newCount || 
+                        knowledgeBaseStructureChanged || 
+                        JSON.stringify(currentIntegrations) !== JSON.stringify(updatedIntegrations)
+
+      if (hasChanges) {
+        loggerWithChild().info(
+          `Agent ${agent.name}: updating database with new integrations`,
+        )
+        
+        await trx
+          .update(agents)
+          .set({ 
+            appIntegrations: updatedIntegrations, 
+            updatedAt: new Date() 
+          })
+          .where(eq(agents.id, agent.id))
+
+        updatedAgentsCount++
+      } else {
+        loggerWithChild().info(
+          `Agent ${agent.name}: no changes needed, skipping update`,
+        )
+      }
+    }
+  } catch (error) {
+    loggerWithChild().error(
+      error,
+      `Failed to clean up agents for deleted item IDs: ${deletedItemIds.join(", ")}`,
+    )
+    throw new Error(
+      `Failed to clean up agents for deleted items: ${deletedItemIds.join(", ")}`,
+    )
+  }
+}
 
 export const createAgentHelper = async (
   agentData: CreateAgentPayload,
