@@ -65,7 +65,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast"
-import { ChatBox } from "@/components/ChatBox"
+import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
 import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
@@ -403,6 +403,8 @@ function AgentComponent() {
   const [confirmAction, setConfirmAction] = useState<
     (() => Promise<void>) | null
   >(null)
+
+  const chatBoxRef = useRef<ChatBoxRef>(null)
 
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
@@ -2083,10 +2085,6 @@ function AgentComponent() {
         sources: finalSelectedIntegrationNames,
       }
     }
-    url.searchParams.append(
-      "modelId",
-      finalModelForChat === "Auto" ? "gpt-4o-mini" : finalModelForChat,
-    )
     url.searchParams.append("message", encodeURIComponent(messageToSend))
     
     // Add agent ID to the request if using an agent
@@ -2097,6 +2095,11 @@ function AgentComponent() {
       url.searchParams.append("agentPromptPayload", JSON.stringify(agentPromptPayload))
       url.searchParams.append("agentId", "default-agent")
     }
+    
+    // Get model configuration from ChatBox
+    const modelConfig = chatBoxRef.current?.getCurrentModelConfig()
+
+    url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
 
     if (metadata && metadata.length > 0) {
       url.searchParams.append("attachmentMetadata", JSON.stringify(metadata))
@@ -4387,6 +4390,7 @@ function AgentComponent() {
 
             <div className="p-2 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1E1E1E] flex justify-center">
               <ChatBox
+                ref={chatBoxRef}
                 role={user?.role}
                 query={query}
                 user={user}
