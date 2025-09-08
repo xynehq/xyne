@@ -1489,18 +1489,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                     }
                   }
                   planningContext = cleanContext(resolvedContexts?.join("\n"))
-                  const { imageFileNames } = extractImageFileNames(
-                    planningContext,
-                    [...results.root.children, ...chatContexts, ...threadContexts],
-                  )
-                
-                  const finalImageFileNames = imageFileNames || []
-                
-                  if (ImageAttachmentFileIds?.length) {
-                    finalImageFileNames.push(
-                      ...ImageAttachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
-                    )
-                  }
                   if (chatContexts.length > 0) {
                     planningContext += "\n" + buildContext(chatContexts, 10)
                   }

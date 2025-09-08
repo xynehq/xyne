@@ -47,6 +47,7 @@ import {
   UserRole,
   DataSourceEntity,
   AttachmentMetadata,
+  FileType,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -92,19 +93,19 @@ interface SelectedFile {
   fileType?: string
 }
 
-export const getFileIcon = (fileType: string | undefined) => {
+export const getFileIcon = (fileType: FileType | string | undefined) => {
   switch (fileType) {
-    case "Image":
+    case FileType.IMAGE:
       return <FileImage size={24} className="text-blue-500 dark:text-blue-400 flex-shrink-0" />
-    case "Document":
+    case FileType.DOCUMENT:
       return <FileText size={24} className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
-    case "Spreadsheet":
+    case FileType.SPREADSHEET:
       return <FileSpreadsheet size={24} className="text-green-600 dark:text-green-400 flex-shrink-0" />
-    case "Presentation":
+    case FileType.PRESENTATION:
       return <Presentation size={24} className="text-orange-600 dark:text-orange-400 flex-shrink-0" />
-    case "PDF":
+    case FileType.PDF:
       return <FileText size={24} className="text-red-600 dark:text-red-400 flex-shrink-0" />
-    case "Text":
+    case FileType.TEXT:
       return <FileText size={24} className="text-gray-600 dark:text-gray-400 flex-shrink-0" />
     default:
       return <File size={24} className="text-gray-500 dark:text-gray-400 flex-shrink-0" />
@@ -733,7 +734,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           id: generateFileId(),
           uploading: false,
           preview: createImagePreview(file),
-          fileType: getFileType(file),
+          fileType: getFileType({ type: file.type, name: file.name }),
         }))
 
         setSelectedFiles((prev) => {
@@ -2372,8 +2373,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         if (isValid.length > 0) {
                           // Process the pasted file
                           processFiles([file])
-                          const fileType = getFileType(file)
-                          
+                          const fileType = getFileType({ type: file.type, name: file.name })
+
                           showToast(
                             "File pasted",
                             `${fileType} has been added to your message.`,

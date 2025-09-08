@@ -178,7 +178,7 @@ import {
 } from "@/db/attachment"
 import type { AttachmentMetadata } from "@/shared/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
-import { isImageFile } from "@/utils/image"
+import { isImageFile } from "shared/fileUtils"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import {
@@ -2170,6 +2170,7 @@ async function* generateAnswerFromGivenContext(
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
+      generateAnswerSpan?.end()
       return
     }
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering

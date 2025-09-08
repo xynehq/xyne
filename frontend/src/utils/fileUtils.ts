@@ -1,62 +1,37 @@
-import { isValidFile } from "../../../shared/filesutils"
+import { isValidFile, isImageFile } from "shared/fileUtils"
 import { SelectedFile } from "@/components/ClFileUpload"
 import { authFetch } from "./authFetch"
+import { FileType, MIME_TYPE_MAPPINGS, EXTENSION_MAPPINGS } from "shared/types"
 
 // Generate unique ID for files
 export const generateFileId = () => Math.random().toString(36).substring(2, 9)
 
-// Check if file is an image
-const isImageFile = (file: File): boolean => {
-  return (
-    file.type.startsWith("image/") &&
-    [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-    ].includes(file.type)
-  )
-}
+export const getFileType = ({ type, name }: { type: string, name: string }): FileType => {
+  const fileName = name.toLowerCase()
+  const mimeType = type.toLowerCase()
 
-// Get file type category for display purposes
-export const getFileType = (file: File | { type: string, name: string }): string => {
-  if (file instanceof File && isImageFile(file)) {
-    return "Image"
+  // Check each file type category using the mappings
+  for (const [fileType, mimeTypes] of Object.entries(MIME_TYPE_MAPPINGS)) {
+    // Check MIME type first (more reliable)
+    if (mimeTypes.some(mime => mimeType === mime || mimeType.includes(mime))) {
+      return fileType as FileType
+    }
   }
-  
-  // Check for document types
-  if (file.type.includes("word") || file.name.toLowerCase().match(/\.(doc|docx)$/)) {
-    return "Document"
+
+  // Fallback to extension-based detection
+  for (const [fileType, extensions] of Object.entries(EXTENSION_MAPPINGS)) {
+    if (extensions.some(ext => fileName.endsWith(ext))) {
+      return fileType as FileType
+    }
   }
-  
-  // Check for spreadsheet types
-  if (file.type.includes("excel") || file.type.includes("spreadsheet") || file.name.toLowerCase().match(/\.(xls|xlsx|csv)$/)) {
-    return "Spreadsheet"
-  }
-  
-  // Check for presentation types
-  if (file.type.includes("powerpoint") || file.type.includes("presentation") || file.name.toLowerCase().match(/\.(ppt|pptx)$/)) {
-    return "Presentation"
-  }
-  
-  // Check for PDF
-  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    return "PDF"
-  }
-  
-  // Check for text files
-  if (file.type.startsWith("text/") || file.name.toLowerCase().match(/\.(txt|md)$/)) {
-    return "Text"
-  }
-  
+
   // Default fallback
-  return "File"
+  return FileType.FILE
 }
 
 // Create preview URL for image files
 export const createImagePreview = (file: File): string | undefined => {
-  if (isImageFile(file)) {
+  if (isImageFile(file.type)) {
     return URL.createObjectURL(file)
   }
   return undefined

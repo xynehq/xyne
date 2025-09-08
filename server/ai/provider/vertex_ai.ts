@@ -12,7 +12,7 @@ import {
   type ModelParams,
   type WebSearchSource,
 } from "@/ai/types"
-import BaseProvider, { findImageByName } from "@/ai/provider/base"
+import BaseProvider, { findImageByName, regex } from "@/ai/provider/base"
 import { Subsystem } from "@/types"
 import config from "@/config"
 import { createLabeledImageContent } from "../utils"
@@ -32,8 +32,7 @@ const buildVertexAIImageParts = async (imagePaths: string[]) => {
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    //  format: docIndex_docId_imageNumber
-    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
+    const match = imgPath.match(regex)
     if (!match) {
       Logger.error(
         `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
