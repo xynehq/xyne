@@ -256,7 +256,6 @@ export const startStream = async (
   metadata?: AttachmentMetadata[],
   preventNavigation?: boolean,
   setChatId?: (chatId: string) => void,
-  enableWebSearch: boolean = false,
   selectedModel?: string,
 ): Promise<void> => {
   if (!messageToSend) return
@@ -314,9 +313,7 @@ export const startStream = async (
   if (selectedSources && selectedSources.length > 0) {
     url.searchParams.append("selectedSources", JSON.stringify(selectedSources))
   }
-  
-  url.searchParams.append("enableWebSearch", enableWebSearch.toString())
-  
+
   if (modelConfig) {
     url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
   }
@@ -769,7 +766,6 @@ export const useChatStream = (
         metadata,
         preventNavigation,
         setChatId,
-        enableWebSearch,
         selectedModel,
       )
 

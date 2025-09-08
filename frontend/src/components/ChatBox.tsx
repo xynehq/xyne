@@ -2752,7 +2752,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             </div>
           )}
 
-          <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
+          <div className={`flex ml-[16px] ${hideButtons ? "justify-between mr-[16px]" : "mr-[6px]"} mb-[6px] items-center space-x-3 pt-1 pb-1`}>
             <Attach
               className={`${
                 selectedFiles.length >= MAX_ATTACHMENTS

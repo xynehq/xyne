@@ -33,7 +33,6 @@ import React, {
     textToImageCitationIndex,
     ImageCitationComponent,
     textToCitationIndex,
-    REASONING_STATE_KEY,
   } from "../routes/_authenticated/chat"
   import { createCitationLink, Citation } from "@/components/CitationLink"
   import Retry from "@/assets/retry.svg"
@@ -516,22 +515,11 @@ import React, {
     const [allCitations, setAllCitations] = useState<Map<string, Citation>>(
       new Map(),
     ) // State for all citations
-    const [isReasoningActive, setIsReasoningActive] = useState(() => {
-      const storedValue = localStorage.getItem(REASONING_STATE_KEY)
-      return storedValue ? JSON.parse(storedValue) : true
-    })
     const chatBoxRef = useRef<ChatBoxRef>(null)
     // Citation state management
     // const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null)
     // Add retryIsStreaming state
     const [retryIsStreaming, setRetryIsStreaming] = useState(false)
-
-    useEffect(() => {
-      if (isReasoningActive) {
-        console.log("isReasoningActive", isReasoningActive)
-      }
-    }, [isReasoningActive])
-
     
     // Custom setChatId function that handles the mapping
     const handleSetChatId = useCallback(
@@ -577,10 +565,6 @@ import React, {
         setChatId(null)
       }
     }, [initialChatId])
-
-    useEffect(() => {
-      localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
-    }, [isReasoningActive])
   
     // Create a current streaming response
     const currentResp = isStreaming
@@ -737,7 +721,6 @@ import React, {
         await startStream(
           messageToSend,
           sourcesWithDocument, // Use the sources array that includes the document ID
-          isReasoningActive, // isReasoningActive
           false, // isAgenticMode
           null,
           [],
@@ -776,7 +759,7 @@ import React, {
     const handleRetry = async (messageId: string) => {
       if (!messageId || isStreaming) return
       setRetryIsStreaming(true)
-      await retryMessage(messageId, isReasoningActive, false)
+      await retryMessage(messageId, false)
     }
   
     // Handle feedback
@@ -940,8 +923,6 @@ import React, {
             allCitations={allCitations}
             setIsAgenticMode={() => {}}
             isAgenticMode={false}
-            isReasoningActive={isReasoningActive}
-            setIsReasoningActive={setIsReasoningActive}
             user={user}
             hideButtons={true}
           />

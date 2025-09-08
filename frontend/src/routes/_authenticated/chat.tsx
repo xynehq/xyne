@@ -317,8 +317,6 @@ const jsonToHtmlMessage = (jsonString: string): string => {
   }
 }
 
-export const REASONING_STATE_KEY = "isReasoningGlobalState"
-
 const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
