@@ -11,7 +11,6 @@ import { useNavigate } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
-  Globe,
   AtSign,
   Layers,
   Square,
@@ -22,6 +21,7 @@ import {
   Search,
   RotateCcw,
   Atom,
+  Brain, // Add Brain icon for deep research
   Bot, // Import Bot icon
   PlusCircle,
   Gavel, // For MCP connector tools
@@ -32,7 +32,9 @@ import {
   FileSpreadsheet,
   Presentation,
   FileImage,
+  Globe,
 } from "lucide-react"
+import { siOpenai, siClaude, siGooglegemini } from "simple-icons"
 import Attach from "@/assets/attach.svg?react"
 import {
   Citation,
@@ -163,7 +165,7 @@ interface ChatBoxProps {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
-    enableWebSearch?: boolean,
+    selectedModel?: string,
   ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -171,10 +173,6 @@ interface ChatBoxProps {
   chatId?: string | null // Current chat ID
   agentIdFromChatData?: string | null // New prop for agentId from chat data
   allCitations: Map<string, Citation>
-  isReasoningActive: boolean
-  setIsReasoningActive: (
-    value: boolean | ((prevState: boolean) => boolean),
-  ) => void
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
 }
@@ -286,6 +284,7 @@ const setCaretPosition = (element: Node, position: number) => {
 
 export interface ChatBoxRef {
   sendMessage: (message: string) => void
+  getCurrentModelConfig: () => string | null
 }
 
 export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
@@ -301,8 +300,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       handleStop,
       chatId,
       agentIdFromChatData, // Destructure new prop
-      isReasoningActive,
-      setIsReasoningActive,
       user, // Destructure user prop
       setIsAgenticMode,
       isAgenticMode = false,
@@ -471,22 +468,235 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [initialLoadComplete, setInitialLoadComplete] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
     const [isUploadingFiles, setIsUploadingFiles] = useState(false)
-    const [enableWebSearch, setEnableWebSearch] = useState(() => {
-      const saved = localStorage.getItem("enableWebSearch")
-      return saved !== null ? JSON.parse(saved) : false
+    
+    // Model selection state
+    const [availableModels, setAvailableModels] = useState<Array<{
+      labelName: string
+      reasoning: boolean
+      websearch: boolean
+      deepResearch: boolean
+    }>>([])
+    
+    // State for mode-specific model selections
+    const [reasoningModeModel, setReasoningModeModel] = useState<string>(() => {
+      try {
+        return localStorage.getItem("reasoningModeModel") || ""
+      } catch {
+        return ""
+      }
     })
+    
+    const [selectedModel, setSelectedModel] = useState<string>(() => {
+      // Initialize based on current mode and localStorage
+      try {
+        const savedCapability = localStorage.getItem("selectedCapability") as 'reasoning' | 'websearch' | 'deepResearch' | null
+        if (savedCapability === 'reasoning') {
+          return localStorage.getItem("reasoningModeModel") || ""
+        } else if (savedCapability === 'websearch') {
+          return "Gemini 2.5 Flash" // Auto-select for web search
+        } else if (savedCapability === 'deepResearch') {
+          return "GPT O3 Research" // Auto-select for deep research
+        }
+        return localStorage.getItem("reasoningModeModel") || ""
+      } catch {
+        return ""
+      }
+    })
+    
+    const [isModelsLoading, setIsModelsLoading] = useState(false)
+    
+    // Animation state for model text changes
+    const [isModelTextAnimating, setIsModelTextAnimating] = useState(false)
+
+
+    // Selected model capabilities state - now single selection
+    const [selectedCapability, setSelectedCapability] = useState<'reasoning' | 'websearch' | 'deepResearch' | null>(() => {
+      // Initialize from localStorage if available, default to null (no selection)
+      try {
+        const saved = localStorage.getItem("selectedCapability")
+        if (saved) {
+          const capability = saved as 'reasoning' | 'websearch' | 'deepResearch'
+          return capability
+        }
+        return null // Default to no selection
+      } catch (error) {
+        console.warn("Failed to load capability from localStorage:", error)
+        return null
+      }
+    })
+
+    // Hardcoded O3 model for deep research
+    const O3_RESEARCH_MODEL = {
+      labelName: "GPT O3 Research",
+      reasoning: false,
+      websearch: false,
+      deepResearch: true
+    }
+
+    // Get all models including O3 for deep research mode
+    const allModelsWithO3 = useMemo(() => {
+      return [...availableModels, O3_RESEARCH_MODEL]
+    }, [availableModels])
+
+    // Get the currently selected model's data
+    const selectedModelData = useMemo(() => {
+      return allModelsWithO3.find(m => m.labelName === selectedModel)
+    }, [allModelsWithO3, selectedModel])
+
+    // Get models available for current mode
+    const availableModelsForMode = useMemo(() => {
+      if (selectedCapability === 'deepResearch') {
+        // Show all models including O3, but only O3 is enabled
+        return allModelsWithO3
+      } else {
+        // For reasoning and websearch modes, show all API models + O3 (but O3 disabled in non-deep-research)
+        return allModelsWithO3
+      }
+    }, [selectedCapability, allModelsWithO3])
+
+    // Check if a model is disabled in current mode
+    const isModelDisabled = useCallback((model: { labelName: string; reasoning: boolean; websearch: boolean; deepResearch: boolean }) => {
+      if (selectedCapability === 'websearch') {
+        return model.labelName !== 'Gemini 2.5 Flash'
+      } else if (selectedCapability === 'deepResearch') {
+        return model.labelName !== 'GPT O3 Research'
+      } else if (selectedCapability === 'reasoning') {
+        // Reasoning mode: disable O3 Research
+        return model.labelName === 'GPT O3 Research'
+      } else {
+        // No capability selected: disable O3 Research only
+        return model.labelName === 'GPT O3 Research'
+      }
+    }, [selectedCapability])
+
+    // Filter models based on selected filters
+    const filteredModels = useMemo(() => {
+      return availableModelsForMode
+    }, [availableModelsForMode])
+    
     const showAdvancedOptions =
       overrideIsRagOn ??
       (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
 
-    // Persist enableWebSearch state to localStorage when it changes
-    useEffect(() => {
-      localStorage.setItem("enableWebSearch", JSON.stringify(enableWebSearch))
-    }, [enableWebSearch])
-
     // localStorage keys for tool selection persistence
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
     const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId"
+
+    // Effect to persist reasoning mode model selection
+    useEffect(() => {
+      if (selectedCapability === 'reasoning' && selectedModel) {
+        try {
+          localStorage.setItem("reasoningModeModel", selectedModel)
+          setReasoningModeModel(selectedModel)
+        } catch (error) {
+          console.warn("Failed to save reasoning mode model to localStorage:", error)
+        }
+      }
+    }, [selectedModel, selectedCapability])
+
+    // Effect to persist selected capability to localStorage
+    useEffect(() => {
+      try {
+        if (selectedCapability) {
+          localStorage.setItem("selectedCapability", selectedCapability)
+        } else {
+          localStorage.removeItem("selectedCapability")
+        }
+      } catch (error) {
+        console.warn("Failed to save capability to localStorage:", error)
+      }
+    }, [selectedCapability])
+
+    // Effect to trigger animation when model changes
+    useEffect(() => {
+      if (selectedModel) {
+        setIsModelTextAnimating(true)
+        const timer = setTimeout(() => {
+          setIsModelTextAnimating(false)
+        }, 300) // Match animation duration
+        
+        return () => clearTimeout(timer)
+      }
+    }, [selectedModel])
+
+    // Handle capability mode switching
+    const handleCapabilityChange = useCallback((newCapability: 'reasoning' | 'websearch' | 'deepResearch' | null) => {
+      if (newCapability === selectedCapability) {
+        // Clicking the same capability toggles it off (deselects)
+        setSelectedCapability(null)
+        // When deselected, restore reasoning mode model or default
+        if (reasoningModeModel) {
+          setSelectedModel(reasoningModeModel)
+        } else if (availableModels.length > 0) {
+          const defaultModel = availableModels.find((m: any) => m.labelName === 'Claude Sonnet 4') || availableModels[0]
+          setSelectedModel(defaultModel.labelName)
+        }
+        return
+      }
+
+      setSelectedCapability(newCapability)
+      
+      if (newCapability === 'reasoning') {
+        // Switch to reasoning mode - restore previous reasoning model or default
+        const storedReasoningModel = reasoningModeModel || localStorage.getItem("reasoningModeModel")
+        if (storedReasoningModel && availableModels.find((m: any) => m.labelName === storedReasoningModel)) {
+          setSelectedModel(storedReasoningModel)
+        } else if (availableModels.length > 0) {
+          // Default to Claude Sonnet 4 or first available model
+          const defaultModel = availableModels.find((m: any) => m.labelName === 'Claude Sonnet 4') || availableModels[0]
+          setSelectedModel(defaultModel.labelName)
+        }
+      } else if (newCapability === 'websearch') {
+        // Auto-select Gemini 2.5 Flash for web search
+        const geminiModel = availableModels.find((m: any) => m.labelName === 'Gemini 2.5 Flash')
+        if (geminiModel) {
+          setSelectedModel(geminiModel.labelName)
+        }
+      } else if (newCapability === 'deepResearch') {
+        // Auto-select O3 Research for deep research
+        setSelectedModel('GPT O3 Research')
+      }
+    }, [selectedCapability, reasoningModeModel, availableModels])
+
+    // Fetch available models on component mount
+    useEffect(() => {
+      const fetchAvailableModels = async () => {
+        try {
+          setIsModelsLoading(true)
+          const response = await api.chat.models.$get()
+          const data = await response.json()
+          setAvailableModels(data.models)
+          
+          // Set default model based on current mode
+          if (data.models.length > 0 && !selectedModel) {
+            if (selectedCapability === 'reasoning') {
+              // Default to Claude Sonnet 4 or first available
+              const defaultModel = data.models.find((m: any) => m.labelName === 'Claude Sonnet 4') || data.models[0]
+              setSelectedModel(defaultModel.labelName)
+              setReasoningModeModel(defaultModel.labelName)
+            } else if (selectedCapability === 'websearch') {
+              const geminiModel = data.models.find((m: any) => m.labelName === 'Gemini 2.5 Flash')
+              if (geminiModel) {
+                setSelectedModel(geminiModel.labelName)
+              }
+            } else if (selectedCapability === 'deepResearch') {
+              setSelectedModel('GPT O3 Research')
+            } else {
+              // No capability selected - default to Claude Sonnet 4 or first available
+              const defaultModel = data.models.find((m: any) => m.labelName === 'Claude Sonnet 4') || data.models[0]
+              setSelectedModel(defaultModel.labelName)
+              setReasoningModeModel(defaultModel.labelName)
+            }
+          }
+        } catch (error) {
+          console.error("Failed to fetch available models:", error)
+        } finally {
+          setIsModelsLoading(false)
+        }
+      }
+
+      fetchAvailableModels()
+    }, [selectedCapability])
 
     // File upload utility functions
     const showToast = createToastNotifier(toast)
@@ -1751,14 +1961,22 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       })
 
       htmlMessage = tempDiv.innerHTML
-
+      
+      // Prepare model configuration with capability flags
+      const modelConfig = {
+        model: selectedModel,
+        reasoning: selectedCapability === 'reasoning',
+        websearch: selectedCapability === 'websearch', 
+        deepResearch: selectedCapability === 'deepResearch'
+      }
+      
       handleSend(
         htmlMessage,
         attachmentsMetadata,
         activeSourceIds.length > 0 ? activeSourceIds : undefined,
         persistedAgentId,
         toolsListToSend,
-        enableWebSearch,
+        JSON.stringify(modelConfig), // Send model config as JSON string
       )
 
       // Clear the input and attached files after sending
@@ -1780,13 +1998,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       allConnectors,
       selectedFiles,
       persistedAgentId,
+      selectedModel,
+      selectedCapability,
       handleSend,
       uploadFiles,
       user,
       setQuery,
       setSelectedFiles,
       cleanupPreviewUrls,
-      enableWebSearch,
     ])
 
     const handleSourceSelectionChange = (
@@ -1866,6 +2085,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             handleSendMessage()
           }, 0)
         },
+        getCurrentModelConfig: () => {
+          const modelConfig = {
+            model: selectedModel,
+            capability: selectedCapability
+          }
+          return JSON.stringify(modelConfig)
+        },
       }),
       [
         // Include dependencies that affect what gets sent
@@ -1874,6 +2100,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         persistedAgentId,
         selectedSources,
         selectedFiles,
+        selectedModel,
+        selectedCapability,
         handleSendMessage,
       ],
     )
@@ -2574,30 +2802,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
               }
             />
+            
+            {/* Vertical Divider */}
+            {showAdvancedOptions && (
+              <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
+            )}
+            
             {showAdvancedOptions && (
               <>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Globe
-                        size={16}
-                        className={`cursor-pointer transition-colors ${
-                          enableWebSearch
-                            ? "text-blue-600 dark:text-blue-400"
-                            : "text-[#464D53] dark:text-gray-400"
-                        }`}
-                        onClick={() => setEnableWebSearch(!enableWebSearch)}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {enableWebSearch
-                          ? "Disable web search"
-                          : "Enable web search"}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
                 <AtSign
                   size={16}
                   className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
@@ -2642,6 +2854,55 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     input.focus()
                   }}
                 />
+                
+                {/* Capability Selector with Slider Animation */}
+                <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
+                  {/* Slider Background */}
+                  <div 
+                    className="absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out"
+                    style={{
+                      width: '40px', // Same as button width
+                      left: selectedCapability === 'reasoning' ? '4px' :   // Centered on first button
+                             selectedCapability === 'websearch' ? '48px' :   // Centered on second button  
+                             selectedCapability === 'deepResearch' ? '92px' : '4px', // Centered on third button
+                      opacity: selectedCapability ? 1 : 0
+                    }}
+                  />
+                  
+                  {/* Always show all three capability buttons */}
+                  <button
+                    onClick={() => handleCapabilityChange('reasoning')}
+                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                      selectedCapability === 'reasoning'
+                        ? 'text-gray-900 dark:text-gray-100'
+                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
+                    }`}
+                  >
+                    <Atom size={14} />
+                  </button>
+                  
+                  <button
+                    onClick={() => handleCapabilityChange('websearch')}
+                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                      selectedCapability === 'websearch'
+                        ? 'text-gray-900 dark:text-gray-100'
+                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
+                    }`}
+                  >
+                    <Globe size={14} />
+                  </button>
+                  
+                  <button
+                    onClick={() => handleCapabilityChange('deepResearch')}
+                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                      selectedCapability === 'deepResearch'
+                        ? 'text-gray-900 dark:text-gray-100'
+                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
+                    }`}
+                  >
+                    <Brain size={14} />
+                  </button>
+                </div>
               </>
             )}
             {/* Dropdown for All Connectors */}
@@ -3258,29 +3519,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {/* Closing tag for the conditional render */}
-            <div className="flex items-center">
-              <button
-                onClick={() => setIsReasoningActive(!isReasoningActive)}
-                className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[15px] ${
-                  isReasoningActive
-                    ? "text-green-600 dark:text-green-400"
-                    : "text-[#464D53] dark:text-gray-400"
-                }`}
-              >
-                <Atom
-                  size={16}
-                  className={
-                    isReasoningActive
-                      ? "text-green-600 dark:text-green-400"
-                      : "dark:text-gray-400"
-                  }
-                />
-                <span className={isReasoningActive ? "" : "dark:text-gray-300"}>
-                  Reasoning
-                </span>
-              </button>
-            </div>
             {showAdvancedOptions && (
               <button
                 onClick={(e) => {
@@ -3302,10 +3540,220 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </span>
               </button>
             )}
+
+            {/* Model Selection Dropdown */}
+            {showAdvancedOptions && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button 
+                    className="flex items-center gap-1 px-3 py-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer mr-2 transition-all duration-200"
+                    style={{ marginLeft: "auto" }}
+                  >
+                    <span 
+                      className={`font-semibold whitespace-nowrap transition-all duration-300 ease-in ${
+                        isModelTextAnimating 
+                          ? 'transform scale-105' 
+                          : 'transform scale-100'
+                      }`}
+                      style={{
+                        animation: isModelTextAnimating ? 'modelTextChange 0.3s ease-in' : 'none'
+                      }}
+                    >
+                      {isModelsLoading 
+                        ? "Loading..." 
+                        : selectedModelData?.labelName || "Select Model"
+                      }
+                    </span>
+                    <ChevronDown size={14} className="ml-1 transition-transform duration-200" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent 
+                  className="w-80 max-h-96 p-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg"
+                  align="start"
+                  side="bottom"
+                >
+                  {/* Models list with provider grouping */}
+                  <div className="max-h-80 overflow-y-auto py-2 scrollbar-thin">
+                    {filteredModels.length > 0 ? (
+                      (() => {
+                        // Group models by provider
+                        const modelsByProvider = filteredModels.reduce((acc, model) => {
+                          let provider = 'Other'
+                          if (model.labelName.includes('Claude') || model.labelName.includes('Sonnet') || model.labelName.includes('Opus')) {
+                            provider = 'Claude'
+                          } else if (model.labelName.includes('GPT') || model.labelName.includes('OpenAI')) {
+                            provider = 'OpenAI'
+                          } else if (model.labelName.includes('Gemini')) {
+                            provider = 'Gemini'
+                          }
+                          
+                          if (!acc[provider]) acc[provider] = []
+                          acc[provider].push(model)
+                          return acc
+                        }, {} as Record<string, typeof filteredModels>)
+
+                        // Sort models within each provider - selected model first
+                        Object.keys(modelsByProvider).forEach(provider => {
+                          modelsByProvider[provider].sort((a, b) => {
+                            const aSelected = selectedModel === a.labelName
+                            const bSelected = selectedModel === b.labelName
+                            if (aSelected && !bSelected) return -1
+                            if (!aSelected && bSelected) return 1
+                            return 0
+                          })
+                        })
+
+                        // Find which provider has the selected model
+                        const selectedModelProvider = Object.keys(modelsByProvider).find(provider =>
+                          modelsByProvider[provider].some(model => model.labelName === selectedModel)
+                        )
+
+                        // Reorder providers - selected model's provider first
+                        const baseProviderOrder = ['Claude', 'OpenAI', 'Gemini', 'Other'] as const
+                        const providerOrder = selectedModelProvider 
+                          ? [selectedModelProvider, ...baseProviderOrder.filter(p => p !== selectedModelProvider)]
+                          : baseProviderOrder
+                        
+                        // Provider icon components
+                        const ProviderIcon = ({ provider }: { provider: string }) => {
+                          switch (provider) {
+                            case 'Claude':
+                              return (
+                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
+                                  <path 
+                                    fill="currentColor" 
+                                    d={siClaude.path}
+                                  />
+                                </svg>
+                              )
+                            case 'OpenAI':
+                              return (
+                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
+                                  <path 
+                                    fill="currentColor" 
+                                    d={siOpenai.path}
+                                  />
+                                </svg>
+                              )
+                            case 'Gemini':
+                              return (
+                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
+                                  <path 
+                                    fill="currentColor" 
+                                    d={siGooglegemini.path}
+                                  />
+                                </svg>
+                              )
+                            default:
+                              return <span className="text-sm text-gray-600 dark:text-gray-400">⚡</span>
+                          }
+                        }
+
+                        return providerOrder.map((provider, providerIndex) => {
+                          const models = modelsByProvider[provider]
+                          if (!models || models.length === 0) return null
+
+                          return (
+                            <div key={provider}>
+                              {/* Provider Header */}
+                              <div className="pl-4 pr-4 py-2 flex items-center gap-2">
+                                <ProviderIcon provider={provider} />
+                                <span className="text-sm font-medium" style={{ color: '#788187' }}>
+                                  {provider}
+                                </span>
+                              </div>
+                              
+                              {/* Provider Models */}
+                              {models.map((model) => {
+                                const isDisabled = isModelDisabled(model)
+                                const isSelected = selectedModel === model.labelName
+                                
+                                return (
+                                  <DropdownMenuItem
+                                    key={model.labelName}
+                                    onClick={() => {
+                                      if (!isDisabled) {
+                                        setSelectedModel(model.labelName)
+                                        // Update reasoning mode model if in reasoning mode
+                                        if (selectedCapability === 'reasoning') {
+                                          setReasoningModeModel(model.labelName)
+                                        }
+                                      }
+                                    }}
+                                    className={`pl-4 pr-4 mb-1 rounded-lg hover:bg-transparent focus:bg-transparent data-[highlighted]:bg-transparent ${
+                                      isDisabled 
+                                        ? 'opacity-50 cursor-not-allowed' 
+                                        : 'cursor-pointer'
+                                    }`}
+                                    disabled={isDisabled}
+                                  >
+                                    <div className="flex items-baseline w-full py-2 gap-2">
+                                      {/* Checkmark aligned with model name baseline */}
+                                      <div className="w-4 h-4 flex items-center justify-center flex-shrink-0 pt-2">
+                                        {isSelected && (
+                                          <Check size={12} strokeWidth={2.5} className="text-gray-700 dark:text-gray-300" />
+                                        )}
+                                      </div>
+                                      
+                                      {/* Text aligned with provider name */}
+                                      <div className="flex flex-col flex-1 min-w-0">
+                                        <span className={`font-medium text-sm ${
+                                          isDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'
+                                        }`}>
+                                          {model.labelName.replace(/^(Claude |GPT |Gemini )/i, '')}
+                                        </span>
+                                        
+                                        {/* Model description based on name */}
+                                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                          {(model.labelName.includes('Sonnet 3.7') || model.labelName.includes('3.7 Sonnet') || model.labelName.includes('3.7 sonnet')) && 'Advanced reasoning with enhanced performance and longer context.'}
+                                          {(model.labelName.includes('Sonnet 3.5') || model.labelName.includes('3.5 Sonnet') || model.labelName.includes('3.5 sonnet')) && 'Designed for quick responses while ensuring solid reasoning.'}
+                                          {(model.labelName.includes('Sonnet 4') || model.labelName.includes('4 Sonnet') || model.labelName.includes('4 sonnet')) && 'Balanced for reasoning, long context windows.'}
+                                          {model.labelName.includes('Opus') && 'Ideal for in-depth research and thorough analysis.'}
+                                          {model.labelName.includes('GPT 5') && 'Features enhanced reasoning, creativity, and better multi-step planning.'}
+                                          {model.labelName.includes('GPT 4') && 'Great for programming, content generation, and logical structuring.'}
+                                          {model.labelName.includes('GPT O3') && 'Advanced research model with deep analysis capabilities.'}
+                                          {model.labelName.includes('Gemini 2.5 Pro') && 'Proficient in reasoning across text, visuals, and programming.'}
+                                          {model.labelName.includes('Gemini 2.5 Flash') && 'Tailored for cost-effectiveness and rapid response times.'}
+                                        </span>
+                                        
+                                        {/* Disabled state messages */}
+                                        {isDisabled && selectedCapability === 'websearch' && model.labelName !== 'Gemini 2.5 Flash' && (
+                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                            Not available in Web Search mode
+                                          </span>
+                                        )}
+                                        {isDisabled && selectedCapability === 'deepResearch' && model.labelName !== 'GPT O3 Research' && (
+                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                            Not available in Deep Research mode
+                                          </span>
+                                        )}
+                                        {isDisabled && selectedCapability === 'reasoning' && model.labelName === 'GPT O3 Research' && (
+                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                            Only available in Deep Research mode
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </DropdownMenuItem>
+                                )
+                              })}
+                            </div>
+                          )
+                        })
+                      })()
+                    ) : (
+                      <DropdownMenuItem disabled className="px-4 py-3 text-center">
+                        <span className="text-gray-500 dark:text-gray-400">No models available</span>
+                      </DropdownMenuItem>
+                    )}
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            
             {(isStreaming || retryIsStreaming) && chatId ? (
               <button
                 onClick={handleStop}
-                style={{ marginLeft: "auto" }}
                 className="flex mr-6 bg-[#464B53] dark:bg-gray-700 text-white dark:text-gray-200 hover:bg-[#5a5f66] dark:hover:bg-gray-600 rounded-full w-[32px] h-[32px] items-center justify-center"
               >
                 <Square className="text-white dark:text-gray-200" size={16} />
@@ -3314,7 +3762,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               <button
                 disabled={isStreaming || retryIsStreaming || isUploadingFiles}
                 onClick={() => handleSendMessage()}
-                style={{ marginLeft: "auto" }}
                 className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
               >
                 {isUploadingFiles ? (

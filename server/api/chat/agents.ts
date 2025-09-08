@@ -23,6 +23,7 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
+  agentWithNoIntegrationsQuestion,
 } from "@/ai/provider"
 import {
   getConnectorByExternalId,
@@ -182,6 +183,7 @@ import {
 } from "./utils"
 export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
+import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   buildContext,
   buildUserQuery,
@@ -217,6 +219,7 @@ const generateStepSummary = async (
   step: AgentReasoningStep,
   userQuery: string,
   contextInfo?: string,
+  modelId?: string,
 ): Promise<string> => {
   try {
     const prompt = generateAgentStepSummaryPromptJson(
@@ -225,9 +228,9 @@ const generateStepSummary = async (
       contextInfo,
     )
 
-    // Use a fast model for summary generation
+    // Use the provided model or fallback to fast model for summary generation
     const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
-      modelId: defaultFastModel,
+      modelId: (modelId as Models) || defaultFastModel,
       stream: false,
       json: true,
       reasoning: false,
@@ -267,6 +270,22 @@ const generateFallbackSummary = (step: AgentReasoningStep): string => {
     default:
       return "Processing step"
   }
+}
+
+// Check if agent has no app integrations and should use the no-integrations flow
+export const checkAgentWithNoIntegrations = (agentForDb: SelectAgent | null): boolean => {
+  if (!agentForDb?.appIntegrations) return true
+
+  if (typeof agentForDb.appIntegrations === "object") {
+    if (Object.keys(agentForDb.appIntegrations).length === 0) return true
+
+    return Object.values(agentForDb.appIntegrations).every(
+      (config) =>
+        !config.selectedAll && (!config.itemIds || config.itemIds.length === 0),
+    )
+  }
+
+  return false
 }
 
 const checkAndYieldCitationsForAgent = async function* (
@@ -401,6 +420,7 @@ async function* getToolContinuationIterator(
   fallbackReasoning?: string,
   attachmentFileIds?: string[],
   email?: string,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -433,7 +453,7 @@ async function* getToolContinuationIterator(
     message,
     userCtx,
     {
-      modelId: defaultBestModel,
+      modelId: (modelId as Models) || defaultBestModel,
       stream: true,
       json: true,
       reasoning: false,
@@ -542,6 +562,7 @@ async function performSynthesis(
   logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
   sub: string,
   attachmentFileIds?: string[],
+  modelId?: string,
 ): Promise<SynthesisResponse | null> {
   let parseSynthesisOutput: SynthesisResponse | null = null
 
@@ -556,7 +577,7 @@ async function performSynthesis(
       message,
       planningContext,
       {
-        modelId: defaultBestModel,
+        modelId: (modelId as Models) || defaultBestModel,
         stream: false,
         json: true,
         reasoning: false,
@@ -652,11 +673,73 @@ export const MessageWithToolsApi = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       toolsList,
       agentId,
     }: MessageReqType = body
+    
+    // Parse the model configuration JSON
+    let modelId: string | null = null
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const modelConfig = JSON.parse(selectedModelConfig)
+        modelId = modelConfig.model || null
+        
+        // Handle new direct boolean format
+        isReasoningEnabled = modelConfig.reasoning === true
+        enableWebSearch = modelConfig.websearch === true
+        isDeepResearchEnabled = modelConfig.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `[MessageWithToolsApi] Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (modelConfig.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+            enableWebSearch = modelConfig.capabilities.includes('websearch')
+            isDeepResearchEnabled = modelConfig.capabilities.includes('deepResearch')
+          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+            enableWebSearch = modelConfig.capabilities.websearch === true
+            isDeepResearchEnabled = modelConfig.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `[MessageWithToolsApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+        )
+      } catch (error) {
+        console.error('Failed to parse selectedModelConfig:', error)
+      }
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
+    if (modelId) {
+      if (!actualModelId && (modelId in Models)) {
+        actualModelId = modelId as Models
+      } else if (!actualModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    } else {
+      actualModelId = defaultBestModel
+    }
+    
     const attachmentMetadata = parseAttachmentMetadata(c)
     const ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
     const NonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
@@ -758,7 +841,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -809,7 +892,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -903,6 +986,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           const aiGeneratedSummary = await generateStepSummary(
             reasoningStep,
             userQuery,
+            undefined,
+            actualModelId || undefined,
           )
 
           const enhancedStep: AgentReasoningStep = {
@@ -959,13 +1044,13 @@ export const MessageWithToolsApi = async (c: Context) => {
               `Iteration ${iterationNumber} complete summary`,
             )
 
-            // Use a fast model for summary generation
+            // Use the selected model or fallback to fast model for summary generation
             const summaryResult = await generateSynthesisBasedOnToolOutput(
               prompt,
               "",
               "",
               {
-                modelId: defaultFastModel,
+                modelId: (actualModelId as Models) || defaultFastModel,
                 stream: false,
                 json: true,
                 reasoning: false,
@@ -1450,6 +1535,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     logAndStreamReasoning,
                     sub,
                     ImageAttachmentFileIds,
+                    actualModelId || undefined,
                   )
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.LogMessage,
@@ -1601,7 +1687,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               toolsPrompt,
               agentScratchpad,
               {
-                modelId: defaultFastModel,
+                modelId: (actualModelId as Models) || defaultFastModel,
                 stream: false,
                 json: true,
                 reasoning: false,
@@ -2042,6 +2128,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   logAndStreamReasoning,
                   sub,
                   ImageAttachmentFileIds,
+                  actualModelId || undefined,
                 )
 
                 await logAndStreamReasoning({
@@ -2229,6 +2316,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   logAndStreamReasoning,
                   sub,
                   ImageAttachmentFileIds,
+                  actualModelId || undefined,
                 )
                 await logAndStreamReasoning({
                   type: AgentReasoningStepType.LogMessage,
@@ -2275,6 +2363,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             fallbackReasoning,
             ImageAttachmentFileIds,
             email,
+            actualModelId || undefined,
           )
           for await (const chunk of continuationIterator) {
             if (stream.closed) {
@@ -2396,7 +2485,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: reasoningLog,
-              modelId:
+              modelId: (actualModelId as Models) || 
                 ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
@@ -2678,6 +2767,7 @@ async function* nonRagIterator(
   imageFileNames: string[] = [],
   email?: string,
   isReasoning = true,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2689,7 +2779,7 @@ async function* nonRagIterator(
     userCtx,
     context,
     {
-      modelId: defaultBestModel,
+      modelId: (modelId as Models) || defaultBestModel,
       stream: true,
       json: false,
       reasoning: isReasoning,
@@ -2777,6 +2867,7 @@ async function* nonRagIterator(
   }
 }
 
+
 export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
@@ -2814,11 +2905,45 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       agentId,
       streamOff,
     }: MessageReqType = body
+    
+    // Parse the model configuration JSON
+    let modelId: string | null = null
+    let isReasoningEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const modelConfig = JSON.parse(selectedModelConfig)
+        modelId = modelConfig.model || null
+        
+        // Check capabilities - handle both array and object formats
+        if (modelConfig.capabilities) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+          }
+        }
+      } catch (error) {
+        console.error('Failed to parse selectedModelConfig:', error)
+      }
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
+    if (modelId) {
+      if (!actualModelId && (modelId in Models)) {
+        actualModelId = modelId as Models
+      } else if (!actualModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    } else {
+      actualModelId = defaultBestModel
+    }
+    
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId, // This workspaceId is the externalId from JWT
@@ -2909,7 +3034,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           return [chat, insertedMsg]
@@ -2943,7 +3068,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
           return [existingChat, allMessages, insertedMsg]
@@ -3064,6 +3189,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             finalImageFileNames,
             email,
             isReasoningEnabled,
+            actualModelId || undefined,
           )
           let answer = ""
           let citations: any[] = []
@@ -3155,7 +3281,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3187,7 +3313,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3214,7 +3340,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(errorMessage, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3350,7 +3476,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             imageCitations: params.imageCitations,
             message: processed,
             thinking: params.thinking, // ALWAYS include collected thinking
-            modelId: defaultBestModel,
+            modelId: (actualModelId as Models) || defaultBestModel,
             cost: totalCost.toString(),
             tokensUsed: totalTokens,
           })
@@ -3380,6 +3506,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           finalImageFileNames,
           email,
           isReasoningEnabled,
+          actualModelId || undefined,
         )
 
         const {
@@ -3479,12 +3606,88 @@ export const AgentMessageApi = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       agentId,
       streamOff,
       path,
     }: MessageReqType = body
+    
+    // Parse selectedModelConfig JSON to extract individual values
+    let modelId: string | undefined = undefined
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const config = JSON.parse(selectedModelConfig)
+        modelId = config.model
+        
+        // Handle new direct boolean format
+        isReasoningEnabled = config.reasoning === true
+        enableWebSearch = config.websearch === true
+        isDeepResearchEnabled = config.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `[AgentMessageApi] Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (config.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+          if (Array.isArray(config.capabilities)) {
+            // Array format: ["reasoning", "websearch"]
+            isReasoningEnabled = config.capabilities.includes('reasoning')
+            enableWebSearch = config.capabilities.includes('websearch')
+            isDeepResearchEnabled = config.capabilities.includes('deepResearch')
+          } else if (typeof config.capabilities === 'object') {
+            // Object format: { reasoning: true, websearch: false }
+            isReasoningEnabled = config.capabilities.reasoning === true
+            enableWebSearch = config.capabilities.websearch === true
+            isDeepResearchEnabled = config.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+        )
+      } catch (e) {
+        loggerWithChild({ email }).warn(
+          `[AgentMessageApi] Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
+        )
+        modelId = defaultBestModel as string // fallback
+      }
+    } else {
+      // Fallback if no model config provided
+      modelId = defaultBestModel as string
+      loggerWithChild({ email: email }).info("[AgentMessageApi] No model config provided, using default")
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    if (modelId) {
+      const convertedModelId = getModelValueFromLabel(modelId)
+      if (convertedModelId) {
+        actualModelId = convertedModelId as string // Can be Models enum or string
+        loggerWithChild({ email: email }).info(
+          `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`
+        )
+      } else {
+        loggerWithChild({ email: email }).warn(
+          `[AgentMessageApi] Could not convert model label "${modelId}" to value, will use as-is`
+        )
+        actualModelId = modelId // fallback to using the label as-is
+      }
+    }
+    
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -3594,7 +3797,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (modelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -3645,7 +3848,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (modelId as Models) || defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -4038,27 +4241,48 @@ export const AgentMessageApi = async (c: Context) => {
                   }
                 }
               }
-
-              const searchOrAnswerIterator =
-                generateSearchQueryOrAnswerFromConversation(
-                  message,
-                  ctx,
-                  {
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .modelId,
-                    stream: true,
-                    json: true,
-                    reasoning:
-                      userRequestsReasoning &&
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .reasoning,
-                    messages: limitedMessages,
-                    agentPrompt: agentPromptForLLM,
-                  },
-                  undefined,
-                  previousClassification,
+              const agentWithNoIntegrations = checkAgentWithNoIntegrations(agentForDb)
+              let searchOrAnswerIterator
+              
+              if (agentWithNoIntegrations) {
+                loggerWithChild({ email: email }).info(
+                  "Using agent with no integrations for the question",
                 )
+
+                searchOrAnswerIterator = agentWithNoIntegrationsQuestion(message, ctx, {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: false,
+                  agentPrompt: agentPromptForLLM,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                  messages: limitedMessages,
+                  agentWithNoIntegrations: true,
+                })
+              } else {
+                searchOrAnswerIterator =
+                  generateSearchQueryOrAnswerFromConversation(
+                    message,
+                    ctx,
+                    {
+                      modelId:
+                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                          .modelId,
+                      stream: true,
+                      json: true,
+                      reasoning:
+                        userRequestsReasoning &&
+                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                          .reasoning,
+                      messages: limitedMessages,
+                      agentPrompt: agentPromptForLLM,
+                    },
+                    undefined,
+                    previousClassification,
+                  )
+              }
 
               // TODO: for now if the answer is from the conversation itself we don't
               // add any citations for it, we can refer to the original message for citations
@@ -4097,91 +4321,133 @@ export const AgentMessageApi = async (c: Context) => {
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
-              for await (const chunk of searchOrAnswerIterator) {
-                if (stream.closed) {
-                  Logger.info(
-                    "[AgentMessageApi] Stream closed during conversation search loop. Breaking.",
-                  )
-                  wasStreamClosedPrematurely = true
-                  break
+
+              if (agentWithNoIntegrations) {
+                loggerWithChild({ email: email }).info(
+                  "Processing agent with no integrations response",
+                )
+
+                stream.writeSSE({
+                  event: ChatSSEvents.Start,
+                  data: "",
+                })
+
+                for await (const chunk of searchOrAnswerIterator) {
+                  if (stream.closed) {
+                    Logger.info(
+                      "[AgentMessageApi] Stream closed during agent no integrations loop. Breaking.",
+                    )
+                    wasStreamClosedPrematurely = true
+                    break
+                  }
+                  
+                  if (chunk.text) {
+                    answer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
+                  }
+
+                  if (chunk.cost) {
+                    costArr.push(chunk.cost)
+                  }
+                  if (chunk.metadata?.usage) {
+                    tokenArr.push({
+                      inputTokens: chunk.metadata.usage.inputTokens || 0,
+                      outputTokens: chunk.metadata.usage.outputTokens || 0,
+                    })
+                  }
                 }
-                if (chunk.text) {
-                  if (reasoning) {
-                    if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                      thinking += chunk.text
-                      stream.writeSSE({
-                        event: ChatSSEvents.Reasoning,
-                        data: chunk.text,
-                      })
-                    } else {
-                      // first time
-                      if (!chunk.text.includes(StartThinkingToken)) {
-                        let token = chunk.text
-                        if (chunk.text.includes(EndThinkingToken)) {
-                          token = chunk.text.split(EndThinkingToken)[0]
-                          thinking += token
-                        } else {
-                          thinking += token
-                        }
+
+                parsed.answer = answer
+              } else {
+                for await (const chunk of searchOrAnswerIterator) {
+                  if (stream.closed) {
+                    Logger.info(
+                      "[AgentMessageApi] Stream closed during conversation search loop. Breaking.",
+                    )
+                    wasStreamClosedPrematurely = true
+                    break
+                  }
+                  if (chunk.text) {
+                    if (reasoning) {
+                      if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                        thinking += chunk.text
                         stream.writeSSE({
                           event: ChatSSEvents.Reasoning,
-                          data: token,
+                          data: chunk.text,
                         })
-                      }
-                    }
-                  }
-                  if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                    reasoning = false
-                    chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                  }
-                  if (!reasoning) {
-                    buffer += chunk.text
-                    try {
-                      parsed = jsonParseLLMOutput(buffer) || {}
-                      if (parsed.answer && currentAnswer !== parsed.answer) {
-                        if (currentAnswer === "") {
-                          Logger.info(
-                            "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                          )
+                      } else {
+                        // first time
+                        if (!chunk.text.includes(StartThinkingToken)) {
+                          let token = chunk.text
+                          if (chunk.text.includes(EndThinkingToken)) {
+                            token = chunk.text.split(EndThinkingToken)[0]
+                            thinking += token
+                          } else {
+                            thinking += token
+                          }
                           stream.writeSSE({
-                            event: ChatSSEvents.Start,
-                            data: "",
-                          })
-                          // First valid answer - send the whole thing
-                          stream.writeSSE({
-                            event: ChatSSEvents.ResponseUpdate,
-                            data: parsed.answer,
-                          })
-                        } else {
-                          // Subsequent chunks - send only the new part
-                          const newText = parsed.answer.slice(
-                            currentAnswer.length,
-                          )
-                          stream.writeSSE({
-                            event: ChatSSEvents.ResponseUpdate,
-                            data: newText,
+                            event: ChatSSEvents.Reasoning,
+                            data: token,
                           })
                         }
-                        currentAnswer = parsed.answer
                       }
-                    } catch (err) {
-                      const errMessage = (err as Error).message
-                      Logger.error(
-                        err,
-                        `Error while parsing LLM output ${errMessage}`,
-                      )
-                      continue
+                    }
+                    if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                      reasoning = false
+                      chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                    }
+                    if (!reasoning) {
+                      buffer += chunk.text
+                      try {
+                        parsed = jsonParseLLMOutput(buffer) || {}
+                        if (parsed.answer && currentAnswer !== parsed.answer) {
+                          if (currentAnswer === "") {
+                            Logger.info(
+                              "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                            )
+                            stream.writeSSE({
+                              event: ChatSSEvents.Start,
+                              data: "",
+                            })
+                            // First valid answer - send the whole thing
+                            stream.writeSSE({
+                              event: ChatSSEvents.ResponseUpdate,
+                              data: parsed.answer,
+                            })
+                          } else {
+                            // Subsequent chunks - send only the new part
+                            const newText = parsed.answer.slice(
+                              currentAnswer.length,
+                            )
+                            stream.writeSSE({
+                              event: ChatSSEvents.ResponseUpdate,
+                              data: newText,
+                            })
+                          }
+                          currentAnswer = parsed.answer
+                        }
+                      } catch (err) {
+                        const errMessage = (err as Error).message
+                        Logger.error(
+                          err,
+                          `Error while parsing LLM output ${errMessage}`,
+                        )
+                        continue
+                      }
                     }
                   }
-                }
-                if (chunk.cost) {
-                  costArr.push(chunk.cost)
-                }
-                if (chunk.metadata?.usage) {
-                  tokenArr.push({
-                    inputTokens: chunk.metadata.usage.inputTokens,
-                    outputTokens: chunk.metadata.usage.outputTokens,
-                  })
+                  if (chunk.cost) {
+                    costArr.push(chunk.cost)
+                  }
+                  if (chunk.metadata?.usage) {
+                    tokenArr.push({
+                      inputTokens: chunk.metadata.usage.inputTokens,
+                      outputTokens: chunk.metadata.usage.outputTokens,
+                    })
+                  }
                 }
               }
 
@@ -4636,7 +4902,7 @@ export const AgentMessageApi = async (c: Context) => {
             imageCitations: params.imageCitations,
             message: processed,
             thinking: params.thinking,
-            modelId:
+            modelId: (actualModelId as Models) || 
               ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             cost: totalCost.toString(),
             tokensUsed: totalTokens,
@@ -4735,156 +5001,6 @@ export const AgentMessageApi = async (c: Context) => {
           }
         }
 
-        // Path B: try "answer from conversation OR rewrite then RAG"
-        const searchOrAnswerIterator =
-          generateSearchQueryOrAnswerFromConversation(
-            message,
-            ctx,
-            {
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-              stream: true,
-              json: true,
-              reasoning:
-                userRequestsReasoning &&
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: limitedMessages,
-              agentPrompt: agentPromptForLLM,
-            },
-            undefined,
-            previousClassification,
-          )
-
-        // Buffer the JSON-ish control stream
-        let buffer = ""
-        let queryFilters = {
-          apps: [],
-          entities: [],
-          startTime: "",
-          endTime: "",
-          count: 0,
-          sortDirection: "",
-          intent: {},
-          offset: 0,
-        }
-        let parsed = {
-          answer: "",
-          queryRewrite: "",
-          temporalDirection: null,
-          filter_query: "",
-          type: "",
-          intent: {},
-          filters: queryFilters,
-        }
-        let costArrA: number[] = []
-        let tokenArrA: { inputTokens: number; outputTokens: number }[] = []
-
-        for await (const chunk of searchOrAnswerIterator) {
-          if (chunk.text) {
-            buffer += chunk.text
-            try {
-              parsed = jsonParseLLMOutput(buffer) || parsed
-            } catch {
-              // keep buffering until valid
-            }
-          }
-          if (chunk.cost) costArrA.push(chunk.cost)
-          if (chunk.metadata?.usage) {
-            tokenArrA.push({
-              inputTokens: chunk.metadata.usage.inputTokens,
-              outputTokens: chunk.metadata.usage.outputTokens,
-            })
-          }
-        }
-
-        if (parsed.answer) {
-          // Found direct answer from conversation; persist/return
-          return await finalizeAndRespond({
-            answer: parsed.answer,
-            thinking: "",
-            citations: [],
-            imageCitations: [],
-            citationMap: {},
-            costArr: costArrA,
-            tokenArr: tokenArrA,
-          })
-        }
-
-        // No direct answer -> do full RAG
-        const classification: TemporalClassifier & QueryRouterResponse = {
-          direction: parsed.temporalDirection,
-          type: parsed.type as QueryType,
-          filterQuery: parsed.filter_query,
-          filters: {
-            ...(parsed?.filters ?? {}),
-            apps: parsed.filters?.apps || [],
-            entities: (parsed.filters?.entities as any) || [],
-            intent: parsed.intent || {},
-          },
-        }
-
-        if (parsed.queryRewrite) {
-          message = parsed.queryRewrite
-        }
-
-        const ragSpan = streamSpan.startSpan("rag_processing")
-        const understandSpan = ragSpan.startSpan("understand_message")
-        const iterator = UnderstandMessageAndAnswer(
-          email,
-          ctx,
-          message,
-          classification,
-          limitedMessages,
-          0.5,
-          userRequestsReasoning,
-          understandSpan,
-          agentPromptForLLM,
-        )
-
-        const {
-          answer,
-          thinking,
-          citations,
-          imageCitations,
-          citationMap,
-          costArr,
-          tokenArr,
-        } = await collectIterator(iterator)
-
-        understandSpan.end()
-        ragSpan.end()
-
-        if (answer || wasStreamClosedPrematurely) {
-          return await finalizeAndRespond({
-            answer,
-            thinking,
-            citations,
-            imageCitations,
-            citationMap,
-            costArr: costArrA.concat(costArr),
-            tokenArr: tokenArrA.concat(tokenArr),
-          })
-        } else {
-          const allMessages = await getChatMessagesWithAuth(
-            db,
-            chat?.externalId,
-            email,
-          )
-          const lastMessage = allMessages[allMessages.length - 1]
-          const msg =
-            "Oops, something went wrong. Please try rephrasing your question or ask something else."
-          await addErrMessageToMessage(lastMessage, msg)
-          streamSpan.end()
-          rootSpan.end()
-          return c.json(
-            {
-              chatId: chat.externalId,
-              messageId: lastMessage.externalId,
-              error: msg,
-            },
-            400,
-          )
-        }
       } catch (error) {
         const streamErrorSpan = streamSpan.startSpan("handle_nonstream_error")
         streamErrorSpan.addEvent("error", {
