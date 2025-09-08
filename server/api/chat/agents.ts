@@ -741,8 +741,8 @@ export const MessageWithToolsApi = async (c: Context) => {
     }
     
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
-    const NonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
+    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
@@ -754,8 +754,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           fileIds: [],
         }
     let fileIds = extractedInfo?.fileIds
-    if (NonImageAttachmentFileIds && NonImageAttachmentFileIds.length > 0) {
-      fileIds = [...fileIds, ...NonImageAttachmentFileIds]
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
@@ -1522,7 +1522,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     messagesWithNoErrResponse,
                     logAndStreamReasoning,
                     sub,
-                    ImageAttachmentFileIds,
+                    imageAttachmentFileIds,
                     actualModelId || undefined,
                   )
                   await logAndStreamReasoning({
@@ -2115,7 +2115,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   messagesWithNoErrResponse,
                   logAndStreamReasoning,
                   sub,
-                  ImageAttachmentFileIds,
+                  imageAttachmentFileIds,
                   actualModelId || undefined,
                 )
 
@@ -2303,7 +2303,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   messagesWithNoErrResponse,
                   logAndStreamReasoning,
                   sub,
-                  ImageAttachmentFileIds,
+                  imageAttachmentFileIds,
                   actualModelId || undefined,
                 )
                 await logAndStreamReasoning({
@@ -2349,7 +2349,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             agentPromptForLLM,
             messagesWithNoErrResponse,
             fallbackReasoning,
-            ImageAttachmentFileIds,
+            imageAttachmentFileIds,
             email,
             actualModelId || undefined,
           )
@@ -3588,8 +3588,8 @@ export const AgentMessageApi = async (c: Context) => {
     rootSpan.setAttribute("workspaceId", workspaceId)
 
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
-    const NonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
+    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
     let attachmentStorageError: Error | null = null
     let {
       message,
@@ -3726,10 +3726,10 @@ export const AgentMessageApi = async (c: Context) => {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
         }
-    isMsgWithContext = isMsgWithContext || (NonImageAttachmentFileIds && NonImageAttachmentFileIds.length > 0)
+    isMsgWithContext = isMsgWithContext || (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0)
     let fileIds = extractedInfo?.fileIds
-    if (NonImageAttachmentFileIds && NonImageAttachmentFileIds.length > 0) {
-      fileIds = [...fileIds, ...NonImageAttachmentFileIds]
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
 
     const agentDocs = agentForDb?.docIds || []
@@ -3922,7 +3922,7 @@ export const AgentMessageApi = async (c: Context) => {
 
             if (
               (isMsgWithContext && fileIds && fileIds?.length > 0) ||
-              (ImageAttachmentFileIds && ImageAttachmentFileIds?.length > 0)
+              (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
             ) {
               Logger.info(
                 "User has selected some context with query, answering only based on that given context",
@@ -3954,7 +3954,7 @@ export const AgentMessageApi = async (c: Context) => {
                 userRequestsReasoning,
                 understandSpan,
                 [],
-                ImageAttachmentFileIds,
+                imageAttachmentFileIds,
                 agentPromptForLLM,
               )
               stream.writeSSE({
@@ -4925,7 +4925,7 @@ export const AgentMessageApi = async (c: Context) => {
         // Path A: user provided explicit context (fileIds / attachments)
         if (
           (isMsgWithContext && fileIds && fileIds.length > 0) ||
-          (ImageAttachmentFileIds && ImageAttachmentFileIds.length > 0)
+          (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
         ) {
           const ragSpan = streamSpan.startSpan("rag_processing")
           const understandSpan = ragSpan.startSpan("understand_message")
@@ -4939,7 +4939,7 @@ export const AgentMessageApi = async (c: Context) => {
             userRequestsReasoning,
             understandSpan,
             [],
-            ImageAttachmentFileIds,
+            imageAttachmentFileIds,
             agentPromptForLLM,
           )
 

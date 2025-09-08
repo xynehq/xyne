@@ -462,7 +462,8 @@ const checkAndYieldCitations = async function* (
         const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
-          if (item.fields.sddocname === dataSourceFileSchema || item.fields.entity === KnowledgeBaseEntity.Attachment) {
+          const f = (item as any)?.fields
+          if (f?.sddocname === dataSourceFileSchema || f?.entity === KnowledgeBaseEntity.Attachment) {
             // Skip datasource and attachment files from citations
             continue
           }
@@ -2170,6 +2171,7 @@ async function* generateAnswerFromGivenContext(
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
+      generateAnswerSpan?.setAttribute("answer_found", false)
       generateAnswerSpan?.end()
       return
     }
@@ -4067,8 +4069,8 @@ export const MessageApi = async (c: Context) => {
       return MessageWithToolsApi(c)
     }
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
-    const NonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
+    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -4110,10 +4112,10 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    isMsgWithContext = isMsgWithContext || (NonImageAttachmentFileIds && NonImageAttachmentFileIds.length > 0)
+    isMsgWithContext = isMsgWithContext || (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0)
     let fileIds = extractedInfo?.fileIds
-    if (NonImageAttachmentFileIds && NonImageAttachmentFileIds.length > 0) {
-      fileIds = fileIds.concat(NonImageAttachmentFileIds)
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = fileIds.concat(nonImageAttachmentFileIds)
     }
     const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
@@ -4325,7 +4327,7 @@ export const MessageApi = async (c: Context) => {
           }
           if (
             (isMsgWithContext && fileIds && fileIds?.length > 0) ||
-            (ImageAttachmentFileIds && ImageAttachmentFileIds?.length > 0)
+            (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
           ) {
             let answer = ""
             let citations = []
@@ -4352,7 +4354,7 @@ export const MessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              ImageAttachmentFileIds,
+              imageAttachmentFileIds,
               agentPromptValue,
               actualModelId || config.defaultBestModel,
             )

@@ -9,11 +9,12 @@ export const generateFileId = () => Math.random().toString(36).substring(2, 9)
 export const getFileType = ({ type, name }: { type: string, name: string }): FileType => {
   const fileName = name.toLowerCase()
   const mimeType = type.toLowerCase()
+  const baseMime = mimeType.split(";")[0]
 
   // Check each file type category using the mappings
   for (const [fileType, mimeTypes] of Object.entries(MIME_TYPE_MAPPINGS)) {
     // Check MIME type first (more reliable)
-    if (mimeTypes.some(mime => mimeType === mime || mimeType.includes(mime))) {
+    if (mimeTypes.some(mime => baseMime === mime)) {
       return fileType as FileType
     }
   }

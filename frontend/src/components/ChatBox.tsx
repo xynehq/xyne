@@ -90,7 +90,7 @@ interface SelectedFile {
   uploading?: boolean
   uploadError?: string
   preview?: string // URL for image preview
-  fileType?: string
+  fileType?: FileType
 }
 
 export const getFileIcon = (fileType: FileType | string | undefined) => {
