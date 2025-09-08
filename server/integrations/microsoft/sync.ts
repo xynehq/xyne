@@ -45,7 +45,6 @@ import {
   type MicrosoftGraphClient,
 } from "./client"
 import {
-  getUniqueEmails,
   getTextFromEventDescription,
   getAttendeesOfEvent,
   getAttachments,
@@ -65,6 +64,9 @@ import type { Document } from "@langchain/core/documents"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { processSpreadsheetFileWithSheetInfo } from "./attachment-utils"
 import { discoverMailFolders } from "./outlook"
+import { getUniqueEmails } from "../google"
+import { deleteWholeSpreadsheet } from "../google/sync"
+import { DriveMime } from "../google/utils"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "microsoft-sync",
@@ -390,27 +392,39 @@ export const handleOneDriveChange = async (
   // Handle deleted files
   if (change.deleted) {
     try {
-      const doc = await getDocumentOrNull(fileSchema, docId)
+      const doc = await getDocumentOrSpreadsheet(docId)
       if (doc) {
-        const permissions =
-          (doc.fields as VespaFileWithDrivePermission)?.permissions ?? []
-        if (permissions.length === 1) {
-          // Remove the document entirely
-          if (permissions[0] === userEmail) {
-            await DeleteDocument(docId, fileSchema)
-            stats.removed += 1
-            stats.summary += `${docId} removed\n`
-          } else {
-            throw new Error(
-              "We got a change for us that we didn't have access to in Vespa",
-            )
-          }
+        // Check if its spreadsheet
+        if ((doc?.fields as VespaFile).mimeType === DriveMime.Sheets) {
+          await deleteWholeSpreadsheet(
+            doc?.fields as VespaFile,
+            docId,
+            stats,
+            userEmail,
+          )
         } else {
-          // Remove our user's permission from the document
-          const newPermissions = permissions.filter((v) => v && v !== userEmail)
-          await UpdateDocumentPermissions(fileSchema, docId, newPermissions)
-          stats.updated += 1
-          stats.summary += `user lost permission for doc: ${docId}\n`
+          const permissions =
+            (doc.fields as VespaFileWithDrivePermission)?.permissions ?? []
+          if (permissions.length === 1) {
+            // Remove the document entirely
+            if (permissions[0] === userEmail) {
+              await DeleteDocument(docId, fileSchema)
+              stats.removed += 1
+              stats.summary += `${docId} removed\n`
+            } else {
+              throw new Error(
+                "We got a change for us that we didn't have access to in Vespa",
+              )
+            }
+          } else {
+            // Remove our user's permission from the document
+            const newPermissions = permissions.filter(
+              (v) => v && v !== userEmail,
+            )
+            await UpdateDocumentPermissions(fileSchema, docId, newPermissions)
+            stats.updated += 1
+            stats.summary += `user lost permission for doc: ${docId}\n`
+          }
         }
       } else {
         Logger.error(`No document with docId ${docId} found to delete in Vespa`)
@@ -423,7 +437,6 @@ export const handleOneDriveChange = async (
     }
     return stats
   }
-
   // Handle file additions/updates
   try {
     // Check if document already exists
@@ -487,7 +500,7 @@ export const getDocumentOrSpreadsheet = async (docId: string) => {
 }
 
 // Discover current folders and detect changes
-const discoverFolderChanges = async (
+const handleMicrosoftFolderChanges = async (
   client: MicrosoftGraphClient,
   userEmail: string,
   existingFolders: Record<string, string>,
@@ -556,7 +569,7 @@ const handleOutlookChanges = async (
 
     // Discover folder changes
     const { currentFolders, newFolders, deletedFolderIds } =
-      await discoverFolderChanges(client, userEmail, currentDeltaTokens)
+      await handleMicrosoftFolderChanges(client, userEmail, currentDeltaTokens)
 
     // Handle deleted folders
     if (deletedFolderIds.length > 0) {
@@ -903,7 +916,7 @@ const handleMicrosoftCalendarEventsChanges = async (
 
           if (fullEvent) {
             const existingEvent = await getDocumentOrNull(eventSchema, docId)
-            await insertEventIntoVespa(fullEvent, userEmail)
+            await insertMicrosoftCalendarEventIntoVespa(fullEvent, userEmail)
 
             if (existingEvent) {
               stats.updated += 1
@@ -1012,7 +1025,10 @@ const fetchEventsBatch = async (
 }
 
 // Insert Microsoft event into Vespa
-const insertEventIntoVespa = async (event: any, userEmail: string) => {
+const insertMicrosoftCalendarEventIntoVespa = async (
+  event: any,
+  userEmail: string,
+) => {
   try {
     const { baseUrl, joiningUrl } = getJoiningLink(event)
     const { attendeesInfo, attendeesEmails, attendeesNames } =

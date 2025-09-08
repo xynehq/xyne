@@ -66,17 +66,13 @@ import type { Client } from "@microsoft/microsoft-graph-client"
 import type { DriveItem } from "@microsoft/microsoft-graph-types"
 import { Schema } from "zod"
 import { handleOutlookIngestion } from "./outlook"
+import { getUniqueEmails } from "../google"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 
 export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "microsoft",
 })
-
-// Get unique emails from permissions
-export const getUniqueEmails = (permissions: string[]): string[] => {
-  return Array.from(new Set(permissions.filter((email) => email.trim() !== "")))
-}
 
 // Convert HTML to text
 const htmlToText = require("html-to-text")

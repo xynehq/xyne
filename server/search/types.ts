@@ -1,5 +1,5 @@
 import { z } from "zod"
-export const fileSchema = "file" // Replace with your actual schema name
+export const fileSchema = "file"
 export const userSchema = "user"
 
 // calendar
@@ -1237,9 +1237,7 @@ export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
   googledrive: Apps.GoogleDrive,
   googlecalendar: Apps.GoogleCalendar,
   // Microsoft mappings (mirroring Google structure)
-  outlook: Apps.MicrosoftOutlook,
   microsoftoutlook: Apps.MicrosoftOutlook,
-  onedrive: Apps.MicrosoftDrive,
   microsoftdrive: Apps.MicrosoftDrive,
   microsoftcalendar: Apps.MicrosoftCalendar,
   slack: Apps.Slack,
