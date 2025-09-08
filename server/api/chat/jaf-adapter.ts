@@ -166,7 +166,7 @@ function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.AnyZodObje
   }
 }
 
-export function buildInternalJAFTools(baseCtx: JAFAdapterCtx): Tool<any, JAFAdapterCtx>[] {
+export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
   const tools: Tool<any, JAFAdapterCtx>[] = []
   for (const [name, at] of Object.entries(agentTools)) {
     // Skip the fallbackTool as it's no longer needed
@@ -181,22 +181,29 @@ export function buildInternalJAFTools(baseCtx: JAFAdapterCtx): Tool<any, JAFAdap
         parameters: paramsToZod(at.parameters || {}),
       },
       async execute(args, context) {
-        // Delegate to existing agent tool implementation
-        const res = await at.execute(
-          args,
-          undefined,
-          context.email,
-          context.userCtx,
-          context.agentPrompt,
-          context.userMessage,
-        )
-        // Normalize to JAF ToolResult while keeping summary string as data
-        const summary = res?.result ?? ""
-        const contexts = res?.contexts ?? []
-        return ToolResponse.success(summary, {
-          toolName: name,
-          contexts,
-        })
+        try {
+          // Delegate to existing agent tool implementation
+          const res = await at.execute(
+            args,
+            undefined,
+            context.email,
+            context.userCtx,
+            context.agentPrompt,
+            context.userMessage,
+          )
+          // Normalize to JAF ToolResult while keeping summary string as data
+          const summary = res?.result ?? ""
+          const contexts = res?.contexts ?? []
+          return ToolResponse.success(summary, {
+            toolName: name,
+            contexts,
+          })
+        }catch (err: any) { 
+           return ToolResponse.error( 
+             "EXECUTION_FAILED", 
+              `Internal tool ${name} failed: ${err?.message || String(err)}`, 
+            ) 
+        }
       },
     })
   }

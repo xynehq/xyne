@@ -1742,9 +1742,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             agentPrompt: agentPromptForLLM,
             userMessage: message,
           }
-          const internalJAFTools: JAFTool<any, JAFAdapterCtx>[] = buildInternalJAFTools(
-            baseCtx,
-          )
+          const internalJAFTools: JAFTool<any, JAFAdapterCtx>[] = buildInternalJAFTools()
           const mcpJAFTools: JAFTool<any, JAFAdapterCtx>[] =
             buildMCPJAFTools(finalToolsList as unknown as JAFinalToolsList)
           const allJAFTools = [...internalJAFTools, ...mcpJAFTools]

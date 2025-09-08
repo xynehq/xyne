@@ -129,7 +129,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
         }
         
       } else {
-        console.log("No KnowledgeBase items found in selectedItems")
+        Logger.info("No KnowledgeBase items found in selectedItems")
       }
 
     Logger.debug({ agentPromptData }, "Parsed agent prompt data")

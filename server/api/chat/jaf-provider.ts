@@ -102,6 +102,43 @@ function jafToProviderMessages(
 
 // No OpenAI message conversion needed when using native provider hub only.
 
+// Helper to recursively unwrap Zod wrapper types and determine if field is required
+function isZodSchemaRequired(zodSchema: any): boolean {
+  const def = zodSchema?._def
+  const typeName = def?.typeName
+
+  // These wrapper types make a field optional/not required
+  if (
+    typeName === "ZodOptional" ||
+    typeName === "ZodDefault" ||
+    typeName === "ZodNullable" ||
+    typeName === "ZodNull"
+  ) {
+    return false
+  }
+
+  // These wrapper types need to be unwrapped to check the inner type
+  if (typeName === "ZodEffects" || typeName === "ZodBranded") {
+    const innerType = def.schema || def.type
+    if (innerType) {
+      return isZodSchemaRequired(innerType)
+    }
+  }
+
+  // For other wrapper types that have innerType
+  if (def?.innerType) {
+    return isZodSchemaRequired(def.innerType)
+  }
+
+  // For other wrapper types that have type
+  if (def?.type) {
+    return isZodSchemaRequired(def.type)
+  }
+
+  // Base case: if we reach here, it's a core type that is required by default
+  return true
+}
+
 // Minimal Zod -> JSON Schema converter sufficient for tool parameters
 function zodSchemaToJsonSchema(zodSchema: any): any {
   const def = zodSchema?._def
@@ -127,7 +164,9 @@ function zodSchemaToJsonSchema(zodSchema: any): any {
     const required: string[] = []
     for (const [key, value] of Object.entries(shape)) {
       properties[key] = zodSchemaToJsonSchema(value)
-      if (!(value as any).isOptional()) required.push(key)
+      if (isZodSchemaRequired(value)) {
+        required.push(key)
+      }
     }
     return withDesc({
       type: "object",
