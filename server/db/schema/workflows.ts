@@ -64,6 +64,7 @@ export const toolTypeEnum = pgEnum("tool_type", [
   "merged_node",
   "form",
   "email",
+  "ai_agent",
 ])
 
 // Tool Execution Status Enum
@@ -302,10 +303,13 @@ export const createWorkflowToolSchema = z.object({
     "merged_node",
     "form",
     "email",
+    "ai_agent",
   ]),
   value: z.union([z.string(), z.number(), z.record(z.any())]).optional(),
   config: z.record(z.any()).optional(),
 })
+
+export const updateWorkflowToolSchema = createWorkflowToolSchema.partial()
 
 export const createWorkflowStepTemplateSchema = z.object({
   workflowTemplateId: z.string().uuid(),
@@ -353,10 +357,34 @@ export const formSubmissionSchema = z.object({
   formData: z.record(z.any()),
 })
 
+export const addStepToWorkflowSchema = z.object({
+  stepName: z.string().min(1).max(255),
+  stepDescription: z.string().optional(),
+  stepType: z.enum(["manual", "automated"]).default("automated"),
+  timeEstimate: z.number().int().min(0).default(300),
+  metadata: z.record(z.any()).optional(),
+  tool: z.object({
+    type: z.enum([
+      "delay",
+      "python_script",
+      "slack",
+      "gmail",
+      "agent",
+      "merged_node",
+      "form",
+      "email",
+      "ai_agent",
+    ]),
+    value: z.union([z.string(), z.number(), z.record(z.any())]).optional(),
+    config: z.record(z.any()).optional(),
+  }),
+})
+
 export type CreateWorkflowTemplateRequest = z.infer<
   typeof createWorkflowTemplateSchema
 >
 export type CreateWorkflowToolRequest = z.infer<typeof createWorkflowToolSchema>
+export type UpdateWorkflowToolRequest = z.infer<typeof updateWorkflowToolSchema>
 export type CreateWorkflowStepTemplateRequest = z.infer<
   typeof createWorkflowStepTemplateSchema
 >
@@ -374,3 +402,4 @@ export type UpdateWorkflowStepExecutionRequest = z.infer<
   typeof updateWorkflowStepExecutionSchema
 >
 export type FormSubmissionRequest = z.infer<typeof formSubmissionSchema>
+export type AddStepToWorkflowRequest = z.infer<typeof addStepToWorkflowSchema>

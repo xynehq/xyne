@@ -226,7 +226,7 @@ import {
   getPublicAgentsByUser,
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
-import type {GroundingSupport } from "@google/genai"
+import type { GroundingSupport } from "@google/genai"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -4757,7 +4757,7 @@ export const MessageApi = async (c: Context) => {
                     data: JSON.stringify({
                       contextChunks: citations,
                       citationMap: citationMap,
-                      updatedResponse: answer
+                      updatedResponse: answer,
                     }),
                   })
                 }
