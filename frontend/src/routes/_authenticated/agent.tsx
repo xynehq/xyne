@@ -1468,6 +1468,12 @@ function AgentComponent() {
     // Collect data source IDs
     const dataSourceIds: string[] = []
     let hasDataSourceSelections = false
+
+    // Check for Slack channels in selected entities
+    const slackChannels = selectedEntities.filter(
+      (entity) =>
+        entity.app === Apps.Slack && entity.entity === SlackEntity.Channel,
+    )
     // Process each selected integration
     for (const [integrationId, isSelected] of Object.entries(
       selectedIntegrations,
@@ -1520,6 +1526,14 @@ function AgentComponent() {
             selectedAll: true,
           }
         }
+      }
+    }
+
+    // Handle Slack channels from selected entities
+    if (slackChannels.length > 0) {
+      appIntegrationsObject["slack"] = {
+        itemIds: slackChannels.map((channel) => channel.docId),
+        selectedAll: false,
       }
     }
 
