@@ -3,7 +3,7 @@ import OpenAI from "openai"
 import { isDeepResearchModel, modelDetailsMap } from "@/ai/mappers"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
 import { AIProviders, Models } from "@/ai/types"
-import BaseProvider from "@/ai/provider/base"
+import BaseProvider, { regex } from "@/ai/provider/base"
 import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -20,22 +20,25 @@ const buildOpenAIImageParts = async (imagePaths: string[]) => {
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    // Check if the file already has an extension, if not add .png
-    const match = imgPath.match(/^(.+)_([0-9]+)$/)
+    const match = imgPath.match(regex)
     if (!match) {
-      Logger.error(`Invalid image path: ${imgPath}`)
+      Logger.error(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
       throw new Error(`Invalid image path: ${imgPath}`)
     }
 
-    // Validate that the docId doesn't contain path traversal characters
-    const docId = match[1]
+    const docIndex = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
+
     if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
       Logger.error(`Invalid docId containing path traversal: ${docId}`)
       throw new Error(`Invalid docId: ${docId}`)
     }
 
     const imageDir = path.join(baseDir, docId)
-    const absolutePath = findImageByName(imageDir, match[2])
+    const absolutePath = findImageByName(imageDir, imageNumber)
     const extension = path.extname(absolutePath).toLowerCase()
 
     // Map file extensions to MIME types for OpenAI

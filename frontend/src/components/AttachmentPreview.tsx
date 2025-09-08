@@ -1,14 +1,7 @@
 import React, { useState } from "react"
 import { AttachmentMetadata } from "shared/types"
 import {
-  Download,
   Eye,
-  FileText,
-  Image,
-  Video,
-  Music,
-  Archive,
-  File,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,25 +10,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { authFetch } from "@/utils/authFetch"
+import { getFileType } from "@/utils/fileUtils"
+import { getFileIcon } from "@/components/ChatBox"
 
 interface AttachmentPreviewProps {
   attachment: AttachmentMetadata
   className?: string
-}
-
-const getFileIcon = (fileType: string) => {
-  if (fileType.startsWith("image/")) return Image
-  if (fileType.startsWith("video/")) return Video
-  if (fileType.startsWith("audio/")) return Music
-  if (fileType.includes("pdf") || fileType.includes("document")) return FileText
-  if (
-    fileType.includes("zip") ||
-    fileType.includes("tar") ||
-    fileType.includes("gz")
-  )
-    return Archive
-  return File
 }
 
 const formatFileSize = (bytes: number): string => {
@@ -53,45 +33,10 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   const [showImageModal, setShowImageModal] = useState(false)
   const [imageError, setImageError] = useState(false)
 
-  const FileIcon = getFileIcon(attachment.fileType)
   const isImage = attachment.isImage && !imageError
   const thumbnailUrl = attachment.thumbnailPath
     ? `/api/v1/attachments/${attachment.fileId}/thumbnail`
     : null
-
-  const handleDownload = async () => {
-    let url: string | null = null
-    try {
-      const response = await authFetch(
-        `/api/v1/attachments/${attachment.fileId}`,
-        {
-          credentials: "include",
-        },
-      )
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error("Please log in to download attachments")
-        }
-        throw new Error(`Download failed: ${response.statusText}`)
-      }
-
-      const blob = await response.blob()
-      url = window.URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = attachment.fileName
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-    } catch (error) {
-      console.error("Download failed:", error)
-      alert(error instanceof Error ? error.message : "Download failed")
-    } finally {
-      if (url) {
-        window.URL.revokeObjectURL(url)
-      }
-    }
-  }
 
   const handleImageView = () => {
     if (isImage) {
@@ -126,7 +71,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           </div>
         ) : (
           <div className="w-12 h-12 flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-md">
-            <FileIcon className="w-6 h-6 text-gray-600 dark:text-gray-400" />
+            {getFileIcon(getFileType({type: attachment.fileType, name: attachment.fileName}))}
           </div>
         )}
       </div>
@@ -137,33 +82,24 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
           {attachment.fileName}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          {formatFileSize(attachment.fileSize)} • {attachment.fileType}
+          {formatFileSize(attachment.fileSize)} • {getFileType({type: attachment.fileType, name: attachment.fileName})}
         </p>
       </div>
 
       {/* Actions */}
-      <div className="flex items-center space-x-2">
-        {isImage && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleImageView}
-            className="p-2"
-            aria-label={`Preview ${attachment.fileName}`}
-          >
-            <Eye className="w-4 h-4" />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleDownload}
-          className="p-2"
-          aria-label={`Download ${attachment.fileName}`}
-        >
-          <Download className="w-4 h-4" />
-        </Button>
-      </div>
+      {isImage && (
+        <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleImageView}
+              className="p-2"
+              aria-label={`Preview ${attachment.fileName}`}
+            >
+              <Eye className="w-4 h-4" />
+            </Button>
+          </div>
+      )}
 
       {/* Image Modal */}
       {isImage && (
