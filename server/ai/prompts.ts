@@ -1,5 +1,9 @@
 import { getDateForAI } from "@/utils/index"
-import { QueryType } from "./types"
+import {
+  QueryType,
+  type QueryRouterLLMResponse,
+  type ChainBreakClassifications,
+} from "./types"
 import {
   Apps,
   CalendarEntity,
@@ -1051,7 +1055,11 @@ export const SearchQueryToolContextPrompt = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string): string => {
+export const searchQueryPrompt = (
+  userContext: string,
+  previousClassification?: QueryRouterLLMResponse | null,
+  chainBreakClassifications?: ChainBreakClassifications | null,
+): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
@@ -1060,9 +1068,45 @@ export const searchQueryPrompt = (userContext: string): string => {
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
+
+    ${
+      previousClassification
+        ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
+
+    ${
+      chainBreakClassifications
+        ? `**Chain Break Classifications (Previous Conversation Chains):**
+    ${JSON.stringify(chainBreakClassifications, null, 2)}
+
+    NOTE : PREVIOUS QUERY CLASSIFICATION, PREVIOUS ASSISTANT RESPONSE AND CHAINS ARE FOR REFERENCE ONLY, YOU CAN USE IT TO CHECK IF THE CURRENT QUERY IS FOLLOW UP OF ANY PREVIOUS QUERIES`
+        : ""
+    }
+
+    **IMPORTANT - Chain Context Integration:**
+    The above chain break classifications represent previous conversation topics that were interrupted by non-follow-up queries.
+    - If the current query relates to any of these previous chains, use their classifications as reference context
+    - This allows queries to reconnect with earlier conversation threads even after chain breaks
+    - Example: If Chain 1 was about "emails from [X] person", Chain 2 broke it with "weather update", and current query is "show me more from him", 
+      use Chain 1's classification to understand "him" refers to John and the context is emails
+    - Pay special attention to keyword similarities and contextual references that might connect to these previous chains`
+        : ""
+    }
+
+    **IMPORTANT - For Follow-Up Queries:**
+    When requesting more results (e.g : "more", "continue", "next", "show more") or follow-up queries:
+
+    **OFFSET CALCULATION WILL HAPPEN FOR ${QueryType.GetItems}:**
+    - Formula: newOffset = previousOffset + previousCount
+    - Preserve your app and entity
+    - Current calculation: newOffset = ${previousClassification?.filters?.offset || 0} + ${previousClassification?.filters?.count || 0}
+    - CRITICAL: Use original requested count, NOT actual returned count    
+    
     Now handle the query as follows:
 
     0. **Follow-Up Detection:** HIGHEST PRIORITY
+
+      - You can use the previous classification, chain break classifications, and last assistant response to determine if the current query is a follow-up.
+
       For follow-up detection, if the users latest query against the ENTIRE conversation history.
       **Required Evidence for Follow-Up Classification:**
 
@@ -1073,6 +1117,8 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "can you elaborate on [specific content]"
         - "what about the [specific item mentioned before]"
         - "expand on that [specific reference]"
+        - "now tell more from [different source]"
+        - "what about from [different app/source]"
 
       - **Direct Back-References:** Questions referencing specific numbered items, names, or content from previous responses:
         - "the second option you mentioned"
@@ -1081,9 +1127,16 @@ export const searchQueryPrompt = (userContext: string): string => {
 
       - **Context-Dependent Ordinals/Selectors:** Language that only makes sense with prior context:
 
+      - **Source Transition Patterns:** Queries that request similar information from different sources:
+        - Following a query about emails with "now from slack"
+        - Following a query about one app with "what about [different app]"
+        - Pattern: Previous query about data source A, current query about data source B with similar intent
+        - Temporal continuity words: "now", "then", "next", "also"
+
       **Mandatory Conditions for "isFollowUp": true:**
       1. The current query must contain explicit referential language (as defined above)
-      2. The referential language must point to specific, identifiable content in a previous assistant response
+      2. The referential language must point to specific, identifiable content in a previous assistant response or it is related to previous classification or chain break classifications.
+      3. If the query is ambiguous and it's related to the previous classification, chain break classifications, or last assistant response, it can be considered a follow-up if it clearly builds on that context
 
       **Always set "isFollowUp": false when:**
       1. The query is fully self-contained and interpretable without conversation history
@@ -1244,8 +1297,6 @@ export const searchQueryPrompt = (userContext: string): string => {
     3. **${QueryType.SearchWithFilters}**:
       - The user is referring explicitly to one or more <app> or <entity> and wants to search content within those apps/entities
       - Used for content-based searches including:
-        - Person names without email addresses (e.g., "emails from John", "emails from prateek")
-        - Topic/subject keywords
         - Any content that needs to be searched rather than precisely matched
         - Apps/entities can be single or multiple
         - Multiple apps/entities should be detected and included in arrays
@@ -1370,7 +1421,7 @@ export const searchQueryPrompt = (userContext: string): string => {
            "apps": ["<app1>", "<app2>"] or ["<single_app>"] or null,
            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"] or null,
            "count": "<number of items to retrieve or null>",
-           "offset": "<number of items to skip or null>",
+           "offset": "<number for pagination - IMPORTANT: For follow-up queries, use (previousOffset + previousRequestedCount), NOT returned count>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
@@ -1561,21 +1612,16 @@ ${retrievedContext}
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 
-If relevant emails are found in Retrieved Context:
 {
   "answer": "Formatted response string with citations following the specified format"
-}
-
-If NO relevant emails are found in Retrieved Context or context doesn't match query:
-{
-  "answer": null
 }
 
 REMEMBER: 
 - Your complete response must be ONLY a valid JSON object containing the single "answer" key.
 - DO NOT explain your reasoning or state what you're doing.
-- Return null if the Retrieved Context doesn't contain information that directly answers the query.
-- DO NOT provide alternative suggestions or general responses.`
+- Format ALL emails found in the Retrieved Context - do not apply additional filtering.
+- Only return null if the Retrieved Context contains zero emails. 
+- If there is even one email, format and return them as specified.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
@@ -2298,3 +2344,43 @@ ${retrievedContext}
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
 `
+
+export const deepResearchPrompt = (userCtx: string) => `
+User-Details: ${userCtx} \n\n 
+
+You are a professional research assistant tasked with preparing a structured, evidence-driven report on the question the user poses.
+
+Core Guidelines:
+- Provide **data-rich insights**: include specific figures, trends, statistics, case studies, measurable outcomes, or quantified comparisons wherever possible.
+- **Structure output for clarity**: organize findings into sections with clear headings. Highlight when data could be summarized visually (e.g., "this would work well as a line chart of adoption trends over time" or "a table comparing regional costs").
+- **Use high-quality sources**: prioritize peer-reviewed studies, government/agency reports, industry whitepapers, official financial filings, and credible news outlets. 
+- **Internal data use**: leverage our internal file lookup tool to retrieve proprietary data. Avoid duplicate fetches for the same file; always integrate retrieved data where relevant.
+- **Citations**: provide inline citations with full source metadata so findings are transparent and verifiable.
+- **Analytical reasoning**: avoid generic commentary. Each section should connect facts to implications, explain significance, and support decision-making in policy, strategy, or financial contexts.
+
+Tone & Style:
+- Objective, analytical, and concise.
+- Prioritize evidence and reasoning over speculation.
+- Focus on insights that could directly inform research, business strategy, or decision-making.
+`
+
+export const webSearchSystemPrompt = (userCtx: string) =>
+  `User-Details: ${userCtx} \n\n
+       You are a helpful AI assistant with access to web search. Use web search when you need current information or real-time data to answer the user's question accurately. 
+       
+       IMPORTANT: Always consider the user's timezone and current time when performing web searches. If the user asks about current events, prices, weather, business hours, or any time-sensitive information, make sure to search for information relevant to their timezone and current date/time. When providing time-sensitive information like business hours, event schedules, or deadlines, always reference them in the user's timezone.`
+
+// Agent with No Integrations System Prompt
+export const agentWithNoIntegrationsSystemPrompt = `You are a helpful AI assistant, but you currently don't have access to any connected apps or knowledge sources to provide specific information from your workspace.
+
+To get the most out of our conversation and access your personal data like emails, documents, calendar events, or other workplace information, please connect relevant apps or knowledge sources to enable me to help you more effectively.
+
+Without these connections, I can only provide general assistance and cannot access your specific:
+- Emails and messages
+- Documents and files 
+- Calendar events and meetings
+- Contacts and directory information
+- Project-specific data
+- Company knowledge bases
+
+I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`

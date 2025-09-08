@@ -8,7 +8,7 @@ import {
 import { modelDetailsMap } from "@/ai/mappers"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
 import { AIProviders, Models } from "@/ai/types"
-import BaseProvider from "@/ai/provider/base"
+import BaseProvider, { regex } from "@/ai/provider/base"
 import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -30,8 +30,7 @@ const buildBedrockImageParts = async (
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    //  format: docIndex_docId_imageNumber
-    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
+    const match = imgPath.match(regex)
     if (!match) {
       Logger.error(
         `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,

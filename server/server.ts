@@ -17,6 +17,7 @@ import {
   SearchApi,
   chatStopSchema,
   SearchSlackChannels,
+  agentChatMessageSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -67,6 +68,7 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
+  GetWorkspaceApiKeys,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -120,6 +122,7 @@ import {
   GetChatTraceApi,
   StopStreamingApi,
   GenerateFollowUpQuestionsApi,
+  GetAvailableModelsApi,
 } from "@/api/chat/chat"
 import {
   CreateSharedChatApi,
@@ -183,6 +186,10 @@ import {
   GetFilePreviewApi,
   GetFileContentApi,
 } from "@/api/knowledgeBase"
+import {
+  searchKnowledgeBaseSchema,
+  SearchKnowledgeBaseApi,
+} from "./api/knowledgeBase/search"
 
 import {
   isSlackEnabled,
@@ -210,7 +217,12 @@ import {
   groupVespaSearchProxy,
 } from "@/routes/vespa-proxy"
 import { updateMetricsFromThread } from "@/metrics/utils"
-import type { PublicUserWorkspace } from "./db/schema"
+
+import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
+import { sendMailHelper } from "@/api/testEmail"
+import { emailService } from "./services/emailService"
+import { AgentMessageApi } from "./api/chat/agents"
+import { eq } from "drizzle-orm"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -269,6 +281,55 @@ const AdminRoleMiddleware = async (c: Context, next: Next) => {
   }
 
   await next()
+}
+
+const ApiKeyMiddleware = async (c: Context, next: Next) => {
+  let apiKey: string
+  try {
+    // Extract API key from request body
+    apiKey = c.req.header("x-api-key") || (c.req.query("api_key") as string)
+
+    if (!apiKey) {
+      Logger.error(
+        "API key verification failed: Missing apiKey in request body",
+      )
+      throw new HTTPException(401, {
+        message: "Missing API key. Please provide apiKey in request body.",
+      })
+    }
+    // Decrypt and validate the API key
+    const [foundApiKey] = await db
+      .select({
+        workspaceId: apiKeys.workspaceId,
+        userId: apiKeys.userId,
+        userEmail: users.email,
+      })
+      .from(apiKeys)
+      .leftJoin(users, eq(apiKeys.userId, users.externalId)) // or users.externalId depending on your schema
+      .where(eq(apiKeys.key, apiKey))
+      .limit(1)
+
+    if (!foundApiKey) {
+      throw new HTTPException(400, {
+        message: "Invalid API KEY",
+      })
+    }
+    c.set("apiKey", apiKey)
+    c.set("workspaceId", foundApiKey.workspaceId)
+    c.set("userEmail", foundApiKey.userEmail)
+
+    Logger.info(`API key verified for workspace ID: ${foundApiKey.workspaceId}`)
+
+    await next()
+  } catch (error) {
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    Logger.warn("API key verification failed: Invalid JSON body")
+    throw new HTTPException(400, {
+      message: "Invalid API KEY",
+    })
+  }
 }
 
 // Middleware for frontend routes
@@ -664,6 +725,18 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
+  .post(
+    "/agent/chat",
+    ApiKeyMiddleware,
+    zValidator("json", agentChatMessageSchema),
+    AgentMessageApi,
+  )
+  .post(
+    "/agent/chat/stop",
+    ApiKeyMiddleware,
+    zValidator("json", chatStopSchema),
+    StopStreamingApi,
+  )
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
@@ -709,6 +782,7 @@ export const AppRoutes = app
     zValidator("json", followUpQuestionsSchema),
     GenerateFollowUpQuestionsApi,
   )
+  .get("/chat/models", GetAvailableModelsApi)
   // Shared chat routes
   .post(
     "/chat/share/create",
@@ -799,10 +873,17 @@ export const AppRoutes = app
     zValidator("query", generateApiKeySchema),
     GenerateApiKey,
   )
+  //send Email Route
+  .post("/email/send", sendMailHelper)
 
   // Collection Routes
   .post("/cl", CreateCollectionApi)
   .get("/cl", ListCollectionsApi)
+  .get(
+    "/cl/search",
+    zValidator("query", searchKnowledgeBaseSchema),
+    SearchKnowledgeBaseApi,
+  )
   .get("/cl/:clId", GetCollectionApi)
   .put("/cl/:clId", UpdateCollectionApi)
   .delete("/cl/:clId", DeleteCollectionApi)
@@ -900,7 +981,7 @@ export const AppRoutes = app
   )
   .post(
     "/apikey/mcp/create",
-    zValidator("form", addApiKeyMCPConnectorSchema),
+    zValidator("json", addApiKeyMCPConnectorSchema),
     AddApiKeyMCPConnector,
   )
   .post(
@@ -953,11 +1034,13 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentFeedbackMessages,
   )
+
   .get(
     "/agents/:agentId/user-feedback/:userId",
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
   )
+  .get("/workspace/api-key", GetWorkspaceApiKeys)
   .get(
     "/admin/users/:userId/feedback",
     zValidator("query", userAgentLeaderboardQuerySchema),
@@ -1132,6 +1215,7 @@ app.get(
         UserRole.User,
         existingWorkspace.externalId,
       )
+
       const accessToken = await generateTokens(
         user.email,
         user.role,
@@ -1145,6 +1229,10 @@ app.get(
       )
       // save refresh token generated in user schema
       await saveRefreshTokenToDB(db, email, refreshToken)
+      const emailSent = await emailService.sendWelcomeEmail(user.email, user.name)
+      if(emailSent) {
+        Logger.info(`Welcome email sent to ${user.email} and ${user.name}`)
+      }
       const opts = {
         secure: true,
         path: "/",
@@ -1186,6 +1274,10 @@ app.get(
     )
     // save refresh token generated in user schema
     await saveRefreshTokenToDB(db, email, refreshToken)
+    const emailSent = await emailService.sendWelcomeEmail(userAcc.email, userAcc.name)
+    if(emailSent) {
+      Logger.info(`Welcome email sent to new workspace creator ${userAcc.email}`)
+    }
     const opts = {
       secure: true,
       path: "/",
@@ -1287,11 +1379,6 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get(
-  "/knowledge-base",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
 app.get(
   "/knowledgeManagement",
   AuthRedirect,

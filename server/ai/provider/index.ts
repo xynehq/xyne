@@ -36,11 +36,13 @@ import { parse } from "partial-json"
 import { ModelToProviderMap } from "@/ai/mappers"
 import type {
   AnswerResponse,
+  ChainBreakClassifications,
   ConverseResponse,
   Cost,
   Intent,
   LLMProvider,
   ModelParams,
+  QueryRouterLLMResponse,
   QueryRouterResponse,
   TemporalClassifier,
 } from "@/ai/types"
@@ -81,6 +83,9 @@ import {
   withToolQueryPrompt,
   ragOffPromptJson,
   nameToEmailResolutionPrompt,
+  deepResearchPrompt,
+  webSearchSystemPrompt,
+  agentWithNoIntegrationsSystemPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -93,7 +98,7 @@ import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
-import { VertexAiProvider } from "@/ai/provider/vertex_ai"
+import { VertexAiProvider, VertexProvider } from "@/ai/provider/vertex_ai"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -241,7 +246,12 @@ const initializeProviders = (): void => {
   }
 
   if (OllamaModel) {
-    const ollama = new Ollama()
+    const ollama = new Ollama({
+      ...(aiProviderBaseUrl ? { host: aiProviderBaseUrl } : {}),
+    })
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and Ollama model, using base_url for LLM`)
+    }
     ollamaProvider = new OllamaProvider(ollama)
   }
 
@@ -273,10 +283,21 @@ const initializeProviders = (): void => {
   }
 
   if (VertexProjectId && VertexRegion) {
+    const vertexProviderType = process.env[
+      "VERTEX_PROVIDER"
+    ] as keyof typeof VertexProvider
+    const provider =
+      vertexProviderType && VertexProvider[vertexProviderType]
+        ? VertexProvider[vertexProviderType]
+        : VertexProvider.ANTHROPIC
+
     vertexProvider = new VertexAiProvider({
       projectId: VertexProjectId,
       region: VertexRegion,
+      provider: provider,
     })
+
+    Logger.info(`Initialized VertexAI provider with ${provider} backend`)
   }
 
   if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
@@ -350,13 +371,30 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
           ? AIProviders.Fireworks
           : GeminiAIModel
             ? AIProviders.GoogleAI
-            : VertexAIModel
+            : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
               : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
   }
+
+  // Special handling for Vertex AI models - create appropriate provider based on model type
+  if (providerType === AIProviders.VertexAI && VertexProjectId && VertexRegion) {
+    const isGeminiModel = modelId.toString().toLowerCase().includes('gemini')
+    const requiredProvider = isGeminiModel ? VertexProvider.GOOGLE : VertexProvider.ANTHROPIC
+    
+    // Create a new provider instance with the correct backend for this model
+    const vertexProvider = new VertexAiProvider({
+      projectId: VertexProjectId,
+      region: VertexRegion,
+      provider: requiredProvider,
+    })
+    
+    Logger.info(`Created VertexAI provider for model ${modelId} with ${requiredProvider} backend`)
+    return vertexProvider
+  }
+
   const provider = ProviderMap[providerType]
   if (!provider) {
     throw new Error("Invalid provider")
@@ -1443,6 +1481,8 @@ export function generateSearchQueryOrAnswerFromConversation(
   userContext: string,
   params: ModelParams,
   toolContext?: string,
+  previousClassification?: QueryRouterLLMResponse | null,
+  chainBreakClassifications?: ChainBreakClassifications | null,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   let defaultReasoning = isReasoning
@@ -1459,7 +1499,11 @@ export function generateSearchQueryOrAnswerFromConversation(
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext)
+    params.systemPrompt = searchQueryPrompt(
+      userContext,
+      previousClassification,
+      chainBreakClassifications,
+    )
   }
 
   const baseMessage = {
@@ -1771,5 +1815,138 @@ export const generateFollowUpQuestions = async (
   } catch (error) {
     Logger.error(error, "Error generating follow-up questions")
     return { followUpQuestions: [] }
+  }
+}
+
+export const webSearchQuestion = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+    params.webSearch = true
+
+    if (!params.systemPrompt) {
+      if (!isAgentPromptEmpty(params.agentPrompt)) {
+        const parsed = parseAgentPrompt(params.agentPrompt)
+        params.systemPrompt =
+          webSearchSystemPrompt(userCtx) +
+          "\n\n" +
+          `Name: ${parsed.name}\nDescription: ${parsed.description}\nPrompt: ${parsed.prompt}`
+      } else {
+        params.systemPrompt = webSearchSystemPrompt(userCtx)
+      }
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    if (!config.VertexProjectId || !config.VertexRegion) {
+      Logger.warn(
+        "VertexProjectId/VertexRegion not configured, moving with default provider.",
+      )
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
+    const vertexGoogleProvider = new VertexAiProvider({
+      projectId: config.VertexProjectId!,
+      region: config.VertexRegion!,
+      provider: VertexProvider.GOOGLE,
+    })
+
+    return vertexGoogleProvider.converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const getDeepResearchResponse = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = Models.o3_Deep_Research
+    }
+
+    params.webSearch = true
+
+    if (!params.systemPrompt) {
+      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
+        ? deepResearchPrompt(userCtx) +
+          "\n\n" +
+          parseAgentPrompt(params.agentPrompt)
+        : deepResearchPrompt(userCtx)
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    const openAIKey = process.env["DS_OPENAI_API_KEY"]
+    const baseUrl = process.env["DS_BASE_URL"]
+    if (!openAIKey) {
+      Logger.warn("OpenAIKey not configured, moving with default provider.")
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
+
+    const openAIClient = new OpenAI({
+      apiKey: openAIKey,
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
+    })
+    const openaiProvider = new OpenAIProvider(openAIClient)
+
+    return openaiProvider.converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const agentWithNoIntegrationsQuestion = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+    if (!params.systemPrompt) {
+      if (!isAgentPromptEmpty(params.agentPrompt)) {
+        const agentPromptData = parseAgentPrompt(params.agentPrompt)
+        params.systemPrompt = askQuestionSystemPrompt + "\n\n" + agentPromptData.prompt
+      } else {
+        params.systemPrompt = agentWithNoIntegrationsSystemPrompt
+      }
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+
+    return getProviderByModel(params.modelId).converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in agentWithNoIntegrationsQuestion")
+    throw error
   }
 }
