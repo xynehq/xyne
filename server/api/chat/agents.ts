@@ -40,6 +40,7 @@ import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+
 import {
   Models,
   QueryType,
@@ -260,7 +261,6 @@ const generateStepSummary = async (
       contextInfo,
     )
 
-
     // Use a fast model for summary generation
     const summarySpan = span.startSpan("synthesis_call")
     const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
@@ -389,13 +389,6 @@ const checkAndYieldCitationsForAgent = async function* (
           continue
         }
 
-
-        yield {
-          citation: {
-            index: citationIndex,
-            item: item.source,
-          },
-        }
 
           yield {
             citation: {
