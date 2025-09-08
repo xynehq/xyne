@@ -6,8 +6,15 @@ export default {
     [
       '@semantic-release/npm',           // updates package.json version
       {
-        npmPublish: false                // don’t publish to npm
-      }
+        npmPublish: false,               // don’t publish to npm
+      },
     ],
-  ]
+    [
+      '@semantic-release/git',
+      {
+        assets: ['package.json'],
+        message: 'chore(release): ${nextRelease.version} [skip ci]',
+      },
+    ],
+  ],
 };

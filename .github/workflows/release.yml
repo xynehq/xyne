@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main 
+      - feat/version_management  # or your release branch
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write    # so semantic-release can push commits + tags
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # semantic-release needs full history + tags
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: ./server
+        run: bun install
+
+      - name: Run semantic-release
+        working-directory: ./server
+        run: bunx run release --no-ci
