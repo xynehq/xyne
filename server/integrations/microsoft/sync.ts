@@ -851,15 +851,39 @@ const handleMicrosoftCalendarEventsChanges = async (
       )
     }
 
-    // Get delta changes from Microsoft Graph API
-    const deltaResponse = await makeGraphApiCall(client, endpoint + search)
-    newSyncTokenUrl =
-      deltaResponse["@odata.deltaLink"] ||
-      deltaResponse["@odata.nextLink"] ||
-      syncTokenUrl
+    // Collect all event changes from all pages
+    const allEventChanges: any[] = []
+    let nextLink: string | null = endpoint + search
+
+    // Loop through all pages until no more data
+    while (nextLink) {
+      const deltaResponse = await makeGraphApiCall(client, nextLink)
+
+      // Collect all events from this page
+      if (deltaResponse.value && deltaResponse.value.length > 0) {
+        allEventChanges.push(...deltaResponse.value)
+      }
+
+      // Update the sync token and next link
+      newSyncTokenUrl =
+        deltaResponse["@odata.deltaLink"] ||
+        deltaResponse["@odata.nextLink"] ||
+        syncTokenUrl
+
+      // If we have a deltaLink, we're done with pagination
+      if (deltaResponse["@odata.deltaLink"]) {
+        nextLink = null
+      } else if (deltaResponse["@odata.nextLink"]) {
+        // Continue with next page
+        nextLink = deltaResponse["@odata.nextLink"]
+      } else {
+        // No more pages
+        nextLink = null
+      }
+    }
 
     // Early return if no changes
-    if (newSyncTokenUrl === syncTokenUrl || !deltaResponse.value?.length) {
+    if (newSyncTokenUrl === syncTokenUrl || !allEventChanges.length) {
       loggerWithChild({ email: userEmail }).info(`No calendar changes detected`)
       return {
         eventChanges: [],
@@ -870,11 +894,11 @@ const handleMicrosoftCalendarEventsChanges = async (
     }
 
     loggerWithChild({ email: userEmail }).info(
-      `Found ${deltaResponse.value.length} calendar event changes`,
+      `Found ${allEventChanges.length} calendar event changes across all pages`,
     )
 
-    // Process each event change
-    for (const eventChange of deltaResponse.value) {
+    // Process each event change from all collected pages
+    for (const eventChange of allEventChanges) {
       const docId = eventChange.id
       if (!docId) continue
 
@@ -941,7 +965,7 @@ const handleMicrosoftCalendarEventsChanges = async (
     )
 
     return {
-      eventChanges: deltaResponse.value,
+      eventChanges: allEventChanges,
       stats,
       newCalendarEventsSyncToken: newSyncTokenUrl,
       changesExist,
