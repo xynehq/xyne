@@ -1926,25 +1926,173 @@ function AgentComponent() {
         )
     }
 
-    let finalAgentPrompt = agentPrompt
-    let finalSelectedIntegrationNames = allAvailableIntegrations
-      .filter((integration) => selectedIntegrations[integration.id])
-      .map((integration) => integration.name)
-    let finalModelForChat = selectedModel
+    let agentPromptPayload: any
+    let finalModelForChat: string
 
-    if (chatConfigAgent) {
-      finalAgentPrompt = chatConfigAgent.prompt || ""
-      finalSelectedIntegrationNames = allAvailableIntegrations
-        .filter((integration) =>
-          chatConfigAgent.appIntegrations?.includes(integration.id),
-        )
-        .map((integration) => integration.name)
+    if (selectedChatAgentExternalId === null) {
+      // Test Current Form Config - construct complete agent configuration
+      finalModelForChat = selectedModel
+      
+      const appIntegrationsObject: Record<
+        string,
+        {
+          itemIds: string[]
+          selectedAll: boolean
+        }
+      > = {}
+
+      // Collect collection item IDs
+      const collectionItemIds: string[] = []
+      let hasCollectionSelections = false
+
+      // Collect data source IDs
+      const dataSourceIds: string[] = []
+      let hasDataSourceSelections = false
+
+      // Process each selected integration
+      for (const [integrationId, isSelected] of Object.entries(
+        selectedIntegrations,
+      )) {
+        if (isSelected) {
+          const integration = allAvailableIntegrations.find(
+            (int) => int.id === integrationId,
+          )
+          if (!integration) continue
+
+          // For collections, collect item IDs with appropriate prefixes
+          if (integrationId.startsWith("cl_")) {
+            const collectionId = integrationId.replace("cl_", "")
+            const selectedItems =
+              selectedItemsInCollection[collectionId] || new Set()
+            const itemDetails =
+              selectedItemDetailsInCollection[collectionId] || {}
+
+            if (selectedItems.size === 0) {
+              // If no specific items are selected, use the collection id with collection prefix
+              const collectionId = integration.id.replace("cl_", "")
+              collectionItemIds.push(`cl-${collectionId}`) // Collection prefix
+            } else {
+              // If specific items are selected, use their IDs with appropriate prefixes
+              selectedItems.forEach((itemId) => {
+                const itemDetail = itemDetails[itemId]
+                if (itemDetail && itemDetail.type === "folder") {
+                  // This is a folder within the collection
+                  collectionItemIds.push(`clfd-${itemId}`) // Collection folder prefix
+                } else {
+                  // For files or items without type info, use original ID
+                  collectionItemIds.push(`clf-${itemId}`)
+                }
+              })
+            }
+            hasCollectionSelections = true
+          }
+          // For data sources, collect their IDs
+          else if (
+            integrationId.startsWith("ds-") ||
+            integration.app === Apps.DataSource
+          ) {
+            dataSourceIds.push(integrationId)
+            hasDataSourceSelections = true
+          }
+          // For other integrations, use the integration ID as key
+          else {
+            appIntegrationsObject[integrationId] = {
+              itemIds: [],
+              selectedAll: true,
+            }
+          }
+        }
+      }
+
+      // Add collection selections if any exist
+      if (hasCollectionSelections) {
+        appIntegrationsObject["knowledge_base"] = {
+          itemIds: collectionItemIds,
+          selectedAll: collectionItemIds.length === 0,
+        }
+      }
+
+      // Add data source selections if any exist
+      if (hasDataSourceSelections) {
+        appIntegrationsObject["DataSource"] = {
+          itemIds: dataSourceIds,
+          selectedAll: dataSourceIds.length === 0,
+        }
+      }
+
+      // Construct complete agent payload for current form config
+      agentPromptPayload = {
+        name: agentName,
+        description: agentDescription,
+        prompt: agentPrompt,
+        model: selectedModel,
+        isPublic: isPublic,
+        isRagOn: isRagOn,
+        appIntegrations: appIntegrationsObject,
+        docIds: selectedEntities,
+        userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
+      }
+    } else if (chatConfigAgent) {
+      // Using saved agent - extract details from saved agent
       finalModelForChat = chatConfigAgent.model
-    }
+      
+      let finalAgentPrompt = chatConfigAgent.prompt || ""
+      let finalSelectedIntegrationNames: string[] = []
+      
+      // Fix appIntegrations processing - handle object format properly
+      const agentIntegrations = chatConfigAgent.appIntegrations
+      if (agentIntegrations) {
+        if (Array.isArray(agentIntegrations)) {
+          // Legacy array format
+          finalSelectedIntegrationNames = allAvailableIntegrations
+            .filter((integration) => agentIntegrations.includes(integration.id))
+            .map((integration) => integration.name)
+        } else if (typeof agentIntegrations === 'object') {
+          // New object format - extract integration names from selected integrations
+          const selectedIntegrationIds: string[] = []
+          
+          // Handle knowledge_base integrations
+          if (agentIntegrations.knowledge_base?.itemIds) {
+            // Add knowledge base sources
+            selectedIntegrationIds.push('Collections')
+          }
+          
+          // Handle DataSource integrations
+          if (agentIntegrations.DataSource?.itemIds) {
+            selectedIntegrationIds.push('DataSource')
+          }
+          
+          // Handle other integrations (Google Drive, Slack, etc.)
+          Object.keys(agentIntegrations).forEach(key => {
+            if (key !== 'knowledge_base' && key !== 'DataSource') {
+              const integration = allAvailableIntegrations.find(int => int.id === key)
+              if (integration && agentIntegrations[key]?.selectedAll) {
+                selectedIntegrationIds.push(integration.name)
+              }
+            }
+          })
+          
+          finalSelectedIntegrationNames = selectedIntegrationIds
+        }
+      }
 
-    const agentPromptPayload = {
-      prompt: finalAgentPrompt,
-      sources: finalSelectedIntegrationNames,
+      // For saved agents, use the legacy format for backward compatibility
+      agentPromptPayload = {
+        prompt: finalAgentPrompt,
+        sources: finalSelectedIntegrationNames,
+      }
+    } else {
+      // Fallback case - use current form data in legacy format
+      finalModelForChat = selectedModel
+      
+      let finalSelectedIntegrationNames = allAvailableIntegrations
+        .filter((integration) => selectedIntegrations[integration.id])
+        .map((integration) => integration.name)
+
+      agentPromptPayload = {
+        prompt: agentPrompt,
+        sources: finalSelectedIntegrationNames,
+      }
     }
     url.searchParams.append(
       "modelId",
@@ -1954,7 +2102,14 @@ function AgentComponent() {
     if (isReasoningActive) {
       url.searchParams.append("isReasoningEnabled", "true")
     }
-    url.searchParams.append("agentPrompt", JSON.stringify(agentPromptPayload))
+    // Add agent ID to the request if using an agent
+    if (chatConfigAgent?.externalId) {
+      url.searchParams.append("agentId", chatConfigAgent.externalId)
+    } else {
+      // If no agent is used (the user is not authenticated), we can use the default agent
+      url.searchParams.append("agentPromptPayload", JSON.stringify(agentPromptPayload))
+      url.searchParams.append("agentId", "default-agent")
+    }
 
     if (metadata && metadata.length > 0) {
       url.searchParams.append("attachmentMetadata", JSON.stringify(metadata))
@@ -4258,6 +4413,8 @@ function AgentComponent() {
                 isReasoningActive={isReasoningActive}
                 setIsReasoningActive={setIsReasoningActive}
                 overrideIsRagOn={testAgentIsRagOn}
+                agentIdFromChatData={selectedChatAgentExternalId}
+                chatId={chatId}
               />
             </div>
           </div>
