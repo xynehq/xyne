@@ -3944,7 +3944,7 @@ function AgentComponent() {
                 {isRagOn && (
                   <div>
                     <Label className="text-base font-medium text-gray-800 dark:text-gray-300">
-                      Specific Entites
+                      Specific Entities
                     </Label>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-3">
                       Search for and select specific entities for your agent to
@@ -3965,7 +3965,7 @@ function AgentComponent() {
                         ))
                       ) : (
                         <span className="text-sm text-gray-500 dark:text-gray-300">
-                          Selected entites will be shown here
+                          Selected entities will be shown here
                         </span>
                       )}
                     </div>
