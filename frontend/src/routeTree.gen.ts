@@ -27,6 +27,7 @@ import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authent
 import { Route as AuthenticatedIntegrationsMcpImport } from './routes/_authenticated/integrations/mcp'
 import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
 import { Route as AuthenticatedIntegrationsFileuploadImport } from './routes/_authenticated/integrations/fileupload'
+import { Route as AuthenticatedIntegrationsApiKeyImport } from './routes/_authenticated/integrations/apiKey'
 import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
@@ -135,6 +136,13 @@ const AuthenticatedIntegrationsFileuploadRoute =
   AuthenticatedIntegrationsFileuploadImport.update({
     id: '/integrations/fileupload',
     path: '/integrations/fileupload',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedIntegrationsApiKeyRoute =
+  AuthenticatedIntegrationsApiKeyImport.update({
+    id: '/integrations/apiKey',
+    path: '/integrations/apiKey',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -281,6 +289,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDataSourceDocIdImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/integrations/apiKey': {
+      id: '/_authenticated/integrations/apiKey'
+      path: '/integrations/apiKey'
+      fullPath: '/integrations/apiKey'
+      preLoaderRoute: typeof AuthenticatedIntegrationsApiKeyImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/integrations/fileupload': {
       id: '/_authenticated/integrations/fileupload'
       path: '/integrations/fileupload'
@@ -377,6 +392,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
+  AuthenticatedIntegrationsApiKeyRoute: typeof AuthenticatedIntegrationsApiKeyRoute
   AuthenticatedIntegrationsFileuploadRoute: typeof AuthenticatedIntegrationsFileuploadRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
   AuthenticatedIntegrationsMcpRoute: typeof AuthenticatedIntegrationsMcpRoute
@@ -399,6 +415,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTuningRoute: AuthenticatedTuningRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
+  AuthenticatedIntegrationsApiKeyRoute: AuthenticatedIntegrationsApiKeyRoute,
   AuthenticatedIntegrationsFileuploadRoute:
     AuthenticatedIntegrationsFileuploadRoute,
   AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
@@ -434,6 +451,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
@@ -459,6 +477,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
@@ -486,6 +505,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/_authenticated/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/_authenticated/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/_authenticated/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/_authenticated/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
@@ -514,6 +534,7 @@ export interface FileRouteTypes {
     | '/'
     | '/chat/$chatId'
     | '/dataSource/$docId'
+    | '/integrations/apiKey'
     | '/integrations/fileupload'
     | '/integrations/google'
     | '/integrations/mcp'
@@ -538,6 +559,7 @@ export interface FileRouteTypes {
     | '/'
     | '/chat/$chatId'
     | '/dataSource/$docId'
+    | '/integrations/apiKey'
     | '/integrations/fileupload'
     | '/integrations/google'
     | '/integrations/mcp'
@@ -563,6 +585,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dataSource/$docId'
+    | '/_authenticated/integrations/apiKey'
     | '/_authenticated/integrations/fileupload'
     | '/_authenticated/integrations/google'
     | '/_authenticated/integrations/mcp'
@@ -615,6 +638,7 @@ export const routeTree = rootRoute
         "/_authenticated/tuning",
         "/_authenticated/",
         "/_authenticated/dataSource/$docId",
+        "/_authenticated/integrations/apiKey",
         "/_authenticated/integrations/fileupload",
         "/_authenticated/integrations/google",
         "/_authenticated/integrations/mcp",
@@ -674,6 +698,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/dataSource/$docId": {
       "filePath": "_authenticated/dataSource.$docId.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/apiKey": {
+      "filePath": "_authenticated/integrations/apiKey.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/integrations/fileupload": {

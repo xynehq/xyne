@@ -724,18 +724,6 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
-  .post(
-    "/agent/chat",
-    ApiKeyMiddleware,
-    zValidator("query", agentChatMessageSchema),
-    AgentMessageApi,
-  )
-  .post(
-    "/agent/chat/stop",
-    ApiKeyMiddleware,
-    zValidator("json", chatStopSchema),
-    StopStreamingApi,
-  )
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
@@ -1092,6 +1080,25 @@ app.get(
   StartOAuth,
 )
 
+app
+  .basePath("/api/v1")
+  .use("*", ApiKeyMiddleware)
+  .post(
+    "/consumer/agent/create",
+    zValidator("json", createAgentSchema),
+    CreateAgentApi,
+  )
+  .post(
+    "/consumer/agent/chat",
+    zValidator("json", agentChatMessageSchema),
+    AgentMessageApi,
+  )
+  .post(
+    "/consumer/agent/chat/stop",
+    zValidator("json", chatStopSchema),
+    StopStreamingApi,
+  )
+
 const generateTokens = async (
   email: string,
   role: string,
@@ -1227,8 +1234,11 @@ app.get(
       )
       // save refresh token generated in user schema
       await saveRefreshTokenToDB(db, email, refreshToken)
-      const emailSent = await emailService.sendWelcomeEmail(user.email, user.name)
-      if(emailSent) {
+      const emailSent = await emailService.sendWelcomeEmail(
+        user.email,
+        user.name,
+      )
+      if (emailSent) {
         Logger.info(`Welcome email sent to ${user.email} and ${user.name}`)
       }
       const opts = {
@@ -1272,9 +1282,14 @@ app.get(
     )
     // save refresh token generated in user schema
     await saveRefreshTokenToDB(db, email, refreshToken)
-    const emailSent = await emailService.sendWelcomeEmail(userAcc.email, userAcc.name)
-    if(emailSent) {
-      Logger.info(`Welcome email sent to new workspace creator ${userAcc.email}`)
+    const emailSent = await emailService.sendWelcomeEmail(
+      userAcc.email,
+      userAcc.name,
+    )
+    if (emailSent) {
+      Logger.info(
+        `Welcome email sent to new workspace creator ${userAcc.email}`,
+      )
     }
     const opts = {
       secure: true,
