@@ -305,6 +305,7 @@ export interface ModelParams {
   webSearch?: boolean
   agentWithNoIntegrations?: boolean
   deepResearchEnabled?: boolean
+
 }
 
 export interface ConverseResponse {

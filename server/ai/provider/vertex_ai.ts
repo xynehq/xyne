@@ -158,40 +158,49 @@ export class VertexAiProvider extends BaseProvider {
       : []
     const transformedMessages = this.injectImages(messages, imageParts)
 
-    const client = this.client as AnthropicVertex
-    const response = await client.beta.messages.create({
-      model: modelId,
-      max_tokens: maxTokens,
-      temperature,
-      system: systemPrompt,
-      messages: transformedMessages,
-      tools: params.tools && params.tools.length
-        ? params.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.parameters || { type: 'object', properties: {} },
-          }))
-        : undefined,
-    })
+    try {
+      Logger.info(`Starting VertexAI Anthropic request with model: ${modelId}`)
+      const client = this.client as AnthropicVertex
+      const response = await client.beta.messages.create({
+        model: modelId,
+        max_tokens: maxTokens,
+        temperature,
+        system: systemPrompt,
+        messages: transformedMessages,
+        tools: params.tools && params.tools.length
+          ? params.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters || { type: 'object', properties: {} },
+            }))
+          : undefined,
+      })
 
-    const text = response.content
-      .filter((c: any) => c.type === "text")
-      .map((c: any) => c.text)
-      .join("")
-    const toolCalls = response.content
-      .filter((c: any) => c.type === 'tool_use')
-      .map((c: any) => ({
-        id: c.id || '',
-        type: 'function' as const,
-        function: {
-          name: c.name || '',
-          arguments: c.input ? JSON.stringify(c.input) : '{}',
-        },
-      }))
-    const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-    const cost = 0
+      const text = response.content
+        .filter((c: any) => c.type === "text")
+        .map((c: any) => c.text)
+        .join("")
+      const toolCalls = response.content
+        .filter((c: any) => c.type === 'tool_use')
+        .map((c: any) => ({
+          id: c.id || '',
+          type: 'function' as const,
+          function: {
+            name: c.name || '',
+            arguments: c.input ? JSON.stringify(c.input) : '{}',
+          },
+        }))
+      const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
+      const cost = 0
 
-    return { text, cost, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }
+      return { text, cost, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }
+    } catch (error) {
+      Logger.error(`VertexAI Anthropic request failed:`, error)
+      if (error instanceof Error && error.message?.includes('timeout')) {
+        throw new Error(`VertexAI request timed out after 4 minutes`)
+      }
+      throw error
+    }
   }
 
   private async *converseStreamAnthropic(

@@ -260,6 +260,7 @@ const generateStepSummary = async (
       contextInfo,
     )
 
+
     // Use a fast model for summary generation
     const summarySpan = span.startSpan("synthesis_call")
     const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
@@ -388,9 +389,12 @@ const checkAndYieldCitationsForAgent = async function* (
           continue
         }
 
-        // we dont want citations for attachments in the chat
-        if(item.source.entity === KnowledgeBaseEntity.Attachment) {
-          continue
+
+        yield {
+          citation: {
+            index: citationIndex,
+            item: item.source,
+          },
         }
 
           yield {
@@ -896,6 +900,9 @@ export const MessageWithToolsApi = async (c: Context) => {
     }
     
     const attachmentMetadata = parseAttachmentMetadata(c)
+    const attachmentFileIds = attachmentMetadata.map(
+      (m: AttachmentMetadata) => m.fileId,
+    )
     const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
