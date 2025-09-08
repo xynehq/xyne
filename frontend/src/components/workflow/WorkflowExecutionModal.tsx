@@ -6,54 +6,54 @@ import checkCircleIcon from "@/assets/check-circle.svg"
 import { workflowExecutionsAPI } from "./api/ApiHandlers"
 
 interface WorkflowTemplate {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  status: string;
+  id: string
+  name: string
+  description: string
+  version: string
+  status: string
   config: {
-    ai_model?: string;
-    max_file_size?: string;
-    auto_execution?: boolean;
-    schema_version?: string;
-    allowed_file_types?: string[];
-    supports_file_upload?: boolean;
-  };
-  createdBy: string;
-  rootWorkflowStepTemplateId: string;
-  createdAt: string;
-  updatedAt: string;
+    ai_model?: string
+    max_file_size?: string
+    auto_execution?: boolean
+    schema_version?: string
+    allowed_file_types?: string[]
+    supports_file_upload?: boolean
+  }
+  createdBy: string
+  rootWorkflowStepTemplateId: string
+  createdAt: string
+  updatedAt: string
   rootStep?: {
-    id: string;
-    workflowTemplateId: string;
-    name: string;
-    description: string;
-    type: string;
-    timeEstimate: number;
+    id: string
+    workflowTemplateId: string
+    name: string
+    description: string
+    type: string
+    timeEstimate: number
     metadata: {
-      icon?: string;
-      step_order?: number;
-      schema_version?: string;
-      user_instructions?: string;
-    };
+      icon?: string
+      step_order?: number
+      schema_version?: string
+      user_instructions?: string
+    }
     tool?: {
-      id: string;
-      type: string;
+      id: string
+      type: string
       value: {
         fields?: Array<{
-          name: string;
-          type: string;
-          required?: boolean;
-          default?: any;
-        }>;
-        [key: string]: any;
-      };
-      config: any;
-      createdBy: string;
-      createdAt: string;
-      updatedAt: string;
-    };
-  };
+          name: string
+          type: string
+          required?: boolean
+          default?: any
+        }>
+        [key: string]: any
+      }
+      config: any
+      createdBy: string
+      createdAt: string
+      updatedAt: string
+    }
+  }
 }
 
 interface WorkflowExecutionModalProps {
@@ -67,22 +67,24 @@ interface WorkflowExecutionModalProps {
 
 const SUPPORTED_FILE_TYPES = {
   // Text files
-  'text/plain': 'text',
-  'text/csv': 'text',
+  "text/plain": "text",
+  "text/csv": "text",
   // Images
-  'image/jpeg': 'image',
-  'image/jpg': 'image', 
-  'image/png': 'image',
-  'image/gif': 'image',
-  'image/webp': 'image',
+  "image/jpeg": "image",
+  "image/jpg": "image",
+  "image/png": "image",
+  "image/gif": "image",
+  "image/webp": "image",
   // Documents
-  'application/pdf': 'PDF',
-  'application/msword': 'Word',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
-  'application/vnd.ms-excel': 'Excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
-  'application/vnd.ms-powerpoint': 'PowerPoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
+  "application/pdf": "PDF",
+  "application/msword": "Word",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    "Word",
+  "application/vnd.ms-excel": "Excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+  "application/vnd.ms-powerpoint": "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+    "PowerPoint",
 }
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024 // 40MB
@@ -93,7 +95,7 @@ export function WorkflowExecutionModal({
   workflowName,
   workflowDescription,
   templateId,
-  workflowTemplate
+  workflowTemplate,
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [, setIsUploading] = useState(false)
@@ -101,8 +103,12 @@ export function WorkflowExecutionModal({
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
-  const [processingMessage, setProcessingMessage] = useState<string>('Processing the File')
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
+  const [processingMessage, setProcessingMessage] = useState<string>(
+    "Processing the File",
+  )
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
+    null,
+  )
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const resetModalState = () => {
@@ -112,13 +118,13 @@ export function WorkflowExecutionModal({
     setUploadError(null)
     setIsProcessing(false)
     setIsCompleted(false)
-    setProcessingMessage('')
+    setProcessingMessage("")
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
     }
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+      fileInputRef.current.value = ""
     }
   }
 
@@ -160,60 +166,67 @@ export function WorkflowExecutionModal({
   const executeWorkflow = async (file: File) => {
     setIsUploading(true)
     try {
-      console.log('Executing workflow with template ID:', templateId)
-      console.log('Selected file:', file.name)
-      console.log('Workflow template:', workflowTemplate)
-      
+      console.log("Executing workflow with template ID:", templateId)
+      console.log("Selected file:", file.name)
+      console.log("Workflow template:", workflowTemplate)
+
       // Create form data matching the curl command format
       const formData: Record<string, any> = {
         name: `${workflowName} - ${new Date().toLocaleString()}`,
         description: `Execution of ${workflowName} with file: ${file.name}`,
-        file_description: `Test document: ${file.name}`
+        file_description: `Test document: ${file.name}`,
       }
-      
-      console.log('Generated form data:', formData)
-      
+
+      console.log("Generated form data:", formData)
+
       const executionData = {
         name: formData.name,
         description: formData.description,
         file: file,
-        formData: formData
+        formData: formData,
       }
 
-      const response = await workflowExecutionsAPI.executeTemplate(templateId, executionData)
+      const response = await workflowExecutionsAPI.executeTemplate(
+        templateId,
+        executionData,
+      )
 
-      console.log('🚀 WORKFLOW EXECUTION RESPONSE:', response)
-      
+      console.log("🚀 WORKFLOW EXECUTION RESPONSE:", response)
+
       // Extract message from response and set it for display
       if (response.message) {
         setProcessingMessage(response.message)
       }
-      
-      if (response.error || response.status === 'error') {
+
+      if (response.error || response.status === "error") {
         setIsUploaded(false)
         setIsProcessing(false)
-        setUploadError(`Execution failed: ${response.error || response.message}`)
+        setUploadError(
+          `Execution failed: ${response.error || response.message}`,
+        )
       } else {
         setIsUploaded(true)
-        
+
         // Extract execution ID from response.data.execution.id
         const executionId = response.data?.execution?.id
-        console.log('📋 Extracted execution ID:', executionId)
-        
+        console.log("📋 Extracted execution ID:", executionId)
+
         if (executionId) {
           // Start polling for completion with the execution ID
           startStatusPolling(executionId)
         } else {
-          console.warn('No execution ID found in response')
+          console.warn("No execution ID found in response")
           // Fallback to old polling mechanism
           startPolling()
         }
       }
     } catch (error) {
-      console.error('Execution error:', error)
+      console.error("Execution error:", error)
       setIsUploaded(false)
       setIsProcessing(false)
-      setUploadError(`Execution failed: ${error instanceof Error ? error.message : 'Please check your connection and try again.'}`)
+      setUploadError(
+        `Execution failed: ${error instanceof Error ? error.message : "Please check your connection and try again."}`,
+      )
     } finally {
       setIsUploading(false)
     }
@@ -240,12 +253,12 @@ export function WorkflowExecutionModal({
 
   const handleStartExecution = async () => {
     if (!selectedFile) return
-    
-    console.log('Starting execution for workflow:', workflowName)
-    console.log('Selected file:', selectedFile.name)
-    console.log('File size:', selectedFile.size, 'bytes')
-    console.log('File type:', selectedFile.type)
-    
+
+    console.log("Starting execution for workflow:", workflowName)
+    console.log("Selected file:", selectedFile.name)
+    console.log("File size:", selectedFile.size, "bytes")
+    console.log("File type:", selectedFile.type)
+
     setIsProcessing(true)
     await executeWorkflow(selectedFile)
   }
@@ -254,7 +267,7 @@ export function WorkflowExecutionModal({
     setSelectedFile(null)
     setUploadError(null)
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+      fileInputRef.current.value = ""
     }
   }
 
@@ -264,64 +277,68 @@ export function WorkflowExecutionModal({
     setIsProcessing(false)
     setIsCompleted(false)
     setUploadError(null)
-    setProcessingMessage('')
+    setProcessingMessage("")
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
     }
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+      fileInputRef.current.value = ""
     }
   }
 
   const startStatusPolling = async (executionId: string) => {
-    console.log('🔄 Starting status polling for execution ID:', executionId)
-    
+    console.log("🔄 Starting status polling for execution ID:", executionId)
+
     // Clear any existing interval first
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
     }
-    
+
     const checkStatus = async () => {
       try {
-        const BACKEND_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-        const token = localStorage.getItem('authToken');
-        
-        const response = await fetch(`${BACKEND_BASE_URL}/api/v1/workflow/executions/${executionId}/status`, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'ngrok-skip-browser-warning': 'true',
-            'Access-Control-Allow-Origin': '*',
-            ...(token && { 'Authorization': `Bearer ${token}` }),
+        const BACKEND_BASE_URL =
+          import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
+        const token = localStorage.getItem("authToken")
+
+        const response = await fetch(
+          `${BACKEND_BASE_URL}/api/v1/workflow/executions/${executionId}/status`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              "ngrok-skip-browser-warning": "true",
+              "Access-Control-Allow-Origin": "*",
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+            mode: "cors",
           },
-          mode: 'cors',
-        })
-        
+        )
+
         const statusData = await response.json()
-        console.log('📊 Status polling response:', statusData)
-        
-        if (statusData.success && statusData.status === 'completed') {
-          console.log('✅ Execution completed!')
+        console.log("📊 Status polling response:", statusData)
+
+        if (statusData.success && statusData.status === "completed") {
+          console.log("✅ Execution completed!")
           setIsProcessing(false)
           setIsCompleted(true)
           // Clear the polling interval
           setPollingInterval((currentInterval) => {
             if (currentInterval) {
-              console.log('🛑 Stopping polling - execution completed')
+              console.log("🛑 Stopping polling - execution completed")
               clearInterval(currentInterval)
             }
             return null
           })
-        } else if (statusData.status === 'failed') {
-          console.log('❌ Execution failed!')
+        } else if (statusData.status === "failed") {
+          console.log("❌ Execution failed!")
           setIsProcessing(false)
-          setUploadError('Execution failed')
+          setUploadError("Execution failed")
           // Clear the polling interval
           setPollingInterval((currentInterval) => {
             if (currentInterval) {
-              console.log('🛑 Stopping polling - execution failed')
+              console.log("🛑 Stopping polling - execution failed")
               clearInterval(currentInterval)
             }
             return null
@@ -329,24 +346,24 @@ export function WorkflowExecutionModal({
         }
         // If status is still pending, continue polling
       } catch (error) {
-        console.error('Status polling error:', error)
+        console.error("Status polling error:", error)
       }
     }
-    
+
     // Start polling every 2 seconds
     const interval = setInterval(checkStatus, 2000)
     setPollingInterval(interval)
-    console.log('⏰ Polling interval started:', interval)
-    
+    console.log("⏰ Polling interval started:", interval)
+
     // Also check immediately
     checkStatus()
   }
 
   const startPolling = () => {
-    console.log('Starting polling for process completion...')
+    console.log("Starting polling for process completion...")
     // For now, simulate completion after 5 seconds since we don't have a status endpoint
     const interval = setTimeout(() => {
-      console.log('Process completed!')
+      console.log("Process completed!")
       setPollingInterval(null)
       setIsProcessing(false)
       setIsCompleted(true)
@@ -372,9 +389,7 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">
-                {workflowDescription}
-              </p>
+              <p className="text-gray-600 text-base">{workflowDescription}</p>
             </div>
 
             {/* Completion Content */}
@@ -382,13 +397,19 @@ export function WorkflowExecutionModal({
               <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
                 {/* Success Icon */}
                 <div className="w-16 h-16 flex items-center justify-center mb-6">
-                  <img src={checkCircleIcon} alt="Success" className="w-16 h-16" />
+                  <img
+                    src={checkCircleIcon}
+                    alt="Success"
+                    className="w-16 h-16"
+                  />
                 </div>
-                
+
                 {/* Success Message */}
-                <p className="text-gray-900 text-lg font-medium">Process completed successfully!</p>
+                <p className="text-gray-900 text-lg font-medium">
+                  Process completed successfully!
+                </p>
               </div>
-              
+
               {/* Upload Another Button */}
               <div className="flex justify-end mt-6">
                 <Button
@@ -408,9 +429,7 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">
-                {workflowDescription}
-              </p>
+              <p className="text-gray-600 text-base">{workflowDescription}</p>
             </div>
 
             {/* Processing Content */}
@@ -419,10 +438,12 @@ export function WorkflowExecutionModal({
                 <div className="w-12 h-12 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin mb-6"></div>
                 {/* <p className="text-gray-900 text-lg font-medium mb-2">Processing the File</p> */}
                 {processingMessage && (
-                  <p className="text-gray-900 text-lg font-medium mb-2">{processingMessage}</p>
+                  <p className="text-gray-900 text-lg font-medium mb-2">
+                    {processingMessage}
+                  </p>
                 )}
               </div>
-              
+
               {/* Executing Button */}
               <div className="flex justify-end mt-6">
                 <Button
@@ -442,84 +463,106 @@ export function WorkflowExecutionModal({
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">
-                {workflowDescription}
-              </p>
+              <p className="text-gray-600 text-base">{workflowDescription}</p>
             </div>
 
-        {/* File Upload Area */}
-        <div className="px-8 pb-6">
-          {selectedFile ? (
-            // Selected File Display
-            <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
-              <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
-                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span className="text-gray-900 font-medium">{selectedFile.name}</span>
-                <button
-                  onClick={handleDiscardFile}
-                  className="ml-2 text-gray-400 hover:text-gray-600 transition-colors"
+            {/* File Upload Area */}
+            <div className="px-8 pb-6">
+              {selectedFile ? (
+                // Selected File Display
+                <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
+                  <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
+                    <svg
+                      className="w-6 h-6 text-gray-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    <span className="text-gray-900 font-medium">
+                      {selectedFile.name}
+                    </span>
+                    <button
+                      onClick={handleDiscardFile}
+                      className="ml-2 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // Upload Area
+                <div
+                  className="border border-dashed border-gray-300 rounded-xl px-6 py-10 text-center cursor-pointer hover:border-gray-400 transition-colors bg-gray-50 w-full min-h-[280px]"
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onClick={() => fileInputRef.current?.click()}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+                  <div className="flex flex-col items-center space-y-4">
+                    {/* File Icon */}
+                    <div className="w-16 h-16 flex items-center justify-center">
+                      <img src={fileUpIcon} alt="Upload" className="w-8 h-8" />
+                    </div>
+
+                    {/* Upload Button */}
+                    <Button
+                      className="bg-white hover:bg-gray-50 text-gray-800 border border-gray-300 px-6 py-2 rounded-full uppercase font-medium text-sm leading-6 tracking-normal"
+                      style={{ fontFamily: "Inter" }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
+                    >
+                      BROWSE FILES
+                    </Button>
+
+                    {/* Or text */}
+                    <p className="text-gray-600">or drag & drop files</p>
+
+                    {/* Supported formats */}
+                    <p className="text-gray-500 text-sm text-center leading-relaxed">
+                      Supported formats include text, image, CSV, PDF, Word,
+                      Excel, and PowerPoint files
+                      <br />
+                      (max 40MB per file).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                className="hidden"
+                accept=".txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              />
+
+              {/* Error Display */}
+              {uploadError && (
+                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-800">{uploadError}</p>
+                </div>
+              )}
             </div>
-          ) : (
-            // Upload Area
-            <div
-              className="border border-dashed border-gray-300 rounded-xl px-6 py-10 text-center cursor-pointer hover:border-gray-400 transition-colors bg-gray-50 w-full min-h-[280px]"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onClick={() => fileInputRef.current?.click()}
-            >
-            <div className="flex flex-col items-center space-y-4">
-              {/* File Icon */}
-              <div className="w-16 h-16 flex items-center justify-center">
-                <img src={fileUpIcon} alt="Upload" className="w-8 h-8" />
-              </div>
-
-              {/* Upload Button */}
-              <Button 
-                className="bg-white hover:bg-gray-50 text-gray-800 border border-gray-300 px-6 py-2 rounded-full uppercase font-medium text-sm leading-6 tracking-normal"
-                style={{ fontFamily: 'Inter' }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  fileInputRef.current?.click()
-                }}
-              >
-                BROWSE FILES
-              </Button>
-
-              {/* Or text */}
-              <p className="text-gray-600">or drag & drop files</p>
-
-              {/* Supported formats */}
-              <p className="text-gray-500 text-sm text-center leading-relaxed">
-                Supported formats include text, image, CSV, PDF, Word, Excel, and PowerPoint files<br />
-                (max 40MB per file).
-              </p>
-            </div>
-          </div>
-          )}
-          
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleFileSelect}
-            className="hidden"
-            accept=".txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-          />
-
-          {/* Error Display */}
-          {uploadError && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{uploadError}</p>
-            </div>
-          )}
-        </div>
 
             {/* Action Button */}
             <div className="px-8 pb-8">
@@ -528,9 +571,9 @@ export function WorkflowExecutionModal({
                   onClick={handleStartExecution}
                   disabled={!selectedFile}
                   className={`px-6 py-2 rounded-full font-medium transition-all ${
-                    selectedFile 
-                      ? 'bg-black hover:bg-gray-800 text-white' 
-                      : 'bg-gray-400 cursor-not-allowed text-gray-600'
+                    selectedFile
+                      ? "bg-black hover:bg-gray-800 text-white"
+                      : "bg-gray-400 cursor-not-allowed text-gray-600"
                   }`}
                 >
                   Start Execution

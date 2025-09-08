@@ -1,5 +1,13 @@
-import { Status, Step, Flow, LegacyFlow, StepGeneratorData, ComponentListData, SerialComponents } from './Types';
-import { defaultStep } from './Default';
+import {
+  Status,
+  Step,
+  Flow,
+  LegacyFlow,
+  StepGeneratorData,
+  ComponentListData,
+  SerialComponents,
+} from "./Types"
+import { defaultStep } from "./Default"
 
 export function padWithZero(value: number): string {
   if (value < 10) {
@@ -41,7 +49,10 @@ export function isExecutable(status: Status): boolean {
   return status === "PENDING" || status === "INCOMPLETE" || status === "OVERDUE"
 }
 
-export function customCompare(a: number | undefined, b: number | undefined): number {
+export function customCompare(
+  a: number | undefined,
+  b: number | undefined,
+): number {
   if (a === undefined && b === undefined) return 0
   if (a === undefined) return 1
   if (b === undefined) return -1
@@ -52,8 +63,9 @@ export function getFirstActiveSubStepInfo(
   stepPropsArray: StepGeneratorData[],
   stepDict: Record<string, Step>,
 ): Step | undefined {
-  const activeStep = stepPropsArray.find((stepProps) =>
-    stepProps.step.status && isExecutable(stepProps.step.status as Status),
+  const activeStep = stepPropsArray.find(
+    (stepProps) =>
+      stepProps.step.status && isExecutable(stepProps.step.status as Status),
   )?.step
 
   if (!activeStep) return undefined
@@ -100,12 +112,17 @@ export function fillConnectedChildSteps(
   visited: Set<string> = new Set(),
 ): void {
   for (const childStepId of childStepIds) {
-    if (visited.has(childStepId)) continue;
-    visited.add(childStepId);
-    connectedStepList.push(childStepId);
-    const childStep = stepDict[childStepId];
+    if (visited.has(childStepId)) continue
+    visited.add(childStepId)
+    connectedStepList.push(childStepId)
+    const childStep = stepDict[childStepId]
     if (childStep?.child_step_ids?.length) {
-      fillConnectedChildSteps(childStep.child_step_ids, connectedStepList, stepDict, visited);
+      fillConnectedChildSteps(
+        childStep.child_step_ids,
+        connectedStepList,
+        stepDict,
+        visited,
+      )
     }
   }
 }
@@ -114,7 +131,7 @@ export function flowBFS(
   stepDict: Record<string, Step>,
   flow: Flow | LegacyFlow,
 ): [ComponentListData[], number, number, string] {
-  const legacyFlow = flow as LegacyFlow;
+  const legacyFlow = flow as LegacyFlow
   const rootStep = stepDict[legacyFlow.root_step_id] || defaultStep
   const traversedArray = [rootStep.id]
   const componentList: ComponentListData[] = []

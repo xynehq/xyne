@@ -1,0 +1,104 @@
+{
+  "name": "LLM Document Analysis",
+  "description": "Analyze documents using actual LLM calls with OpenAI GPT-4o-mini",
+  "version": "1.0.0",
+  "status": "active",
+  "config": {
+    "recipient": "yash.daga@juspay.in",
+    "maxFileSize": "25MB",
+    "analysisType": "llm-powered",
+    "supportedFormats": [
+      "pdf",
+      "jpg",
+      "jpeg",
+      "png",
+      "gif",
+      "bmp",
+      "doc",
+      "docx",
+      "txt",
+      "rtf"
+    ]
+  },
+  "createdBy": "system",
+  "steps": [
+    {
+      "name": "Document Upload",
+      "description": "Upload document for LLM analysis",
+      "type": "manual",
+      "parentStepId": null,
+      "prevStepIds": [],
+      "nextStepIds": ["LLM Content Analysis"],
+      "timeEstimate": 60,
+      "metadata": {
+        "icon": "📁",
+        "step_order": 1,
+        "user_instructions": "Upload document for AI-powered analysis"
+      }
+    },
+    {
+      "name": "LLM Content Analysis",
+      "description": "Analyze document content using OpenAI GPT API",
+      "type": "automated",
+      "parentStepId": "Document Upload",
+      "prevStepIds": ["Document Upload"],
+      "nextStepIds": ["LLM Analysis Email"],
+      "timeEstimate": 300,
+      "metadata": {
+        "icon": "🤖",
+        "step_order": 2,
+        "automated_description": "Processing document with GPT-4o-mini"
+      }
+    },
+    {
+      "name": "LLM Analysis Email",
+      "description": "Send LLM analysis results to yash.daga@juspay.in",
+      "type": "automated",
+      "parentStepId": "LLM Content Analysis",
+      "prevStepIds": ["LLM Content Analysis"],
+      "nextStepIds": [],
+      "timeEstimate": 30,
+      "metadata": {
+        "icon": "📧",
+        "step_order": 3,
+        "automated_description": "Sending AI analysis via email"
+      }
+    }
+  ],
+  "workflow_tools": [
+    {
+      "type": "form",
+      "value": {
+        "title": "LLM Document Analysis",
+        "fields": [
+          {
+            "id": "document_file",
+            "type": "file",
+            "label": "Document",
+            "maxSize": "25MB",
+            "required": true,
+            "fileTypes": [
+              "pdf",
+              "jpg",
+              "jpeg",
+              "png",
+              "gif",
+              "bmp",
+              "doc",
+              "docx",
+              "txt",
+              "rtf"
+            ],
+            "description": "Upload document for AI-powered analysis"
+          }
+        ],
+        "description": "Upload document for LLM analysis"
+      },
+      "config": {
+        "submitText": "Analyze with AI",
+        "validation": "strict"
+      },
+      "createdBy": "system"
+    }
+  ]
+}

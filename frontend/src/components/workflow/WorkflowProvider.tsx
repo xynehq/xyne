@@ -1,5 +1,5 @@
 import React, { createContext, useState, ReactNode, useEffect } from "react"
-import { Flow, Step } from './Types';
+import { Flow, Step } from "./Types"
 
 interface FlowContextProps {
   flow: Flow | null

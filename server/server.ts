@@ -175,8 +175,12 @@ import {
   GetWorkflowExecutionStatusApi,
   ListWorkflowExecutionsApi,
   CreateWorkflowToolApi,
+  GetWorkflowToolApi,
   ListWorkflowToolsApi,
   UpdateWorkflowToolApi,
+  DeleteWorkflowToolApi,
+  AddStepToWorkflowApi,
+  DeleteWorkflowStepTemplateApi,
   UpdateWorkflowStepExecutionApi,
   CompleteWorkflowStepExecutionApi,
   SubmitFormStepApi,
@@ -230,7 +234,14 @@ import {
 const { JwtPayloadKey } = config
 import { updateMetricsFromThread } from "@/metrics/utils"
 
-import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
+import {
+  agents,
+  apiKeys,
+  users,
+  type PublicUserWorkspace,
+  updateWorkflowToolSchema,
+  addStepToWorkflowSchema,
+} from "./db/schema"
 import { sendMailHelper } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
@@ -272,20 +283,45 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 const app = new Hono<{ Variables: Variables }>()
 
 // Global CORS middleware for all routes
-app.use('*', cors({
-  origin: (origin) => origin || '*',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'Accept', 'Origin', 'X-Requested-With'],
-  credentials: true,
-  maxAge: 86400
-}))
+app.use(
+  "*",
+  cors({
+    origin: (origin) => origin || "*",
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-api-key",
+      "Accept",
+      "Origin",
+      "X-Requested-With",
+    ],
+    credentials: true,
+    maxAge: 86400,
+  }),
+)
 
 const internalMetricRouter = new Hono<{ Variables: Variables }>()
 
 // Modified to allow all requests - no authentication required
 const AuthMiddleware = async (c: Context, next: Next) => {
-  // Pass through all requests without authentication
-  await next()
+  const authToken =
+    getCookie(c, AccessTokenCookieName) ||
+    c.req.header("Authorization")?.replace("Bearer ", "")
+
+  if (!authToken) {
+    throw new HTTPException(401, { message: "No auth token provided" })
+  }
+
+  try {
+    const payload = await verify(authToken, accessTokenSecret)
+    Logger.info(`JWT payload: ${JSON.stringify(payload)}`)
+    c.set(JwtPayloadKey, payload)
+    await next()
+  } catch (err) {
+    Logger.error(`JWT verification failed: ${err}`)
+    throw new HTTPException(401, { message: "Invalid or expired token" })
+  }
 }
 
 // Middleware to check if user has admin or superAdmin role
@@ -768,14 +804,14 @@ export const AppRoutes = app
   .use("/workflow/*", honoMiddlewareLogger)
   .use("/workflow/*", async (c, next) => {
     // Add CORS headers for workflow API
-    c.header('Access-Control-Allow-Origin', 'http://localhost:3003')
-    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    
-    if (c.req.method === 'OPTIONS') {
+    c.header("Access-Control-Allow-Origin", "http://localhost:3003")
+    c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    c.header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+    if (c.req.method === "OPTIONS") {
       return new Response(null, { status: 200 })
     }
-    
+
     await next()
   })
   .post(
@@ -794,6 +830,11 @@ export const AppRoutes = app
   .post(
     "/workflow/templates/:templateId/execute-with-input",
     ExecuteWorkflowWithInputApi,
+  )
+  .post(
+    "/workflow/templates/:templateId/steps",
+    zValidator("json", addStepToWorkflowSchema),
+    AddStepToWorkflowApi,
   )
   .post(
     "/workflow/executions",
@@ -816,7 +857,14 @@ export const AppRoutes = app
     CreateWorkflowToolApi,
   )
   .get("/workflow/tools", ListWorkflowToolsApi)
-  .put("/workflow/tools/:toolId", UpdateWorkflowToolApi)
+  .get("/workflow/tools/:toolId", GetWorkflowToolApi)
+  .put(
+    "/workflow/tools/:toolId",
+    zValidator("json", updateWorkflowToolSchema),
+    UpdateWorkflowToolApi,
+  )
+  .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
     zValidator("json", updateWorkflowStepExecutionSchema),
