@@ -1,6 +1,6 @@
 // release.config.js
 export default {
-  branches: ['main'], // main branch
+  branches: ['main', 'feat/version_management'], // main branch
   plugins: [
     '@semantic-release/commit-analyzer', // analyzes commits for version bump
     [
