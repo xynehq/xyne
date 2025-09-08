@@ -50,7 +50,7 @@ import {
   userContext,
 } from "@/ai/context"
 import { VespaSearchResultsSchema } from "@/search/types"
-import { AnswerSSEvents } from "@/shared/types"
+import { agentPromptPayloadSchema, AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -202,31 +202,7 @@ export const messageSchema = z.object({
       )
       .optional(),
   ),
-  agentPromptPayload: z.preprocess(
-    (val) => {
-      if (typeof val === "string") {
-        try {
-          return JSON.parse(val)
-        } catch {
-          return undefined
-        }
-      }
-      return val
-    },
-    z
-      .object({
-        name: z.string().optional(),
-        description: z.string().optional(),
-        prompt: z.string().optional(),
-        model: z.string().optional(),
-        isPublic: z.boolean().optional(),
-        isRagOn: z.boolean().optional(),
-        appIntegrations: z.record(z.any()).optional(),
-        docIds: z.array(z.any()).optional(),
-        userEmails: z.array(z.string()).optional(),
-      })
-      .optional(),
-  ),
+  agentPromptPayload: agentPromptPayloadSchema.optional(),
   streamOff: z
     .string()
     .optional()

@@ -29,6 +29,7 @@ import {
   type SelectPublicAgent,
   type AttachmentMetadata,
   SlackEntity,
+  AgentPromptPayload,
 } from "shared/types"
 import {
   ChevronDown,
@@ -1917,7 +1918,7 @@ function AgentComponent() {
         )
     }
 
-    let agentPromptPayload: any
+    let agentPromptPayload: AgentPromptPayload;
 
     if (selectedChatAgentExternalId === null) {
       // Test Current Form Config - construct complete agent configuration
@@ -2020,65 +2021,7 @@ function AgentComponent() {
         appIntegrations: appIntegrationsObject,
         docIds: selectedEntities,
         userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
-      }
-    } else if (chatConfigAgent) {
-      // Using saved agent - extract details from saved agent
-      
-      let finalAgentPrompt = chatConfigAgent.prompt || ""
-      let finalSelectedIntegrationNames: string[] = []
-      
-      // Fix appIntegrations processing - handle object format properly
-      const agentIntegrations = chatConfigAgent.appIntegrations
-      if (agentIntegrations) {
-        if (Array.isArray(agentIntegrations)) {
-          // Legacy array format
-          finalSelectedIntegrationNames = allAvailableIntegrations
-            .filter((integration) => agentIntegrations.includes(integration.id))
-            .map((integration) => integration.name)
-        } else if (typeof agentIntegrations === 'object') {
-          // New object format - extract integration names from selected integrations
-          const selectedIntegrationIds: string[] = []
-          
-          // Handle knowledge_base integrations
-          if (agentIntegrations.knowledge_base?.itemIds) {
-            // Add knowledge base sources
-            selectedIntegrationIds.push('Collections')
-          }
-          
-          // Handle DataSource integrations
-          if (agentIntegrations.DataSource?.itemIds) {
-            selectedIntegrationIds.push('DataSource')
-          }
-          
-          // Handle other integrations (Google Drive, Slack, etc.)
-          Object.keys(agentIntegrations).forEach(key => {
-            if (key !== 'knowledge_base' && key !== 'DataSource') {
-              const integration = allAvailableIntegrations.find(int => int.id === key)
-              if (integration && agentIntegrations[key]?.selectedAll) {
-                selectedIntegrationIds.push(integration.name)
-              }
-            }
-          })
-          
-          finalSelectedIntegrationNames = selectedIntegrationIds
-        }
-      }
-
-      // For saved agents, use the legacy format for backward compatibility
-      agentPromptPayload = {
-        prompt: finalAgentPrompt,
-        sources: finalSelectedIntegrationNames,
-      }
-    } else {
-      // Fallback case - use current form data in legacy format
-      
-      let finalSelectedIntegrationNames = allAvailableIntegrations
-        .filter((integration) => selectedIntegrations[integration.id])
-        .map((integration) => integration.name)
-
-      agentPromptPayload = {
-        prompt: agentPrompt,
-        sources: finalSelectedIntegrationNames,
+        allowWebSearch: false, // Not supported in form config
       }
     }
     url.searchParams.append("message", encodeURIComponent(messageToSend))

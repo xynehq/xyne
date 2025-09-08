@@ -271,6 +271,49 @@ const generateFallbackSummary = (step: AgentReasoningStep): string => {
   }
 }
 
+// Create mock agent from form data for testing
+const createMockAgentFromFormData = (
+  agentPromptPayload: any,
+  user: any,
+  workspace: any,
+  email: string
+): { agentForDb: SelectAgent; agentPromptForLLM: string } => {
+  try {
+    const formData = agentPromptPayload;
+    
+    // Create mock SelectAgent from form data without DB call
+    const agentForDb = {
+      name: formData.name || "Test Agent",
+      description: formData.description || null,
+      prompt: formData.prompt || null,
+      model: formData.model || "Claude Sonnet 4",
+      isPublic: formData.isPublic || false,
+      isRagOn: formData.isRagOn !== false,
+      appIntegrations: formData.appIntegrations || null,
+      docIds: formData.docIds || null,
+      // Dummy values for required DB fields
+      id: -1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      userId: user.id,
+      deletedAt: null,
+      externalId: `test-agent-${Date.now()}`,
+      workspaceId: workspace.id,
+      allowWebSearch: formData.allowWebSearch || null,
+    };
+    
+    const agentPromptForLLM = JSON.stringify(agentForDb);
+    loggerWithChild({ email }).info("Created mock agent from form data for testing");
+    
+    return { agentForDb, agentPromptForLLM };
+  } catch (error) {
+    loggerWithChild({ email }).error(error, "Failed to parse agentPromptPayload");
+    throw new HTTPException(400, {
+      message: "Invalid agent form data provided",
+    });
+  }
+};
+
 // Check if agent has no app integrations and should use the no-integrations flow
 export const checkAgentWithNoIntegrations = (agentForDb: SelectAgent | null): boolean => {
   if (!agentForDb?.appIntegrations) return true
@@ -2940,41 +2983,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     let agentForDb: SelectAgent | null = null
     
     // Handle test current form config case
-    if (agentPromptPayload && typeof agentPromptPayload === 'object') {
-      try {
-        const formData = typeof agentPromptPayload === 'string' 
-          ? JSON.parse(agentPromptPayload) 
-          : agentPromptPayload;
-        
-        // Create mock SelectAgent from form data without DB call
-        agentForDb = {
-          name: formData.name || "Test Agent",
-          description: formData.description || null,
-          prompt: formData.prompt || null,
-          model: formData.model || "gpt-4o-mini",
-          isPublic: formData.isPublic || false,
-          isRagOn: formData.isRagOn !== false,
-          appIntegrations: formData.appIntegrations || null,
-          docIds: formData.docIds || null,
-          // Dummy values for required DB fields
-          id: -1,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          userId: user.id,
-          deletedAt: null,
-          externalId: `test-agent-${Date.now()}`,
-          workspaceId: workspace.id,
-          allowWebSearch: formData.allowWebSearch || null,
-        };
-        
-        agentPromptForLLM = JSON.stringify(agentForDb);
-        loggerWithChild({ email }).info("Created mock agent from form data for testing");
-      } catch (error) {
-        loggerWithChild({ email }).error(error, "Failed to parse agentPromptPayload");
-        throw new HTTPException(400, {
-          message: "Invalid agent form data provided",
-        });
-      }
+    if (agentPromptPayload !== undefined) {
+      const mockAgentResult = createMockAgentFromFormData(agentPromptPayload, user, workspace, email);
+      agentForDb = mockAgentResult.agentForDb;
+      agentPromptForLLM = mockAgentResult.agentPromptForLLM;
     } else if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
@@ -3760,42 +3772,10 @@ export const AgentMessageApi = async (c: Context) => {
     let agentForDb: SelectAgent | null = null
     
     // Handle test current form config case
-    if (agentPromptPayload && typeof agentPromptPayload === 'object') {
-      try {
-        const formData = typeof agentPromptPayload === 'string' 
-          ? JSON.parse(agentPromptPayload) 
-          : agentPromptPayload;
-        
-        // Create mock SelectAgent from form data without DB call
-        agentForDb = {
-          name: formData.name || "Test Agent",
-          description: formData.description || null,
-          prompt: formData.prompt || null,
-          model: formData.model || "gpt-4o-mini",
-          isPublic: formData.isPublic || false,
-          isRagOn: formData.isRagOn !== false, // default to true unless explicitly false
-          appIntegrations: formData.appIntegrations || null,
-          docIds: formData.docIds || null,
-          // Dummy values for required DB fields
-          id: -1, // Use -1 to indicate this is a test agent
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          userId: user.id,
-          deletedAt: null,
-          externalId: `test-agent-${Date.now()}`,
-          workspaceId: workspace.id,
-          allowWebSearch: formData.allowWebSearch || null,
-        };
-
-        agentPromptForLLM = JSON.stringify(agentForDb);
-
-        loggerWithChild({ email }).info("Created mock agent from form data for testing");
-      } catch (error) {
-        loggerWithChild({ email }).error(error, "Failed to parse agentPromptPayload");
-        throw new HTTPException(400, {
-          message: "Invalid agent form data provided",
-        });
-      }
+    if (agentPromptPayload !== undefined) {
+      const mockAgentResult = createMockAgentFromFormData(agentPromptPayload, user, workspace, email);
+      agentForDb = mockAgentResult.agentForDb;
+      agentPromptForLLM = mockAgentResult.agentPromptForLLM;
     } else if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(

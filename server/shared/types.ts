@@ -603,3 +603,42 @@ export const attachmentMetadataSchema = z.object({
 })
 
 export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>
+
+
+export const agentPromptPayloadSchema = z.preprocess(
+  (val) => {
+    if (typeof val === "string") {
+      try {
+        return JSON.parse(val)
+      } catch {
+        throw new Error("Invalid agentPromptPayload JSON")
+      }
+    }
+    return val
+  },
+  z
+    .object({
+      name: z.string().optional(),
+      description: z.string().optional(),
+      prompt: z.string().optional(),
+      model: z.string().optional(),
+      isPublic: z.boolean().optional(),
+      isRagOn: z.boolean().optional(),
+      appIntegrations: z.record(z.object({
+        itemIds: z.array(z.string()),
+        selectedAll: z.boolean()
+      })).optional(),
+      docIds: z.array(z.object({
+        docId: z.string(),
+        name: z.string(),
+        app: z.string(),
+        entity: z.string()
+      })).optional(),
+      userEmails: z.array(z.string()).optional(),
+      allowWebSearch: z.boolean().optional(),
+      
+    })
+    .optional(),
+)
+
+export type AgentPromptPayload = z.infer<typeof agentPromptPayloadSchema>
