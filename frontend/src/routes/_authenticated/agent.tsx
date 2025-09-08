@@ -1918,11 +1918,9 @@ function AgentComponent() {
     }
 
     let agentPromptPayload: any
-    let finalModelForChat: string
 
     if (selectedChatAgentExternalId === null) {
       // Test Current Form Config - construct complete agent configuration
-      finalModelForChat = selectedModel
       
       const appIntegrationsObject: Record<
         string,
@@ -2025,7 +2023,6 @@ function AgentComponent() {
       }
     } else if (chatConfigAgent) {
       // Using saved agent - extract details from saved agent
-      finalModelForChat = chatConfigAgent.model
       
       let finalAgentPrompt = chatConfigAgent.prompt || ""
       let finalSelectedIntegrationNames: string[] = []
@@ -2074,7 +2071,6 @@ function AgentComponent() {
       }
     } else {
       // Fallback case - use current form data in legacy format
-      finalModelForChat = selectedModel
       
       let finalSelectedIntegrationNames = allAvailableIntegrations
         .filter((integration) => selectedIntegrations[integration.id])
