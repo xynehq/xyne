@@ -22,6 +22,7 @@ import {
 } from "@/db/userAgentPermission"
 import { db } from "./client"
 import { getLoggerWithChild } from "@/logger"
+import { getUserByEmail } from "./user"
 
 import { createAgentSchema } from "@/api/agent"
 import { getErrorMessage } from "@/utils"
