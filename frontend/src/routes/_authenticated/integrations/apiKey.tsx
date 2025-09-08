@@ -47,7 +47,12 @@ import {
 } from "lucide-react"
 import { errorComponent } from "@/components/error"
 import { authFetch } from "@/utils/authFetch"
-import type { PublicUser, PublicWorkspace } from "shared/types"
+import { api } from "@/api"
+import type {
+  PublicUser,
+  PublicWorkspace,
+  SelectPublicAgent,
+} from "shared/types"
 
 // Types
 interface ApiKeyScope {
@@ -57,9 +62,9 @@ interface ApiKeyScope {
 }
 
 interface ApiKeyAgent {
-  id: string
-  name: string
   externalId: string
+  name: string
+  description?: string
 }
 
 interface ApiKey {
@@ -124,13 +129,13 @@ const ApiKeyComponent = ({
   const [isGenerating, setIsGenerating] = useState(false)
   const [selectedApiKeyForScopes, setSelectedApiKeyForScopes] =
     useState<ApiKey | null>(null)
+  const [selectedApiKeyForAgents, setSelectedApiKeyForAgents] =
+    useState<ApiKey | null>(null)
 
   // Form state
   const [keyName, setKeyName] = useState("")
   const [selectedScopes, setSelectedScopes] = useState<string[]>([])
   const [selectedAgents, setSelectedAgents] = useState<string[]>([])
-  const [selectAllAgents, setSelectAllAgents] = useState(false)
-  const [selectAllScopes, setSelectAllScopes] = useState(false)
 
   const { toast } = useToast() // Load initial data
   useEffect(() => {
@@ -156,7 +161,7 @@ const ApiKeyComponent = ({
           name: "Production API Key",
           key: "xyne_api_12345678901234567890",
           scopes: ["NORMAL_CHAT", "UPLOAD_KB"],
-          agents: ["agent-1", "agent-2"],
+          agents: [],
           createdAt: "2024-01-15T10:30:00Z",
           isVisible: false,
         },
@@ -168,23 +173,20 @@ const ApiKeyComponent = ({
 
   const loadAvailableAgents = async () => {
     try {
-      const response = await authFetch("/api/v1/agent?limit=100")
+      const response = await api.agents.$get({ query: { filter: "all" } })
       if (response.ok) {
-        const data = await response.json()
-        setAvailableAgents(data.agents || [])
+        const data = (await response.json()) as SelectPublicAgent[]
+        const agentData: ApiKeyAgent[] = data.map((agent) => ({
+          externalId: agent.externalId,
+          name: agent.name,
+          description: agent.description,
+        }))
+        setAvailableAgents(agentData)
       }
     } catch (err) {
       console.error("Failed to load agents:", err)
-      // Mock data
-      setAvailableAgents([
-        {
-          id: "agent-1",
-          name: "Customer Support Agent",
-          externalId: "cust-001",
-        },
-        { id: "agent-2", name: "Research Assistant", externalId: "res-001" },
-        { id: "agent-3", name: "Data Analyst", externalId: "data-001" },
-      ])
+      // Fallback to empty array in case of error
+      setAvailableAgents([])
     }
   }
 
@@ -207,12 +209,21 @@ const ApiKeyComponent = ({
       return
     }
 
+    if (selectedAgents.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please select at least one agent",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsGenerating(true)
     try {
       const payload: CreateApiKeyPayload = {
         name: keyName,
         scopes: selectedScopes,
-        agents: selectAllAgents ? [] : selectedAgents,
+        agents: selectedAgents,
       }
 
       // Mock API call - replace with actual endpoint
@@ -241,9 +252,7 @@ const ApiKeyComponent = ({
         name: keyName,
         key: `xyne_api_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`,
         scopes: selectedScopes,
-        agents: selectAllAgents
-          ? availableAgents.map((a) => a.id)
-          : selectedAgents,
+        agents: selectedAgents,
         createdAt: new Date().toISOString(),
         isVisible: false,
       }
@@ -264,8 +273,6 @@ const ApiKeyComponent = ({
     setKeyName("")
     setSelectedScopes([])
     setSelectedAgents([])
-    setSelectAllAgents(false)
-    setSelectAllScopes(false)
   }
 
   const handleRevokeApiKey = async (keyId: string) => {
@@ -321,27 +328,11 @@ const ApiKeyComponent = ({
     }
   }
 
-  const handleAgentToggle = (agentId: string) => {
-    if (selectedAgents.includes(agentId)) {
-      setSelectedAgents((prev) => prev.filter((a) => a !== agentId))
+  const handleAgentToggle = (agentExternalId: string) => {
+    if (selectedAgents.includes(agentExternalId)) {
+      setSelectedAgents((prev) => prev.filter((a) => a !== agentExternalId))
     } else {
-      setSelectedAgents((prev) => [...prev, agentId])
-    }
-  }
-
-  const handleSelectAllScopes = () => {
-    if (selectAllScopes) {
-      setSelectedScopes([])
-    } else {
-      setSelectedScopes(AVAILABLE_SCOPES.map((s) => s.id))
-    }
-    setSelectAllScopes(!selectAllScopes)
-  }
-
-  const handleSelectAllAgentsToggle = () => {
-    setSelectAllAgents(!selectAllAgents)
-    if (!selectAllAgents) {
-      setSelectedAgents([])
+      setSelectedAgents((prev) => [...prev, agentExternalId])
     }
   }
 
@@ -350,9 +341,12 @@ const ApiKeyComponent = ({
       year: "numeric",
       month: "short",
       day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
     })
+  }
+
+  const truncateName = (name: string, maxLength: number = 10) => {
+    if (name.length <= maxLength) return name
+    return name.substring(0, maxLength) + "..."
   }
 
   const getScopeNames = (scopeIds: string[]) => {
@@ -367,13 +361,23 @@ const ApiKeyComponent = ({
     return firstScope?.name || scopeIds[0]
   }
 
-  const getAgentNames = (agentIds: string[]) => {
-    if (agentIds.length === availableAgents.length) {
-      return "All Agents"
-    }
-    return agentIds
-      .map((id) => availableAgents.find((a) => a.id === id)?.name || id)
+  const getAgentNames = (agentExternalIds: string[]) => {
+    if (agentExternalIds.length === 0) return "No agents selected"
+    return agentExternalIds
+      .map(
+        (externalId) =>
+          availableAgents.find((a) => a.externalId === externalId)?.name ||
+          externalId,
+      )
       .join(", ")
+  }
+
+  const getFirstAgentName = (agentExternalIds: string[]) => {
+    if (agentExternalIds.length === 0) return "No agents"
+    const firstAgent = availableAgents.find(
+      (a) => a.externalId === agentExternalIds[0],
+    )
+    return firstAgent?.name || agentExternalIds[0]
   }
 
   const maskApiKey = (key: string, isVisible: boolean) => {
@@ -438,14 +442,6 @@ const ApiKeyComponent = ({
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <Label>Scopes</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleSelectAllScopes}
-                      >
-                        {selectAllScopes ? "Deselect All" : "Select All"}
-                      </Button>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3">
@@ -481,54 +477,37 @@ const ApiKeyComponent = ({
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <Label>Agent Access</Label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id="selectAllAgents"
-                          checked={selectAllAgents}
-                          onChange={handleSelectAllAgentsToggle}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <Label
-                          htmlFor="selectAllAgents"
-                          className="text-sm cursor-pointer"
-                        >
-                          All Agents
-                        </Label>
-                      </div>
                     </div>
 
-                    {!selectAllAgents && (
-                      <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
-                        {availableAgents.map((agent) => (
-                          <div
-                            key={agent.id}
-                            className="flex items-center space-x-3"
-                          >
-                            <input
-                              type="checkbox"
-                              id={agent.id}
-                              checked={selectedAgents.includes(agent.id)}
-                              onChange={() => handleAgentToggle(agent.id)}
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
+                    <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
+                      {availableAgents.map((agent) => (
+                        <div
+                          key={agent.externalId}
+                          className="flex items-start space-x-3"
+                        >
+                          <input
+                            type="checkbox"
+                            id={agent.externalId}
+                            checked={selectedAgents.includes(agent.externalId)}
+                            onChange={() => handleAgentToggle(agent.externalId)}
+                            className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <div className="flex-1">
                             <Label
-                              htmlFor={agent.id}
-                              className="cursor-pointer flex-1"
+                              htmlFor={agent.externalId}
+                              className="cursor-pointer font-medium"
                             >
                               {agent.name}
                             </Label>
+                            {agent.description && (
+                              <p className="text-sm text-muted-foreground">
+                                {agent.description}
+                              </p>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {selectAllAgents && (
-                      <p className="text-sm text-muted-foreground italic">
-                        This API key will have access to all current and future
-                        agents
-                      </p>
-                    )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -592,8 +571,8 @@ const ApiKeyComponent = ({
                   <TableBody>
                     {apiKeys.map((apiKey) => (
                       <TableRow key={apiKey.id}>
-                        <TableCell className="font-medium">
-                          {apiKey.name}
+                        <TableCell className="font-medium" title={apiKey.name}>
+                          {truncateName(apiKey.name)}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center space-x-2">
@@ -629,7 +608,10 @@ const ApiKeyComponent = ({
                               className="max-w-32 truncate"
                               title={getScopeNames(apiKey.scopes)}
                             >
-                              {getFirstScopeName(apiKey.scopes)}
+                              {truncateName(
+                                getFirstScopeName(apiKey.scopes),
+                                15,
+                              )}
                             </span>
                             {apiKey.scopes.length > 1 && (
                               <Button
@@ -646,11 +628,28 @@ const ApiKeyComponent = ({
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div
-                            className="max-w-48 truncate"
-                            title={getAgentNames(apiKey.agents)}
-                          >
-                            {getAgentNames(apiKey.agents)}
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="max-w-32 truncate"
+                              title={getAgentNames(apiKey.agents)}
+                            >
+                              {truncateName(
+                                getFirstAgentName(apiKey.agents),
+                                15,
+                              )}
+                            </span>
+                            {apiKey.agents.length > 1 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setSelectedApiKeyForAgents(apiKey)
+                                }
+                                className="text-xs px-2 py-1 h-6 text-blue-600 hover:text-blue-700"
+                              >
+                                +{apiKey.agents.length - 1} more
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
@@ -691,7 +690,8 @@ const ApiKeyComponent = ({
               <DialogHeader>
                 <DialogTitle>API Key Scopes</DialogTitle>
                 <DialogDescription>
-                  Scopes for "{selectedApiKeyForScopes?.name}"
+                  Scopes for "
+                  {truncateName(selectedApiKeyForScopes?.name || "", 30)}"
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
@@ -709,6 +709,61 @@ const ApiKeyComponent = ({
                     </div>
                   )
                 })}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Agents Modal */}
+          <Dialog
+            open={!!selectedApiKeyForAgents}
+            onOpenChange={(open) => !open && setSelectedApiKeyForAgents(null)}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>API Key Agent Access</DialogTitle>
+                <DialogDescription>
+                  Agent access for "
+                  {truncateName(selectedApiKeyForAgents?.name || "", 30)}"
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                {selectedApiKeyForAgents?.agents.length === 0 ? (
+                  <div className="flex items-start space-x-3">
+                    <div className="w-2 h-2 rounded-full bg-gray-400 mt-2 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium text-muted-foreground">
+                        No agents selected
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        This API key has no agent access
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  selectedApiKeyForAgents?.agents.map((agentExternalId) => {
+                    const agent = availableAgents.find(
+                      (a) => a.externalId === agentExternalId,
+                    )
+                    return (
+                      <div
+                        key={agentExternalId}
+                        className="flex items-start space-x-3"
+                      >
+                        <div className="w-2 h-2 rounded-full bg-green-500 mt-2 flex-shrink-0" />
+                        <div>
+                          <p className="font-medium">
+                            {agent?.name || agentExternalId}
+                          </p>
+                          {agent?.description && (
+                            <p className="text-sm text-muted-foreground">
+                              {agent.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
               </div>
             </DialogContent>
           </Dialog>
