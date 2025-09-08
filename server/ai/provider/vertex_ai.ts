@@ -112,7 +112,12 @@ export class VertexAiProvider extends BaseProvider {
     if (provider === VertexProvider.GOOGLE) {
       client = new VertexAI({ project: projectId, location: region })
     } else {
-      client = new AnthropicVertex({ projectId, region })
+      client = new AnthropicVertex({ 
+        projectId, 
+        region,
+        timeout: parseInt(process.env.VERTEX_AI_TIMEOUT || '240000'), // Default 4 minutes timeout
+        maxRetries: 3
+      })
     }
 
     super(client, AIProviders.VertexAI)

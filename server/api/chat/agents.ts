@@ -388,6 +388,11 @@ const checkAndYieldCitationsForAgent = async function* (
           continue
         }
 
+        // we dont want citations for attachments in the chat
+        if(item.source.entity === KnowledgeBaseEntity.Attachment) {
+          continue
+        }
+
           yield {
             citation: {
               index: citationIndex,
