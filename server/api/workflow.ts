@@ -30,7 +30,18 @@ import {
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
 } from "@/db/schema/workflows"
-import { eq, sql, inArray, and, gte, lte, like, desc, asc } from "drizzle-orm"
+import {
+  eq,
+  sql,
+  inArray,
+  and,
+  gte,
+  lte,
+  like,
+  desc,
+  asc,
+  ne,
+} from "drizzle-orm"
 
 // Re-export schemas for server.ts
 export {
@@ -443,7 +454,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           }
         }
       }
-
       ;[toolExecutionRecord] = await db
         .insert(toolExecution)
         .values({
@@ -1347,16 +1357,16 @@ const executePythonScript = async (
   scriptContent: string,
   previousStepResults: any,
   config: any,
-  scriptType: string = "python_script"
+  scriptType: string = "python_script",
 ) => {
   try {
     // Create a temporary directory for the script execution
     const tempDir = `/tmp/${scriptType}_scripts_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     await mkdir(tempDir, { recursive: true })
-    
+
     // Write the script to a temporary file
     const scriptPath = `${tempDir}/script.py`
-    
+
     // Prepare the script with context injection
     const previousStepResultsJson = JSON.stringify(previousStepResults)
       .replace(/null/g, "None")
@@ -1366,7 +1376,7 @@ const executePythonScript = async (
       .replace(/null/g, "None")
       .replace(/true/g, "True")
       .replace(/false/g, "False")
-    
+
     const scriptWithContext = `
 import json
 import sys
@@ -1386,28 +1396,31 @@ if 'result' in locals():
 else:
     print(json.dumps({"status": "error", "error_message": "Script did not produce a result variable"}))
 `
-    
+
     await Bun.write(scriptPath, scriptWithContext)
-    
+
     // Execute the Python script using Bun's spawn
     const proc = Bun.spawn(["python3", scriptPath], {
       stdout: "pipe",
       stderr: "pipe",
       cwd: tempDir,
     })
-    
+
     const stdout = await new Response(proc.stdout).text()
     const stderr = await new Response(proc.stderr).text()
     await proc.exited
-    
+
     // Clean up temporary files
     try {
       const fs = await import("node:fs/promises")
       await fs.rm(tempDir, { recursive: true, force: true })
     } catch (cleanupError) {
-      Logger.warn(`Failed to cleanup temporary ${scriptType} files:`, cleanupError)
+      Logger.warn(
+        `Failed to cleanup temporary ${scriptType} files:`,
+        cleanupError,
+      )
     }
-    
+
     if (proc.exitCode !== 0) {
       return {
         status: "error",
@@ -1419,11 +1432,11 @@ else:
         },
       }
     }
-    
+
     if (stderr && stderr.trim()) {
       Logger.warn(`${scriptType} stderr:`, stderr)
     }
-    
+
     // Parse the output as JSON
     try {
       const result = JSON.parse(stdout.trim())
@@ -1438,11 +1451,13 @@ else:
           error: `Failed to parse ${scriptType} output as JSON`,
           raw_output: stdout,
           stderr: stderr,
-          parse_error: parseError instanceof Error ? parseError.message : String(parseError),
+          parse_error:
+            parseError instanceof Error
+              ? parseError.message
+              : String(parseError),
         },
       }
     }
-    
   } catch (error) {
     return {
       status: "error",
@@ -1485,53 +1500,65 @@ const executeWorkflowTool = async (
         }
 
         // Use unified Python execution function
-        return await executePythonScript(scriptContent, previousStepResults, config, "python_script")
+        return await executePythonScript(
+          scriptContent,
+          previousStepResults,
+          config,
+          "python_script",
+        )
 
       case "email":
         // Execute Python script to get email details, then send email
         const emailScriptContent =
           typeof tool.value === "string" ? tool.value : tool.value?.script
         const emailConfig = tool.config
-        
+
         if (!emailScriptContent) {
           return {
             status: "error",
             result: { error: "No script content found in email tool value" },
           }
         }
-        
+
         try {
           // Use unified Python execution function
-          const pythonResult = await executePythonScript(emailScriptContent, previousStepResults, emailConfig, "email")
-          
+          const pythonResult = await executePythonScript(
+            emailScriptContent,
+            previousStepResults,
+            emailConfig,
+            "email",
+          )
+
           if (pythonResult.status === "error") {
             return pythonResult
           }
-          
+
           const emailData = pythonResult.result
-          
+
           // Validate email data structure
           if (!emailData.to || !emailData.subject || !emailData.body) {
             return {
               status: "error",
               result: {
-                error: "Email script must return object with 'to', 'subject', and 'body' fields",
+                error:
+                  "Email script must return object with 'to', 'subject', and 'body' fields",
                 script_output: emailData,
               },
             }
           }
-          
+
           // Import and use the email service to actually send the email
           const { emailService } = await import("@/services/emailService")
-          
+
           // Send the email using the TypeScript emailService
           const emailSent = await emailService.sendEmail({
             to: emailData.to,
             subject: emailData.subject,
             body: emailData.body,
-            contentType: emailData.content_type === "text/html" ? "html" : "text",
+            contentType:
+              emailData.content_type === "text/html" ? "html" : "text",
           })
-          
+
           return {
             status: emailSent ? "success" : "error",
             result: {
@@ -1542,11 +1569,12 @@ const executeWorkflowTool = async (
                 body_length: emailData.body.length,
               },
               python_script_output: emailData,
-              message: emailSent ? "Email sent successfully via TypeScript emailService" : "Email failed to send (check AWS SES configuration)",
+              message: emailSent
+                ? "Email sent successfully via TypeScript emailService"
+                : "Email failed to send (check AWS SES configuration)",
               email_service_used: "typescript_emailService",
             },
           }
-          
         } catch (error) {
           return {
             status: "error",
@@ -1822,13 +1850,28 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
     const toolId = c.req.param("toolId")
     const requestData = await c.req.json()
 
+    // Check if tool exists first
+    const existingTool = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolId))
+
+    if (existingTool.length === 0) {
+      throw new HTTPException(404, {
+        message: "Workflow tool not found",
+      })
+    }
+
+    // Only update fields that are provided
+    const updateData: any = {}
+    if (requestData.type !== undefined) updateData.type = requestData.type
+    if (requestData.value !== undefined) updateData.value = requestData.value
+    if (requestData.config !== undefined) updateData.config = requestData.config
+    updateData.updatedAt = new Date()
+
     const [tool] = await db
       .update(workflowTool)
-      .set({
-        type: requestData.type,
-        value: requestData.value,
-        config: requestData.config,
-      })
+      .set(updateData)
       .where(eq(workflowTool.id, toolId))
       .returning()
 
@@ -1838,6 +1881,394 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Failed to update workflow tool")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Get single workflow tool
+export const GetWorkflowToolApi = async (c: Context) => {
+  try {
+    const toolId = c.req.param("toolId")
+
+    const [tool] = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolId))
+
+    if (!tool) {
+      throw new HTTPException(404, {
+        message: "Workflow tool not found",
+      })
+    }
+
+    return c.json({
+      success: true,
+      data: tool,
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to get workflow tool")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Delete workflow tool
+export const DeleteWorkflowToolApi = async (c: Context) => {
+  try {
+    const toolId = c.req.param("toolId")
+
+    // Check if tool exists first
+    const existingTool = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolId))
+
+    if (existingTool.length === 0) {
+      throw new HTTPException(404, {
+        message: "Workflow tool not found",
+      })
+    }
+
+    await db.delete(workflowTool).where(eq(workflowTool.id, toolId))
+
+    return c.json({
+      success: true,
+      message: "Workflow tool deleted successfully",
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to delete workflow tool")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Add step with tool to workflow template
+export const AddStepToWorkflowApi = async (c: Context) => {
+  try {
+    const templateId = c.req.param("templateId")
+    const requestData = await c.req.json()
+
+    // Validate template exists
+    const [template] = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, templateId))
+
+    if (!template) {
+      throw new HTTPException(404, {
+        message: "Workflow template not found",
+      })
+    }
+
+    // 1. Create the tool first
+    const [newTool] = await db
+      .insert(workflowTool)
+      .values({
+        type: requestData.tool.type,
+        value: requestData.tool.value,
+        config: requestData.tool.config || {},
+        createdBy: "api",
+      })
+      .returning()
+
+    Logger.info(`Created new tool: ${newTool.id}`)
+
+    // 2. Get all existing steps for this template
+    const existingSteps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+
+    const isFirstStep =
+      existingSteps.length === 0 || !template.rootWorkflowStepTemplateId
+
+    // 3. Create the new step
+    const stepOrder = existingSteps.length + 1
+    const [newStep] = await db
+      .insert(workflowStepTemplate)
+      .values({
+        workflowTemplateId: templateId,
+        name: requestData.stepName,
+        description: requestData.stepDescription || `Step ${stepOrder}`,
+        type: requestData.stepType || "automated",
+        parentStepId: null,
+        prevStepIds: isFirstStep ? [] : [],
+        nextStepIds: [],
+        toolIds: [newTool.id],
+        timeEstimate: requestData.timeEstimate || 300,
+        metadata: {
+          icon: getStepIcon(requestData.tool.type),
+          step_order: stepOrder,
+          ...requestData.metadata,
+        },
+      })
+      .returning()
+
+    Logger.info(`Created new step: ${newStep.id}`)
+
+    // 4. Handle step connections
+    if (isFirstStep) {
+      // This is the first/root step
+      await db
+        .update(workflowTemplate)
+        .set({
+          rootWorkflowStepTemplateId: newStep.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(workflowTemplate.id, templateId))
+
+      Logger.info(`Set step ${newStep.id} as root step`)
+    } else {
+      // Find the current last step (step with no nextStepIds)
+      const currentLastStep = existingSteps.find(
+        (step) => !step.nextStepIds || step.nextStepIds.length === 0,
+      )
+
+      if (currentLastStep) {
+        // Update the current last step to point to new step
+        await db
+          .update(workflowStepTemplate)
+          .set({
+            nextStepIds: [newStep.id],
+            updatedAt: new Date(),
+          })
+          .where(eq(workflowStepTemplate.id, currentLastStep.id))
+
+        // Update new step to have current last step as previous
+        await db
+          .update(workflowStepTemplate)
+          .set({
+            prevStepIds: [currentLastStep.id],
+            updatedAt: new Date(),
+          })
+          .where(eq(workflowStepTemplate.id, newStep.id))
+
+        Logger.info(`Connected step ${currentLastStep.id} -> ${newStep.id}`)
+      }
+    }
+
+    // 5. Return the complete updated template with new step
+    const updatedTemplate = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, templateId))
+
+    const allSteps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+
+    return c.json({
+      success: true,
+      data: {
+        template: updatedTemplate[0],
+        newStep: newStep,
+        newTool: newTool,
+        totalSteps: allSteps.length,
+        isRootStep: isFirstStep,
+      },
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to add step to workflow")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Helper function to get step icon based on tool type
+function getStepIcon(toolType: string): string {
+  const iconMap: Record<string, string> = {
+    form: "📁",
+    ai_agent: "🤖",
+    python_script: "🐍",
+    email: "📧",
+    slack: "💬",
+    gmail: "📮",
+    delay: "⏰",
+    agent: "🤖",
+    merged_node: "🔀",
+  }
+  return iconMap[toolType] || "⚙️"
+}
+
+// Delete workflow step template API
+export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
+  try {
+    const stepId = c.req.param("stepId")
+
+    // 1. Check if step exists and get its details
+    const [stepToDelete] = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.id, stepId))
+
+    if (!stepToDelete) {
+      throw new HTTPException(404, {
+        message: "Workflow step template not found",
+      })
+    }
+
+    const templateId = stepToDelete.workflowTemplateId
+
+    // 2. Get the workflow template
+    const [template] = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, templateId))
+
+    if (!template) {
+      throw new HTTPException(404, {
+        message: "Workflow template not found",
+      })
+    }
+
+    // 3. Get all steps in the workflow
+    const allSteps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+
+    // 4. Handle step chain reconnection
+    const prevStepIds = stepToDelete.prevStepIds || []
+    const nextStepIds = stepToDelete.nextStepIds || []
+
+    // Update previous steps to point to next steps
+    for (const prevStepId of prevStepIds) {
+      await db
+        .update(workflowStepTemplate)
+        .set({
+          nextStepIds: nextStepIds,
+          updatedAt: new Date(),
+        })
+        .where(eq(workflowStepTemplate.id, prevStepId))
+    }
+
+    // Update next steps to point to previous steps
+    for (const nextStepId of nextStepIds) {
+      await db
+        .update(workflowStepTemplate)
+        .set({
+          prevStepIds: prevStepIds,
+          updatedAt: new Date(),
+        })
+        .where(eq(workflowStepTemplate.id, nextStepId))
+    }
+
+    // 5. Handle root step updates
+    let newRootStepId = template.rootWorkflowStepTemplateId
+    const isRootStep = template.rootWorkflowStepTemplateId === stepId
+
+    if (isRootStep) {
+      // If deleting root step, set the first next step as new root
+      // If no next steps, set to null
+      newRootStepId = nextStepIds.length > 0 ? nextStepIds[0] : null
+
+      await db
+        .update(workflowTemplate)
+        .set({
+          rootWorkflowStepTemplateId: newRootStepId,
+          updatedAt: new Date(),
+        })
+        .where(eq(workflowTemplate.id, templateId))
+
+      Logger.info(`Updated root step from ${stepId} to ${newRootStepId}`)
+    }
+
+    // 6. Delete associated tools if they are only used by this step
+    const toolIdsToCheck = stepToDelete.toolIds || []
+
+    for (const toolId of toolIdsToCheck) {
+      // Check if any other steps use this tool
+      const otherStepsUsingTool = await db
+        .select()
+        .from(workflowStepTemplate)
+        .where(
+          and(
+            eq(workflowStepTemplate.workflowTemplateId, templateId),
+            ne(workflowStepTemplate.id, stepId),
+          ),
+        )
+
+      const toolInUse = otherStepsUsingTool.some(
+        (step) => step.toolIds && step.toolIds.includes(toolId),
+      )
+
+      if (!toolInUse) {
+        // Delete the tool if not used by other steps
+        await db.delete(workflowTool).where(eq(workflowTool.id, toolId))
+        Logger.info(`Deleted unused tool: ${toolId}`)
+      }
+    }
+
+    // 7. Delete the step
+    await db
+      .delete(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.id, stepId))
+
+    // 8. Update step orders for remaining steps
+    const remainingSteps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+
+    // Reorder remaining steps
+    const sortedSteps = remainingSteps.sort((a, b) => {
+      const orderA = a.metadata?.step_order || 0
+      const orderB = b.metadata?.step_order || 0
+      return orderA - orderB
+    })
+
+    for (let i = 0; i < sortedSteps.length; i++) {
+      const step = sortedSteps[i]
+      const newOrder = i + 1
+
+      if (step.metadata?.step_order !== newOrder) {
+        await db
+          .update(workflowStepTemplate)
+          .set({
+            metadata: {
+              ...step.metadata,
+              step_order: newOrder,
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(workflowStepTemplate.id, step.id))
+      }
+    }
+
+    // 9. Get updated workflow data
+    const updatedTemplate = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, templateId))
+
+    const updatedSteps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+
+    Logger.info(
+      `Successfully deleted step ${stepId} and reconnected workflow chain`,
+    )
+
+    return c.json({
+      success: true,
+      data: {
+        deletedStepId: stepId,
+        wasRootStep: isRootStep,
+        newRootStepId: newRootStepId,
+        remainingSteps: updatedSteps.length,
+        template: updatedTemplate[0],
+        message: `Step "${stepToDelete.name}" deleted successfully`,
+      },
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to delete workflow step template")
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
