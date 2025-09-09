@@ -3,29 +3,53 @@ FROM oven/bun:1 AS base
 
 WORKDIR /usr/src/app
 
-# Copy all files into the container
-COPY . .
+# Copy package files first for better layer caching
+COPY server/package.json server/bun.lock* /usr/src/app/server/
+COPY frontend/package.json frontend/bun.lockb /usr/src/app/frontend/
 
 # Switch to server directory and install backend dependencies
 WORKDIR /usr/src/app/server
 RUN bun install
-RUN chmod +x docker-init.sh 
 
-
-# Install dependencies and build the frontend
+# Install frontend dependencies
 WORKDIR /usr/src/app/frontend
 RUN bun install
+
+# Copy server source code and configuration
+WORKDIR /usr/src/app
+COPY server/ /usr/src/app/server/
+COPY frontend/ /usr/src/app/frontend/
+
+# Copy other necessary files
+COPY biome.json /usr/src/app/
+
+# Make scripts executable
+WORKDIR /usr/src/app/server
+RUN chmod +x docker-init.sh 2>/dev/null || true
+
+# Build the frontend
+WORKDIR /usr/src/app/frontend
 RUN bun run build
 
 # Set the environment as production
 ENV NODE_ENV=production
 
-# Install required tools and vespa CLI
+# Install required tools, canvas dependencies, and vespa CLI
 USER root
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
     tar \
+    libexpat1 \
+    libexpat1-dev \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libjpeg-dev \
+    libgif-dev \
+    librsvg2-dev \
+    libpixman-1-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
     && wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz \
     && tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz \
     && mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/ \
@@ -33,18 +57,31 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 
+# Copy data restoration script and make it executable
+#COPY deployment/restore-data.sh /usr/src/app/deployment/restore-data.sh
+#RUN chmod +x /usr/src/app/deployment/restore-data.sh
+
+# Copy sample data archive if it exists (conditional copy during build)
+#COPY deployment/sample-data.tar.gz* /usr/src/app/deployment/
+
 # Set ownership for bun user
 RUN chown -R bun:bun /usr/src/app
 
-# Expose the application port
-EXPOSE 80/tcp
+# Note: Application ports are exposed below
 
 WORKDIR /usr/src/app/server
 
-RUN mkdir -p downloads
+RUN mkdir -p downloads vespa-data vespa-logs uploads migrations
+
+# Copy and setup startup script
+COPY start.sh /usr/src/app/start.sh
+RUN chmod +x /usr/src/app/start.sh
 
 USER bun
 
-## A delay of 20 seconds to wait for the other containers to start running and the migrate changes and deploy schema changes
-CMD ["sh", "-c", "sleep 20 && if [ -f /usr/src/app/server/.env ]; then . /usr/src/app/server/.env; fi && bun run generate && bun run migrate && cd /usr/src/app/server/vespa && EMBEDDING_MODEL=$EMBEDDING_MODEL ./deploy-docker.sh && cd /usr/src/app/server/ && bun run server.ts"]
+# Expose application ports
+EXPOSE 3000
+EXPOSE 3001
+
+CMD ["/usr/src/app/start.sh"]
 

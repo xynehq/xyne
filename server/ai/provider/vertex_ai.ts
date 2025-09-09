@@ -12,7 +12,7 @@ import {
   type ModelParams,
   type WebSearchSource,
 } from "@/ai/types"
-import BaseProvider, { findImageByName } from "@/ai/provider/base"
+import BaseProvider, { findImageByName, regex } from "@/ai/provider/base"
 import { Subsystem } from "@/types"
 import config from "@/config"
 import { createLabeledImageContent } from "../utils"
@@ -32,20 +32,50 @@ const buildVertexAIImageParts = async (imagePaths: string[]) => {
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    const match = imgPath.match(/^(.+)_([0-9]+)$/)
-    if (!match) throw new Error(`Invalid image path: ${imgPath}`)
-    const docId = match[1]
+    const match = imgPath.match(regex)
+    if (!match) {
+      Logger.error(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
+      throw new Error(`Invalid image path: ${imgPath}`)
+    }
+
+    const docIndex = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
+
+    if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
+      Logger.error(`Invalid docId containing path traversal: ${docId}`)
+      throw new Error(`Invalid docId: ${docId}`)
+    }
+
     const imageDir = path.join(baseDir, docId)
-    const absolutePath = findImageByName(imageDir, match[2])
-    const ext = path.extname(absolutePath).toLowerCase()
-    const mimeMap: Record<string, string> = {
+    const absolutePath = findImageByName(imageDir, imageNumber)
+    const extension = path.extname(absolutePath).toLowerCase()
+
+    // Map file extensions to Bedrock format values
+    const formatMap: Record<string, string> = {
       ".png": "image/png",
       ".jpg": "image/jpeg",
       ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
       ".webp": "image/webp",
     }
-    const mimeType = mimeMap[ext]
-    if (!mimeType) return null
+
+    const format = formatMap[extension]
+    if (!format) {
+      Logger.warn(
+        `Unsupported image format: ${extension}. Skipping image: ${absolutePath}`,
+      )
+      return null
+    }
+
+    // Ensure the resolved path is within baseDir
+    const resolvedPath = path.resolve(imageDir)
+    if (!resolvedPath.startsWith(baseDir)) {
+      Logger.error(`Path traversal attempt detected: ${imageDir}`)
+      throw new Error(`Invalid path: ${imageDir}`)
+    }
 
     try {
       await fs.promises.access(absolutePath, fs.constants.F_OK)
@@ -54,7 +84,7 @@ const buildVertexAIImageParts = async (imagePaths: string[]) => {
       const base64 = imgBuffer.toString("base64")
       return {
         type: "image",
-        source: { type: "base64", media_type: mimeType, data: base64 },
+        source: { type: "base64", media_type: format, data: base64 },
       }
     } catch (err) {
       Logger.error(`Failed to read image: ${absolutePath}`)
@@ -82,7 +112,12 @@ export class VertexAiProvider extends BaseProvider {
     if (provider === VertexProvider.GOOGLE) {
       client = new VertexAI({ project: projectId, location: region })
     } else {
-      client = new AnthropicVertex({ projectId, region })
+      client = new AnthropicVertex({ 
+        projectId, 
+        region,
+        timeout: parseInt(process.env.VERTEX_AI_TIMEOUT || '240000'), // Default 4 minutes timeout
+        maxRetries: 3
+      })
     }
 
     super(client, AIProviders.VertexAI)
@@ -123,23 +158,49 @@ export class VertexAiProvider extends BaseProvider {
       : []
     const transformedMessages = this.injectImages(messages, imageParts)
 
-    const client = this.client as AnthropicVertex
-    const response = await client.beta.messages.create({
-      model: modelId,
-      max_tokens: maxTokens,
-      temperature,
-      system: systemPrompt,
-      messages: transformedMessages,
-    })
+    try {
+      Logger.info(`Starting VertexAI Anthropic request with model: ${modelId}`)
+      const client = this.client as AnthropicVertex
+      const response = await client.beta.messages.create({
+        model: modelId,
+        max_tokens: maxTokens,
+        temperature,
+        system: systemPrompt,
+        messages: transformedMessages,
+        tools: params.tools && params.tools.length
+          ? params.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters || { type: 'object', properties: {} },
+            }))
+          : undefined,
+      })
 
-    const text = response.content
-      .filter((c: any) => c.type === "text")
-      .map((c: any) => c.text)
-      .join("")
-    const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-    const cost = 0
+      const text = response.content
+        .filter((c: any) => c.type === "text")
+        .map((c: any) => c.text)
+        .join("")
+      const toolCalls = response.content
+        .filter((c: any) => c.type === 'tool_use')
+        .map((c: any) => ({
+          id: c.id || '',
+          type: 'function' as const,
+          function: {
+            name: c.name || '',
+            arguments: c.input ? JSON.stringify(c.input) : '{}',
+          },
+        }))
+      const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
+      const cost = 0
 
-    return { text, cost }
+      return { text, cost, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }
+    } catch (error) {
+      Logger.error(`VertexAI Anthropic request failed:`, error)
+      if (error instanceof Error && error.message?.includes('timeout')) {
+        throw new Error(`VertexAI request timed out after 4 minutes`)
+      }
+      throw error
+    }
   }
 
   private async *converseStreamAnthropic(
@@ -161,6 +222,13 @@ export class VertexAiProvider extends BaseProvider {
       system: systemPrompt,
       messages: transformedMessages,
       stream: true,
+      tools: params.tools && params.tools.length
+        ? params.tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            input_schema: t.parameters || { type: 'object', properties: {} },
+          }))
+        : undefined,
     })
 
     let totalInputTokens = 0
@@ -168,6 +236,8 @@ export class VertexAiProvider extends BaseProvider {
     let accumulatedText = ""
     let costYielded = false
 
+    // Track current tool_use block
+    let currentTool: { id: string; name: string; args: string } | null = null
     for await (const chunk of stream) {
       if (chunk?.type === "message_start") {
         const usage = chunk.message.usage
@@ -180,11 +250,43 @@ export class VertexAiProvider extends BaseProvider {
         yield { text: chunk.content_block.text }
         accumulatedText += chunk.content_block.text
       } else if (
+        chunk?.type === "content_block_start" &&
+        (chunk as any).content_block?.type === "tool_use"
+      ) {
+        const tb: any = (chunk as any).content_block
+        currentTool = { id: tb?.id || "", name: tb?.name || "", args: "" }
+      } else if (
         chunk?.type === "content_block_delta" &&
         chunk.delta?.type === "text_delta"
       ) {
         yield { text: chunk.delta.text }
         accumulatedText += chunk.delta.text
+      } else if (
+        chunk?.type === "content_block_delta" &&
+        (chunk as any).delta?.type === "input_json_delta" &&
+        currentTool
+      ) {
+        const d: any = (chunk as any).delta
+        if (typeof d.partial_json === "string") {
+          currentTool.args += d.partial_json
+        }
+      } else if (
+        chunk?.type === "content_block_stop" &&
+        currentTool
+      ) {
+        // Flush tool call
+        const toolCalls = [
+          {
+            id: currentTool.id,
+            type: "function" as const,
+            function: {
+              name: currentTool.name,
+              arguments: currentTool.args || "{}",
+            },
+          },
+        ]
+        yield { tool_calls: toolCalls }
+        currentTool = null
       } else if (chunk?.type === "message_stop" && !costYielded) {
         const usage = {
           inputTokens: totalInputTokens,
