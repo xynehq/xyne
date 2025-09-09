@@ -182,7 +182,7 @@ import {
   processMessage,
   searchToCitation,
 } from "./utils"
-export const textToCitationIndex = /\[(\d+)\]/g
+import { textToCitationIndex, textToImageCitationIndex } from "./utils"
 import config from "@/config"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
@@ -191,7 +191,6 @@ import {
   cleanBuffer,
   getThreadContext,
   isContextSelected,
-  textToImageCitationIndex,
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"

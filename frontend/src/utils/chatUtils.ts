@@ -1,8 +1,10 @@
 import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
-import { textToCitationIndex, textToImageCitationIndex } from "@/routes/_authenticated/chat"
 
 // Helper function to generate UUID
 export const generateUUID = () => crypto.randomUUID()
+
+export const textToCitationIndex = /\[(\d+)\]/g
+export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
 export const processMessage = (text: string, citationMap: Record<number, number> | undefined, citationUrls: string[]) => {
     text = splitGroupedCitationsWithSpaces(text)

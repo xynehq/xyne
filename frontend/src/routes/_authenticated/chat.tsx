@@ -1598,9 +1598,6 @@ export const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   )
 }
 
-export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
-
 const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
 const Code = ({
   inline,

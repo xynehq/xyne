@@ -464,6 +464,7 @@ const searchToCitations = (
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
+export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
 export const processMessage = (
   text: string,

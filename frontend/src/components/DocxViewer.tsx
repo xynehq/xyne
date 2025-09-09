@@ -200,8 +200,8 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
             const cellEl = cell as HTMLElement;
             cellEl.style.overflowWrap = 'break-word';
             cellEl.style.whiteSpace = 'normal';
-            cellEl.style.maxWidth = '0'; // Forces text wrapping
-            cellEl.style.minWidth = '100px';
+            cellEl.style.maxWidth = '100px';
+            cellEl.style.minWidth = '0';
             cellEl.style.boxSizing = 'border-box';
             cellEl.style.padding = '5px';
           });

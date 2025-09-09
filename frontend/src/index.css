@@ -346,8 +346,6 @@ html {
   word-wrap: break-word;
   overflow-wrap: break-word;
   white-space: normal;
-  max-width: 0;
-  min-width: 100px;
 }
 
 .docx-preview p { 

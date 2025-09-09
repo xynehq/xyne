@@ -168,6 +168,8 @@ import {
   parseAppSelections,
   isAppSelectionMap,
   findOptimalCitationInsertionPoint,
+  textToCitationIndex,
+  textToImageCitationIndex,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -365,8 +367,6 @@ export const GetChatTraceApi = async (c: Context) => {
   }
 }
 
-export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
