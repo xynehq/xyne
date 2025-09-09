@@ -2378,7 +2378,7 @@ Guidelines for using web search:
 - For time-sensitive details (such as business hours, event schedules, or deadlines), ensure your answer is localized to the user's timezone.
 
 ${
-  agentPrompt && agentPrompt.name
+  agentPrompt && agentPrompt.prompt
     ? `
 Agent Instructions:  
 Name: ${agentPrompt.name}  
