@@ -173,6 +173,15 @@ function WorkflowComponent() {
         console.log("Templates API Response:", templates.data)
 
         // Convert WorkflowTemplate to Template interface for modal
+        // const convertedTemplates: Template[] = templates.data.map((workflowTemplate) => ({
+        //   id: workflowTemplate.id,
+        //   name: workflowTemplate.name,
+        //   description: workflowTemplate.description,
+        //   icon: getTemplateIcon(workflowTemplate),
+        //   iconBgColor: getTemplateIconBgColor(workflowTemplate),
+        //   isPlaceholder: false
+        // }))
+
         const convertedTemplates: Template[] = templates.data.map(
           (workflowTemplate) => ({
             id: workflowTemplate.id,
