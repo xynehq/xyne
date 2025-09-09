@@ -92,7 +92,7 @@ export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
   "service-key": z
-    .instanceof(File)
+    .any()
     .refine(
       (file) =>
         file.type === "application/json" || file.name?.endsWith(".json"),
@@ -125,7 +125,7 @@ export type ServiceAccountConnection = z.infer<
 
 export const updateServiceConnectionSchema = z.object({
   "service-key": z
-    .instanceof(File)
+    .any()
     .refine(
       (file) =>
         file.type === "application/json" || file.name?.endsWith(".json"),
