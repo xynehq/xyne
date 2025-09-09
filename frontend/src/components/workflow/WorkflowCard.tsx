@@ -76,12 +76,6 @@ export function WorkflowCard({ workflow, onViewClick }: WorkflowCardProps) {
     return <img src={botLogo} alt="Bot Logo" className="w-5 h-5" />
   }
 
-  const getTemplateStatus = () => {
-    if (workflow.status === "active") {
-      return "Active"
-    }
-    return workflow.status.charAt(0).toUpperCase() + workflow.status.slice(1)
-  }
 
   return (
     <div

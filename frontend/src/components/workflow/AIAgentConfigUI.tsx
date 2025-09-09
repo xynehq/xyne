@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,7 +12,7 @@ interface AIAgentConfigUIProps {
   onSave?: (agentConfig: AIAgentConfig) => void
   toolData?: any
   toolId?: string // Tool ID for API updates
-  stepData?: any // Step data for titles
+  stepData?: any // Step data for loading existing configuration
 }
 
 export interface AIAgentConfig {
@@ -33,13 +33,51 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   stepData,
 }) => {
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
-    name: toolData?.value?.name || "AI Agent",
-    description: toolData?.value?.description || "",
-    model: toolData?.config?.aiModel || "gemini-1.5-pro",
+    name: "AI Agent",
+    description: "",
+    model: "gemini-1.5-pro",
     inputPrompt: "$json.input",
-    systemPrompt: toolData?.config?.prompt || "",
+    systemPrompt: "",
     knowledgeBase: "",
   })
+
+  // Load existing data or reset to defaults when component becomes visible
+  React.useEffect(() => {
+    if (isVisible) {
+      // Try to load from stepData.config first, then toolData, otherwise use defaults
+      let existingConfig = null
+      
+      if (stepData?.config) {
+        existingConfig = stepData.config
+      } else if (toolData?.value || toolData?.config) {
+        existingConfig = toolData.value || toolData.config || {}
+      }
+      
+      if (existingConfig) {
+        setAgentConfig({
+          name: existingConfig.name || "AI Agent",
+          description: existingConfig.description || "",
+          model: existingConfig.model || "gemini-1.5-pro",
+          inputPrompt: existingConfig.inputPrompt || "$json.input",
+          systemPrompt: existingConfig.systemPrompt || "",
+          knowledgeBase: existingConfig.knowledgeBase || "",
+        })
+      } else {
+        // Reset to defaults for new AI Agent
+        setAgentConfig({
+          name: "AI Agent",
+          description: "",
+          model: "gemini-1.5-pro",
+          inputPrompt: "$json.input",
+          systemPrompt: "",
+          knowledgeBase: "",
+        })
+      }
+      setIsModelDropdownOpen(false)
+      setIsKnowledgeDropdownOpen(false)
+      setIsEnhancingPrompt(false)
+    }
+  }, [isVisible, toolData, stepData])
 
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [isKnowledgeDropdownOpen, setIsKnowledgeDropdownOpen] = useState(false)
@@ -173,19 +211,13 @@ Always strive for accuracy and helpfulness in your responses.`
       if (toolId) {
         const updatedToolData = {
           type: "ai_agent",
-          value: {
-            name: agentConfig.name,
-            description: agentConfig.description,
-          },
+          value: agentConfig,
           config: {
             ...toolData?.config,
-            aiModel: agentConfig.model,
-            prompt: agentConfig.systemPrompt,
+            model: agentConfig.model,
             name: agentConfig.name,
             description: agentConfig.description,
           },
-          stepName: agentConfig.name,
-          stepDescription: agentConfig.description,
         }
 
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
@@ -248,7 +280,7 @@ Always strive for accuracy and helpfulness in your responses.`
             textTransform: "capitalize",
           }}
         >
-          {stepData?.step?.name || toolData?.name || "AI Agent"}
+          AI Agent
         </h2>
 
         <button
@@ -286,6 +318,28 @@ Always strive for accuracy and helpfulness in your responses.`
               }
               placeholder="Enter agent name"
               className="w-full"
+            />
+          </div>
+
+          {/* Agent Description */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="agent-description"
+              className="text-sm font-medium text-slate-700"
+            >
+              Agent Description
+            </Label>
+            <Textarea
+              id="agent-description"
+              value={agentConfig.description}
+              onChange={(e) =>
+                setAgentConfig((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
+              placeholder="Describe what this agent does"
+              className="w-full min-h-[80px] resize-none"
             />
           </div>
 

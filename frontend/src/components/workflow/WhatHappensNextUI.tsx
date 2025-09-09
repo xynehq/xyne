@@ -8,10 +8,8 @@ import {
   Users,
   ChevronRight,
   X,
-  ArrowLeft,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { workflowStepsAPI } from "./api/ApiHandlers"
@@ -50,34 +48,31 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
     pythonCode: toolData?.value || "",
   })
 
-  const [aiAgentConfig, setAiAgentConfig] = useState({
-    name: "",
-    description: "",
-    model: "gemini-1.5-pro",
-    inputPrompt: "$json.input",
-    systemPrompt: "",
-    knowledgeBase: "",
-  })
 
-  const [emailConfig, setEmailConfig] = useState({
-    sendingFrom: "aman.asrani@juspay.in",
-    emailAddresses: [],
-  })
 
-  const [selectedAction, setSelectedAction] = useState<string | null>(null)
+  const [, setSelectedAction] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+
+  // Reset form states when component becomes visible or when selectedNodeId changes
+  React.useEffect(() => {
+    if (isVisible) {
+      // Reset all form states to default values
+      setPythonConfig({
+        pythonCode: toolData?.value || "",
+      })
+      setSelectedAction(null)
+      setIsSaving(false)
+    }
+  }, [isVisible, selectedNodeId, toolData])
 
   // Check if we should show Python code config
   const showPythonConfig =
     toolType === "python_code" || toolType === "python_script"
 
-  // Check if we should show specific action config
-  const showActionConfig = selectedAction !== null
-
-  // Handle save configuration - calls API
+  // Handle save configuration - calls API and creates visual step
   const handleSaveConfiguration = async () => {
-    if (!selectedTemplate || !selectedNodeId) {
-      console.error("Missing template or node ID")
+    if (!selectedNodeId) {
+      console.error("Missing node ID")
       return
     }
 
@@ -110,63 +105,29 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
             automated_description: "Python script execution",
           },
         }
-      } else if (selectedAction === "ai_agent") {
-        // Save AI Agent step
-        stepData = {
-          name: aiAgentConfig.name || "AI Agent",
-          description:
-            aiAgentConfig.description || "AI agent for processing data",
-          type: "ai_agent",
-          tool: {
-            type: "ai_agent",
-            value: aiAgentConfig,
-            config: {
-              model: aiAgentConfig.model,
-            },
-          },
-          prevStepIds: [selectedNodeId],
-          timeEstimate: 300,
-          metadata: {
-            icon: "🤖",
-            step_order: 999,
-            automated_description: "AI agent processing",
-          },
-        }
-      } else if (selectedAction === "email") {
-        // Save Email step
-        stepData = {
-          name: "Email",
-          description: "Send email notification",
-          type: "email",
-          tool: {
-            type: "email",
-            value: emailConfig,
-            config: {
-              to_email: emailConfig.emailAddresses,
-              from_email: emailConfig.sendingFrom,
-            },
-          },
-          prevStepIds: [selectedNodeId],
-          timeEstimate: 60,
-          metadata: {
-            icon: "📧",
-            step_order: 999,
-            automated_description: "Email notification",
-          },
-        }
       }
 
       if (stepData) {
-        console.log("Saving step:", stepData)
-        const response = await workflowStepsAPI.createStep(
-          selectedTemplate.id,
-          stepData,
-        )
-        console.log("Step created successfully:", response)
+        console.log("Creating visual step with data:", stepData)
 
-        // Call callback if provided
+        // Call callback to create visual step FIRST
         if (onStepCreated) {
-          onStepCreated(response)
+          onStepCreated(stepData)
+        }
+
+        // Try to save to API if template is available, but don't block UI updates
+        if (selectedTemplate) {
+          try {
+            console.log("Saving step to API:", stepData)
+            const response = await workflowStepsAPI.createStep(
+              selectedTemplate.id,
+              stepData,
+            )
+            console.log("Step created successfully:", response)
+          } catch (error) {
+            console.error("Failed to save step to API:", error)
+            // Continue with UI update even if API call fails
+          }
         }
 
         // Close the sidebar
@@ -239,11 +200,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div className="text-sm font-semibold text-gray-700 tracking-wider uppercase">
             {showPythonConfig
               ? "Python Code Configuration"
-              : selectedAction === "ai_agent"
-                ? "AI Agent Configuration"
-                : selectedAction === "email"
-                  ? "Email Configuration"
-                  : "What Happens Next?"}
+              : "What Happens Next?"}
           </div>
           <button
             onClick={onClose}
@@ -294,135 +251,6 @@ print('Hello, World!')"
             </div>
           </div>
         </div>
-      ) : selectedAction === "ai_agent" ? (
-        /* AI Agent Configuration */
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <Label
-                htmlFor="agent-name"
-                className="text-sm font-medium text-slate-700"
-              >
-                Agent Name
-              </Label>
-              <Input
-                id="agent-name"
-                value={aiAgentConfig.name}
-                onChange={(e) =>
-                  setAiAgentConfig((prev) => ({
-                    ...prev,
-                    name: e.target.value,
-                  }))
-                }
-                placeholder="Enter agent name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label
-                htmlFor="agent-description"
-                className="text-sm font-medium text-slate-700"
-              >
-                Agent Description
-              </Label>
-              <Textarea
-                id="agent-description"
-                value={aiAgentConfig.description}
-                onChange={(e) =>
-                  setAiAgentConfig((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
-                placeholder="Describe what this agent does"
-                className="min-h-[80px]"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label
-                htmlFor="system-prompt"
-                className="text-sm font-medium text-slate-700"
-              >
-                System Prompt
-              </Label>
-              <Textarea
-                id="system-prompt"
-                value={aiAgentConfig.systemPrompt}
-                onChange={(e) =>
-                  setAiAgentConfig((prev) => ({
-                    ...prev,
-                    systemPrompt: e.target.value,
-                  }))
-                }
-                placeholder="Enter system prompt"
-                className="min-h-[120px]"
-              />
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button
-                onClick={() => setSelectedAction(null)}
-                variant="outline"
-                className="flex-1"
-              >
-                Back
-              </Button>
-              <Button
-                onClick={handleSaveConfiguration}
-                disabled={isSaving}
-                className="flex-1"
-              >
-                {isSaving ? "Saving..." : "Save Configuration"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : selectedAction === "email" ? (
-        /* Email Configuration */
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <Label
-                htmlFor="email-addresses"
-                className="text-sm font-medium text-slate-700"
-              >
-                Email Addresses (comma-separated)
-              </Label>
-              <Input
-                id="email-addresses"
-                value={emailConfig.emailAddresses.join(", ")}
-                onChange={(e) =>
-                  setEmailConfig((prev) => ({
-                    ...prev,
-                    emailAddresses: e.target.value
-                      .split(",")
-                      .map((email) => email.trim())
-                      .filter(Boolean),
-                  }))
-                }
-                placeholder="Enter email addresses separated by commas"
-              />
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button
-                onClick={() => setSelectedAction(null)}
-                variant="outline"
-                className="flex-1"
-              >
-                Back
-              </Button>
-              <Button
-                onClick={handleSaveConfiguration}
-                disabled={isSaving}
-                className="flex-1"
-              >
-                {isSaving ? "Saving..." : "Save Configuration"}
-              </Button>
-            </div>
-          </div>
-        </div>
       ) : (
         /* Default Actions List */
         <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-1">
@@ -430,7 +258,15 @@ print('Hello, World!')"
           {availableActions.map((action) => (
             <div
               key={action.id}
-              onClick={() => setSelectedAction(action.id)}
+              onClick={() => {
+                if (action.id === "ai_agent" || action.id === "email") {
+                  // For AI Agent and Email, trigger custom event to open respective ConfigUI
+                  onSelectAction(action.id)
+                  onClose() // Close WhatHappensNextUI
+                } else {
+                  setSelectedAction(action.id)
+                }
+              }}
               className="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 min-h-[60px] bg-transparent hover:bg-slate-50 text-slate-700 cursor-pointer"
             >
               <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-slate-500">

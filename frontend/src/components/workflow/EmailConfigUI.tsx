@@ -2,7 +2,6 @@ import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, X, Trash2 } from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
@@ -12,13 +11,12 @@ interface EmailConfigUIProps {
   onSave?: (emailConfig: EmailConfig) => void
   toolData?: any
   toolId?: string // Tool ID for API updates
-  stepData?: any // Step data for titles
+  stepData?: any // Step data for loading existing configuration
 }
 
 export interface EmailConfig {
   sendingFrom: string
   emailAddresses: string[]
-  content_path: string
 }
 
 const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
@@ -31,11 +29,38 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
 }) => {
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     sendingFrom: "aman.asrani@juspay.in",
-    emailAddresses: toolData?.config?.to_email || [],
-    content_path: toolData?.config?.content_path || "latest",
+    emailAddresses: [],
   })
 
   const [newEmailAddress, setNewEmailAddress] = useState("")
+
+  // Load existing data or reset to defaults when component becomes visible
+  React.useEffect(() => {
+    if (isVisible) {
+      // Try to load from stepData.config first, then toolData, otherwise use defaults
+      let existingConfig = null
+      
+      if (stepData?.config) {
+        existingConfig = stepData.config
+      } else if (toolData?.value || toolData?.config) {
+        existingConfig = toolData.value || toolData.config || {}
+      }
+      
+      if (existingConfig) {
+        setEmailConfig({
+          sendingFrom: existingConfig.sendingFrom || "aman.asrani@juspay.in",
+          emailAddresses: existingConfig.emailAddresses || existingConfig.to_email || [],
+        })
+      } else {
+        // Reset to defaults for new Email
+        setEmailConfig({
+          sendingFrom: "aman.asrani@juspay.in",
+          emailAddresses: [],
+        })
+      }
+      setNewEmailAddress("")
+    }
+  }, [isVisible, toolData, stepData])
 
   const handleAddEmail = () => {
     if (
@@ -76,13 +101,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             ...toolData?.config,
             to_email: emailConfig.emailAddresses,
             from_email: emailConfig.sendingFrom,
-            content_path: emailConfig.content_path,
           },
-          stepName: "Email",
-          stepDescription:
-            emailConfig.emailAddresses.length > 0
-              ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
-              : "Send automated email notifications to specified recipients.",
         }
 
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
@@ -145,7 +164,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             textTransform: "capitalize",
           }}
         >
-          {stepData?.step?.name || toolData?.name || "Email"}
+          Email
         </h2>
 
         <button
@@ -262,32 +281,6 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 })}
               </div>
             )}
-          </div>
-
-          {/* Content Path */}
-          <div className="space-y-2">
-            <Label
-              htmlFor="content-path"
-              className="text-sm font-medium text-slate-700"
-            >
-              Content Path
-            </Label>
-            <Textarea
-              id="content-path"
-              value={emailConfig.content_path}
-              onChange={(e) =>
-                setEmailConfig((prev) => ({
-                  ...prev,
-                  content_path: e.target.value,
-                }))
-              }
-              placeholder="latest"
-              className="w-full min-h-[80px] resize-none"
-            />
-            <p className="text-xs text-slate-500">
-              Specify the path to extract content from previous steps (e.g.,
-              "latest", "step_name", "step_1.output").
-            </p>
           </div>
         </div>
       </div>
