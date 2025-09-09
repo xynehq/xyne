@@ -19,6 +19,11 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Sidebar } from "@/components/Sidebar"
 import {
+  safeNumberConversion,
+  formatCostInINR,
+  formatCostPerMessageInINR,
+} from "@/lib/utils"
+import {
   AgentUserFeedbackModal,
   UserFeedbackModal,
 } from "@/components/feedback/FeedbackViewModal"
@@ -60,12 +65,16 @@ interface TimeSeriesData {
   totalMessages: number
   normalMessages: number
   agentMessages: number
+  totalCost: number
+  totalTokens: number
 }
 
 // Base interfaces for reusability
 interface BaseStatsData {
   totalChats: number
   totalMessages: number
+  totalCost: number
+  totalTokens: number
 }
 
 interface BaseUserData {
@@ -76,6 +85,8 @@ interface BaseUserData {
   messageCount: number
   likes: number
   dislikes: number
+  totalCost: number
+  totalTokens: number
   lastUsed: string
 }
 
@@ -87,6 +98,8 @@ interface BaseAgentData {
   messageCount: number
   likes: number
   dislikes: number
+  totalCost: number
+  totalTokens: number
   lastUsed: string
 }
 
@@ -248,6 +261,76 @@ const MetricCard = ({
     </CardContent>
   </Card>
 )
+
+const ShowMoreMetricsToggle = ({
+  showMoreMetrics,
+  onToggle,
+  variant = "default",
+  className = "",
+}: {
+  showMoreMetrics: boolean
+  onToggle: () => void
+  variant?: "default" | "muted"
+  className?: string
+}) => {
+  const baseClasses =
+    "flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors"
+  const variantClasses =
+    variant === "muted"
+      ? "text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-lg"
+      : "text-muted-foreground hover:text-foreground"
+
+  return (
+    <div className={`flex justify-center ${className}`}>
+      <button onClick={onToggle} className={`${baseClasses} ${variantClasses}`}>
+        <span>
+          {showMoreMetrics ? "Show Less Metrics" : "Show More Metrics"}
+        </span>
+        <svg
+          className={`h-4 w-4 transition-transform duration-200 ${
+            showMoreMetrics ? "rotate-180" : ""
+          }`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+const ExpandableMetricsSection = ({
+  showMoreMetrics,
+  children,
+  className = "",
+  variant = "fade",
+}: {
+  showMoreMetrics: boolean
+  children: React.ReactNode
+  className?: string
+  variant?: "fade" | "slide"
+}) => {
+  if (variant === "slide") {
+    return showMoreMetrics ? <div className={className}>{children}</div> : null
+  }
+
+  return (
+    <div
+      className={`transition-all duration-300 ease-in-out overflow-hidden ${
+        showMoreMetrics ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+      } ${className}`}
+    >
+      {children}
+    </div>
+  )
+}
 
 const MessageActivityChart = ({
   data,
@@ -480,9 +563,24 @@ const AgentUsageCard = ({
                     </span>
                   </div>
                   <div className="flex flex-col items-center">
-                    <Badge variant="secondary" className="min-w-[60px]">
-                      {agent.chatCount} chats
-                    </Badge>
+                    <span className="text-sm font-medium">
+                      {agent.chatCount}
+                    </span>
+                    <span className="text-xs text-muted-foreground">chats</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-medium">
+                      {formatCostInINR(agent.totalCost)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">cost</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-medium">
+                      {(agent.totalTokens || 0).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      tokens
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <div className="flex items-center gap-1 text-green-600">
@@ -535,6 +633,7 @@ const SharedAgentUsageCard = ({
   const [agentSearchQuery, setAgentSearchQuery] = useState<string>("")
   const [userSearchQuery, setUserSearchQuery] = useState<string>("")
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [showMoreMetrics, setShowMoreMetrics] = useState(false)
 
   // Reset user search when selected agent changes
   useEffect(() => {
@@ -572,74 +671,67 @@ const SharedAgentUsageCard = ({
 
   if (loading) {
     return (
-      <div className="space-y-6 min-h-[500px]">
-        {/* Summary Cards Skeleton - Match exact structure */}
+      <div className="space-y-6">
+        {/* Summary Cards - Show immediately with actual structure */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
-          {[...Array(6)].map((_, index) => (
-            <Card key={index} className="animate-pulse">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 bg-muted rounded w-20"></div>
-                <div className="h-4 w-4 bg-muted rounded"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 bg-muted rounded w-12 mb-2"></div>
-                <div className="h-4 bg-muted rounded w-24"></div>
-              </CardContent>
-            </Card>
-          ))}
+          <MetricCard
+            title="My Agents"
+            value="..."
+            description="Public agents you created"
+            icon={Bot}
+          />
+          <MetricCard
+            title="Total Chats"
+            value="..."
+            description="Across all shared agents"
+            icon={MessageSquare}
+          />
+          <MetricCard
+            title="Total Messages"
+            value="..."
+            description="All user interactions total"
+            icon={Activity}
+          />
+          <MetricCard
+            title="Total Users"
+            value="..."
+            description="Users who used your agents"
+            icon={Users}
+          />
+          <MetricCard
+            title="Total Likes"
+            value="..."
+            description="Positive feedback received"
+            icon={ThumbsUp}
+          />
+          <MetricCard
+            title="Satisfaction"
+            value="..."
+            description="Loading..."
+            icon={ThumbsDown}
+          />
         </div>
 
-        {/* Main Content Skeleton - Match exact structure */}
-        <Card className="flex-1">
+        {/* Show More Metrics Button - Match actual layout */}
+        <ShowMoreMetricsToggle showMoreMetrics={false} onToggle={() => {}} />
+
+        {/* Agent List Loading - Simple skeleton */}
+        <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="h-6 bg-muted rounded w-40 mb-2"></div>
-                <div className="h-4 bg-muted rounded w-64"></div>
-              </div>
-              <div className="h-6 bg-muted rounded w-16"></div>
-            </div>
-            {/* Search skeleton */}
-            <div className="mt-4">
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 bg-muted rounded"></div>
-                <div className="w-full pl-10 pr-4 py-2 h-10 bg-muted rounded-md"></div>
-              </div>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5" />
+              Your Shared Agents
+            </CardTitle>
+            <CardDescription>Loading your agents...</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="max-h-80 overflow-y-auto space-y-4">
-              {/* Agent list skeleton */}
-              {[...Array(3)].map((_, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/20 animate-pulse min-h-[80px]"
-                >
-                  <div className="flex items-center space-x-4 flex-1">
-                    <div className="w-8 h-8 bg-muted rounded-full"></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="h-4 bg-muted rounded w-32 mb-2"></div>
-                      <div className="h-3 bg-muted rounded w-48"></div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-right">
-                    <div className="flex flex-col items-center">
-                      <div className="h-4 bg-muted rounded w-8 mb-1"></div>
-                      <div className="h-3 bg-muted rounded w-12"></div>
-                    </div>
-                    <div className="h-6 bg-muted rounded w-16"></div>
-                    <div className="h-6 bg-muted rounded w-16"></div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-4 bg-muted rounded w-8"></div>
-                      <div className="h-4 bg-muted rounded w-8"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Footer skeleton */}
-            <div className="text-center pt-2 border-t">
-              <div className="h-3 bg-muted rounded w-32 mx-auto"></div>
+          <CardContent>
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center space-y-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="text-sm text-muted-foreground">
+                  Loading agents...
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -689,7 +781,6 @@ const SharedAgentUsageCard = ({
           value={sharedAgents.length.toLocaleString()}
           description="Public agents you created"
           icon={Bot}
-          className="border-blue-200 dark:border-blue-800"
         />
         <MetricCard
           title="Total Chats"
@@ -714,7 +805,6 @@ const SharedAgentUsageCard = ({
           value={totalUsage.totalLikes.toLocaleString()}
           description="Positive feedback received"
           icon={ThumbsUp}
-          className="border-green-200 dark:border-green-800"
         />
         <MetricCard
           title="Satisfaction"
@@ -729,9 +819,57 @@ const SharedAgentUsageCard = ({
           }%`}
           description={`From ${totalUsage.totalLikes + totalUsage.totalDislikes} total ratings`}
           icon={ThumbsDown}
-          className="border-red-200 dark:border-red-800"
         />
       </div>
+
+      {/* Show More Metrics Button */}
+      <ShowMoreMetricsToggle
+        showMoreMetrics={showMoreMetrics}
+        onToggle={() => setShowMoreMetrics(!showMoreMetrics)}
+      />
+
+      {/* Additional Metrics (Expandable) */}
+      <ExpandableMetricsSection
+        showMoreMetrics={showMoreMetrics}
+        className="pt-2"
+      >
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            title="Total Cost"
+            value={formatCostInINR(totalUsage.totalCost)}
+            description="Total LLM usage cost"
+            icon={Activity}
+          />
+          <MetricCard
+            title="Total Tokens"
+            value={(totalUsage.totalTokens || 0).toLocaleString()}
+            description="Total tokens processed"
+            icon={Activity}
+          />
+          <MetricCard
+            title="Cost Per Message"
+            value={formatCostPerMessageInINR(
+              totalUsage.totalCost,
+              totalUsage.totalMessages,
+            )}
+            description="Average cost per message"
+            icon={Activity}
+          />
+          <MetricCard
+            title="Tokens Per Message"
+            value={
+              totalUsage.totalMessages > 0
+                ? Math.round(
+                    safeNumberConversion(totalUsage.totalTokens) /
+                      totalUsage.totalMessages,
+                  ).toLocaleString()
+                : "0"
+            }
+            description="Average tokens per message"
+            icon={Activity}
+          />
+        </div>
+      </ExpandableMetricsSection>
 
       {/* Agent List */}
       {sharedAgents.length > 0 ? (
@@ -797,14 +935,36 @@ const SharedAgentUsageCard = ({
                         </span>
                       </div>
                       <div className="flex flex-col items-center">
-                        <Badge variant="secondary" className="min-w-[60px]">
-                          {agent.totalChats} chats
-                        </Badge>
+                        <span className="text-sm font-medium">
+                          {agent.totalChats}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          chats
+                        </span>
                       </div>
                       <div className="flex flex-col items-center">
-                        <Badge variant="outline" className="min-w-[60px]">
-                          {agent.userUsage.length} users
-                        </Badge>
+                        <span className="text-sm font-medium">
+                          {agent.userUsage.length}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          users
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-sm font-medium">
+                          {formatCostInINR(agent.totalCost)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          cost
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-sm font-medium">
+                          {(agent.totalTokens || 0).toLocaleString()}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          tokens
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
                         <div className="flex items-center gap-1 text-green-600">
@@ -872,9 +1032,23 @@ const UsersAnalyticsTable = ({
   searchPlaceholder?: string
   userSearchQuery: string
   setUserSearchQuery: (query: string) => void
-  sortBy: "messages" | "chats" | "likes" | "dislikes" | "lastUsed"
+  sortBy:
+    | "messages"
+    | "chats"
+    | "likes"
+    | "dislikes"
+    | "lastUsed"
+    | "cost"
+    | "tokens"
   setSortBy: (
-    sortBy: "messages" | "chats" | "likes" | "dislikes" | "lastUsed",
+    sortBy:
+      | "messages"
+      | "chats"
+      | "likes"
+      | "dislikes"
+      | "lastUsed"
+      | "cost"
+      | "tokens",
   ) => void
   agentId?: string
   agentName?: string
@@ -902,6 +1076,15 @@ const UsersAnalyticsTable = ({
         return b.likes - a.likes
       case "dislikes":
         return b.dislikes - a.dislikes
+      case "cost":
+        return (
+          safeNumberConversion(b.totalCost) - safeNumberConversion(a.totalCost)
+        )
+      case "tokens":
+        return (
+          safeNumberConversion(b.totalTokens) -
+          safeNumberConversion(a.totalTokens)
+        )
       case "lastUsed":
         return new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()
       default:
@@ -950,13 +1133,17 @@ const UsersAnalyticsTable = ({
                     | "chats"
                     | "likes"
                     | "dislikes"
-                    | "lastUsed",
+                    | "lastUsed"
+                    | "cost"
+                    | "tokens",
                 )
               }
               className="appearance-none bg-background border border-input rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             >
               <option value="messages">Sort by Messages</option>
               <option value="chats">Sort by Chats</option>
+              <option value="cost">Sort by Cost</option>
+              <option value="tokens">Sort by Tokens</option>
               <option value="likes">Sort by Likes</option>
               <option value="dislikes">Sort by Dislikes</option>
               <option value="lastUsed">Sort by Last Used</option>
@@ -1029,9 +1216,28 @@ const UsersAnalyticsTable = ({
                         </span>
                       </div>
                       <div className="flex flex-col items-center">
-                        <Badge variant="secondary" className="min-w-[60px]">
-                          {user.chatCount} chats
-                        </Badge>
+                        <span className="text-sm font-medium">
+                          {user.chatCount}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          chats
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-sm font-medium">
+                          {formatCostInINR(user.totalCost)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          cost
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-sm font-medium">
+                          {(user.totalTokens || 0).toLocaleString()}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          tokens
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
                         <div className="flex items-center gap-1 text-green-600">
@@ -1109,8 +1315,9 @@ const AgentDetailPage = ({
   setUserSearchQuery: (query: string) => void
 }) => {
   const [sortBy, setSortBy] = useState<
-    "messages" | "chats" | "likes" | "dislikes" | "lastUsed"
+    "messages" | "chats" | "likes" | "dislikes" | "lastUsed" | "cost" | "tokens"
   >("messages")
+  const [showMoreMetrics, setShowMoreMetrics] = useState(false)
 
   // Calculate stats
   const avgMessagesPerUser =
@@ -1121,6 +1328,18 @@ const AgentDetailPage = ({
   const avgChatsPerUser =
     agent.userUsage.length > 0
       ? Math.round(agent.totalChats / agent.userUsage.length)
+      : 0
+
+  const avgCostPerUser =
+    agent.userUsage.length > 0
+      ? safeNumberConversion(agent.totalCost) / agent.userUsage.length
+      : 0
+
+  const avgTokensPerUser =
+    agent.userUsage.length > 0
+      ? Math.round(
+          safeNumberConversion(agent.totalTokens) / agent.userUsage.length,
+        )
       : 0
 
   const satisfactionRate =
@@ -1212,6 +1431,60 @@ const AgentDetailPage = ({
           className="border-indigo-200 dark:border-indigo-800"
         />
       </div>
+
+      {/* Show More Button */}
+      <ShowMoreMetricsToggle
+        showMoreMetrics={showMoreMetrics}
+        onToggle={() => setShowMoreMetrics(!showMoreMetrics)}
+        variant="muted"
+      />
+
+      {/* Additional Metrics - Expandable */}
+      <ExpandableMetricsSection
+        showMoreMetrics={showMoreMetrics}
+        variant="slide"
+      >
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            title="Total Cost"
+            value={formatCostInINR(agent.totalCost)}
+            description={`Avg ${formatCostInINR(avgCostPerUser)} per user`}
+            icon={Activity}
+            className="border-purple-200 dark:border-purple-800"
+          />
+          <MetricCard
+            title="Total Tokens"
+            value={(agent.totalTokens || 0).toLocaleString()}
+            description={`Avg ${avgTokensPerUser.toLocaleString()} per user`}
+            icon={Activity}
+            className="border-orange-200 dark:border-orange-800"
+          />
+          <MetricCard
+            title="Cost per Message"
+            value={formatCostPerMessageInINR(
+              agent.totalCost,
+              agent.totalMessages,
+            )}
+            description="Average cost per message"
+            icon={Activity}
+            className="border-yellow-200 dark:border-yellow-800"
+          />
+          <MetricCard
+            title="Tokens per Message"
+            value={
+              agent.totalMessages > 0
+                ? Math.round(
+                    safeNumberConversion(agent.totalTokens) /
+                      agent.totalMessages,
+                  ).toLocaleString()
+                : "0"
+            }
+            description="Average tokens per message"
+            icon={Activity}
+            className="border-green-200 dark:border-green-800"
+          />
+        </div>
+      </ExpandableMetricsSection>
 
       {/* Unified Users Table with Sort */}
       <UsersAnalyticsTable
@@ -1381,9 +1654,28 @@ const AdminUsersLeaderboard = ({
                       </span>
                     </div>
                     <div className="flex flex-col items-center">
-                      <Badge variant="secondary" className="min-w-[60px]">
-                        {user.chatCount} chats
-                      </Badge>
+                      <span className="text-sm font-medium">
+                        {user.chatCount}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        chats
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="text-sm font-medium">
+                        {formatCostInINR(user.totalCost)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        cost
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="text-sm font-medium">
+                        {(user.totalTokens || 0).toLocaleString()}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        tokens
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs">
                       <div className="flex items-center gap-1 text-green-600">
@@ -1486,7 +1778,7 @@ const UserAgentLeaderboardCard = ({
           Agent Usage Leaderboard
         </CardTitle>
         <CardDescription>
-          Ranked by total messages sent to each agent
+          Ranked by total messages sent to each agent with cost and token usage
         </CardDescription>
         {/* Search */}
         <div className="mt-4">
@@ -1545,9 +1837,24 @@ const UserAgentLeaderboardCard = ({
                     </span>
                   </div>
                   <div className="flex flex-col items-center">
-                    <Badge variant="secondary" className="min-w-[60px]">
-                      {agent.chatCount} chats
-                    </Badge>
+                    <span className="text-sm font-medium">
+                      {agent.chatCount}
+                    </span>
+                    <span className="text-xs text-muted-foreground">chats</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-medium">
+                      {formatCostInINR(agent.totalCost)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">cost</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-medium">
+                      {(agent.totalTokens || 0).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      tokens
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <div className="flex items-center gap-1 text-green-600">
@@ -1601,7 +1908,7 @@ const AgentAnalysisPage = ({
   const [loading, setLoading] = useState(true)
   const [userSearchQuery, setUserSearchQuery] = useState<string>("")
   const [sortBy, setSortBy] = useState<
-    "messages" | "chats" | "likes" | "dislikes" | "lastUsed"
+    "messages" | "chats" | "likes" | "dislikes" | "lastUsed" | "cost" | "tokens"
   >("messages")
 
   useEffect(() => {
@@ -1858,9 +2165,8 @@ const UserDetailPage = ({
     UserAgentLeaderboard[]
   >([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<
-    "normal" | "agent" | "leaderboard"
-  >("agent")
+  const [activeTab, setActiveTab] = useState<"normal" | "agent">("agent")
+  const [showMoreMetrics, setShowMoreMetrics] = useState(false)
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -1939,6 +2245,8 @@ const UserDetailPage = ({
     let normalChats = 0
     let agentChats = 0
     let totalMessages = 0
+    let totalCostCalculated = 0
+    let totalTokensCalculated = 0
 
     const getTimeBucket = (date: Date, timeRange: string) => {
       const d = new Date(date)
@@ -1985,6 +2293,8 @@ const UserDetailPage = ({
     chats.forEach((chat) => {
       const messageCount = chat.messageCount || chat.messages?.length || 0
       totalMessages += messageCount
+      totalCostCalculated += chat.totalCost || 0
+      totalTokensCalculated += chat.totalTokens || 0
 
       if (chat.agentId) {
         agentChats++
@@ -2004,6 +2314,8 @@ const UserDetailPage = ({
           totalMessages: 0,
           normalMessages: 0,
           agentMessages: 0,
+          totalCost: 0,
+          totalTokens: 0,
         })
       }
 
@@ -2035,6 +2347,8 @@ const UserDetailPage = ({
     return {
       totalChats: chats.length,
       totalMessages,
+      totalCost: totalCostCalculated,
+      totalTokens: totalTokensCalculated,
       normalChats,
       agentChats,
       recentActivity,
@@ -2171,6 +2485,60 @@ const UserDetailPage = ({
         />
       </div>
 
+      {/* Show More Button */}
+      <ShowMoreMetricsToggle
+        showMoreMetrics={showMoreMetrics}
+        onToggle={() => setShowMoreMetrics(!showMoreMetrics)}
+        variant="muted"
+      />
+
+      {/* Additional Metrics - Expandable */}
+      <ExpandableMetricsSection
+        showMoreMetrics={showMoreMetrics}
+        variant="slide"
+      >
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            title="Total Cost"
+            value={formatCostInINR(userStats.totalCost)}
+            description="LLM usage cost"
+            icon={Activity}
+            className="border-purple-200 dark:border-purple-800"
+          />
+          <MetricCard
+            title="Total Tokens"
+            value={(userStats.totalTokens || 0).toLocaleString()}
+            description="Tokens processed"
+            icon={Activity}
+            className="border-orange-200 dark:border-orange-800"
+          />
+          <MetricCard
+            title="Cost per Message"
+            value={formatCostPerMessageInINR(
+              userStats.totalCost,
+              userStats.totalMessages,
+            )}
+            description="Average cost per message"
+            icon={Activity}
+            className="border-yellow-200 dark:border-yellow-800"
+          />
+          <MetricCard
+            title="Tokens per Message"
+            value={
+              userStats.totalMessages > 0
+                ? Math.round(
+                    safeNumberConversion(userStats.totalTokens) /
+                      userStats.totalMessages,
+                  ).toLocaleString()
+                : "0"
+            }
+            description="Average tokens per message"
+            icon={Activity}
+            className="border-green-200 dark:border-green-800"
+          />
+        </div>
+      </ExpandableMetricsSection>
+
       {/* Tabs for Charts */}
       <div className="flex items-center gap-1 p-1 bg-muted rounded-lg w-fit">
         <button
@@ -2199,36 +2567,27 @@ const UserDetailPage = ({
             Normal Message Analysis
           </div>
         </button>
-        <button
-          onClick={() => setActiveTab("leaderboard")}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeTab === "leaderboard"
-              ? "bg-white dark:bg-gray-800 shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Trophy className="h-4 w-4" />
-            Agent Leaderboard
-          </div>
-        </button>
       </div>
 
       {/* Charts Section based on active tab */}
       {activeTab === "agent" ? (
-        <MessageActivityChart
-          data={userStats.recentActivity}
-          timeRange={timeRange}
-          type="agent"
-        />
-      ) : activeTab === "normal" ? (
-        <MessageActivityChart
-          data={userStats.recentActivity}
-          timeRange={timeRange}
-          type="normal"
-        />
+        <div className="space-y-6">
+          <MessageActivityChart
+            data={userStats.recentActivity}
+            timeRange={timeRange}
+            type="agent"
+          />
+          <UserAgentLeaderboardCard agentLeaderboard={agentLeaderboard} />
+        </div>
       ) : (
-        <UserAgentLeaderboardCard agentLeaderboard={agentLeaderboard} />
+        <div className="space-y-6">
+          <MessageActivityChart
+            data={userStats.recentActivity}
+            timeRange={timeRange}
+            type="normal"
+          />
+          <UserAgentLeaderboardCard agentLeaderboard={agentLeaderboard} />
+        </div>
       )}
     </div>
   )
@@ -2248,6 +2607,8 @@ export const Dashboard = ({
   const [stats, setStats] = useState<DashboardStats>({
     totalChats: 0,
     totalMessages: 0,
+    totalCost: 0,
+    totalTokens: 0,
     activeAgents: 0,
     normalChats: 0,
     agentChats: 0,
@@ -2267,6 +2628,8 @@ export const Dashboard = ({
       totalUsage: {
         totalChats: 0,
         totalMessages: 0,
+        totalCost: 0,
+        totalTokens: 0,
         totalLikes: 0,
         totalDislikes: 0,
         uniqueUsers: 0,
@@ -2290,6 +2653,8 @@ export const Dashboard = ({
     totalUsers: 0,
     totalChats: 0,
     totalMessages: 0,
+    totalCost: 0,
+    totalTokens: 0,
     totalAgents: 0,
     totalSharedAgents: 0,
     recentActivity: [],
@@ -2305,6 +2670,7 @@ export const Dashboard = ({
   const [adminLoading, setAdminLoading] = useState(false)
   const [adminError, setAdminError] = useState<string | null>(null)
   const [selectedUser, setSelectedUser] = useState<AdminUserUsage | null>(null)
+  const [showMoreAdminMetrics, setShowMoreAdminMetrics] = useState(false)
 
   // Agent analysis state
   const [selectedAgent, setSelectedAgent] = useState<AgentUsageData | null>(
@@ -2521,7 +2887,10 @@ export const Dashboard = ({
     chats: Chat[],
     agents: Agent[],
     timeRange: "today" | "1w" | "1m" | "3m" | "all",
-    messageCounts: Record<string, number> = {},
+    messageCounts: Record<
+      string,
+      { messageCount: number; totalCost: number; totalTokens: number }
+    > = {},
     feedbackStats: FeedbackStats = {
       totalLikes: 0,
       totalDislikes: 0,
@@ -2536,10 +2905,14 @@ export const Dashboard = ({
     let normalChats = 0
     let agentChats = 0
     let totalMessages = 0
+    let totalCostCalculated = 0
+    let totalTokensCalculated = 0
 
-    // Calculate total message count
-    Object.values(messageCounts).forEach((count) => {
-      totalMessages += count
+    // Calculate total message count, cost, and tokens
+    Object.values(messageCounts).forEach((chatData) => {
+      totalMessages += chatData.messageCount
+      totalCostCalculated += chatData.totalCost
+      totalTokensCalculated += chatData.totalTokens
     })
 
     // Determine the appropriate time bucket size and format based on time range
@@ -2631,6 +3004,8 @@ export const Dashboard = ({
             messageCount: 0,
             likes: 0,
             dislikes: 0,
+            totalCost: 0,
+            totalTokens: 0,
             lastUsed: chat.createdAt,
           })
         }
@@ -2638,8 +3013,12 @@ export const Dashboard = ({
         const agentUsage = agentUsageMap.get(chat.agentId)!
         agentUsage.chatCount++
         // Add message count for this chat if available
-        const chatMessageCount = messageCounts[chat.externalId] || 0
-        agentUsage.messageCount += chatMessageCount
+        const chatData = messageCounts[chat.externalId]
+        if (chatData) {
+          agentUsage.messageCount += chatData.messageCount
+          agentUsage.totalCost += chatData.totalCost
+          agentUsage.totalTokens += chatData.totalTokens
+        }
 
         // Add feedback counts for this chat if available
         const chatFeedback = feedbackStats.feedbackByChat[chat.externalId]
@@ -2669,13 +3048,21 @@ export const Dashboard = ({
           totalMessages: 0,
           normalMessages: 0,
           agentMessages: 0,
+          totalCost: 0,
+          totalTokens: 0,
         })
       }
 
       const timeData = timeSeriesMap.get(timeBucket.key)!
-      const chatMessageCount = messageCounts[chat.externalId] || 0
+      const chatData = messageCounts[chat.externalId]
+      const chatMessageCount = chatData ? chatData.messageCount : 0
+      const chatCost = chatData ? chatData.totalCost : 0
+      const chatTokens = chatData ? chatData.totalTokens : 0
+
       timeData.totalChats++
       timeData.totalMessages += chatMessageCount
+      timeData.totalCost += chatCost
+      timeData.totalTokens += chatTokens
 
       if (chat.agentId && chat.agentId !== "") {
         timeData.agentChats++
@@ -2730,6 +3117,8 @@ export const Dashboard = ({
                 totalMessages: 0,
                 normalMessages: 0,
                 agentMessages: 0,
+                totalCost: 0,
+                totalTokens: 0,
               })
             }
           }
@@ -2759,6 +3148,8 @@ export const Dashboard = ({
                 totalMessages: 0,
                 normalMessages: 0,
                 agentMessages: 0,
+                totalCost: 0,
+                totalTokens: 0,
               })
             }
           }
@@ -2789,6 +3180,8 @@ export const Dashboard = ({
                 totalMessages: 0,
                 normalMessages: 0,
                 agentMessages: 0,
+                totalCost: 0,
+                totalTokens: 0,
               })
             }
           }
@@ -2819,6 +3212,8 @@ export const Dashboard = ({
                 totalMessages: 0,
                 normalMessages: 0,
                 agentMessages: 0,
+                totalCost: 0,
+                totalTokens: 0,
               })
             }
           }
@@ -2846,6 +3241,8 @@ export const Dashboard = ({
     return {
       totalChats: chats.length,
       totalMessages: totalMessages,
+      totalCost: totalCostCalculated,
+      totalTokens: totalTokensCalculated,
       activeAgents,
       normalChats,
       agentChats,
@@ -2865,6 +3262,8 @@ export const Dashboard = ({
     const agentUsageMap = new Map<string, AgentUsageData>()
 
     let totalMessages = 0
+    let totalCostCalculated = 0
+    let totalTokensCalculated = 0
     let totalUsers = new Set<string>()
     let normalChats = 0
     let agentChats = 0
@@ -2950,6 +3349,8 @@ export const Dashboard = ({
               messageCount: 0,
               likes: 0,
               dislikes: 0,
+              totalCost: 0,
+              totalTokens: 0,
               lastUsed: chat.createdAt,
             })
           }
@@ -2959,6 +3360,10 @@ export const Dashboard = ({
           const messageCountForChat =
             chat.messageCount || chat.messages?.length || 0
           agentUsage.messageCount += messageCountForChat
+
+          // Add cost and token tracking from chat data
+          agentUsage.totalCost += chat.totalCost || 0
+          agentUsage.totalTokens += chat.totalTokens || 0
 
           // Add feedback counts from this chat
           agentUsage.likes += chat.likes || 0
@@ -2975,6 +3380,8 @@ export const Dashboard = ({
       const messageCountForChat =
         chat.messageCount || chat.messages?.length || 0
       totalMessages += messageCountForChat
+      totalCostCalculated += chat.totalCost || 0
+      totalTokensCalculated += chat.totalTokens || 0
 
       // Track user usage
       const userKey = userId.toString()
@@ -2990,14 +3397,20 @@ export const Dashboard = ({
           normalChats: 0,
           likes: 0,
           dislikes: 0,
+          totalCost: 0,
+          totalTokens: 0,
           lastActive: chat.createdAt,
-          createdAt: chat.user?.createdAt || chat.createdAt,
+          createdAt: chat.userCreatedAt || chat.createdAt, // Use userCreatedAt (user's join date) instead of chat creation date
         })
       }
 
       const userUsage = userUsageMap.get(userKey)!
       userUsage.messageCount += messageCountForChat
       userUsage.chatCount++
+
+      // Add cost and token tracking from chat data
+      userUsage.totalCost += chat.totalCost || 0
+      userUsage.totalTokens += chat.totalTokens || 0
 
       // Add feedback counts from this chat
       userUsage.likes += chat.likes || 0
@@ -3025,6 +3438,8 @@ export const Dashboard = ({
           totalMessages: 0,
           normalMessages: 0,
           agentMessages: 0,
+          totalCost: 0,
+          totalTokens: 0,
         })
       }
 
@@ -3065,6 +3480,8 @@ export const Dashboard = ({
             totalMessages: 0,
             normalMessages: 0,
             agentMessages: 0,
+            totalCost: 0,
+            totalTokens: 0,
           },
         )
 
@@ -3117,6 +3534,8 @@ export const Dashboard = ({
           messageCount: 0,
           likes: 0,
           dislikes: 0,
+          totalCost: 0,
+          totalTokens: 0,
           lastUsed: agent.createdAt || new Date().toISOString(),
         }
       )
@@ -3125,6 +3544,8 @@ export const Dashboard = ({
     return {
       totalChats: chats.length,
       totalMessages,
+      totalCost: totalCostCalculated,
+      totalTokens: totalTokensCalculated,
       totalUsers: totalUsers.size,
       totalAgents: agents.length,
       totalSharedAgents: agents.filter((a) => a.isPublic === true).length, // Count public agents
@@ -3183,7 +3604,7 @@ export const Dashboard = ({
         <div className="p-6 space-y-6 max-w-7xl mx-auto">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+              <h1 className="text-3xl tracking-wider font-display ">Dashboard</h1>
               <p className="text-muted-foreground">
                 Monitor your Xyne chat activity and agent usage
               </p>
@@ -3346,31 +3767,33 @@ export const Dashboard = ({
                     timeRange={timeRange}
                     type="normal"
                   />
+                  <AgentUsageCard
+                    agentUsage={stats.agentUsage}
+                    showAll={true}
+                  />
                 </div>
               )}
             </>
           ) : mainTab === "shared-agents" ? (
             <>
               {/* Shared Agent Usage Tab Content */}
-              <div className="min-h-[600px]">
-                {sharedAgentError ? (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center text-red-600 dark:text-red-400">
-                        {sharedAgentError}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <SharedAgentUsageCard
-                    sharedAgentData={sharedAgentStats}
-                    loading={sharedAgentLoading}
-                    timeRange={timeRange}
-                    selectedAgent={selectedSharedAgent}
-                    setSelectedAgent={setSelectedSharedAgent}
-                  />
-                )}
-              </div>
+              {sharedAgentError ? (
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-center text-red-600 dark:text-red-400">
+                      {sharedAgentError}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <SharedAgentUsageCard
+                  sharedAgentData={sharedAgentStats}
+                  loading={sharedAgentLoading}
+                  timeRange={timeRange}
+                  selectedAgent={selectedSharedAgent}
+                  setSelectedAgent={setSelectedSharedAgent}
+                />
+              )}
             </>
           ) : mainTab === "admin-overview" ? (
             <>
@@ -3415,7 +3838,6 @@ export const Dashboard = ({
                       value={adminStats.totalUsers.toLocaleString()}
                       description="Registered platform users"
                       icon={Users}
-                      className="border-purple-200 dark:border-purple-800"
                     />
                     <MetricCard
                       title="Total Chats"
@@ -3440,16 +3862,65 @@ export const Dashboard = ({
                       value={adminStats.totalSharedAgents.toLocaleString()}
                       description="Publicly shared agents"
                       icon={Users}
-                      className="border-blue-200 dark:border-blue-800"
                     />
                     <MetricCard
                       title="Active Ratio"
                       value={`${adminStats.totalChats > 0 ? Math.round((adminStats.totalMessages / adminStats.totalChats) * 100) / 100 : 0}:1`}
                       description="Messages per chat session"
                       icon={Activity}
-                      className="border-green-200 dark:border-green-800"
                     />
                   </div>
+
+                  {/* Show More Metrics Button */}
+                  <ShowMoreMetricsToggle
+                    showMoreMetrics={showMoreAdminMetrics}
+                    onToggle={() =>
+                      setShowMoreAdminMetrics(!showMoreAdminMetrics)
+                    }
+                  />
+
+                  {/* Additional Metrics (Expandable) */}
+                  <ExpandableMetricsSection
+                    showMoreMetrics={showMoreAdminMetrics}
+                    className="pt-2"
+                  >
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                      <MetricCard
+                        title="Total Cost"
+                        value={formatCostInINR(adminStats.totalCost)}
+                        description="System-wide LLM usage cost"
+                        icon={Activity}
+                      />
+                      <MetricCard
+                        title="Total Tokens"
+                        value={(adminStats.totalTokens || 0).toLocaleString()}
+                        description="Total tokens processed"
+                        icon={Activity}
+                      />
+                      <MetricCard
+                        title="Cost Per Message"
+                        value={formatCostPerMessageInINR(
+                          adminStats.totalCost,
+                          adminStats.totalMessages,
+                        )}
+                        description="Average cost per message"
+                        icon={Activity}
+                      />
+                      <MetricCard
+                        title="Tokens Per Message"
+                        value={
+                          adminStats.totalMessages > 0
+                            ? Math.round(
+                                safeNumberConversion(adminStats.totalTokens) /
+                                  adminStats.totalMessages,
+                              ).toLocaleString()
+                            : "0"
+                        }
+                        description="Average tokens per message"
+                        icon={Activity}
+                      />
+                    </div>
+                  </ExpandableMetricsSection>
 
                   {/* Tabs for Charts */}
                   <div className="flex items-center gap-1 p-1 bg-muted rounded-lg w-fit">

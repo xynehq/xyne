@@ -17,10 +17,12 @@ export const chatTeamSchema = "chat_team"
 export const chatMessageSchema = "chat_message"
 export const chatUserSchema = "chat_user"
 export const chatAttachment = "chat_attachment"
-// previous queries
+// Previous queries
 export const userQuerySchema = "user_query"
 export const datasourceSchema = "datasource"
 export const dataSourceFileSchema = "datasource_file"
+// Knowledge Base feature schemas - contains collections with folders and files
+export const KbItemsSchema = "kb_items" // Collection items (folders and files)
 
 export type VespaSchema =
   | typeof fileSchema
@@ -36,6 +38,7 @@ export type VespaSchema =
   | typeof chatAttachment
   | typeof datasourceSchema
   | typeof dataSourceFileSchema
+  | typeof KbItemsSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -55,6 +58,8 @@ export enum Apps {
   Github = "github",
   Xyne = "xyne",
   DataSource = "data-source",
+  KnowledgeBase = "KnowledgeBase",
+  WebSearch = "web-search",
 }
 
 export const isValidApp = (app: string): boolean => {
@@ -85,6 +90,9 @@ export const isValidEntity = (entity: string): boolean => {
           .includes(normalizedEntity) ||
         Object.values(SlackEntity)
           .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(WebSearchEntity)
+          .map((v) => v.toLowerCase())
           .includes(normalizedEntity)
     : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
       false
@@ -110,6 +118,7 @@ const Schemas = z.union([
   z.literal(chatMessageSchema),
   z.literal(datasourceSchema),
   z.literal(dataSourceFileSchema),
+  z.literal(KbItemsSchema),
 ])
 
 export enum MailEntity {
@@ -163,6 +172,13 @@ export enum MailAttachmentEntity {
   Text = "text",
   NotValid = "notvalid",
 }
+export enum KnowledgeBaseEntity {
+  File = "file", // Files within collections
+  Folder = "folder", // Folders within collections
+  Collection = "collection", // Collections (main containers)
+  KnowledgeBase = "knowledgebase", // Legacy alias for collection
+  Attachment = "attachment",
+}
 
 export const isMailAttachment = (entity: Entity): boolean =>
   Object.values(MailAttachmentEntity).includes(entity as MailAttachmentEntity)
@@ -181,6 +197,7 @@ export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
+export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
 
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
@@ -191,8 +208,14 @@ export enum SystemEntity {
 export enum DataSourceEntity {
   DataSourceFile = "data_source_file",
 }
+
+export enum WebSearchEntity {
+  WebSearch = "websearch",
+}
+
 export const SystemEntitySchema = z.nativeEnum(SystemEntity)
 export const DataSourceEntitySchema = z.nativeEnum(DataSourceEntity)
+export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
@@ -203,6 +226,8 @@ export const entitySchema = z.union([
   MailAttachmentEntitySchema,
   ChatEntitySchema,
   DataSourceEntitySchema,
+  WebSearchEntitySchema,
+  KnowledgeBaseEntitySchema,
 ])
 
 export type Entity =
@@ -215,6 +240,8 @@ export type Entity =
   | MailAttachmentEntity
   | SlackEntity
   | DataSourceEntity
+  | WebSearchEntity
+  | KnowledgeBaseEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -386,6 +413,59 @@ export const VespaDataSourceFileSearchSchema =
 export type VespaDataSourceFileSearch = z.infer<
   typeof VespaDataSourceFileSearchSchema
 >
+
+// Base schema for KbFile (for insertion)
+export const VespaKbFileSchemaBase = z.object({
+  docId: z.string(),
+  clId: z.string(),
+  itemId: z.string(),
+  app: z.literal(Apps.KnowledgeBase),
+  entity: z.nativeEnum(KnowledgeBaseEntity),
+  fileName: z.string(),
+  description: z.string(),
+  storagePath: z.string(),
+  chunks: z.array(z.string()),
+  image_chunks: z.array(z.string()),
+  chunks_pos: z.array(z.number()),
+  image_chunks_pos: z.array(z.number()),
+  metadata: z.string(),
+  createdBy: z.string(),
+  duration: z.number(),
+  mimeType: z.string(),
+  fileSize: z.number(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+})
+
+export type VespaKbFile = z.infer<typeof VespaKbFileSchemaBase>
+
+// KB File Match Features
+const KbFileMatchFeaturesSchema = z.object({
+  "bm25(fileName)": z.number().optional(),
+  "bm25(chunks)": z.number().optional(),
+  "closeness(field, chunk_embeddings)": z.number().optional(),
+  chunk_scores: chunkScoresSchema.optional(),
+})
+export type KbFileMatchFeatures = z.infer<typeof KbFileMatchFeaturesSchema>
+
+// Search schema for KbFile
+export const VespaKbFileSearchSchema = VespaKbFileSchemaBase.extend({
+  sddocname: z.literal(KbItemsSchema),
+  matchfeatures: KbFileMatchFeaturesSchema,
+  rankfeatures: z.any().optional(),
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+    chunks_pos_summary: z.array(z.number()).optional(),
+  })
+export type VespaKbFileSearch = z.infer<typeof VespaKbFileSearchSchema>
+
+// Get schema for KbFile
+export const VespaKbFileGetSchema = VespaKbFileSchemaBase.merge(
+  defaultVespaFieldsSchema,
+)
+export type VespaKbFileGet = z.infer<typeof VespaKbFileGetSchema>
 
 export const VespaFileSearchSchema = VespaFileSchema.extend({
   sddocname: z.literal(fileSchema),
@@ -713,6 +793,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatMessageSearchSchema,
   VespaDataSourceSearchSchema,
   VespaDataSourceFileSearchSchema,
+  VespaKbFileSearchSchema,
 ])
 
 // Get schema for DataSourceFile
@@ -732,6 +813,7 @@ const SearchMatchFeaturesSchema = z.union([
   ChatMessageMatchFeaturesSchema,
   DataSourceFileMatchFeaturesSchema,
   ChatContainerMatchFeaturesSchema,
+  KbFileMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z
@@ -746,6 +828,7 @@ export const VespaGetFieldsSchema = z.union([
   VespaFileGetSchema,
   VespaMailGetSchema,
   VespaDataSourceFileGetSchema,
+  VespaKbFileGetSchema,
 ])
 
 export const VespaSearchResultsSchema = z.object({
@@ -865,6 +948,7 @@ export type Inserts =
   | VespaChatMessage
   | VespaDataSource
   | VespaDataSourceFile
+  | VespaKbFile
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({

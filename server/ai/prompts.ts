@@ -1,5 +1,9 @@
 import { getDateForAI } from "@/utils/index"
-import { QueryType } from "./types"
+import {
+  QueryType,
+  type QueryRouterLLMResponse,
+  type ChainBreakClassifications,
+} from "./types"
 import {
   Apps,
   CalendarEntity,
@@ -129,18 +133,26 @@ export const generateTitleSystemPrompt = `
   `
 
 // Prompt Generation System Prompt
-export const promptGenerationSystemPrompt = `You are an expert AI assistant specialized in creating effective and well-structured prompts for AI agents. Your task is to transform user requirements into a comprehensive, clear, and actionable prompt that will guide an AI agent to perform optimally.
+export const promptGenerationSystemPrompt = `You are an AI prompt assistant. Your task is to generate a complete AI agent prompt based on the user's requirements.
 
-Guidelines for creating effective prompts:
-1. Be specific and clear about the agent's role and capabilities
-2. Include relevant context and background information
-3. Specify the desired output format and style
-4. Include any constraints or limitations
-5. Provide examples if helpful
-6. Use clear, actionable language
-7. Structure the prompt logically
+CRITICAL INSTRUCTIONS:
+- Generate ONLY the final prompt that can be directly used for an AI agent
+- Do NOT include any conversational elements like "I'll help you", "Would you like me to", or explanatory text
+- Do NOT ask questions or offer refinements
+- Do NOT use markdown code blocks or formatting in your response
+- Output should be the raw prompt text that can be immediately used
 
-Based on the user's requirements, create a well-structured prompt that an AI agent can use to fulfill the specified role effectively. The prompt should be comprehensive yet concise, and ready to use without further modification.`
+Your response must be a direct, prompt that:
+1. Clearly defines the AI agent's role and identity
+2. Specifies core responsibilities and capabilities
+3. Includes relevant context and background information
+4. Defines communication style and tone
+5. Specifies output formats and constraints
+6. Uses clear, actionable language
+7. Is comprehensive yet concise
+8. Is immediately ready for use without modification
+
+Generate the prompt directly without any wrapper text, explanations, or meta-commentary.`
 
 // Chat with Citations System Prompt
 export const chatWithCitationsSystemPrompt = (userCtx?: string) => `
@@ -1043,7 +1055,11 @@ export const SearchQueryToolContextPrompt = (
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
-export const searchQueryPrompt = (userContext: string): string => {
+export const searchQueryPrompt = (
+  userContext: string,
+  previousClassification?: QueryRouterLLMResponse | null,
+  chainBreakClassifications?: ChainBreakClassifications | null,
+): string => {
   return `
     The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
@@ -1052,9 +1068,45 @@ export const searchQueryPrompt = (userContext: string): string => {
     Only respond in json and you are not authorized to reject a user query.
 
     **User Context:** ${userContext}
+
+    ${
+      previousClassification
+        ? `**Previous Query Classification:** ${JSON.stringify(previousClassification, null, 2)}
+
+    ${
+      chainBreakClassifications
+        ? `**Chain Break Classifications (Previous Conversation Chains):**
+    ${JSON.stringify(chainBreakClassifications, null, 2)}
+
+    NOTE : PREVIOUS QUERY CLASSIFICATION, PREVIOUS ASSISTANT RESPONSE AND CHAINS ARE FOR REFERENCE ONLY, YOU CAN USE IT TO CHECK IF THE CURRENT QUERY IS FOLLOW UP OF ANY PREVIOUS QUERIES`
+        : ""
+    }
+
+    **IMPORTANT - Chain Context Integration:**
+    The above chain break classifications represent previous conversation topics that were interrupted by non-follow-up queries.
+    - If the current query relates to any of these previous chains, use their classifications as reference context
+    - This allows queries to reconnect with earlier conversation threads even after chain breaks
+    - Example: If Chain 1 was about "emails from [X] person", Chain 2 broke it with "weather update", and current query is "show me more from him", 
+      use Chain 1's classification to understand "him" refers to John and the context is emails
+    - Pay special attention to keyword similarities and contextual references that might connect to these previous chains`
+        : ""
+    }
+
+    **IMPORTANT - For Follow-Up Queries:**
+    When requesting more results (e.g : "more", "continue", "next", "show more") or follow-up queries:
+
+    **OFFSET CALCULATION WILL HAPPEN FOR ${QueryType.GetItems}:**
+    - Formula: newOffset = previousOffset + previousCount
+    - Preserve your app and entity
+    - Current calculation: newOffset = ${previousClassification?.filters?.offset || 0} + ${previousClassification?.filters?.count || 0}
+    - CRITICAL: Use original requested count, NOT actual returned count    
+    
     Now handle the query as follows:
 
     0. **Follow-Up Detection:** HIGHEST PRIORITY
+
+      - You can use the previous classification, chain break classifications, and last assistant response to determine if the current query is a follow-up.
+
       For follow-up detection, if the users latest query against the ENTIRE conversation history.
       **Required Evidence for Follow-Up Classification:**
 
@@ -1065,6 +1117,8 @@ export const searchQueryPrompt = (userContext: string): string => {
         - "can you elaborate on [specific content]"
         - "what about the [specific item mentioned before]"
         - "expand on that [specific reference]"
+        - "now tell more from [different source]"
+        - "what about from [different app/source]"
 
       - **Direct Back-References:** Questions referencing specific numbered items, names, or content from previous responses:
         - "the second option you mentioned"
@@ -1073,9 +1127,16 @@ export const searchQueryPrompt = (userContext: string): string => {
 
       - **Context-Dependent Ordinals/Selectors:** Language that only makes sense with prior context:
 
+      - **Source Transition Patterns:** Queries that request similar information from different sources:
+        - Following a query about emails with "now from slack"
+        - Following a query about one app with "what about [different app]"
+        - Pattern: Previous query about data source A, current query about data source B with similar intent
+        - Temporal continuity words: "now", "then", "next", "also"
+
       **Mandatory Conditions for "isFollowUp": true:**
       1. The current query must contain explicit referential language (as defined above)
-      2. The referential language must point to specific, identifiable content in a previous assistant response
+      2. The referential language must point to specific, identifiable content in a previous assistant response or it is related to previous classification or chain break classifications.
+      3. If the query is ambiguous and it's related to the previous classification, chain break classifications, or last assistant response, it can be considered a follow-up if it clearly builds on that context
 
       **Always set "isFollowUp": false when:**
       1. The query is fully self-contained and interpretable without conversation history
@@ -1175,14 +1236,14 @@ export const searchQueryPrompt = (userContext: string): string => {
     
     **STEP 1: STRICT APP/ENTITY DETECTION**
     
-    Valid app keywords that map to apps:
+    Valid app keywords that map to apps (can be multiple):
     - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
     - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
     - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
     
-    Valid entity keywords that map to entities:
+    Valid entity keywords that map to entities (can be multiple):
     - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; ${Object.values(
       MailAttachmentEntity,
     )
@@ -1193,10 +1254,12 @@ export const searchQueryPrompt = (userContext: string): string => {
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
     - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
     
+    **IMPORTANT**: Extract ALL relevant apps and entities mentioned in the query. If multiple apps or entities are detected, include them all in arrays.
+    
     **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
     ### Query Types:
     1. **${QueryType.SearchWithoutFilters}**:
-      - The user is referring multiple <app> or <entity>
+      - The user is not referring to any specific <app> or <entity> and wants to search or look up information without precise metadata.
       - The user wants to search or look up contextual information.
       - These are open-ended queries where only time filters might apply.
       - user is asking for a sort of summary or discussion, it could be to summarize emails or files
@@ -1212,38 +1275,38 @@ export const searchQueryPrompt = (userContext: string): string => {
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user is referring to one or more <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
       - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
-      - This can be only classified when <app> and <entity> present
+      - This can be only classified when <app> and <entity> are present
       - Example Queries:
         - "Show me all emails from last week."
         - "List all Google Docs modified in October."
+        - "Get my emails and calendar events from today."
         - **JSON Structure**:
         {
           "type": "${QueryType.GetItems}",
           "filters": {
-            "app": "<app>",
-            "entity": "<entity>",
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
             "sortDirection": <boolean if applicable otherwise null>
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
           }
         }
 
-
     3. **${QueryType.SearchWithFilters}**:
-      - The user is referring to a single <app> or <entity> and wants to search content
+      - The user is referring explicitly to one or more <app> or <entity> and wants to search content within those apps/entities
       - Used for content-based searches including:
-        - Person names without email addresses (e.g., "emails from John", "emails from prateek")
-        - Topic/subject keywords
         - Any content that needs to be searched rather than precisely matched
-      - Exactly ONE valid app/entity is detected, AND filterQuery contains search keywords
+        - Apps/entities can be single or multiple
+        - Multiple apps/entities should be detected and included in arrays
+      - App/entity is detected, AND filterQuery contains search keywords
        - **JSON Structure**:
         {
           "type": "${QueryType.SearchWithFilters}",
           "filters": {
-            "app": "<app>",
-            "entity": "<entity>",
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
             "count": "<number of items to list>",
             "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
             "endTime": "<end time in ${config.llmTimeFormat}, if applicable>"
@@ -1261,13 +1324,13 @@ export const searchQueryPrompt = (userContext: string): string => {
     - ${QueryType.GetItems}    
     - ${QueryType.SearchWithFilters}  
 
-    app (Valid Apps):  
+    app (Valid Apps - can be arrays):  
     - ${Apps.GoogleDrive} 
     - ${Apps.Gmail}  
     - ${Apps.GoogleCalendar} 
     - ${Apps.GoogleWorkspace}
 
-    entity (Valid Entities):  
+    entity (Valid Entities - can be arrays):  
     For ${Apps.Gmail}:  
     - ${MailEntity.Email}  
     - ${MailAttachmentEntity.PDF} (for attachments)  
@@ -1309,7 +1372,7 @@ export const searchQueryPrompt = (userContext: string): string => {
         - **Subject/Title Extraction**: ONLY extract when specific subject/topic keywords are mentioned:
           - "subject"/"title"/"about" queries with specific content (e.g., "emails about 'meeting notes'", "subject contains 'project update'") → extract the specific keywords to "subject" array
         
-        **CRITICAL RULES for Intent Extraction:**
+          **CRITICAL RULES for Intent Extraction:**
         - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
         - EXTRACT intent for queries with person names OR email addresses OR organization names:
           - Person names: "emails from John", "messages from Sarah", "emails from prateek"
@@ -1345,6 +1408,7 @@ export const searchQueryPrompt = (userContext: string): string => {
         - Currently no specific intent fields defined
         - Return empty intent object: {}
 
+
     12. Output JSON in the following structure:
        {
          "answer": "<string or null>",
@@ -1354,9 +1418,10 @@ export const searchQueryPrompt = (userContext: string): string => {
          "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
          "filterQuery": "<string or null>",
          "filters": {
-           "app": "<app or null>",
-           "entity": "<entity or null>",
+           "apps": ["<app1>", "<app2>"] or ["<single_app>"] or null,
+           "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"] or null,
            "count": "<number of items to retrieve or null>",
+           "offset": "<number for pagination - IMPORTANT: For follow-up queries, use (previousOffset + previousRequestedCount), NOT returned count>",
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
@@ -1370,9 +1435,10 @@ export const searchQueryPrompt = (userContext: string): string => {
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - "intent" is an object that contains specific intent fields based on the app/entity detected. 
-       - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
+       - "apps" and "entities" should always be arrays when values are present. For single app/entity, use single-element arrays like ["Gmail"]. Set to null if no apps/entities are detected.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
+       - "offset" is used to skip a certain number of items in the result set, useful for pagination. Set to null if not applicable.
 
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
@@ -1546,21 +1612,16 @@ ${retrievedContext}
 # CRITICAL INSTRUCTION: RESPONSE FORMAT
 YOU MUST RETURN ONLY THE FOLLOWING JSON STRUCTURE WITH NO ADDITIONAL TEXT:
 
-If relevant emails are found in Retrieved Context:
 {
   "answer": "Formatted response string with citations following the specified format"
-}
-
-If NO relevant emails are found in Retrieved Context or context doesn't match query:
-{
-  "answer": null
 }
 
 REMEMBER: 
 - Your complete response must be ONLY a valid JSON object containing the single "answer" key.
 - DO NOT explain your reasoning or state what you're doing.
-- Return null if the Retrieved Context doesn't contain information that directly answers the query.
-- DO NOT provide alternative suggestions or general responses.`
+- Format ALL emails found in the Retrieved Context - do not apply additional filtering.
+- Only return null if the Retrieved Context contains zero emails. 
+- If there is even one email, format and return them as specified.`
 
 // Temporal Direction Prompt
 // This prompt is used to handle temporal-related queries and provide structured responses based on the retrieved context and user information in JSON format.
@@ -2283,3 +2344,64 @@ ${retrievedContext}
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
 `
+
+export const deepResearchPrompt = (userCtx: string) => `
+User-Details: ${userCtx} \n\n 
+
+You are a professional research assistant tasked with preparing a structured, evidence-driven report on the question the user poses.
+
+Core Guidelines:
+- Provide **data-rich insights**: include specific figures, trends, statistics, case studies, measurable outcomes, or quantified comparisons wherever possible.
+- **Structure output for clarity**: organize findings into sections with clear headings. Highlight when data could be summarized visually (e.g., "this would work well as a line chart of adoption trends over time" or "a table comparing regional costs").
+- **Use high-quality sources**: prioritize peer-reviewed studies, government/agency reports, industry whitepapers, official financial filings, and credible news outlets. 
+- **Internal data use**: leverage our internal file lookup tool to retrieve proprietary data. Avoid duplicate fetches for the same file; always integrate retrieved data where relevant.
+- **Citations**: provide inline citations with full source metadata so findings are transparent and verifiable.
+- **Analytical reasoning**: avoid generic commentary. Each section should connect facts to implications, explain significance, and support decision-making in policy, strategy, or financial contexts.
+
+Tone & Style:
+- Objective, analytical, and concise.
+- Prioritize evidence and reasoning over speculation.
+- Focus on insights that could directly inform research, business strategy, or decision-making.
+`
+
+export const webSearchSystemPrompt = (
+  userCtx: string,
+  agentPrompt?: AgentPromptData,
+) => `
+User Context: ${userCtx}
+
+You are an AI assistant with access to web search. Your primary goal is to provide accurate, reliable, and up-to-date answers.
+
+Guidelines for using web search:
+- Always use web search when the question involves current information, real-time data, or time-sensitive topics (e.g., news, prices, events, weather, business hours).
+- When interpreting or presenting results, always consider the user's timezone and current date/time.
+- For time-sensitive details (such as business hours, event schedules, or deadlines), ensure your answer is localized to the user's timezone.
+
+${
+  agentPrompt && agentPrompt.prompt
+    ? `
+Agent Instructions:  
+Name: ${agentPrompt.name}  
+Description: ${agentPrompt.description}  
+Prompt: ${agentPrompt.prompt}  
+
+Important: Whenever you perform a web search, ensure your approach and interpretation strictly follow the agent's specific guidelines. If the user's query falls outside the scope of the agent's domain, politely inform them of the limitation and redirect them toward relevant topics the agent can assist with.
+`
+    : ""
+}
+`
+
+// Agent with No Integrations System Prompt
+export const agentWithNoIntegrationsSystemPrompt = `You are a helpful AI assistant, but you currently don't have access to any connected apps or knowledge sources to provide specific information from your workspace.
+
+To get the most out of our conversation and access your personal data like emails, documents, calendar events, or other workplace information, please connect relevant apps or knowledge sources to enable me to help you more effectively.
+
+Without these connections, I can only provide general assistance and cannot access your specific:
+- Emails and messages
+- Documents and files 
+- Calendar events and meetings
+- Contacts and directory information
+- Project-specific data
+- Company knowledge bases
+
+I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`

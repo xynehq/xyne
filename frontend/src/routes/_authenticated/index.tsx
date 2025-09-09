@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useTheme } from "@/components/ThemeContext"
 import { Sidebar } from "@/components/Sidebar"
-import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router"
 import { Bot, Search as SearchIcon } from "lucide-react"
 import { SearchBar } from "@/components/SearchBar"
 import {
@@ -22,7 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Tip } from "@/components/Tooltip"
-import { ToolsListItem } from "@/types"
+import { ToolsListItem, indexSearchParamsSchema } from "@/types"
 import { AgentCard } from "@/components/AgentCard"
 
 enum Tabs {
@@ -34,10 +34,6 @@ const Index = () => {
   const { theme } = useTheme()
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
-  const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
-    return storedValue ? JSON.parse(storedValue) : true
-  })
   const AGENTIC_STATE = "agenticState"
   const [isAgenticMode, setIsAgenticMode] = useState(() => {
     const storedValue = localStorage.getItem(AGENTIC_STATE)
@@ -102,17 +98,6 @@ const Index = () => {
   }, [allAgents, favoriteAgents])
 
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    const agentIdFromUrl = searchParams.get("agentId")
-
-    if (agentIdFromUrl) {
-      setPersistedAgentId(agentIdFromUrl)
-    } else {
-      setPersistedAgentId(null)
-    }
-  }, [])
-
-  useEffect(() => {
     const fetchAgentDetails = async () => {
       if (persistedAgentId) {
         try {
@@ -140,13 +125,6 @@ const Index = () => {
     localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
   }, [isAgenticMode])
 
-  useEffect(() => {
-    localStorage.setItem(
-      "isReasoningGlobalState",
-      JSON.stringify(isReasoningActive),
-    )
-  }, [isReasoningActive])
-
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
   >([])
@@ -160,6 +138,11 @@ const Index = () => {
   const navigate = useNavigate({ from: "/" })
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
+  const searchParams = useSearch({ from: "/_authenticated/" })
+
+  useEffect(() => {
+    setPersistedAgentId(searchParams.agentId || null)
+  }, [searchParams.agentId])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -231,30 +214,27 @@ const Index = () => {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
+    selectedModel?: string,
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string
-        reasoning?: boolean
         sources?: string
         agentId?: string
         toolsList?: ToolsListItem[]
         agentic?: boolean
         metadata?: AttachmentMetadata[]
+        selectedModel?: string
       } = {
         q: encodeURIComponent(messageToSend.trim()),
-      }
-      if (isReasoningActive) {
-        searchParams.reasoning = true
       }
 
       if (selectedSources && selectedSources.length > 0) {
         searchParams.sources = selectedSources.join(",")
       }
-      // If agentId is provided, add it to the searchParams
-      if (agentId) {
-        // Use agentId directly
-        searchParams.agentId = agentId
+      // If agentId is provided, use it, otherwise use the persisted agent ID from the URL
+      if (agentId || persistedAgentId) {
+        searchParams.agentId = agentId || (persistedAgentId as string)
       }
       if (isAgenticMode) {
         searchParams.agentic = true
@@ -267,6 +247,10 @@ const Index = () => {
       // Use toolsList as array instead of JSON string
       if (toolsList && toolsList.length > 0) {
         searchParams.toolsList = toolsList
+      }
+
+      if (selectedModel) {
+        searchParams.selectedModel = selectedModel
       }
 
       navigate({
@@ -403,10 +387,9 @@ const Index = () => {
                     setQuery={setQuery}
                     handleSend={handleAsk}
                     allCitations={new Map()} // Change this line
-                    isReasoningActive={isReasoningActive}
-                    setIsReasoningActive={setIsReasoningActive}
                     isAgenticMode={isAgenticMode}
                     setIsAgenticMode={setIsAgenticMode}
+                    agentIdFromChatData={persistedAgentId}
                   />
                 </div>
               )}
@@ -450,5 +433,6 @@ export const Route = createFileRoute("/_authenticated/")({
   component: () => {
     return <Index />
   },
+  validateSearch: (search) => indexSearchParamsSchema.parse(search),
   errorComponent: errorComponent,
 })

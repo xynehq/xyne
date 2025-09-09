@@ -648,6 +648,7 @@ export async function extractTextAndImagesWithChunksFromPptx(
   data: Uint8Array,
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
+  describeImages: boolean = true,
 ): Promise<PptxProcessingResult> {
   Logger.info(`Starting PPTX processing for document: ${docid}`)
   let totalTextLength = 0
@@ -861,7 +862,11 @@ export async function extractTextAndImagesWithChunksFromPptx(
                     `Reusing description for repeated image ${imagePath} in slide ${slideNumber}`,
                   )
                 } else {
-                  description = await describeImageWithllm(imageBuffer)
+                  if(describeImages) {
+                    description = await describeImageWithllm(imageBuffer)
+                  } else {
+                    description = "This is an image."
+                  }
                   if (
                     description === "No description returned." ||
                     description === "Image is not worth describing."

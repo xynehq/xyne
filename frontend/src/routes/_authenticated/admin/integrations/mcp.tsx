@@ -7,13 +7,20 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { api } from "@/api"
 import { getErrorMessage } from "@/lib/utils"
-import { Apps, AuthType, ConnectorType } from "shared/types" // Added ConnectorType
+import { Apps, ConnectorType } from "shared/types" // Added ConnectorType
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { Sidebar } from "@/components/Sidebar"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { RefreshCw, X, PlusCircle, Check, RotateCcw } from "lucide-react" // Added PlusCircle, Check, RotateCcw
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useState, useEffect, useRef } from "react" // Added React hooks
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 import {
   Card,
@@ -44,7 +51,7 @@ import { ConnectorStatus } from "shared/types"
 interface FetchedTool {
   id: number // This is the tool's internal DB ID
   workspaceId: number
-  connectorId: number // This is the connector's internal DB ID
+  connectorId: number
   toolName: string
   toolSchema: string
   description: string | null
@@ -53,36 +60,22 @@ interface FetchedTool {
   updatedAt: string
 }
 
-// Function to update connector status
-export const updateConnectorStatus = async (
-  connectorId: string,
-  status: ConnectorStatus,
-) => {
-  const res = await api.admin.connector.update_status.$post({
-    form: {
-      connectorId,
-      status,
-    },
-  })
-  if (!res.ok) {
-    if (res.status === 401) {
-      throw new Error("Unauthorized")
-    }
-    throw new Error("Could not update connector status")
-  }
-  return res.json()
-}
-
 // Function to submit the MCP client connector details
 const submitMCPClient = async (
-  value: { name: string; url: string; apiKey: string },
+  value: {
+    name: string;
+    url: string;
+    mode: "sse" | "streamable-http";
+    headers: Record<string, string>;
+  },
   navigate: ReturnType<typeof useNavigate>,
 ) => {
   const response = await api.admin.apikey.mcp.create.$post({
-    form: {
+    json: {
       url: value.url,
-      apiKey: value.apiKey,
       name: value.name,
+      mode: value.mode,
+      headers: value.headers,
     },
   })
   if (!response.ok) {
@@ -156,11 +149,40 @@ export const getConnectors = async (): Promise<any> => {
 export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const form = useForm<{ name: string; url: string; apiKey: string }>({
-    defaultValues: { name: "", url: "", apiKey: "" },
+  const form = useForm<{
+    name: string;
+    url: string;
+    mode: "sse" | "streamable-http";
+    headers: { u_id: number; key: string; value: string }[];
+  }>({
+    defaultValues: {
+      name: "",
+      url: "",
+      mode: "sse",
+      headers: [{ u_id: Date.now(), key: "", value: "" }],
+    },
     onSubmit: async ({ value }) => {
       try {
-        await submitMCPClient(value, navigate)
+        // Transform headers from array to object, filtering out empty keys
+        const headersObject = value.headers.reduce(
+          (acc, header) => {
+            if (header.key) {
+              acc[header.key] = header.value;
+            }
+            return acc;
+          },
+          {} as Record<string, string>,
+        );
+
+        await submitMCPClient(
+          {
+            name: value.name,
+            url: value.url,
+            mode: value.mode,
+            headers: headersObject,
+          },
+          navigate,
+        );
         toast({
           title: "MCP Client Connected",
           description: "MCP Client successfully connected. Updating status...",
@@ -186,9 +208,6 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
       }}
       className="grid w-full items-center gap-1.5"
     >
-      <Label htmlFor="name" className="mt-2">
-        Name
-      </Label>
       <form.Field
         name="name"
         validators={{
@@ -196,8 +215,11 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
         }}
         children={(field) => (
           <>
+            <Label htmlFor={field.name} className="mt-2">
+              Name
+            </Label>
             <Input
-              id="name"
+              id={field.name}
               type="text"
               value={field.state.value}
               onChange={(e) => field.handleChange(e.target.value)}
@@ -212,7 +234,6 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
         )}
       />
 
-      <Label htmlFor="url">URL</Label>
       <form.Field
         name="url"
         validators={{
@@ -220,8 +241,11 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
         }}
         children={(field) => (
           <>
+            <Label htmlFor={field.name} className="mt-2">
+              URL
+            </Label>
             <Input
-              id="url"
+              id={field.name}
               type="text"
               value={field.state.value}
               onChange={(e) => field.handleChange(e.target.value)}
@@ -236,34 +260,98 @@ export const MCPClientForm = ({ onSuccess }: { onSuccess: () => void }) => {
         )}
       />
 
-      <Label htmlFor="apiKey" className="mt-2">
-        API Key
-      </Label>
       <form.Field
-        name="apiKey"
-        validators={{
-          onChange: ({ value }) => (!value ? "API Key is required" : undefined),
-        }}
+        name="mode"
         children={(field) => (
           <>
-            <Input
-              id="apiKey"
-              type="text"
+            <Label htmlFor={field.name} className="mt-2">
+              Mode
+            </Label>
+            <Select
               value={field.state.value}
-              onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="Enter MCP Client API Key"
-            />
-            {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <div className="text-red-500 text-sm">
-                {field.state.meta.errors[0]}
-              </div>
-            ) : null}
+              onValueChange={(value) => field.handleChange(value as "streamable-http" | "sse")}
+            >
+              <SelectTrigger id={field.name}>
+                <SelectValue placeholder="Select a mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sse">SSE</SelectItem>
+                <SelectItem value="streamable-http">Streamable HTTP</SelectItem>
+              </SelectContent>
+            </Select>
           </>
         )}
       />
 
-      <Button type="submit" className="mt-4">
-        Add MCP Client
+      <>
+        <Label className="mt-2">Custom Headers</Label>
+        <form.Field
+          name="headers"
+          children={(field) => {
+            return (
+              <div className="space-y-2 mt-1">
+                {field.state.value.map((header, index) => (
+                  <div key={header.u_id} className="flex items-center gap-2">
+                    <form.Field
+                      key={`headers[${index}].key`}
+                      name={`headers[${index}].key`}
+                      children={(subField) => (
+                        <Input
+                          value={subField.state.value}
+                          onChange={(e) =>
+                            subField.handleChange(e.target.value)
+                          }
+                          placeholder="Header Key"
+                          className="flex-1"
+                        />
+                      )}
+                    />
+                    <form.Field
+                      key={`headers[${index}].value`}
+                      name={`headers[${index}].value`}
+                      children={(subField) => (
+                        <Input
+                          value={subField.state.value}
+                          onChange={(e) =>
+                            subField.handleChange(e.target.value)
+                          }
+                          placeholder="Header Value"
+                          className="flex-1"
+                        />
+                      )}
+                    />
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      onClick={() => field.removeValue(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full mt-2"
+                  onClick={() => field.pushValue({ u_id: Date.now() /* using Date.now() here so that we can keep this as key for our list */
+                                                  , key: "", value: "" })}
+                >
+                  <PlusCircle className="h-4 w-4 mr-2" />
+                  Add Header
+                </Button>
+              </div>
+            );
+          }}
+        />
+      </>
+
+      <Button
+        type="submit"
+        className="w-full mt-4"
+        disabled={form.state.isSubmitting}
+      >
+        {form.state.isSubmitting ? "Adding..." : "Add MCP Client"}
       </Button>
     </form>
   )
@@ -518,6 +606,7 @@ const MCPClientsList = ({
     if (
       !isToolModalOpen &&
       selectedClientForTools &&
+      initialToolsStateRef.current &&
       initialToolsStateRef.current.length >= 0
     ) {
       // Allow empty initial state if no tools
@@ -614,10 +703,8 @@ const MCPClientsList = ({
                 {client.name || client.config?.name || client.app || "Unnamed"}
               </TableCell>
               <TableCell>
-                {client.type === ConnectorType.MCP
-                  ? client.authType === AuthType.ApiKey
-                    ? "API Key"
-                    : "Stdio"
+                {client.type === ConnectorType.MCP || client.app === Apps.MCP || client.app === Apps.Github
+                  ? (client.config?.command ? "Stdio" : "API Key")
                   : client.authType}
               </TableCell>
               <TableCell>
@@ -634,45 +721,45 @@ const MCPClientsList = ({
                 >
                   {client.status}
                 </span>
-              </TableCell>
+</TableCell>
               <TableCell>
                 {(client.type === ConnectorType.MCP ||
                   client.app === Apps.MCP ||
                   client.app === Apps.Github) && (
-                  <Button
+                <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleManageTools(client)}
+                  onClick={() => handleManageTools(client)}
                     title="Manage Tools"
-                  >
+                >
                     <PlusCircle className="h-4 w-4" />
-                  </Button>
+                </Button>
                 )}
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
-                  <Button
+                <Button
                     variant="ghost"
-                    size="icon"
-                    onClick={async () => {
-                      try {
+                  size="icon"
+                  onClick={async () => {
+                    try {
                         await onDelete(client.id)
-                        toast({
-                          title: "Client Removed",
+                      toast({
+                        title: "Client Removed",
                           description:
                             "MCP Client has been removed successfully",
                         })
-                      } catch (error) {
-                        toast({
-                          title: "Removal Failed",
-                          description: getErrorMessage(error),
-                          variant: "destructive",
+                    } catch (error) {
+                      toast({
+                        title: "Removal Failed",
+                        description: getErrorMessage(error),
+                        variant: "destructive",
                         })
-                      }
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+                    }
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
                 </div>
               </TableCell>
             </TableRow>
@@ -717,7 +804,7 @@ const MCPClientsList = ({
                 className="mb-1"
               />
             </div>
-            {isLoadingTools ? (
+              {isLoadingTools ? (
               <div className="flex justify-center items-center h-32">
                 <RefreshCw className="h-6 w-6 animate-spin text-primary" />
               </div>
@@ -741,22 +828,22 @@ const MCPClientsList = ({
                         key={tool.id} // Use tool.id (internal DB id) as key
                         className="flex items-center justify-between py-2 px-1 hover:bg-muted rounded cursor-pointer"
                         onClick={() => {
-                          setSelectedTools((prev) => {
-                            const newSelectedForClient = new Set(
-                              prev[selectedClientForTools!.id] || [],
+                            setSelectedTools((prev) => {
+                              const newSelectedForClient = new Set(
+                                prev[selectedClientForTools!.id] || [],
                             )
                             if (newSelectedForClient.has(tool.toolName)) {
                               newSelectedForClient.delete(tool.toolName)
-                            } else {
+                              } else {
                               newSelectedForClient.add(tool.toolName)
-                            }
-                            return {
-                              ...prev,
-                              [selectedClientForTools!.id]:
-                                newSelectedForClient,
+                              }
+                              return {
+                                ...prev,
+                                [selectedClientForTools!.id]:
+                                  newSelectedForClient,
                             }
                           })
-                        }}
+                          }}
                       >
                         <span
                           className="text-sm flex-grow mr-2 truncate"
@@ -773,10 +860,10 @@ const MCPClientsList = ({
                           ).has(tool.toolName) && (
                             <Check className="h-4 w-4 text-green-500" />
                           )}
-                        </div>
                       </div>
+                </div>
                     ))
-                ) : (
+              ) : (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     No tools found
                     {toolSearchTerm
@@ -786,8 +873,8 @@ const MCPClientsList = ({
                         : ""}
                     .
                   </p>
-                )}
-              </div>
+              )}
+            </div>
             )}
             <DialogFooter className="mt-auto pt-2 pb-1 flex justify-between items-center">
               {selectedClientForTools &&
@@ -799,22 +886,22 @@ const MCPClientsList = ({
                 )}
               {selectedClientForTools &&
                 (selectedTools[selectedClientForTools.id]?.size || 0) > 0 && (
-                  <Button
-                    variant="ghost"
+                <Button
+                  variant="ghost"
                     size="icon"
                     className="h-6 w-6"
-                    onClick={() => {
-                      if (selectedClientForTools) {
-                        setSelectedTools((prev) => ({
-                          ...prev,
-                          [selectedClientForTools.id]: new Set(),
+                  onClick={() => {
+                    if (selectedClientForTools) {
+                      setSelectedTools((prev) => ({
+                        ...prev,
+                        [selectedClientForTools.id]: new Set(),
                         }))
-                      }
-                    }}
-                    title="Clear all selected tools"
-                  >
+                    }
+                  }}
+                  title="Clear all selected tools"
+                >
                     <RotateCcw className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                  </Button>
+                </Button>
                 )}
             </DialogFooter>
           </DialogContent>

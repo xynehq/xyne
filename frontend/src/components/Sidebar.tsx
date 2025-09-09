@@ -11,6 +11,8 @@ import {
   ExternalLink,
   Key,
   BarChart3,
+  BookOpen,
+  Workflow,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -169,6 +171,26 @@ export const Sidebar = ({
             </Tooltip>
           </div>
 
+           <Link
+            to="/workflow"
+            className={cn(
+              "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+              location.pathname.includes("/workflow") &&
+                "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Workflow
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Workflow Builder" />
+            </Tooltip>
+          </Link>
+
           {/* TODO: Add appropriate Link destination and Tooltip info for the Bot icon */}
           {isAgentMode && (
             <Link
@@ -214,24 +236,25 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
 
-          <div
-            onClick={toggleTheme}
-            className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]"
+          <Link
+            to="/knowledgeManagement"            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
+              location.pathname.includes("/knowledgeManagement")
+                ? "bg-[#D8DFE680] dark:bg-gray-700"
+                : ""
+            }`}
           >
             <Tooltip>
               <TooltipTrigger asChild>
-                {isDarkMode ? (
-                  <Sun size={18} stroke="#F1F3F4" />
-                ) : (
-                  <Moon size={18} stroke="#384049" />
-                )}
+                <BookOpen
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
               </TooltipTrigger>
-              <Tip
-                side="right"
-                info={isDarkMode ? "Light Mode" : "Dark Mode"}
-              />
+              <Tip side="right" info="Collections" />
             </Tooltip>
-          </div>
+          </Link>
+
 
           <Link
             to="/dashboard"
@@ -253,7 +276,25 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
         </div>
-        <div className="mt-auto mb-4 flex justify-center">
+        <div className="mt-auto mb-4 flex flex-col items-center">
+          <div
+            onClick={toggleTheme}
+            className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mb-4"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {isDarkMode ? (
+                  <Sun size={18} stroke="#F1F3F4" />
+                ) : (
+                  <Moon size={18} stroke="#384049" />
+                )}
+              </TooltipTrigger>
+              <Tip
+                side="right"
+                info={isDarkMode ? "Light Mode" : "Dark Mode"}
+              />
+            </Tooltip>
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <img src={Logo} alt="Logo" />

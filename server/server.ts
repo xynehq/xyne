@@ -17,12 +17,14 @@ import {
   SearchApi,
   chatStopSchema,
   SearchSlackChannels,
+  agentChatMessageSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
   addApiKeyMCPConnectorSchema,
   addServiceConnectionSchema,
+  updateServiceConnectionSchema,
   addStdioMCPConnectorSchema,
   answerSchema,
   createOAuthProvider,
@@ -40,6 +42,7 @@ import {
   AddApiKeyConnector,
   AddApiKeyMCPConnector,
   AddServiceConnection,
+  UpdateServiceConnection,
   CreateOAuthProvider,
   DeleteConnector,
   DeleteOauthConnector,
@@ -65,6 +68,7 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
+  GetWorkspaceApiKeys,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -92,7 +96,7 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo, GenerateApiKey } from "@/api/auth"
+import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -118,6 +122,7 @@ import {
   GetChatTraceApi,
   StopStreamingApi,
   GenerateFollowUpQuestionsApi,
+  GetAvailableModelsApi,
 } from "@/api/chat/chat"
 import {
   CreateSharedChatApi,
@@ -148,6 +153,7 @@ import {
   DeleteAgentApi,
   GetWorkspaceUsersApi,
   GetAgentPermissionsApi,
+  GetAgentIntegrationItemsApi,
   createAgentSchema,
   listAgentsSchema,
   updateAgentSchema,
@@ -168,45 +174,41 @@ import {
 } from "@/api/chat/types"
 
 import {
+  CreateCollectionApi,
+  ListCollectionsApi,
+  GetCollectionApi,
+  UpdateCollectionApi,
+  DeleteCollectionApi,
+  ListCollectionItemsApi,
+  CreateFolderApi,
+  UploadFilesApi,
+  DeleteItemApi,
+  GetFilePreviewApi,
+  GetFileContentApi,
+} from "@/api/knowledgeBase"
+import {
+  searchKnowledgeBaseSchema,
+  SearchKnowledgeBaseApi,
+} from "./api/knowledgeBase/search"
+
+import {
   isSlackEnabled,
   startSocketMode,
   getSocketModeStatus,
 } from "@/integrations/slack/client"
-
-// Import Vespa proxy handlers
-import {
-  validateApiKey,
-  vespaSearchProxy,
-  vespaAutocompleteProxy,
-  vespaGroupSearchProxy,
-  vespaGetItemsProxy,
-  vespaChatContainerByChannelProxy,
-  vespaChatUserByEmailProxy,
-  vespaGetDocumentProxy,
-  vespaGetDocumentsByIdsProxy,
-  vespaGetUsersByNamesAndEmailsProxy,
-  vespaGetDocumentsByThreadIdProxy,
-  vespaGetEmailsByThreadIdsProxy,
-  vespaGetDocumentsWithFieldProxy,
-  vespaGetRandomDocumentProxy,
-  searchVespaProxy,
-  groupVespaSearchProxy,
-} from "@/routes/vespa-proxy"
+const { JwtPayloadKey } = config
 import { updateMetricsFromThread } from "@/metrics/utils"
-import type { PublicUserWorkspace } from "./db/schema"
+
+import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
+import { sendMailHelper } from "@/api/testEmail"
+import { emailService } from "./services/emailService"
+import { AgentMessageApi } from "./api/chat/agents"
+import { eq } from "drizzle-orm"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
   dataSourceName: z.string().min(1),
   fileName: z.string().min(1),
-})
-
-// Add schema for API key generation
-const generateApiKeySchema = z.object({
-  expirationDays: z.coerce
-    .number()
-    .min(1 / 1440)
-    .max(30), // Allow fractional days, minimum 1 minute (1/1440 days)
 })
 
 export type Variables = JwtVariables
@@ -228,10 +230,80 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
 const app = new Hono<{ Variables: Variables }>()
 
+const internalMetricRouter = new Hono<{ Variables: Variables }>()
+
 const AuthMiddleware = jwt({
   secret: accessTokenSecret,
   cookie: AccessTokenCookieName,
 })
+
+// Middleware to check if user has admin or superAdmin role
+const AdminRoleMiddleware = async (c: Context, next: Next) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const user = await getUserByEmail(db, sub)
+  if (!user.length) {
+    throw new HTTPException(403, {
+      message: `Access denied. user with email ${sub} does not exist.`,
+    })
+  }
+  const userRole = user[0].role
+  if (userRole !== UserRole.Admin && userRole !== UserRole.SuperAdmin) {
+    throw new HTTPException(403, {
+      message: "Access denied. Admin privileges required.",
+    })
+  }
+
+  await next()
+}
+
+const ApiKeyMiddleware = async (c: Context, next: Next) => {
+  let apiKey: string
+  try {
+    // Extract API key from request body
+    apiKey = c.req.header("x-api-key") || (c.req.query("api_key") as string)
+
+    if (!apiKey) {
+      Logger.error(
+        "API key verification failed: Missing apiKey in request body",
+      )
+      throw new HTTPException(401, {
+        message: "Missing API key. Please provide apiKey in request body.",
+      })
+    }
+    // Decrypt and validate the API key
+    const [foundApiKey] = await db
+      .select({
+        workspaceId: apiKeys.workspaceId,
+        userId: apiKeys.userId,
+        userEmail: users.email,
+      })
+      .from(apiKeys)
+      .leftJoin(users, eq(apiKeys.userId, users.externalId)) // or users.externalId depending on your schema
+      .where(eq(apiKeys.key, apiKey))
+      .limit(1)
+
+    if (!foundApiKey) {
+      throw new HTTPException(400, {
+        message: "Invalid API KEY",
+      })
+    }
+    c.set("apiKey", apiKey)
+    c.set("workspaceId", foundApiKey.workspaceId)
+    c.set("userEmail", foundApiKey.userEmail)
+
+    Logger.info(`API key verified for workspace ID: ${foundApiKey.workspaceId}`)
+
+    await next()
+  } catch (error) {
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    Logger.warn("API key verification failed: Invalid JSON body")
+    throw new HTTPException(400, {
+      message: "Invalid API KEY",
+    })
+  }
+}
 
 // Middleware for frontend routes
 // Checks if there is token in cookie or not
@@ -383,10 +455,8 @@ const handleUpdatedMetrics = async (c: Context) => {
     blockedPdfs,
   })
 }
-const updateApp = new Hono()
 
-updateApp.post("/update-metrics", handleUpdatedMetrics)
-app.route("/", updateApp)
+internalMetricRouter.post("/update-metrics", handleUpdatedMetrics)
 
 // App validatione endpoint
 
@@ -628,6 +698,18 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
+  .post(
+    "/agent/chat",
+    ApiKeyMiddleware,
+    zValidator("json", agentChatMessageSchema),
+    AgentMessageApi,
+  )
+  .post(
+    "/agent/chat/stop",
+    ApiKeyMiddleware,
+    zValidator("json", chatStopSchema),
+    StopStreamingApi,
+  )
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
@@ -673,6 +755,7 @@ export const AppRoutes = app
     zValidator("json", followUpQuestionsSchema),
     GenerateFollowUpQuestionsApi,
   )
+  .get("/chat/models", GetAvailableModelsApi)
   // Shared chat routes
   .post(
     "/chat/share/create",
@@ -750,6 +833,7 @@ export const AppRoutes = app
   .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
+  .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),
@@ -757,27 +841,29 @@ export const AppRoutes = app
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi)
   .post("/auth/logout", LogOut)
+  //send Email Route
+  .post("/email/send", sendMailHelper)
+
+  // Collection Routes
+  .post("/cl", CreateCollectionApi)
+  .get("/cl", ListCollectionsApi)
   .get(
-    "/auth/generate-api-key",
-    zValidator("query", generateApiKeySchema),
-    GenerateApiKey,
+    "/cl/search",
+    zValidator("query", searchKnowledgeBaseSchema),
+    SearchKnowledgeBaseApi,
   )
-  // Admin Routes
-  .basePath("/admin")
-  // TODO: debug
-  // for some reason the validation schema
-  // is not making the keys mandatory
-  .post(
-    "/service_account",
-    zValidator("form", addServiceConnectionSchema),
-    AddServiceConnection,
-  )
-  .post(
-    "/google/service_account/ingest_more",
-    zValidator("json", serviceAccountIngestMoreSchema),
-    ServiceAccountIngestMoreUsersApi,
-  )
-  // create the provider + connector
+  .get("/cl/:clId", GetCollectionApi)
+  .put("/cl/:clId", UpdateCollectionApi)
+  .delete("/cl/:clId", DeleteCollectionApi)
+  .get("/cl/:clId/items", ListCollectionItemsApi)
+  .post("/cl/:clId/items/folder", CreateFolderApi)
+  .post("/cl/:clId/items/upload", UploadFilesApi)
+  .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi)
+  .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
+  .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+
   .post(
     "/oauth/create",
     zValidator("form", createOAuthProvider),
@@ -785,10 +871,6 @@ export const AppRoutes = app
   )
   .post(
     "/slack/ingest_more_channel",
-    async (c, next) => {
-      console.log("i am ")
-      await next()
-    },
     zValidator("json", ingestMoreChannelSchema),
     IngestMoreChannelApi,
   )
@@ -797,6 +879,69 @@ export const AppRoutes = app
     zValidator("json", startSlackIngestionSchema),
     StartSlackIngestionApi,
   )
+  .delete(
+    "/oauth/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteOauthConnector,
+  )
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .get("/connectors/all", GetConnectors)
+  .get("/oauth/global-slack-provider", GetProviders)
+
+  // Admin Routes
+  .basePath("/admin")
+  .use("*", AdminRoleMiddleware)
+  // TODO: debug
+  // for some reason the validation schema
+  // is not making the keys mandatory
+  .post(
+    "/oauth/create",
+    zValidator("form", createOAuthProvider),
+    CreateOAuthProvider,
+  )
+  .post(
+    "/slack/ingest_more_channel",
+    zValidator("json", ingestMoreChannelSchema),
+    IngestMoreChannelApi,
+  )
+  .post(
+    "/slack/start_ingestion",
+    zValidator("json", startSlackIngestionSchema),
+    StartSlackIngestionApi,
+  )
+  .delete(
+    "/oauth/connector/delete",
+    zValidator("form", deleteConnectorSchema),
+    DeleteOauthConnector,
+  )
+  .post(
+    "/connector/update_status",
+    zValidator("form", updateConnectorStatusSchema),
+    UpdateConnectorStatus,
+  )
+  .get("/connectors/all", GetConnectors)
+  .get("/oauth/global-slack-provider", GetProviders)
+
+  .post(
+    "/service_account",
+    zValidator("form", addServiceConnectionSchema),
+    AddServiceConnection,
+  )
+  .put(
+    "/service_account",
+    zValidator("form", updateServiceConnectionSchema),
+    UpdateServiceConnection,
+  )
+  .post(
+    "/google/service_account/ingest_more",
+    zValidator("json", serviceAccountIngestMoreSchema),
+    ServiceAccountIngestMoreUsersApi,
+  )
+  // create the provider + connector
   .post(
     "/apikey/create",
     zValidator("form", addApiKeyConnectorSchema),
@@ -804,7 +949,7 @@ export const AppRoutes = app
   )
   .post(
     "/apikey/mcp/create",
-    zValidator("form", addApiKeyMCPConnectorSchema),
+    zValidator("json", addApiKeyMCPConnectorSchema),
     AddApiKeyMCPConnector,
   )
   .post(
@@ -812,23 +957,15 @@ export const AppRoutes = app
     zValidator("form", addStdioMCPConnectorSchema),
     AddStdioMCPConnector,
   )
-  .get("/connectors/all", GetConnectors)
+
   .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
-  .post(
-    "/connector/update_status",
-    zValidator("form", updateConnectorStatusSchema),
-    UpdateConnectorStatus,
-  )
+
   .delete(
     "/connector/delete",
     zValidator("form", deleteConnectorSchema),
     DeleteConnector,
   )
-  .delete(
-    "/oauth/connector/delete",
-    zValidator("form", deleteConnectorSchema),
-    DeleteOauthConnector,
-  )
+
   .post(
     // Added route for updating tool statuses
     "/tools/update_status",
@@ -840,7 +977,7 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
-  .get("/oauth/global-slack-provider", GetProviders)
+
   // Admin Dashboard Routes
   .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
   .get("/agents", GetAdminAgents)
@@ -865,55 +1002,18 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentFeedbackMessages,
   )
+
   .get(
     "/agents/:agentId/user-feedback/:userId",
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
   )
+  .get("/workspace/api-key", GetWorkspaceApiKeys)
   .get(
     "/admin/users/:userId/feedback",
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetAllUserFeedbackMessages,
   )
-
-// Vespa Proxy Routes (for production server proxying)
-app
-  .basePath("/api/vespa")
-  .post("/search", validateApiKey, vespaSearchProxy)
-  .post("/autocomplete", validateApiKey, vespaAutocompleteProxy)
-  .post("/group-search", validateApiKey, vespaGroupSearchProxy)
-  .post("/get-items", validateApiKey, vespaGetItemsProxy)
-  .post(
-    "/chat-container-by-channel",
-    validateApiKey,
-    vespaChatContainerByChannelProxy,
-  )
-  .post("/chat-user-by-email", validateApiKey, vespaChatUserByEmailProxy)
-  .post("/get-document", validateApiKey, vespaGetDocumentProxy)
-  .post("/get-documents-by-ids", validateApiKey, vespaGetDocumentsByIdsProxy)
-  .post(
-    "/get-users-by-names-and-emails",
-    validateApiKey,
-    vespaGetUsersByNamesAndEmailsProxy,
-  )
-  .post(
-    "/get-documents-by-thread-id",
-    validateApiKey,
-    vespaGetDocumentsByThreadIdProxy,
-  )
-  .post(
-    "/get-emails-by-thread-ids",
-    validateApiKey,
-    vespaGetEmailsByThreadIdsProxy,
-  )
-  .post(
-    "/get-documents-with-field",
-    validateApiKey,
-    vespaGetDocumentsWithFieldProxy,
-  )
-  .post("/get-random-document", validateApiKey, vespaGetRandomDocumentProxy)
-  .post("/group-vespa-search", validateApiKey, groupVespaSearchProxy)
-  .post("/search-vespa", validateApiKey, searchVespaProxy)
 
 app.get("/oauth/callback", AuthMiddleware, OAuthCallback)
 app.get(
@@ -1044,6 +1144,7 @@ app.get(
         UserRole.User,
         existingWorkspace.externalId,
       )
+
       const accessToken = await generateTokens(
         user.email,
         user.role,
@@ -1057,6 +1158,13 @@ app.get(
       )
       // save refresh token generated in user schema
       await saveRefreshTokenToDB(db, email, refreshToken)
+      const emailSent = await emailService.sendWelcomeEmail(
+        user.email,
+        user.name,
+      )
+      if (emailSent) {
+        Logger.info(`Welcome email sent to ${user.email} and ${user.name}`)
+      }
       const opts = {
         secure: true,
         path: "/",
@@ -1098,6 +1206,15 @@ app.get(
     )
     // save refresh token generated in user schema
     await saveRefreshTokenToDB(db, email, refreshToken)
+    const emailSent = await emailService.sendWelcomeEmail(
+      userAcc.email,
+      userAcc.name,
+    )
+    if (emailSent) {
+      Logger.info(
+        `Welcome email sent to new workspace creator ${userAcc.email}`,
+      )
+    }
     const opts = {
       secure: true,
       path: "/",
@@ -1123,6 +1240,7 @@ app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
 app.get(
   "/chat/:param",
   AuthRedirect,
@@ -1198,6 +1316,11 @@ app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get(
+  "/knowledgeManagement",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 
 export const init = async () => {
   await initQueue()
@@ -1220,7 +1343,7 @@ export const init = async () => {
   }
 }
 
-app.get("/metrics", async (c) => {
+internalMetricRouter.get("/metrics", async (c) => {
   try {
     const metrics = await metricRegister.metrics()
     return c.text(metrics, 200, {
@@ -1252,6 +1375,15 @@ const server = Bun.serve({
   development: true,
   error: errorHandler,
 })
+
+const metricServer = Bun.serve({
+  fetch: internalMetricRouter.fetch,
+  port: config.metricsPort, // new port from config
+  idleTimeout: 180,
+  development: true,
+  error: errorHandler,
+})
+
 Logger.info(`listening on port: ${config.port}`)
 
 const errorEvents: string[] = [

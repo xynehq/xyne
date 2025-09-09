@@ -1,5 +1,6 @@
 import config from "@/config"
 import { z } from "zod"
+import secureJsonParse from "secure-json-parse"
 import {
   Apps,
   AuthType,
@@ -52,10 +53,17 @@ const baseSearchSchema = z.object({
     .pipe(z.boolean())
     .optional(),
   agentId: z.string().optional(),
+  isAgentIntegSearch: z.string().optional(),
 })
 
 export const searchSchema = baseSearchSchema.refine(
-  (data) => (data.app && data.entity) || (!data.app && !data.entity),
+  (data) => {
+    if (data.isAgentIntegSearch) {
+      return true
+    }
+    // Otherwise use the existing validation
+    return (data.app && data.entity) || (!data.app && !data.entity)
+  },
   {
     message: "app and entity must be provided together",
     path: ["app", "entity"],
@@ -83,7 +91,29 @@ export type SlackConfig = z.infer<typeof UpdatedAtValSchema>
 export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
-  "service-key": z.any(),
+  "service-key": z
+    .instanceof(File)
+    .refine(
+      (file) =>
+        file.type === "application/json" || file.name?.endsWith(".json"),
+      "File must be a JSON file",
+    )
+    .refine(
+      (file) => file.size <= config.MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
+      `File size must be less than ${config.MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`,
+    )
+    .refine(async (file) => {
+      try {
+        const content = await file.text()
+        secureJsonParse(content, undefined, {
+          protoAction: "error",
+          constructorAction: "error",
+        }) // Use secure JSON parsing with strict security options
+        return true
+      } catch {
+        return false
+      }
+    }, "File must contain valid and secure JSON"),
   app: z.nativeEnum(Apps),
   email: z.string().email(),
   whitelistedEmails: z.string().optional(),
@@ -93,6 +123,37 @@ export type ServiceAccountConnection = z.infer<
   typeof addServiceConnectionSchema
 >
 
+export const updateServiceConnectionSchema = z.object({
+  "service-key": z
+    .instanceof(File)
+    .refine(
+      (file) =>
+        file.type === "application/json" || file.name?.endsWith(".json"),
+      "File must be a JSON file",
+    )
+    .refine(
+      (file) => file.size <= config.MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
+      `File size must be less than ${config.MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`,
+    )
+    .refine(async (file) => {
+      try {
+        const content = await file.text()
+        secureJsonParse(content, undefined, {
+          protoAction: "error",
+          constructorAction: "error",
+        }) // Use secure JSON parsing with strict security options
+        return true
+      } catch {
+        return false
+      }
+    }, "File must contain valid and secure JSON"),
+  connectorId: z.string().min(1, "Connector ID is required"),
+})
+
+export type UpdateServiceAccountConnection = z.infer<
+  typeof updateServiceConnectionSchema
+>
+
 export const addApiKeyConnectorSchema = z.object({
   app: z.nativeEnum(Apps),
   apiKey: z.string(),
@@ -100,11 +161,17 @@ export const addApiKeyConnectorSchema = z.object({
 
 export type ApiKeyConnector = z.infer<typeof addApiKeyConnectorSchema>
 
+export enum MCPConnectorMode {
+  SSE = "sse",
+  StreamableHTTP = "streamable-http",
+}
+
 export const addApiKeyMCPConnectorSchema = z.object({
-  apiKey: z.string(),
-  url: z.string(),
+  url: z.string().url({ message: 'must be a valid HTTP(S) URL' }),
   name: z.string(),
-})
+  mode: z.nativeEnum(MCPConnectorMode),
+  headers: z.record(z.string()),
+});
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
@@ -408,6 +475,8 @@ export enum Platform {
   Slack = "slack",
 }
 
+
+
 export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),
   citations: z.array(z.number()),
@@ -416,7 +485,10 @@ export const AnswerWithCitationsSchema = z.object({
 export const MCPClientConfig = z.object({
   url: z.string(),
   version: z.string(),
+  mode: z.nativeEnum(MCPConnectorMode).optional(),
 })
+
+export type MCPClientConfig = z.infer<typeof MCPClientConfig>
 
 export const MCPClientStdioConfig = z.object({
   command: z.string(),

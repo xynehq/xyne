@@ -1,11 +1,12 @@
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
-import { getUserByEmail } from "@/db/user"
+import { getUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
+import { SSEClientTransport, type SSEClientTransportOptions } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import { StreamableHTTPClientTransport, type StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import {
   syncConnectorTools,
   deleteToolsByConnectorId,
@@ -27,9 +28,12 @@ import {
   type OAuthStartQuery,
   type SaaSJob,
   type ServiceAccountConnection,
+  type UpdateServiceAccountConnection,
   type ApiKeyMCPConnector,
   type StdioMCPConnector,
   MCPClientStdioConfig,
+  MCPConnectorMode,
+  MCPClientConfig,
   Subsystem,
   updateToolsStatusSchema, // Added for tool status updates
 } from "@/types"
@@ -56,6 +60,7 @@ import {
   getAgentFeedbackMessages,
   getAgentUserFeedbackMessages,
   getAllUserFeedbackMessages,
+  getWorkspaceApiKeys,
 } from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
@@ -74,6 +79,7 @@ import {
 } from "@/integrations/dataDeletion"
 import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
 import { clearUserSyncJob } from "@/db/syncJob"
+import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -467,6 +473,70 @@ export const AddServiceConnection = async (c: Context) => {
   // })
 }
 
+export const UpdateServiceConnection = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  loggerWithChild({ email: sub }).info("UpdateServiceConnection")
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: UpdateServiceAccountConnection = c.req.valid("form")
+  const serviceKeyData = await form["service-key"].text()
+  const connectorId = form.connectorId
+
+  try {
+    // Get the existing connector
+    const existingConnector = await getConnectorByExternalId(
+      db,
+      connectorId,
+      user.id,
+    )
+    if (!existingConnector) {
+      throw new HTTPException(404, {
+        message: "Service account connector not found",
+      })
+    }
+
+    // Verify it's a service account connector
+    if (existingConnector.authType !== AuthType.ServiceAccount) {
+      throw new HTTPException(400, {
+        message: "Connector is not a service account type",
+      })
+    }
+
+    // Update the connector with new credentials
+    await updateConnector(db, existingConnector.id, {
+      credentials: serviceKeyData,
+      status: ConnectorStatus.Connected,
+    })
+
+    return c.json({
+      success: true,
+      message: "Service account updated",
+      id: existingConnector.externalId,
+    })
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `${new AddServiceConnectionError({
+        cause: error as Error,
+      })} \n : ${errMessage} : ${(error as Error).stack}`,
+    )
+
+    if (error instanceof HTTPException) {
+      throw error
+    }
+
+    throw new HTTPException(500, {
+      message: "Error updating service account connection",
+    })
+  }
+}
+
 // adding first for slack
 // slack is using bot token for the initial ingestion and sync
 // same service will be used for any api key based connector
@@ -781,10 +851,26 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
   }
   const [user] = userRes
   // @ts-ignore
-  const form: ApiKeyMCPConnector = c.req.valid("form")
-  const apiKey = form.apiKey
-  const url = form.url
-  const app = form.name
+  const form: ApiKeyMCPConnector = c.req.valid("json")
+  const { url, name: connectorName, mode, headers } = form
+  // Normalize and sanitize headers (defensive)
+  const forbiddenHeaderSet = new Set([
+    "host",
+    "connection",
+    "proxy-connection",
+    "transfer-encoding",
+    "content-length",
+    "keep-alive",
+    "upgrade",
+  ])
+  const sanitizedHeaders: Record<string, string> = Object.fromEntries(
+    Object.entries(headers ?? {})
+      .filter(
+        ([k, v]) => typeof k === "string" && typeof v === "string" && v.trim() !== "",
+      )
+      .map(([k, v]) => [k.toLowerCase(), v])
+      .filter(([k]) => !forbiddenHeaderSet.has(k)),
+  )
   let status = ConnectorStatus.NotConnected
   try {
     // Insert the connection within the transaction
@@ -793,26 +879,80 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       user.workspaceId,
       user.id,
       user.workspaceExternalId,
-      app,
+      connectorName,
       ConnectorType.MCP,
-      AuthType.ApiKey,
+      AuthType.Custom, // Using Custom AuthType for headers
       Apps.MCP,
-      { url: url, version: "0.1.0" },
+      { url: url, version: "0.1.0", mode: mode },
+      JSON.stringify(sanitizedHeaders), // Storing headers in the encrypted credentials field
       null,
       null,
-      null,
-      apiKey,
-    )
+      null, // apiKey is no longer used
+    );
     try {
+      // Backwards compatibility logic demonstration for connection test
+      const loadedConfig = connector.config as MCPClientConfig;
+      const loadedUrl = loadedConfig.url;
+      // Default to 'sse' for old connectors that won't have the mode field
+      const loadedMode = loadedConfig.mode || MCPConnectorMode.SSE;
+
+      let loadedHeaders: Record<string, string> = {};
+
+      if (connector.credentials) {
+        // New format: credentials contain the headers object. The custom type decrypts it.
+        try {
+          loadedHeaders = JSON.parse(connector.credentials);
+        } catch (error) {
+          loggerWithChild({ email: sub }).error(
+            `Failed to parse credentials for connector ${connector.externalId}: ${getErrorMessage(
+              error,
+            )}`,
+          );
+          loadedHeaders = {};
+        }
+      } else if (connector.apiKey) {
+        // Old format: for backwards compatibility.
+        loadedHeaders["Authorization"] = `Bearer ${connector.apiKey}`;
+      }
+
       const client = new Client({
         name: `connector-${connector.externalId}`,
         version: "0.1.0",
       })
       loggerWithChild({ email: sub }).info(
-        `invoking client initialize for url: ${new URL(url)}`,
-      )
-      await client.connect(new SSEClientTransport(new URL(url)))
-      status = ConnectorStatus.Connected
+        `invoking client initialize for url: ${
+          new URL(loadedUrl).origin
+        }${new URL(loadedUrl).pathname} with mode: ${loadedMode}`,
+      );
+
+      if (loadedMode === MCPConnectorMode.StreamableHTTP) {
+        const transportOptions: StreamableHTTPClientTransportOptions = {
+          requestInit: {
+            headers: loadedHeaders,
+          },
+        };
+        await client.connect(
+          new StreamableHTTPClientTransport(
+            new URL(loadedUrl),
+            transportOptions,
+          ),
+        );
+      } else if (loadedMode === MCPConnectorMode.SSE) {
+        const transportOptions: SSEClientTransportOptions = {
+          requestInit: {
+            headers: loadedHeaders,
+          },
+        };
+        await client.connect(
+          new SSEClientTransport(new URL(loadedUrl), transportOptions),
+        );
+      } else {
+        // This case should ideally not be reached if validation is correct,
+        // but it's a good safeguard.
+        throw new Error(`Unsupported MCP connector mode: ${loadedMode}`);
+      }
+
+      status = ConnectorStatus.Connected;
 
       // Fetch all available tools from the client
       // TODO: look in the DB. cache logic has to be discussed.
@@ -1000,7 +1140,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
         toolId: toolUpdate.toolId,
         success: false,
         error: getErrorMessage(error),
-      }
+    }
     }
   })
 
@@ -1232,7 +1372,7 @@ export const GetAdminChats = async (c: Context) => {
       conditions.push(eq(chats.userId, userId))
     }
 
-    // Build the query with feedback aggregation
+    // Build the query with feedback aggregation and cost tracking
     const baseQuery = db
       .select({
         id: chats.id,
@@ -1244,9 +1384,12 @@ export const GetAdminChats = async (c: Context) => {
         userEmail: users.email,
         userName: users.name,
         userRole: users.role,
+        userCreatedAt: users.createdAt, // Add user's actual creation date
         messageCount: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
+        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
       })
       .from(chats)
       .leftJoin(users, eq(chats.userId, users.id))
@@ -1256,10 +1399,29 @@ export const GetAdminChats = async (c: Context) => {
       conditions.length > 0
         ? await baseQuery
             .where(and(...conditions))
-            .groupBy(chats.id, users.email, users.name, users.role)
-        : await baseQuery.groupBy(chats.id, users.email, users.name, users.role)
+            .groupBy(
+              chats.id,
+              users.email,
+              users.name,
+              users.role,
+              users.createdAt,
+            )
+        : await baseQuery.groupBy(
+            chats.id,
+            users.email,
+            users.name,
+            users.role,
+            users.createdAt,
+          )
 
-    return c.json(result)
+    // Convert totalCost from string to number and totalTokens from bigint to number
+    const processedResult = result.map((chat) => ({
+      ...chat,
+      totalCost: Number(chat.totalCost) || 0, // numeric → string at runtime
+      totalTokens: Number(chat.totalTokens) || 0, // bigint → string at runtime
+    }))
+
+    return c.json(processedResult)
   } catch (error) {
     Logger.error(error, "Error fetching admin chats")
     return c.json(
@@ -1315,6 +1477,8 @@ export const GetAdminUsers = async (c: Context) => {
         totalMessages: sql<number>`COUNT(${messages.id})::int`,
         likes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'like' THEN 1 END)::int`,
         dislikes: sql<number>`COUNT(CASE WHEN ${messages.feedback}->>'type' = 'dislike' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${messages.cost}), 0)::numeric`,
+        totalTokens: sql<number>`COALESCE(SUM(${messages.tokensUsed}), 0)::bigint`,
       })
       .from(users)
       .leftJoin(chats, eq(users.id, chats.userId))
@@ -1329,7 +1493,14 @@ export const GetAdminUsers = async (c: Context) => {
         users.deletedAt,
       )
 
-    return c.json(result)
+    // Convert totalCost from string to number and totalTokens from bigint to number
+    const processedResult = result.map((user) => ({
+      ...user,
+      totalCost: Number(user.totalCost) || 0, // numeric → string at runtime
+      totalTokens: Number(user.totalTokens) || 0, // bigint → string at runtime
+    }))
+
+    return c.json(processedResult)
   } catch (error) {
     Logger.error(error, "Error fetching admin users")
     return c.json(
@@ -1599,6 +1770,45 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Error fetching all user feedback messages")
+    return c.json(
+      {
+        success: false,
+        message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const GetWorkspaceApiKeys = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
+    email = sub
+
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceExternalId,
+      email,
+    )
+    if (
+      !userAndWorkspace ||
+      !userAndWorkspace.user ||
+      !userAndWorkspace.workspace
+    ) {
+      return c.json({ message: "User or workspace not found" }, 404)
+    }
+    const apiKeys = await getWorkspaceApiKeys({
+      db,
+      userId: userAndWorkspace.user.externalId,
+      workspaceId: userAndWorkspace.workspace.externalId,
+    })
+    return c.json({
+      success: true,
+      data: apiKeys,
+    })
+  } catch (error) {
+    Logger.error(error, "Error fetching agent API keys")
     return c.json(
       {
         success: false,

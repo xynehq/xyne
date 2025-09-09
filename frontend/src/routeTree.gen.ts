@@ -15,8 +15,10 @@ import { Route as AuthImport } from './routes/auth'
 import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
 import { Route as OauthSuccessImport } from './routes/oauth/success'
+import { Route as AuthenticatedWorkflowImport } from './routes/_authenticated/workflow'
 import { Route as AuthenticatedTuningImport } from './routes/_authenticated/tuning'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
+import { Route as AuthenticatedKnowledgeManagementImport } from './routes/_authenticated/knowledgeManagement'
 import { Route as AuthenticatedDashboardImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedApiKeyImport } from './routes/_authenticated/api-key'
@@ -59,6 +61,12 @@ const OauthSuccessRoute = OauthSuccessImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AuthenticatedWorkflowRoute = AuthenticatedWorkflowImport.update({
+  id: '/workflow',
+  path: '/workflow',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+
 const AuthenticatedTuningRoute = AuthenticatedTuningImport.update({
   id: '/tuning',
   path: '/tuning',
@@ -70,6 +78,13 @@ const AuthenticatedSearchRoute = AuthenticatedSearchImport.update({
   path: '/search',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+
+const AuthenticatedKnowledgeManagementRoute =
+  AuthenticatedKnowledgeManagementImport.update({
+    id: '/knowledgeManagement',
+    path: '/knowledgeManagement',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 const AuthenticatedDashboardRoute = AuthenticatedDashboardImport.update({
   id: '/dashboard',
@@ -224,6 +239,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/knowledgeManagement': {
+      id: '/_authenticated/knowledgeManagement'
+      path: '/knowledgeManagement'
+      fullPath: '/knowledgeManagement'
+      preLoaderRoute: typeof AuthenticatedKnowledgeManagementImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/search': {
       id: '/_authenticated/search'
       path: '/search'
@@ -236,6 +258,13 @@ declare module '@tanstack/react-router' {
       path: '/tuning'
       fullPath: '/tuning'
       preLoaderRoute: typeof AuthenticatedTuningImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/workflow': {
+      id: '/_authenticated/workflow'
+      path: '/workflow'
+      fullPath: '/workflow'
+      preLoaderRoute: typeof AuthenticatedWorkflowImport
       parentRoute: typeof AuthenticatedImport
     }
     '/oauth/success': {
@@ -357,8 +386,10 @@ interface AuthenticatedRouteChildren {
   AuthenticatedApiKeyRoute: typeof AuthenticatedApiKeyRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedKnowledgeManagementRoute: typeof AuthenticatedKnowledgeManagementRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
+  AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
   AuthenticatedIntegrationsFileuploadRoute: typeof AuthenticatedIntegrationsFileuploadRoute
@@ -378,8 +409,10 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedApiKeyRoute: AuthenticatedApiKeyRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedKnowledgeManagementRoute: AuthenticatedKnowledgeManagementRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedTuningRoute: AuthenticatedTuningRoute,
+  AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
   AuthenticatedIntegrationsFileuploadRoute:
@@ -410,8 +443,10 @@ export interface FileRoutesByFullPath {
   '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
+  '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -434,8 +469,10 @@ export interface FileRoutesByTo {
   '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
+  '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -460,8 +497,10 @@ export interface FileRoutesById {
   '/_authenticated/api-key': typeof AuthenticatedApiKeyRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/tuning': typeof AuthenticatedTuningRoute
+  '/_authenticated/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
@@ -487,8 +526,10 @@ export interface FileRouteTypes {
     | '/api-key'
     | '/chat'
     | '/dashboard'
+    | '/knowledgeManagement'
     | '/search'
     | '/tuning'
+    | '/workflow'
     | '/oauth/success'
     | '/'
     | '/chat/$chatId'
@@ -510,8 +551,10 @@ export interface FileRouteTypes {
     | '/api-key'
     | '/chat'
     | '/dashboard'
+    | '/knowledgeManagement'
     | '/search'
     | '/tuning'
+    | '/workflow'
     | '/oauth/success'
     | '/'
     | '/chat/$chatId'
@@ -534,8 +577,10 @@ export interface FileRouteTypes {
     | '/_authenticated/api-key'
     | '/_authenticated/chat'
     | '/_authenticated/dashboard'
+    | '/_authenticated/knowledgeManagement'
     | '/_authenticated/search'
     | '/_authenticated/tuning'
+    | '/_authenticated/workflow'
     | '/oauth/success'
     | '/_authenticated/'
     | '/_authenticated/chat/$chatId'
@@ -587,8 +632,10 @@ export const routeTree = rootRoute
         "/_authenticated/api-key",
         "/_authenticated/chat",
         "/_authenticated/dashboard",
+        "/_authenticated/knowledgeManagement",
         "/_authenticated/search",
         "/_authenticated/tuning",
+        "/_authenticated/workflow",
         "/_authenticated/",
         "/_authenticated/dataSource/$docId",
         "/_authenticated/integrations/fileupload",
@@ -625,12 +672,20 @@ export const routeTree = rootRoute
       "filePath": "_authenticated/dashboard.tsx",
       "parent": "/_authenticated"
     },
+    "/_authenticated/knowledgeManagement": {
+      "filePath": "_authenticated/knowledgeManagement.tsx",
+      "parent": "/_authenticated"
+    },
     "/_authenticated/search": {
       "filePath": "_authenticated/search.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/tuning": {
       "filePath": "_authenticated/tuning.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/workflow": {
+      "filePath": "_authenticated/workflow.tsx",
       "parent": "/_authenticated"
     },
     "/oauth/success": {

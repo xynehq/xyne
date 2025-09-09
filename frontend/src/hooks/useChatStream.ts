@@ -12,11 +12,29 @@ import {
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
 
+interface DeepResearchStep {
+  id: string
+  type: "reasoning" | "web_search" | "analysis" | "synthesis"
+  title: string
+  content?: string
+  sourceUrl?: string
+  sourcesCount?: number
+  recentSources?: string[]
+  timestamp: number
+  status: "active" | "completed" | "error"
+  query?: string // Search query for web_search steps
+  focus?: string // What the reasoning/analysis is focusing on
+  stepNumber?: number // Sequential number for same type steps
+  isReasoningDelta?: boolean // Whether this is a delta update for reasoning content
+  fullReasoningContent?: string // Complete reasoning content when step is done
+}
+
 // Module-level storage for persistent EventSource connections
 interface StreamState {
   es: EventSource
   partial: string
   thinking: string
+  deepResearchSteps: DeepResearchStep[]
   sources: Citation[]
   imageCitations: ImageCitation[]
   citationMap: Record<number, number>
@@ -25,11 +43,13 @@ interface StreamState {
   isStreaming: boolean
   isRetrying?: boolean
   subscribers: Set<() => void>
+  response?: string
 }
 
 interface StreamInfo {
   partial: string
   thinking: string
+  deepResearchSteps: DeepResearchStep[]
   sources: Citation[]
   imageCitations: ImageCitation[]
   citationMap: Record<number, number>
@@ -171,6 +191,24 @@ const notifySubscribers = (streamId: string) => {
   }
 }
 
+// Helper function to append reasoning data to stream state
+const appendReasoningData = (streamState: StreamState, data: string) => {
+  try {
+    const stepData = JSON.parse(data)
+
+    // If this is a valid reasoning step, add it as a new line
+    if (stepData.step || stepData.text) {
+      streamState.thinking += data + "\n"
+    } else {
+      // Fallback to simple text accumulation
+      streamState.thinking += data
+    }
+  } catch (e) {
+    // Not JSON, just add as text
+    streamState.thinking += data
+  }
+}
+
 export async function createAuthEventSource(url: string): Promise<EventSource> {
   return new Promise((resolve, reject) => {
     let triedRefresh = false
@@ -209,7 +247,6 @@ export const startStream = async (
   streamKey: string,
   messageToSend: string,
   selectedSources: string[] = [],
-  isReasoningActive: boolean = true,
   isAgenticMode: boolean = false,
   queryClient?: any,
   router?: any,
@@ -217,6 +254,7 @@ export const startStream = async (
   agentIdFromChatParams?: string | null,
   toolsList?: ToolsListItem[],
   metadata?: AttachmentMetadata[],
+  selectedModel?: string,
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -254,12 +292,24 @@ export const startStream = async (
   if (isAgenticMode) {
     url.searchParams.append("agentic", "true")
   }
-  url.searchParams.append("modelId", "gpt-4o-mini")
-  url.searchParams.append("message", finalMessagePayload)
-
-  if (isReasoningActive) {
-    url.searchParams.append("isReasoningEnabled", "true")
+  // Build selected model JSON configuration (optional)
+  let modelConfig: { model?: string; capabilities?: any } | null = null
+  if (selectedModel) {
+    try {
+      const parsed = JSON.parse(selectedModel)
+      modelConfig =
+        typeof parsed === "string"
+          ? { model: parsed, capabilities: [] }
+          : parsed
+    } catch {
+      // Treat raw value as a label/model id
+      modelConfig = { model: String(selectedModel), capabilities: [] }
+    }
   }
+  if (modelConfig) {
+    url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
+  }
+  url.searchParams.append("message", finalMessagePayload)
 
   // Add toolsList parameter if provided
   if (toolsList && toolsList.length > 0) {
@@ -294,6 +344,7 @@ export const startStream = async (
     es: eventSource,
     partial: "",
     thinking: "",
+    deepResearchSteps: [],
     sources: [],
     imageCitations: [],
     citationMap: {},
@@ -302,6 +353,7 @@ export const startStream = async (
     isStreaming: true,
     isRetrying: false,
     subscribers: new Set(),
+    response: ""
   }
 
   activeStreams.set(streamKey, streamState)
@@ -312,14 +364,61 @@ export const startStream = async (
   })
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
-    streamState.thinking += event.data
+    appendReasoningData(streamState, event.data)
     notifySubscribers(streamKey)
   })
 
+  streamState.es.addEventListener(
+    ChatSSEvents.DeepResearchReasoning,
+    (event) => {
+      try {
+        const stepData = JSON.parse(event.data)
+        const newStep: DeepResearchStep = {
+          id: stepData.id || crypto.randomUUID(),
+          type: stepData.type || "reasoning",
+          title: stepData.title || "Processing...",
+          content: stepData.content,
+          sourceUrl: stepData.sourceUrl,
+          sourcesCount: stepData.sourcesCount,
+          recentSources: stepData.recentSources || [],
+          timestamp: stepData.timestamp || Date.now(),
+          status: stepData.status || "active",
+          query: stepData.query,
+          focus: stepData.focus,
+          stepNumber: stepData.stepNumber,
+          isReasoningDelta: stepData.isReasoningDelta,
+          fullReasoningContent: stepData.fullReasoningContent,
+        }
+
+        // Always look for existing step first by id
+        const existingIndex = streamState.deepResearchSteps.findIndex(
+          (step) => step.id === newStep.id,
+        )
+
+        if (existingIndex >= 0) {
+          // Update existing step with new data
+          streamState.deepResearchSteps[existingIndex] = {
+            ...streamState.deepResearchSteps[existingIndex],
+            ...newStep,
+          }
+        } else {
+          // Add new step
+          streamState.deepResearchSteps.push(newStep)
+        }
+
+        notifySubscribers(streamKey)
+      } catch (error) {
+        console.error("Error parsing deep research step:", error)
+      }
+    },
+  )
+
   streamState.es.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-    const { contextChunks, citationMap } = JSON.parse(event.data)
+    const { contextChunks, citationMap, updatedResponse } = JSON.parse(event.data)
     streamState.sources = contextChunks
     streamState.citationMap = citationMap
+    streamState.response = updatedResponse
+
     notifySubscribers(streamKey)
   })
 
@@ -400,8 +499,36 @@ export const startStream = async (
     streamState.isStreaming = false
     streamState.es.close()
 
-    if (streamKey && queryClient) {
-      queryClient.invalidateQueries({ queryKey: ["chatHistory", streamKey] })
+    // Create new complete message with accumulated text and citations
+    if (streamKey && queryClient && streamState.chatId && streamState.messageId) {
+      queryClient.setQueryData(["chatHistory", streamState.chatId], (old: any) => {
+        if (!old?.messages) return old
+        
+        // When streaming completes, consolidate all accumulated data (response, citations, thinking) into a final message object
+        // Save the complete assistant message to React Query cache to persist the conversation history
+        // Use streamState.response if available (from CitationsUpdate for web search), otherwise use streamState.partial (from ResponseUpdate for regular chat)
+        const finalMessage = streamState.response || streamState.partial
+        
+        const newAssistantMessage = {
+          externalId: streamState.messageId,
+          messageRole: "assistant",
+          message: finalMessage,
+          sources: streamState.sources,
+          citationMap: streamState.citationMap,
+          thinking: streamState.thinking,
+          imageCitations: streamState.imageCitations,
+          deepResearchSteps: streamState.deepResearchSteps,
+          isStreaming: false,
+          attachments: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+        
+        return {
+          ...old,
+          messages: [...old.messages, newAssistantMessage],
+        }
+      })
     }
     notifySubscribers(streamKey)
   })
@@ -496,6 +623,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     return {
       partial: "",
       thinking: "",
+      deepResearchSteps: [],
       sources: [],
       imageCitations: [],
       citationMap: {},
@@ -508,6 +636,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
   return {
     partial: stream.partial,
     thinking: stream.thinking,
+    deepResearchSteps: stream.deepResearchSteps,
     sources: stream.sources,
     imageCitations: stream.imageCitations,
     citationMap: stream.citationMap,
@@ -598,11 +727,11 @@ export const useChatStream = (
     async (
       messageToSend: string,
       selectedSources: string[] = [],
-      isReasoningActive: boolean = true,
       isAgenticMode: boolean = false,
       agentIdFromChatParams?: string | null,
       toolsList?: ToolsListItem[],
       metadata?: AttachmentMetadata[],
+      selectedModel?: string,
     ) => {
       const streamKey = currentStreamKey
 
@@ -610,7 +739,6 @@ export const useChatStream = (
         streamKey,
         messageToSend,
         selectedSources,
-        isReasoningActive,
         isAgenticMode,
         queryClient,
         router,
@@ -618,6 +746,7 @@ export const useChatStream = (
         agentIdFromChatParams,
         toolsList,
         metadata,
+        selectedModel,
       )
 
       setStreamInfo(getStreamState(streamKey))
@@ -640,9 +769,9 @@ export const useChatStream = (
   const retryMessage = useCallback(
     async (
       messageId: string,
-      isReasoningActive: boolean = false,
       isAgenticMode: boolean = false,
       attachmentFileIds?: string[],
+      selectedModelConfig?: string | null,
     ) => {
       if (!messageId) return
 
@@ -737,12 +866,12 @@ export const useChatStream = (
       }
 
       const url = new URL(`/api/v1/message/retry`, window.location.origin)
-      url.searchParams.append("messageId", encodeURIComponent(messageId))
-      if (isReasoningActive) {
-        url.searchParams.append("isReasoningEnabled", "true")
-      }
+      url.searchParams.append("messageId", messageId)
       if (isAgenticMode) {
         url.searchParams.append("agentic", "true")
+      }
+      if (selectedModelConfig) {
+        url.searchParams.append("selectedModelConfig", selectedModelConfig)
       }
       if (attachmentFileIds) {
         url.searchParams.append(
@@ -774,6 +903,7 @@ export const useChatStream = (
         es: eventSource,
         partial: "",
         thinking: "",
+        deepResearchSteps: [],
         sources: [],
         imageCitations: [],
         citationMap: {},
@@ -846,7 +976,7 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-        streamState.thinking += event.data
+        appendReasoningData(streamState, event.data)
         patchReasoningContent(event.data)
       })
 

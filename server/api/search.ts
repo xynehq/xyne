@@ -149,9 +149,10 @@ export const sharedAgentUsageSchema = z.object({
     .transform((val) => (val ? new Date(val) : undefined)),
 })
 
-export const messageSchema = z.object({
-  message: z.string().min(1),
+export const agentChatMessageSchema = z.object({
+  message: z.string(),
   chatId: z.string().optional(),
+  path: z.string().optional(),
   modelId: z.string().min(1),
   isReasoningEnabled: z
     .string()
@@ -160,6 +161,21 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
+  agentId: z.string(),
+  streamOff: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
+})
+
+export const messageSchema = z.object({
+  message: z.string().min(1),
+  path: z.string().optional(),
+  chatId: z.string().optional(),
+  selectedModelConfig: z.string().optional(), // JSON string containing model config
   agentId: z.string().optional(),
   toolsList: z.preprocess(
     (val) => {
@@ -181,6 +197,13 @@ export const messageSchema = z.object({
       )
       .optional(),
   ),
+  streamOff: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
@@ -188,13 +211,7 @@ export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
   agentId: z.string().optional(),
   agentic: z.string().optional().default("false"),
-  isReasoningEnabled: z
-    .string()
-    .optional()
-    .transform((val) => {
-      if (!val) return false
-      return val.toLowerCase() === "true"
-    }),
+  selectedModelConfig: z.string().optional(),
 })
 
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
@@ -412,7 +429,6 @@ export const SearchApi = async (c: Context) => {
         timestampRange,
       }),
     ]
-
     // ensure only update when query is typed
     if (isQueryTyped) {
       tasks.push(updateUserQueryHistory(decodedQuery, email))
@@ -425,6 +441,7 @@ export const SearchApi = async (c: Context) => {
       requestDebug: debug,
       offset,
       timestampRange,
+      rankProfile: SearchModes.BoostTitle,
     })
   }
 
