@@ -18,7 +18,7 @@ export const createCitationLink =
   (
     citations: Citation[] = [],
     onCitationClick?: (citation: Citation, chunkIndex?: number) => void,
-    showTooltip?: boolean,
+    showTooltip: boolean = true,
   ) =>
   ({
     href,
