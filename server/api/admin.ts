@@ -40,7 +40,7 @@ import {
 import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
-import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
+import { Apps, AuthType, ConnectorStatus, ConnectorType, McpScope } from "@/shared/types"
 import {
   createOAuthProvider,
   getAppGlobalOAuthProvider,
@@ -852,7 +852,7 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
   const [user] = userRes
   // @ts-ignore
   const form: ApiKeyMCPConnector = c.req.valid("json")
-  const { url, name: connectorName, mode, headers } = form
+  const { url, name: connectorName, mode, headers, scope } = form
   // Normalize and sanitize headers (defensive)
   const forbiddenHeaderSet = new Set([
     "host",
@@ -872,6 +872,8 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       .filter(([k]) => !forbiddenHeaderSet.has(k)),
   )
   let status = ConnectorStatus.NotConnected
+  const finalScope = scope || McpScope.Private
+
   try {
     // Insert the connection within the transaction
     const connector = await insertConnector(
@@ -888,7 +890,9 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       null,
       null,
       null, // apiKey is no longer used
-    );
+      null,
+      finalScope,
+    )
     try {
       // Backwards compatibility logic demonstration for connection test
       const loadedConfig = connector.config as MCPClientConfig;

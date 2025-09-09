@@ -656,3 +656,8 @@ export const attachmentMetadataSchema = z.object({
 })
 
 export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>
+
+export enum McpScope {
+  Private = "private",
+  Global = "global",
+}
