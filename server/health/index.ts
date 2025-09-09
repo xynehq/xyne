@@ -35,7 +35,7 @@ export const checkPostgresHealth = async (): Promise<HealthStatusResponse> => {
     } else {
       return {
         status: HealthStatusType.Healthy,
-        serviceName: "PostgreSQL",
+        serviceName: ServiceName.postgres,
         responseTime,
         details: {
           message: "PostgreSQL Database is healthy",
@@ -46,7 +46,7 @@ export const checkPostgresHealth = async (): Promise<HealthStatusResponse> => {
     Logger.error(error, "PostgreSQL health check failed")
     return {
       status: HealthStatusType.Unhealthy,
-      serviceName: "PostgreSQL",
+      serviceName: ServiceName.postgres,
       responseTime: Date.now() - start,
       details: {
         message: "Failed to connect to PostgreSQL Database",
@@ -343,8 +343,25 @@ export const checkPrometheusHealth =
             serviceName: ServiceName.prometheus,
             responseTime,
             details: {
-              queryEngine: "available",
+              message: "Prometheus is healthy and query engine is responsive",
               upTargets: queryData.data?.result?.length || 0,
+            },
+          }
+        } else {
+          Logger.warn(
+            `Prometheus query endpoint returned non-OK: HTTP ${queryResponse.status} ${queryResponse.statusText}`,
+          )
+          return {
+            status: HealthStatusType.Degraded,
+            serviceName: ServiceName.prometheus,
+            responseTime: responseTime,
+            details: {
+              basicHealth: "ok",
+              message:
+                "Prometheus is healthy but query engine is slow or unresponsive",
+              status: queryResponse.status,
+              statusText: queryResponse.statusText,
+              endpoint: "/api/v1/query??query=up",
             },
           }
         }
@@ -358,16 +375,6 @@ export const checkPrometheusHealth =
             queryEngine: "failed",
           },
         }
-      }
-
-      return {
-        status: HealthStatusType.Healthy,
-        responseTime,
-        serviceName: ServiceName.prometheus,
-        details: {
-          message: "Prometheus is healthy",
-          endpoint,
-        },
       }
     } catch (error) {
       Logger.error(error, "Prometheus health check failed")
@@ -430,7 +437,7 @@ export const checkLokiHealth = async (): Promise<HealthStatusResponse> => {
           responseTime: buildResponseTime,
           details: {
             message: `Loki health check failed: HTTP ${buildResponse.status} and ${buildResponse.statusText}`,
-            endpoint: buildResponse,
+            endpoint: buildEndpoint,
           },
         }
       }
@@ -438,13 +445,14 @@ export const checkLokiHealth = async (): Promise<HealthStatusResponse> => {
       const buildData = await buildResponse.json()
 
       return {
-        status: HealthStatusType.Healthy,
+        status: HealthStatusType.Degraded,
         serviceName: ServiceName.loki,
         responseTime,
         details: {
-          message: "Loki is healthy",
+          message: "Loki is healthy but not ready to serve requests",
           version: buildData.version,
           buildDate: buildData.buildDate,
+          endpoint: buildEndpoint,
         },
       }
     }
@@ -454,7 +462,7 @@ export const checkLokiHealth = async (): Promise<HealthStatusResponse> => {
       serviceName: ServiceName.loki,
       responseTime: Date.now() - startTime,
       details: {
-        message: `Loki ready check : HTTP ${readyResponse.status} and ${readyResponse.statusText}`,
+        message: `Loki ready with HTTP status ${readyResponse.status}`,
         endpoint: readyEndpoint,
       },
     }
