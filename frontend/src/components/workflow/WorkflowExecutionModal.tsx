@@ -362,7 +362,7 @@ export function WorkflowExecutionModal({
   const startPolling = () => {
     console.log("Starting polling for process completion...")
     // For now, simulate completion after 5 seconds since we don't have a status endpoint
-    const interval = setTimeout(() => {
+    setTimeout(() => {
       console.log("Process completed!")
       setPollingInterval(null)
       setIsProcessing(false)

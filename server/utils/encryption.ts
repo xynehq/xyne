@@ -27,8 +27,8 @@ export class Encryption {
     const iv = crypto.randomBytes(12)
     const cipher = crypto.createCipheriv(
       this.algo,
-      Buffer.from(this.key, this.encoding),
-      iv,
+      new Uint8Array(Buffer.from(this.key, this.encoding)),
+      new Uint8Array(iv),
     )
     let enc = cipher.update(str, "utf8", this.encoding)
     enc += cipher.final(this.encoding)
@@ -50,10 +50,10 @@ export class Encryption {
 
     const decipher = crypto.createDecipheriv(
       this.algo,
-      Buffer.from(this.key, this.encoding),
-      Buffer.from(iv, this.encoding),
+      new Uint8Array(Buffer.from(this.key, this.encoding)),
+      new Uint8Array(Buffer.from(iv, this.encoding)),
     )
-    decipher.setAuthTag(Buffer.from(authTag, this.encoding))
+    decipher.setAuthTag(new Uint8Array(Buffer.from(authTag, this.encoding)))
     let str = decipher.update(ciphertext, this.encoding, "utf8")
     str += decipher.final("utf8")
     return str

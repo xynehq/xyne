@@ -8,10 +8,8 @@ import {
   Users,
   ChevronRight,
   X,
-  ArrowLeft,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { workflowStepsAPI } from "./api/ApiHandlers"
@@ -52,7 +50,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
 
 
 
-  const [selectedAction, setSelectedAction] = useState<string | null>(null)
+  const [, setSelectedAction] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
   // Reset form states when component becomes visible or when selectedNodeId changes
