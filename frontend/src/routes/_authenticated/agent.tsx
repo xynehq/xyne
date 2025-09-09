@@ -29,6 +29,8 @@ import {
   type SelectPublicAgent,
   type AttachmentMetadata,
   SlackEntity,
+  AgentPromptPayload,
+  DEFAULT_TEST_AGENT_ID,
 } from "shared/types"
 import {
   ChevronDown,
@@ -65,7 +67,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { toast, useToast } from "@/hooks/use-toast"
-import { ChatBox } from "@/components/ChatBox"
+import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
 import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
@@ -403,6 +405,8 @@ function AgentComponent() {
   const [confirmAction, setConfirmAction] = useState<
     (() => Promise<void>) | null
   >(null)
+
+  const chatBoxRef = useRef<ChatBoxRef>(null)
 
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
@@ -1926,32 +1930,127 @@ function AgentComponent() {
         )
     }
 
-    let finalAgentPrompt = agentPrompt
-    let finalSelectedIntegrationNames = allAvailableIntegrations
-      .filter((integration) => selectedIntegrations[integration.id])
-      .map((integration) => integration.name)
-    let finalModelForChat = selectedModel
+    let agentPromptPayload: AgentPromptPayload;
 
-    if (chatConfigAgent) {
-      finalAgentPrompt = chatConfigAgent.prompt || ""
-      finalSelectedIntegrationNames = allAvailableIntegrations
-        .filter((integration) =>
-          chatConfigAgent.appIntegrations?.includes(integration.id),
-        )
-        .map((integration) => integration.name)
-      finalModelForChat = chatConfigAgent.model
-    }
+    if (selectedChatAgentExternalId === null) {
+      // Test Current Form Config - construct complete agent configuration
+      
+      const appIntegrationsObject: Record<
+        string,
+        {
+          itemIds: string[]
+          selectedAll: boolean
+        }
+      > = {}
 
-    const agentPromptPayload = {
-      prompt: finalAgentPrompt,
-      sources: finalSelectedIntegrationNames,
+      // Collect collection item IDs
+      const collectionItemIds: string[] = []
+      let hasCollectionSelections = false
+
+      // Collect data source IDs
+      const dataSourceIds: string[] = []
+      let hasDataSourceSelections = false
+
+      // Process each selected integration
+      for (const [integrationId, isSelected] of Object.entries(
+        selectedIntegrations,
+      )) {
+        if (isSelected) {
+          const integration = allAvailableIntegrations.find(
+            (int) => int.id === integrationId,
+          )
+          if (!integration) continue
+
+          // For collections, collect item IDs with appropriate prefixes
+          if (integrationId.startsWith("cl_")) {
+            const collectionId = integrationId.replace("cl_", "")
+            const selectedItems =
+              selectedItemsInCollection[collectionId] || new Set()
+            const itemDetails =
+              selectedItemDetailsInCollection[collectionId] || {}
+
+            if (selectedItems.size === 0) {
+              // If no specific items are selected, use the collection id with collection prefix
+              const collectionId = integration.id.replace("cl_", "")
+              collectionItemIds.push(`cl-${collectionId}`) // Collection prefix
+            } else {
+              // If specific items are selected, use their IDs with appropriate prefixes
+              selectedItems.forEach((itemId) => {
+                const itemDetail = itemDetails[itemId]
+                if (itemDetail && itemDetail.type === "folder") {
+                  // This is a folder within the collection
+                  collectionItemIds.push(`clfd-${itemId}`) // Collection folder prefix
+                } else {
+                  // For files or items without type info, use original ID
+                  collectionItemIds.push(`clf-${itemId}`)
+                }
+              })
+            }
+            hasCollectionSelections = true
+          }
+          // For data sources, collect their IDs
+          else if (
+            integrationId.startsWith("ds-") ||
+            integration.app === Apps.DataSource
+          ) {
+            dataSourceIds.push(integrationId)
+            hasDataSourceSelections = true
+          }
+          // For other integrations, use the integration ID as key
+          else {
+            appIntegrationsObject[integrationId] = {
+              itemIds: [],
+              selectedAll: true,
+            }
+          }
+        }
+      }
+
+      // Add collection selections if any exist
+      if (hasCollectionSelections) {
+        appIntegrationsObject["knowledge_base"] = {
+          itemIds: collectionItemIds,
+          selectedAll: collectionItemIds.length === 0,
+        }
+      }
+
+      // Add data source selections if any exist
+      if (hasDataSourceSelections) {
+        appIntegrationsObject["DataSource"] = {
+          itemIds: dataSourceIds,
+          selectedAll: dataSourceIds.length === 0,
+        }
+      }
+
+      // Construct complete agent payload for current form config
+      agentPromptPayload = {
+        name: agentName,
+        description: agentDescription,
+        prompt: agentPrompt,
+        model: selectedModel,
+        isPublic: isPublic,
+        isRagOn: isRagOn,
+        appIntegrations: appIntegrationsObject,
+        docIds: selectedEntities,
+        userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
+        allowWebSearch: false, // Not supported in form config
+      }
     }
-    url.searchParams.append(
-      "modelId",
-      finalModelForChat === "Auto" ? "gpt-4o-mini" : finalModelForChat,
-    )
     url.searchParams.append("message", encodeURIComponent(messageToSend))
-    url.searchParams.append("agentPrompt", JSON.stringify(agentPromptPayload))
+    
+    // Add agent ID to the request if using an agent
+    if (chatConfigAgent?.externalId) {
+      url.searchParams.append("agentId", chatConfigAgent.externalId)
+    } else {
+      // If no agent is used (the user is not authenticated), we can use the default agent
+      url.searchParams.append("agentPromptPayload", JSON.stringify(agentPromptPayload))
+      url.searchParams.append("agentId", DEFAULT_TEST_AGENT_ID)
+    }
+    
+    // Get model configuration from ChatBox
+    const modelConfig = chatBoxRef.current?.getCurrentModelConfig()
+
+    url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
 
     if (metadata && metadata.length > 0) {
       url.searchParams.append("attachmentMetadata", JSON.stringify(metadata))
@@ -4242,6 +4341,7 @@ function AgentComponent() {
 
             <div className="p-2 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1E1E1E] flex justify-center">
               <ChatBox
+                ref={chatBoxRef}
                 role={user?.role}
                 query={query}
                 user={user}
@@ -4253,6 +4353,8 @@ function AgentComponent() {
                 isStreaming={isStreaming}
                 allCitations={allCitations}
                 overrideIsRagOn={testAgentIsRagOn}
+                agentIdFromChatData={selectedChatAgentExternalId}
+                chatId={chatId}
               />
             </div>
           </div>

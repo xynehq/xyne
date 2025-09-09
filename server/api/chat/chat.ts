@@ -62,7 +62,7 @@ import {
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { ChatSSEvents, OpenAIError, type MessageReqType } from "@/shared/types"
+import { ChatSSEvents, OpenAIError, type MessageReqType, DEFAULT_TEST_AGENT_ID } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
   delay,
@@ -4079,8 +4079,9 @@ export const MessageApi = async (c: Context) => {
     }
     const webSearchEnabled = enableWebSearch ?? false
     const deepResearchEnabled = isDeepResearchEnabled ?? false
-    let agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
+    const agentPromptValue = agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
+      
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
@@ -4104,11 +4105,12 @@ export const MessageApi = async (c: Context) => {
         agentPromptValue,
         userAndWorkspaceCheck.workspace.id,
       )
+
       if (
         !isAgentic &&
         !enableWebSearch &&
         !deepResearchEnabled &&
-        agentDetails
+        (agentDetails || agentPromptValue === DEFAULT_TEST_AGENT_ID)
       ) {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
