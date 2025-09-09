@@ -18,12 +18,53 @@ import playIcon from "@/assets/play.svg"
 import importDslIcon from "@/assets/import-dsl.svg"
 import plusIcon from "@/assets/plus.svg"
 
+interface ToolConfig {
+  [key: string]: string | number | boolean | string[] | object | null
+}
+
+interface ToolValue {
+  [key: string]: string | number | boolean | string[] | object | null
+}
+
+interface WorkflowTool {
+  id: string
+  type: string
+  value: ToolValue
+  config: ToolConfig
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+interface WorkflowStep {
+  id: string
+  workflowTemplateId: string
+  name: string
+  description: string
+  type: "form" | "ai_agent" | "email" | "automated" | "manual"
+  parentStepId: string | null
+  prevStepIds: string[]
+  nextStepIds: string[]
+  toolIds: string[]
+  timeEstimate: number
+  metadata: {
+    icon?: string
+    step_order?: number
+    schema_version?: string
+    user_instructions?: string
+    ai_model?: string
+    automated_description?: string
+  }
+  createdAt: string
+  updatedAt: string
+}
+
 interface WorkflowTemplate {
   id: string
   name: string
   description: string
   version: string
-  status: string
+  status: "active" | "inactive" | "draft"
   config: {
     ai_model?: string
     max_file_size?: string
@@ -36,43 +77,14 @@ interface WorkflowTemplate {
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
-  steps?: Array<{
-    id: string
-    workflowTemplateId: string
-    name: string
-    description: string
-    type: string
-    parentStepId: string | null
-    prevStepIds: string[]
-    nextStepIds: string[]
-    toolIds: string[]
-    timeEstimate: number
-    metadata: {
-      icon?: string
-      step_order?: number
-      schema_version?: string
-      user_instructions?: string
-      ai_model?: string
-      automated_description?: string
-    }
-    createdAt: string
-    updatedAt: string
-  }>
-  workflow_tools?: Array<{
-    id: string
-    type: string
-    value: any
-    config: any
-    createdBy: string
-    createdAt: string
-    updatedAt: string
-  }>
+  steps?: WorkflowStep[]
+  workflow_tools?: WorkflowTool[]
   rootStep?: {
     id: string
     workflowTemplateId: string
     name: string
     description: string
-    type: string
+    type: "form" | "ai_agent" | "email" | "automated" | "manual"
     timeEstimate: number
     metadata: {
       icon?: string
@@ -80,15 +92,7 @@ interface WorkflowTemplate {
       schema_version?: string
       user_instructions?: string
     }
-    tool?: {
-      id: string
-      type: string
-      value: any
-      config: any
-      createdBy: string
-      createdAt: string
-      updatedAt: string
-    }
+    tool?: WorkflowTool
   }
 }
 
@@ -420,7 +424,9 @@ function WorkflowComponent() {
       console.log("🔍 Raw template response:", response)
 
       // Check if response has a data property that needs to be extracted
-      const template = (response as any).data || response
+      const template =
+        (response as { data?: WorkflowTemplate }).data ||
+        (response as WorkflowTemplate)
       console.log("📋 Template data to use:", template)
 
       setSelectedTemplate(template)
@@ -518,12 +524,15 @@ function WorkflowComponent() {
 
           if (executionTemplate?.step_executions) {
             steps = executionTemplate.step_executions.map(
-              (stepExec: any, index: number) => ({
+              (
+                stepExec: Partial<WorkflowStep>,
+                index: number,
+              ): WorkflowStep => ({
                 id: stepExec.id || `step-${index}`,
-                workflowTemplateId: executionTemplate.id,
+                workflowTemplateId: executionTemplate.id || "",
                 name: stepExec.name || `Step ${index + 1}`,
                 description: stepExec.description || "",
-                type: stepExec.type || "unknown",
+                type: (stepExec.type as WorkflowStep["type"]) || "automated",
                 parentStepId: null,
                 prevStepIds: [],
                 nextStepIds: [],
@@ -536,12 +545,12 @@ function WorkflowComponent() {
             )
           } else if (executionTemplate?.workflow_steps) {
             steps = executionTemplate.workflow_steps.map(
-              (step: any, index: number) => ({
+              (step: Partial<WorkflowStep>, index: number): WorkflowStep => ({
                 id: step.id || `step-${index}`,
-                workflowTemplateId: executionTemplate.id,
+                workflowTemplateId: executionTemplate.id || "",
                 name: step.name || `Step ${index + 1}`,
                 description: step.description || "",
-                type: step.type || "unknown",
+                type: (step.type as WorkflowStep["type"]) || "automated",
                 parentStepId: null,
                 prevStepIds: [],
                 nextStepIds: [],
@@ -557,12 +566,13 @@ function WorkflowComponent() {
             steps = [
               {
                 id: executionTemplate?.id || "execution-step",
-                workflowTemplateId: executionTemplate?.id || "unknown",
+                workflowTemplateId:
+                  executionTemplate?.id || "execution-workflow",
                 name: executionTemplate?.name || "Workflow Execution",
                 description:
                   executionTemplate?.description ||
                   "Viewing workflow execution",
-                type: "execution",
+                type: "automated" as const,
                 parentStepId: null,
                 prevStepIds: [],
                 nextStepIds: [],
@@ -582,13 +592,15 @@ function WorkflowComponent() {
           console.log("🔧 Created steps from execution:", steps)
 
           if (steps.length > 0) {
-            const workflowFromExecution = {
+            const workflowFromExecution: WorkflowTemplate = {
               id: executionTemplate?.id || "execution-workflow",
               name: executionTemplate?.name || "Workflow Execution",
               description:
                 executionTemplate?.description || "Viewing workflow execution",
               version: "1.0",
-              status: executionTemplate?.status || "unknown",
+              status:
+                (executionTemplate?.status as WorkflowTemplate["status"]) ||
+                "draft",
               config: executionTemplate?.config || {},
               createdBy: executionTemplate?.createdBy || "",
               rootWorkflowStepTemplateId: steps[0]?.id || "",

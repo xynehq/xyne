@@ -73,6 +73,198 @@ const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.WorkflowApi)
 
+// TypeScript interfaces for complete type safety
+interface FormField {
+  id: string
+  type: string
+  label: string
+  required: boolean
+  placeholder: string
+  description: string
+  maxSize: string
+  fileTypes: string[]
+  rows: number
+  defaultValue: string
+}
+
+interface FormDefinition {
+  title: string
+  fields: FormField[]
+}
+
+interface UploadedFile {
+  fileName: string
+  fileSize: number
+  mimetype: string
+  uploadedAt: string
+  uploadedBy: string
+  absolutePath: string
+  relativePath: string
+  fileExtension: string
+  workflowStepId: string
+  originalFileName: string
+  workflowExecutionId: string
+}
+
+interface FormData {
+  [key: string]: string | UploadedFile | File
+}
+
+interface FormSubmission {
+  formData: FormData
+  submittedAt: string
+  submittedBy: string
+  autoCompleted: boolean
+}
+
+interface InputMetadata {
+  inputType: string
+  formFields: number
+  filesProcessed: number
+  sourceStep: string
+}
+
+interface UsageMetadata {
+  totalTokenCount: number
+  promptTokenCount: number
+  promptTokensDetails: Array<{ modality: string; tokenCount: number }>
+  candidatesTokenCount: number
+  candidatesTokensDetails: Array<{ modality: string; tokenCount: number }>
+}
+
+interface EmailResult {
+  recipient: string
+  sent: boolean
+  error: string
+}
+
+interface EmailDetails {
+  from: string
+  subject: string
+  content_type: string
+  body_length: number
+}
+
+interface StepResult {
+  aiOutput: string
+  output: string
+  content: string
+  model: string
+  inputType: string
+  inputMetadata: InputMetadata
+  usage: UsageMetadata
+  processedAt: string
+  error: string
+  message: string
+  formData: FormData
+  emails_sent: number
+  total_recipients: number
+  all_sent: boolean
+  results: EmailResult[]
+  email_details: EmailDetails
+}
+
+interface ToolExecutionInfo {
+  id: string
+  status: "completed" | "failed" | "pending" | "running"
+  result: StepResult
+  createdAt: Date
+  updatedAt: Date
+  completedAt: Date
+  workflowExecutionId: string
+  workflowToolId: string
+  startedAt: Date
+}
+
+interface StepExecution {
+  id: string
+  stepId: string
+  result: StepResult
+  formSubmission: FormSubmission
+  toolExecution: ToolExecutionInfo
+  workflowStepTemplateId: string
+  type: string
+  name: string
+}
+
+interface PreviousStepResults {
+  [stepId: string]: StepExecution
+}
+
+interface ToolValue {
+  title: string
+  fields: FormField[]
+  name: string
+  description: string
+  sendingFrom: string
+  emailAddresses: string[]
+  script: string
+  [key: string]: string | number | boolean | FormField[] | string[]
+}
+
+interface ToolConfig {
+  to_email: string[]
+  from_email: string
+  recipients: string[]
+  content_type: string
+  subject: string
+  content_path: string
+  content_source_path: string
+  name: string
+  prompt: string
+  aiModel: string
+  model: string
+  timeout: number
+  inputType: string
+  description: string
+  gemini_api_key: string
+  submitText: string
+  validation: string
+  script: string
+  [key: string]: string | number | boolean | string[]
+}
+
+interface WorkflowTool {
+  id: string
+  type:
+    | "python_script"
+    | "form"
+    | "ai_agent"
+    | "email"
+    | "slack"
+    | "gmail"
+    | "delay"
+    | "agent"
+    | "merged_node"
+  value: ToolValue
+  config: ToolConfig
+  createdBy: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+interface ToolUpdateData {
+  type:
+    | "python_script"
+    | "form"
+    | "ai_agent"
+    | "email"
+    | "slack"
+    | "gmail"
+    | "delay"
+    | "agent"
+    | "merged_node"
+  value: ToolValue
+  config: ToolConfig
+  updatedAt: Date
+}
+
+interface StepUpdateData {
+  name: string
+  description: string
+  updatedAt: Date
+}
+
 // New Workflow API Routes
 export const workflowRouter = new Hono()
 
@@ -189,7 +381,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     const templateId = c.req.param("templateId")
     const contentType = c.req.header("content-type") || ""
 
-    let requestData: any = {}
+    let requestData: Record<string, string | number | boolean | File> = {}
     let hasFileUploads = false
 
     // Handle both JSON and multipart form data
@@ -495,7 +687,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Auto-execute next automated steps
     const allTools = await db.select().from(workflowTool)
     const rootStepName = rootStepExecution.name || "Root Step"
-    const currentResults: Record<string, any> = {}
+    const currentResults: PreviousStepResults = {}
 
     currentResults[rootStepName] = {
       stepId: rootStepExecution.id,
@@ -667,9 +859,9 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
 const executeAutomatedWorkflowSteps = async (
   executionId: string,
   nextStepTemplateIds: string[],
-  stepExecutions: any[],
-  allTools: any[],
-  currentResults: any,
+  stepExecutions: StepExecution[],
+  allTools: WorkflowTool[],
+  currentResults: PreviousStepResults,
 ) => {
   try {
     Logger.info(
@@ -750,8 +942,8 @@ const executeAutomatedWorkflowSteps = async (
 const executeWorkflowChain = async (
   executionId: string,
   currentStepId: string,
-  tools: any[],
-  previousResults: any,
+  tools: WorkflowTool[],
+  previousResults: PreviousStepResults,
 ) => {
   try {
     // Get current step execution
@@ -1290,7 +1482,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
     // Continue workflow execution - execute next automated steps
     const tools = await db.select().from(workflowTool)
     const stepName = stepExecution.name || "unknown_step"
-    const currentResults: Record<string, any> = {}
+    const currentResults: PreviousStepResults = {}
     currentResults[stepName] = {
       stepId: stepExecution.id,
       formSubmission: {
@@ -1355,8 +1547,8 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
 // Unified Python script execution function
 const executePythonScript = async (
   scriptContent: string,
-  previousStepResults: any,
-  config: any,
+  previousStepResults: PreviousStepResults,
+  config: ToolConfig,
   scriptType: string = "python_script",
 ) => {
   try {
@@ -1471,7 +1663,7 @@ else:
 
 // Helper function to extract content from previous step results using simplified input paths
 const extractContentFromPath = (
-  previousStepResults: any,
+  previousStepResults: PreviousStepResults,
   contentPath: string,
 ): string => {
   try {
@@ -1527,8 +1719,8 @@ const extractContentFromPath = (
 
 // Execute workflow tool (Python scripts, etc.)
 const executeWorkflowTool = async (
-  tool: any,
-  previousStepResults: any = {},
+  tool: WorkflowTool,
+  previousStepResults: PreviousStepResults = {},
 ) => {
   try {
     switch (tool.type) {
