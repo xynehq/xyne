@@ -10,8 +10,6 @@ import {
   type ServiceHealthCheck,
 } from "./type"
 import config from "@/config"
-import { version } from "jszip"
-import { build } from "bun"
 
 const Logger = getLogger(Subsystem.Server).child({ module: "health" })
 
