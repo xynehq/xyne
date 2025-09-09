@@ -1,18 +1,25 @@
 // release.config.js
 export default {
-  branches: ['main', 'feat/version_management'], // main branch
+  branches: ['main', 'feat/version_management'],
   plugins: [
-    '@semantic-release/commit-analyzer', // analyzes commits for version bump
+    '@semantic-release/commit-analyzer', // decides bump (major/minor/patch)
+    '@semantic-release/release-notes-generator', // generates human-readable notes
     [
-      '@semantic-release/npm',           // updates package.json version
+      '@semantic-release/changelog', // writes to CHANGELOG.md
       {
-        npmPublish: false,               // don’t publish to npm
+        changelogFile: 'CHANGELOG.md',
+      },
+    ],
+    [
+      '@semantic-release/npm',
+      {
+        npmPublish: false, // no npm publish
       },
     ],
     [
       '@semantic-release/git',
       {
-        assets: ['package.json'],
+        assets: ['package.json', 'CHANGELOG.md'], // commit changelog + version
         message: 'chore(release): ${nextRelease.version} [skip ci]',
       },
     ],

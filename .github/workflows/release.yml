@@ -32,5 +32,7 @@ jobs:
 
       - name: Run semantic-release
         working-directory: ./server
-        run: HUSKY=0 bunx semantic-release --no-ci
+        env:
+          HUSKY: 0
+        run: bunx semantic-release --no-ci
 
