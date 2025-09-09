@@ -3,7 +3,7 @@ import OpenAI from "openai"
 import { isDeepResearchModel, modelDetailsMap } from "@/ai/mappers"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
 import { AIProviders, Models } from "@/ai/types"
-import BaseProvider from "@/ai/provider/base"
+import BaseProvider, { regex } from "@/ai/provider/base"
 import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -20,22 +20,25 @@ const buildOpenAIImageParts = async (imagePaths: string[]) => {
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    // Check if the file already has an extension, if not add .png
-    const match = imgPath.match(/^(.+)_([0-9]+)$/)
+    const match = imgPath.match(regex)
     if (!match) {
-      Logger.error(`Invalid image path: ${imgPath}`)
+      Logger.error(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
       throw new Error(`Invalid image path: ${imgPath}`)
     }
 
-    // Validate that the docId doesn't contain path traversal characters
-    const docId = match[1]
+    const docIndex = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
+
     if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
       Logger.error(`Invalid docId containing path traversal: ${docId}`)
       throw new Error(`Invalid docId: ${docId}`)
     }
 
     const imageDir = path.join(baseDir, docId)
-    const absolutePath = findImageByName(imageDir, match[2])
+    const absolutePath = findImageByName(imageDir, imageNumber)
     const extension = path.extname(absolutePath).toLowerCase()
 
     // Map file extensions to MIME types for OpenAI
@@ -199,9 +202,33 @@ export class OpenAIProvider extends BaseProvider {
       max_tokens: modelParams.maxTokens,
       temperature: modelParams.temperature,
       top_p: modelParams.topP,
+      // tool calling support
+      tools: params.tools
+        ? params.tools.map((t) => ({
+            type: "function" as const,
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.parameters || { type: "object", properties: {} },
+            },
+          }))
+        : undefined,
+      tool_choice: params.tools ? (params.tool_choice ?? "auto") : undefined,
+      parallel_tool_calls: params.tools
+        ? params.parallel_tool_calls ?? true
+        : undefined,
       ...(modelParams.json ? { response_format: { type: "json_object" } } : {}),
     })
-    const fullResponse = chatCompletion.choices[0].message?.content || ""
+    const choice = chatCompletion.choices[0]
+    const fullResponse = choice.message?.content || ""
+    const toolCalls = (choice.message?.tool_calls || []).map((tc) => ({
+      id: (tc as any).id || "",
+      type: "function" as const,
+      function: {
+        name: (tc as any).function?.name || "",
+        arguments: (tc as any).function?.arguments || "{}",
+      },
+    }))
     const cost = calculateCost(
       {
         inputTokens: chatCompletion.usage?.prompt_tokens!,
@@ -212,6 +239,7 @@ export class OpenAIProvider extends BaseProvider {
     return {
       text: fullResponse,
       cost,
+      ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
     }
   }
 

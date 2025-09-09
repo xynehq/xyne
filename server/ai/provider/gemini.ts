@@ -4,7 +4,7 @@ import {
   type GenerateContentConfig,
   type ThinkingConfig,
 } from "@google/genai"
-import BaseProvider from "@/ai/provider/base"
+import BaseProvider, { regex } from "@/ai/provider/base"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import {
   type ModelParams,
@@ -31,7 +31,7 @@ async function buildGeminiImageParts(
 
   const imagePromises = imagePaths.map(async (imgPath) => {
     // Check if the file already has an extension, if not add .png
-    const match = imgPath.match(/^([0-9]+)_(.+)_([0-9]+)$/)
+    const match = imgPath.match(regex)
     if (!match) {
       Logger.error(`Invalid image path: ${imgPath}`)
       throw new Error(`Invalid image path: ${imgPath}`)
@@ -165,7 +165,21 @@ export class GeminiAIProvider extends BaseProvider {
               },
             ],
           },
-        } satisfies GenerateContentConfig,
+          // Tool calling support: function declarations
+          ...(params.tools && params.tools.length
+            ? {
+                tools: [
+                  {
+                    functionDeclarations: params.tools.map((t) => ({
+                      name: t.name,
+                      description: t.description,
+                      parameters: t.parameters || { type: 'object', properties: {} },
+                    })),
+                  },
+                ],
+              }
+            : {}),
+        } as any,
       })
 
       const lastMessage = messages[messages.length - 1]
@@ -278,7 +292,20 @@ export class GeminiAIProvider extends BaseProvider {
               },
             ],
           },
-        } satisfies GenerateContentConfig,
+          ...(params.tools && params.tools.length
+            ? {
+                tools: [
+                  {
+                    functionDeclarations: params.tools.map((t) => ({
+                      name: t.name,
+                      description: t.description,
+                      parameters: t.parameters || { type: 'object', properties: {} },
+                    })),
+                  },
+                ],
+              }
+            : {}),
+        } as any,
       })
 
       const lastMessage = messages[messages.length - 1]
@@ -309,6 +336,8 @@ export class GeminiAIProvider extends BaseProvider {
       let accumulatedSources: any[] = []
       let accumulatedGroundingSupports: GroundingSupport[] = []
 
+      // Accumulate function call (best-effort)
+      let pendingFn: { name: string; args: string } | null = null
       for await (const chunk of stream) {
         let chunkText = ""
         // Extract sources from grounding metadata if available
@@ -368,6 +397,24 @@ export class GeminiAIProvider extends BaseProvider {
           if (wasThinkingInPreviousChunk) {
             chunkText += "</think>"
             wasThinkingInPreviousChunk = false
+          }
+        }
+
+        // Detect function call in this chunk
+        const fnPart = chunk.candidates?.[0]?.content?.parts?.find(
+          (p: any) => p.functionCall,
+        )
+        if (fnPart?.functionCall) {
+          const fc = fnPart.functionCall
+          pendingFn = { name: fc.name || '', args: fc.args ? JSON.stringify(fc.args) : '{}' }
+          yield {
+            tool_calls: [
+              {
+                id: '',
+                type: 'function' as const,
+                function: { name: pendingFn.name, arguments: pendingFn.args },
+              },
+            ],
           }
         }
 

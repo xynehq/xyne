@@ -37,13 +37,35 @@ export class FireworksProvider extends BaseProvider {
           top_p: modelParams.topP,
           max_tokens: modelParams.maxTokens,
           stream: false,
+          tools: params.tools
+            ? params.tools.map((t) => ({
+                type: 'function',
+                function: {
+                  name: t.name,
+                  description: t.description,
+                  parameters: t.parameters || { type: 'object', properties: {} },
+                },
+              }))
+            : undefined,
+          tool_choice: params.tools ? (params.tool_choice ?? 'auto') : undefined,
         },
       )
 
       const cost = 0 // Explicitly setting 0 as cost
+      const fc = response.choices?.[0]?.message?.function_call
+      const toolCalls = fc
+        ? [
+            {
+              id: '',
+              type: 'function' as const,
+              function: { name: fc.name || '', arguments: fc.arguments || '{}' },
+            },
+          ]
+        : []
       return {
         text: response.choices[0].message?.content || "",
         cost,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
       }
     } catch (error) {
       throw new Error("Failed to get response from Fireworks")
@@ -67,18 +89,40 @@ export class FireworksProvider extends BaseProvider {
         })),
       ]
 
-      for await (const chunk of (this.client as Fireworks).streamComplete(
+      for await (const evt of (this.client as Fireworks).streamComplete(
         messagesList,
         {
           model: modelParams.modelId,
           temperature: modelParams.temperature,
           top_p: modelParams.topP,
           // max_tokens: modelParams.maxTokens,
+          tools: params.tools
+            ? params.tools.map((t) => ({
+                type: 'function',
+                function: {
+                  name: t.name,
+                  description: t.description,
+                  parameters: t.parameters || { type: 'object', properties: {} },
+                },
+              }))
+            : undefined,
+          tool_choice: params.tools ? (params.tool_choice ?? 'auto') : undefined,
         },
       )) {
-        yield {
-          text: chunk,
-          cost: 0,
+        if ((evt as any).type === 'tool_call') {
+          const tc = evt as { type: 'tool_call'; name: string; arguments: string }
+          yield {
+            tool_calls: [
+              {
+                id: '',
+                type: 'function' as const,
+                function: { name: tc.name, arguments: tc.arguments || '{}' },
+              },
+            ],
+          }
+        } else if ((evt as any).type === 'text') {
+          const t = evt as { type: 'text'; text: string }
+          yield { text: t.text, cost: 0 }
         }
       }
     } catch (error) {

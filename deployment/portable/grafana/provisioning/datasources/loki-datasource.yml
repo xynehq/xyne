@@ -1,0 +1,14 @@
+# API version annd kind of the provisioning resource
+apiVersion: 1
+
+# Array of data sources to insert/update
+datasources:
+  - name: Loki # Name of the data source in Grafana
+    type: loki # Type of the data source
+    access: proxy # Access mode: proxy (Grafana backend handles requests) or direct (browser handles requests)
+    url: http://loki:3100 # URL of the Loki instance. 'loki' is the service name in Docker Compose.
+    jsonData:
+      # Optional: Add any Loki-specific jsonData fields if needed
+      # For example, to set a default query or derived fields
+      maxLines: 1000
+    # isDefault: true # Uncomment if you want this to be the default Loki data source

@@ -44,6 +44,9 @@ abstract class Provider implements LLMProvider {
   ): AsyncIterableIterator<ConverseResponse>
 }
 
+//  format: docIndex_docId_imageNumber
+export const regex = /^([0-9]+)_(.+)_([0-9]+)$/
+
 export function findImageByName(directory: string, imageName: string) {
   const files = fs.readdirSync(directory)
   const match = files.find((file) => path.parse(file).name === imageName)
