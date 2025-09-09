@@ -30,6 +30,7 @@ show_help() {
     echo "  db-generate        Generate new database migrations (run after schema changes)"
     echo "  db-migrate         Apply pending database migrations"
     echo "  db-studio          Open Drizzle Studio for database management"
+    echo "  revert <tag>       Revert app to a specific Docker image tag without rebuilding"
     echo "  help               Show this help message"
     echo ""
     echo "Options:"
@@ -43,6 +44,7 @@ show_help() {
     echo "  $0 logs app        # Show app logs"
     echo "  $0 db-generate     # Generate migrations after schema changes"
     echo "  $0 db-migrate      # Apply pending migrations"
+    echo "  $0 revert v1.2.3   # Revert app to Docker image tag v1.2.3"
 }
 
 detect_gpu_support() {
@@ -340,6 +342,48 @@ db_studio() {
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml run -p 4983:4983 app bun drizzle-kit studio
 }
 
+revert_app() {
+    local target_tag=$1
+    
+    if [ -z "$target_tag" ]; then
+        echo -e "${RED}ERROR: No image tag specified${NC}"
+        echo "Usage: $0 revert <tag>"
+        echo "Example: $0 revert v1.2.3"
+        exit 1
+    fi
+    
+    echo -e "${YELLOW}Reverting application to image tag: $target_tag${NC}"
+    
+    # Check if the image exists locally or can be pulled
+    if ! docker image inspect "xyne:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image xyne:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "xyne:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image xyne:$target_tag${NC}"
+            echo "Available local images:"
+            docker images xyne --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            exit 1
+        fi
+    fi
+    
+    # Tag the target image as 'latest' for docker-compose
+    echo -e "${YELLOW}Tagging xyne:$target_tag as xyne:latest${NC}"
+    docker tag "xyne:$target_tag" "xyne:latest"
+    
+    # Stop and recreate only the app service with the reverted image
+    INFRA_COMPOSE=$(get_infrastructure_compose)
+    echo -e "${YELLOW}Stopping current app service${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml stop app
+    
+    echo -e "${YELLOW}Starting app service with reverted image${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app
+    
+    echo -e "${GREEN}Application successfully reverted to tag: $target_tag${NC}"
+    echo -e "${BLUE}INFO: Database and Vespa services were not affected${NC}"
+    
+    # Show status
+    show_status
+}
+
 # Main script logic
 case $COMMAND in
     start)
@@ -390,6 +434,9 @@ case $COMMAND in
         ;;
     db-studio)
         db_studio
+        ;;
+    revert)
+        revert_app $1
         ;;
     help|--help|-h)
         show_help
