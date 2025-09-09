@@ -474,26 +474,6 @@ function RouteComponent() {
     return () => clearInterval(interval)
   }, [isUploading, uploadingCollectionName, batchProgress.total, showToast])
 
-  // Helper function to sort collections by lastUpdated (most recent first)
-  const sortCollectionsByUpdated = (collections: Collection[]) => {
-    return collections.sort((a, b) => {
-      // Convert lastUpdated strings to Date objects for comparison
-      const dateA = new Date(
-        a.lastUpdated.replace(
-          /(\d{1,2}) (\w{3}) (\d{4}), (\d{1,2}):(\d{2})/,
-          "$2 $1, $3 $4:$5",
-        ),
-      )
-      const dateB = new Date(
-        b.lastUpdated.replace(
-          /(\d{1,2}) (\w{3}) (\d{4}), (\d{1,2}):(\d{2})/,
-          "$2 $1, $3 $4:$5",
-        ),
-      )
-      return dateB.getTime() - dateA.getTime() // Most recent first
-    })
-  }
-
   useEffect(() => {
     const fetchCollections = async () => {
       try {
@@ -543,11 +523,7 @@ function RouteComponent() {
             }
           })
 
-          // Sort collections by lastUpdated before setting state
-          const sortedCollections = sortCollectionsByUpdated(
-            Array.from(collectionsMap.values()),
-          )
-          setCollections(sortedCollections)
+          setCollections(Array.from(collectionsMap.values()))
         } else {
           showToast("Error", "Failed to fetch knowledge bases.", true)
         }
@@ -659,11 +635,7 @@ function RouteComponent() {
         // Add/update new collection
         collectionsMap.set(newCollection.id, newCollection)
 
-        // Sort collections by lastUpdated after creating new collection
-        const sortedCollections = sortCollectionsByUpdated(
-          Array.from(collectionsMap.values()),
-        )
-        return sortedCollections
+        return Array.from(collectionsMap.values())
       })
 
       handleCloseModal()
@@ -801,11 +773,7 @@ function RouteComponent() {
 
         collectionsMap.set(addingToCollection.id, updatedCollection)
 
-        // Sort collections by lastUpdated after adding files
-        const sortedCollections = sortCollectionsByUpdated(
-          Array.from(collectionsMap.values()),
-        )
-        return sortedCollections
+        return Array.from(collectionsMap.values())
       })
 
       showToast(
@@ -946,11 +914,7 @@ function RouteComponent() {
             })
           }
 
-          // Sort collections by lastUpdated after update
-          const sortedCollections = sortCollectionsByUpdated(
-            Array.from(collectionsMap.values()),
-          )
-          return sortedCollections
+          return Array.from(collectionsMap.values())
         })
 
         setEditingCollection(null)
