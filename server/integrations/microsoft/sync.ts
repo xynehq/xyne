@@ -76,6 +76,29 @@ const Logger = getLogger(Subsystem.Integrations).child({
   module: "microsoft-sync",
 })
 
+// Validate Microsoft client credentials at module load time
+const validateMicrosoftCredentials = () => {
+  const clientId = process.env.MICROSOFT_CLIENT_ID
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET
+
+  if (!clientId) {
+    throw new Error(
+      "MICROSOFT_CLIENT_ID environment variable is required but not set",
+    )
+  }
+
+  if (!clientSecret) {
+    throw new Error(
+      "MICROSOFT_CLIENT_SECRET environment variable is required but not set",
+    )
+  }
+
+  return { clientId, clientSecret }
+}
+
+const { clientId: MICROSOFT_CLIENT_ID, clientSecret: MICROSOFT_CLIENT_SECRET } =
+  validateMicrosoftCredentials()
+
 // Microsoft-specific change token types
 type MicrosoftDriveChangeToken = {
   type: "microsoftDriveDeltaToken"
@@ -1167,8 +1190,8 @@ export const handleMicrosoftOAuthChanges = async (
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
         oauthTokens.refresh_token,
-        process.env.MICROSOFT_CLIENT_ID!,
-        process.env.MICROSOFT_CLIENT_SECRET!,
+        MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET,
       )
 
       let config: MicrosoftDriveChangeToken =
@@ -1310,8 +1333,8 @@ export const handleMicrosoftOAuthChanges = async (
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
         oauthTokens.refresh_token,
-        process.env.MICROSOFT_CLIENT_ID!,
-        process.env.MICROSOFT_CLIENT_SECRET!,
+        MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET,
       )
 
       let {
@@ -1416,8 +1439,8 @@ export const handleMicrosoftOAuthChanges = async (
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
         oauthTokens.refresh_token,
-        process.env.MICROSOFT_CLIENT_ID!,
-        process.env.MICROSOFT_CLIENT_SECRET!,
+        MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET,
       )
 
       let {
