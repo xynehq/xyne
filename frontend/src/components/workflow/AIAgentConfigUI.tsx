@@ -292,7 +292,6 @@ Always strive for accuracy and helpfulness in your responses.`
             />
           </div>
 
-
           {/* Choose Model */}
           <div className="space-y-2">
             <Label className="text-sm font-medium text-slate-700">
@@ -327,7 +326,6 @@ Always strive for accuracy and helpfulness in your responses.`
               )}
             </div>
           </div>
-
 
           {/* System Prompt */}
           <div className="space-y-2">
@@ -462,10 +460,10 @@ Always strive for accuracy and helpfulness in your responses.`
               className="w-full min-h-[80px] resize-none"
             />
             <p className="text-xs text-slate-500">
-              Specify the path to extract content from previous steps (e.g., "latest", "step_name", "step_1.output").
+              Specify the path to extract content from previous steps (e.g.,
+              "latest", "step_name", "step_1.output").
             </p>
           </div>
-
         </div>
       </div>
 
