@@ -952,6 +952,163 @@ const StepNode: React.FC<NodeProps> = ({
     )
   }
 
+  // Special rendering for python_script tools
+  const hasPythonScriptTool =
+    tools && tools.length > 0 && tools[0].type === "python_script"
+  if (step.type === "python_script" || hasPythonScriptTool) {
+    // Check if any associated tool execution has failed
+    const hasFailedToolExecution =
+      tools && tools.some((tool) => (tool as any).status === "failed")
+    const isFailed = step.status === "failed" || hasFailedToolExecution
+
+    return (
+      <>
+        <div
+          className="relative cursor-pointer hover:shadow-lg transition-shadow"
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            border: isFailed
+              ? "2px solid #EF4444"
+              : isCompleted
+                ? "2px solid #10B981"
+                : "2px solid #181B1D",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+            boxShadow: isFailed
+              ? "0 0 0 2px #FECACA"
+              : isCompleted
+                ? "0 0 0 2px #BBF7D0"
+                : "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Bot icon with background */}
+            <div
+              className="flex justify-center items-center flex-shrink-0"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+                background: "#EBF4FF",
+              }}
+            >
+              <img src={botLogo} alt="Bot" width={16} height={16} />
+            </div>
+
+            <h3
+              className="text-gray-800 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+                color: "#3B4145",
+              }}
+            >
+              {tools?.[0]?.name ||
+                tools?.[0]?.value?.name ||
+                step.name ||
+                "Python Script"}
+              {/* Show execution status indicator */}
+              {(step as any).isExecution && isActive && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  Running
+                </span>
+              )}
+              {(step as any).isExecution &&
+                isFailed &&
+                step.status !== "failed" && (
+                  <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                    Tool Failed
+                  </span>
+                )}
+            </h3>
+          </div>
+
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 mb-3"></div>
+
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {tools?.[0]?.description ||
+                tools?.[0]?.value?.description ||
+                step.description ||
+                "Execute Python script to process data and generate results."}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
+          </div>
+
+          {/* Add Next Step Button */}
+          {hasNext && (
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                console.log("Plus button clicked for node:", id)
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
+              }}
+            >
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                style={{
+                  width: "28px",
+                  height: "28px",
+                }}
+              >
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
   // For executions, create a generic template-style node if no specific type matched
   const isExecution = (step as any).isExecution
   if (isExecution) {
@@ -1244,7 +1401,7 @@ const ExecutionResultModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] mx-4 relative overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] mx-4 relative overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
@@ -1268,13 +1425,56 @@ const ExecutionResultModal = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
           <div className="bg-gray-50 p-4 rounded-lg border">
-            <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
-              {typeof result === "object"
-                ? JSON.stringify(result, null, 2)
-                : String(result)}
-            </pre>
+            {(() => {
+              const resultString =
+                typeof result === "object"
+                  ? JSON.stringify(result, null, 2)
+                  : String(result)
+
+              // Check if the content is HTML (starts with <!DOCTYPE html> or <html>)
+              const isHTML =
+                resultString.includes("<!DOCTYPE html>") ||
+                resultString.includes("<html>") ||
+                (resultString.includes("<body>") &&
+                  resultString.includes("</body>"))
+
+              if (isHTML) {
+                return (
+                  <div className="w-full">
+                    <div className="mb-3 text-sm text-gray-600 font-medium">
+                      Email HTML Preview:
+                    </div>
+                    <div
+                      className="border border-gray-300 rounded bg-white"
+                      style={{ minHeight: "400px" }}
+                    >
+                      <iframe
+                        srcDoc={resultString}
+                        className="w-full h-[500px] border-0 rounded"
+                        title="Email HTML Preview"
+                        sandbox="allow-same-origin"
+                      />
+                    </div>
+                    <details className="mt-4">
+                      <summary className="text-sm text-gray-600 cursor-pointer hover:text-gray-800">
+                        View HTML Source
+                      </summary>
+                      <pre className="whitespace-pre-wrap text-xs text-gray-700 font-mono leading-relaxed mt-2 p-3 bg-gray-100 rounded border max-h-60 overflow-y-auto">
+                        {resultString}
+                      </pre>
+                    </details>
+                  </div>
+                )
+              } else {
+                return (
+                  <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
+                    {resultString}
+                  </pre>
+                )
+              }
+            })()}
           </div>
         </div>
 
@@ -2286,22 +2486,107 @@ const ExecutionSidebar = ({
                           <h4 className="text-xs font-semibold text-gray-600">
                             Result
                           </h4>
-                          <button
-                            onClick={() => onResultClick?.(tool.result)}
-                            className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
-                          >
-                            View Full
-                          </button>
+                          {(() => {
+                            // Check if this is a successful email tool execution
+                            const isEmailTool = tool.type === "email"
+                            const isSuccess =
+                              step.status === "completed" &&
+                              tool.status === "completed"
+                            const hasEmailBody =
+                              tool.result?.python_script_output?.body
+
+                            if (isEmailTool && isSuccess && hasEmailBody) {
+                              return (
+                                <button
+                                  onClick={() =>
+                                    onResultClick?.(
+                                      tool.result.python_script_output.body,
+                                    )
+                                  }
+                                  className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                                >
+                                  View Body
+                                </button>
+                              )
+                            } else {
+                              return (
+                                <button
+                                  onClick={() => onResultClick?.(tool.result)}
+                                  className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                                >
+                                  View Full
+                                </button>
+                              )
+                            }
+                          })()}
                         </div>
                         <div
                           className="text-xs text-gray-900 bg-gray-100 p-3 rounded max-h-32 overflow-y-auto border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors"
-                          onClick={() => onResultClick?.(tool.result)}
+                          onClick={() => {
+                            // Check if this is a successful email tool execution
+                            const isEmailTool = tool.type === "email"
+                            const isSuccess =
+                              step.status === "completed" &&
+                              tool.status === "completed"
+
+                            if (isEmailTool && isSuccess) {
+                              const hasEmailBody =
+                                tool.result?.python_script_output?.body
+                              if (hasEmailBody) {
+                                onResultClick?.(
+                                  tool.result.python_script_output.body,
+                                )
+                              } else {
+                                onResultClick?.(tool.result)
+                              }
+                            } else {
+                              onResultClick?.(tool.result)
+                            }
+                          }}
                         >
-                          <pre className="whitespace-pre-wrap">
-                            {typeof tool.result === "object"
-                              ? JSON.stringify(tool.result, null, 2)
-                              : String(tool.result)}
-                          </pre>
+                          {(() => {
+                            const isEmailTool = tool.type === "email"
+                            const isSuccess =
+                              step.status === "completed" &&
+                              tool.status === "completed"
+                            const isFailed =
+                              step.status === "failed" ||
+                              tool.status === "failed"
+
+                            // Handle failed executions for any tool type
+                            if (isFailed) {
+                              // Extract error message from multiple possible paths
+                              const error =
+                                tool.result?.error ||
+                                tool.result?.message ||
+                                tool.result?.python_script_output?.error ||
+                                tool.result?.stderr ||
+                                tool.result?.exception ||
+                                `${tool.type} execution failed`
+                              return <div className="text-red-700">{error}</div>
+                            }
+
+                            // Handle successful email tools specifically
+                            if (isEmailTool && isSuccess) {
+                              const message = tool.result?.message
+                              if (message) {
+                                return (
+                                  <div className="text-green-700">
+                                    {message}
+                                  </div>
+                                )
+                              }
+                            }
+
+                            // Default behavior - show full result
+                            return (
+                              <pre className="whitespace-pre-wrap">
+                                {typeof tool.result === "object"
+                                  ? JSON.stringify(tool.result, null, 2)
+                                  : String(tool.result)}
+                              </pre>
+                            )
+                          })()}
                         </div>
                       </div>
                     )}
