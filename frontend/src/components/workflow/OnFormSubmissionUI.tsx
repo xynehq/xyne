@@ -134,7 +134,9 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
             validation: "strict",
           },
           stepName: formConfig.title || "Form Submission",
-          stepDescription: formConfig.description || "Upload a file in formats such as PDF, DOCX, or JPG.",
+          stepDescription:
+            formConfig.description ||
+            "Upload a file in formats such as PDF, DOCX, or JPG.",
         }
 
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
@@ -475,7 +477,8 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                           )}
 
                           {/* Uploaded Files Display - Commented out when type is 'file' */}
-                          {false && uploadedFiles[field.id] &&
+                          {false &&
+                            uploadedFiles[field.id] &&
                             uploadedFiles[field.id].length > 0 && (
                               <div className="space-y-2">
                                 <Label className="text-sm font-medium text-slate-700">

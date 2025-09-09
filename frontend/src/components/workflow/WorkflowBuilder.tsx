@@ -304,7 +304,11 @@ const StepNode: React.FC<NodeProps> = ({
                 color: "#3B4145",
               }}
             >
-              {tools?.[0]?.name || tools?.[0]?.value?.name || step.name || aiConfig?.name || "AI Agent"}
+              {tools?.[0]?.name ||
+                tools?.[0]?.value?.name ||
+                step.name ||
+                aiConfig?.name ||
+                "AI Agent"}
             </h3>
           </div>
 
@@ -314,7 +318,9 @@ const StepNode: React.FC<NodeProps> = ({
           {/* Description text */}
           <div className="px-4 pb-4">
             <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {tools?.[0]?.description || tools?.[0]?.value?.description || step.description ||
+              {tools?.[0]?.description ||
+                tools?.[0]?.value?.description ||
+                step.description ||
                 aiConfig?.description ||
                 `AI agent to analyze and summarize documents using ${aiConfig?.aiModel || "gemini-1.5-pro"}.`}
             </p>
@@ -543,7 +549,10 @@ const StepNode: React.FC<NodeProps> = ({
                 color: "#3B4145",
               }}
             >
-              {tools?.[0]?.name || tools?.[0]?.value?.name || step.name || "Email"}
+              {tools?.[0]?.name ||
+                tools?.[0]?.value?.name ||
+                step.name ||
+                "Email"}
             </h3>
           </div>
 
@@ -553,7 +562,9 @@ const StepNode: React.FC<NodeProps> = ({
           {/* Description text */}
           <div className="px-4 pb-4">
             <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {tools?.[0]?.description || tools?.[0]?.value?.description || step.description ||
+              {tools?.[0]?.description ||
+                tools?.[0]?.value?.description ||
+                step.description ||
                 (emailAddresses && emailAddresses.length > 0
                   ? `Send emails to ${emailAddresses.join(", ")} via automated workflow.`
                   : "Send automated email notifications to specified recipients.")}
@@ -670,7 +681,9 @@ const StepNode: React.FC<NodeProps> = ({
                 color: "#3B4145",
               }}
             >
-              {tools?.[0]?.name || tools?.[0]?.value?.name || step.name ||
+              {tools?.[0]?.name ||
+                tools?.[0]?.value?.name ||
+                step.name ||
                 (step as any).config?.title ||
                 (hasFormTool && tools?.[0]?.value?.title) ||
                 "Form Submission"}
@@ -686,9 +699,11 @@ const StepNode: React.FC<NodeProps> = ({
               {(() => {
                 // Prioritize tool description first
                 if (tools?.[0]?.description || tools?.[0]?.value?.description) {
-                  return tools?.[0]?.description || tools?.[0]?.value?.description
+                  return (
+                    tools?.[0]?.description || tools?.[0]?.value?.description
+                  )
                 }
-                
+
                 // If step has description, use it next
                 if (step.description) {
                   return step.description
@@ -2451,21 +2466,24 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                         description: formattedDescription,
                       },
                     },
-                    tools: node.data.tools?.map((tool, index) => 
-                      index === 0 
-                        ? {
-                            ...tool,
-                            name: agentConfig.name,
-                            description: agentConfig.description,
-                            value: {
-                              ...tool.value,
+                    tools:
+                      node.data.tools?.map((tool, index) =>
+                        index === 0
+                          ? {
+                              ...tool,
                               name: agentConfig.name,
                               description: agentConfig.description,
+                              value: {
+                                ...tool.value,
+                                name: agentConfig.name,
+                                description: agentConfig.description,
+                              },
                             }
-                          }
-                        : tool
-                    ) || [],
-                    hasNext: !edges.some(edge => edge.source === selectedAgentNodeId), // Only show + if no outgoing edges
+                          : tool,
+                      ) || [],
+                    hasNext: !edges.some(
+                      (edge) => edge.source === selectedAgentNodeId,
+                    ), // Only show + if no outgoing edges
                   },
                 }
               : node,
@@ -2524,25 +2542,30 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                         emailAddresses: emailConfig.emailAddresses,
                       },
                     },
-                    tools: node.data.tools?.map((tool, index) => 
-                      index === 0 
-                        ? {
-                            ...tool,
-                            name: "Email",
-                            description: emailConfig.emailAddresses.length > 0 
-                              ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
-                              : "Send automated email notifications to specified recipients.",
-                            value: {
-                              ...tool.value,
+                    tools:
+                      node.data.tools?.map((tool, index) =>
+                        index === 0
+                          ? {
+                              ...tool,
                               name: "Email",
-                              description: emailConfig.emailAddresses.length > 0 
-                                ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
-                                : "Send automated email notifications to specified recipients.",
+                              description:
+                                emailConfig.emailAddresses.length > 0
+                                  ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
+                                  : "Send automated email notifications to specified recipients.",
+                              value: {
+                                ...tool.value,
+                                name: "Email",
+                                description:
+                                  emailConfig.emailAddresses.length > 0
+                                    ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
+                                    : "Send automated email notifications to specified recipients.",
+                              },
                             }
-                          }
-                        : tool
-                    ) || [],
-                    hasNext: !edges.some(edge => edge.source === selectedEmailNodeId), // Only show + if no outgoing edges
+                          : tool,
+                      ) || [],
+                    hasNext: !edges.some(
+                      (edge) => edge.source === selectedEmailNodeId,
+                    ), // Only show + if no outgoing edges
                   },
                 }
               : node,
@@ -2584,21 +2607,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       name: formConfig.title || "Form Submission",
                       config: formConfig,
                     },
-                    tools: node.data.tools?.map((tool, index) => 
-                      index === 0 
-                        ? {
-                            ...tool,
-                            name: formConfig.title || "Form Submission",
-                            description: formConfig.description || "Upload a file in formats such as PDF, DOCX, or JPG.",
-                            value: {
-                              ...tool.value,
+                    tools:
+                      node.data.tools?.map((tool, index) =>
+                        index === 0
+                          ? {
+                              ...tool,
                               name: formConfig.title || "Form Submission",
-                              description: formConfig.description || "Upload a file in formats such as PDF, DOCX, or JPG.",
+                              description:
+                                formConfig.description ||
+                                "Upload a file in formats such as PDF, DOCX, or JPG.",
+                              value: {
+                                ...tool.value,
+                                name: formConfig.title || "Form Submission",
+                                description:
+                                  formConfig.description ||
+                                  "Upload a file in formats such as PDF, DOCX, or JPG.",
+                              },
                             }
-                          }
-                        : tool
-                    ) || [],
-                    hasNext: !edges.some(edge => edge.source === selectedFormNodeId), // Only show + if no outgoing edges
+                          : tool,
+                      ) || [],
+                    hasNext: !edges.some(
+                      (edge) => edge.source === selectedFormNodeId,
+                    ), // Only show + if no outgoing edges
                   },
                 }
               : node,
