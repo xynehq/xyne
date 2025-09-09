@@ -9,11 +9,11 @@ import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
 import type { Message, ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import { Subsystem, MessageRole } from "@/types"
-// import { ragPipelineConfig, RagPipelineStages } from "../chat/types"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
-import { type AttachmentMetadata } from "@/shared/types"
-import { storeAttachmentMetadata } from "@/db/attachment"
-
+import { GetDocumentsByDocIds } from "@/search/vespa" // Retrieve non-image attachments from Vespa
+import { answerContextMap, cleanContext } from "@/ai/context"  // Transform Vespa results to text
+import { VespaSearchResultsSchema } from "@/search/types"  // Type for Vespa results
+import { getTracer, type Span } from "@/tracer"
 const Logger = getLogger(Subsystem.Server)
 
 export const executeAgentSchema = z.object({
@@ -24,7 +24,8 @@ export const executeAgentSchema = z.object({
   isStreamable: z.boolean().optional().default(false),
   temperature: z.number().min(0).max(2).optional(),
   max_new_tokens: z.number().positive().optional(),
-  attachmentMetadata: z.array(z.any()).optional(),
+  attachmentFileIds: z.array(z.string()).optional().default([]),        // For images: ["att_123", "att_456"]
+  nonImageAttachmentFileIds: z.array(z.string()).optional().default([]), // For PDFs: ["att_789"]
 })
 
 export type ExecuteAgentParams = z.infer<typeof executeAgentSchema>
@@ -141,7 +142,7 @@ async function* createStreamingWithDBSave(
  * This function provides a simplified subset of AgentMessageApi functionality:
  * 1. Generate chat title and insert in DB
  * 2. Fetch agent details from agent table (includes model)
- * 3. Process attachments (images vs non-images)
+ * 3. Process attachments (images and documents)
  * 4. Call LLM directly with agent prompt + user query + attachments
  * 5. Return response (no reasoning loop, no RAG, no tools)
  */
@@ -149,27 +150,28 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
   try {
     // Validate parameters
     const validatedParams = executeAgentSchema.parse(params)
-
+    const tracer = getTracer("executeAgent")
+    const executeAgentSpan = tracer.startSpan('executeAgent')
     const {
       agentId,
       userQuery,
-      isStreamable = false,
+      isStreamable = true,
       temperature,
       max_new_tokens,
       workspaceId,
       userEmail,
-      attachmentMetadata,
+      attachmentFileIds = [],
+      nonImageAttachmentFileIds = [],
     } = validatedParams
 
-    // Process attachments if provided
-    const attachmentFileIds = attachmentMetadata?.map((m: AttachmentMetadata) => m.fileId) || []
-    const imageAttachmentFileIds = attachmentMetadata?.filter((m: AttachmentMetadata) => m.isImage).map((m: AttachmentMetadata) => m.fileId) || []
-    const nonImageAttachmentFileIds = attachmentMetadata?.filter((m: AttachmentMetadata) => !m.isImage).map((m: AttachmentMetadata) => m.fileId) || []
-
-    Logger.info(`Executing agent ${agentId} for user ${userEmail}`)
-    Logger.info(
-      `Total attachment files received: ${attachmentFileIds.length} (${imageAttachmentFileIds.length} images, ${nonImageAttachmentFileIds.length} non-images)`
-    )
+    Logger.info(`🚀 executeAgent called with parameters:`)
+    Logger.info(`   - agentId: ${agentId}`)
+    Logger.info(`   - userEmail: ${userEmail}`)
+    Logger.info(`   - workspaceId: ${workspaceId}`)
+    Logger.info(`   - userQuery length: ${userQuery.length}`)
+    Logger.info(`   - isStreamable: ${isStreamable}`)
+    Logger.info(`   - attachmentFileIds: ${JSON.stringify(attachmentFileIds)}`)
+    Logger.info(`   - nonImageAttachmentFileIds: ${JSON.stringify(nonImageAttachmentFileIds)}`)
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -198,6 +200,95 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
 
     Logger.info(`Found agent: ${agent.name} with model: ${agent.model}`)
 
+    // ========================================
+    // ATTACHMENT PROCESSING SECTION
+    // ========================================
+
+    let contextualContent = ""
+    let finalImageFileNames: string[] = []
+
+    Logger.info("🔍 Starting attachment processing...")
+    Logger.info(`📎 Non-image attachments: ${JSON.stringify(nonImageAttachmentFileIds)}`)
+    Logger.info(`🖼️ Image attachments: ${JSON.stringify(attachmentFileIds)}`)
+
+    // Step 1: Handle Non-Image Attachments (PDFs, DOCX, etc.)
+    if (nonImageAttachmentFileIds.length > 0) {
+      Logger.info(`📄 Processing ${nonImageAttachmentFileIds.length} non-image attachments`)
+
+      try {
+        // Retrieve document content from Vespa (same as chat.ts:1974-1979)
+        Logger.info(`🔍 Calling GetDocumentsByDocIds with IDs: ${JSON.stringify(nonImageAttachmentFileIds)}`)
+        // Note: Passing null for span since we don't have tracing in executeAgent
+        const results = await GetDocumentsByDocIds(nonImageAttachmentFileIds, executeAgentSpan!)
+        // End the child span
+        executeAgentSpan?.end()
+        Logger.info(`📊 GetDocumentsByDocIds returned:`, {
+          hasRoot: !!results.root,
+          hasChildren: !!(results.root?.children),
+          childrenCount: results.root?.children?.length || 0,
+        })
+
+        if (results.root.children && results.root.children.length > 0) {
+          Logger.info(`📚 Found ${results.root.children.length} documents, transforming to readable context...`)
+
+          // Transform Vespa results to readable context (same as chat.ts:2054-2120)
+          const contextPromises = results.root.children.map(async (v, i) => {
+            Logger.info(`📖 Processing document ${i} with ID: ${v.id}`)
+
+            const content = await answerContextMap(
+              v as z.infer<typeof VespaSearchResultsSchema>,
+              0,    // maxSummaryChunks (0 = include all chunks)
+              true, // isSelectedFiles
+            )
+
+            Logger.info(`📝 Document ${i} processed, content length: ${content.length} characters`)
+            return `Index ${i} \n ${content}`
+          })
+
+          const resolvedContexts = await Promise.all(contextPromises)
+          contextualContent = cleanContext(resolvedContexts.join("\n"))
+
+          Logger.info(`✅ Context building completed!`)
+          Logger.info(`📏 Total context length: ${contextualContent.length} characters`)
+          Logger.info(`📄 Context preview (first 200 chars): ${contextualContent.substring(0, 200)}...`)
+
+        } else {
+          Logger.warn("⚠️ No documents found in Vespa results")
+        }
+
+      } catch (error) {
+        Logger.error(error, "❌ Error processing non-image attachments")
+        // Continue execution even if attachment processing fails
+      }
+    } else {
+      Logger.info("📄 No non-image attachments to process")
+    }
+
+    // Step 2: Handle Image Attachments 
+    if (attachmentFileIds.length > 0) {
+      Logger.info(`🖼️ Processing ${attachmentFileIds.length} image attachments`)
+
+      // Transform attachment IDs to image file names (same as chat.ts:2127-2131)
+      finalImageFileNames = attachmentFileIds.map((fileid, index) => {
+        const imageName = `${index}_${fileid}_${0}`  // Format: "0_att_123_0"
+        Logger.info(`🏷️ Transformed attachment ID "${fileid}" → image name "${imageName}"`)
+        return imageName
+      })
+
+      Logger.info(`🖼️ Final image file names: ${JSON.stringify(finalImageFileNames)}`)
+    } else {
+      Logger.info("🖼️ No image attachments to process")
+    }
+
+    Logger.info("✅ Attachment processing completed!")
+    Logger.info(`📊 Summary:`)
+    Logger.info(`   - Context length: ${contextualContent.length} characters`)
+    Logger.info(`   - Image files: ${finalImageFileNames.length}`)
+
+    // ========================================
+    // END ATTACHMENT PROCESSING SECTION
+    // ========================================
+
     Logger.info("Generating chat title...")
 
     const titleResp = await generateTitleUsingQuery(userQuery, {
@@ -207,33 +298,56 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
     const title = titleResp.title
     Logger.info(`Generated title: ${title}`)
 
-    // Enhanced system prompt with attachment awareness
-    const systemPrompt = agent.prompt || "You are a helpful assistant."
-    const attachmentAwarePrompt = imageAttachmentFileIds.length > 0
-      ? `${systemPrompt}\n\nNote: The user has attached ${imageAttachmentFileIds.length} image(s) that you can reference and analyze in your response.`
-      : systemPrompt
+    Logger.info("🔧 Building model parameters...")
 
     const modelParams = {
       modelId: agent.model as Models,
       stream: isStreamable,
       json: false,
       reasoning: false,
-      systemPrompt: attachmentAwarePrompt,
-      ...(imageAttachmentFileIds.length > 0 ? {
-        imageFileNames: imageAttachmentFileIds.map(
-          (fileId, index) => `${index}_${fileId}_${0}`,
-        )
-      } : {}),
+      systemPrompt: agent.prompt || "You are a helpful assistant.",
+
+      // ADD IMAGE SUPPORT:
+      ...(finalImageFileNames.length > 0 ? { imageFileNames: finalImageFileNames } : {}),
+
       ...(temperature !== undefined ? { temperature } : {}),
       ...(max_new_tokens !== undefined ? { max_new_tokens } : {}),
     }
 
+    Logger.info("🔧 Model parameters built:", {
+      modelId: modelParams.modelId,
+      hasImages: !!(modelParams as any).imageFileNames,
+      imageCount: ((modelParams as any).imageFileNames || []).length,
+      systemPromptLength: modelParams.systemPrompt.length,
+      hasTemperature: temperature !== undefined,
+      hasMaxTokens: max_new_tokens !== undefined,
+    })
+
+    Logger.info("💬 Constructing LLM messages...")
+
+    // UPDATE MESSAGE CONSTRUCTION TO INCLUDE CONTEXT:
+    const userContent = contextualContent
+      ? `Context from attached documents:\n${contextualContent}\n\nUser Query: ${userQuery}`  // Include document context
+      : userQuery  // No context, just user query
+
+    Logger.info("💬 Message construction details:", {
+      hasContext: !!contextualContent,
+      contextLength: contextualContent.length,
+      userQueryLength: userQuery.length,
+      finalContentLength: userContent.length,
+    })
+
+    Logger.info("💬 Final user content preview (first 300 chars):")
+    Logger.info(userContent.substring(0, 300) + (userContent.length > 300 ? "..." : ""))
+
     const messages: Message[] = [
       {
         role: "user" as ConversationRole,
-        content: [{ text: userQuery }],
+        content: [{ text: userContent }],  // User query + document context
       }
     ]
+
+    Logger.info("💬 Messages array constructed with 1 user message")
 
     Logger.info(`Calling LLM with model ${agent.model}...`)
 
@@ -247,8 +361,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
       agentId: agent.externalId,
     })
 
-    // Insert user message with attachment file IDs
-    const insertedUserMessage = await insertMessage(db, {
+    await insertMessage(db, {
       chatId: insertedChat.id,
       userId: user.id,
       chatExternalId: insertedChat.externalId,
@@ -258,32 +371,26 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
       sources: [],
       message: userQuery,
       modelId: agent.model,
-      fileIds: nonImageAttachmentFileIds, // Only non-image files for text-based retrieval
     })
-
-    // Store attachment metadata if provided
-    if (attachmentMetadata && attachmentMetadata.length > 0) {
-      try {
-        await storeAttachmentMetadata(db, insertedUserMessage.externalId, attachmentMetadata, userEmail)
-        Logger.info(`Stored attachment metadata for ${attachmentMetadata.length} files`)
-      } catch (error) {
-        Logger.error(error, `Failed to store attachment metadata for user message ${insertedUserMessage.externalId}`)
-        // Don't fail the request, just log the error
-      }
-    }
 
     // Step 6: Call LLM and return based on streaming preference
     if (isStreamable) {
-      Logger.info("Agent execution started (streaming............)")
+      Logger.info("🌊 Agent execution started (streaming mode)")
+      Logger.info("🌊 About to call LLM with attachments:", {
+        hasImages: finalImageFileNames.length > 0,
+        imageFiles: finalImageFileNames,
+        hasContext: contextualContent.length > 0,
+        contextLength: contextualContent.length,
+      })
 
       // Add provider debugging
       const provider = getProviderByModel(agent.model as Models)
-      Logger.info(`Provider for model ${agent.model}:`, typeof provider)
+      Logger.info(`🤖 Provider for model ${agent.model}:`, typeof provider)
 
       try {
-        Logger.info("Creating original iterator...")
+        Logger.info("🔄 Creating original iterator...")
         const originalIterator = provider.converseStream(messages, modelParams)
-        Logger.info("Original iterator created, starting wrapper...")
+        Logger.info("🔄 Original iterator created, starting wrapper...")
 
         const wrappedIterator = createStreamingWithDBSave(originalIterator, {
           chatId: insertedChat.id,
@@ -294,7 +401,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
           modelId: agent.model,
         })
 
-        Logger.info("Wrapper created successfully")
+        Logger.info("✅ Wrapper created successfully")
 
         return {
           success: true,
@@ -306,15 +413,30 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
           modelId: agent.model,
         }
       } catch (providerError) {
-        Logger.error(providerError, "Error creating streaming iterator")
+        Logger.error(providerError, "❌ Error creating streaming iterator")
         throw providerError
       }
-    } else {
+    } else { 
+      Logger.info("💫 Agent execution started (non-streaming mode)")
+      Logger.info("💫 About to call LLM with attachments:", {
+        hasImages: finalImageFileNames.length > 0,
+        imageFiles: finalImageFileNames,
+        hasContext: contextualContent.length > 0,
+        contextLength: contextualContent.length,
+      })
+
       // Get non-streaming response
       const response = await getProviderByModel(agent.model as Models).converse(
         messages,
         modelParams
       )
+
+      Logger.info("💫 LLM response received:", {
+        hasText: !!response.text,
+        textLength: response.text?.length || 0,
+        hasCost: !!response.cost,
+        cost: response.cost,
+      })
 
       if (!response.text) {
         return {
@@ -336,7 +458,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         cost: response.cost?.toString(),
       })
 
-      Logger.info("Agent execution completed successfully (non-streaming)")
+      Logger.info("✅ Agent execution completed successfully (non-streaming)")
 
       return {
         success: true,
@@ -350,6 +472,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
     }
 
   } catch (error) {
+    
     Logger.error(error, "Error in executeAgent")
 
     if (error instanceof z.ZodError) {

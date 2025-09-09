@@ -1,6 +1,7 @@
-  import { executeAgent } from "../api/agent/executeAgent"
+import { executeAgent } from "../api/agent/executeAgent"
   import { getLogger } from "@/logger"
   import { Subsystem } from "@/types"
+
   const Logger = getLogger(Subsystem.AI)
 
   async function testExecuteAgent() {
@@ -10,11 +11,14 @@
       console.log('🚀 Invoking executeAgent with test parameters...')
       const result = await executeAgent({
         agentId: "zk3i1cycov8i5arrhk5u7y20",
-        userQuery: "Hello! Can you tell me a joke?",
+        userQuery: "Can you summarize the attached resume?",
         workspaceId: "uxwyx18h74vdch0j8ir46aka",
         userEmail: "aman.asrani@juspay.in",
         isStreamable: false,
-        temperature: 0.7
+        temperature: 0.7,
+        // ✅ UPDATED WITH FRESH ATTACHMENT ID:
+        attachmentFileIds: [], // Empty array for images
+        nonImageAttachmentFileIds: ["att_a9b4896e-044a-4391-82d7-2befd06a40e7"], // Fresh Anant's resume
       })
       console.log('🚀 Ending executeAgent with test parameters...')
 
@@ -81,5 +85,90 @@
     }
   }
 
+  // Test with image attachment (when you have an image attachment ID)
+  async function testExecuteAgentWithImageAttachment() {
+    console.log('🧪 Testing executeAgent with image attachment...')
+
+    const result = await executeAgent({
+      agentId: "zk3i1cycov8i5arrhk5u7y20",
+      userQuery: "What does this image show?",
+      workspaceId: "uxwyx18h74vdch0j8ir46aka",
+      userEmail: "aman.asrani@juspay.in",
+      isStreamable: false,
+      temperature: 0.7,
+      attachmentFileIds: ["att_a9b4896e-044a-4391-82d7-2befd06a40e7"], // This resume has 1 embedded image!
+      nonImageAttachmentFileIds: [], // Empty array for documents
+    })
+
+    console.log('🖼️ Image test result:', result.success ? 'SUCCESS' : result.error)
+    if (result.success && result.type === 'non-streaming') {
+      console.log('🖼️ Image response:', result.response.text)
+    }
+  }
+
+  // Test with both PDF content and embedded image
+  async function testExecuteAgentWithMixedAttachments() {
+    console.log('🧪 Testing executeAgent with PDF text + embedded image...')
+
+    const result = await executeAgent({
+      agentId: "zk3i1cycov8i5arrhk5u7y20",
+      userQuery: "Analyze the resume content and describe any images or visual elements you see",
+      workspaceId: "uxwyx18h74vdch0j8ir46aka",
+      userEmail: "aman.asrani@juspay.in",
+      isStreamable: false,
+      temperature: 0.7,
+      // ✨ INTERESTING: This resume has BOTH text content AND embedded images!
+      attachmentFileIds: ["att_a9b4896e-044a-4391-82d7-2befd06a40e7"], // Images extracted from PDF
+      nonImageAttachmentFileIds: ["att_a9b4896e-044a-4391-82d7-2befd06a40e7"], // Text content from PDF
+    })
+
+    console.log('🔀 Mixed test result:', result.success ? 'SUCCESS' : result.error)
+    if (result.success && result.type === 'non-streaming') {
+      console.log('🔀 Mixed response:', result.response.text?.substring(0, 200) + '...')
+    }
+  }
+
+  async function testExecuteAgentWithoutAttachments() {
+    console.log('🧪 Testing executeAgent without attachments...')
+
+    const result = await executeAgent({
+      agentId: "zk3i1cycov8i5arrhk5u7y20",
+      userQuery: "Hello! Can you tell me a joke?",
+      workspaceId: "uxwyx18h74vdch0j8ir46aka",
+      userEmail: "aman.asrani@juspay.in",
+      isStreamable: false,
+      temperature: 0.7,
+      attachmentFileIds: [], // Empty arrays
+      nonImageAttachmentFileIds: [],
+    })
+
+    console.log('🗣️ No attachments test result:', result.success ? 'SUCCESS' : result.error)
+    if (result.success && result.type === 'non-streaming') {
+      console.log('🗣️ Joke response:', result.response.text)
+    }
+  }
+
+  // Run the tests
+  async function runAllTests() {
+    console.log('🧪🧪🧪 Running all executeAgent tests...\n')
+
+    // Test 1: PDF content analysis  
+    await testExecuteAgent()
+    console.log('\n' + '='.repeat(50) + '\n')
+
+    // // Test 2: Image analysis (PDF has embedded images!)
+    // await testExecuteAgentWithImageAttachment()
+    // console.log('\n' + '='.repeat(50) + '\n')
+
+    // // Test 3: Both text and images from same PDF
+    // await testExecuteAgentWithMixedAttachments()
+    // console.log('\n' + '='.repeat(50) + '\n')
+
+    // Test 4: No attachments baseline
+    await testExecuteAgentWithoutAttachments()
+
+    console.log('\n🎉 All tests completed!')
+  }
+
   // Run the test
-  testExecuteAgent()
+  runAllTests()
