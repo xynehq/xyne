@@ -2385,7 +2385,7 @@ Name: ${agentPrompt.name}
 Description: ${agentPrompt.description}  
 Prompt: ${agentPrompt.prompt}  
 
-Important: Whenever you perform a web search, ensure your approach and interpretation align with the agent's specific guidelines above.
+Important: Whenever you perform a web search, ensure your approach and interpretation strictly follow the agent's specific guidelines. If the user's query falls outside the scope of the agent's domain, politely inform them of the limitation and redirect them toward relevant topics the agent can assist with.
 `
     : ""
 }
