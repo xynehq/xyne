@@ -1832,10 +1832,7 @@ export const webSearchQuestion = (
     if (!params.systemPrompt) {
       if (!isAgentPromptEmpty(params.agentPrompt)) {
         const parsed = parseAgentPrompt(params.agentPrompt)
-        params.systemPrompt =
-          webSearchSystemPrompt(userCtx) +
-          "\n\n" +
-          `Name: ${parsed.name}\nDescription: ${parsed.description}\nPrompt: ${parsed.prompt}`
+        params.systemPrompt = webSearchSystemPrompt(userCtx, parsed)
       } else {
         params.systemPrompt = webSearchSystemPrompt(userCtx)
       }
