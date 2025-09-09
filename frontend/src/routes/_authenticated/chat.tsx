@@ -2216,7 +2216,7 @@ const VirtualizedMessages = React.forwardRef<
             ;(ref as any).current = node
           }
         }}
-        className="h-full w-full overflow-auto flex flex-col items-center"
+        className={`h-full w-full overflow-auto flex flex-col ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
         onScroll={handleScroll}
         style={{
           height: "100%",
