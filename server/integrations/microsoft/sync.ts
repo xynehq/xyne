@@ -69,7 +69,10 @@ import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { processSpreadsheetFileWithSheetInfo } from "./attachment-utils"
 import { discoverMailFolders } from "./outlook"
 import { getUniqueEmails } from "../google"
-import { deleteWholeSpreadsheet } from "../google/sync"
+import {
+  deleteWholeSpreadsheet,
+  getDocumentOrSpreadsheet,
+} from "../google/sync"
 import { DriveMime } from "../google/utils"
 
 const Logger = getLogger(Subsystem.Integrations).child({
@@ -500,27 +503,6 @@ export const handleOneDriveChange = async (
   }
 
   return stats
-}
-
-// Get document or spreadsheet (similar to Google implementation)
-export const getDocumentOrSpreadsheet = async (docId: string) => {
-  try {
-    const doc = await getDocumentOrNull(fileSchema, docId)
-    if (!doc) {
-      Logger.error(
-        `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
-      )
-      const sheetsForSpreadSheet = await getDocumentOrNull(
-        fileSchema,
-        `${docId}_0`,
-      )
-      return sheetsForSpreadSheet
-    }
-    return doc
-  } catch (err) {
-    Logger.error(err, `Error getting document`)
-    throw err
-  }
 }
 
 // Discover current folders and detect changes
