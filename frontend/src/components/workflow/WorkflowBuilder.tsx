@@ -2566,16 +2566,24 @@ const ExecutionSidebar = ({
                               return <div className="text-red-700">{error}</div>
                             }
 
-                            // Handle successful email tools specifically
-                            if (isEmailTool && isSuccess) {
-                              const message = tool.result?.message
-                              if (message) {
-                                return (
-                                  <div className="text-green-700">
-                                    {message}
-                                  </div>
-                                )
+                            // Handle successful executions for any tool type
+                            if (isSuccess) {
+                              // For email tools, show custom message if available
+                              if (isEmailTool) {
+                                const message = tool.result?.message
+                                if (message) {
+                                  return (
+                                    <div className="text-green-700">
+                                      {message}
+                                    </div>
+                                  )
+                                }
                               }
+
+                              // For all successful tools, show generic success message
+                              return (
+                                <div className="text-green-700">Success</div>
+                              )
                             }
 
                             // Default behavior - show full result
