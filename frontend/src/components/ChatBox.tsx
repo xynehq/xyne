@@ -318,6 +318,24 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
+// Reusable tooltip wrapper component
+const TooltipWrapper: React.FC<{
+  children: React.ReactElement
+  content: string
+  delayDuration?: number
+}> = ({ children, content, delayDuration = 500 }) => (
+  <TooltipProvider delayDuration={delayDuration}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>{content}</p>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+)
+
 export interface ChatBoxRef {
   sendMessage: (message: string) => void
   getCurrentModelConfig: () => string | null
@@ -2870,32 +2888,25 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           )}
 
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-            <TooltipProvider delayDuration={500}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Attach
-                    className={`${
-                      selectedFiles.length >= MAX_ATTACHMENTS
-                        ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                        : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
-                    } transition-colors`}
-                    onClick={
-                      selectedFiles.length >= MAX_ATTACHMENTS
-                        ? undefined
-                        : handleFileSelect
-                    }
-                    title={
-                      selectedFiles.length >= MAX_ATTACHMENTS
-                        ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
-                        : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
-                    }
-                  />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>attachment</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <TooltipWrapper content="attachment">
+              <Attach
+                className={`${
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                    : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
+                } transition-colors`}
+                onClick={
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? undefined
+                    : handleFileSelect
+                }
+                title={
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
+                    : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
+                }
+              />
+            </TooltipWrapper>
 
             {/* Vertical Divider */}
             {showAdvancedOptions && (
@@ -2904,60 +2915,53 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
             {showAdvancedOptions && (
               <>
-                <TooltipProvider delayDuration={500}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <AtSign
-                        size={16}
-                        className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-                        onClick={() => {
-                          const input = inputRef.current
-                          if (!input) return
+                <TooltipWrapper content="find and attach specific document">
+                  <AtSign
+                    size={16}
+                    className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
+                    onClick={() => {
+                      const input = inputRef.current
+                      if (!input) return
 
-                          const textContentBeforeAt = input.textContent || ""
+                      const textContentBeforeAt = input.textContent || ""
 
-                          const textToAppend =
-                            textContentBeforeAt.length === 0 ||
-                            textContentBeforeAt.endsWith(" ") ||
-                            textContentBeforeAt.endsWith("\n") ||
-                            textContentBeforeAt.endsWith("\u00A0")
-                              ? "@"
-                              : " @"
+                      const textToAppend =
+                        textContentBeforeAt.length === 0 ||
+                        textContentBeforeAt.endsWith(" ") ||
+                        textContentBeforeAt.endsWith("\n") ||
+                        textContentBeforeAt.endsWith("\u00A0")
+                          ? "@"
+                          : " @"
 
-                          const atTextNode =
-                            document.createTextNode(textToAppend)
+                      const atTextNode =
+                        document.createTextNode(textToAppend)
 
-                          input.appendChild(atTextNode)
+                      input.appendChild(atTextNode)
 
-                          const newTextContent = input.textContent || ""
-                          setQuery(newTextContent)
-                          setIsPlaceholderVisible(newTextContent.length === 0)
+                      const newTextContent = input.textContent || ""
+                      setQuery(newTextContent)
+                      setIsPlaceholderVisible(newTextContent.length === 0)
 
-                          const newAtSymbolIndex =
-                            textContentBeforeAt.length +
-                            (textToAppend === " @" ? 1 : 0)
-                          setCaretPosition(input, newTextContent.length)
+                      const newAtSymbolIndex =
+                        textContentBeforeAt.length +
+                        (textToAppend === " @" ? 1 : 0)
+                      setCaretPosition(input, newTextContent.length)
 
-                          setActiveAtMentionIndex(newAtSymbolIndex)
-                          setReferenceSearchTerm("")
-                          setShowReferenceBox(true)
-                          updateReferenceBoxPosition(newAtSymbolIndex)
-                          setSearchMode("citations")
-                          setGlobalResults([])
-                          setGlobalError(null)
-                          setPage(1)
-                          setTotalCount(0)
-                          setSelectedRefIndex(-1)
+                      setActiveAtMentionIndex(newAtSymbolIndex)
+                      setReferenceSearchTerm("")
+                      setShowReferenceBox(true)
+                      updateReferenceBoxPosition(newAtSymbolIndex)
+                      setSearchMode("citations")
+                      setGlobalResults([])
+                      setGlobalError(null)
+                      setPage(1)
+                      setTotalCount(0)
+                      setSelectedRefIndex(-1)
 
-                          input.focus()
-                        }}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>find and attact documents</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                      input.focus()
+                    }}
+                  />
+                </TooltipWrapper>
 
                 {/* Capability Selector with Slider Animation */}
                 <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
@@ -2981,65 +2985,44 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   />
 
                   {/* Always show all three capability buttons */}
-                  <TooltipProvider delayDuration={500}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => handleCapabilityChange("reasoning")}
-                          className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                            selectedCapability === "reasoning"
-                              ? "text-gray-900 dark:text-gray-100"
-                              : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
-                          }`}
-                        >
-                          <Atom size={14} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>reasoning</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <TooltipWrapper content="reasoning">
+                    <button
+                      onClick={() => handleCapabilityChange("reasoning")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "reasoning"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Atom size={14} />
+                    </button>
+                  </TooltipWrapper>
 
-                  <TooltipProvider delayDuration={500}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => handleCapabilityChange("websearch")}
-                          className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                            selectedCapability === "websearch"
-                              ? "text-gray-900 dark:text-gray-100"
-                              : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
-                          }`}
-                        >
-                          <Globe size={14} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>websearch</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <TooltipWrapper content="websearch">
+                    <button
+                      onClick={() => handleCapabilityChange("websearch")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "websearch"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Globe size={14} />
+                    </button>
+                  </TooltipWrapper>
 
-                  <TooltipProvider delayDuration={500}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => handleCapabilityChange("deepResearch")}
-                          className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                            selectedCapability === "deepResearch"
-                              ? "text-gray-900 dark:text-gray-100"
-                              : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
-                          }`}
-                        >
-                          <Brain size={14} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>deepresearch</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <TooltipWrapper content="deepresearch">
+                    <button
+                      onClick={() => handleCapabilityChange("deepResearch")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "deepResearch"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Brain size={14} />
+                    </button>
+                  </TooltipWrapper>
                 </div>
               </>
             )}
