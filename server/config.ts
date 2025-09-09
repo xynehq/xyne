@@ -1,6 +1,10 @@
 import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
 let vespaBaseHost = "0.0.0.0"
+let vespaPort = process.env.VESPA_PORT || 8080
+let grafanaPort = process.env.GRAFANA_PORT || 3002
+let prometheusPort = process.env.PROMETHEUS_PORT || 9090
+let lokiPort = process.env.LOKI_PORT || 3100
 let postgresBaseHost = "0.0.0.0"
 let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
@@ -152,6 +156,10 @@ export default {
   port,
   metricsPort,
   host,
+  vespaPort,
+  grafanaPort,
+  prometheusPort,
+  lokiPort,
   // slack oauth does not work on http
   slackHost,
   AwsAccessKey,
