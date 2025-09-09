@@ -152,8 +152,7 @@ function parseAgentPrompt(
     if (
       typeof parsed.name === "string" &&
       typeof parsed.description === "string" &&
-      typeof parsed.prompt === "string" &&
-      Array.isArray(parsed.appIntegrations)
+      typeof parsed.prompt === "string"
     ) {
       return {
         name: parsed.name,
