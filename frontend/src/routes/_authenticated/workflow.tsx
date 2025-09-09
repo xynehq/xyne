@@ -146,7 +146,7 @@ function WorkflowComponent() {
       
       console.log('Workflows API Response:', workflows)
       if (Array.isArray(workflows.data)) {
-        const filteredWorkflows = workflows.data.filter(workflow => workflow.id === 'acd589c3-cc73-4fc0-860c-798800b512d4') //temporary
+        const filteredWorkflows = workflows.data //temporary
         setWorkflows(filteredWorkflows)
       } else {
         console.error('Workflows response is not an array')
@@ -183,7 +183,6 @@ function WorkflowComponent() {
 
 
         const convertedTemplates: Template[] = templates.data
-          .filter((workflowTemplate) => workflowTemplate.id === 'acd589c3-cc73-4fc0-860c-798800b512d4')
           .map((workflowTemplate) => ({
             id: workflowTemplate.id,
             name: workflowTemplate.name,
