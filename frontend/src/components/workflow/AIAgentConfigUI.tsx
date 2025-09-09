@@ -378,33 +378,6 @@ Always strive for accuracy and helpfulness in your responses.`
             </div>
           </div>
 
-          {/* Input Prompt */}
-          <div className="space-y-2">
-            <Label
-              htmlFor="input-prompt"
-              className="text-sm font-medium text-slate-700"
-            >
-              Input Prompt (User Input)
-            </Label>
-            <div className="relative">
-              <Input
-                id="input-prompt"
-                value={agentConfig.inputPrompt}
-                onChange={(e) =>
-                  setAgentConfig((prev) => ({
-                    ...prev,
-                    inputPrompt: e.target.value,
-                  }))
-                }
-                placeholder="Enter input prompt"
-                className="w-full bg-blue-50 border-blue-200 text-blue-800 font-mono text-sm"
-              />
-            </div>
-            <p className="text-xs text-slate-500">
-              This is the data sent by the last node
-            </p>
-          </div>
-
           {/* System Prompt */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -515,37 +488,6 @@ Always strive for accuracy and helpfulness in your responses.`
               A system prompt is the initial instruction that sets an AI model's
               behavior, style, and constraints.
             </p>
-          </div>
-
-          {/* Add Knowledge Base */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-slate-700">
-              Add Knowledge Base
-            </Label>
-            <div className="relative">
-              <button
-                onClick={() =>
-                  setIsKnowledgeDropdownOpen(!isKnowledgeDropdownOpen)
-                }
-                className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
-              >
-                <div className="flex items-center gap-2">
-                  <Search className="w-4 h-4 text-slate-500" />
-                  <span className="text-slate-500">Search by name</span>
-                </div>
-                <ChevronDown
-                  className={`w-4 h-4 text-slate-500 transition-transform ${isKnowledgeDropdownOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-
-              {isKnowledgeDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-md shadow-lg">
-                  <div className="p-3 text-sm text-slate-500 text-center">
-                    No knowledge bases available
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>

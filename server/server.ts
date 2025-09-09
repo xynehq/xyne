@@ -1,3 +1,6 @@
+// Suppress library conflict warnings
+import "./lib-conflict-fix.js"
+
 import { type Context, Hono, type Next } from "hono"
 import { cors } from "hono/cors"
 import {
