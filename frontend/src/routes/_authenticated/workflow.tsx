@@ -8,7 +8,6 @@ import { TemplateSelectionModal } from "@/components/workflow/TemplateSelectionM
 import { WorkflowExecutionsTable } from "@/components/workflow/WorkflowExecutionsTable"
 import {
   userWorkflowsAPI,
-  templatesAPI,
   workflowExecutionsAPI,
 } from "@/components/workflow/api/ApiHandlers"
 import sitemapIcon from "@/assets/sitemap.svg"

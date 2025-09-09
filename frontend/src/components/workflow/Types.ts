@@ -50,6 +50,7 @@ export type ToolValue = {
   script?: string
   message?: string
   webhook_url?: string
+  title?: string
   [key: string]: any
 }
 

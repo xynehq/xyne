@@ -28,7 +28,6 @@ import {
   Step,
   UserDetail,
   Tool,
-  StepExecution,
 } from "./Types"
 
 // Import WorkflowTemplate type
@@ -104,6 +103,35 @@ interface WorkflowTemplate {
       updatedAt: string
     }
   }
+  stepExecutions?: Array<{
+    id: string
+    workflowExecutionId: string
+    workflowStepTemplateId: string
+    name: string
+    type: string
+    status: string
+    parentStepId: string | null
+    prevStepIds: string[]
+    nextStepIds: string[]
+    toolExecIds: string[]
+    timeEstimate: number
+    metadata: any
+    completedBy: string | null
+    createdAt: string
+    updatedAt: string
+    completedAt: string | null
+  }>
+  toolExecutions?: Array<{
+    id: string
+    workflowToolId: string
+    workflowExecutionId: string
+    status: string
+    result: any
+    startedAt: string | null
+    completedAt: string | null
+    createdAt: string
+    updatedAt: string
+  }>
 }
 import ActionBar from "./ActionBar"
 import {
@@ -120,14 +148,7 @@ import {
   AddIcon,
   FormDocumentIcon,
 } from "./WorkflowIcons"
-import botLogo from "@/assets/bot-logo.svg"
-import androidIcon from "@/assets/android.svg"
-import documentIcon from "@/assets/document.svg"
 import {
-  workflowTemplatesAPI,
-  workflowsAPI,
-  workflowStepsAPI,
-  workflowToolsAPI,
   workflowExecutionsAPI,
 } from "./api/ApiHandlers"
 import WhatHappensNextUI from "./WhatHappensNextUI"
@@ -157,7 +178,7 @@ const StepNode: React.FC<NodeProps> = ({
   if (step.type === "ai_agent" || hasAIAgentTool) {
     // Get config from step or tool
     const aiConfig =
-      (step as any).config || (hasAIAgentTool && tools?.[0]?.value) || {}
+      (step as any).config || (hasAIAgentTool && tools?.[0]?.val) || {}
     const isConfigured = aiConfig?.name && aiConfig?.name.trim() !== ""
 
     if (!isConfigured) {
@@ -390,7 +411,7 @@ const StepNode: React.FC<NodeProps> = ({
   if (step.type === "email" || hasEmailTool) {
     // Get config from step or tool
     const emailConfig =
-      (step as any).config || (hasEmailTool && tools?.[0]?.value) || {}
+      (step as any).config || (hasEmailTool && tools?.[0]?.val) || {}
     const emailAddresses =
       emailConfig?.emailAddresses ||
       emailConfig?.to_email ||
@@ -674,7 +695,7 @@ const StepNode: React.FC<NodeProps> = ({
             >
               {step.name ||
                 (step as any).config?.title ||
-                (hasFormTool && tools?.[0]?.value?.title) ||
+                (hasFormTool && tools?.[0] && typeof tools[0].val === 'object' && tools[0].val?.title) ||
                 "Form Submission"}
             </h3>
           </div>
@@ -694,7 +715,7 @@ const StepNode: React.FC<NodeProps> = ({
                 // Get config from step or tool
                 const config =
                   (step as any).config ||
-                  (hasFormTool && tools?.[0]?.value) ||
+                  (hasFormTool && tools?.[0]?.val) ||
                   {}
 
                 // If user has configured the form, show form details
@@ -1263,16 +1284,16 @@ const ToolsSidebar = ({
                   </div>
                 )}
 
-                {(tool as any).value && (
+                {(tool as any).val && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-semibold text-gray-600">
                       Tool Value
                     </h4>
                     <div className="text-xs text-gray-900 bg-gray-50 p-2 rounded max-h-20 overflow-y-auto">
                       <pre>
-                        {typeof (tool as any).value === "object"
-                          ? JSON.stringify((tool as any).value, null, 2)
-                          : String((tool as any).value)}
+                        {typeof (tool as any).val === "object"
+                          ? JSON.stringify((tool as any).val, null, 2)
+                          : String((tool as any).val)}
                       </pre>
                     </div>
                   </div>
@@ -1615,23 +1636,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
-  const [selectedNodeTools, setSelectedNodeTools] = useState<Tool[] | null>(
+  const [selectedNodeTools] = useState<Tool[] | null>(
     null,
   )
-  const [selectedNodeInfo, setSelectedNodeInfo] = useState<any>(null)
+  const [selectedNodeInfo] = useState<any>(null)
   const [showResultModal, setShowResultModal] = useState(false)
   const [selectedResult, setSelectedResult] = useState<any>(null)
   const [showExecutionModal, setShowExecutionModal] = useState(false)
   const [createdTemplate, setCreatedTemplate] = useState<WorkflowTemplate | null>(null)
   // Template workflow state (for creating the initial workflow)
-  const [templateWorkflow, setTemplateWorkflow] = useState<TemplateFlow | null>(
+  const [templateWorkflow] = useState<TemplateFlow | null>(
     null,
   )
-  const [, setIsLoadingTemplate] = useState(false)
-  const [, setTemplateError] = useState<string | null>(null)
-
   // Running workflow state (for real-time updates)
-  const [, setWorkflow] = useState<Flow | null>(null)
   const [, setIsPolling] = useState(false)
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
     null,
@@ -1662,7 +1679,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         : selectedTemplate.steps
 
       // Sort steps by step_order or creation order before creating nodes
-      const sortedSteps = [...stepsData].sort((a, b) => {
+      const sortedSteps = stepsData ? [...stepsData].sort((a, b) => {
         // First try to sort by step_order in metadata
         const orderA = a.metadata?.step_order ?? 999
         const orderB = b.metadata?.step_order ?? 999
@@ -1675,16 +1692,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         if (b.nextStepIds?.includes(a.id)) return 1
         // Final fallback to creation time
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      })
+      }) : []
 
       console.log("Original steps:", stepsData)
       console.log("Sorted steps:", sortedSteps)
 
       // Create nodes from steps in top-down layout
-      const templateNodes: Node[] = sortedSteps.map((step, index) => {
+      const templateNodes: Node[] = sortedSteps.map((step: any, index: number) => {
         // Find associated tools for this step
         let stepTools = []
-        let toolExecutions = []
+        let toolExecutions: any[] = []
 
         if (isExecution) {
           // For executions, get tool executions from toolExecIds
@@ -1745,14 +1762,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       // Create edges from nextStepIds
       const templateEdges: Edge[] = []
-      stepsData.forEach((step) => {
+      stepsData?.forEach((step) => {
         step.nextStepIds?.forEach((nextStepId) => {
           // For executions, we need to map template step IDs to execution step IDs
           let targetStepId = nextStepId
 
           if (isExecution) {
             // Find the step execution that corresponds to this template step ID
-            const targetStepExecution = stepsData.find(
+            const targetStepExecution = stepsData?.find(
               (s: any) => s.workflowStepTemplateId === nextStepId,
             )
             if (targetStepExecution) {
@@ -1785,7 +1802,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       setNodes(templateNodes)
       setEdges(templateEdges)
-      setNodeCounter(stepsData.length + 1)
+      setNodeCounter((stepsData?.length || 0) + 1)
       setShowEmptyCanvas(false)
 
       setTimeout(() => {
@@ -3025,7 +3042,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                           type: stepData.type,
                           status: "pending",
                           contents: [],
-                          config: stepData.tool?.value || {},
+                          config: stepData.tool?.val || {},
                         },
                         tools: stepData.tool ? [stepData.tool] : [],
                         isActive: false,

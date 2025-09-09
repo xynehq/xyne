@@ -8,6 +8,7 @@ interface EmailOptions {
   to: string
   subject: string
   body: string
+  contentType?: "text" | "html"
 }
 
 class SimpleEmailService {

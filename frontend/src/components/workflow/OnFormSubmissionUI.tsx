@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react"
+import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -101,9 +101,6 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<{
     [fieldId: string]: File[]
   }>({})
-  const fileInputRefs = useRef<{ [fieldId: string]: HTMLInputElement | null }>(
-    {},
-  )
 
   const handleSave = async () => {
     try {
@@ -167,68 +164,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     })
   }
 
-  const addField = () => {
-    const newField: FormField = {
-      id: crypto.randomUUID(),
-      name: `Field ${formConfig.fields.length + 1}`,
-      placeholder: "",
-      type: "text",
-      required: false,
-    }
 
-    setFormConfig((prev) => ({
-      ...prev,
-      fields: [...prev.fields, newField],
-    }))
-
-    // Automatically expand the new field for configuration
-    setCollapsedFieldIds((prev) => {
-      const newSet = new Set(prev)
-      // Don't add the new field to collapsed set, so it starts expanded
-      return newSet
-    })
-  }
-
-  const handleFileUpload = (
-    fieldId: string,
-    files: FileList,
-    allowedTypes: string[] = [],
-  ) => {
-    const validFiles: File[] = []
-    const invalidFiles: string[] = []
-
-    Array.from(files).forEach((file) => {
-      if (allowedTypes.length > 0) {
-        const fileExtension = "." + file.name.split(".").pop()?.toLowerCase()
-        const isValidType = allowedTypes.some(
-          (type) =>
-            type.toLowerCase() === fileExtension ||
-            file.type.includes(type.toLowerCase().replace(".", "")),
-        )
-
-        if (isValidType) {
-          validFiles.push(file)
-        } else {
-          invalidFiles.push(file.name)
-        }
-      } else {
-        validFiles.push(file)
-      }
-    })
-
-    if (invalidFiles.length > 0) {
-      alert(
-        `Invalid file types: ${invalidFiles.join(", ")}. Allowed types: ${allowedTypes.join(", ")}`,
-      )
-    }
-
-    if (validFiles.length > 0) {
-      setUploadedFiles((prev) => ({
-        ...prev,
-        [fieldId]: [...(prev[fieldId] || []), ...validFiles],
-      }))
-    }
-  }
 
   const removeFile = (fieldId: string, fileIndex: number) => {
     setUploadedFiles((prev) => ({
