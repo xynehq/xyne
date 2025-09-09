@@ -4186,7 +4186,7 @@ export const MessageApi = async (c: Context) => {
       )
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        modelId: actualModelId as Models,
         stream: false,
       })
       loggerWithChild({ email: email }).info(

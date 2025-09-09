@@ -1032,7 +1032,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       const titleSpan = chatCreationSpan.startSpan("generate_title")
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        modelId: actualModelId as Models,
         stream: false,
       })
       title = titleResp.title
@@ -2743,7 +2743,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       const titleSpan = chatCreationSpan.startSpan("generate_title")
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        modelId: actualModelId as Models,
         stream: false,
       })
       title = titleResp.title
@@ -3513,7 +3513,7 @@ export const AgentMessageApi = async (c: Context) => {
       const titleSpan = chatCreationSpan.startSpan("generate_title")
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        modelId: actualModelId as Models,
         stream: false,
       })
       title = titleResp.title
