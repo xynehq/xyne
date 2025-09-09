@@ -113,6 +113,7 @@ export const getName = (app: Apps, entity: Entity): string => {
   ) {
     return "Data-Source"
   } else if (app === Apps.KnowledgeBase) {
+
     if (entity === KnowledgeBaseEntity.File) {
       return "KB Files"
     } else if (entity === KnowledgeBaseEntity.Folder) {
@@ -127,6 +128,7 @@ export const getName = (app: Apps, entity: Entity): string => {
       return "Knowledge-Base"
     } else {
       return "Knowledge Base"
+
     }
   } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
     return "Web Search"

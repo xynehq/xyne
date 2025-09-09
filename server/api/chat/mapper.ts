@@ -482,137 +482,141 @@ export const internalTools: Record<string, ToolDefinition> = {
   [XyneTools.GetUserInfo]: {
     name: XyneTools.GetUserInfo,
     description:
-      "Retrieves basic information about the current user and their environment (name, email, company, current date/time). No parameters needed. This tool does not accept/use.",
+      "Retrieves comprehensive information about the current authenticated user and their workspace environment. This tool provides essential context including user identity (name, email), organizational details (company affiliation), current system time, and workspace configuration. Perfect for personalizing responses, understanding user context, and providing time-sensitive information. This tool requires no parameters and automatically returns current user session data.",
     params: [],
   },
   [XyneTools.MetadataRetrieval]: {
     name: XyneTools.MetadataRetrieval,
     description:
-      "Retrieves items based on metadata filters (time range, app, entity, email addresses). Use this tool when searching within a specific app/entity with optional keyword filtering. For Gmail queries, supports filtering by sender/recipient email addresses.",
+      "Advanced structured data retrieval tool that searches and filters items based on comprehensive metadata criteria across integrated applications. This tool excels at precise, targeted searches within specific applications (Gmail, Google Drive, Google Calendar, Slack, etc.) using metadata filters like time ranges, entity types, and semantic intent. Ideal for queries requiring exact application targeting, complex email filtering with sender/recipient analysis, time-bounded searches, and structured data exploration. Use when you need precise control over search scope and when semantic content search is less important than metadata-based filtering.",
     params: [
       {
         name: "from",
         type: "string",
         required: false,
-        description: `Specify the start date for the search in UTC format (${config.llmTimeFormat}). Use this when the query explicitly mentions a time range or a starting point (e.g., "emails from last week").`,
+        description: `Define the temporal start boundary for search results in UTC format (${config.llmTimeFormat}). This parameter establishes the earliest timestamp for returned items. Essential for time-sensitive queries like "emails from last week", "meetings since Monday", or "documents created after January 1st". The system intelligently handles relative time expressions and converts them to absolute timestamps.`,
       },
       {
         name: "to",
         type: "string",
         required: false,
-        description: `Specify the end date for the search in UTC format (${config.llmTimeFormat}). Use this when the query explicitly mentions a time range or an ending point (e.g., "emails until yesterday").`,
+        description: `Define the temporal end boundary for search results in UTC format (${config.llmTimeFormat}). This parameter establishes the latest timestamp for returned items. Critical for time-bounded queries like "emails until yesterday", "events before next week", or "files modified before the deadline". Works in conjunction with 'from' parameter to create precise time windows.`,
       },
       {
         name: "app",
         type: "string",
         required: true,
         description: `
-          Valid app keywords that map to apps:
-          - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
-          - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
-          - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
-          - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
+          Specify the target application for search operations. MUST BE EXACTLY ONE OF THESE VALUES (case-sensitive):
+          - '${Apps.Gmail}' - For email communications, messages, threads, and email-related data
+          - '${Apps.GoogleCalendar}' - For calendar events, meetings, appointments, and scheduling data  
+          - '${Apps.GoogleDrive}' - For cloud storage files, documents, folders, and collaborative content
+          - '${Apps.GoogleWorkspace}' - For organizational contacts, people directory, and workspace members
+          - '${Apps.Slack}' - For Slack messages, channels, threads, and team communications
+          - '${Apps.DataSource}' - For custom data sources and external integrations
         `,
       },
       {
         name: "entity",
         type: "string",
         required: false,
-        description: `Specify the type of item being searched. Examples:
-          Valid entity keywords that map to entities:
-          - For App Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
-          - For App Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
-          - For App Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
-          - For App Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
+        description: `
+          Refine search scope by specifying the exact data entity type within the target application. MUST BE EXACTLY ONE OF THESE VALUES (case-sensitive):
+          - Gmail entities: '${MailEntity.Email}' for email messages and conversations
+          - Drive entities: '${DriveEntity.Docs}' (Google Docs), '${DriveEntity.Sheets}' (Spreadsheets), '${DriveEntity.Slides}' (Presentations), '${DriveEntity.PDF}' (PDF files), '${DriveEntity.Folder}' (directory structures)
+          - Calendar entities: '${CalendarEntity.Event}' for calendar events and meetings
+          - Workspace entities: '${GooglePeopleEntity.Contacts}' for contact information and profiles
+          - Slack entities: 'message' (chat messages), 'user' (user profiles), 'channel' (channel information)
           `,
       },
       {
         name: "filter_query",
         type: "string",
         required: false,
-        description: "Keywords to refine the search based on the user's query.",
+        description: "Semantic keyword filter for content-based refinement. Use natural language terms, specific phrases, or domain-specific keywords that should appear in the search results. This parameter performs intelligent matching across titles, content, descriptions, and other searchable text fields within the specified app and entity context.",
       },
       {
         name: "intent",
         type: "object",
         required: false,
         description: `
-          Email filtering intent with support for multiple addresses, names, and organizations. 
-            - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. 
-            - Each field is an array of strings containing email addresses, person names, or organization names. 
-            - Supports mixed queries like 'emails from john@company.com and Sarah' or 'emails from OpenAI and Linear'.
-            - The system will automatically resolve names and organizations to email addresses. 
-            Example: {from: ['john@company.com', 'Sarah'], to: ['team@company.com'], cc: ['manager@company.com'], bcc: ['admin@company.com']}
+          Advanced email communication filtering with intelligent resolution of names, organizations, and email addresses. Supports complex multi-participant email queries with automatic name-to-email mapping.
+          Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}
+          - Each field accepts arrays containing email addresses, full names, first names, or organization names
+          - System performs intelligent resolution: 'John Doe' → 'john.doe@company.com', 'OpenAI' → all known OpenAI email addresses
+          - Supports mixed queries: {from: ['john@company.com', 'Sarah Wilson', 'Linear'], to: ['team-leads']}
+          - Use cases: "emails from John and Linear team", "messages to project managers", "communications involving external partners"
+          Example: {from: ['john@company.com', 'Sarah'], to: ['team@company.com'], cc: ['manager@company.com']}
           `,
       },
       {
         name: "limit",
         type: "number",
         required: false,
-        description: "Maximum number of items to retrieve.",
+        description: "Maximum number of results to return in a single response. Controls result set size for performance optimization and relevant result focus. Default values vary by application type. Use smaller limits (10-50) for detailed reviews, larger limits (100-500) for comprehensive analysis.",
       },
       {
         name: "offset",
         type: "number",
         required: false,
-        description: "Number of items to skip for pagination.",
+        description: "Number of results to skip from the beginning, enabling pagination through large result sets. Essential for browsing through extensive search results systematically. Combine with 'limit' for efficient data exploration. Example: offset=50, limit=25 retrieves results 51-75.",
       },
       {
         name: "order_direction",
         type: "string",
         required: false,
         description:
-          "Sort direction ('asc' for oldest first, 'desc' for newest first).",
+          "Result ordering preference by timestamp. Use 'desc' (default) for newest-first chronological order, ideal for recent activity review. Use 'asc' for oldest-first ordering, perfect for historical analysis, project timelines, or sequential data review.",
       },
       {
         name: "excludedIds",
         type: "array",
         required: false,
-        description: "Optional list of document IDs to exclude from results.",
+        description: "Array of document/item identifiers to exclude from search results. Useful for removing known irrelevant items, avoiding duplicate processing, or filtering out specific content. Accepts internal document IDs, file IDs, or message IDs depending on the target application.",
       },
     ],
   },
   [XyneTools.Search]: {
     name: XyneTools.Search,
-    description: "Search *content* across all sources.",
+    description: "Universal semantic content search engine that performs intelligent, full-text searches across all integrated data sources simultaneously. This tool leverages advanced natural language processing and semantic understanding to find relevant information regardless of source application. Ideal for exploratory searches, content discovery, cross-platform information retrieval, and when you need to find information but aren't sure which specific application contains it. Use this tool for broad, content-focused queries where semantic relevance is more important than metadata precision.",
     params: [
       {
         name: "filter_query",
         type: "string",
         required: true,
-        description: "Keywords to refine the search based on the user's query.",
+        description: "Natural language search query that describes the information you're seeking. This parameter supports complex semantic queries, conceptual searches, specific phrases, technical terms, and contextual keywords. The system performs intelligent content matching across documents, emails, messages, and other text-based content using advanced NLP techniques.",
       },
       {
         name: "limit",
         type: "number",
         required: false,
-        description: "Maximum number of items to retrieve.",
+        description: "Maximum number of search results to return, controlling response size and processing time. Higher limits provide comprehensive coverage but may include less relevant results. Recommended values: 20-50 for focused searches, 100+ for comprehensive exploration.",
       },
       {
         name: "order_direction",
         type: "string",
         required: false,
         description:
-          "Sort direction ('asc' for oldest first, 'desc' for newest first).",
+          "Chronological sorting preference for search results. 'desc' returns newest content first (default), ideal for finding recent information. 'asc' returns oldest content first, useful for historical research, project origins, or timeline analysis.",
       },
       {
         name: "offset",
         type: "number",
         required: false,
-        description: "Number of items to skip for pagination.",
+        description: "Pagination offset for navigating through large result sets. Specifies how many results to skip from the beginning, enabling systematic exploration of comprehensive search results. Essential for reviewing all relevant information when initial results exceed the limit.",
       },
       {
         name: "excludedIds",
         type: "array",
         required: false,
-        description: "Optional list of document IDs to exclude from results.",
+        description: "Collection of unique identifiers for items to exclude from search results. Useful for refining searches by removing known irrelevant content, avoiding previously processed items, or filtering out specific documents/messages based on prior search iterations.",
       },
     ],
   },
   [XyneTools.Conversational]: {
     name: XyneTools.Conversational,
     description:
-      'Determine if the user\'s query is conversational or a basic calculation. Examples include greetings like: "Hi", "Hello", "Hey", "What is the time in Japan". Select this tool with empty params. No parameters needed.',
+      "Intelligent conversational query classifier and response handler for casual interactions, greetings, social queries, and basic informational requests that don't require data retrieval. This tool identifies and responds to conversational patterns including social greetings (Hello, Hi, How are you), time zone queries (What time is it in Tokyo?), simple calculations, weather questions, and other casual interactions. Use this tool when the user's intent is social communication rather than data search or retrieval. The tool automatically handles response generation without requiring additional parameters.",
     params: [],
   },
 }
@@ -621,100 +625,100 @@ export const slackTools: Record<string, ToolDefinition> = {
   [XyneTools.getSlackThreads]: {
     name: XyneTools.getSlackThreads,
     description:
-      "Search and retrieve Slack thread messages for conversational context.",
+      "Advanced Slack thread conversation retrieval tool designed to search and extract threaded message discussions with full conversational context. This tool specializes in finding and assembling complete conversation threads, including parent messages, replies, reactions, and thread metadata. Perfect for understanding discussion context, tracking decision-making processes, analyzing conversation flows, and gathering comprehensive team communication history. Ideal for queries like 'show me the discussion about the project launch' or 'find threads where technical decisions were made'.",
     params: [
       {
         name: "filter_query",
         type: "string",
         required: false,
-        description: "Keywords to refine the search.",
+        description: "Semantic search keywords to identify relevant thread conversations. Use natural language terms, project names, technical concepts, or discussion topics to find threads containing specific subjects. The system performs intelligent matching across thread content, participant names, and message context to locate the most relevant threaded discussions.",
       },
       {
         name: "limit",
         type: "number",
         required: false,
-        description: "Maximum number of items to retrieve.",
+        description: "Maximum number of thread conversations to retrieve in a single response. Controls the breadth of results returned. Recommended values: 10-25 for focused thread analysis, 50+ for comprehensive conversation discovery. Each result represents a complete thread with all its constituent messages.",
       },
       {
         name: "offset",
         type: "number",
         required: false,
-        description: "Number of items to skip for pagination.",
+        description: "Pagination parameter to skip a specified number of thread results from the beginning. Essential for browsing through extensive thread collections systematically. Use in combination with 'limit' to navigate large conversation datasets efficiently.",
       },
       {
         name: "order_direction",
         type: "string",
         required: false,
         description:
-          "Sort direction ('asc' for oldest first, 'desc' for newest first).",
+          "Chronological ordering of thread results based on thread initiation time. 'desc' (default) shows newest threads first, ideal for recent conversation analysis. 'asc' shows oldest threads first, useful for historical discussion review and project timeline analysis.",
       },
     ],
   },
   [XyneTools.getSlackRelatedMessages]: {
     name: XyneTools.getSlackRelatedMessages,
-    description: "Search and retrieve Slack messages with flexible filtering.",
+    description: "Comprehensive Slack message search and retrieval system with advanced filtering capabilities for targeted channel-based communication analysis. This tool provides granular control over message discovery within specific channels, supporting complex queries involving user-specific messages, time-bounded searches, content filtering, and contextual message retrieval. Essential for channel-focused investigations, user activity analysis, project communication tracking, and temporal message exploration within defined Slack workspaces.",
     params: [
       {
         name: "channel_name",
         type: "string",
         required: true,
-        description: "Name of the Slack channel.",
+        description: "Exact name or identifier of the target Slack channel for message retrieval. Accepts channel names (without # prefix), channel IDs, or channel display names. This parameter defines the scope boundary for all message searches. Examples: 'general', 'project-alpha', 'engineering-team'.",
       },
       {
         name: "filter_query",
         type: "string",
         required: false,
-        description: "Keywords to refine the search.",
+        description: "Content-based search filter using natural language keywords, phrases, or semantic concepts. The system performs intelligent text matching across message content, file names, link descriptions, and embedded content. Supports complex queries like technical terms, project names, or contextual discussions.",
       },
       {
         name: "user_email",
         type: "string",
         required: false,
-        description: "Email address of the user whose messages to retrieve.",
+        description: "Email address of a specific Slack user to filter messages by authorship. When specified, only messages sent by this user within the target channel will be returned. Useful for tracking individual contributions, finding specific user's communications, or analyzing participation patterns.",
       },
       {
         name: "limit",
         type: "number",
         required: false,
-        description: "Maximum number of items to retrieve.",
+        description: "Maximum number of individual messages to retrieve from the specified channel. Controls result volume and response processing time. Recommended values: 25-100 for focused message analysis, 200+ for comprehensive channel history review.",
       },
       {
         name: "offset",
         type: "number",
         required: false,
-        description: "Number of items to skip for pagination.",
+        description: "Number of messages to skip from the beginning of the result set, enabling systematic pagination through large message collections. Critical for exploring extensive channel histories without overwhelming single responses.",
       },
       {
         name: "order_direction",
         type: "string",
         required: false,
         description:
-          "Sort direction ('asc' for oldest first, 'desc' for newest first).",
+          "Temporal ordering preference for message results. 'desc' (default) returns newest messages first, optimal for recent activity review. 'asc' returns oldest messages first, ideal for chronological analysis, project timelines, and historical communication patterns.",
       },
       {
         name: "from",
         type: "string",
         required: false,
-        description: `Specify the start date for the search in UTC format (${config.llmTimeFormat}).`,
+        description: `Temporal start boundary for message search in UTC format (${config.llmTimeFormat}). Establishes the earliest timestamp for returned messages. Essential for time-scoped analysis like 'messages from last sprint', 'communications since project start', or 'activity after the announcement'. Works with intelligent relative time parsing.`,
       },
       {
         name: "to",
         type: "string",
         required: false,
-        description: `Specify the end date for the search in UTC format (${config.llmTimeFormat}).`,
+        description: `Temporal end boundary for message search in UTC format (${config.llmTimeFormat}). Defines the latest timestamp for returned messages. Critical for bounded time analysis like 'messages until the deadline', 'communications before the meeting', or 'activity during the project phase'. Combines with 'from' parameter for precise time window definition.`,
       },
     ],
   },
   [XyneTools.getUserSlackProfile]: {
     name: XyneTools.getUserSlackProfile,
-    description: "Get a user's Slack profile details by their email address.",
+    description: "Comprehensive Slack user profile information retrieval tool that fetches detailed user account data, workspace membership details, and professional information from Slack directories. This tool provides essential user context including display names, roles, team affiliations, status information, contact details, and workspace-specific metadata. Invaluable for user identification, team member discovery, contact information lookup, and understanding organizational structure within Slack workspaces. Perfect for queries involving user verification, team composition analysis, and contact management.",
     params: [
       {
         name: "user_email",
         type: "string",
         required: true,
         description:
-          "Email address of the user whose Slack profile to retrieve.",
+          "Primary email address associated with the target user's Slack account. This serves as the unique identifier for user profile lookup across workspace directories. Must be the exact email address used for Slack account registration. The system will retrieve comprehensive profile information including display name, real name, title, department, phone numbers, and workspace-specific settings associated with this email address.",
       },
     ],
   },
