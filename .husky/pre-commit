@@ -22,3 +22,4 @@ check_and_format() {
 
 # Run the check and format function
 check_and_format
+

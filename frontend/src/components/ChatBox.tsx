@@ -176,6 +176,7 @@ interface ChatBoxProps {
   allCitations: Map<string, Citation>
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
+  hideButtons?: boolean // Add prop to hide mark step as done section
 }
 
 const availableSources: SourceItem[] = [
@@ -305,6 +306,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       setIsAgenticMode,
       isAgenticMode = false,
       overrideIsRagOn,
+      hideButtons = false, // Destructure new prop with default value
     } = props
     // Interface for fetched tools
     interface FetchedTool {
@@ -576,8 +578,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [availableModelsForMode])
     
     const showAdvancedOptions =
-      overrideIsRagOn ??
-      (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
+    !hideButtons &&
+    (overrideIsRagOn ??
+      (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
 
     // localStorage keys for tool selection persistence
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -2516,17 +2519,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 let shouldTriggerBox = false
                 let newActiveMentionIndex = -1
 
-                // Check if the character right before the cursor is an '@' and if it's validly placed
-                const atCharIndex = cursorPosition - 1
-                if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
-                  const isFirstCharacter = atCharIndex === 0
-                  const isPrecededBySpace =
-                    atCharIndex > 0 &&
-                    (newValue[atCharIndex - 1] === " " ||
-                      newValue[atCharIndex - 1] === "\u00A0")
-                  if (isFirstCharacter || isPrecededBySpace) {
-                    shouldTriggerBox = true
-                    newActiveMentionIndex = atCharIndex
+                // Disable @ mention functionality when autoAddDocumentPill is provided
+                if (!hideButtons) {
+                  // Check if the character right before the cursor is an '@' and if it's validly placed
+                  const atCharIndex = cursorPosition - 1
+                  if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
+                    const isFirstCharacter = atCharIndex === 0
+                    const isPrecededBySpace =
+                      atCharIndex > 0 &&
+                      (newValue[atCharIndex - 1] === " " ||
+                        newValue[atCharIndex - 1] === "\u00A0")
+                    if (isFirstCharacter || isPrecededBySpace) {
+                      shouldTriggerBox = true
+                      newActiveMentionIndex = atCharIndex
+                    }
                   }
                 }
 
@@ -2785,7 +2791,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             </div>
           )}
 
-          <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
+          <div className={`flex ml-[16px] ${hideButtons ? "justify-between mr-[16px]" : "mr-[6px]"} mb-[6px] items-center space-x-3 pt-1 pb-1`}>
             <Attach
               className={`${
                 selectedFiles.length >= MAX_ATTACHMENTS
@@ -3543,7 +3549,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             )}
 
             {/* Model Selection Dropdown */}
-            {showAdvancedOptions && (
+            {(showAdvancedOptions || hideButtons) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button 
