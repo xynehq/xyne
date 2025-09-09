@@ -30,6 +30,7 @@ import {
   type AttachmentMetadata,
   SlackEntity,
   AgentPromptPayload,
+  DEFAULT_TEST_AGENT_ID,
 } from "shared/types"
 import {
   ChevronDown,
@@ -2032,7 +2033,7 @@ function AgentComponent() {
     } else {
       // If no agent is used (the user is not authenticated), we can use the default agent
       url.searchParams.append("agentPromptPayload", JSON.stringify(agentPromptPayload))
-      url.searchParams.append("agentId", "default-agent")
+      url.searchParams.append("agentId", DEFAULT_TEST_AGENT_ID)
     }
     
     // Get model configuration from ChatBox

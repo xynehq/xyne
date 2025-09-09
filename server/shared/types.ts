@@ -604,6 +604,7 @@ export const attachmentMetadataSchema = z.object({
 
 export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>
 
+export const DEFAULT_TEST_AGENT_ID = "default-test-agent"
 
 export const agentPromptPayloadSchema = z.preprocess(
   (val) => {

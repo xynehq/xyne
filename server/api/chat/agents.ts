@@ -286,7 +286,7 @@ const createMockAgentFromFormData = (
       name: formData.name || "Test Agent",
       description: formData.description || null,
       prompt: formData.prompt || null,
-      model: formData.model || "Claude Sonnet 4",
+      model: formData.model || Models.Claude_Sonnet_4,
       isPublic: formData.isPublic || false,
       isRagOn: formData.isRagOn !== false,
       appIntegrations: formData.appIntegrations || null,
