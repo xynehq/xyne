@@ -13,6 +13,7 @@ interface OnFormSubmissionUIProps {
   initialConfig?: FormConfig
   toolData?: any // Tool data from the backend
   toolId?: string // Tool ID for API updates
+  stepData?: any // Step data for titles
 }
 
 interface FormField {
@@ -20,6 +21,7 @@ interface FormField {
   name: string
   placeholder: string
   type: "text" | "email" | "file" | "number" | "textarea" | "dropdown"
+  originalType?: string // Track the original backend type
   options?: string[] // For dropdown fields
   fileTypes?: string[] // For file upload validation
   required?: boolean
@@ -38,6 +40,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   initialConfig,
   toolData,
   toolId,
+  stepData,
 }) => {
   const initialFieldId = crypto.randomUUID()
 
@@ -130,6 +133,8 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
             submitText: "Submit Form",
             validation: "strict",
           },
+          stepName: formConfig.title || "Form Submission",
+          stepDescription: formConfig.description || "Upload a file in formats such as PDF, DOCX, or JPG.",
         }
 
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
@@ -299,7 +304,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
             textTransform: "capitalize",
           }}
         >
-          On form submission
+          {stepData?.step?.name || toolData?.name || "On form submission"}
         </h2>
 
         <button
@@ -426,49 +431,51 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                       {/* Field Type Specific Content */}
                       {field.type === "file" ? (
                         <div className="space-y-4">
-                          {/* File Upload Area */}
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-slate-700">
-                              File Upload
-                            </Label>
-                            <div
-                              className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:border-slate-400 transition-colors cursor-pointer"
-                              onClick={() =>
-                                fileInputRefs.current[field.id]?.click()
-                              }
-                            >
-                              <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                              <p className="text-sm text-slate-600">
-                                Click to upload files
-                                {field.fileTypes &&
-                                  field.fileTypes.length > 0 && (
-                                    <span className="block text-xs text-slate-500 mt-1">
-                                      Allowed: {field.fileTypes.join(", ")}
-                                    </span>
-                                  )}
-                              </p>
-                              <input
-                                ref={(el) =>
-                                  (fileInputRefs.current[field.id] = el)
+                          {/* File Upload Area - Commented out when type is 'file' */}
+                          {false && (
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-slate-700">
+                                File Upload
+                              </Label>
+                              <div
+                                className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:border-slate-400 transition-colors cursor-pointer"
+                                onClick={() =>
+                                  fileInputRefs.current[field.id]?.click()
                                 }
-                                type="file"
-                                multiple
-                                accept={field.fileTypes?.join(",") || ""}
-                                onChange={(e) =>
-                                  e.target.files &&
-                                  handleFileUpload(
-                                    field.id,
-                                    e.target.files,
-                                    field.fileTypes,
-                                  )
-                                }
-                                className="hidden"
-                              />
+                              >
+                                <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                                <p className="text-sm text-slate-600">
+                                  Click to upload files
+                                  {field.fileTypes &&
+                                    field.fileTypes.length > 0 && (
+                                      <span className="block text-xs text-slate-500 mt-1">
+                                        Allowed: {field.fileTypes.join(", ")}
+                                      </span>
+                                    )}
+                                </p>
+                                <input
+                                  ref={(el) =>
+                                    (fileInputRefs.current[field.id] = el)
+                                  }
+                                  type="file"
+                                  multiple
+                                  accept={field.fileTypes?.join(",") || ""}
+                                  onChange={(e) =>
+                                    e.target.files &&
+                                    handleFileUpload(
+                                      field.id,
+                                      e.target.files,
+                                      field.fileTypes,
+                                    )
+                                  }
+                                  className="hidden"
+                                />
+                              </div>
                             </div>
-                          </div>
+                          )}
 
-                          {/* Uploaded Files Display */}
-                          {uploadedFiles[field.id] &&
+                          {/* Uploaded Files Display - Commented out when type is 'file' */}
+                          {false && uploadedFiles[field.id] &&
                             uploadedFiles[field.id].length > 0 && (
                               <div className="space-y-2">
                                 <Label className="text-sm font-medium text-slate-700">

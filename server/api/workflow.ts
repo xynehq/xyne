@@ -1469,6 +1469,61 @@ else:
   }
 }
 
+// Helper function to extract content from previous step results using configurable paths
+const extractContentFromPath = (previousStepResults: any, contentPath: string): string => {
+  try {
+    // Parse the path - supports formats like:
+    // "stepName.result.aiOutput" 
+    // "step1.result.output"
+    // "latest.result.aiOutput" (for most recent step)
+    
+    const pathParts = contentPath.split('.')
+    
+    if (pathParts.length === 0) {
+      return ""
+    }
+    
+    let target = previousStepResults
+    
+    // Handle special "latest" keyword
+    if (pathParts[0] === "latest") {
+      const stepKeys = Object.keys(previousStepResults)
+      if (stepKeys.length === 0) return ""
+      
+      // Get the most recent step (last in object)
+      const latestStepKey = stepKeys[stepKeys.length - 1]
+      target = previousStepResults[latestStepKey]
+      pathParts.shift() // Remove "latest" from path
+    } else {
+      // Use specific step name
+      const stepName = pathParts[0]
+      target = previousStepResults[stepName]
+      pathParts.shift() // Remove step name from path
+    }
+    
+    // Navigate through the remaining path
+    for (const part of pathParts) {
+      if (target && typeof target === 'object' && part in target) {
+        target = target[part]
+      } else {
+        return ""
+      }
+    }
+    
+    // Convert result to string
+    if (typeof target === 'string') {
+      return target
+    } else if (target !== null && target !== undefined) {
+      return JSON.stringify(target, null, 2)
+    }
+    
+    return ""
+  } catch (error) {
+    console.error('Error extracting content from path:', error)
+    return ""
+  }
+}
+
 // Execute workflow tool (Python scripts, etc.)
 const executeWorkflowTool = async (
   tool: any,
@@ -1508,80 +1563,320 @@ const executeWorkflowTool = async (
         )
 
       case "email":
-        // Execute Python script to get email details, then send email
-        const emailScriptContent =
-          typeof tool.value === "string" ? tool.value : tool.value?.script
-        const emailConfig = tool.config
-
-        if (!emailScriptContent) {
-          return {
-            status: "error",
-            result: { error: "No script content found in email tool value" },
-          }
-        }
+        // Enhanced email tool using config for recipients and configurable path for content extraction
+        const emailConfig = tool.config || {}
+        const toEmail = emailConfig.to_email || emailConfig.recipients || []
+        const fromEmail = emailConfig.from_email || "aman.asrani@juspay.in"
+        const subject = emailConfig.subject || "Workflow Results"
+        const contentType = emailConfig.content_type || "html"
+        
+        // New configurable content path feature
+        const contentPath = emailConfig.content_path || emailConfig.content_source_path
 
         try {
-          // Use unified Python execution function
-          const pythonResult = await executePythonScript(
-            emailScriptContent,
-            previousStepResults,
-            emailConfig,
-            "email",
-          )
+          let emailBody = ""
 
-          if (pythonResult.status === "error") {
-            return pythonResult
-          }
-
-          const emailData = pythonResult.result
-
-          // Validate email data structure
-          if (!emailData.to || !emailData.subject || !emailData.body) {
-            return {
-              status: "error",
-              result: {
-                error:
-                  "Email script must return object with 'to', 'subject', and 'body' fields",
-                script_output: emailData,
-              },
+          if (contentPath) {
+            // Extract content using configurable path
+            emailBody = extractContentFromPath(previousStepResults, contentPath)
+            if (!emailBody) {
+              emailBody = `No content found at path: ${contentPath}`
+            }
+          } else {
+            // Fallback to previous behavior - get from first step
+            const prevStepData = Object.values(previousStepResults)[0] as any
+            
+            if (prevStepData?.result?.aiOutput) {
+              // From AI agent step
+              emailBody = prevStepData.result.aiOutput
+            } else if (prevStepData?.result?.output) {
+              // Generic output
+              emailBody = prevStepData.result.output
+            } else if (prevStepData?.result) {
+              // Fallback to stringified result
+              emailBody = typeof prevStepData.result === "string" 
+                ? prevStepData.result 
+                : JSON.stringify(prevStepData.result, null, 2)
+            } else {
+              emailBody = "No content available from previous step"
             }
           }
 
-          // Import and use the email service to actually send the email
+          // Wrap plain text in HTML if content type is HTML
+          if (contentType === "html" && !emailBody.includes("<html")) {
+            emailBody = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; line-height: 1.6; margin: 20px; }
+        .content { max-width: 800px; margin: 0 auto; }
+        .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .body-content { background: white; padding: 20px; border: 1px solid #dee2e6; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <div class="header">
+            <h2>🤖 Workflow Results</h2>
+            <p>Generated on: ${new Date().toLocaleString()}</p>
+        </div>
+        <div class="body-content">
+            ${emailBody.replace(/\n/g, '<br>')}
+        </div>
+    </div>
+</body>
+</html>`
+          }
+
+          // Validate email configuration
+          if (!toEmail || (Array.isArray(toEmail) && toEmail.length === 0)) {
+            return {
+              status: "error",
+              result: {
+                error: "No email recipients configured in tool config (to_email or recipients field required)",
+                config: emailConfig
+              }
+            }
+          }
+
+          // Import and use the email service
           const { emailService } = await import("@/services/emailService")
 
-          // Send the email using the TypeScript emailService
-          const emailSent = await emailService.sendEmail({
-            to: emailData.to,
-            subject: emailData.subject,
-            body: emailData.body,
-            contentType:
-              emailData.content_type === "text/html" ? "html" : "text",
-          })
+          // Convert single email to array if needed
+          const recipients = Array.isArray(toEmail) ? toEmail : [toEmail]
+
+          // Send email to all recipients
+          const emailResults = []
+          for (const recipient of recipients) {
+            try {
+              const emailSent = await emailService.sendEmail({
+                to: recipient,
+                subject,
+                body: emailBody,
+                contentType: contentType === "html" ? "html" : "text",
+              })
+              emailResults.push({ recipient, sent: emailSent })
+            } catch (emailError) {
+              emailResults.push({ 
+                recipient, 
+                sent: false, 
+                error: emailError instanceof Error ? emailError.message : String(emailError)
+              })
+            }
+          }
+
+          const successCount = emailResults.filter(r => r.sent).length
+          const allSent = successCount === recipients.length
 
           return {
-            status: emailSent ? "success" : "error",
+            status: allSent ? "success" : "partial_success",
             result: {
-              email_sent: emailSent,
+              emails_sent: successCount,
+              total_recipients: recipients.length,
+              all_sent: allSent,
+              results: emailResults,
               email_details: {
-                to: emailData.to,
-                subject: emailData.subject,
-                body_length: emailData.body.length,
+                from: fromEmail,
+                subject,
+                content_type: contentType,
+                body_length: emailBody.length,
               },
-              python_script_output: emailData,
-              message: emailSent
-                ? "Email sent successfully via TypeScript emailService"
-                : "Email failed to send (check AWS SES configuration)",
-              email_service_used: "typescript_emailService",
-            },
+              message: allSent 
+                ? `Email sent successfully to all ${successCount} recipients`
+                : `Email sent to ${successCount} of ${recipients.length} recipients`
+            }
           }
+
         } catch (error) {
           return {
             status: "error",
             result: {
               error: "Email tool execution failed",
               message: error instanceof Error ? error.message : String(error),
-            },
+              config: emailConfig
+            }
+          }
+        }
+
+      case "ai_agent":
+        // Enhanced AI agent with Text/Form input type support
+        const aiConfig = tool.config || {}
+        const inputType = aiConfig.inputType || "text" // Default to text
+        const aiModel = aiConfig.aiModel || aiConfig.model || "gemini-1.5-flash"
+        const prompt = aiConfig.prompt || "Please analyze the provided content"
+        const geminiApiKey = aiConfig.gemini_api_key || "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw"
+
+        try {
+          let analysisInput = ""
+          let inputMetadata = {}
+
+          if (inputType === "form") {
+            // Extract form data and files from previous step results
+            const prevStepData = Object.values(previousStepResults)[0] as any
+            const formSubmission = prevStepData?.formSubmission?.formData || prevStepData?.result?.formData || {}
+            
+            // Process text fields
+            const textFields = Object.entries(formSubmission)
+              .filter(([key, value]) => typeof value === "string")
+              .map(([key, value]) => `${key}: ${value}`)
+              .join("\n")
+
+            // Process uploaded files
+            const fileContents = []
+            for (const [key, value] of Object.entries(formSubmission)) {
+              if (value && typeof value === "object" && value.absolutePath) {
+                try {
+                  const fileData = value as any
+                  const fileExt = fileData.fileExtension?.toLowerCase()
+                  
+                  if (fileExt === "txt") {
+                    // Text files - read directly
+                    const fs = await import("node:fs/promises")
+                    const content = await fs.readFile(fileData.absolutePath, "utf-8")
+                    fileContents.push(`File: ${fileData.originalFileName}\nContent:\n${content}`)
+                  } else if (fileExt === "pdf") {
+                    // PDF files - extract text using pdf-parse (Node.js friendly)
+                    try {
+                      const fs = await import("node:fs/promises")
+                      const pdfParse = require("pdf-parse")
+                      
+                      // Read PDF file
+                      const pdfBuffer = await fs.readFile(fileData.absolutePath)
+                      
+                      // Parse PDF with pdf-parse
+                      const pdfData = await pdfParse(pdfBuffer)
+                      
+                      const cleanedText = pdfData.text.trim()
+                      if (cleanedText && cleanedText.length > 10) {
+                        fileContents.push(`File: ${fileData.originalFileName}\nContent:\n${cleanedText}`)
+                      } else {
+                        fileContents.push(`File: ${fileData.originalFileName}\nContent: [PDF file - no readable text found]`)
+                      }
+                    } catch (pdfError) {
+                      // Fallback: just indicate PDF was processed but couldn't extract text
+                      fileContents.push(`File: ${fileData.originalFileName}\nType: PDF document (${fileData.fileSize} bytes)\nNote: PDF text extraction failed. File contains ${fileData.fileSize} bytes of content that may include text, images, or other data.`)
+                    }
+                  } else if (["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(fileExt)) {
+                    // Image files - OCR text extraction using sharp + canvas
+                    try {
+                      const fs = await import("node:fs/promises")
+                      const sharp = await import("sharp")
+                      
+                      // Convert image to high-contrast format for better OCR
+                      const imageBuffer = await fs.readFile(fileData.absolutePath)
+                      const processedImage = await sharp.default(imageBuffer)
+                        .greyscale()
+                        .normalize()
+                        .sharpen()
+                        .png()
+                        .toBuffer()
+                      
+                      // For now, indicate image was processed but OCR would need additional setup
+                      // Full OCR would require tesseract.js or similar
+                      const imageInfo = await sharp.default(imageBuffer).metadata()
+                      fileContents.push(`File: ${fileData.originalFileName}\nType: Image (${imageInfo.width}x${imageInfo.height} ${fileExt.toUpperCase()})\nNote: Image processed but text extraction requires OCR setup. Image contains visual content that may include text, charts, or diagrams.`)
+                    } catch (imageError) {
+                      fileContents.push(`File: ${fileData.originalFileName}\nError: Image processing failed - ${imageError.message}`)
+                    }
+                  } else if (["doc", "docx"].includes(fileExt)) {
+                    // Word documents - would need additional library like mammoth
+                    fileContents.push(`File: ${fileData.originalFileName}\nType: Microsoft Word document\nNote: Word document processing requires additional setup. File contains ${fileData.fileSize} bytes of content.`)
+                  } else {
+                    // Unsupported file type
+                    fileContents.push(`File: ${fileData.originalFileName}\nType: ${fileExt.toUpperCase()} (${fileData.fileSize} bytes)\nNote: File type not supported for content extraction`)
+                  }
+                } catch (fileError) {
+                  fileContents.push(`File: ${value.originalFileName}\nError: Could not read file - ${fileError.message}`)
+                }
+              }
+            }
+
+            analysisInput = [textFields, ...fileContents].filter(Boolean).join("\n\n")
+            inputMetadata = {
+              inputType: "form",
+              formFields: Object.keys(formSubmission).length,
+              filesProcessed: fileContents.length
+            }
+          } else {
+            // Text input - get from previous step result
+            const prevStepData = Object.values(previousStepResults)[0] as any
+            analysisInput = prevStepData?.result?.output || 
+                          prevStepData?.result?.content || 
+                          JSON.stringify(prevStepData?.result || {})
+            inputMetadata = {
+              inputType: "text",
+              sourceStep: Object.keys(previousStepResults)[0] || "unknown"
+            }
+          }
+
+          if (!analysisInput.trim()) {
+            return {
+              status: "error",
+              result: {
+                error: "No input content found for AI analysis",
+                inputType,
+                inputMetadata
+              }
+            }
+          }
+
+          // Call Gemini API
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`
+          
+          const fullPrompt = `${prompt}\n\nInput to analyze:\n${analysisInput.slice(0, 8000)}`
+          
+          const geminiResponse = await fetch(geminiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{ text: fullPrompt }]
+              }],
+              generationConfig: {
+                temperature: 0.3,
+                topK: 40,
+                topP: 0.95,
+                maxOutputTokens: 2048
+              }
+            })
+          })
+
+          if (!geminiResponse.ok) {
+            return {
+              status: "error",
+              result: {
+                error: `Gemini API error: ${geminiResponse.status}`,
+                inputType,
+                inputMetadata
+              }
+            }
+          }
+
+          const geminiData = await geminiResponse.json()
+          const aiOutput = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "No response from AI"
+
+          return {
+            status: "success",
+            result: {
+              aiOutput,
+              model: aiModel,
+              inputType,
+              inputMetadata,
+              usage: geminiData.usageMetadata || {},
+              processedAt: new Date().toISOString()
+            }
+          }
+
+        } catch (error) {
+          return {
+            status: "error",
+            result: {
+              error: "AI agent execution failed",
+              message: error instanceof Error ? error.message : String(error),
+              inputType: aiConfig.inputType
+            }
           }
         }
 
@@ -1862,22 +2157,58 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
       })
     }
 
-    // Only update fields that are provided
-    const updateData: any = {}
-    if (requestData.type !== undefined) updateData.type = requestData.type
-    if (requestData.value !== undefined) updateData.value = requestData.value
-    if (requestData.config !== undefined) updateData.config = requestData.config
-    updateData.updatedAt = new Date()
+    // Use database transaction to update both tool and associated step
+    const result = await db.transaction(async (trx) => {
+      // Update tool fields that are provided
+      const toolUpdateData: any = {}
+      if (requestData.type !== undefined) toolUpdateData.type = requestData.type
+      if (requestData.value !== undefined) toolUpdateData.value = requestData.value
+      if (requestData.config !== undefined) toolUpdateData.config = requestData.config
+      toolUpdateData.updatedAt = new Date()
 
-    const [tool] = await db
-      .update(workflowTool)
-      .set(updateData)
-      .where(eq(workflowTool.id, toolId))
-      .returning()
+      const [updatedTool] = await trx
+        .update(workflowTool)
+        .set(toolUpdateData)
+        .where(eq(workflowTool.id, toolId))
+        .returning()
+
+      // Update associated step if stepName or stepDescription is provided
+      let updatedStep = null
+      if (requestData.stepName !== undefined || requestData.stepDescription !== undefined) {
+        // Find step that uses this tool
+        const stepWithTool = await trx
+          .select()
+          .from(workflowStepTemplate)
+          .where(sql`${toolId} = ANY(${workflowStepTemplate.toolIds})`)
+
+        if (stepWithTool.length > 0) {
+          const stepUpdateData: any = {}
+          if (requestData.stepName !== undefined) stepUpdateData.name = requestData.stepName
+          if (requestData.stepDescription !== undefined) stepUpdateData.description = requestData.stepDescription
+          stepUpdateData.updatedAt = new Date()
+
+          const [updated] = await trx
+            .update(workflowStepTemplate)
+            .set(stepUpdateData)
+            .where(eq(workflowStepTemplate.id, stepWithTool[0].id))
+            .returning()
+
+          updatedStep = updated
+        }
+      }
+
+      return { tool: updatedTool, step: updatedStep }
+    })
 
     return c.json({
       success: true,
-      data: tool,
+      data: {
+        tool: result.tool,
+        step: result.step,
+        message: result.step 
+          ? "Tool and associated step updated successfully" 
+          : "Tool updated successfully"
+      },
     })
   } catch (error) {
     Logger.error(error, "Failed to update workflow tool")

@@ -309,7 +309,10 @@ export const createWorkflowToolSchema = z.object({
   config: z.record(z.any()).optional(),
 })
 
-export const updateWorkflowToolSchema = createWorkflowToolSchema.partial()
+export const updateWorkflowToolSchema = createWorkflowToolSchema.partial().extend({
+  stepName: z.string().min(1).max(255).optional(),
+  stepDescription: z.string().optional(),
+})
 
 export const createWorkflowStepTemplateSchema = z.object({
   workflowTemplateId: z.string().uuid(),
