@@ -22,7 +22,6 @@ export interface AIAgentConfig {
   inputPrompt: string
   systemPrompt: string
   knowledgeBase: string
-  content_path: string
 }
 
 const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
@@ -40,7 +39,6 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
     inputPrompt: "$json.input",
     systemPrompt: toolData?.config?.prompt || "",
     knowledgeBase: "",
-    content_path: toolData?.config?.content_path || "latest",
   })
 
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
@@ -183,7 +181,6 @@ Always strive for accuracy and helpfulness in your responses.`
             ...toolData?.config,
             aiModel: agentConfig.model,
             prompt: agentConfig.systemPrompt,
-            content_path: agentConfig.content_path,
             name: agentConfig.name,
             description: agentConfig.description,
           },
@@ -436,32 +433,6 @@ Always strive for accuracy and helpfulness in your responses.`
             <p className="text-xs text-slate-500">
               A system prompt is the initial instruction that sets an AI model's
               behavior, style, and constraints.
-            </p>
-          </div>
-
-          {/* Content Path */}
-          <div className="space-y-2">
-            <Label
-              htmlFor="content-path"
-              className="text-sm font-medium text-slate-700"
-            >
-              Content Path
-            </Label>
-            <Textarea
-              id="content-path"
-              value={agentConfig.content_path || "latest"}
-              onChange={(e) =>
-                setAgentConfig((prev) => ({
-                  ...prev,
-                  content_path: e.target.value,
-                }))
-              }
-              placeholder="latest"
-              className="w-full min-h-[80px] resize-none"
-            />
-            <p className="text-xs text-slate-500">
-              Specify the path to extract content from previous steps (e.g.,
-              "latest", "step_name", "step_1.output").
             </p>
           </div>
         </div>

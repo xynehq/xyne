@@ -2,6 +2,7 @@ import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, X, Trash2 } from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
@@ -17,6 +18,7 @@ interface EmailConfigUIProps {
 export interface EmailConfig {
   sendingFrom: string
   emailAddresses: string[]
+  content_path: string
 }
 
 const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
@@ -30,6 +32,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     sendingFrom: "aman.asrani@juspay.in",
     emailAddresses: toolData?.config?.to_email || [],
+    content_path: toolData?.config?.content_path || "latest",
   })
 
   const [newEmailAddress, setNewEmailAddress] = useState("")
@@ -73,6 +76,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             ...toolData?.config,
             to_email: emailConfig.emailAddresses,
             from_email: emailConfig.sendingFrom,
+            content_path: emailConfig.content_path,
           },
           stepName: "Email",
           stepDescription:
@@ -258,6 +262,32 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 })}
               </div>
             )}
+          </div>
+
+          {/* Content Path */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="content-path"
+              className="text-sm font-medium text-slate-700"
+            >
+              Content Path
+            </Label>
+            <Textarea
+              id="content-path"
+              value={emailConfig.content_path}
+              onChange={(e) =>
+                setEmailConfig((prev) => ({
+                  ...prev,
+                  content_path: e.target.value,
+                }))
+              }
+              placeholder="latest"
+              className="w-full min-h-[80px] resize-none"
+            />
+            <p className="text-xs text-slate-500">
+              Specify the path to extract content from previous steps (e.g.,
+              "latest", "step_name", "step_1.output").
+            </p>
           </div>
         </div>
       </div>

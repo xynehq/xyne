@@ -1469,47 +1469,45 @@ else:
   }
 }
 
-// Helper function to extract content from previous step results using configurable paths
+// Helper function to extract content from previous step results using simplified input paths
 const extractContentFromPath = (
   previousStepResults: any,
   contentPath: string,
 ): string => {
   try {
-    // Parse the path - supports formats like:
-    // "stepName.result.aiOutput"
-    // "step1.result.output"
-    // "latest.result.aiOutput" (for most recent step)
+    // New simplified approach: input.* always points to latest.result.*
+    // Examples: "input.aiOutput" -> latest step's result.aiOutput
+    //          "input.output" -> latest step's result.output
 
-    const pathParts = contentPath.split(".")
-
-    if (pathParts.length === 0) {
-      return ""
+    if (!contentPath.startsWith("input.")) {
+      return `Invalid path: ${contentPath}. Only paths starting with 'input.' are supported.`
     }
 
-    let target = previousStepResults
-
-    // Handle special "latest" keyword
-    if (pathParts[0] === "latest") {
-      const stepKeys = Object.keys(previousStepResults)
-      if (stepKeys.length === 0) return ""
-
-      // Get the most recent step (last in object)
-      const latestStepKey = stepKeys[stepKeys.length - 1]
-      target = previousStepResults[latestStepKey]
-      pathParts.shift() // Remove "latest" from path
-    } else {
-      // Use specific step name
-      const stepName = pathParts[0]
-      target = previousStepResults[stepName]
-      pathParts.shift() // Remove step name from path
+    // Get the latest step
+    const stepKeys = Object.keys(previousStepResults)
+    if (stepKeys.length === 0) {
+      return "No previous steps available"
     }
 
-    // Navigate through the remaining path
+    const latestStepKey = stepKeys[stepKeys.length - 1]
+    const latestStepResult = previousStepResults[latestStepKey]
+
+    if (!latestStepResult?.result) {
+      return "Latest step has no result data"
+    }
+
+    // Remove "input." prefix and navigate from latest step's result
+    const propertyPath = contentPath.slice(6) // Remove "input."
+    const pathParts = propertyPath.split(".")
+
+    let target = latestStepResult.result
+
+    // Navigate through the path starting from result
     for (const part of pathParts) {
       if (target && typeof target === "object" && part in target) {
         target = target[part]
       } else {
-        return ""
+        return `Property '${part}' not found in latest step result`
       }
     }
 
@@ -1520,10 +1518,10 @@ const extractContentFromPath = (
       return JSON.stringify(target, null, 2)
     }
 
-    return ""
+    return "No content found"
   } catch (error) {
     console.error("Error extracting content from path:", error)
-    return ""
+    return `Error: ${error instanceof Error ? error.message : String(error)}`
   }
 }
 
