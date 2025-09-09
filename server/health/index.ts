@@ -343,6 +343,7 @@ export const checkPrometheusHealth =
             details: {
               message: "Prometheus is healthy and query engine is responsive",
               upTargets: queryData.data?.result?.length || 0,
+              endpoint: "/api/v1/query?query=up",
             },
           }
         } else {

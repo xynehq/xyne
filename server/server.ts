@@ -212,7 +212,11 @@ import {
   checkPrometheusHealth,
   checkVespaHealth,
 } from "./health"
-import { HealthStatusType } from "@/health/type"
+import {
+  HealthStatusType,
+  ServiceName,
+  type HealthStatusResponse,
+} from "@/health/type"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -1333,6 +1337,35 @@ app.get(
 
 // START of Health Check Endpoints
 // Comprehensive health check endpoint
+
+const createHealthCheckHandler = (
+  checkFn: () => Promise<HealthStatusResponse>,
+  serviceName: ServiceName,
+) => {
+  return async (c: Context) => {
+    try {
+      const health = await checkFn()
+      const statusCode =
+        health.status === HealthStatusType.Healthy ||
+        health.status === HealthStatusType.Degraded
+          ? 200
+          : 503
+      return c.json(health, statusCode)
+    } catch (error) {
+      Logger.error(error, `Health check endpoint failed for ${serviceName}`)
+      return c.json(
+        {
+          status: HealthStatusType.Unhealthy,
+          timestamp: new Date().toISOString(),
+          error: "Health check failed",
+          details: error instanceof Error ? error.message : "Unknown error",
+        },
+        503,
+      )
+    }
+  }
+}
+
 app.get("/health", async (c) => {
   try {
     const health = await checkOverallSystemHealth()
@@ -1359,134 +1392,34 @@ app.get("/health", async (c) => {
 })
 
 // Postgres health check endpoint
-app.get("/health/postgres", async (c) => {
-  try {
-    const health = await checkPostgresHealth()
-    const statusCode =
-      health.status === HealthStatusType.Healthy
-        ? 200
-        : health.status === HealthStatusType.Degraded
-          ? 200
-          : 503
-
-    return c.json(health, statusCode)
-  } catch (error) {
-    Logger.error(error, "Health check endpoint failed for postgres")
-    return c.json(
-      {
-        status: HealthStatusType.Unhealthy,
-        timestamp: new Date().toISOString(),
-        error: "Health check failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      503,
-    )
-  }
-})
+app.get(
+  "/health/postgres",
+  createHealthCheckHandler(checkPostgresHealth, ServiceName.postgres),
+)
 
 // Grafana health check endpoint
-app.get("/health/grafana", async (c) => {
-  try {
-    const health = await checkGrafanaHealth()
-    const statusCode =
-      health.status === HealthStatusType.Healthy
-        ? 200
-        : health.status === HealthStatusType.Degraded
-          ? 200
-          : 503
-
-    return c.json(health, statusCode)
-  } catch (error) {
-    Logger.error(error, "Health check endpoint failed for grafana")
-    return c.json(
-      {
-        status: HealthStatusType.Unhealthy,
-        timestamp: new Date().toISOString(),
-        error: "Health check failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      503,
-    )
-  }
-})
+app.get(
+  "/health/grafana",
+  createHealthCheckHandler(checkGrafanaHealth, ServiceName.grafana),
+)
 
 // Vespa health check endpoint
-app.get("/health/vespa", async (c) => {
-  try {
-    const health = await checkVespaHealth()
-    const statusCode =
-      health.status === HealthStatusType.Healthy
-        ? 200
-        : health.status === HealthStatusType.Degraded
-          ? 200
-          : 503
-
-    return c.json(health, statusCode)
-  } catch (error) {
-    Logger.error(error, "Health check endpoint failed for vespa ")
-    return c.json(
-      {
-        status: HealthStatusType.Unhealthy,
-        timestamp: new Date().toISOString(),
-        error: "Health check failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      503,
-    )
-  }
-})
+app.get(
+  "/health/vespa",
+  createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
+)
 
 // Prometheus health check endpoint
-app.get("/health/prometheus", async (c) => {
-  try {
-    const health = await checkPrometheusHealth()
-    const statusCode =
-      health.status === HealthStatusType.Healthy
-        ? 200
-        : health.status === HealthStatusType.Degraded
-          ? 200
-          : 503
-
-    return c.json(health, statusCode)
-  } catch (error) {
-    Logger.error(error, "Health check endpoint failed for prometheus ")
-    return c.json(
-      {
-        status: HealthStatusType.Unhealthy,
-        timestamp: new Date().toISOString(),
-        error: "Health check failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      503,
-    )
-  }
-})
+app.get(
+  "/health/prometheus",
+  createHealthCheckHandler(checkPrometheusHealth, ServiceName.prometheus),
+)
 
 //Loki health check endpoint
-app.get("/health/loki", async (c) => {
-  try {
-    const health = await checkLokiHealth()
-    const statusCode =
-      health.status === HealthStatusType.Healthy
-        ? 200
-        : health.status === HealthStatusType.Degraded
-          ? 200
-          : 503
-
-    return c.json(health, statusCode)
-  } catch (error) {
-    Logger.error(error, "Health check endpoint failed for loki ")
-    return c.json(
-      {
-        status: HealthStatusType.Unhealthy,
-        timestamp: new Date().toISOString(),
-        error: "Health check failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      503,
-    )
-  }
-})
+app.get(
+  "/health/loki",
+  createHealthCheckHandler(checkLokiHealth, ServiceName.loki),
+)
 
 export const init = async () => {
   await initQueue()
