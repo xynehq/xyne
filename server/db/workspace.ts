@@ -74,6 +74,7 @@ export const createWorkspace = async (
   trx: TxnOrClient,
   createdBy: string,
   domain: string,
+  config?: any,
 ) => {
   const externalId = createId()
   // extract a default name out of the domain
@@ -86,6 +87,7 @@ export const createWorkspace = async (
       createdBy,
       domain,
       name,
+      config,
     })
     .returning()
 }
