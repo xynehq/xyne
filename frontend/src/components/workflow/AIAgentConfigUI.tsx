@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +12,7 @@ interface AIAgentConfigUIProps {
   onSave?: (agentConfig: AIAgentConfig) => void
   toolData?: any
   toolId?: string // Tool ID for API updates
+  stepData?: any // Step data for titles
 }
 
 export interface AIAgentConfig {
@@ -21,6 +22,7 @@ export interface AIAgentConfig {
   inputPrompt: string
   systemPrompt: string
   knowledgeBase: string
+  content_path: string
 }
 
 const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
@@ -29,14 +31,16 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   onSave,
   toolData,
   toolId,
+  stepData,
 }) => {
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
-    name: "AI Agent",
-    description: "",
-    model: "gemini-1.5-pro",
+    name: toolData?.value?.name || "AI Agent",
+    description: toolData?.value?.description || "",
+    model: toolData?.config?.aiModel || "gemini-1.5-pro",
     inputPrompt: "$json.input",
-    systemPrompt: "",
+    systemPrompt: toolData?.config?.prompt || "",
     knowledgeBase: "",
+    content_path: toolData?.config?.content_path || "latest",
   })
 
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
@@ -171,13 +175,20 @@ Always strive for accuracy and helpfulness in your responses.`
       if (toolId) {
         const updatedToolData = {
           type: "ai_agent",
-          value: agentConfig,
-          config: {
-            ...toolData?.config,
-            model: agentConfig.model,
+          value: {
             name: agentConfig.name,
             description: agentConfig.description,
           },
+          config: {
+            ...toolData?.config,
+            aiModel: agentConfig.model,
+            prompt: agentConfig.systemPrompt,
+            content_path: agentConfig.content_path,
+            name: agentConfig.name,
+            description: agentConfig.description,
+          },
+          stepName: agentConfig.name,
+          stepDescription: agentConfig.description,
         }
 
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
@@ -240,7 +251,7 @@ Always strive for accuracy and helpfulness in your responses.`
             textTransform: "capitalize",
           }}
         >
-          AI Agent
+          {stepData?.step?.name || toolData?.name || "AI Agent"}
         </h2>
 
         <button
@@ -281,27 +292,6 @@ Always strive for accuracy and helpfulness in your responses.`
             />
           </div>
 
-          {/* Agent Description */}
-          <div className="space-y-2">
-            <Label
-              htmlFor="agent-description"
-              className="text-sm font-medium text-slate-700"
-            >
-              Agent Description
-            </Label>
-            <Textarea
-              id="agent-description"
-              value={agentConfig.description}
-              onChange={(e) =>
-                setAgentConfig((prev) => ({
-                  ...prev,
-                  description: e.target.value,
-                }))
-              }
-              placeholder="Describe what this agent does"
-              className="w-full min-h-[80px] resize-none"
-            />
-          </div>
 
           {/* Choose Model */}
           <div className="space-y-2">
@@ -338,32 +328,6 @@ Always strive for accuracy and helpfulness in your responses.`
             </div>
           </div>
 
-          {/* Input Prompt */}
-          <div className="space-y-2">
-            <Label
-              htmlFor="input-prompt"
-              className="text-sm font-medium text-slate-700"
-            >
-              Input Prompt (User Input)
-            </Label>
-            <div className="relative">
-              <Input
-                id="input-prompt"
-                value={agentConfig.inputPrompt}
-                onChange={(e) =>
-                  setAgentConfig((prev) => ({
-                    ...prev,
-                    inputPrompt: e.target.value,
-                  }))
-                }
-                placeholder="Enter input prompt"
-                className="w-full bg-blue-50 border-blue-200 text-blue-800 font-mono text-sm"
-              />
-            </div>
-            <p className="text-xs text-slate-500">
-              This is the data sent by the last node
-            </p>
-          </div>
 
           {/* System Prompt */}
           <div className="space-y-2">
@@ -477,36 +441,31 @@ Always strive for accuracy and helpfulness in your responses.`
             </p>
           </div>
 
-          {/* Add Knowledge Base */}
+          {/* Content Path */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-slate-700">
-              Add Knowledge Base
+            <Label
+              htmlFor="content-path"
+              className="text-sm font-medium text-slate-700"
+            >
+              Content Path
             </Label>
-            <div className="relative">
-              <button
-                onClick={() =>
-                  setIsKnowledgeDropdownOpen(!isKnowledgeDropdownOpen)
-                }
-                className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
-              >
-                <div className="flex items-center gap-2">
-                  <Search className="w-4 h-4 text-slate-500" />
-                  <span className="text-slate-500">Search by name</span>
-                </div>
-                <ChevronDown
-                  className={`w-4 h-4 text-slate-500 transition-transform ${isKnowledgeDropdownOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-
-              {isKnowledgeDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-md shadow-lg">
-                  <div className="p-3 text-sm text-slate-500 text-center">
-                    No knowledge bases available
-                  </div>
-                </div>
-              )}
-            </div>
+            <Textarea
+              id="content-path"
+              value={agentConfig.content_path || "latest"}
+              onChange={(e) =>
+                setAgentConfig((prev) => ({
+                  ...prev,
+                  content_path: e.target.value,
+                }))
+              }
+              placeholder="latest"
+              className="w-full min-h-[80px] resize-none"
+            />
+            <p className="text-xs text-slate-500">
+              Specify the path to extract content from previous steps (e.g., "latest", "step_name", "step_1.output").
+            </p>
           </div>
+
         </div>
       </div>
 

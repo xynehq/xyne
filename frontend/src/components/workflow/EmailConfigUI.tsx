@@ -11,6 +11,7 @@ interface EmailConfigUIProps {
   onSave?: (emailConfig: EmailConfig) => void
   toolData?: any
   toolId?: string // Tool ID for API updates
+  stepData?: any // Step data for titles
 }
 
 export interface EmailConfig {
@@ -24,6 +25,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
   onSave,
   toolData,
   toolId,
+  stepData,
 }) => {
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     sendingFrom: "aman.asrani@juspay.in",
@@ -72,6 +74,10 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             to_email: emailConfig.emailAddresses,
             from_email: emailConfig.sendingFrom,
           },
+          stepName: "Email",
+          stepDescription: emailConfig.emailAddresses.length > 0 
+            ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
+            : "Send automated email notifications to specified recipients.",
         }
 
         await workflowToolsAPI.updateTool(toolId, updatedToolData)
@@ -134,7 +140,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             textTransform: "capitalize",
           }}
         >
-          Email
+          {stepData?.step?.name || toolData?.name || "Email"}
         </h2>
 
         <button

@@ -375,6 +375,8 @@ export const workflowToolsAPI = {
       type: string
       value: any
       config: any
+      stepName?: string
+      stepDescription?: string
     },
   ): Promise<any> {
     return apiRequest<any>(
@@ -393,6 +395,8 @@ export const workflowToolsAPI = {
     type: string
     value: any
     config: any
+    stepName?: string
+    stepDescription?: string
   }): Promise<any> {
     return apiRequest<any>(`${WORKFLOW_TEMPLATES_BASE_URL}/workflow/tools`, {
       method: "POST",
