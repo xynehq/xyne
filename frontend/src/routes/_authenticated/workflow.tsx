@@ -173,28 +173,16 @@ function WorkflowComponent() {
         console.log("Templates API Response:", templates.data)
 
         // Convert WorkflowTemplate to Template interface for modal
-        // const convertedTemplates: Template[] = templates.data.map((workflowTemplate) => ({
-        //   id: workflowTemplate.id,
-        //   name: workflowTemplate.name,
-        //   description: workflowTemplate.description,
-        //   icon: getTemplateIcon(workflowTemplate),
-        //   iconBgColor: getTemplateIconBgColor(workflowTemplate),
-        //   isPlaceholder: false
-        // }))
-
-        const convertedTemplates: Template[] = templates.data
-          .filter(
-            (workflowTemplate) =>
-              workflowTemplate.id === "acd589c3-cc73-4fc0-860c-798800b512d4",
-          )
-          .map((workflowTemplate) => ({
+        const convertedTemplates: Template[] = templates.data.map(
+          (workflowTemplate) => ({
             id: workflowTemplate.id,
             name: workflowTemplate.name,
             description: workflowTemplate.description,
             icon: getTemplateIcon(workflowTemplate),
             iconBgColor: getTemplateIconBgColor(workflowTemplate),
             isPlaceholder: false,
-          }))
+          }),
+        )
 
         // Add placeholder cards to fill the grid
         const placeholderCount = Math.max(0, 3 - convertedTemplates.length)
