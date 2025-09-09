@@ -68,7 +68,6 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
-  GetWorkspaceApiKeys,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -96,7 +95,11 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo, GenerateApiKey } from "@/api/auth"
+import {
+  GetUserWorkspaceInfo,
+  GenerateApiKey,
+  GenerateUserApiKey,
+} from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -135,7 +138,7 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import { UserRole, Apps } from "@/shared/types" // Import Apps
+import { UserRole, Apps, CreateApiKeySchema } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -302,6 +305,7 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
         workspaceId: apiKeys.workspaceId,
         userId: apiKeys.userId,
         userEmail: users.email,
+        config: apiKeys.config,
       })
       .from(apiKeys)
       .leftJoin(users, eq(apiKeys.userId, users.externalId)) // or users.externalId depending on your schema
@@ -316,6 +320,7 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     c.set("apiKey", apiKey)
     c.set("workspaceId", foundApiKey.workspaceId)
     c.set("userEmail", foundApiKey.userEmail)
+    c.set("config", foundApiKey.config)
 
     Logger.info(`API key verified for workspace ID: ${foundApiKey.workspaceId}`)
 
@@ -819,6 +824,11 @@ export const AppRoutes = app
     SearchSlackChannels,
   )
   .get("/me", GetUserWorkspaceInfo)
+  .post(
+    "/users/api-key",
+    zValidator("json", CreateApiKeySchema),
+    GenerateUserApiKey,
+  )
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
@@ -1010,6 +1020,8 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
   )
+  // .get("/workspace/api-key", GetWorkspaceApiKeys)
+
   .get(
     "/agents/:agentId/analysis",
     zValidator("query", agentAnalysisQuerySchema),
@@ -1026,7 +1038,6 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
   )
-  .get("/workspace/api-key", GetWorkspaceApiKeys)
   .get(
     "/admin/users/:userId/feedback",
     zValidator("query", userAgentLeaderboardQuerySchema),

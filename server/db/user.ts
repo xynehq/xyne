@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm"
 import { db } from "./client"
 import {
+  apiKeys,
   selectUserSchema,
   selectWorkspaceSchema,
   userPublicSchema,
@@ -16,6 +17,7 @@ import { createId } from "@paralleldrive/cuid2"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
+import crypto from "crypto"
 
 export const getPublicUserAndWorkspaceByEmail = async (
   trx: TxnOrClient,
@@ -178,4 +180,44 @@ export const getUserById = async (
     throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
   }
   return parsedRes.data
+}
+
+export async function createUserApiKey({
+  db,
+  userId,
+  workspaceId,
+  name,
+  scope,
+}: {
+  db: TxnOrClient
+  userId: string
+  workspaceId: string
+  name: string
+  scope: any
+}): Promise<{
+  success: boolean
+  key?: string
+  error?: string
+}> {
+  try {
+    // Generate random MD5 hash
+
+    const md5Hash = crypto.randomBytes(16).toString("hex")
+
+    // Store encrypted API key in database
+    const [inserted] = await db.insert(apiKeys).values({
+      userId,
+      name,
+      workspaceId,
+      key: md5Hash,
+      config: scope, // Direct encrypted string
+    })
+    return { success: true, key: md5Hash }
+  } catch (err) {
+    console.error("[createAgentApiKey] Error:", err)
+    return {
+      success: false,
+      error: `Database error while creating API key - ${err}`,
+    }
+  }
 }

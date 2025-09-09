@@ -108,6 +108,13 @@ export enum OpenAIError {
   RateLimitError = "rate_limit_exceeded",
   InvalidAPIKey = "invalid_api_key",
 }
+export enum ApiKeyScopes {
+  agent_chat = "CREATE_AGENT",
+  create_agent = "AGENT_CHAT",
+  agent_chat_stop = "AGENT_CHAT_STOP",
+  normal_chat = "NORMAL_CHAT",
+  upload_kb = "UPLOAD_KB",
+}
 
 export const AutocompleteFileSchema = z
   .object({
@@ -602,3 +609,33 @@ export const attachmentMetadataSchema = z.object({
 })
 
 export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>
+
+export const ApiKeyPermissionsSchema = z
+  .object({
+    scopes: z.array(z.nativeEnum(ApiKeyScopes)),
+    agents: z.array(z.string()).optional(),
+  })
+  .refine(
+    (data) => {
+      // If scopes contains agent_chat, then agent_id array must be present and non-empty
+      const scopeSet = new Set(data.scopes)
+
+      // Agent-related validation
+      if (scopeSet.has(ApiKeyScopes.agent_chat) && !data.agents?.length) {
+        return false
+      }
+      return true
+    },
+    {
+      message: "agent_id array is required when scopes contains agent_chat",
+      path: ["agents"],
+    },
+  )
+
+export const CreateApiKeySchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  permissions: ApiKeyPermissionsSchema,
+})
+
+export type ApiKeyPermissions = z.infer<typeof ApiKeyPermissionsSchema>
+export type CreateApiKeyRequest = z.infer<typeof CreateApiKeySchema>

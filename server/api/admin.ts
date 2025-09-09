@@ -4,9 +4,15 @@ import { db } from "@/db/client"
 import { getUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { SSEClientTransport, type SSEClientTransportOptions } from "@modelcontextprotocol/sdk/client/sse.js"
+import {
+  SSEClientTransport,
+  type SSEClientTransportOptions,
+} from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { StreamableHTTPClientTransport, type StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import {
+  StreamableHTTPClientTransport,
+  type StreamableHTTPClientTransportOptions,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import {
   syncConnectorTools,
   deleteToolsByConnectorId,
@@ -60,7 +66,6 @@ import {
   getAgentFeedbackMessages,
   getAgentUserFeedbackMessages,
   getAllUserFeedbackMessages,
-  getWorkspaceApiKeys,
 } from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
@@ -866,7 +871,8 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
   const sanitizedHeaders: Record<string, string> = Object.fromEntries(
     Object.entries(headers ?? {})
       .filter(
-        ([k, v]) => typeof k === "string" && typeof v === "string" && v.trim() !== "",
+        ([k, v]) =>
+          typeof k === "string" && typeof v === "string" && v.trim() !== "",
       )
       .map(([k, v]) => [k.toLowerCase(), v])
       .filter(([k]) => !forbiddenHeaderSet.has(k)),
@@ -888,31 +894,31 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
       null,
       null,
       null, // apiKey is no longer used
-    );
+    )
     try {
       // Backwards compatibility logic demonstration for connection test
-      const loadedConfig = connector.config as MCPClientConfig;
-      const loadedUrl = loadedConfig.url;
+      const loadedConfig = connector.config as MCPClientConfig
+      const loadedUrl = loadedConfig.url
       // Default to 'sse' for old connectors that won't have the mode field
-      const loadedMode = loadedConfig.mode || MCPConnectorMode.SSE;
+      const loadedMode = loadedConfig.mode || MCPConnectorMode.SSE
 
-      let loadedHeaders: Record<string, string> = {};
+      let loadedHeaders: Record<string, string> = {}
 
       if (connector.credentials) {
         // New format: credentials contain the headers object. The custom type decrypts it.
         try {
-          loadedHeaders = JSON.parse(connector.credentials);
+          loadedHeaders = JSON.parse(connector.credentials)
         } catch (error) {
           loggerWithChild({ email: sub }).error(
             `Failed to parse credentials for connector ${connector.externalId}: ${getErrorMessage(
               error,
             )}`,
-          );
-          loadedHeaders = {};
+          )
+          loadedHeaders = {}
         }
       } else if (connector.apiKey) {
         // Old format: for backwards compatibility.
-        loadedHeaders["Authorization"] = `Bearer ${connector.apiKey}`;
+        loadedHeaders["Authorization"] = `Bearer ${connector.apiKey}`
       }
 
       const client = new Client({
@@ -923,36 +929,36 @@ export const AddApiKeyMCPConnector = async (c: Context) => {
         `invoking client initialize for url: ${
           new URL(loadedUrl).origin
         }${new URL(loadedUrl).pathname} with mode: ${loadedMode}`,
-      );
+      )
 
       if (loadedMode === MCPConnectorMode.StreamableHTTP) {
         const transportOptions: StreamableHTTPClientTransportOptions = {
           requestInit: {
             headers: loadedHeaders,
           },
-        };
+        }
         await client.connect(
           new StreamableHTTPClientTransport(
             new URL(loadedUrl),
             transportOptions,
           ),
-        );
+        )
       } else if (loadedMode === MCPConnectorMode.SSE) {
         const transportOptions: SSEClientTransportOptions = {
           requestInit: {
             headers: loadedHeaders,
           },
-        };
+        }
         await client.connect(
           new SSEClientTransport(new URL(loadedUrl), transportOptions),
-        );
+        )
       } else {
         // This case should ideally not be reached if validation is correct,
         // but it's a good safeguard.
-        throw new Error(`Unsupported MCP connector mode: ${loadedMode}`);
+        throw new Error(`Unsupported MCP connector mode: ${loadedMode}`)
       }
 
-      status = ConnectorStatus.Connected;
+      status = ConnectorStatus.Connected
 
       // Fetch all available tools from the client
       // TODO: look in the DB. cache logic has to be discussed.
@@ -1140,7 +1146,7 @@ export const UpdateToolsStatusApi = async (c: Context) => {
         toolId: toolUpdate.toolId,
         success: false,
         error: getErrorMessage(error),
-    }
+      }
     }
   })
 
@@ -1770,45 +1776,6 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Error fetching all user feedback messages")
-    return c.json(
-      {
-        success: false,
-        message: getErrorMessage(error),
-      },
-      500,
-    )
-  }
-}
-
-export const GetWorkspaceApiKeys = async (c: Context) => {
-  let email = ""
-  try {
-    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    email = sub
-
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceExternalId,
-      email,
-    )
-    if (
-      !userAndWorkspace ||
-      !userAndWorkspace.user ||
-      !userAndWorkspace.workspace
-    ) {
-      return c.json({ message: "User or workspace not found" }, 404)
-    }
-    const apiKeys = await getWorkspaceApiKeys({
-      db,
-      userId: userAndWorkspace.user.externalId,
-      workspaceId: userAndWorkspace.workspace.externalId,
-    })
-    return c.json({
-      success: true,
-      data: apiKeys,
-    })
-  } catch (error) {
-    Logger.error(error, "Error fetching agent API keys")
     return c.json(
       {
         success: false,

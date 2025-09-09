@@ -15,6 +15,7 @@ const apiKeyEncryption = new Encryption(process.env.ENCRYPTION_KEY!)
 
 export const apiKeys = pgTable("api_keys", {
   id: serial("id").primaryKey(),
+  name: text("name").notNull(),
   userId: text("user_id")
     .references(() => users.externalId, { onDelete: "cascade" })
     .notNull(),
