@@ -75,9 +75,10 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             from_email: emailConfig.sendingFrom,
           },
           stepName: "Email",
-          stepDescription: emailConfig.emailAddresses.length > 0 
-            ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
-            : "Send automated email notifications to specified recipients.",
+          stepDescription:
+            emailConfig.emailAddresses.length > 0
+              ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
+              : "Send automated email notifications to specified recipients.",
         }
 
         await workflowToolsAPI.updateTool(toolId, updatedToolData)

@@ -1470,26 +1470,29 @@ else:
 }
 
 // Helper function to extract content from previous step results using configurable paths
-const extractContentFromPath = (previousStepResults: any, contentPath: string): string => {
+const extractContentFromPath = (
+  previousStepResults: any,
+  contentPath: string,
+): string => {
   try {
     // Parse the path - supports formats like:
-    // "stepName.result.aiOutput" 
+    // "stepName.result.aiOutput"
     // "step1.result.output"
     // "latest.result.aiOutput" (for most recent step)
-    
-    const pathParts = contentPath.split('.')
-    
+
+    const pathParts = contentPath.split(".")
+
     if (pathParts.length === 0) {
       return ""
     }
-    
+
     let target = previousStepResults
-    
+
     // Handle special "latest" keyword
     if (pathParts[0] === "latest") {
       const stepKeys = Object.keys(previousStepResults)
       if (stepKeys.length === 0) return ""
-      
+
       // Get the most recent step (last in object)
       const latestStepKey = stepKeys[stepKeys.length - 1]
       target = previousStepResults[latestStepKey]
@@ -1500,26 +1503,26 @@ const extractContentFromPath = (previousStepResults: any, contentPath: string): 
       target = previousStepResults[stepName]
       pathParts.shift() // Remove step name from path
     }
-    
+
     // Navigate through the remaining path
     for (const part of pathParts) {
-      if (target && typeof target === 'object' && part in target) {
+      if (target && typeof target === "object" && part in target) {
         target = target[part]
       } else {
         return ""
       }
     }
-    
+
     // Convert result to string
-    if (typeof target === 'string') {
+    if (typeof target === "string") {
       return target
     } else if (target !== null && target !== undefined) {
       return JSON.stringify(target, null, 2)
     }
-    
+
     return ""
   } catch (error) {
-    console.error('Error extracting content from path:', error)
+    console.error("Error extracting content from path:", error)
     return ""
   }
 }
@@ -1569,9 +1572,10 @@ const executeWorkflowTool = async (
         const fromEmail = emailConfig.from_email || "aman.asrani@juspay.in"
         const subject = emailConfig.subject || "Workflow Results"
         const contentType = emailConfig.content_type || "html"
-        
+
         // New configurable content path feature
-        const contentPath = emailConfig.content_path || emailConfig.content_source_path
+        const contentPath =
+          emailConfig.content_path || emailConfig.content_source_path
 
         try {
           let emailBody = ""
@@ -1585,7 +1589,7 @@ const executeWorkflowTool = async (
           } else {
             // Fallback to previous behavior - get from first step
             const prevStepData = Object.values(previousStepResults)[0] as any
-            
+
             if (prevStepData?.result?.aiOutput) {
               // From AI agent step
               emailBody = prevStepData.result.aiOutput
@@ -1594,9 +1598,10 @@ const executeWorkflowTool = async (
               emailBody = prevStepData.result.output
             } else if (prevStepData?.result) {
               // Fallback to stringified result
-              emailBody = typeof prevStepData.result === "string" 
-                ? prevStepData.result 
-                : JSON.stringify(prevStepData.result, null, 2)
+              emailBody =
+                typeof prevStepData.result === "string"
+                  ? prevStepData.result
+                  : JSON.stringify(prevStepData.result, null, 2)
             } else {
               emailBody = "No content available from previous step"
             }
@@ -1623,7 +1628,7 @@ const executeWorkflowTool = async (
             <p>Generated on: ${new Date().toLocaleString()}</p>
         </div>
         <div class="body-content">
-            ${emailBody.replace(/\n/g, '<br>')}
+            ${emailBody.replace(/\n/g, "<br>")}
         </div>
     </div>
 </body>
@@ -1635,9 +1640,10 @@ const executeWorkflowTool = async (
             return {
               status: "error",
               result: {
-                error: "No email recipients configured in tool config (to_email or recipients field required)",
-                config: emailConfig
-              }
+                error:
+                  "No email recipients configured in tool config (to_email or recipients field required)",
+                config: emailConfig,
+              },
             }
           }
 
@@ -1659,15 +1665,18 @@ const executeWorkflowTool = async (
               })
               emailResults.push({ recipient, sent: emailSent })
             } catch (emailError) {
-              emailResults.push({ 
-                recipient, 
-                sent: false, 
-                error: emailError instanceof Error ? emailError.message : String(emailError)
+              emailResults.push({
+                recipient,
+                sent: false,
+                error:
+                  emailError instanceof Error
+                    ? emailError.message
+                    : String(emailError),
               })
             }
           }
 
-          const successCount = emailResults.filter(r => r.sent).length
+          const successCount = emailResults.filter((r) => r.sent).length
           const allSent = successCount === recipients.length
 
           return {
@@ -1683,20 +1692,19 @@ const executeWorkflowTool = async (
                 content_type: contentType,
                 body_length: emailBody.length,
               },
-              message: allSent 
+              message: allSent
                 ? `Email sent successfully to all ${successCount} recipients`
-                : `Email sent to ${successCount} of ${recipients.length} recipients`
-            }
+                : `Email sent to ${successCount} of ${recipients.length} recipients`,
+            },
           }
-
         } catch (error) {
           return {
             status: "error",
             result: {
               error: "Email tool execution failed",
               message: error instanceof Error ? error.message : String(error),
-              config: emailConfig
-            }
+              config: emailConfig,
+            },
           }
         }
 
@@ -1706,7 +1714,8 @@ const executeWorkflowTool = async (
         const inputType = aiConfig.inputType || "text" // Default to text
         const aiModel = aiConfig.aiModel || aiConfig.model || "gemini-1.5-flash"
         const prompt = aiConfig.prompt || "Please analyze the provided content"
-        const geminiApiKey = aiConfig.gemini_api_key || "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw"
+        const geminiApiKey =
+          aiConfig.gemini_api_key || "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw"
 
         try {
           let analysisInput = ""
@@ -1715,8 +1724,11 @@ const executeWorkflowTool = async (
           if (inputType === "form") {
             // Extract form data and files from previous step results
             const prevStepData = Object.values(previousStepResults)[0] as any
-            const formSubmission = prevStepData?.formSubmission?.formData || prevStepData?.result?.formData || {}
-            
+            const formSubmission =
+              prevStepData?.formSubmission?.formData ||
+              prevStepData?.result?.formData ||
+              {}
+
             // Process text fields
             const textFields = Object.entries(formSubmission)
               .filter(([key, value]) => typeof value === "string")
@@ -1730,84 +1742,117 @@ const executeWorkflowTool = async (
                 try {
                   const fileData = value as any
                   const fileExt = fileData.fileExtension?.toLowerCase()
-                  
+
                   if (fileExt === "txt") {
                     // Text files - read directly
                     const fs = await import("node:fs/promises")
-                    const content = await fs.readFile(fileData.absolutePath, "utf-8")
-                    fileContents.push(`File: ${fileData.originalFileName}\nContent:\n${content}`)
+                    const content = await fs.readFile(
+                      fileData.absolutePath,
+                      "utf-8",
+                    )
+                    fileContents.push(
+                      `File: ${fileData.originalFileName}\nContent:\n${content}`,
+                    )
                   } else if (fileExt === "pdf") {
                     // PDF files - extract text using pdf-parse (Node.js friendly)
                     try {
                       const fs = await import("node:fs/promises")
                       const pdfParse = require("pdf-parse")
-                      
+
                       // Read PDF file
                       const pdfBuffer = await fs.readFile(fileData.absolutePath)
-                      
+
                       // Parse PDF with pdf-parse
                       const pdfData = await pdfParse(pdfBuffer)
-                      
+
                       const cleanedText = pdfData.text.trim()
                       if (cleanedText && cleanedText.length > 10) {
-                        fileContents.push(`File: ${fileData.originalFileName}\nContent:\n${cleanedText}`)
+                        fileContents.push(
+                          `File: ${fileData.originalFileName}\nContent:\n${cleanedText}`,
+                        )
                       } else {
-                        fileContents.push(`File: ${fileData.originalFileName}\nContent: [PDF file - no readable text found]`)
+                        fileContents.push(
+                          `File: ${fileData.originalFileName}\nContent: [PDF file - no readable text found]`,
+                        )
                       }
                     } catch (pdfError) {
                       // Fallback: just indicate PDF was processed but couldn't extract text
-                      fileContents.push(`File: ${fileData.originalFileName}\nType: PDF document (${fileData.fileSize} bytes)\nNote: PDF text extraction failed. File contains ${fileData.fileSize} bytes of content that may include text, images, or other data.`)
+                      fileContents.push(
+                        `File: ${fileData.originalFileName}\nType: PDF document (${fileData.fileSize} bytes)\nNote: PDF text extraction failed. File contains ${fileData.fileSize} bytes of content that may include text, images, or other data.`,
+                      )
                     }
-                  } else if (["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(fileExt)) {
+                  } else if (
+                    ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(
+                      fileExt,
+                    )
+                  ) {
                     // Image files - OCR text extraction using sharp + canvas
                     try {
                       const fs = await import("node:fs/promises")
                       const sharp = await import("sharp")
-                      
+
                       // Convert image to high-contrast format for better OCR
-                      const imageBuffer = await fs.readFile(fileData.absolutePath)
-                      const processedImage = await sharp.default(imageBuffer)
+                      const imageBuffer = await fs.readFile(
+                        fileData.absolutePath,
+                      )
+                      const processedImage = await sharp
+                        .default(imageBuffer)
                         .greyscale()
                         .normalize()
                         .sharpen()
                         .png()
                         .toBuffer()
-                      
+
                       // For now, indicate image was processed but OCR would need additional setup
                       // Full OCR would require tesseract.js or similar
-                      const imageInfo = await sharp.default(imageBuffer).metadata()
-                      fileContents.push(`File: ${fileData.originalFileName}\nType: Image (${imageInfo.width}x${imageInfo.height} ${fileExt.toUpperCase()})\nNote: Image processed but text extraction requires OCR setup. Image contains visual content that may include text, charts, or diagrams.`)
+                      const imageInfo = await sharp
+                        .default(imageBuffer)
+                        .metadata()
+                      fileContents.push(
+                        `File: ${fileData.originalFileName}\nType: Image (${imageInfo.width}x${imageInfo.height} ${fileExt.toUpperCase()})\nNote: Image processed but text extraction requires OCR setup. Image contains visual content that may include text, charts, or diagrams.`,
+                      )
                     } catch (imageError) {
-                      fileContents.push(`File: ${fileData.originalFileName}\nError: Image processing failed - ${imageError.message}`)
+                      fileContents.push(
+                        `File: ${fileData.originalFileName}\nError: Image processing failed - ${imageError.message}`,
+                      )
                     }
                   } else if (["doc", "docx"].includes(fileExt)) {
                     // Word documents - would need additional library like mammoth
-                    fileContents.push(`File: ${fileData.originalFileName}\nType: Microsoft Word document\nNote: Word document processing requires additional setup. File contains ${fileData.fileSize} bytes of content.`)
+                    fileContents.push(
+                      `File: ${fileData.originalFileName}\nType: Microsoft Word document\nNote: Word document processing requires additional setup. File contains ${fileData.fileSize} bytes of content.`,
+                    )
                   } else {
                     // Unsupported file type
-                    fileContents.push(`File: ${fileData.originalFileName}\nType: ${fileExt.toUpperCase()} (${fileData.fileSize} bytes)\nNote: File type not supported for content extraction`)
+                    fileContents.push(
+                      `File: ${fileData.originalFileName}\nType: ${fileExt.toUpperCase()} (${fileData.fileSize} bytes)\nNote: File type not supported for content extraction`,
+                    )
                   }
                 } catch (fileError) {
-                  fileContents.push(`File: ${value.originalFileName}\nError: Could not read file - ${fileError.message}`)
+                  fileContents.push(
+                    `File: ${value.originalFileName}\nError: Could not read file - ${fileError.message}`,
+                  )
                 }
               }
             }
 
-            analysisInput = [textFields, ...fileContents].filter(Boolean).join("\n\n")
+            analysisInput = [textFields, ...fileContents]
+              .filter(Boolean)
+              .join("\n\n")
             inputMetadata = {
               inputType: "form",
               formFields: Object.keys(formSubmission).length,
-              filesProcessed: fileContents.length
+              filesProcessed: fileContents.length,
             }
           } else {
             // Text input - get from previous step result
             const prevStepData = Object.values(previousStepResults)[0] as any
-            analysisInput = prevStepData?.result?.output || 
-                          prevStepData?.result?.content || 
-                          JSON.stringify(prevStepData?.result || {})
+            analysisInput =
+              prevStepData?.result?.output ||
+              prevStepData?.result?.content ||
+              JSON.stringify(prevStepData?.result || {})
             inputMetadata = {
               inputType: "text",
-              sourceStep: Object.keys(previousStepResults)[0] || "unknown"
+              sourceStep: Object.keys(previousStepResults)[0] || "unknown",
             }
           }
 
@@ -1817,30 +1862,32 @@ const executeWorkflowTool = async (
               result: {
                 error: "No input content found for AI analysis",
                 inputType,
-                inputMetadata
-              }
+                inputMetadata,
+              },
             }
           }
 
           // Call Gemini API
           const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`
-          
+
           const fullPrompt = `${prompt}\n\nInput to analyze:\n${analysisInput.slice(0, 8000)}`
-          
+
           const geminiResponse = await fetch(geminiUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{
-                parts: [{ text: fullPrompt }]
-              }],
+              contents: [
+                {
+                  parts: [{ text: fullPrompt }],
+                },
+              ],
               generationConfig: {
                 temperature: 0.3,
                 topK: 40,
                 topP: 0.95,
-                maxOutputTokens: 2048
-              }
-            })
+                maxOutputTokens: 2048,
+              },
+            }),
           })
 
           if (!geminiResponse.ok) {
@@ -1849,13 +1896,15 @@ const executeWorkflowTool = async (
               result: {
                 error: `Gemini API error: ${geminiResponse.status}`,
                 inputType,
-                inputMetadata
-              }
+                inputMetadata,
+              },
             }
           }
 
           const geminiData = await geminiResponse.json()
-          const aiOutput = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "No response from AI"
+          const aiOutput =
+            geminiData.candidates?.[0]?.content?.parts?.[0]?.text ||
+            "No response from AI"
 
           return {
             status: "success",
@@ -1865,18 +1914,17 @@ const executeWorkflowTool = async (
               inputType,
               inputMetadata,
               usage: geminiData.usageMetadata || {},
-              processedAt: new Date().toISOString()
-            }
+              processedAt: new Date().toISOString(),
+            },
           }
-
         } catch (error) {
           return {
             status: "error",
             result: {
               error: "AI agent execution failed",
               message: error instanceof Error ? error.message : String(error),
-              inputType: aiConfig.inputType
-            }
+              inputType: aiConfig.inputType,
+            },
           }
         }
 
@@ -2162,8 +2210,10 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
       // Update tool fields that are provided
       const toolUpdateData: any = {}
       if (requestData.type !== undefined) toolUpdateData.type = requestData.type
-      if (requestData.value !== undefined) toolUpdateData.value = requestData.value
-      if (requestData.config !== undefined) toolUpdateData.config = requestData.config
+      if (requestData.value !== undefined)
+        toolUpdateData.value = requestData.value
+      if (requestData.config !== undefined)
+        toolUpdateData.config = requestData.config
       toolUpdateData.updatedAt = new Date()
 
       const [updatedTool] = await trx
@@ -2174,7 +2224,10 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
 
       // Update associated step if stepName or stepDescription is provided
       let updatedStep = null
-      if (requestData.stepName !== undefined || requestData.stepDescription !== undefined) {
+      if (
+        requestData.stepName !== undefined ||
+        requestData.stepDescription !== undefined
+      ) {
         // Find step that uses this tool
         const stepWithTool = await trx
           .select()
@@ -2183,8 +2236,10 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
 
         if (stepWithTool.length > 0) {
           const stepUpdateData: any = {}
-          if (requestData.stepName !== undefined) stepUpdateData.name = requestData.stepName
-          if (requestData.stepDescription !== undefined) stepUpdateData.description = requestData.stepDescription
+          if (requestData.stepName !== undefined)
+            stepUpdateData.name = requestData.stepName
+          if (requestData.stepDescription !== undefined)
+            stepUpdateData.description = requestData.stepDescription
           stepUpdateData.updatedAt = new Date()
 
           const [updated] = await trx
@@ -2205,9 +2260,9 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
       data: {
         tool: result.tool,
         step: result.step,
-        message: result.step 
-          ? "Tool and associated step updated successfully" 
-          : "Tool updated successfully"
+        message: result.step
+          ? "Tool and associated step updated successfully"
+          : "Tool updated successfully",
       },
     })
   } catch (error) {
