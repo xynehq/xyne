@@ -995,10 +995,22 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
       .from(workflowStepExecution)
       .where(eq(workflowStepExecution.workflowExecutionId, executionId))
 
-    // Get all tool executions for this workflow
+    // Get all tool executions for this workflow with tool type
     const toolExecutions = await db
-      .select()
+      .select({
+        id: toolExecution.id,
+        workflowToolId: toolExecution.workflowToolId,
+        workflowExecutionId: toolExecution.workflowExecutionId,
+        status: toolExecution.status,
+        result: toolExecution.result,
+        startedAt: toolExecution.startedAt,
+        completedAt: toolExecution.completedAt,
+        createdAt: toolExecution.createdAt,
+        updatedAt: toolExecution.updatedAt,
+        toolType: workflowTool.type,
+      })
       .from(toolExecution)
+      .leftJoin(workflowTool, eq(toolExecution.workflowToolId, workflowTool.id))
       .where(eq(toolExecution.workflowExecutionId, executionId))
 
     return c.json({
