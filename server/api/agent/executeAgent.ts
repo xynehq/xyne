@@ -71,7 +71,7 @@ async function* createStreamingWithDBSave(
   }
 ): AsyncIterableIterator<ConverseResponse> {
 
-  // Same accumulation pattern as AgentMessageApi
+
   Logger.info("🌊 createStreamingWithDBSave: Starting...")
   let answer = ""
   let costArr: number[] = []
@@ -80,7 +80,7 @@ async function* createStreamingWithDBSave(
 
   try {
     Logger.info("🌊 createStreamingWithDBSave: About to start for-await loop...")
-    // Forward chunks while accumulating (same as AgentMessageApi)
+
     for await (const chunk of originalIterator) {
       if (chunk.text) {
         answer += chunk.text  // Accumulate full response
@@ -112,7 +112,7 @@ async function* createStreamingWithDBSave(
         0,
       )
 
-      // Save assistant message to database
+
       await insertMessage(db, {
         chatId: dbSaveParams.chatId,
         userId: dbSaveParams.userId,
@@ -218,10 +218,9 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
       try {
         // Retrieve document content from Vespa (same as chat.ts:1974-1979)
         Logger.info(`🔍 Calling GetDocumentsByDocIds with IDs: ${JSON.stringify(nonImageAttachmentFileIds)}`)
-        // Note: Passing null for span since we don't have tracing in executeAgent
+
         const results = await GetDocumentsByDocIds(nonImageAttachmentFileIds, executeAgentSpan!)
-        // End the child span
-        executeAgentSpan?.end()
+
         Logger.info(`📊 GetDocumentsByDocIds returned:`, {
           hasRoot: !!results.root,
           hasChildren: !!(results.root?.children),
