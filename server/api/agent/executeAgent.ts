@@ -11,9 +11,10 @@ import type { Message, ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import { Subsystem, MessageRole } from "@/types"
 // import { ragPipelineConfig, RagPipelineStages } from "../chat/types"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { type AttachmentMetadata } from "@/shared/types"
+import { storeAttachmentMetadata } from "@/db/attachment"
 
 const Logger = getLogger(Subsystem.Server)
-
 
 export const executeAgentSchema = z.object({
   agentId: z.string().min(1, "Agent ID is required"),
@@ -23,10 +24,10 @@ export const executeAgentSchema = z.object({
   isStreamable: z.boolean().optional().default(false),
   temperature: z.number().min(0).max(2).optional(),
   max_new_tokens: z.number().positive().optional(),
+  attachmentMetadata: z.array(z.any()).optional(),
 })
 
 export type ExecuteAgentParams = z.infer<typeof executeAgentSchema>
-
 
 type ExecuteAgentSuccess = {
   success: true
@@ -56,10 +57,6 @@ export type ExecuteAgentResponse =
   | StreamingExecuteAgentResponse
   | NonStreamingExecuteAgentResponse
   | ExecuteAgentErrorResponse
-
-
-
-
 
 async function* createStreamingWithDBSave(
   originalIterator: AsyncIterableIterator<ConverseResponse>,
@@ -104,7 +101,6 @@ async function* createStreamingWithDBSave(
       }
     }
 
-
     Logger.info("🌊 createStreamingWithDBSave: Iterator completed, saving to DB...")
 
     // Save to DB after stream completes (same pattern as AgentMessageApi)
@@ -139,15 +135,15 @@ async function* createStreamingWithDBSave(
   }
 }
 
-
 /**
- * ExecuteAgent - Simplified agent execution function
+ * ExecuteAgent - Simplified agent execution function with attachment support
  * 
  * This function provides a simplified subset of AgentMessageApi functionality:
  * 1. Generate chat title and insert in DB
  * 2. Fetch agent details from agent table (includes model)
- * 3. Call LLM directly with agent prompt + user query
- * 4. Return response (no reasoning loop, no RAG, no tools)
+ * 3. Process attachments (images vs non-images)
+ * 4. Call LLM directly with agent prompt + user query + attachments
+ * 5. Return response (no reasoning loop, no RAG, no tools)
  */
 export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteAgentResponse> => {
   try {
@@ -157,14 +153,24 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
     const {
       agentId,
       userQuery,
-      isStreamable = true,
+      isStreamable = false,
       temperature,
       max_new_tokens,
       workspaceId,
       userEmail,
+      attachmentMetadata,
     } = validatedParams
 
+    // Process attachments if provided
+    const attachmentFileIds = attachmentMetadata?.map((m: AttachmentMetadata) => m.fileId) || []
+    const imageAttachmentFileIds = attachmentMetadata?.filter((m: AttachmentMetadata) => m.isImage).map((m: AttachmentMetadata) => m.fileId) || []
+    const nonImageAttachmentFileIds = attachmentMetadata?.filter((m: AttachmentMetadata) => !m.isImage).map((m: AttachmentMetadata) => m.fileId) || []
+
     Logger.info(`Executing agent ${agentId} for user ${userEmail}`)
+    Logger.info(
+      `Total attachment files received: ${attachmentFileIds.length} (${imageAttachmentFileIds.length} images, ${nonImageAttachmentFileIds.length} non-images)`
+    )
+
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId,
@@ -192,7 +198,6 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
 
     Logger.info(`Found agent: ${agent.name} with model: ${agent.model}`)
 
-
     Logger.info("Generating chat title...")
 
     const titleResp = await generateTitleUsingQuery(userQuery, {
@@ -202,13 +207,23 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
     const title = titleResp.title
     Logger.info(`Generated title: ${title}`)
 
+    // Enhanced system prompt with attachment awareness
+    const systemPrompt = agent.prompt || "You are a helpful assistant."
+    const attachmentAwarePrompt = imageAttachmentFileIds.length > 0
+      ? `${systemPrompt}\n\nNote: The user has attached ${imageAttachmentFileIds.length} image(s) that you can reference and analyze in your response.`
+      : systemPrompt
 
     const modelParams = {
       modelId: agent.model as Models,
       stream: isStreamable,
       json: false,
       reasoning: false,
-      systemPrompt: agent.prompt || "You are a helpful assistant.",
+      systemPrompt: attachmentAwarePrompt,
+      ...(imageAttachmentFileIds.length > 0 ? {
+        imageFileNames: imageAttachmentFileIds.map(
+          (fileId, index) => `${index}_${fileId}_${0}`,
+        )
+      } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
       ...(max_new_tokens !== undefined ? { max_new_tokens } : {}),
     }
@@ -222,7 +237,6 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
 
     Logger.info(`Calling LLM with model ${agent.model}...`)
 
-
     const insertedChat = await insertChat(db, {
       workspaceId: workspace.id,
       workspaceExternalId: workspaceId,
@@ -233,7 +247,8 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
       agentId: agent.externalId,
     })
 
-    await insertMessage(db, {
+    // Insert user message with attachment file IDs
+    const insertedUserMessage = await insertMessage(db, {
       chatId: insertedChat.id,
       userId: user.id,
       chatExternalId: insertedChat.externalId,
@@ -243,7 +258,19 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
       sources: [],
       message: userQuery,
       modelId: agent.model,
+      fileIds: nonImageAttachmentFileIds, // Only non-image files for text-based retrieval
     })
+
+    // Store attachment metadata if provided
+    if (attachmentMetadata && attachmentMetadata.length > 0) {
+      try {
+        await storeAttachmentMetadata(db, insertedUserMessage.externalId, attachmentMetadata, userEmail)
+        Logger.info(`Stored attachment metadata for ${attachmentMetadata.length} files`)
+      } catch (error) {
+        Logger.error(error, `Failed to store attachment metadata for user message ${insertedUserMessage.externalId}`)
+        // Don't fail the request, just log the error
+      }
+    }
 
     // Step 6: Call LLM and return based on streaming preference
     if (isStreamable) {
@@ -289,14 +316,12 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         modelParams
       )
 
-
       if (!response.text) {
         return {
           success: false,
           error: "No response received from LLM"
         }
       }
-
 
       await insertMessage(db, {
         chatId: insertedChat.id,
