@@ -43,6 +43,7 @@ export const agents = pgTable(
       .notNull()
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    via_apiKey: boolean("via_apiKey").notNull().default(false),
   },
   (table) => ({
     agentWorkspaceIdIndex: index("agent_workspace_id_index").on(
@@ -65,13 +66,19 @@ export const fetchedDataSourceSchema = z.object({
 export type FetchedDataSource = z.infer<typeof fetchedDataSourceSchema>
 
 export const insertAgentSchema = createInsertSchema(agents, {
-  appIntegrations: z.union([
-    z.array(z.string()), // Legacy format
-    z.record(z.object({   // New AppSelectionMap format
-      itemIds: z.array(z.string()),
-      selectedAll: z.boolean()
-    }))
-  ]).optional().default([]),
+  appIntegrations: z
+    .union([
+      z.array(z.string()), // Legacy format
+      z.record(
+        z.object({
+          // New AppSelectionMap format
+          itemIds: z.array(z.string()),
+          selectedAll: z.boolean(),
+        }),
+      ),
+    ])
+    .optional()
+    .default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
 }).omit({
   id: true,
@@ -83,14 +90,21 @@ export const insertAgentSchema = createInsertSchema(agents, {
 export type InsertAgent = z.infer<typeof insertAgentSchema>
 
 export const selectAgentSchema = createSelectSchema(agents, {
-  appIntegrations: z.union([
-    z.array(z.string()), // Legacy format
-    z.record(z.object({   // New AppSelectionMap format
-      itemIds: z.array(z.string()),
-      selectedAll: z.boolean()
-    }))
-  ]).optional().default([]),
+  appIntegrations: z
+    .union([
+      z.array(z.string()), // Legacy format
+      z.record(
+        z.object({
+          // New AppSelectionMap format
+          itemIds: z.array(z.string()),
+          selectedAll: z.boolean(),
+        }),
+      ),
+    ])
+    .optional()
+    .default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
+  via_apiKey: z.boolean().default(false),
 })
 export type SelectAgent = z.infer<typeof selectAgentSchema>
 

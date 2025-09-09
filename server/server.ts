@@ -1091,24 +1091,38 @@ app.get(
   StartOAuth,
 )
 
+// Consumer API endpoints, authenticated by ApiKeyMiddleware
 app
-  .basePath("/api/v1")
+  .basePath("/api/consumer")
   .use("*", ApiKeyMiddleware)
+  .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi) // Create Agent
   .post(
-    "/consumer/agent/create",
-    zValidator("json", createAgentSchema),
-    CreateAgentApi,
-  )
-  .post(
-    "/consumer/agent/chat",
-    zValidator("json", agentChatMessageSchema),
+    "/agent/chat",
+    zValidator("json", agentChatMessageSchema), // Agent Chat
     AgentMessageApi,
   )
   .post(
-    "/consumer/agent/chat/stop",
-    zValidator("json", chatStopSchema),
+    "/agent/chat/stop",
+    zValidator("json", chatStopSchema), // Agent Chat Stop
     StopStreamingApi,
   )
+  .put(
+    "/agent/:agentExternalId",
+    zValidator("json", updateAgentSchema), // Update Agent
+    UpdateAgentApi,
+  )
+  .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
+  .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
+  // todo add schema here
+  .post("/cl", CreateCollectionApi) // Create collection (KB)
+  .get("/cl", ListCollectionsApi) // List all collections
+  .get(
+    "/cl/search",
+    zValidator("query", searchKnowledgeBaseSchema),
+    SearchKnowledgeBaseApi, // Search collection (KB)
+  )
+  .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB
 
 const generateTokens = async (
   email: string,

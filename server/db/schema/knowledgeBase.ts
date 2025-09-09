@@ -32,30 +32,34 @@ export const collections = pgTable(
     isPrivate: boolean("is_private").default(true).notNull(),
     totalItems: integer("total_items").default(0).notNull(),
     lastUpdatedByEmail: varchar("last_updated_by_email", { length: 255 }),
-    lastUpdatedById: integer("last_updated_by_id")
-      .references(() => users.id),
+    lastUpdatedById: integer("last_updated_by_id").references(() => users.id),
     metadata: jsonb("metadata").default({}).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
+    via_apiKey: boolean("via_apiKey").notNull().default(false),
   },
   (table) => ({
     // Ensure unique names per workspace (excluding soft-deleted items)
-    uniqueWorkspaceName: uniqueIndex("unique_workspace_collection_name_not_deleted")
+    uniqueWorkspaceName: uniqueIndex(
+      "unique_workspace_collection_name_not_deleted",
+    )
       .on(table.workspaceId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
     // Index for finding collections by owner
     idxOwnerCollections: index("idx_owner_collections").on(table.ownerId),
     // Index for workspace collections
-    idxWorkspaceCollections: index("idx_workspace_collections").on(table.workspaceId),
+    idxWorkspaceCollections: index("idx_workspace_collections").on(
+      table.workspaceId,
+    ),
     // Index for soft deletes
     idxDeletedAt: index("idx_collection_deleted_at").on(table.deletedAt),
     // Index for privacy filtering
     idxPrivacy: index("idx_collection_privacy").on(table.isPrivate),
     // Index for vespa doc id
     idxVespaDocId: index("idx_collection_vespa_doc_id").on(table.vespaDocId),
-  })
-);
+  }),
+)
 
 // Collection Items table - stores folders and files within collections
 export const collectionItems = pgTable(

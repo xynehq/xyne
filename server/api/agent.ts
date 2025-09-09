@@ -120,11 +120,35 @@ export const listAgentsSchema = z.object({
   filter: z.enum(["all", "madeByMe", "sharedToMe"]).optional().default("all"),
 })
 
-export const CreateAgentApi = async (c: Context) => {
-  let email = ""
+const safeGet = <T>(c: Context, key: string): T | undefined => {
   try {
-    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    email = sub
+    return c.get(key) as T
+  } catch {
+    return undefined
+  }
+}
+
+type Auth = { email: string; workspaceExternalId: string; via_apiKey: boolean }
+
+const getAuth = (c: Context): Auth => {
+  console.log("getAuth run")
+  const jwt = safeGet<{ sub: string; workspaceId: string }>(c, JwtPayloadKey)
+  return {
+    email: jwt?.sub ?? safeGet<string>(c, "userEmail") ?? "",
+    workspaceExternalId:
+      jwt?.workspaceId ?? safeGet<string>(c, "workspaceId") ?? "",
+    via_apiKey: jwt?.sub && jwt?.workspaceId ? false : true,
+  }
+}
+
+export const CreateAgentApi = async (c: Context) => {
+  const { email, workspaceExternalId, via_apiKey } = getAuth(c)
+  console.log("via_apiKey", via_apiKey)
+  console.log("email", email)
+  console.log("workspaceExternalId", workspaceExternalId)
+
+  // todo if via_apiKey is true, then check if the api key has CREATE_AGENT scope
+  try {
     const body = await c.req.json<CreateAgentPayload>()
 
     const validatedBody = createAgentSchema.parse(body)
@@ -153,6 +177,7 @@ export const CreateAgentApi = async (c: Context) => {
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
       docIds: validatedBody.docIds,
+      via_apiKey,
     }
 
     // Create agent and sync user permissions in a transaction
