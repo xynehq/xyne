@@ -335,7 +335,7 @@ export class VertexAiProvider extends BaseProvider {
 
       const client = this.client as VertexAI
       const model = client.getGenerativeModel({
-        model: params.modelId,
+        model: modelId,
         generationConfig: {
           maxOutputTokens: maxTokens,
           temperature: temperature,
