@@ -467,7 +467,10 @@ const checkAndYieldCitations = async function* (
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
           const f = (item as any)?.fields
-          if (f?.sddocname === dataSourceFileSchema || f?.entity === KnowledgeBaseEntity.Attachment) {
+          if (
+            f?.sddocname === dataSourceFileSchema ||
+            f?.entity === KnowledgeBaseEntity.Attachment
+          ) {
             // Skip datasource and attachment files from citations
             continue
           }
@@ -3998,13 +4001,8 @@ export const MessageApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("query")
     const isAgentic = c.req.query("agentic") === "true"
-    let {
-      message,
-      chatId,
-      selectedModelConfig,
-      agentId,
-    }: MessageReqType = body
-    
+    let { message, chatId, selectedModelConfig, agentId }: MessageReqType = body
+
     // Parse selectedModelConfig JSON to extract individual values
     let modelId: string | undefined = undefined
     let isReasoningEnabled = false
@@ -4025,43 +4023,50 @@ export const MessageApi = async (c: Context) => {
         if (isDeepResearchEnabled) {
           modelId = "Claude Sonnet 4"
           loggerWithChild({ email: email }).info(
-            `Deep research enabled - forcing model to Claude Sonnet 4`
+            `Deep research enabled - forcing model to Claude Sonnet 4`,
           )
         }
-        
+
         // Check capabilities - handle both array and object formats for backward compatibility
-        if (config.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+        if (
+          config.capabilities &&
+          !isReasoningEnabled &&
+          !enableWebSearch &&
+          !isDeepResearchEnabled
+        ) {
           if (Array.isArray(config.capabilities)) {
             // Array format: ["reasoning", "websearch"]
-            isReasoningEnabled = config.capabilities.includes('reasoning')
-            enableWebSearch = config.capabilities.includes('websearch')
-            isDeepResearchEnabled = config.capabilities.includes('deepResearch')
-          } else if (typeof config.capabilities === 'object') {
+            isReasoningEnabled = config.capabilities.includes("reasoning")
+            enableWebSearch = config.capabilities.includes("websearch")
+            isDeepResearchEnabled = config.capabilities.includes("deepResearch")
+          } else if (typeof config.capabilities === "object") {
             // Object format: { reasoning: true, websearch: false }
             isReasoningEnabled = config.capabilities.reasoning === true
             enableWebSearch = config.capabilities.websearch === true
             isDeepResearchEnabled = config.capabilities.deepResearch === true
           }
-          
+
           // For deep research from old format, also force Claude Sonnet 4
           if (isDeepResearchEnabled) {
             modelId = "Claude Sonnet 4"
           }
         }
-        
+
         loggerWithChild({ email: email }).info(
-          `Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+          `Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
         )
       } catch (e) {
         loggerWithChild({ email: email }).warn(
-          `Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
+          `Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`,
         )
         modelId = config.defaultBestModel // fallback
       }
     } else {
       // Fallback if no model config provided
       modelId = config.defaultBestModel
-      loggerWithChild({ email: email }).info("No model config provided, using default")
+      loggerWithChild({ email: email }).info(
+        "No model config provided, using default",
+      )
     }
     // Convert modelId from friendly label to actual model value
     let actualModelId: string = modelId || config.defaultBestModel // Ensure we always have a string
@@ -4070,16 +4075,16 @@ export const MessageApi = async (c: Context) => {
       if (convertedModelId) {
         actualModelId = convertedModelId as string // Can be Models enum or string
         loggerWithChild({ email: email }).info(
-          `Converted model label "${modelId}" to value "${actualModelId}"`
+          `Converted model label "${modelId}" to value "${actualModelId}"`,
         )
       } else if (modelId in Models) {
         actualModelId = modelId // Use the raw model ID if it exists in Models enum
         loggerWithChild({ email: email }).info(
-          `Using model ID "${modelId}" directly as it exists in Models enum`
+          `Using model ID "${modelId}" directly as it exists in Models enum`,
         )
       } else {
         loggerWithChild({ email: email }).error(
-          `Invalid model: ${modelId}. Model not found in label mappings or Models enum.`
+          `Invalid model: ${modelId}. Model not found in label mappings or Models enum.`,
         )
         throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
       }
@@ -4091,9 +4096,14 @@ export const MessageApi = async (c: Context) => {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
+
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
-    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
+    const imageAttachmentFileIds = attachmentMetadata
+      .filter((m) => m.isImage)
+      .map((m) => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata
+      .filter((m) => !m.isImage)
+      .map((m) => m.fileId)
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -4115,6 +4125,20 @@ export const MessageApi = async (c: Context) => {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
+    }
+
+    let agentDetails: SelectAgent | null = null
+    if (agentPromptValue) {
+      const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
+        db,
+        workspaceId,
+        email,
+      )
+      agentDetails = await getAgentByExternalId(
+        db,
+        agentPromptValue,
+        userAndWorkspaceCheck.workspace.id,
+      )
     }
 
     // If none of the above, proceed with default RAG flow
@@ -4695,7 +4719,7 @@ export const MessageApi = async (c: Context) => {
                 modelId: Models.o3_Deep_Research,
                 stream: true,
                 json: false,
-                agentPrompt: agentPromptValue,
+                agentPrompt: JSON.stringify(agentDetails),
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
@@ -4707,12 +4731,11 @@ export const MessageApi = async (c: Context) => {
               loggerWithChild({ email: email }).info(
                 "Using web search for the question",
               )
-
               searchOrAnswerIterator = webSearchQuestion(message, ctx, {
                 modelId: Models.Gemini_2_5_Flash,
                 stream: true,
                 json: false,
-                agentPrompt: agentPromptValue,
+                agentPrompt: JSON.stringify(agentDetails),
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
@@ -5616,26 +5639,26 @@ export const MessageRetryApi = async (c: Context) => {
     // Parse the model configuration JSON
     let extractedModelId: string | null = null
     let isReasoningEnabled = false
-    
+
     if (selectedModelConfig) {
       try {
         // Decode the URL-encoded string first
         const modelConfig = JSON.parse(selectedModelConfig)
         extractedModelId = modelConfig.model || null
-        
+
         // Check capabilities - handle both array and object formats
         if (modelConfig.capabilities) {
           if (Array.isArray(modelConfig.capabilities)) {
-            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
-          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.includes("reasoning")
+          } else if (typeof modelConfig.capabilities === "object") {
             isReasoningEnabled = modelConfig.capabilities.reasoning === true
           }
         }
       } catch (error) {
-        console.error('Failed to parse selectedModelConfig in retry:', error)
+        console.error("Failed to parse selectedModelConfig in retry:", error)
       }
     }
-    
+
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub ?? ""
@@ -5655,7 +5678,9 @@ export const MessageRetryApi = async (c: Context) => {
     if (isUserMessage) {
       // If retrying a user message, get attachments from that message
       attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
-      ImageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+      ImageAttachmentFileIds = attachmentMetadata
+        .filter((m) => m.isImage)
+        .map((m) => m.fileId)
     }
 
     rootSpan.setAttribute("email", email)
@@ -5709,22 +5734,28 @@ export const MessageRetryApi = async (c: Context) => {
           prevUserMessage.externalId,
           email,
         )
-        ImageAttachmentFileIds = attachmentMetadata.map(
-          (m: AttachmentMetadata) => m.isImage ? m.fileId : null,
-        ).filter((m: string | null) => m !== null)
+        ImageAttachmentFileIds = attachmentMetadata
+          .map((m: AttachmentMetadata) => (m.isImage ? m.fileId : null))
+          .filter((m: string | null) => m !== null)
       }
     }
 
     // Use the extracted modelId if provided, otherwise use the original message's modelId
-    let convertedModelId = extractedModelId ? getModelValueFromLabel(extractedModelId) : null
+    let convertedModelId = extractedModelId
+      ? getModelValueFromLabel(extractedModelId)
+      : null
     if (extractedModelId) {
-      if (!convertedModelId && (extractedModelId in Models)) {
+      if (!convertedModelId && extractedModelId in Models) {
         convertedModelId = extractedModelId as Models
       } else if (!convertedModelId) {
-        throw new HTTPException(400, { message: `Invalid model: ${extractedModelId}` })
+        throw new HTTPException(400, {
+          message: `Invalid model: ${extractedModelId}`,
+        })
       }
     }
-    const modelId = convertedModelId ? (convertedModelId as Models) : (originalMessage.modelId as Models)
+    const modelId = convertedModelId
+      ? (convertedModelId as Models)
+      : (originalMessage.modelId as Models)
 
     // Get user and workspace
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -7069,11 +7100,11 @@ export const GetAvailableModelsApi = async (c: Context) => {
   try {
     const { sub } = c.get(JwtPayloadKey) ?? {}
     email = sub || ""
-    
+
     if (!email) {
       throw new HTTPException(401, { message: "Unauthorized" })
     }
-    
+
     const availableModels = getAvailableModels({
       AwsAccessKey: config.AwsAccessKey,
       AwsSecretKey: config.AwsSecretKey,
@@ -7091,7 +7122,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
     })
 
     // Filter out actualName and provider fields before sending to frontend
-    const filteredModels = availableModels.map(model => ({
+    const filteredModels = availableModels.map((model) => ({
       labelName: model.labelName,
       reasoning: model.reasoning,
       websearch: model.websearch,
@@ -7107,7 +7138,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
     )
     if (error instanceof HTTPException) throw error
     throw new HTTPException(500, {
-      message: "Could not fetch available models"
+      message: "Could not fetch available models",
     })
   }
 }

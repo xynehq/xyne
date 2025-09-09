@@ -6,6 +6,7 @@ import {
   Entity,
   GooglePeopleEntity,
   isMailAttachment,
+  KnowledgeBaseEntity,
   SlackEntity,
   SystemEntity,
   WebSearchEntity,
@@ -111,8 +112,18 @@ export const getName = (app: Apps, entity: Entity): string => {
     entity === DataSourceEntity.DataSourceFile
   ) {
     return "Data-Source"
-  } else if (app === Apps.KnowledgeBase && entity === SystemEntity.SystemInfo) {
-    return "Knowledge-Base"
+  } else if (app === Apps.KnowledgeBase) {
+    // Handle all KnowledgeBase entities with fallback for string values
+    if (entity === SystemEntity.SystemInfo) {
+      return "Knowledge-Base"
+    } else if (entity === KnowledgeBaseEntity.File || entity === "file") {
+      return "KB Files"
+    } else if (entity === KnowledgeBaseEntity.Folder || entity === "folder") {
+      return "KB Folders"
+    } else {
+      // Fallback for any unhandled KnowledgeBase entity
+      return "Knowledge-Base"
+    }
   } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
     return "Web Search"
   } else {

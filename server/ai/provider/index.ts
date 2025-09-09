@@ -154,8 +154,7 @@ function parseAgentPrompt(
     if (
       typeof parsed.name === "string" &&
       typeof parsed.description === "string" &&
-      typeof parsed.prompt === "string" &&
-      Array.isArray(parsed.appIntegrations)
+      typeof parsed.prompt === "string"
     ) {
       return {
         name: parsed.name,
@@ -1849,10 +1848,7 @@ export const webSearchQuestion = (
     if (!params.systemPrompt) {
       if (!isAgentPromptEmpty(params.agentPrompt)) {
         const parsed = parseAgentPrompt(params.agentPrompt)
-        params.systemPrompt =
-          webSearchSystemPrompt(userCtx) +
-          "\n\n" +
-          `Name: ${parsed.name}\nDescription: ${parsed.description}\nPrompt: ${parsed.prompt}`
+        params.systemPrompt = webSearchSystemPrompt(userCtx, parsed)
       } else {
         params.systemPrompt = webSearchSystemPrompt(userCtx)
       }
