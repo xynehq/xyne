@@ -22,6 +22,7 @@ import {
   workflowTool,
   toolExecution,
   createWorkflowTemplateSchema,
+  createComplexWorkflowTemplateSchema,
   createWorkflowToolSchema,
   executeWorkflowSchema,
   updateWorkflowTemplateSchema,
@@ -46,6 +47,7 @@ import {
 // Re-export schemas for server.ts
 export {
   createWorkflowTemplateSchema,
+  createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
   createWorkflowExecutionSchema,
   updateWorkflowExecutionSchema,
@@ -660,6 +662,140 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
+  }
+}
+
+// Improved workflow completion logic that only considers executed steps
+const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
+  try {
+    // Get current workflow execution
+    const [currentExecution] = await db
+      .select()
+      .from(workflowExecution)
+      .where(eq(workflowExecution.id, executionId))
+
+    if (!currentExecution || currentExecution.status === "completed" || currentExecution.status === "failed") {
+      return false // Already completed or failed, no update needed
+    }
+
+    // Get all step executions for this workflow
+    const allStepExecutions = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+    // Filter steps that are part of the actual execution path
+    // A step is considered "in execution path" if:
+    // 1. It has been started (status is not "draft")
+    // 2. OR it's the root step
+    // 3. OR it has completed tool executions
+    const executedSteps = allStepExecutions.filter(step => {
+      const isRootStep = currentExecution.rootWorkflowStepExeId === step.id
+      const hasBeenStarted = step.status !== "draft"
+      const hasToolExecutions = step.toolExecIds && step.toolExecIds.length > 0
+      
+      return isRootStep || hasBeenStarted || hasToolExecutions
+    })
+
+    Logger.info(
+      `Workflow ${executionId}: ${executedSteps.length} executed steps out of ${allStepExecutions.length} total steps`
+    )
+
+    // Check completion conditions
+    const completedSteps = executedSteps.filter(step => step.status === "completed")
+    const failedSteps = executedSteps.filter(step => step.status === "failed")
+    const activeSteps = executedSteps.filter(step => step.status === "active")
+    const manualStepsAwaitingInput = executedSteps.filter(step => 
+      step.type === "manual" && step.status === "draft"
+    )
+
+    Logger.info(
+      `Workflow ${executionId} status: ${completedSteps.length} completed, ${failedSteps.length} failed, ${activeSteps.length} active, ${manualStepsAwaitingInput.length} awaiting input`
+    )
+
+    // Update workflow metadata with execution progress
+    const progressMetadata = {
+      ...(currentExecution.metadata || {}),
+      executionProgress: {
+        totalSteps: allStepExecutions.length,
+        executedSteps: executedSteps.length,
+        completedSteps: completedSteps.length,
+        failedSteps: failedSteps.length,
+        activeSteps: activeSteps.length,
+        manualStepsAwaitingInput: manualStepsAwaitingInput.length,
+        lastUpdated: new Date().toISOString()
+      }
+    }
+
+    // Determine if workflow should be marked as completed
+    let shouldComplete = false
+    let completionReason = ""
+
+    if (failedSteps.length > 0) {
+      // If any executed step failed, mark workflow as failed
+      await db
+        .update(workflowExecution)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          completedBy: "system",
+          metadata: progressMetadata
+        })
+        .where(eq(workflowExecution.id, executionId))
+      
+      Logger.info(`Workflow ${executionId} marked as failed due to ${failedSteps.length} failed steps`)
+      return true
+    }
+
+    if (executedSteps.length === 0) {
+      // No steps have been executed yet, workflow is not complete
+      shouldComplete = false
+    } else if (completedSteps.length === executedSteps.length) {
+      // All executed steps are completed
+      shouldComplete = true
+      completionReason = "All executed steps completed"
+    } else if (activeSteps.length === 0 && manualStepsAwaitingInput.length === 0) {
+      // No active steps and no manual steps awaiting input
+      // This means we've reached the end of the execution path
+      shouldComplete = true
+      completionReason = "End of execution path reached"
+    } else {
+      // There are still active steps or manual steps awaiting input
+      shouldComplete = false
+    }
+
+    // Update workflow metadata with current progress
+    await db
+      .update(workflowExecution)
+      .set({
+        metadata: progressMetadata,
+        updatedAt: new Date()
+      })
+      .where(eq(workflowExecution.id, executionId))
+
+    if (shouldComplete) {
+      Logger.info(
+        `Workflow ${executionId} completion criteria met: ${completionReason}`
+      )
+      
+      await db
+        .update(workflowExecution)
+        .set({
+          status: "completed",
+          completedAt: new Date(),
+          completedBy: "system",
+          metadata: progressMetadata
+        })
+        .where(eq(workflowExecution.id, executionId))
+      
+      Logger.info(`Workflow ${executionId} marked as completed`)
+      return true
+    }
+
+    return false
+  } catch (error) {
+    Logger.error(error, `Failed to check workflow completion for ${executionId}`)
+    return false
   }
 }
 
@@ -1595,7 +1731,7 @@ const executeWorkflowTool = async (
             emailBody = extractContentFromPath(previousStepResults, contentPath)
             if (!emailBody) {
               emailBody = `No content found at path: ${contentPath}`
-            }
+          }
           } else {
             // Fallback to previous behavior - get from first step
             const prevStepData = Object.values(previousStepResults)[0] as any
@@ -1667,12 +1803,12 @@ const executeWorkflowTool = async (
           const emailResults = []
           for (const recipient of recipients) {
             try {
-              const emailSent = await emailService.sendEmail({
+          const emailSent = await emailService.sendEmail({
                 to: recipient,
                 subject,
                 body: emailBody,
                 contentType: contentType === "html" ? "html" : "text",
-              })
+          })
               emailResults.push({ recipient, sent: emailSent })
             } catch (emailError) {
               emailResults.push({
@@ -2005,6 +2141,200 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
   }
 }
 
+// Create complex workflow template from frontend workflow builder
+export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
+  try {
+    const requestData = await c.req.json()
+    
+    // Create the main workflow template
+    const [template] = await db
+      .insert(workflowTemplate)
+      .values({
+        name: requestData.name,
+        description: requestData.description,
+        version: requestData.version || "1.0.0",
+        status: "draft",
+        config: requestData.config || {},
+        createdBy: "demo",
+      })
+      .returning()
+
+    const templateId = template.id
+    
+    // Create workflow tools first (needed for step tool references)
+    const toolIdMap = new Map<string, string>() // frontend tool ID -> backend tool ID
+    const createdTools: any[] = []
+    
+    // Collect all tools from nodes
+    const allTools = requestData.nodes
+      .flatMap((node: any) => node.data?.tools || [])
+      .filter((tool: any) => tool && tool.type)
+    
+    // Create unique tools (deduplicate by frontend tool ID if it exists)
+    const uniqueTools = allTools.reduce((acc: any[], tool: any) => {
+      // If tool has an ID and we haven't seen it, add it
+      if (tool.id && !acc.find(t => t.id === tool.id)) {
+        acc.push(tool)
+      } else if (!tool.id) {
+        // If tool has no ID, always add it (will get new ID)
+        acc.push(tool)
+      }
+      return acc
+    }, [])
+    
+    for (const tool of uniqueTools) {
+      const [createdTool] = await db
+        .insert(workflowTool)
+        .values({
+          type: tool.type,
+          value: tool.value || {},
+          config: tool.config || {},
+          createdBy: "demo",
+        })
+        .returning()
+      
+      createdTools.push(createdTool)
+      
+      // Map frontend tool ID to backend tool ID
+      if (tool.id) {
+        toolIdMap.set(tool.id, createdTool.id)
+      }
+    }
+    
+    // Create workflow step templates
+    const stepIdMap = new Map<string, string>() // frontend step ID -> backend step ID
+    const createdSteps: any[] = []
+    
+    // Sort nodes by step_order if available, otherwise by position.y
+    const sortedNodes = [...requestData.nodes].sort((a, b) => {
+      const orderA = a.data?.step?.metadata?.step_order ?? 999
+      const orderB = b.data?.step?.metadata?.step_order ?? 999
+      if (orderA !== orderB) return orderA - orderB
+      return a.position.y - b.position.y
+    })
+    
+    // First pass: create all steps to get their IDs
+    for (const node of sortedNodes) {
+      const stepData = node.data.step
+      
+      const [createdStep] = await db
+        .insert(workflowStepTemplate)
+        .values({
+          workflowTemplateId: templateId,
+          name: stepData.name,
+          description: stepData.description || "",
+          type: stepData.type === "form_submission" ? "manual" : "automated",
+          timeEstimate: 180, // Default time estimate
+          metadata: {
+            icon: stepData.metadata?.icon,
+            step_order: stepData.metadata?.step_order,
+            schema_version: stepData.metadata?.schema_version,
+            user_instructions: stepData.metadata?.user_instructions,
+            ai_model: stepData.metadata?.ai_model,
+            automated_description: stepData.metadata?.automated_description,
+            position: node.position,
+            ...stepData.config,
+          },
+          prevStepIds: [], // Will be updated in second pass
+          nextStepIds: [], // Will be updated in second pass
+          toolIds: [], // Will be updated in second pass
+        })
+        .returning()
+      
+      createdSteps.push(createdStep)
+      stepIdMap.set(stepData.id, createdStep.id)
+    }
+    
+    // Second pass: update relationships based on edges
+    for (const step of createdSteps) {
+      const frontendStepId = [...stepIdMap.entries()].find(([_, backendId]) => backendId === step.id)?.[0]
+      const correspondingNode = requestData.nodes.find((n: any) => n.data.step.id === frontendStepId)
+      
+      // Find edges where this step is involved
+      const outgoingEdges = requestData.edges.filter((edge: any) => edge.source === frontendStepId)
+      const incomingEdges = requestData.edges.filter((edge: any) => edge.target === frontendStepId)
+      
+      // Map frontend step IDs to backend step IDs
+      const nextStepIds = outgoingEdges
+        .map((edge: any) => stepIdMap.get(edge.target))
+        .filter(Boolean)
+      
+      const prevStepIds = incomingEdges
+        .map((edge: any) => stepIdMap.get(edge.source))
+        .filter(Boolean)
+      
+      // Map tool IDs for this step
+      const stepToolIds: string[] = []
+      if (correspondingNode?.data?.tools) {
+        for (const tool of correspondingNode.data.tools) {
+          if (tool.id && toolIdMap.has(tool.id)) {
+            stepToolIds.push(toolIdMap.get(tool.id)!)
+          } else {
+            // Find tool by type and config if no ID mapping
+            const matchingTool = createdTools.find(t => 
+              t.type === tool.type && 
+              JSON.stringify(t.value) === JSON.stringify(tool.value || {})
+            )
+            if (matchingTool) {
+              stepToolIds.push(matchingTool.id)
+            }
+          }
+        }
+      }
+      
+      // Update the step with relationships
+      await db
+        .update(workflowStepTemplate)
+        .set({
+          prevStepIds,
+          nextStepIds,
+          toolIds: stepToolIds,
+        })
+        .where(eq(workflowStepTemplate.id, step.id))
+    }
+    
+    // Set root step (first step in the workflow - usually form submission or trigger)
+    let rootStepId = null
+    if (createdSteps.length > 0) {
+      // Find the step with no incoming edges (root step)
+      const rootStep = createdSteps.find(step => {
+        const frontendStepId = [...stepIdMap.entries()].find(([_, backendId]) => backendId === step.id)?.[0]
+        const hasIncomingEdges = requestData.edges.some((edge: any) => edge.target === frontendStepId)
+        return !hasIncomingEdges
+      })
+      
+      rootStepId = rootStep?.id || createdSteps[0].id
+      
+      // Update template with root step ID
+      await db
+        .update(workflowTemplate)
+        .set({
+          rootWorkflowStepTemplateId: rootStepId,
+        })
+        .where(eq(workflowTemplate.id, templateId))
+    }
+    
+    // Return the complete workflow template with steps and tools
+    const completeTemplate = {
+      ...template,
+      rootWorkflowStepTemplateId: rootStepId,
+      steps: createdSteps,
+      workflow_tools: createdTools,
+    }
+
+    return c.json({
+      success: true,
+      data: completeTemplate,
+      message: `Created workflow template with ${createdSteps.length} steps and ${createdTools.length} tools`,
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to create complex workflow template")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
 // Execute template (alias for ExecuteWorkflowTemplateApi)
 export const ExecuteTemplateApi = ExecuteWorkflowTemplateApi
 
@@ -2227,10 +2557,10 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
       toolUpdateData.updatedAt = new Date()
 
       const [updatedTool] = await trx
-        .update(workflowTool)
+      .update(workflowTool)
         .set(toolUpdateData)
-        .where(eq(workflowTool.id, toolId))
-        .returning()
+      .where(eq(workflowTool.id, toolId))
+      .returning()
 
       // Update associated step if stepName or stepDescription is provided
       let updatedStep = null

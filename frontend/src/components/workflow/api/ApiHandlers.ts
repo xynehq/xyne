@@ -184,11 +184,35 @@ async function apiFormRequest<T>(url: string, formData: FormData): Promise<T> {
       body: formData,
     })
 
-    const responseData = await response.json()
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get("content-type")
+    let responseData: any
+
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        responseData = await response.json()
+      } catch (jsonError) {
+        // If JSON parsing fails, get text content for better error message
+        const textContent = await response.text()
+        throw new Error(`Invalid JSON response: ${textContent.substring(0, 200)}...`)
+      }
+    } else {
+      // If not JSON, get text content (likely HTML error page)
+      const textContent = await response.text()
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status} ${response.statusText}. Response: ${textContent.substring(0, 200)}...`)
+      }
+      // Try to parse as JSON anyway in case content-type header is missing
+      try {
+        responseData = JSON.parse(textContent)
+      } catch {
+        throw new Error(`Non-JSON response: ${textContent.substring(0, 200)}...`)
+      }
+    }
 
     if (!response.ok) {
       throw new Error(
-        responseData.message ||
+        responseData?.message ||
           `HTTP ${response.status}: ${response.statusText}`,
       )
     }
@@ -292,6 +316,7 @@ export const templatesAPI = {
   },
 }
 
+
 // Workflow Executions API
 export const workflowExecutionsAPI = {
   /**
@@ -325,6 +350,28 @@ export const workflowExecutionsAPI = {
 
     const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions?${queryParams.toString()}`
     return apiRequest<WorkflowExecutionsResponse>(url)
+  },
+
+  /**
+   * Fetch workflow execution status by execution ID
+   */
+  async fetchStatus(executionId: string): Promise<{
+    success: boolean
+    status: "draft" | "active" | "paused" | "completed" | "failed"
+  }> {
+    const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions/${executionId}/status`
+    return apiRequest<{
+      success: boolean
+      status: "draft" | "active" | "paused" | "completed" | "failed"
+    }>(url)
+  },
+
+  /**
+   * Fetch full workflow execution details by execution ID
+   */
+  async fetchById(executionId: string): Promise<any> {
+    const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions/${executionId}`
+    return apiRequest<any>(url)
   },
 
   /**
@@ -375,8 +422,6 @@ export const workflowToolsAPI = {
       type: string
       value: any
       config: any
-      stepName?: string
-      stepDescription?: string
     },
   ): Promise<any> {
     return apiRequest<any>(
@@ -395,8 +440,6 @@ export const workflowToolsAPI = {
     type: string
     value: any
     config: any
-    stepName?: string
-    stepDescription?: string
   }): Promise<any> {
     return apiRequest<any>(`${WORKFLOW_TEMPLATES_BASE_URL}/workflow/tools`, {
       method: "POST",

@@ -339,6 +339,65 @@ export const executeWorkflowSchema = z.object({
 export const updateWorkflowTemplateSchema =
   createWorkflowTemplateSchema.partial()
 
+// Complex workflow template creation schema for frontend workflow builder
+export const createComplexWorkflowTemplateSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
+  version: z.string().default("1.0.0"),
+  config: z.object({
+    ai_model: z.string().optional(),
+    max_file_size: z.string().optional(),
+    auto_execution: z.boolean().optional(),
+    schema_version: z.string().optional(),
+    allowed_file_types: z.array(z.string()).optional(),
+    supports_file_upload: z.boolean().optional(),
+  }).optional(),
+  nodes: z.array(z.object({
+    id: z.string(),
+    type: z.string(),
+    position: z.object({
+      x: z.number(),
+      y: z.number(),
+    }),
+    data: z.object({
+      step: z.object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        type: z.string(),
+        status: z.string().optional(),
+        contents: z.array(z.any()).optional(),
+        config: z.record(z.any()).optional(),
+      }),
+      tools: z.array(z.object({
+        id: z.string().optional(),
+        type: z.string(),
+        value: z.any().optional(),
+        config: z.record(z.any()).optional(),
+      })).optional(),
+      isActive: z.boolean().optional(),
+      isCompleted: z.boolean().optional(),
+      hasNext: z.boolean().optional(),
+    }),
+  })),
+  edges: z.array(z.object({
+    id: z.string(),
+    source: z.string(),
+    target: z.string(),
+    type: z.string().optional(),
+    sourceHandle: z.string().optional(),
+    targetHandle: z.string().optional(),
+    style: z.record(z.any()).optional(),
+    markerEnd: z.record(z.any()).optional(),
+  })),
+  metadata: z.object({
+    nodeCount: z.number(),
+    edgeCount: z.number(),
+    createdAt: z.string(),
+    workflowType: z.string(),
+  }).optional(),
+})
+
 export const createWorkflowExecutionSchema = z.object({
   workflowTemplateId: z.string().uuid(),
   name: z.string().min(1).max(255),

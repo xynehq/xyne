@@ -163,6 +163,7 @@ import {
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import {
   CreateWorkflowTemplateApi,
+  CreateComplexWorkflowTemplateApi,
   ExecuteTemplateApi,
   ExecuteWorkflowWithInputApi,
   GetWorkflowTemplateApi,
@@ -185,6 +186,7 @@ import {
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
   createWorkflowTemplateSchema,
+  createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
   createWorkflowExecutionSchema,
   updateWorkflowExecutionSchema,
@@ -806,6 +808,11 @@ export const AppRoutes = app
     "/workflow/templates",
     zValidator("json", createWorkflowTemplateSchema),
     CreateWorkflowTemplateApi,
+  )
+  .post(
+    "/workflow/templates/complex",
+    zValidator("json", createComplexWorkflowTemplateSchema),
+    CreateComplexWorkflowTemplateApi,
   )
   .get("/workflow/templates", ListWorkflowTemplatesApi)
   .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
@@ -1471,14 +1478,6 @@ app.get(
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
-
-// Workflow UI Routes
-app.get(
-  "/workflow-ui",
-  AuthRedirect,
-  serveStatic({ path: "./workflow-ui-dist/index.html" }),
-)
-app.get("/workflow-ui/*", serveStatic({ root: "./workflow-ui-dist" }))
 
 export const init = async () => {
   await initQueue()
