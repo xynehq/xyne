@@ -42,9 +42,7 @@ import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
 import { DocumentChat } from "@/components/DocumentChat"
 import { authFetch } from "@/utils/authFetch"
-
-// Helper function to generate UUID
-const generateUUID = () => crypto.randomUUID()
+import { generateUUID } from "@/utils/chatUtils"
 
 // Module-level map to store documentId -> tempChatId mapping (frontend-generated UUIDs)
 const documentToTempChatMap = new Map<string, string>()
@@ -138,7 +136,7 @@ const DocumentViewerContainer = memo(
           <div className="h-full">
             {selectedDocument.file.name.toLowerCase().endsWith(".pdf") ? (
               <PdfViewer
-                key={selectedDocument.file.id} // Force re-render when file changes
+                key={selectedDocument.file.id}
                 source={
                   new File(
                     [selectedDocument.content],
@@ -171,7 +169,7 @@ const DocumentViewerContainer = memo(
             ) : (
               <div className="h-full p-6 overflow-auto">
                 <DocxViewer
-                  key={selectedDocument.file.id} // Force re-render when file changes
+                  key={selectedDocument.file.id}
                   source={
                     new File(
                       [selectedDocument.content],
@@ -323,10 +321,6 @@ function RouteComponent() {
       }
     }
   }, [])
-
-  useEffect(() => {
-    //"Zoom level changed, hide chat
-  }, [isChatHidden])
           
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
 
@@ -1170,7 +1164,7 @@ function RouteComponent() {
               {!isChatHidden ? (
                 <div className="flex flex-col bg-white dark:bg-[#1E1E1E] sticky top-0 border-l border-gray-200 dark:border-gray-700 w-[40%]">
                   <DocumentChat
-                    key={currentInitialChatId} // Force re-render when switching documents
+                    key={currentInitialChatId}
                     user={user}
                     documentId={selectedDocument.file.id || ""}
                     documentName={selectedDocument.file.name}
@@ -1231,7 +1225,7 @@ function RouteComponent() {
                   {/* Chat component */}
                   <div className="h-full">
                     <DocumentChat
-                      key={currentInitialChatId} // Force re-render when switching documents
+                      key={currentInitialChatId}
                       user={user}
                       documentId={selectedDocument.file.id || ""}
                       documentName={selectedDocument.file.name}

@@ -23,16 +23,13 @@ import React, {
   } from "shared/types"
   import { PublicUser } from "shared/types"
   import logo from "@/assets/logo.svg"
-  import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
   import { EnhancedReasoning } from "@/components/EnhancedReasoning"
   import { AttachmentGallery } from "@/components/AttachmentGallery"
-  import { renderToStaticMarkup } from "react-dom/server"
-  import { Pill } from "@/components/Pill"
-  import { Reference, ToolsListItem } from "@/types"
+  import { jsonToHtmlMessage } from "@/routes/_authenticated/chat"
+  import { processMessage } from "@/utils/chatUtils"
+  import { ToolsListItem } from "@/types"
   import {
-    textToImageCitationIndex,
     ImageCitationComponent,
-    textToCitationIndex,
   } from "../routes/_authenticated/chat"
   import { createCitationLink, Citation } from "@/components/CitationLink"
   import Retry from "@/assets/retry.svg"
@@ -41,83 +38,6 @@ import React, {
   export const tempChatIdToChatIdMap = new Map<string, string>()
   
   export const THINKING_PLACEHOLDER = "Thinking"
-  
-  // Define the structure for parsed message parts, including app, entity, and pillType for pills
-  type ParsedMessagePart =
-    | { type: "text"; value: string }
-    | {
-        type: "pill"
-        value: {
-          docId: string
-          url: string | null
-          title: string | null
-          app?: string
-          entity?: string
-          pillType?: "citation" | "global"
-          imgSrc?: string | null
-        }
-      }
-    | { type: "link"; value: string }
-  
-  // Helper function to convert JSON message parts back to HTML using Pill component
-  const jsonToHtmlMessage = (jsonString: string): string => {
-    try {
-      const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
-      if (!Array.isArray(parts)) {
-        // If not our specific JSON structure, treat as plain HTML/text string
-        return jsonString
-      }
-  
-      return parts
-        .map((part, index) => {
-          let htmlPart = ""
-          if (part.type === "text") {
-            htmlPart = part.value
-          } else if (
-            part.type === "pill" &&
-            part.value &&
-            typeof part.value === "object"
-          ) {
-            const { docId, url, title, app, entity, pillType, imgSrc } =
-              part.value
-  
-            const referenceForPill: Reference = {
-              id: docId,
-              docId: docId,
-              title: title || docId,
-              url: url || undefined,
-              app: app,
-              entity: entity,
-              type: pillType || "global",
-              // Include imgSrc if available, mapping it to photoLink for the Reference type.
-              // The Pill component will need to be able to utilize this.
-              ...(imgSrc && { photoLink: imgSrc }),
-            }
-            htmlPart = renderToStaticMarkup(
-              React.createElement(Pill, { newRef: referenceForPill }),
-            )
-          } else if (part.type === "link" && typeof part.value === "string") {
-            const url = part.value
-            // Create a simple anchor tag string for links
-            // Ensure it has similar styling to how it's created in ChatBox
-            // The text of the link will be the URL itself
-            htmlPart = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer">${url}</a>`
-          }
-          // Add a space only if the part is not the last one, or if the next part is text.
-          // This avoids trailing spaces or double spaces between elements.
-          if (htmlPart.length > 0 && index < parts.length - 1) {
-            // Add space if current part is not empty and it's not the last part.
-            // More sophisticated logic might be needed if consecutive non-text elements occur.
-            htmlPart += " "
-          }
-          return htmlPart
-        })
-        .join("")
-        .trimEnd()
-    } catch (error) {
-      return jsonString
-    }
-  }
   
   interface DocumentChatProps {
     user: PublicUser
@@ -169,47 +89,6 @@ import React, {
     const [isCopied, setIsCopied] = useState(false)
   
     const citationUrls = citations?.map((c: Citation) => c.url)
-    
-    const processMessage = (text: string) => {
-      text = splitGroupedCitationsWithSpaces(text)
-      text = text.replace(
-        /(\[\d+_\d+\])/g,
-        (fullMatch, capturedCitation, offset, string) => {
-          // Check if this image citation appears earlier in the string
-          const firstIndex = string.indexOf(fullMatch)
-          if (firstIndex < offset) {
-            // remove duplicate image citations
-            return ""
-          }
-          return capturedCitation
-        },
-      )
-      text = text.replace(
-        textToImageCitationIndex,
-        (match, citationKey, offset, string) => {
-          // Check if this image citation appears earlier in the string
-          const firstIndex = string.indexOf(match)
-          if (firstIndex < offset) {
-            // remove duplicate image citations
-            return ""
-          }
-          return `![image-citation:${citationKey}](image-citation:${citationKey})`
-        },
-      )
-
-      if (citationMap) {
-        return text.replace(textToCitationIndex, (match, num) => {
-          const index = citationMap[num]
-          const url = citationUrls[index]
-          return typeof index === "number" && url ? `[${index + 1}](${url})` : ""
-        })
-      } else {
-        return text.replace(textToCitationIndex, (match, num) => {
-          const url = citationUrls[num - 1]
-          return url ? `[${num}](${url})` : ""
-        })
-      }
-    }
   
     return (
       <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
@@ -258,7 +137,7 @@ import React, {
                     </div>
                   ) : message !== "" ? (
                     <MarkdownPreview
-                      source={processMessage(message)}
+                      source={processMessage(message, citationMap, citationUrls)}
                       wrapperElement={{
                         "data-color-mode": theme,
                       }}
@@ -435,7 +314,7 @@ import React, {
                       onMouseDown={() => setIsCopied(true)}
                       onMouseUp={() => setIsCopied(false)}
                       onClick={() =>
-                        navigator.clipboard.writeText(processMessage(message))
+                        navigator.clipboard.writeText(processMessage(message, citationMap, citationUrls))
                       }
                     />
                     <img
