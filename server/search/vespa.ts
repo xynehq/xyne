@@ -898,7 +898,7 @@ export const HybridDefaultProfileForAgent = async (
     }
 
     const finalCondition =
-      conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
+      conditions.length > 0 ? `(${conditions.join(" or ")})` : "false"
     // Collection files use clId for collections and docId for folders/files
     return `
       (
