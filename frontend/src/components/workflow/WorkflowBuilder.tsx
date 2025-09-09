@@ -28,7 +28,6 @@ import {
   Step,
   UserDetail,
   Tool,
-  StepExecution,
 } from "./Types"
 
 // Import WorkflowTemplate type
@@ -104,6 +103,35 @@ interface WorkflowTemplate {
       updatedAt: string
     }
   }
+  stepExecutions?: Array<{
+    id: string
+    workflowExecutionId: string
+    workflowStepTemplateId: string
+    name: string
+    type: string
+    status: string
+    parentStepId: string | null
+    prevStepIds: string[]
+    nextStepIds: string[]
+    toolExecIds: string[]
+    timeEstimate: number
+    metadata: any
+    completedBy: string | null
+    createdAt: string
+    updatedAt: string
+    completedAt: string | null
+  }>
+  toolExecutions?: Array<{
+    id: string
+    workflowToolId: string
+    workflowExecutionId: string
+    status: string
+    result: any
+    startedAt: string | null
+    completedAt: string | null
+    createdAt: string
+    updatedAt: string
+  }>
 }
 import ActionBar from "./ActionBar"
 import {
@@ -120,19 +148,14 @@ import {
   AddIcon,
   FormDocumentIcon,
 } from "./WorkflowIcons"
-import botLogo from "@/assets/bot-logo.svg"
-import androidIcon from "@/assets/android.svg"
-import documentIcon from "@/assets/document.svg"
 import {
-  workflowTemplatesAPI,
-  workflowsAPI,
-  workflowStepsAPI,
-  workflowToolsAPI,
+  workflowExecutionsAPI,
 } from "./api/ApiHandlers"
 import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
+import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -155,20 +178,11 @@ const StepNode: React.FC<NodeProps> = ({
   if (step.type === "ai_agent" || hasAIAgentTool) {
     // Get config from step or tool
     const aiConfig =
-      (step as any).config || (hasAIAgentTool && tools?.[0]?.config) || {}
+      (step as any).config || (hasAIAgentTool && tools?.[0]?.val) || {}
     const isConfigured = aiConfig?.name && aiConfig?.name.trim() !== ""
 
-    // For executions, always show configured layout even if config is missing
-    const isExecution = (step as any).isExecution
-    const forceConfiguredLayout = isExecution || isConfigured
-
-    // Check if any associated tool execution has failed
-    const hasFailedToolExecution =
-      tools && tools.some((tool) => (tool as any).status === "failed")
-    const isFailed = step.status === "failed" || hasFailedToolExecution
-
-    if (!forceConfiguredLayout) {
-      // Show only icon when not configured (template mode only)
+    if (!isConfigured) {
+      // Show only icon when not configured
       return (
         <>
           <div
@@ -277,17 +291,9 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
-            boxShadow: isFailed
-              ? "0 0 0 2px #FECACA"
-              : isCompleted
-                ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
+            border: "2px solid #181B1D",
+            background: "#FFF",
+            boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -321,22 +327,7 @@ const StepNode: React.FC<NodeProps> = ({
                 color: "#3B4145",
               }}
             >
-              {tools?.[0]?.name ||
-                tools?.[0]?.value?.name ||
-                step.name ||
-                aiConfig?.name ||
-                "AI Agent"}
-              {/* Show execution status indicator */}
-              {isExecution && isActive && (
-                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  Running
-                </span>
-              )}
-              {isExecution && isFailed && step.status !== "failed" && (
-                <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
-                  Tool Failed
-                </span>
-              )}
+              {step.name || aiConfig?.name || "AI Agent"}
             </h3>
           </div>
 
@@ -346,9 +337,7 @@ const StepNode: React.FC<NodeProps> = ({
           {/* Description text */}
           <div className="px-4 pb-4">
             <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {tools?.[0]?.description ||
-                tools?.[0]?.value?.description ||
-                step.description ||
+              {step.description ||
                 aiConfig?.description ||
                 `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`}
             </p>
@@ -422,7 +411,7 @@ const StepNode: React.FC<NodeProps> = ({
   if (step.type === "email" || hasEmailTool) {
     // Get config from step or tool
     const emailConfig =
-      (step as any).config || (hasEmailTool && tools?.[0]?.value) || {}
+      (step as any).config || (hasEmailTool && tools?.[0]?.val) || {}
     const emailAddresses =
       emailConfig?.emailAddresses ||
       emailConfig?.to_email ||
@@ -434,16 +423,7 @@ const StepNode: React.FC<NodeProps> = ({
       step.name ||
       step.description
 
-    // For executions, always show configured layout even if config is missing
-    const isExecution = (step as any).isExecution
-    const forceConfiguredLayout = isExecution || isConfigured
-
-    // Check if any associated tool execution has failed
-    const hasFailedToolExecution =
-      tools && tools.some((tool) => (tool as any).status === "failed")
-    const isFailed = step.status === "failed" || hasFailedToolExecution
-
-    if (!forceConfiguredLayout) {
+    if (!isConfigured) {
       // Show only icon when not configured
       return (
         <>
@@ -550,17 +530,9 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
-            boxShadow: isFailed
-              ? "0 0 0 2px #FECACA"
-              : isCompleted
-                ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
+            border: "2px solid #181B1D",
+            background: "#FFF",
+            boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -594,21 +566,7 @@ const StepNode: React.FC<NodeProps> = ({
                 color: "#3B4145",
               }}
             >
-              {tools?.[0]?.name ||
-                tools?.[0]?.value?.name ||
-                step.name ||
-                "Email"}
-              {/* Show execution status indicator */}
-              {isExecution && isActive && (
-                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  Running
-                </span>
-              )}
-              {isExecution && isFailed && step.status !== "failed" && (
-                <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
-                  Tool Failed
-                </span>
-              )}
+              {step.name || "Email"}
             </h3>
           </div>
 
@@ -618,9 +576,7 @@ const StepNode: React.FC<NodeProps> = ({
           {/* Description text */}
           <div className="px-4 pb-4">
             <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {tools?.[0]?.description ||
-                tools?.[0]?.value?.description ||
-                step.description ||
+              {step.description ||
                 (emailAddresses && emailAddresses.length > 0
                   ? `Send emails to ${emailAddresses.join(", ")} via automated workflow.`
                   : "Send automated email notifications to specified recipients.")}
@@ -693,10 +649,6 @@ const StepNode: React.FC<NodeProps> = ({
   // Special rendering for form submission nodes and steps with form tools
   const hasFormTool = tools && tools.length > 0 && tools[0].type === "form"
   if (step.type === "form_submission" || hasFormTool) {
-    // Check if any associated tool execution has failed
-    const hasFailedToolExecution =
-      tools && tools.some((tool) => (tool as any).status === "failed")
-    const isFailed = step.status === "failed" || hasFailedToolExecution
     return (
       <>
         <div
@@ -705,17 +657,9 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
-            boxShadow: isFailed
-              ? "0 0 0 2px #FECACA"
-              : isCompleted
-                ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
+            border: "2px solid #181B1D",
+            background: "#FFF",
+            boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -749,25 +693,10 @@ const StepNode: React.FC<NodeProps> = ({
                 color: "#3B4145",
               }}
             >
-              {tools?.[0]?.name ||
-                tools?.[0]?.value?.name ||
-                step.name ||
+              {step.name ||
                 (step as any).config?.title ||
-                (hasFormTool && tools?.[0]?.value?.title) ||
+                (hasFormTool && tools?.[0] && typeof tools[0].val === 'object' && tools[0].val?.title) ||
                 "Form Submission"}
-              {/* Show execution status indicator */}
-              {(step as any).isExecution && isActive && (
-                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  Running
-                </span>
-              )}
-              {(step as any).isExecution &&
-                isFailed &&
-                step.status !== "failed" && (
-                  <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
-                    Tool Failed
-                  </span>
-                )}
             </h3>
           </div>
 
@@ -778,14 +707,7 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="px-4 pb-4">
             <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
               {(() => {
-                // Prioritize tool description first
-                if (tools?.[0]?.description || tools?.[0]?.value?.description) {
-                  return (
-                    tools?.[0]?.description || tools?.[0]?.value?.description
-                  )
-                }
-
-                // If step has description, use it next
+                // If step has description, use it first
                 if (step.description) {
                   return step.description
                 }
@@ -793,7 +715,7 @@ const StepNode: React.FC<NodeProps> = ({
                 // Get config from step or tool
                 const config =
                   (step as any).config ||
-                  (hasFormTool && tools?.[0]?.value) ||
+                  (hasFormTool && tools?.[0]?.val) ||
                   {}
 
                 // If user has configured the form, show form details
@@ -952,277 +874,6 @@ const StepNode: React.FC<NodeProps> = ({
     )
   }
 
-  // Special rendering for python_script tools
-  const hasPythonScriptTool =
-    tools && tools.length > 0 && tools[0].type === "python_script"
-  if (step.type === "python_script" || hasPythonScriptTool) {
-    // Check if any associated tool execution has failed
-    const hasFailedToolExecution =
-      tools && tools.some((tool) => (tool as any).status === "failed")
-    const isFailed = step.status === "failed" || hasFailedToolExecution
-
-    return (
-      <>
-        <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
-            boxShadow: isFailed
-              ? "0 0 0 2px #FECACA"
-              : isCompleted
-                ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Bot icon with background */}
-            <div
-              className="flex justify-center items-center flex-shrink-0"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-                background: "#EBF4FF",
-              }}
-            >
-              <img src={botLogo} alt="Bot" width={16} height={16} />
-            </div>
-
-            <h3
-              className="text-gray-800 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-                color: "#3B4145",
-              }}
-            >
-              {tools?.[0]?.name ||
-                tools?.[0]?.value?.name ||
-                step.name ||
-                "Python Script"}
-              {/* Show execution status indicator */}
-              {(step as any).isExecution && isActive && (
-                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  Running
-                </span>
-              )}
-              {(step as any).isExecution &&
-                isFailed &&
-                step.status !== "failed" && (
-                  <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
-                    Tool Failed
-                  </span>
-                )}
-            </h3>
-          </div>
-
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
-
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {tools?.[0]?.description ||
-                tools?.[0]?.value?.description ||
-                step.description ||
-                "Execute Python script to process data and generate results."}
-            </p>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                console.log("Plus button clicked for node:", id)
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
-    )
-  }
-
-  // For executions, create a generic template-style node if no specific type matched
-  const isExecution = (step as any).isExecution
-  if (isExecution) {
-    // Check if any associated tool execution has failed
-    const hasFailedToolExecution =
-      tools && tools.some((tool) => (tool as any).status === "failed")
-    const isFailed = step.status === "failed" || hasFailedToolExecution
-    // Use template-style design for any execution node that didn't match above types
-    return (
-      <>
-        <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
-          style={{
-            width: "320px",
-            minHeight: "122px",
-            borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
-            boxShadow: isFailed
-              ? "0 0 0 2px #FECACA"
-              : isCompleted
-                ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Generic step icon */}
-            <div
-              className="flex justify-center items-center flex-shrink-0"
-              style={{
-                display: "flex",
-                width: "24px",
-                height: "24px",
-                padding: "4px",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "4.8px",
-                background: "#E5E7EB",
-              }}
-            >
-              <svg width={16} height={16} viewBox="0 0 24 24" fill="#6B7280">
-                <path d="M12 2L13.09 8.26L19 7L17.74 13.74L21 15L14.74 16.26L13 21L7.26 19.74L5 21L6.26 14.74L3 13L9.26 11.74L11 7L16.74 8.26L19 7L17.74 13.74L21 15L14.74 16.26L13 21Z" />
-              </svg>
-            </div>
-
-            <h3
-              className="text-gray-800 truncate flex-1"
-              style={{
-                fontFamily: "Inter",
-                fontSize: "14px",
-                fontStyle: "normal",
-                fontWeight: "600",
-                lineHeight: "normal",
-                letterSpacing: "-0.14px",
-                color: "#3B4145",
-              }}
-            >
-              {step.name || "Step"}
-              {/* Show execution status indicator */}
-              {isActive && (
-                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  Running
-                </span>
-              )}
-              {isFailed && step.status !== "failed" && (
-                <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
-                  Tool Failed
-                </span>
-              )}
-            </h3>
-          </div>
-
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
-
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {step.description || `Execution step: ${step.type || "unknown"}`}
-            </p>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  // Template mode: use original generic step node design
   const getNodeClasses = () => {
     const baseClasses =
       "rounded-2xl border-2 transition-all duration-300 ease-in-out p-6 min-w-[180px] min-h-[90px] text-center flex flex-col items-center justify-center cursor-pointer relative backdrop-blur-sm"
@@ -1401,7 +1052,7 @@ const ExecutionResultModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] mx-4 relative overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] mx-4 relative overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
@@ -1425,56 +1076,13 @@ const ExecutionResultModal = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+        <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
           <div className="bg-gray-50 p-4 rounded-lg border">
-            {(() => {
-              const resultString =
-                typeof result === "object"
-                  ? JSON.stringify(result, null, 2)
-                  : String(result)
-
-              // Check if the content is HTML (starts with <!DOCTYPE html> or <html>)
-              const isHTML =
-                resultString.includes("<!DOCTYPE html>") ||
-                resultString.includes("<html>") ||
-                (resultString.includes("<body>") &&
-                  resultString.includes("</body>"))
-
-              if (isHTML) {
-                return (
-                  <div className="w-full">
-                    <div className="mb-3 text-sm text-gray-600 font-medium">
-                      Email HTML Preview:
-                    </div>
-                    <div
-                      className="border border-gray-300 rounded bg-white"
-                      style={{ minHeight: "400px" }}
-                    >
-                      <iframe
-                        srcDoc={resultString}
-                        className="w-full h-[500px] border-0 rounded"
-                        title="Email HTML Preview"
-                        sandbox="allow-same-origin"
-                      />
-                    </div>
-                    <details className="mt-4">
-                      <summary className="text-sm text-gray-600 cursor-pointer hover:text-gray-800">
-                        View HTML Source
-                      </summary>
-                      <pre className="whitespace-pre-wrap text-xs text-gray-700 font-mono leading-relaxed mt-2 p-3 bg-gray-100 rounded border max-h-60 overflow-y-auto">
-                        {resultString}
-                      </pre>
-                    </details>
-                  </div>
-                )
-              } else {
-                return (
-                  <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
-                    {resultString}
-                  </pre>
-                )
-              }
-            })()}
+            <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
+              {typeof result === "object"
+                ? JSON.stringify(result, null, 2)
+                : String(result)}
+            </pre>
           </div>
         </div>
 
@@ -1516,7 +1124,7 @@ const ToolsSidebar = ({
       <div className="px-6 pt-5 pb-4 border-b border-slate-200">
         <div className="flex items-center justify-between mb-1.5">
           <div className="text-sm font-semibold text-gray-700 tracking-wider uppercase">
-            {nodeInfo?.step?.name?.toUpperCase() || "NODE DETAILS"}
+            NODE DETAILS
           </div>
           {onClose && (
             <button
@@ -1676,16 +1284,16 @@ const ToolsSidebar = ({
                   </div>
                 )}
 
-                {(tool as any).value && (
+                {(tool as any).val && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-semibold text-gray-600">
                       Tool Value
                     </h4>
                     <div className="text-xs text-gray-900 bg-gray-50 p-2 rounded max-h-20 overflow-y-auto">
                       <pre>
-                        {typeof (tool as any).value === "object"
-                          ? JSON.stringify((tool as any).value, null, 2)
-                          : String((tool as any).value)}
+                        {typeof (tool as any).val === "object"
+                          ? JSON.stringify((tool as any).val, null, 2)
+                          : String((tool as any).val)}
                       </pre>
                     </div>
                   </div>
@@ -1947,689 +1555,6 @@ const TriggersSidebar = ({
   )
 }
 
-// Execution Sidebar Component
-const ExecutionSidebar = ({
-  isVisible,
-  executionNode,
-  workflowData,
-  onClose,
-  onResultClick,
-}: {
-  isVisible: boolean
-  executionNode: any
-  workflowData?: any
-  onClose?: () => void
-  onResultClick?: (result: any) => void
-}) => {
-  if (!executionNode) return null
-
-  const { step, tools, node } = executionNode
-  const toolExecutions = (step as any).toolExecutions || []
-
-  // Find previous step's output for input
-  const getPreviousStepOutput = () => {
-    if (!step.prevStepIds || step.prevStepIds.length === 0 || !workflowData)
-      return null
-
-    // Get the first previous step (assuming single previous step for simplicity)
-    const prevStepTemplateId = step.prevStepIds[0]
-
-    // Find previous step execution by matching workflowStepTemplateId
-    const prevStep = workflowData.stepExecutions?.find(
-      (s: any) => s.workflowStepTemplateId === prevStepTemplateId,
-    )
-
-    if (!prevStep) return null
-
-    // Get previous step's tool outputs
-    const prevStepTools =
-      workflowData.toolExecutions?.filter((toolExec: any) =>
-        prevStep.toolExecIds?.includes(toolExec.id),
-      ) || []
-
-    if (prevStepTools.length === 0) return null
-
-    // Return the results from all previous step tools
-    const results = prevStepTools
-      .map((tool: any) => tool.result)
-      .filter(Boolean)
-    return results
-  }
-
-  return (
-    <div
-      className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
-        isVisible ? "translate-x-0 w-[400px]" : "translate-x-full w-0"
-      }`}
-    >
-      {/* Header */}
-      <div className="px-6 pt-5 pb-4 border-b border-slate-200">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="text-sm font-semibold text-gray-700 tracking-wider uppercase">
-            EXECUTION DETAILS
-          </div>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1 hover:bg-gray-100 rounded-md transition-colors"
-            >
-              <svg
-                className="w-4 h-4 text-gray-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          )}
-        </div>
-        <div className="text-sm text-slate-500 leading-5 font-normal">
-          {step?.name || "Step execution information"}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-6">
-        {/* Status Section */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700">Status</h3>
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-medium text-gray-500">
-                Current Status:
-              </span>
-              <span
-                className={`text-xs px-2 py-1 rounded-full ${
-                  step.status === "completed"
-                    ? "bg-green-100 text-green-700"
-                    : step.status === "failed"
-                      ? "bg-red-100 text-red-700"
-                      : step.status === "running"
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-gray-100 text-gray-600"
-                }`}
-              >
-                {step.status || "pending"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-xs font-medium text-gray-500">
-                Step Type:
-              </span>
-              <span className="text-xs text-gray-900">
-                {step.type || "unknown"}
-              </span>
-            </div>
-            {step.completedAt && (
-              <div className="flex justify-between">
-                <span className="text-xs font-medium text-gray-500">
-                  Completed:
-                </span>
-                <span className="text-xs text-gray-900">
-                  {new Date(step.completedAt).toLocaleString()}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Input Section */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700">Input</h3>
-          <div className="bg-gray-100 p-3 rounded-lg border max-h-40 overflow-y-auto">
-            {(() => {
-              // If this step has no previous steps (first step), show form data as input
-              if (!step.prevStepIds || step.prevStepIds.length === 0) {
-                // For first step, check if we have output data from tools to use as input display
-                if (tools && tools.length > 0) {
-                  return (
-                    <div className="space-y-2">
-                      {tools
-                        .map((tool: any, index: number) => {
-                          if (
-                            tool.result?.formData?.document_file
-                              ?.originalFileName
-                          ) {
-                            console.log(
-                              `📁 Input Card - Using output filename from tool ${index}:`,
-                              tool.result.formData.document_file
-                                .originalFileName,
-                            )
-                            return (
-                              <div key={index} className="text-xs">
-                                <div className="text-gray-900">
-                                  <span>
-                                    📁{" "}
-                                    {
-                                      tool.result.formData.document_file
-                                        .originalFileName
-                                    }
-                                  </span>
-                                </div>
-                              </div>
-                            )
-                          }
-                          return null
-                        })
-                        .filter(Boolean)}
-                    </div>
-                  )
-                }
-
-                if (step.metadata?.formSubmission?.formData) {
-                  return (
-                    <div className="space-y-2">
-                      {Object.entries(
-                        step.metadata.formSubmission.formData,
-                      ).map(([key, value]) => (
-                        <div key={key} className="text-xs">
-                          <span className="font-medium text-gray-600">
-                            {key}:
-                          </span>
-                          <div className="text-gray-900 mt-1 pl-2">
-                            {typeof value === "object"
-                              ? (() => {
-                                  // Check if it's a file upload object with originalName
-                                  if (
-                                    value &&
-                                    typeof value === "object" &&
-                                    "originalName" in value
-                                  ) {
-                                    return (
-                                      <span>
-                                        📁 {(value as any).originalName}
-                                      </span>
-                                    )
-                                  }
-                                  // Check if it's a file upload object with filename
-                                  if (
-                                    value &&
-                                    typeof value === "object" &&
-                                    "filename" in value
-                                  ) {
-                                    return (
-                                      <span>📁 {(value as any).filename}</span>
-                                    )
-                                  }
-                                  // Default to JSON
-                                  return (
-                                    <pre className="whitespace-pre-wrap">
-                                      {JSON.stringify(value, null, 2)}
-                                    </pre>
-                                  )
-                                })()
-                              : String(value)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                } else {
-                  return (
-                    <div className="text-xs text-gray-500 italic">
-                      No input data available (first step)
-                    </div>
-                  )
-                }
-              }
-
-              // If step has previous steps, show previous step's output as input
-              const previousOutput = getPreviousStepOutput()
-              if (previousOutput && previousOutput.length > 0) {
-                return (
-                  <div className="space-y-2">
-                    {previousOutput.map((output: any, index: number) => (
-                      <div key={index} className="text-xs">
-                        <div className="text-gray-900">
-                          {(() => {
-                            if (typeof output === "object" && output) {
-                              // Check for the exact same path that works in output card
-                              if (
-                                output.formData &&
-                                output.formData.document_file &&
-                                output.formData.document_file.originalFileName
-                              ) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (formData.document_file.originalFileName):",
-                                  output.formData.document_file
-                                    .originalFileName,
-                                )
-                                return (
-                                  <span>
-                                    📁{" "}
-                                    {
-                                      output.formData.document_file
-                                        .originalFileName
-                                    }
-                                  </span>
-                                )
-                              }
-                              // Check for nested path: result.formData.document_file.originalFileName
-                              if (
-                                output.result &&
-                                output.result.formData &&
-                                output.result.formData.document_file &&
-                                output.result.formData.document_file
-                                  .originalFileName
-                              ) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (result.formData.document_file.originalFileName):",
-                                  output.result.formData.document_file
-                                    .originalFileName,
-                                )
-                                return (
-                                  <span>
-                                    📁{" "}
-                                    {
-                                      output.result.formData.document_file
-                                        .originalFileName
-                                    }
-                                  </span>
-                                )
-                              }
-                              // Fallback: Check for direct file_name property (like "uber bill.pdf" case)
-                              if (output.file_name) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (direct file_name):",
-                                  output.file_name,
-                                )
-                                return <span>📁 {output.file_name}</span>
-                              }
-                              // Fallback: Check for nested file_name in result property
-                              if (
-                                output.result &&
-                                typeof output.result === "object" &&
-                                output.result.file_name
-                              ) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (result.file_name):",
-                                  output.result.file_name,
-                                )
-                                return <span>📁 {output.result.file_name}</span>
-                              }
-                              // Fallback: Check if this is the full output structure with file_name at root level
-                              if (output.status && output.file_name) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (status+file_name):",
-                                  output.file_name,
-                                )
-                                return <span>📁 {output.file_name}</span>
-                              }
-                            }
-                            // Default to showing full JSON
-                            console.log(
-                              "📁 Input Card - No filename found, showing full JSON:",
-                              output,
-                            )
-                            return (
-                              <pre className="whitespace-pre-wrap">
-                                {typeof output === "object"
-                                  ? JSON.stringify(output, null, 2)
-                                  : String(output)}
-                              </pre>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
-              }
-
-              // Step has previous step but no output available
-              return (
-                <div className="text-xs text-gray-500 italic">
-                  No input available from previous step
-                </div>
-              )
-            })()}
-          </div>
-        </div>
-
-        {/* Output Section */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700">Output</h3>
-          {(() => {
-            console.log("📊 Output Card Data:", {
-              tools: tools,
-              toolsLength: tools?.length,
-              toolsData: tools?.map((tool: any, index: number) => ({
-                index,
-                id: tool.id,
-                type: tool.type,
-                status: tool.status,
-                hasResult: !!tool.result,
-                resultType: typeof tool.result,
-                result: tool.result,
-              })),
-            })
-
-            // Extract filename from output card data
-            let outputFilenameFound = false
-            tools?.forEach((tool: any, index: number) => {
-              if (
-                tool.result &&
-                tool.result.formData &&
-                tool.result.formData.document_file &&
-                tool.result.formData.document_file.originalFileName
-              ) {
-                console.log(
-                  `📁 Output Card - Extracted filename from tool ${index}:`,
-                  tool.result.formData.document_file.originalFileName,
-                )
-                console.log(
-                  `📁 Output Card - Full document_file object:`,
-                  tool.result.formData.document_file,
-                )
-                outputFilenameFound = true
-              } else {
-                console.log(
-                  `📁 Output Card - No filename found in tool ${index}, checking structure:`,
-                  {
-                    hasResult: !!tool.result,
-                    hasFormData: !!tool.result?.formData,
-                    hasDocumentFile: !!tool.result?.formData?.document_file,
-                    hasOriginalFileName:
-                      !!tool.result?.formData?.document_file?.originalFileName,
-                    resultStructure: tool.result
-                      ? Object.keys(tool.result)
-                      : "no result",
-                  },
-                )
-              }
-            })
-
-            // If no filename found in output, check input data
-            if (!outputFilenameFound) {
-              console.log(
-                "📁 No filename found in output, checking input data...",
-              )
-
-              // Get previous step output for input
-              const previousOutput = (() => {
-                if (
-                  !step.prevStepIds ||
-                  step.prevStepIds.length === 0 ||
-                  !workflowData
-                )
-                  return null
-                const prevStepTemplateId = step.prevStepIds[0]
-                const prevStep = workflowData.stepExecutions?.find(
-                  (s: any) => s.workflowStepTemplateId === prevStepTemplateId,
-                )
-                if (!prevStep) return null
-                const prevStepTools =
-                  workflowData.toolExecutions?.filter((toolExec: any) =>
-                    prevStep.toolExecIds?.includes(toolExec.id),
-                  ) || []
-                if (prevStepTools.length === 0) return null
-                return prevStepTools
-                  .map((tool: any) => tool.result)
-                  .filter(Boolean)
-              })()
-
-              // Check form submission data (first step)
-              if (step.metadata?.formSubmission?.formData) {
-                console.log(
-                  "📁 Input Card - Checking form submission data:",
-                  step.metadata.formSubmission.formData,
-                )
-                Object.entries(step.metadata.formSubmission.formData).forEach(
-                  ([key, value]) => {
-                    if (
-                      value &&
-                      typeof value === "object" &&
-                      "originalName" in value
-                    ) {
-                      console.log(
-                        `📁 Input Card - Found filename in form data ${key}:`,
-                        (value as any).originalName,
-                      )
-                    }
-                    if (
-                      value &&
-                      typeof value === "object" &&
-                      "filename" in value
-                    ) {
-                      console.log(
-                        `📁 Input Card - Found filename in form data ${key}:`,
-                        (value as any).filename,
-                      )
-                    }
-                  },
-                )
-              }
-
-              // Check previous step output
-              if (previousOutput && previousOutput.length > 0) {
-                console.log(
-                  "📁 Input Card - Checking previous step output:",
-                  previousOutput,
-                )
-                previousOutput.forEach((output: any, index: number) => {
-                  // Check for same path as output card: result.formData.document_file.originalFileName
-                  if (
-                    output?.result?.formData?.document_file?.originalFileName
-                  ) {
-                    console.log(
-                      `📁 Input Card - Found result.formData.document_file.originalFileName in previous output ${index}:`,
-                      output.result.formData.document_file.originalFileName,
-                    )
-                  }
-                  // Check for direct formData path: formData.document_file.originalFileName
-                  if (output?.formData?.document_file?.originalFileName) {
-                    console.log(
-                      `📁 Input Card - Found formData.document_file.originalFileName in previous output ${index}:`,
-                      output.formData.document_file.originalFileName,
-                    )
-                  }
-                  // Fallback paths
-                  if (output?.file_name) {
-                    console.log(
-                      `📁 Input Card - Found file_name in previous output ${index}:`,
-                      output.file_name,
-                    )
-                  }
-                  if (output?.result?.file_name) {
-                    console.log(
-                      `📁 Input Card - Found result.file_name in previous output ${index}:`,
-                      output.result.file_name,
-                    )
-                  }
-                })
-              } else {
-                console.log("📁 Input Card - No previous step output available")
-              }
-            }
-
-            return tools && tools.length > 0 ? (
-              tools.map((tool: any, index: number) => {
-                console.log(`📊 Rendering tool ${index}:`, {
-                  id: tool.id,
-                  type: tool.type,
-                  status: tool.status,
-                  result: tool.result,
-                })
-
-                return (
-                  <div
-                    key={tool.id || index}
-                    className="border border-gray-200 rounded-lg p-4 space-y-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-900">
-                        {tool.type} Tool
-                      </span>
-                      <div className="flex gap-2">
-                        {tool.status && (
-                          <span
-                            className={`text-xs px-2 py-1 rounded-full ${
-                              tool.status === "completed"
-                                ? "bg-green-100 text-green-700"
-                                : tool.status === "failed"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-gray-100 text-gray-600"
-                            }`}
-                          >
-                            {tool.status}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {tool.result && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-semibold text-gray-600">
-                            Result
-                          </h4>
-                          {(() => {
-                            // Check if this is a successful email tool execution
-                            const isEmailTool = tool.type === "email"
-                            const isSuccess =
-                              step.status === "completed" &&
-                              tool.status === "completed"
-                            const hasEmailBody =
-                              tool.result?.python_script_output?.body
-
-                            if (isEmailTool && isSuccess && hasEmailBody) {
-                              return (
-                                <button
-                                  onClick={() =>
-                                    onResultClick?.(
-                                      tool.result.python_script_output.body,
-                                    )
-                                  }
-                                  className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
-                                >
-                                  View Body
-                                </button>
-                              )
-                            } else {
-                              return (
-                                <button
-                                  onClick={() => onResultClick?.(tool.result)}
-                                  className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
-                                >
-                                  View Full
-                                </button>
-                              )
-                            }
-                          })()}
-                        </div>
-                        <div
-                          className="text-xs text-gray-900 bg-gray-100 p-3 rounded max-h-32 overflow-y-auto border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors"
-                          onClick={() => {
-                            // Check if this is a successful email tool execution
-                            const isEmailTool = tool.type === "email"
-                            const isSuccess =
-                              step.status === "completed" &&
-                              tool.status === "completed"
-
-                            if (isEmailTool && isSuccess) {
-                              const hasEmailBody =
-                                tool.result?.python_script_output?.body
-                              if (hasEmailBody) {
-                                onResultClick?.(
-                                  tool.result.python_script_output.body,
-                                )
-                              } else {
-                                onResultClick?.(tool.result)
-                              }
-                            } else {
-                              onResultClick?.(tool.result)
-                            }
-                          }}
-                        >
-                          {(() => {
-                            const isEmailTool = tool.type === "email"
-                            const isSuccess =
-                              step.status === "completed" &&
-                              tool.status === "completed"
-                            const isFailed =
-                              step.status === "failed" ||
-                              tool.status === "failed"
-
-                            // Handle failed executions for any tool type
-                            if (isFailed) {
-                              // Extract error message from multiple possible paths
-                              const error =
-                                tool.result?.error ||
-                                tool.result?.message ||
-                                tool.result?.python_script_output?.error ||
-                                tool.result?.stderr ||
-                                tool.result?.exception ||
-                                `${tool.type} execution failed`
-                              return <div className="text-red-700">{error}</div>
-                            }
-
-                            // Handle successful executions for any tool type
-                            if (isSuccess) {
-                              // For email tools, show custom message if available
-                              if (isEmailTool) {
-                                const message = tool.result?.message
-                                if (message) {
-                                  return (
-                                    <div className="text-green-700">
-                                      {message}
-                                    </div>
-                                  )
-                                }
-                              }
-
-                              // For all successful tools, show generic success message
-                              return (
-                                <div className="text-green-700">Success</div>
-                              )
-                            }
-
-                            // Default behavior - show full result
-                            return (
-                              <pre className="whitespace-pre-wrap">
-                                {typeof tool.result === "object"
-                                  ? JSON.stringify(tool.result, null, 2)
-                                  : String(tool.result)}
-                              </pre>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })
-            ) : (
-              <div className="text-center py-6">
-                <div className="text-gray-400 mb-2">
-                  <svg
-                    className="w-8 h-8 mx-auto"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="1"
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                </div>
-                <p className="text-sm text-gray-500">
-                  No output data available
-                </p>
-              </div>
-            )
-          })()}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 const EmptyCanvas: React.FC<{
   onAddFirstStep: () => void
   onStartWithTemplate: () => void
@@ -2711,23 +1636,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
-  const [selectedNodeTools, setSelectedNodeTools] = useState<Tool[] | null>(
+  const [selectedNodeTools] = useState<Tool[] | null>(
     null,
   )
-  const [selectedNodeInfo, setSelectedNodeInfo] = useState<any>(null)
+  const [selectedNodeInfo] = useState<any>(null)
   const [showResultModal, setShowResultModal] = useState(false)
   const [selectedResult, setSelectedResult] = useState<any>(null)
-  const [showExecutionSidebar, setShowExecutionSidebar] = useState(false)
-  const [selectedExecutionNode, setSelectedExecutionNode] = useState<any>(null)
+  const [showExecutionModal, setShowExecutionModal] = useState(false)
+  const [createdTemplate, setCreatedTemplate] = useState<WorkflowTemplate | null>(null)
   // Template workflow state (for creating the initial workflow)
-  const [templateWorkflow, setTemplateWorkflow] = useState<TemplateFlow | null>(
+  const [templateWorkflow] = useState<TemplateFlow | null>(
     null,
   )
-  const [, setIsLoadingTemplate] = useState(false)
-  const [, setTemplateError] = useState<string | null>(null)
-
   // Running workflow state (for real-time updates)
-  const [, setWorkflow] = useState<Flow | null>(null)
   const [, setIsPolling] = useState(false)
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
     null,
@@ -2757,35 +1678,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         ? selectedTemplate.stepExecutions
         : selectedTemplate.steps
 
-      // Log step executions structure for debugging
-      if (isExecution && selectedTemplate.stepExecutions) {
-        console.log("📋 Step Executions Structure:", {
-          totalSteps: selectedTemplate.stepExecutions.length,
-          firstStep: selectedTemplate.stepExecutions[0]
-            ? {
-                id: selectedTemplate.stepExecutions[0].id,
-                name: selectedTemplate.stepExecutions[0].name,
-                prevStepIds: selectedTemplate.stepExecutions[0].prevStepIds,
-                nextStepIds: selectedTemplate.stepExecutions[0].nextStepIds,
-                workflowStepTemplateId:
-                  selectedTemplate.stepExecutions[0].workflowStepTemplateId,
-              }
-            : null,
-          secondStep: selectedTemplate.stepExecutions[1]
-            ? {
-                id: selectedTemplate.stepExecutions[1].id,
-                name: selectedTemplate.stepExecutions[1].name,
-                prevStepIds: selectedTemplate.stepExecutions[1].prevStepIds,
-                nextStepIds: selectedTemplate.stepExecutions[1].nextStepIds,
-                workflowStepTemplateId:
-                  selectedTemplate.stepExecutions[1].workflowStepTemplateId,
-              }
-            : null,
-        })
-      }
-
       // Sort steps by step_order or creation order before creating nodes
-      const sortedSteps = [...stepsData].sort((a, b) => {
+      const sortedSteps = stepsData ? [...stepsData].sort((a, b) => {
         // First try to sort by step_order in metadata
         const orderA = a.metadata?.step_order ?? 999
         const orderB = b.metadata?.step_order ?? 999
@@ -2798,16 +1692,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         if (b.nextStepIds?.includes(a.id)) return 1
         // Final fallback to creation time
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      })
+      }) : []
 
       console.log("Original steps:", stepsData)
       console.log("Sorted steps:", sortedSteps)
 
       // Create nodes from steps in top-down layout
-      const templateNodes: Node[] = sortedSteps.map((step, index) => {
+      const templateNodes: Node[] = sortedSteps.map((step: any, index: number) => {
         // Find associated tools for this step
         let stepTools = []
-        let toolExecutions = []
+        let toolExecutions: any[] = []
 
         if (isExecution) {
           // For executions, get tool executions from toolExecIds
@@ -2816,48 +1710,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               step.toolExecIds?.includes(toolExec.id),
             ) || []
 
-          console.log("🔧 Tool Execution Mapping:", {
-            stepName: step.name,
-            stepType: step.type,
-            toolExecIds: step.toolExecIds,
-            prevStepIds: step.prevStepIds,
-            nextStepIds: step.nextStepIds,
-            foundToolExecutions: toolExecutions.map((te) => ({
-              id: te.id,
-              type: te.type,
-              toolType: te.toolType,
-              status: te.status,
-            })),
-          })
-
-          // Log toolType from API response
-          toolExecutions.forEach((toolExec) => {
-            console.log("📡 API Response toolType:", {
-              toolExecutionId: toolExec.id,
-              apiToolType: toolExec.toolType,
-              legacyType: toolExec.type,
-              stepName: step.name,
-            })
-          })
-
           // Create tool info from executions
           stepTools = toolExecutions.map((toolExec) => ({
             id: toolExec.id,
-            type: toolExec.toolType || toolExec.type || "execution_tool", // Use new toolType field first
+            type: "execution_tool",
             config: toolExec.result || {},
             toolExecutionId: toolExec.id,
             status: toolExec.status,
             result: toolExec.result,
           }))
-
-          console.log("🔧 Created StepTools:", {
-            stepName: step.name,
-            stepTools: stepTools.map((st) => ({
-              id: st.id,
-              type: st.type,
-              status: st.status,
-            })),
-          })
         } else {
           // For templates, use workflow_tools
           stepTools =
@@ -2868,15 +1729,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
         // Check if this is the last step (no nextStepIds or empty nextStepIds)
         const isLastStep = !step.nextStepIds || step.nextStepIds.length === 0
-        // Don't show plus button for executed workflows
-        const hasNextFlag = isLastStep && !isExecution
+        const hasNextFlag = isLastStep
 
         return {
           id: step.id,
           type: "stepNode",
           position: {
-            x: 400, // Keep all nodes at the same horizontal position
-            y: 100 + index * 200, // Stack vertically with 200px spacing (reduced for new node height)
+            x: 400, // Consistent X position for perfect vertical straight line alignment
+            y: 100 + index * 250, // Increased spacing for better visual separation while maintaining straight lines
           },
           data: {
             step: {
@@ -2890,12 +1750,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               metadata: step.metadata,
               isExecution,
               toolExecutions: isExecution ? toolExecutions : undefined,
-              // Properly extract prevStepIds and nextStepIds for executions
-              prevStepIds: step.prevStepIds || [],
-              nextStepIds: step.nextStepIds || [],
-              workflowStepTemplateId: isExecution
-                ? step.workflowStepTemplateId
-                : step.id,
             },
             tools: stepTools,
             isActive: isExecution && step.status === "running",
@@ -2908,14 +1762,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       // Create edges from nextStepIds
       const templateEdges: Edge[] = []
-      stepsData.forEach((step) => {
+      stepsData?.forEach((step) => {
         step.nextStepIds?.forEach((nextStepId) => {
           // For executions, we need to map template step IDs to execution step IDs
           let targetStepId = nextStepId
 
           if (isExecution) {
             // Find the step execution that corresponds to this template step ID
-            const targetStepExecution = stepsData.find(
+            const targetStepExecution = stepsData?.find(
               (s: any) => s.workflowStepTemplateId === nextStepId,
             )
             if (targetStepExecution) {
@@ -2937,6 +1791,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               type: "arrowclosed",
               color: "#D1D5DB",
             },
+            sourceHandle: "bottom",
+            targetHandle: "top",
           })
         })
       })
@@ -2946,7 +1802,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       setNodes(templateNodes)
       setEdges(templateEdges)
-      setNodeCounter(stepsData.length + 1)
+      setNodeCounter((stepsData?.length || 0) + 1)
       setShowEmptyCanvas(false)
 
       setTimeout(() => {
@@ -2954,32 +1810,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }, 50)
     }
   }, [selectedTemplate, setNodes, setEdges, fitView])
-
-  // Fetch specific workflow template by ID on component mount (keep for backwards compatibility)
-  useEffect(() => {
-    // Only fetch template if no selectedTemplate is provided
-    if (!selectedTemplate) {
-      const fetchWorkflowTemplate = async () => {
-        const templateId = "a50e8400-e29b-41d4-a716-446655440010"
-        setIsLoadingTemplate(true)
-        setTemplateError(null)
-
-        try {
-          const templateData = await workflowTemplatesAPI.fetchById(templateId)
-          setTemplateWorkflow(templateData)
-        } catch (error) {
-          console.error("Fetch error:", error)
-          setTemplateError(
-            error instanceof Error ? error.message : "Network error",
-          )
-        } finally {
-          setIsLoadingTemplate(false)
-        }
-      }
-
-      fetchWorkflowTemplate()
-    }
-  }, [selectedTemplate])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -2989,13 +1819,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         type: "straight",
         animated: false,
         style: {
-          stroke: "#6B7280",
+          stroke: "#D1D5DB",
           strokeWidth: 2,
         },
         markerEnd: {
           type: "arrowclosed",
-          color: "#6B7280",
+          color: "#D1D5DB",
         },
+        sourceHandle: "bottom",
+        targetHandle: "top",
       }
       setEdges((eds) => addEdge(newEdge, eds))
     },
@@ -3015,14 +1847,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       if (!step) return
 
-      // Check if this is an execution workflow node
-      const isExecution = (step as any).isExecution
+      // Don't allow clicking on the initial "Select trigger from the sidebar" node
+      if (step.name === "Select trigger from the sidebar") {
+        return
+      }
+
+      // Get the first tool to determine type
+      const primaryTool = tools[0]
+      const toolType = primaryTool?.type || step.type
 
       console.log(
         "🎯 Node clicked:",
         node.id,
-        "Is execution:",
-        isExecution,
+        "Tool type:",
+        toolType,
         "Step type:",
         step.type,
       )
@@ -3041,19 +1879,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
-      setShowExecutionSidebar(false)
-
-      // If this is an execution workflow, show execution sidebar
-      if (isExecution) {
-        setSelectedExecutionNode({ step, tools, node })
-        setShowExecutionSidebar(true)
-        console.log("📊 Opening execution sidebar")
-        return
-      }
-
-      // Get the first tool to determine type for template workflows
-      const primaryTool = tools[0]
-      const toolType = primaryTool?.type || step.type
 
       // Handle different tool types
       switch (toolType) {
@@ -3090,10 +1915,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           break
 
         default:
-          // For unknown types, open What Happens Next sidebar
-          setSelectedNodeForNext(node.id)
-          setShowWhatHappensNextUI(true)
-          console.log("❓ Opening default sidebar for type:", toolType)
+          // For unknown types, don't open What Happens Next sidebar - this was causing the bug
+          console.log("❓ Unknown node type:", toolType, "- not opening sidebar")
 
           if (onStepClick) {
             onStepClick(step)
@@ -3122,7 +1945,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     const newNode: Node = {
       id: "1",
       type: "stepNode",
-      position: { x: 400, y: 200 },
+      position: { x: 400, y: 100 }, // Consistent X position for straight line connections, starting higher
       data: {
         step: {
           id: "1",
@@ -3218,7 +2041,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             type: "arrowclosed",
             color: "#3B82F6",
           },
-        })
+          sourceHandle: "bottom",
+          targetHandle: "top",
+          })
       })
     })
 
@@ -3327,6 +2152,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   useEffect(() => {
     const handleOpenWhatHappensNext = (event: CustomEvent) => {
       const { nodeId } = event.detail
+      console.log("Plus button clicked, opening What Happens Next for node:", nodeId)
+      
+      // Close all other sidebars to ensure What Happens Next is shown
+      setShowTriggersSidebar(false)
+      setShowAIAgentConfigUI(false)
+      setShowEmailConfigUI(false)
+      setShowOnFormSubmissionUI(false)
+      
+      // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
       setShowWhatHappensNextUI(true)
     }
@@ -3344,77 +2178,101 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
   }, [])
 
-  // Function to fetch workflow status
+  // Function to stop polling
+  const stopPolling = useCallback(() => {
+    setIsPolling(false)
+
+    if (pollingInterval) {
+      clearInterval(pollingInterval)
+      setPollingInterval(null)
+    }
+  }, [pollingInterval, setIsPolling, setPollingInterval])
+
+  // Function to fetch workflow execution status
   const fetchWorkflowStatus = useCallback(
-    async (workflowId: string) => {
+    async (executionId: string) => {
       try {
-        const workflowData = await workflowsAPI.fetchById(workflowId)
+        // Use the status endpoint for lightweight polling
+        const statusData = await workflowExecutionsAPI.fetchStatus(executionId)
+        
+        console.log("📊 Polling status for execution:", executionId, "Status:", statusData.status)
 
-        // Update the running workflow state
-        setWorkflow(workflowData)
-
-        // Update nodes based on workflow step statuses - match by step name
-        if (workflowData?.step_exe) {
-          setNodes((currentNodes) =>
-            currentNodes.map((node) => {
-              // Try to match by step name first, then fall back to id
-              const stepExeArray = workflowData.step_exe as StepExecution[]
-              const matchingStep = stepExeArray?.find((stepItem) => {
-                const step = stepItem as StepExecution
-                // Match by step name (more reliable for template vs running workflow)
-                const nodeStep = node.data?.step as Step
-                if (nodeStep?.name && step.name) {
-                  const nameMatch = nodeStep.name === step.name
-                  return nameMatch
-                }
-                // Fall back to ID matching
-                const idMatch = (step as any)?.id === node.id
-                return idMatch
-              })
-
-              if (matchingStep) {
-                return {
+        // Check if workflow is completed or failed to stop polling
+        if (statusData.success) {
+          if (statusData.status === "completed") {
+            console.log("✅ Workflow execution completed!")
+            // Fetch full details to update nodes with final status
+            const fullData = await workflowExecutionsAPI.fetchById(executionId)
+            
+            // Update nodes to show completed status
+            if (fullData?.stepExecutions) {
+              setNodes((currentNodes) =>
+                currentNodes.map((node) => ({
                   ...node,
                   data: {
                     ...node.data,
-                    isActive:
-                      matchingStep.status === "running" ||
-                      matchingStep.status === "in_progress",
-                    isCompleted:
-                      matchingStep.status === "completed" ||
-                      matchingStep.status === "done",
+                    isActive: false,
+                    isCompleted: true,
                     step: node.data.step
                       ? {
                           ...node.data.step,
-                          status: matchingStep.status,
+                          status: "completed",
                         }
-                      : {
-                          id: matchingStep?.id || node.id,
-                          name: matchingStep?.name || "Unknown Step",
-                          status: matchingStep?.status || "unknown",
-                          contents: [],
-                        },
+                      : node.data.step,
                   },
-                }
-              }
-              return node
-            }),
-          )
-        }
-
-        // Check if workflow is completed or failed to stop polling
-        if (
-          workflowData?.workflow_info?.status === "completed" ||
-          workflowData?.workflow_info?.status === "failed" ||
-          workflowData?.workflow_info?.status === "cancelled"
-        ) {
-          stopPolling()
+                })),
+              )
+            }
+            
+            stopPolling()
+          } else if (statusData.status === "failed") {
+            console.log("❌ Workflow execution failed!")
+            // Update nodes to show failed status
+            setNodes((currentNodes) =>
+              currentNodes.map((node) => ({
+                ...node,
+                data: {
+                  ...node.data,
+                  isActive: false,
+                  isCompleted: false,
+                  step: node.data.step
+                    ? {
+                        ...node.data.step,
+                        status: "failed",
+                      }
+                    : node.data.step,
+                },
+              })),
+            )
+            
+            stopPolling()
+          } else if (statusData.status === "active") {
+            // Update nodes to show active status
+            setNodes((currentNodes) =>
+              currentNodes.map((node, index) => ({
+                ...node,
+                data: {
+                  ...node.data,
+                  isActive: index === 0, // Show first step as active for simplicity
+                  isCompleted: false,
+                  step: node.data.step
+                    ? {
+                        ...node.data.step,
+                        status: "running",
+                      }
+                    : node.data.step,
+                },
+              })),
+            )
+          }
         }
       } catch (error) {
         console.error("Error fetching workflow status:", error)
+        // Stop polling on persistent errors
+        stopPolling()
       }
     },
-    [setWorkflow, setNodes],
+    [setNodes, stopPolling],
   )
 
   // Function to start polling
@@ -3437,16 +2295,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     [pollingInterval, fetchWorkflowStatus, setIsPolling, setPollingInterval],
   )
 
-  // Function to stop polling
-  const stopPolling = useCallback(() => {
-    setIsPolling(false)
-
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
-    }
-  }, [pollingInterval, setIsPolling, setPollingInterval])
-
   // Cleanup polling on component unmount
   useEffect(() => {
     return () => {
@@ -3456,65 +2304,160 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
   }, [pollingInterval])
 
-  const executeNode = useCallback(async () => {
-    if (!templateWorkflow) {
-      console.error("No workflow template loaded")
-      return
-    }
+  const executeWorkflow = useCallback(async (file?: File) => {
+    if (file) {
+      // File execution mode - requires existing template
+      console.log("Executing workflow with file:", file.name)
+      console.log("Selected template:", selectedTemplate)
 
-    try {
-      // Step 1: Instantiate the workflow template
-      const workflowInstance = await workflowTemplatesAPI.instantiate(
-        templateWorkflow.template_id,
-        {
-          name: "Test Webhook Flow",
-          metadata: {
-            description: "Testing webhook workflow",
-            environment: "test",
-          },
-        },
-      )
-
-      // Set initial workflow state after instantiation
       try {
-        const initialWorkflowData = await workflowsAPI.fetchById(
-          workflowInstance.workflowId,
+        // Check if we have a valid template (prioritize createdTemplate over selectedTemplate)
+        const currentTemplate = createdTemplate || selectedTemplate
+        const templateId = currentTemplate?.id
+        if (!templateId || templateId === "custom") {
+          throw new Error("Cannot execute workflow with file: No valid template ID available. Please save the workflow as a template first.")
+        }
+
+        // Create form data matching the curl command format
+        const formData: Record<string, any> = {
+          name: `${currentTemplate?.name || "Workflow"} - ${new Date().toLocaleString()}`,
+          description: `Execution of ${currentTemplate?.name || "workflow"} with file: ${file.name}`,
+          file_description: `Test document: ${file.name}`,
+        }
+
+        console.log("Generated form data:", formData)
+
+        const executionData = {
+          name: formData.name,
+          description: formData.description,
+          file: file,
+          formData: formData,
+        }
+        
+        const response = await workflowExecutionsAPI.executeTemplate(
+          templateId,
+          executionData,
         )
-        setWorkflow(initialWorkflowData)
+
+        console.log("🚀 WORKFLOW EXECUTION RESPONSE:", response)
+
+        // Handle response similar to execution modal
+        if (response.error || response.status === "error") {
+          console.error("Execution failed:", response.error || response.message)
+          throw new Error(response.error || response.message || "Execution failed")
+        } else {
+          // Extract execution ID from response.data.execution.id
+          const executionId = response.data?.execution?.id
+          console.log("📋 Extracted execution ID:", executionId)
+
+          if (executionId) {
+            // Start polling for completion with the execution ID
+            startPolling(executionId)
+          } else {
+            console.warn("No execution ID found in response")
+          }
+        }
+
+        return response
       } catch (error) {
-        console.warn("Failed to fetch initial workflow state:", error)
+        console.error("Execution error:", error)
+        throw error
+      }
+    } else {
+      // Template creation mode - first create template, then open execution modal
+      console.log("Creating workflow template for execution...")
+      
+      // Check if we have nodes to create a workflow
+      if (nodes.length === 0) {
+        throw new Error("Cannot execute workflow: No workflow steps defined. Please add at least one step to your workflow.")
       }
 
-      // Step 2: Run the workflow
-      await workflowsAPI.run(workflowInstance.workflowId)
-
-      // Step 3: Complete a workflow step (root step ID)
-      try {
-        await workflowsAPI.completeStep(workflowInstance.rootStepId)
-      } catch (error) {
-        console.warn(`Failed to complete step:`, error)
-        // Continue execution even if step completion fails
-      }
-
-      // Mark all nodes as active/running initially
-      setNodes((nodes) =>
-        nodes.map((node) => ({
-          ...node,
+      // Create the workflow state payload for the complex template API
+      const workflowState = {
+        name: selectedTemplate?.name || `Custom Workflow ${new Date().toLocaleDateString()}`,
+        description: selectedTemplate?.description || "Workflow created from builder",
+        version: "1.0.0",
+        config: {
+          ai_model: "gemini-1.5-pro",
+          max_file_size: "10MB",
+          auto_execution: false,
+          schema_version: "1.0",
+          allowed_file_types: ["pdf", "docx", "txt", "jpg", "png"],
+          supports_file_upload: true,
+        },
+        nodes: nodes.map(node => ({
+          id: node.id,
+          type: node.type,
+          position: node.position,
           data: {
-            ...node.data,
-            isActive: true,
-            isCompleted: false,
-          },
+            step: node.data?.step,
+            tools: node.data?.tools,
+            isActive: node.data?.isActive,
+            isCompleted: node.data?.isCompleted,
+            hasNext: node.data?.hasNext,
+          }
         })),
-      )
+        edges: edges.map(edge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: edge.type,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle,
+          style: edge.style,
+          markerEnd: edge.markerEnd,
+        })),
+        metadata: {
+          nodeCount: nodes.length,
+          edgeCount: edges.length,
+          createdAt: new Date().toISOString(),
+          workflowType: templateWorkflow ? 'template-based' : 'user-created'
+        }
+      }
+      
+      console.log("=== WORKFLOW STATE FOR BACKEND API ===")
+      console.log(JSON.stringify(workflowState, null, 2))
+      console.log("=== END WORKFLOW STATE ===")
 
-      // Start polling for workflow status updates
-      startPolling(workflowInstance.workflowId)
-    } catch (error) {
-      console.error("Error executing workflow:", error)
-      // You could add error state here to show in UI
+      try {
+        // Create the workflow template in the backend
+        const response = await fetch('http://localhost:3000/api/v1/workflow/templates/complex', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(workflowState),
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Failed to create workflow template: ${response.status} ${response.statusText}. ${errorText.substring(0, 200)}`)
+        }
+
+        const result = await response.json()
+        console.log("✅ Workflow template created successfully:", result)
+
+        // Update the selectedTemplate state with the newly created template
+        if (result.success && result.data) {
+          // The API returns the created template - we can use this for execution
+          const newTemplate = result.data
+          
+          // Store the created template for use in the execution modal
+          setCreatedTemplate(newTemplate)
+          
+          // Open the WorkflowExecutionModal with the created template
+          setShowExecutionModal(true)
+          
+          console.log("📋 Template ID for execution:", newTemplate.id)
+        } else {
+          throw new Error("Failed to create workflow template: Invalid response format")
+        }
+      } catch (error) {
+        console.error("❌ Failed to create workflow template:", error)
+        throw error
+      }
     }
-  }, [templateWorkflow, setNodes, startPolling, setWorkflow])
+  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling])
 
   const handleTriggerClick = useCallback(
     (triggerId: string) => {
@@ -3523,7 +2466,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         const formNode: Node = {
           id: "form-submission",
           type: "stepNode",
-          position: { x: 400, y: 200 },
+          position: { x: 400, y: 100 }, // Consistent X position for straight line connections
           data: {
             step: {
               id: "form-submission",
@@ -3576,10 +2519,168 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [])
 
   const handleWhatHappensNextAction = useCallback(async (actionId: string) => {
-    // This function is now only used for tool selection in the WhatHappensNextUI
-    // API calls are moved to the "Save Configuration" button
     console.log("Selected action:", actionId)
-  }, [])
+    
+    if (actionId === "ai_agent") {
+      // When AI Agent is selected from WhatHappensNextUI, create a blank AI Agent node and open AIAgentConfigUI
+      if (selectedNodeForNext) {
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        if (sourceNode) {
+          const newNodeId = `step-${nodeCounter}`
+          
+          // Create new AI Agent node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: "AI Agent",
+                description: "",
+                type: "ai_agent",
+                status: "pending",
+                contents: [],
+                config: {},
+              },
+              tools: [],
+              isActive: false,
+              isCompleted: false,
+              hasNext: false, // Will be set to true after configuration
+            },
+            draggable: true,
+          }
+
+          // Create edge connecting source to new node
+          const newEdge: Edge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "straight",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          }
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      hasNext: false,
+                    },
+                  }
+                : node,
+            ),
+          )
+
+          // Close WhatHappensNextUI and open AIAgentConfigUI for the new node
+          setShowWhatHappensNextUI(false)
+          setSelectedNodeForNext(null)
+          setSelectedAgentNodeId(newNodeId)
+          setShowAIAgentConfigUI(true)
+        }
+      }
+    } else if (actionId === "email") {
+      // When Email is selected from WhatHappensNextUI, create a blank Email node and open EmailConfigUI
+      if (selectedNodeForNext) {
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        if (sourceNode) {
+          const newNodeId = `step-${nodeCounter}`
+          
+          // Create new Email node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: "Email",
+                description: "",
+                type: "email",
+                status: "pending",
+                contents: [],
+                config: {},
+              },
+              tools: [],
+              isActive: false,
+              isCompleted: false,
+              hasNext: false, // Will be set to true after configuration
+            },
+            draggable: true,
+          }
+
+          // Create edge connecting source to new node
+          const newEdge: Edge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "straight",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          }
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      hasNext: false,
+                    },
+                  }
+                : node,
+            ),
+          )
+
+          // Close WhatHappensNextUI and open EmailConfigUI for the new node
+          setShowWhatHappensNextUI(false)
+          setSelectedNodeForNext(null)
+          setSelectedEmailNodeId(newNodeId)
+          setShowEmailConfigUI(true)
+        }
+      }
+    }
+  }, [selectedNodeForNext, nodes, nodeCounter, setNodes, setEdges, setNodeCounter])
 
   const handleAIAgentConfigBack = useCallback(() => {
     setShowAIAgentConfigUI(false)
@@ -3602,17 +2703,31 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           ? nodes.find((n) => n.id === sourceEdge.source)
           : null
 
+        // Create the tool object for AI Agent
+        const aiAgentTool = {
+          id: `tool-${selectedAgentNodeId}`,
+          type: "ai_agent",
+          val: agentConfig, // Use 'val' to match template structure
+          value: agentConfig, // Also include 'value' for compatibility
+          config: {
+            model: agentConfig.model,
+            name: agentConfig.name,
+            description: formattedDescription,
+            to_email: [],
+          },
+        }
+
         // Update the AI Agent node with the configuration and add hasNext flag
         setNodes((nds) =>
           nds.map((node) =>
             node.id === selectedAgentNodeId
               ? {
                   ...node,
-                  // Reposition node to center below source node now that it's 320px wide
+                  // Reposition node to ensure consistent X alignment for straight lines
                   position: sourceNode
                     ? {
-                        x: sourceNode.position.x, // Align with source node (no offset for 320px node)
-                        y: node.position.y, // Keep same Y position
+                        x: 400, // Consistent X position for perfect straight line alignment
+                        y: node.position.y, // Keep same Y position for straight line connection
                       }
                     : node.position,
                   data: {
@@ -3625,24 +2740,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                         description: formattedDescription,
                       },
                     },
-                    tools:
-                      node.data.tools?.map((tool, index) =>
-                        index === 0
-                          ? {
-                              ...tool,
-                              name: agentConfig.name,
-                              description: agentConfig.description,
-                              value: {
-                                ...tool.value,
-                                name: agentConfig.name,
-                                description: agentConfig.description,
-                              },
-                            }
-                          : tool,
-                      ) || [],
-                    hasNext: !edges.some(
-                      (edge) => edge.source === selectedAgentNodeId,
-                    ), // Only show + if no outgoing edges
+                    tools: [aiAgentTool], // Add the tool object
+                    hasNext: true, // Add the + icon after saving
                   },
                 }
               : node,
@@ -3678,17 +2777,31 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           ? nodes.find((n) => n.id === sourceEdge.source)
           : null
 
+        // Create the tool object for Email
+        const emailTool = {
+          id: `tool-${selectedEmailNodeId}`,
+          type: "email",
+          val: emailConfig, // Use 'val' to match template structure
+          value: emailConfig, // Also include 'value' for compatibility
+          config: {
+            to_email: emailConfig.emailAddresses,
+            from_email: emailConfig.sendingFrom,
+            sendingFrom: emailConfig.sendingFrom,
+            emailAddresses: emailConfig.emailAddresses,
+          },
+        }
+
         // Update the Email node with the configuration and add hasNext flag
         setNodes((nds) =>
           nds.map((node) =>
             node.id === selectedEmailNodeId
               ? {
                   ...node,
-                  // Reposition node to center below source node now that it's 320px wide
+                  // Reposition node to ensure consistent X alignment for straight lines
                   position: sourceNode
                     ? {
-                        x: sourceNode.position.x, // Align with source node (no offset for 320px node)
-                        y: node.position.y, // Keep same Y position
+                        x: 400, // Consistent X position for perfect straight line alignment
+                        y: node.position.y, // Keep same Y position for straight line connection
                       }
                     : node.position,
                   data: {
@@ -3701,30 +2814,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                         emailAddresses: emailConfig.emailAddresses,
                       },
                     },
-                    tools:
-                      node.data.tools?.map((tool, index) =>
-                        index === 0
-                          ? {
-                              ...tool,
-                              name: "Email",
-                              description:
-                                emailConfig.emailAddresses.length > 0
-                                  ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
-                                  : "Send automated email notifications to specified recipients.",
-                              value: {
-                                ...tool.value,
-                                name: "Email",
-                                description:
-                                  emailConfig.emailAddresses.length > 0
-                                    ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
-                                    : "Send automated email notifications to specified recipients.",
-                              },
-                            }
-                          : tool,
-                      ) || [],
-                    hasNext: !edges.some(
-                      (edge) => edge.source === selectedEmailNodeId,
-                    ), // Only show + if no outgoing edges
+                    tools: [emailTool], // Add the tool object
+                    hasNext: true, // Add the + icon after saving
                   },
                 }
               : node,
@@ -3754,6 +2845,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     (formConfig: FormConfig) => {
       // Always update the existing form submission node (since we create it immediately on trigger click)
       if (selectedFormNodeId) {
+        // Create the tool object for Form
+        const formTool = {
+          id: `tool-${selectedFormNodeId}`,
+          type: "form",
+          val: formConfig, // Use 'val' to match template structure
+          value: formConfig, // Also include 'value' for compatibility
+          config: {
+            title: formConfig.title,
+            description: formConfig.description,
+            fields: formConfig.fields,
+          },
+        }
+
         setNodes((nds) =>
           nds.map((node) =>
             node.id === selectedFormNodeId
@@ -3766,28 +2870,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       name: formConfig.title || "Form Submission",
                       config: formConfig,
                     },
-                    tools:
-                      node.data.tools?.map((tool, index) =>
-                        index === 0
-                          ? {
-                              ...tool,
-                              name: formConfig.title || "Form Submission",
-                              description:
-                                formConfig.description ||
-                                "Upload a file in formats such as PDF, DOCX, or JPG.",
-                              value: {
-                                ...tool.value,
-                                name: formConfig.title || "Form Submission",
-                                description:
-                                  formConfig.description ||
-                                  "Upload a file in formats such as PDF, DOCX, or JPG.",
-                              },
-                            }
-                          : tool,
-                      ) || [],
-                    hasNext: !edges.some(
-                      (edge) => edge.source === selectedFormNodeId,
-                    ), // Only show + if no outgoing edges
+                    tools: [formTool], // Add the tool object
+                    hasNext: true, // Enable + icon after configuration
                   },
                 }
               : node,
@@ -3845,7 +2929,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             multiSelectionKeyCode="Shift"
             deleteKeyCode="Delete"
             snapToGrid={true}
-            snapGrid={[15, 15]}
+            snapGrid={[20, 20]}
+            defaultEdgeOptions={{
+              type: 'straight',
+              style: { 
+                strokeWidth: 2,
+                stroke: '#D1D5DB'
+              },
+              markerEnd: { 
+                type: 'arrowclosed',
+                color: '#D1D5DB'
+              },
+            }}
+            connectionLineStyle={{
+              strokeWidth: 2,
+              stroke: '#D1D5DB',
+            }}
             proOptions={{ hideAttribution: true }}
           >
             {/* Selection Info Panel */}
@@ -3896,10 +2995,18 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             />
 
             {/* Action Bar at bottom center */}
-            {!showEmptyCanvas && isEditableMode && (
+            {!showEmptyCanvas && (
               <Panel position="bottom-center">
                 <ActionBar
-                  onExecute={executeNode}
+                  onExecute={async () => {
+                    try {
+                      await executeWorkflow()
+                    } catch (error) {
+                      console.error("Failed to execute workflow:", error)
+                      // You could add user notification here if needed
+                      alert(`Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`)
+                    }
+                  }}
                   zoomLevel={zoomLevel}
                   onZoomChange={handleZoomChange}
                 />
@@ -3914,15 +3021,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           nodeInfo={selectedNodeInfo}
           tools={selectedNodeTools}
           onClose={() => setShowToolsSidebar(false)}
-          onResultClick={handleResultClick}
-        />
-
-        {/* Execution Sidebar */}
-        <ExecutionSidebar
-          isVisible={showExecutionSidebar}
-          executionNode={selectedExecutionNode}
-          workflowData={selectedTemplate}
-          onClose={() => setShowExecutionSidebar(false)}
           onResultClick={handleResultClick}
         />
 
@@ -3949,20 +3047,98 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               selectedNodeId={selectedNodeForNext}
               toolType={
                 selectedNodeForNext
-                  ? nodes.find((n) => n.id === selectedNodeForNext)?.data
-                      ?.tools?.[0]?.type
+                  ? (() => {
+                      const node = nodes.find((n) => n.id === selectedNodeForNext)
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0]?.type : undefined
+                    })()
                   : undefined
               }
               toolData={
                 selectedNodeForNext
-                  ? nodes.find((n) => n.id === selectedNodeForNext)?.data
-                      ?.tools?.[0]
+                  ? (() => {
+                      const node = nodes.find((n) => n.id === selectedNodeForNext)
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0] : undefined
+                    })()
                   : undefined
               }
               selectedTemplate={selectedTemplate}
               onStepCreated={(stepData) => {
                 console.log("Step created:", stepData)
-                // Note: As requested, we don't update the UI after API response
+                
+                // Create visual step below the selected node
+                if (selectedNodeForNext && stepData) {
+                  const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+                  if (sourceNode) {
+                    const newNodeId = `step-${nodeCounter}`
+                    
+                    // Create new node positioned below the source node
+                    const newNode = {
+                      id: newNodeId,
+                      type: "stepNode",
+                      position: {
+                        x: 400, // Consistent X position for perfect straight line alignment
+                        y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+                      },
+                      data: {
+                        step: {
+                          id: newNodeId,
+                          name: stepData.name,
+                          description: stepData.description,
+                          type: stepData.type,
+                          status: "pending",
+                          contents: [],
+                          config: stepData.tool?.val || {},
+                        },
+                        tools: stepData.tool ? [stepData.tool] : [],
+                        isActive: false,
+                        isCompleted: false,
+                        hasNext: true, // Show + button on new step
+                      },
+                      draggable: true,
+                    }
+
+                    // Create edge connecting source to new node
+                    const newEdge: Edge = {
+                      id: `${selectedNodeForNext}-${newNodeId}`,
+                      source: selectedNodeForNext,
+                      target: newNodeId,
+                      type: "straight",
+                      animated: false,
+                      style: {
+                        stroke: "#D1D5DB",
+                        strokeWidth: 2,
+                      },
+                      markerEnd: {
+                        type: "arrowclosed" as const,
+                        color: "#D1D5DB",
+                      },
+                      sourceHandle: "bottom",
+                      targetHandle: "top",
+                    }
+
+                    // Update nodes and edges
+                    setNodes((prevNodes) => [...prevNodes, newNode])
+                    setEdges((prevEdges) => [...prevEdges, newEdge])
+                    setNodeCounter((prev) => prev + 1)
+
+                    // Remove hasNext from source node since it now has a next step
+                    setNodes((prevNodes) =>
+                      prevNodes.map((node) =>
+                        node.id === selectedNodeForNext
+                          ? {
+                              ...node,
+                              data: {
+                                ...node.data,
+                                hasNext: false,
+                              },
+                            }
+                          : node,
+                      ),
+                    )
+                  }
+                }
               }}
             />
           )}
@@ -3975,19 +3151,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             onSave={handleAIAgentConfigSave}
             toolData={
               selectedAgentNodeId
-                ? nodes.find((n) => n.id === selectedAgentNodeId)?.data
-                    ?.tools?.[0]
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedAgentNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0] : undefined
+                  })()
                 : undefined
             }
             toolId={
               selectedAgentNodeId
-                ? nodes.find((n) => n.id === selectedAgentNodeId)?.data
-                    ?.tools?.[0]?.id
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedAgentNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0]?.id : undefined
+                  })()
                 : undefined
             }
             stepData={
               selectedAgentNodeId
-                ? nodes.find((n) => n.id === selectedAgentNodeId)?.data
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedAgentNodeId)
+                    return node?.data?.step
+                  })()
                 : undefined
             }
           />
@@ -4001,19 +3186,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             onSave={handleEmailConfigSave}
             toolData={
               selectedEmailNodeId
-                ? nodes.find((n) => n.id === selectedEmailNodeId)?.data
-                    ?.tools?.[0]
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedEmailNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0] : undefined
+                  })()
                 : undefined
             }
             toolId={
               selectedEmailNodeId
-                ? nodes.find((n) => n.id === selectedEmailNodeId)?.data
-                    ?.tools?.[0]?.id
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedEmailNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0]?.id : undefined
+                  })()
                 : undefined
             }
             stepData={
               selectedEmailNodeId
-                ? nodes.find((n) => n.id === selectedEmailNodeId)?.data
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedEmailNodeId)
+                    return node?.data?.step
+                  })()
                 : undefined
             }
           />
@@ -4034,19 +3228,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }
             toolData={
               selectedFormNodeId
-                ? nodes.find((n) => n.id === selectedFormNodeId)?.data
-                    ?.tools?.[0]
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedFormNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0] : undefined
+                  })()
                 : undefined
             }
             toolId={
               selectedFormNodeId
-                ? nodes.find((n) => n.id === selectedFormNodeId)?.data
-                    ?.tools?.[0]?.id
-                : undefined
-            }
-            stepData={
-              selectedFormNodeId
-                ? nodes.find((n) => n.id === selectedFormNodeId)?.data
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedFormNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0]?.id : undefined
+                  })()
                 : undefined
             }
           />
@@ -4059,6 +3254,21 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         result={selectedResult}
         onClose={handleResultModalClose}
       />
+
+      {/* Workflow Execution Modal */}
+      {showExecutionModal && (createdTemplate || selectedTemplate) && (
+        <WorkflowExecutionModal
+          isOpen={showExecutionModal}
+          onClose={() => {
+            setShowExecutionModal(false)
+            setCreatedTemplate(null) // Clear created template when modal closes
+          }}
+          workflowName={(createdTemplate || selectedTemplate)?.name || "Custom Workflow"}
+          workflowDescription={(createdTemplate || selectedTemplate)?.description || "User-created workflow"}
+          templateId={(createdTemplate || selectedTemplate)!.id}
+          workflowTemplate={(createdTemplate || selectedTemplate)!}
+        />
+      )}
     </div>
   )
 }
