@@ -887,7 +887,7 @@ import React, {
                   onFeedback={handleFeedback}
                   attachments={message.attachments || []}
                   citations={message.sources || []}
-                  citationMap={message.citationMap || {}}
+                  citationMap={message.citationMap}
                   onCitationClick={handleCitationClick}
                   disableRetry={disableRetry}
                 />

@@ -957,8 +957,19 @@ function RouteComponent() {
   }
 
   const handleFileClick = async (file: FileNode, collection: Collection) => {
-    // Only handle files, not folders
-    if (file.type !== "file") {
+    // Handle .docx, .pdf, and .md files
+    const fileName = file.name.toLowerCase()
+    if (
+      file.type !== "file" ||
+      (!fileName.endsWith(".docx") &&
+        !fileName.endsWith(".pdf") &&
+        !fileName.endsWith(".md"))
+    ) {
+      showToast(
+        "Preview Not Available",
+        "Preview is only available for .docx, .pdf, and .md files.",
+        false
+      );
       return
     }
 
