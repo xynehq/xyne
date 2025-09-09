@@ -832,8 +832,7 @@ export const HybridDefaultProfileForAgent = async (
       )`
   }
 
-  const buildCollectionFileYQL = async () => {
-    // Extract all IDs from the key-value pairs
+  const buildCollectionConditions = async () => {
     const collectionIds: string[] = []
     const collectionFolderIds: string[] = []
     const collectionFileIds: string[] = []
@@ -886,8 +885,11 @@ export const HybridDefaultProfileForAgent = async (
       }
     }
 
-    const finalCondition =
-      conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
+    return conditions
+  }
+
+  const buildCollectionFileYQL = async (conditions: string[]) => {
+    const finalCondition = `(${conditions.join(" or ")})`
     // Collection files use clId for collections and docId for folders/files
     return `
       (
@@ -939,10 +941,15 @@ export const HybridDefaultProfileForAgent = async (
           break
         case Apps.KnowledgeBase:
           if (collectionSelections && collectionSelections.length > 0) {
-            const collectionQuery = await buildCollectionFileYQL()
-            if (collectionQuery) {
+            const collectionConditions = await buildCollectionConditions()
+            if (collectionConditions.length > 0) {
+              const collectionQuery = await buildCollectionFileYQL(collectionConditions)
               appQueries.push(collectionQuery)
               if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
+            } else {
+              Logger.warn(
+                "Apps.KnowledgeBase specified for agent, but no valid collection conditions found. Skipping KnowledgeBase search part.",
+              )
             }
           } else {
             Logger.warn(
