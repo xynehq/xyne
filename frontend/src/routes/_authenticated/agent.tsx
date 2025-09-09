@@ -957,9 +957,6 @@ function AgentComponent() {
         icon: getIcon(Apps.DataSource, "datasource", { w: 16, h: 16, mr: 8 }),
       }),
     )
-    if (!isRagOn) {
-      return dynamicDataSources
-    }
 
     const collectionSources: IntegrationSource[] = fetchedCollections.map(
       (cl) => ({
