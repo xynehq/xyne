@@ -353,7 +353,7 @@ export const startStream = async (
     isStreaming: true,
     isRetrying: false,
     subscribers: new Set(),
-    response: ""
+    response: "",
   }
 
   activeStreams.set(streamKey, streamState)
@@ -414,7 +414,9 @@ export const startStream = async (
   )
 
   streamState.es.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-    const { contextChunks, citationMap, updatedResponse } = JSON.parse(event.data)
+    const { contextChunks, citationMap, updatedResponse } = JSON.parse(
+      event.data,
+    )
     streamState.sources = contextChunks
     streamState.citationMap = citationMap
     streamState.response = updatedResponse
