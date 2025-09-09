@@ -6,6 +6,7 @@ import {
   Entity,
   GooglePeopleEntity,
   isMailAttachment,
+  KnowledgeBaseEntity,
   SlackEntity,
   SystemEntity,
   WebSearchEntity,
@@ -111,8 +112,22 @@ export const getName = (app: Apps, entity: Entity): string => {
     entity === DataSourceEntity.DataSourceFile
   ) {
     return "Data-Source"
-  } else if (app === Apps.KnowledgeBase && entity === SystemEntity.SystemInfo) {
-    return "Knowledge-Base"
+  } else if (app === Apps.KnowledgeBase) {
+    if (entity === KnowledgeBaseEntity.File) {
+      return "KB Files"
+    } else if (entity === KnowledgeBaseEntity.Folder) {
+      return "KB Folders"
+    } else if (entity === KnowledgeBaseEntity.Collection) {
+      return "KB Collections"
+    } else if (entity === KnowledgeBaseEntity.KnowledgeBase) {
+      return "Knowledge Base"
+    } else if (entity === KnowledgeBaseEntity.Attachment) {
+      return "KB Attachments"
+    } else if (entity === SystemEntity.SystemInfo) {
+      return "Knowledge-Base"
+    } else {
+      return "Knowledge Base"
+    }
   } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
     return "Web Search"
   } else {

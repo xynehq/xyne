@@ -34,6 +34,7 @@ export {
   dataSourceFileSchema,
   DataSourceEntity,
   WebSearchEntity,
+  KnowledgeBaseEntity,
 } from "search/types"
 export type { Entity, VespaDataSourceFile, VespaGetResult } from "search/types"
 
