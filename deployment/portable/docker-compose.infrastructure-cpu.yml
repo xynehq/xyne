@@ -1,0 +1,180 @@
+services:
+  prometheus-init:
+    image: busybox
+    volumes:
+      - ./data/prometheus-data:/prometheus
+    command: |
+      sh -c '
+        mkdir -p /prometheus
+        chown -R 65534:65534 /prometheus
+        chmod 755 /prometheus
+      '
+    user: "0:0"
+    networks:
+      - xyne
+
+  prometheus:
+    image: "prom/prometheus:latest"
+    container_name: xyne-prometheus
+    user: "65534:65534"
+    depends_on:
+      prometheus-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
+      - ./data/prometheus-data:/prometheus
+    ports:
+    - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
+      - "--storage.tsdb.path=/prometheus"
+    restart: always
+    networks:
+      - xyne
+    extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: xyne-grafana
+    user: "${DOCKER_UID}:${DOCKER_GID}"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./data/grafana-storage:/var/lib/grafana 
+    ports:
+      - "3002:3000"
+    restart: always
+    networks:
+      - xyne
+    environment:
+      - POSTGRES_USER=xyne
+      - POSTGRES_PASSWORD=xyne
+
+  vespa:
+    image: vespaengine/vespa:latest
+    container_name: vespa
+    hostname: vespa
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    ports:
+      - "${VESPA_PORT:-8080}:8080"
+      - "19071:19071"
+    volumes:
+      - ./data/vespa-data:/opt/vespa/var
+    networks:
+      - xyne
+    ulimits:
+      nproc: 409600
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19071/state/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    environment:
+      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx8g -XX:+UseG1GC -XX:G1HeapRegionSize=32M -Djava.io.tmpdir=/opt/vespa/var/tmp
+      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx4g -XX:+UseG1GC -Djava.io.tmpdir=/opt/vespa/var/tmp
+      - TMPDIR=/opt/vespa/var/tmp
+      - VESPA_LOG_LEVEL=info
+      - VESPA_LOG_FILE_SIZE=50M
+      - VESPA_LOG_FILE_COUNT=5
+
+  xyne-db:
+    image: postgres:15-alpine
+    container_name: xyne-db
+    environment:
+      POSTGRES_USER: xyne
+      POSTGRES_PASSWORD: xyne
+      POSTGRES_DB: xyne
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "${XYNE_DB_PORT:-5432}:5432"
+    volumes:
+      - ./data/postgres-data:/var/lib/postgresql/data
+    networks:
+      - xyne
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xyne -d xyne"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  loki-init:
+    image: busybox
+    volumes:
+      - ./data/loki-data:/loki-data
+    command: |
+      sh -c '
+        mkdir -p /loki-data
+        chown -R 10001:10001 /loki-data
+        chmod 755 /loki-data
+      '
+    user: "0:0"
+    networks:
+      - xyne
+
+  loki:
+    image: grafana/loki:3.4.1
+    container_name: loki
+    user: "10001:10001"
+    depends_on:
+      - loki-init
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/mnt/config/loki-config.yaml
+      - ./data/loki-data:/loki
+    command: --config.file=/mnt/config/loki-config.yaml
+    restart: unless-stopped
+    networks:
+      - xyne
+
+  promtail-init:
+    image: busybox
+    volumes:
+      - ./data/promtail-data:/promtail-data
+    command: |
+      sh -c '
+        mkdir -p /promtail-data
+        chown -R 10001:10001 /promtail-data
+        chmod 755 /promtail-data
+      '
+    user: "0:0"
+    networks:
+      - xyne
+
+  promtail:
+    image: grafana/promtail:3.4.1
+    container_name: promtail
+    user: "0:${DOCKER_GROUP_ID:-999}"  # root user with docker group for socket access
+    depends_on:
+      - promtail-init
+      - loki
+    volumes:
+      - ./promtail-config.yaml:/mnt/config/promtail-config.yaml
+      - ./data/promtail-data:/promtail
+      - ./data/app-logs:/var/log/app:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: --config.file=/mnt/config/promtail-config.yaml
+    restart: unless-stopped
+    networks:
+      - xyne
+    environment:
+      - DOCKER_GROUP_ID=${DOCKER_GROUP_ID:-999}
+
+networks:
+  xyne:
+    external: true

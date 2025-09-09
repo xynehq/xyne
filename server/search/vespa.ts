@@ -62,19 +62,12 @@ import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import { AuthType } from "@/shared/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
-import { ProductionVespaClient } from "./productionVespaClient"
 import {
   getAllFolderItems,
   getCollectionFilesVespaIds,
 } from "@/db/knowledgeBase"
 
-const prodUrl = process.env.PRODUCTION_SERVER_URL
-const apiKey = process.env.API_KEY
-
-const vespa =
-  prodUrl && apiKey
-    ? new ProductionVespaClient(prodUrl, apiKey)
-    : new VespaClient()
+const vespa = new VespaClient()
 const fallbackVespa = new VespaClient()
 
 // Define your Vespa endpoint and schema name
@@ -282,10 +275,6 @@ export const autocomplete = async (
   return vespa
     .autoComplete(searchPayload)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(err, "Prod vespa failed in autoComplete, trying fallback")
-        return fallbackVespa.autoComplete(searchPayload)
-      }
       throw err
     })
     .catch((error) => {
@@ -352,13 +341,13 @@ export const HybridDefaultProfile = (
     return `${
       app
         ? (Array.isArray(app) && app.length > 0)
-          ? `and ${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")}`
+          ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
           : "and app contains @app"
         : ""
     } ${
       entity
         ? Array.isArray(entity) && entity.length > 0
-          ? `and ${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")}`
+          ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
           : "and entity contains @entity"
         : ""
     }`.trim()
@@ -843,8 +832,7 @@ export const HybridDefaultProfileForAgent = async (
       )`
   }
 
-  const buildCollectionFileYQL = async () => {
-    // Extract all IDs from the key-value pairs
+  const buildCollectionConditions = async () => {
     const collectionIds: string[] = []
     const collectionFolderIds: string[] = []
     const collectionFileIds: string[] = []
@@ -897,8 +885,11 @@ export const HybridDefaultProfileForAgent = async (
       }
     }
 
-    const finalCondition =
-      conditions.length > 0 ? `(${conditions.join(" or ")})` : "true"
+    return conditions
+  }
+
+  const buildCollectionFileYQL = async (conditions: string[]) => {
+    const finalCondition = `(${conditions.join(" or ")})`
     // Collection files use clId for collections and docId for folders/files
     return `
       (
@@ -950,10 +941,15 @@ export const HybridDefaultProfileForAgent = async (
           break
         case Apps.KnowledgeBase:
           if (collectionSelections && collectionSelections.length > 0) {
-            const collectionQuery = await buildCollectionFileYQL()
-            if (collectionQuery) {
+            const collectionConditions = await buildCollectionConditions()
+            if (collectionConditions.length > 0) {
+              const collectionQuery = await buildCollectionFileYQL(collectionConditions)
               appQueries.push(collectionQuery)
               if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
+            } else {
+              Logger.warn(
+                "Apps.KnowledgeBase specified for agent, but no valid collection conditions found. Skipping KnowledgeBase search part.",
+              )
             }
           } else {
             Logger.warn(
@@ -1364,12 +1360,6 @@ export const getAllDocumentsForAgent = async (
   return vespa
     .search<VespaSearchResponse>(payload)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          "Prod vespa failed in getAllDocumentsForAgent, trying fallback",
-        )
-        return fallbackVespa.search<VespaSearchResponse>(payload)
-      }
       throw err
     })
     .catch((error) => {
@@ -1386,31 +1376,6 @@ export const groupVespaSearch = async (
   limit = config.page,
   timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
-  const hasProdConfig = Boolean(
-    process.env.PRODUCTION_SERVER_URL && process.env.API_KEY,
-  )
-
-  if (hasProdConfig) {
-    try {
-      const client = new ProductionVespaClient(
-        process.env.PRODUCTION_SERVER_URL!,
-        process.env.API_KEY!,
-      )
-      return await client.makeApiCall("group-vespa-search", {
-        query,
-        email,
-        limit,
-        timestampRange,
-      })
-    } catch (err) {
-      Logger.warn(
-        "Production group search Vespa call failed, falling back to local:",
-        err,
-      )
-      // fall through to local
-    }
-  }
-
   // either no prod config, or prod call errored
   return await _groupVespaSearch(query, email, limit, timestampRange)
 }
@@ -1511,43 +1476,6 @@ export const searchVespa = async (
     intent = {},
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  const hasProdConfig = Boolean(
-    process.env.PRODUCTION_SERVER_URL && process.env.API_KEY,
-  )
-
-  if (hasProdConfig) {
-    try {
-      const client = new ProductionVespaClient(
-        process.env.PRODUCTION_SERVER_URL!,
-        process.env.API_KEY!,
-      )
-      return await client.makeApiCall("search-vespa", {
-        query,
-        email,
-        app,
-        entity,
-        alpha,
-        limit,
-        offset,
-        timestampRange,
-        excludedIds,
-        notInMailLabels,
-        rankProfile,
-        requestDebug,
-        span,
-        maxHits,
-        recencyDecayRate,
-        intent,
-      })
-    } catch (err) {
-      Logger.warn(
-        "Production search Vespa call failed, falling back to local:",
-        err,
-      )
-      // fall through to local
-    }
-  }
-
   // either no prod config, or prod call errored
   return await _searchVespa(query, email, app, entity, {
     alpha,
@@ -1704,13 +1632,6 @@ export const searchVespaInFiles = async (
   return vespa
     .search<VespaSearchResponse>(hybridDefaultPayload)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in searchVespaInFiles for search, trying fallback",
-        )
-        return fallbackVespa.search<VespaSearchResponse>(hybridDefaultPayload)
-      }
       throw err
     })
     .catch((error) => {
@@ -1770,13 +1691,6 @@ export const searchSlackInVespa = async (
   return vespa
     .search<VespaSearchResponse>(hybridDefaultPayload)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in searchSlackInVespa for search, trying fallback",
-        )
-        return fallbackVespa.search<VespaSearchResponse>(hybridDefaultPayload)
-      }
       throw err
     })
     .catch((error) => {
@@ -1882,13 +1796,6 @@ export const searchVespaAgent = async (
   return vespa
     .search<VespaSearchResponse>(hybridDefaultPayload)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in searchVespaAgent for search, trying fallback",
-        )
-        return fallbackVespa.search<VespaSearchResponse>(hybridDefaultPayload)
-      }
       throw err
     })
     .catch((error) => {
@@ -1904,13 +1811,6 @@ export const GetDocument = async (schema: VespaSchema, docId: string) => {
   return vespa
     .getDocument(opts)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in getDocument for search, trying fallback",
-        )
-        return fallbackVespa.getDocument(opts)
-      }
       throw err
     })
     .catch((error) => {
@@ -1937,13 +1837,6 @@ export const GetDocumentsByDocIds = async (
   return vespa
     .getDocumentsByOnlyDocIds(opts)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in getDocumentsByOnlyDocIds for search, trying fallback",
-        )
-        return fallbackVespa.getDocumentsByOnlyDocIds(opts)
-      }
       throw err
     })
     .catch((error) => {
@@ -1963,13 +1856,6 @@ export const GetRandomDocument = async (
   return vespa
     .getRandomDocument(namespace, schema, cluster)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in getRandomDocument for search, trying fallback",
-        )
-        return fallbackVespa.getRandomDocument(namespace, schema, cluster)
-      }
       throw err
     })
     .catch((error) => {
@@ -1988,18 +1874,6 @@ export const GetDocumentWithField = async (
   return vespa
     .getDocumentsWithField(fieldName, opts, limit, offset)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in getDocumentsWithField for search, trying fallback",
-        )
-        return fallbackVespa.getDocumentsWithField(
-          fieldName,
-          opts,
-          limit,
-          offset,
-        )
-      }
       throw err
     })
     .catch((error) => {
@@ -2256,13 +2130,6 @@ export const searchUsersByNamesAndEmails = async (
   return vespa
     .getUsersByNamesAndEmails(searchPayload)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in getUsersByNamesAndEmails for search, trying fallback",
-        )
-        return fallbackVespa.getUsersByNamesAndEmails(searchPayload)
-      }
       throw err
     })
     .catch((error) => {
@@ -2677,13 +2544,6 @@ export const getItems = async (
   return vespa
     .getItems(searchPayload)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in getItems for search, trying fallback",
-        )
-        return fallbackVespa.getItems(searchPayload)
-      }
       throw err
     })
     .catch((error) => {
@@ -2753,27 +2613,6 @@ export const getDataSourceByNameAndCreator = async (
     const response = await vespa.search(payload)
     return parseResult(response as VespaSearchResponse)
   } catch (error) {
-    if (vespa instanceof ProductionVespaClient) {
-      Logger.warn(
-        error,
-        `Prod failed in getDataSourceByNameAndCreator for search, trying fallback...`,
-      )
-      try {
-        const fallbackResponse = await fallbackVespa.search(payload)
-        return parseResult(fallbackResponse as VespaSearchResponse)
-      } catch (fallbackError) {
-        Logger.error(
-          fallbackError,
-          `Fallback failed in getDataSourceByNameAndCreator for search`,
-        )
-        throw new ErrorPerformingSearch({
-          message: `${errorMsg} (fallback failed in getDataSourceByNameAndCreator for search)`,
-          cause: fallbackError as Error,
-          sources: datasourceSchema,
-        })
-      }
-    }
-
     Logger.error(
       error,
       `Vespa failed for DataSource by name="${name}", email="${createdByEmail}"`,
@@ -2803,26 +2642,6 @@ export const getDataSourcesByCreator = async (
     return await vespa.search<VespaSearchResponse>(payload)
   } catch (error) {
     const message = `Error fetching DataSources for creator "${createdByEmail}"`
-
-    if (vespa instanceof ProductionVespaClient) {
-      Logger.warn(
-        error,
-        `${message} (prod failed in getDataSourcesByCreator for search, trying fallback)`,
-      )
-      try {
-        return await fallbackVespa.search<VespaSearchResponse>(payload)
-      } catch (fallbackErr) {
-        Logger.error(
-          fallbackErr,
-          `${message} (fallback failed in getDataSourcesByCreator for search)`,
-        )
-        throw new ErrorPerformingSearch({
-          message,
-          cause: fallbackErr as Error,
-          sources: datasourceSchema,
-        })
-      }
-    }
 
     Logger.error(error, message)
     throw new ErrorPerformingSearch({
@@ -2866,28 +2685,6 @@ export const checkIfDataSourceFileExistsByNameAndId = async (
     const response = await vespa.search<VespaSearchResponse>(payload)
     return exists(response)
   } catch (error) {
-    if (vespa instanceof ProductionVespaClient) {
-      Logger.warn(
-        error,
-        `${errorMsg} (prod failed in checkIfDataSourceFileExistsByNameAndId for search, trying fallback)`,
-      )
-      try {
-        const fallbackResponse =
-          await fallbackVespa.search<VespaSearchResponse>(payload)
-        return exists(fallbackResponse)
-      } catch (fallbackErr) {
-        Logger.error(
-          fallbackErr,
-          `${errorMsg} (fallback failed in checkIfDataSourceFileExistsByNameAndId for search)`,
-        )
-        throw new ErrorPerformingSearch({
-          message: errorMsg,
-          cause: fallbackErr as Error,
-          sources: dataSourceFileSchema,
-        })
-      }
-    }
-
     Logger.error(error, errorMsg)
     throw new ErrorPerformingSearch({
       message: errorMsg,
@@ -2976,13 +2773,6 @@ export const fetchAllDataSourceFilesByName = async (
         const res = await vespa
           .search<VespaSearchResponse>(payload)
           .catch(async (err) => {
-            if (vespa instanceof ProductionVespaClient) {
-              Logger.warn(
-                err,
-                `Prod vespa failed in fetchAllDataSourceFilesByName, trying fallback`,
-              )
-              return fallbackVespa.search<VespaSearchResponse>(payload)
-            }
             throw err
           })
         return res
@@ -3130,13 +2920,6 @@ export const SearchVespaThreads = async (
   return vespa
     .getDocumentsBythreadId(validThreadIds)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed for in SearchVespaThreads for getDocumentsBythreadId, trying fallback",
-        )
-        return fallbackVespa.getDocumentsBythreadId(validThreadIds)
-      }
       throw err
     })
     .catch((error) => {
@@ -3159,13 +2942,6 @@ export const SearchEmailThreads = async (
   return vespa
     .getEmailsByThreadIds(validThreadIds, email)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed for in SearchEmailThreads for getEmailsByThreadIds, trying fallback",
-        )
-        return fallbackVespa.getEmailsByThreadIds(validThreadIds, email)
-      }
       throw err
     })
     .catch((error) => {
@@ -3220,21 +2996,6 @@ export const getThreadItems = async (
     try {
       return await fn()
     } catch (err) {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          `Prod vespa failed in getThreadItems for ${fn.name}, trying fallback`,
-        )
-        try {
-          return await fn.call(fallbackVespa)
-        } catch (fallbackErr) {
-          Logger.error(
-            fallbackErr,
-            `Fallback vespa failed in getThreadItems for ${fn.name}`,
-          )
-          throw fallbackErr
-        }
-      }
       throw err
     }
   }
@@ -3248,6 +3009,7 @@ export const getThreadItems = async (
       const resp = await tryWithFallback(() =>
         vespa.getChatContainerIdByChannelName(channelName),
       )
+      //@ts-ignore
       channelId = resp?.root?.children?.[0]?.fields?.docId
     } catch (e) {
       Logger.error(e, `Could not fetch channelId for channel: ${channelName}`)
@@ -3260,6 +3022,7 @@ export const getThreadItems = async (
       const resp = await tryWithFallback(() =>
         vespa.getChatUserByEmail(userEmail),
       )
+      //@ts-ignore
       userId = resp?.root?.children?.[0]?.fields?.docId
     } catch (e) {
       Logger.error(e, `Could not fetch userId for user: ${userEmail}`)
@@ -3364,13 +3127,6 @@ export const getSlackUserDetails = async (
   return vespa
     .getChatUserByEmail(userEmail)
     .catch((err) => {
-      if (vespa instanceof ProductionVespaClient) {
-        Logger.warn(
-          err,
-          "Prod vespa failed in getSlackUserDetails for getChatUserByEmail, trying fallback",
-        )
-        return fallbackVespa.getChatUserByEmail(userEmail)
-      }
       throw err
     })
     .catch((error) => {

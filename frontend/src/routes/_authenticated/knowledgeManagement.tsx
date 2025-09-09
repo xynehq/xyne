@@ -255,6 +255,8 @@ function RouteComponent() {
     savedState.uploadingCollectionName,
   )
 
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
+
   // Save upload state to localStorage whenever it changes
   useEffect(() => {
     saveUploadState({
@@ -545,6 +547,7 @@ function RouteComponent() {
     setTargetFolder(null)
     setCollectionName("")
     setSelectedFiles([])
+    setOpenDropdown(null)
   }
 
   const handleUpload = async () => {

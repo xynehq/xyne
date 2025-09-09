@@ -35,12 +35,35 @@ export class TogetherProvider extends BaseProvider {
         top_p: modelParams.topP,
         max_tokens: modelParams.maxTokens,
         stream: false,
+        // tool calling support (OpenAI-compatible)
+        tools: params.tools
+          ? params.tools.map((t) => ({
+              type: "function" as const,
+              function: {
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters || { type: "object", properties: {} },
+              },
+            }))
+          : undefined,
+        tool_choice: params.tools ? (params.tool_choice ?? "auto") : undefined,
       })
 
       const cost = 0 // Explicitly setting 0 as cost
+      const toolCalls = (response.choices?.[0]?.message as any)?.tool_calls?.map(
+        (tc: any) => ({
+          id: tc.id || "",
+          type: "function" as const,
+          function: {
+            name: tc.function?.name || "",
+            arguments: tc.function?.arguments || "{}",
+          },
+        }),
+      )
       return {
         text: response.choices[0].message?.content || "",
         cost,
+        ...(toolCalls && toolCalls.length ? { tool_calls: toolCalls } : {}),
       }
     } catch (error) {
       throw new Error("Failed to get response from Together")
