@@ -158,8 +158,17 @@ const StepNode: React.FC<NodeProps> = ({
       (step as any).config || (hasAIAgentTool && tools?.[0]?.value) || {}
     const isConfigured = aiConfig?.name && aiConfig?.name.trim() !== ""
 
-    if (!isConfigured) {
-      // Show only icon when not configured
+    // For executions, always show configured layout even if config is missing
+    const isExecution = (step as any).isExecution
+    const forceConfiguredLayout = isExecution || isConfigured
+
+    // Check if any associated tool execution has failed
+    const hasFailedToolExecution =
+      tools && tools.some((tool) => (tool as any).status === "failed")
+    const isFailed = step.status === "failed" || hasFailedToolExecution
+
+    if (!forceConfiguredLayout) {
+      // Show only icon when not configured (template mode only)
       return (
         <>
           <div
@@ -268,9 +277,17 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: "2px solid #181B1D",
-            background: "#FFF",
-            boxShadow: "0 0 0 2px #E2E2E2",
+            border: isFailed
+              ? "2px solid #EF4444"
+              : isCompleted
+                ? "2px solid #10B981"
+                : "2px solid #181B1D",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+            boxShadow: isFailed
+              ? "0 0 0 2px #FECACA"
+              : isCompleted
+                ? "0 0 0 2px #BBF7D0"
+                : "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -305,6 +322,17 @@ const StepNode: React.FC<NodeProps> = ({
               }}
             >
               {step.name || aiConfig?.name || "AI Agent"}
+              {/* Show execution status indicator */}
+              {isExecution && isActive && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  Running
+                </span>
+              )}
+              {isExecution && isFailed && step.status !== "failed" && (
+                <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                  Tool Failed
+                </span>
+              )}
             </h3>
           </div>
 
@@ -400,7 +428,16 @@ const StepNode: React.FC<NodeProps> = ({
       step.name ||
       step.description
 
-    if (!isConfigured) {
+    // For executions, always show configured layout even if config is missing
+    const isExecution = (step as any).isExecution
+    const forceConfiguredLayout = isExecution || isConfigured
+
+    // Check if any associated tool execution has failed
+    const hasFailedToolExecution =
+      tools && tools.some((tool) => (tool as any).status === "failed")
+    const isFailed = step.status === "failed" || hasFailedToolExecution
+
+    if (!forceConfiguredLayout) {
       // Show only icon when not configured
       return (
         <>
@@ -507,9 +544,17 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: "2px solid #181B1D",
-            background: "#FFF",
-            boxShadow: "0 0 0 2px #E2E2E2",
+            border: isFailed
+              ? "2px solid #EF4444"
+              : isCompleted
+                ? "2px solid #10B981"
+                : "2px solid #181B1D",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+            boxShadow: isFailed
+              ? "0 0 0 2px #FECACA"
+              : isCompleted
+                ? "0 0 0 2px #BBF7D0"
+                : "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -544,6 +589,17 @@ const StepNode: React.FC<NodeProps> = ({
               }}
             >
               {step.name || "Email"}
+              {/* Show execution status indicator */}
+              {isExecution && isActive && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  Running
+                </span>
+              )}
+              {isExecution && isFailed && step.status !== "failed" && (
+                <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                  Tool Failed
+                </span>
+              )}
             </h3>
           </div>
 
@@ -626,6 +682,10 @@ const StepNode: React.FC<NodeProps> = ({
   // Special rendering for form submission nodes and steps with form tools
   const hasFormTool = tools && tools.length > 0 && tools[0].type === "form"
   if (step.type === "form_submission" || hasFormTool) {
+    // Check if any associated tool execution has failed
+    const hasFailedToolExecution =
+      tools && tools.some((tool) => (tool as any).status === "failed")
+    const isFailed = step.status === "failed" || hasFailedToolExecution
     return (
       <>
         <div
@@ -634,9 +694,17 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: "2px solid #181B1D",
-            background: "#FFF",
-            boxShadow: "0 0 0 2px #E2E2E2",
+            border: isFailed
+              ? "2px solid #EF4444"
+              : isCompleted
+                ? "2px solid #10B981"
+                : "2px solid #181B1D",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+            boxShadow: isFailed
+              ? "0 0 0 2px #FECACA"
+              : isCompleted
+                ? "0 0 0 2px #BBF7D0"
+                : "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -674,6 +742,19 @@ const StepNode: React.FC<NodeProps> = ({
                 (step as any).config?.title ||
                 (hasFormTool && tools?.[0]?.value?.title) ||
                 "Form Submission"}
+              {/* Show execution status indicator */}
+              {(step as any).isExecution && isActive && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  Running
+                </span>
+              )}
+              {(step as any).isExecution &&
+                isFailed &&
+                step.status !== "failed" && (
+                  <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                    Tool Failed
+                  </span>
+                )}
             </h3>
           </div>
 
@@ -851,6 +932,120 @@ const StepNode: React.FC<NodeProps> = ({
     )
   }
 
+  // For executions, create a generic template-style node if no specific type matched
+  const isExecution = (step as any).isExecution
+  if (isExecution) {
+    // Check if any associated tool execution has failed
+    const hasFailedToolExecution =
+      tools && tools.some((tool) => (tool as any).status === "failed")
+    const isFailed = step.status === "failed" || hasFailedToolExecution
+    // Use template-style design for any execution node that didn't match above types
+    return (
+      <>
+        <div
+          className="relative cursor-pointer hover:shadow-lg transition-shadow"
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            border: isFailed
+              ? "2px solid #EF4444"
+              : isCompleted
+                ? "2px solid #10B981"
+                : "2px solid #181B1D",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+            boxShadow: isFailed
+              ? "0 0 0 2px #FECACA"
+              : isCompleted
+                ? "0 0 0 2px #BBF7D0"
+                : "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Generic step icon */}
+            <div
+              className="flex justify-center items-center flex-shrink-0"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+                background: "#E5E7EB",
+              }}
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="#6B7280">
+                <path d="M12 2L13.09 8.26L19 7L17.74 13.74L21 15L14.74 16.26L13 21L7.26 19.74L5 21L6.26 14.74L3 13L9.26 11.74L11 7L16.74 8.26L19 7L17.74 13.74L21 15L14.74 16.26L13 21Z" />
+              </svg>
+            </div>
+
+            <h3
+              className="text-gray-800 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+                color: "#3B4145",
+              }}
+            >
+              {step.name || "Step"}
+              {/* Show execution status indicator */}
+              {isActive && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  Running
+                </span>
+              )}
+              {isFailed && step.status !== "failed" && (
+                <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                  Tool Failed
+                </span>
+              )}
+            </h3>
+          </div>
+
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 mb-3"></div>
+
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {step.description || `Execution step: ${step.type || "unknown"}`}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // Template mode: use original generic step node design
   const getNodeClasses = () => {
     const baseClasses =
       "rounded-2xl border-2 transition-all duration-300 ease-in-out p-6 min-w-[180px] min-h-[90px] text-center flex flex-col items-center justify-center cursor-pointer relative backdrop-blur-sm"
@@ -1532,6 +1727,596 @@ const TriggersSidebar = ({
   )
 }
 
+// Execution Sidebar Component
+const ExecutionSidebar = ({
+  isVisible,
+  executionNode,
+  workflowData,
+  onClose,
+  onResultClick,
+}: {
+  isVisible: boolean
+  executionNode: any
+  workflowData?: any
+  onClose?: () => void
+  onResultClick?: (result: any) => void
+}) => {
+  if (!executionNode) return null
+
+  const { step, tools, node } = executionNode
+  const toolExecutions = (step as any).toolExecutions || []
+
+  // Find previous step's output for input
+  const getPreviousStepOutput = () => {
+    if (!step.prevStepIds || step.prevStepIds.length === 0 || !workflowData)
+      return null
+
+    // Get the first previous step (assuming single previous step for simplicity)
+    const prevStepTemplateId = step.prevStepIds[0]
+
+    // Find previous step execution by matching workflowStepTemplateId
+    const prevStep = workflowData.stepExecutions?.find(
+      (s: any) => s.workflowStepTemplateId === prevStepTemplateId,
+    )
+
+    if (!prevStep) return null
+
+    // Get previous step's tool outputs
+    const prevStepTools =
+      workflowData.toolExecutions?.filter((toolExec: any) =>
+        prevStep.toolExecIds?.includes(toolExec.id),
+      ) || []
+
+    if (prevStepTools.length === 0) return null
+
+    // Return the results from all previous step tools
+    const results = prevStepTools
+      .map((tool: any) => tool.result)
+      .filter(Boolean)
+    return results
+  }
+
+  return (
+    <div
+      className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+        isVisible ? "translate-x-0 w-[400px]" : "translate-x-full w-0"
+      }`}
+    >
+      {/* Header */}
+      <div className="px-6 pt-5 pb-4 border-b border-slate-200">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-sm font-semibold text-gray-700 tracking-wider uppercase">
+            EXECUTION DETAILS
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+            >
+              <svg
+                className="w-4 h-4 text-gray-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          )}
+        </div>
+        <div className="text-sm text-slate-500 leading-5 font-normal">
+          {step?.name || "Step execution information"}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-6">
+        {/* Status Section */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Status</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-medium text-gray-500">
+                Current Status:
+              </span>
+              <span
+                className={`text-xs px-2 py-1 rounded-full ${
+                  step.status === "completed"
+                    ? "bg-green-100 text-green-700"
+                    : step.status === "failed"
+                      ? "bg-red-100 text-red-700"
+                      : step.status === "running"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                {step.status || "pending"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-xs font-medium text-gray-500">
+                Step Type:
+              </span>
+              <span className="text-xs text-gray-900">
+                {step.type || "unknown"}
+              </span>
+            </div>
+            {step.completedAt && (
+              <div className="flex justify-between">
+                <span className="text-xs font-medium text-gray-500">
+                  Completed:
+                </span>
+                <span className="text-xs text-gray-900">
+                  {new Date(step.completedAt).toLocaleString()}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Input Section */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Input</h3>
+          <div className="bg-gray-100 p-3 rounded-lg border max-h-40 overflow-y-auto">
+            {(() => {
+              // If this step has no previous steps (first step), show form data as input
+              if (!step.prevStepIds || step.prevStepIds.length === 0) {
+                // For first step, check if we have output data from tools to use as input display
+                if (tools && tools.length > 0) {
+                  return (
+                    <div className="space-y-2">
+                      {tools
+                        .map((tool: any, index: number) => {
+                          if (
+                            tool.result?.formData?.document_file
+                              ?.originalFileName
+                          ) {
+                            console.log(
+                              `📁 Input Card - Using output filename from tool ${index}:`,
+                              tool.result.formData.document_file
+                                .originalFileName,
+                            )
+                            return (
+                              <div key={index} className="text-xs">
+                                <div className="text-gray-900">
+                                  <span>
+                                    📁{" "}
+                                    {
+                                      tool.result.formData.document_file
+                                        .originalFileName
+                                    }
+                                  </span>
+                                </div>
+                              </div>
+                            )
+                          }
+                          return null
+                        })
+                        .filter(Boolean)}
+                    </div>
+                  )
+                }
+
+                if (step.metadata?.formSubmission?.formData) {
+                  return (
+                    <div className="space-y-2">
+                      {Object.entries(
+                        step.metadata.formSubmission.formData,
+                      ).map(([key, value]) => (
+                        <div key={key} className="text-xs">
+                          <span className="font-medium text-gray-600">
+                            {key}:
+                          </span>
+                          <div className="text-gray-900 mt-1 pl-2">
+                            {typeof value === "object"
+                              ? (() => {
+                                  // Check if it's a file upload object with originalName
+                                  if (
+                                    value &&
+                                    typeof value === "object" &&
+                                    "originalName" in value
+                                  ) {
+                                    return (
+                                      <span>
+                                        📁 {(value as any).originalName}
+                                      </span>
+                                    )
+                                  }
+                                  // Check if it's a file upload object with filename
+                                  if (
+                                    value &&
+                                    typeof value === "object" &&
+                                    "filename" in value
+                                  ) {
+                                    return (
+                                      <span>📁 {(value as any).filename}</span>
+                                    )
+                                  }
+                                  // Default to JSON
+                                  return (
+                                    <pre className="whitespace-pre-wrap">
+                                      {JSON.stringify(value, null, 2)}
+                                    </pre>
+                                  )
+                                })()
+                              : String(value)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                } else {
+                  return (
+                    <div className="text-xs text-gray-500 italic">
+                      No input data available (first step)
+                    </div>
+                  )
+                }
+              }
+
+              // If step has previous steps, show previous step's output as input
+              const previousOutput = getPreviousStepOutput()
+              if (previousOutput && previousOutput.length > 0) {
+                return (
+                  <div className="space-y-2">
+                    {previousOutput.map((output: any, index: number) => (
+                      <div key={index} className="text-xs">
+                        <div className="text-gray-900">
+                          {(() => {
+                            if (typeof output === "object" && output) {
+                              // Check for the exact same path that works in output card
+                              if (
+                                output.formData &&
+                                output.formData.document_file &&
+                                output.formData.document_file.originalFileName
+                              ) {
+                                console.log(
+                                  "📁 Input Card - Extracted filename (formData.document_file.originalFileName):",
+                                  output.formData.document_file
+                                    .originalFileName,
+                                )
+                                return (
+                                  <span>
+                                    📁{" "}
+                                    {
+                                      output.formData.document_file
+                                        .originalFileName
+                                    }
+                                  </span>
+                                )
+                              }
+                              // Check for nested path: result.formData.document_file.originalFileName
+                              if (
+                                output.result &&
+                                output.result.formData &&
+                                output.result.formData.document_file &&
+                                output.result.formData.document_file
+                                  .originalFileName
+                              ) {
+                                console.log(
+                                  "📁 Input Card - Extracted filename (result.formData.document_file.originalFileName):",
+                                  output.result.formData.document_file
+                                    .originalFileName,
+                                )
+                                return (
+                                  <span>
+                                    📁{" "}
+                                    {
+                                      output.result.formData.document_file
+                                        .originalFileName
+                                    }
+                                  </span>
+                                )
+                              }
+                              // Fallback: Check for direct file_name property (like "uber bill.pdf" case)
+                              if (output.file_name) {
+                                console.log(
+                                  "📁 Input Card - Extracted filename (direct file_name):",
+                                  output.file_name,
+                                )
+                                return <span>📁 {output.file_name}</span>
+                              }
+                              // Fallback: Check for nested file_name in result property
+                              if (
+                                output.result &&
+                                typeof output.result === "object" &&
+                                output.result.file_name
+                              ) {
+                                console.log(
+                                  "📁 Input Card - Extracted filename (result.file_name):",
+                                  output.result.file_name,
+                                )
+                                return <span>📁 {output.result.file_name}</span>
+                              }
+                              // Fallback: Check if this is the full output structure with file_name at root level
+                              if (output.status && output.file_name) {
+                                console.log(
+                                  "📁 Input Card - Extracted filename (status+file_name):",
+                                  output.file_name,
+                                )
+                                return <span>📁 {output.file_name}</span>
+                              }
+                            }
+                            // Default to showing full JSON
+                            console.log(
+                              "📁 Input Card - No filename found, showing full JSON:",
+                              output,
+                            )
+                            return (
+                              <pre className="whitespace-pre-wrap">
+                                {typeof output === "object"
+                                  ? JSON.stringify(output, null, 2)
+                                  : String(output)}
+                              </pre>
+                            )
+                          })()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+
+              // Step has previous step but no output available
+              return (
+                <div className="text-xs text-gray-500 italic">
+                  No input available from previous step
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+
+        {/* Output Section */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Output</h3>
+          {(() => {
+            console.log("📊 Output Card Data:", {
+              tools: tools,
+              toolsLength: tools?.length,
+              toolsData: tools?.map((tool: any, index: number) => ({
+                index,
+                id: tool.id,
+                type: tool.type,
+                status: tool.status,
+                hasResult: !!tool.result,
+                resultType: typeof tool.result,
+                result: tool.result,
+              })),
+            })
+
+            // Extract filename from output card data
+            let outputFilenameFound = false
+            tools?.forEach((tool: any, index: number) => {
+              if (
+                tool.result &&
+                tool.result.formData &&
+                tool.result.formData.document_file &&
+                tool.result.formData.document_file.originalFileName
+              ) {
+                console.log(
+                  `📁 Output Card - Extracted filename from tool ${index}:`,
+                  tool.result.formData.document_file.originalFileName,
+                )
+                console.log(
+                  `📁 Output Card - Full document_file object:`,
+                  tool.result.formData.document_file,
+                )
+                outputFilenameFound = true
+              } else {
+                console.log(
+                  `📁 Output Card - No filename found in tool ${index}, checking structure:`,
+                  {
+                    hasResult: !!tool.result,
+                    hasFormData: !!tool.result?.formData,
+                    hasDocumentFile: !!tool.result?.formData?.document_file,
+                    hasOriginalFileName:
+                      !!tool.result?.formData?.document_file?.originalFileName,
+                    resultStructure: tool.result
+                      ? Object.keys(tool.result)
+                      : "no result",
+                  },
+                )
+              }
+            })
+
+            // If no filename found in output, check input data
+            if (!outputFilenameFound) {
+              console.log(
+                "📁 No filename found in output, checking input data...",
+              )
+
+              // Get previous step output for input
+              const previousOutput = (() => {
+                if (
+                  !step.prevStepIds ||
+                  step.prevStepIds.length === 0 ||
+                  !workflowData
+                )
+                  return null
+                const prevStepTemplateId = step.prevStepIds[0]
+                const prevStep = workflowData.stepExecutions?.find(
+                  (s: any) => s.workflowStepTemplateId === prevStepTemplateId,
+                )
+                if (!prevStep) return null
+                const prevStepTools =
+                  workflowData.toolExecutions?.filter((toolExec: any) =>
+                    prevStep.toolExecIds?.includes(toolExec.id),
+                  ) || []
+                if (prevStepTools.length === 0) return null
+                return prevStepTools
+                  .map((tool: any) => tool.result)
+                  .filter(Boolean)
+              })()
+
+              // Check form submission data (first step)
+              if (step.metadata?.formSubmission?.formData) {
+                console.log(
+                  "📁 Input Card - Checking form submission data:",
+                  step.metadata.formSubmission.formData,
+                )
+                Object.entries(step.metadata.formSubmission.formData).forEach(
+                  ([key, value]) => {
+                    if (
+                      value &&
+                      typeof value === "object" &&
+                      "originalName" in value
+                    ) {
+                      console.log(
+                        `📁 Input Card - Found filename in form data ${key}:`,
+                        (value as any).originalName,
+                      )
+                    }
+                    if (
+                      value &&
+                      typeof value === "object" &&
+                      "filename" in value
+                    ) {
+                      console.log(
+                        `📁 Input Card - Found filename in form data ${key}:`,
+                        (value as any).filename,
+                      )
+                    }
+                  },
+                )
+              }
+
+              // Check previous step output
+              if (previousOutput && previousOutput.length > 0) {
+                console.log(
+                  "📁 Input Card - Checking previous step output:",
+                  previousOutput,
+                )
+                previousOutput.forEach((output: any, index: number) => {
+                  // Check for same path as output card: result.formData.document_file.originalFileName
+                  if (
+                    output?.result?.formData?.document_file?.originalFileName
+                  ) {
+                    console.log(
+                      `📁 Input Card - Found result.formData.document_file.originalFileName in previous output ${index}:`,
+                      output.result.formData.document_file.originalFileName,
+                    )
+                  }
+                  // Check for direct formData path: formData.document_file.originalFileName
+                  if (output?.formData?.document_file?.originalFileName) {
+                    console.log(
+                      `📁 Input Card - Found formData.document_file.originalFileName in previous output ${index}:`,
+                      output.formData.document_file.originalFileName,
+                    )
+                  }
+                  // Fallback paths
+                  if (output?.file_name) {
+                    console.log(
+                      `📁 Input Card - Found file_name in previous output ${index}:`,
+                      output.file_name,
+                    )
+                  }
+                  if (output?.result?.file_name) {
+                    console.log(
+                      `📁 Input Card - Found result.file_name in previous output ${index}:`,
+                      output.result.file_name,
+                    )
+                  }
+                })
+              } else {
+                console.log("📁 Input Card - No previous step output available")
+              }
+            }
+
+            return tools && tools.length > 0 ? (
+              tools.map((tool: any, index: number) => {
+                console.log(`📊 Rendering tool ${index}:`, {
+                  id: tool.id,
+                  type: tool.type,
+                  status: tool.status,
+                  result: tool.result,
+                })
+
+                return (
+                  <div
+                    key={tool.id || index}
+                    className="border border-gray-200 rounded-lg p-4 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-900">
+                        {tool.type} Tool
+                      </span>
+                      <div className="flex gap-2">
+                        {tool.status && (
+                          <span
+                            className={`text-xs px-2 py-1 rounded-full ${
+                              tool.status === "completed"
+                                ? "bg-green-100 text-green-700"
+                                : tool.status === "failed"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {tool.status}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {tool.result && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-semibold text-gray-600">
+                            Result
+                          </h4>
+                          <button
+                            onClick={() => onResultClick?.(tool.result)}
+                            className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                          >
+                            View Full
+                          </button>
+                        </div>
+                        <div
+                          className="text-xs text-gray-900 bg-gray-100 p-3 rounded max-h-32 overflow-y-auto border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors"
+                          onClick={() => onResultClick?.(tool.result)}
+                        >
+                          <pre className="whitespace-pre-wrap">
+                            {typeof tool.result === "object"
+                              ? JSON.stringify(tool.result, null, 2)
+                              : String(tool.result)}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            ) : (
+              <div className="text-center py-6">
+                <div className="text-gray-400 mb-2">
+                  <svg
+                    className="w-8 h-8 mx-auto"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                </div>
+                <p className="text-sm text-gray-500">
+                  No output data available
+                </p>
+              </div>
+            )
+          })()}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const EmptyCanvas: React.FC<{
   onAddFirstStep: () => void
   onStartWithTemplate: () => void
@@ -1619,6 +2404,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedNodeInfo, setSelectedNodeInfo] = useState<any>(null)
   const [showResultModal, setShowResultModal] = useState(false)
   const [selectedResult, setSelectedResult] = useState<any>(null)
+  const [showExecutionSidebar, setShowExecutionSidebar] = useState(false)
+  const [selectedExecutionNode, setSelectedExecutionNode] = useState<any>(null)
   // Template workflow state (for creating the initial workflow)
   const [templateWorkflow, setTemplateWorkflow] = useState<TemplateFlow | null>(
     null,
@@ -1657,6 +2444,33 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         ? selectedTemplate.stepExecutions
         : selectedTemplate.steps
 
+      // Log step executions structure for debugging
+      if (isExecution && selectedTemplate.stepExecutions) {
+        console.log("📋 Step Executions Structure:", {
+          totalSteps: selectedTemplate.stepExecutions.length,
+          firstStep: selectedTemplate.stepExecutions[0]
+            ? {
+                id: selectedTemplate.stepExecutions[0].id,
+                name: selectedTemplate.stepExecutions[0].name,
+                prevStepIds: selectedTemplate.stepExecutions[0].prevStepIds,
+                nextStepIds: selectedTemplate.stepExecutions[0].nextStepIds,
+                workflowStepTemplateId:
+                  selectedTemplate.stepExecutions[0].workflowStepTemplateId,
+              }
+            : null,
+          secondStep: selectedTemplate.stepExecutions[1]
+            ? {
+                id: selectedTemplate.stepExecutions[1].id,
+                name: selectedTemplate.stepExecutions[1].name,
+                prevStepIds: selectedTemplate.stepExecutions[1].prevStepIds,
+                nextStepIds: selectedTemplate.stepExecutions[1].nextStepIds,
+                workflowStepTemplateId:
+                  selectedTemplate.stepExecutions[1].workflowStepTemplateId,
+              }
+            : null,
+        })
+      }
+
       // Sort steps by step_order or creation order before creating nodes
       const sortedSteps = [...stepsData].sort((a, b) => {
         // First try to sort by step_order in metadata
@@ -1689,15 +2503,48 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               step.toolExecIds?.includes(toolExec.id),
             ) || []
 
+          console.log("🔧 Tool Execution Mapping:", {
+            stepName: step.name,
+            stepType: step.type,
+            toolExecIds: step.toolExecIds,
+            prevStepIds: step.prevStepIds,
+            nextStepIds: step.nextStepIds,
+            foundToolExecutions: toolExecutions.map((te) => ({
+              id: te.id,
+              type: te.type,
+              toolType: te.toolType,
+              status: te.status,
+            })),
+          })
+
+          // Log toolType from API response
+          toolExecutions.forEach((toolExec) => {
+            console.log("📡 API Response toolType:", {
+              toolExecutionId: toolExec.id,
+              apiToolType: toolExec.toolType,
+              legacyType: toolExec.type,
+              stepName: step.name,
+            })
+          })
+
           // Create tool info from executions
           stepTools = toolExecutions.map((toolExec) => ({
             id: toolExec.id,
-            type: "execution_tool",
+            type: toolExec.toolType || toolExec.type || "execution_tool", // Use new toolType field first
             config: toolExec.result || {},
             toolExecutionId: toolExec.id,
             status: toolExec.status,
             result: toolExec.result,
           }))
+
+          console.log("🔧 Created StepTools:", {
+            stepName: step.name,
+            stepTools: stepTools.map((st) => ({
+              id: st.id,
+              type: st.type,
+              status: st.status,
+            })),
+          })
         } else {
           // For templates, use workflow_tools
           stepTools =
@@ -1708,7 +2555,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
         // Check if this is the last step (no nextStepIds or empty nextStepIds)
         const isLastStep = !step.nextStepIds || step.nextStepIds.length === 0
-        const hasNextFlag = isLastStep
+        // Don't show plus button for executed workflows
+        const hasNextFlag = isLastStep && !isExecution
 
         return {
           id: step.id,
@@ -1729,6 +2577,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               metadata: step.metadata,
               isExecution,
               toolExecutions: isExecution ? toolExecutions : undefined,
+              // Properly extract prevStepIds and nextStepIds for executions
+              prevStepIds: step.prevStepIds || [],
+              nextStepIds: step.nextStepIds || [],
+              workflowStepTemplateId: isExecution
+                ? step.workflowStepTemplateId
+                : step.id,
             },
             tools: stepTools,
             isActive: isExecution && step.status === "running",
@@ -1848,15 +2702,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       if (!step) return
 
-      // Get the first tool to determine type
-      const primaryTool = tools[0]
-      const toolType = primaryTool?.type || step.type
+      // Check if this is an execution workflow node
+      const isExecution = (step as any).isExecution
 
       console.log(
         "🎯 Node clicked:",
         node.id,
-        "Tool type:",
-        toolType,
+        "Is execution:",
+        isExecution,
         "Step type:",
         step.type,
       )
@@ -1875,6 +2728,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowExecutionSidebar(false)
+
+      // If this is an execution workflow, show execution sidebar
+      if (isExecution) {
+        setSelectedExecutionNode({ step, tools, node })
+        setShowExecutionSidebar(true)
+        console.log("📊 Opening execution sidebar")
+        return
+      }
+
+      // Get the first tool to determine type for template workflows
+      const primaryTool = tools[0]
+      const toolType = primaryTool?.type || step.type
 
       // Handle different tool types
       switch (toolType) {
@@ -2674,6 +3540,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           nodeInfo={selectedNodeInfo}
           tools={selectedNodeTools}
           onClose={() => setShowToolsSidebar(false)}
+          onResultClick={handleResultClick}
+        />
+
+        {/* Execution Sidebar */}
+        <ExecutionSidebar
+          isVisible={showExecutionSidebar}
+          executionNode={selectedExecutionNode}
+          workflowData={selectedTemplate}
+          onClose={() => setShowExecutionSidebar(false)}
           onResultClick={handleResultClick}
         />
 
