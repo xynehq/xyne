@@ -21,7 +21,6 @@ const seed = async () => {
           name: "Xyne",
           domain: "xynehq.com",
           externalId: workspaceExternalId, // Set externalId explicitly
-          config: null, // Include config field for consistency
           // createdAt, updatedAt, deletedAt are set by defaults
         })
         .returning()
