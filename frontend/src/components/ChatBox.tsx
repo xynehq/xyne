@@ -189,6 +189,54 @@ function slackTs(ts: any) {
   return ts.replace(".", "").padEnd(16, "0")
 }
 
+// Model description mapping utility
+const getModelDescription = (modelName: string): string => {
+  const modelDescriptions = new Map([
+    // Claude Sonnet variants
+    [
+      /sonnet 3\.7|3\.7 sonnet/i,
+      "Advanced reasoning with enhanced performance and longer context.",
+    ],
+    [
+      /sonnet 3\.5|3\.5 sonnet/i,
+      "Designed for quick responses while ensuring solid reasoning.",
+    ],
+    [/sonnet 4|4 sonnet/i, "Balanced for reasoning, long context windows."],
+
+    // Claude Opus
+    [/opus/i, "Ideal for in-depth research and thorough analysis."],
+
+    // GPT variants
+    [
+      /gpt 5/i,
+      "Features enhanced reasoning, creativity, and better multi-step planning.",
+    ],
+    [
+      /gpt 4/i,
+      "Great for programming, content generation, and logical structuring.",
+    ],
+    [/gpt o3/i, "Advanced research model with deep analysis capabilities."],
+
+    // Gemini variants
+    [
+      /gemini 2\.5 pro/i,
+      "Proficient in reasoning across text, visuals, and programming.",
+    ],
+    [
+      /gemini 2\.5 flash/i,
+      "Tailored for cost-effectiveness and rapid response times.",
+    ],
+  ])
+
+  for (const [pattern, description] of modelDescriptions) {
+    if (pattern.test(modelName)) {
+      return description
+    }
+  }
+
+  return "" // Return empty string if no match found
+}
+
 interface ChatBoxProps {
   role: UserRole
   query: string
@@ -326,9 +374,7 @@ const TooltipWrapper: React.FC<{
 }> = ({ children, content, delayDuration = 500 }) => (
   <TooltipProvider delayDuration={delayDuration}>
     <Tooltip>
-      <TooltipTrigger asChild>
-        {children}
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent>
         <p>{content}</p>
       </TooltipContent>
@@ -2933,8 +2979,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           ? "@"
                           : " @"
 
-                      const atTextNode =
-                        document.createTextNode(textToAppend)
+                      const atTextNode = document.createTextNode(textToAppend)
 
                       input.appendChild(atTextNode)
 
@@ -3886,52 +3931,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                                         {/* Model description based on name */}
                                         <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                          {(model.labelName.includes(
-                                            "Sonnet 3.7",
-                                          ) ||
-                                            model.labelName.includes(
-                                              "3.7 Sonnet",
-                                            ) ||
-                                            model.labelName.includes(
-                                              "3.7 sonnet",
-                                            )) &&
-                                            "Advanced reasoning with enhanced performance and longer context."}
-                                          {(model.labelName.includes(
-                                            "Sonnet 3.5",
-                                          ) ||
-                                            model.labelName.includes(
-                                              "3.5 Sonnet",
-                                            ) ||
-                                            model.labelName.includes(
-                                              "3.5 sonnet",
-                                            )) &&
-                                            "Designed for quick responses while ensuring solid reasoning."}
-                                          {(model.labelName.includes(
-                                            "Sonnet 4",
-                                          ) ||
-                                            model.labelName.includes(
-                                              "4 Sonnet",
-                                            ) ||
-                                            model.labelName.includes(
-                                              "4 sonnet",
-                                            )) &&
-                                            "Balanced for reasoning, long context windows."}
-                                          {model.labelName.includes("Opus") &&
-                                            "Ideal for in-depth research and thorough analysis."}
-                                          {model.labelName.includes("GPT 5") &&
-                                            "Features enhanced reasoning, creativity, and better multi-step planning."}
-                                          {model.labelName.includes("GPT 4") &&
-                                            "Great for programming, content generation, and logical structuring."}
-                                          {model.labelName.includes("GPT O3") &&
-                                            "Advanced research model with deep analysis capabilities."}
-                                          {model.labelName.includes(
-                                            "Gemini 2.5 Pro",
-                                          ) &&
-                                            "Proficient in reasoning across text, visuals, and programming."}
-                                          {model.labelName.includes(
-                                            "Gemini 2.5 Flash",
-                                          ) &&
-                                            "Tailored for cost-effectiveness and rapid response times."}
+                                          {getModelDescription(model.labelName)}
                                         </span>
 
                                         {/* Disabled state messages */}
