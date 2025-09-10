@@ -823,12 +823,19 @@ const executeAutomatedWorkflowSteps = async (
         Logger.info(
           `Executing automated step: ${nextStep.name} (${nextStep.id})`,
         )
-        executionResults = await executeWorkflowChain(
-          executionId,
-          nextStep.id,
-          allTools,
-          executionResults,
-        )
+        try {
+          executionResults = await executeWorkflowChain(
+            executionId,
+            nextStep.id,
+            allTools,
+            executionResults,
+          )
+        } catch (stepError) {
+          // Step execution failed, workflow should already be marked as failed
+          // Stop processing remaining steps
+          Logger.error(`Step execution failed, stopping workflow execution: ${stepError}`)
+          throw stepError
+        }
       }
     }
 
@@ -864,18 +871,29 @@ const executeAutomatedWorkflowSteps = async (
       `Background workflow execution failed for ${executionId}`,
     )
 
-    // Mark workflow as failed if background execution fails
+    // Check if workflow is already marked as failed before updating
     try {
-      await db
-        .update(workflowExecution)
-        .set({
-          status: "failed",
-          completedAt: new Date(),
-          completedBy: "system",
-        })
+      const [currentExecution] = await db
+        .select()
+        .from(workflowExecution)
         .where(eq(workflowExecution.id, executionId))
+
+      if (currentExecution && currentExecution.status !== "failed") {
+        // Only mark as failed if not already failed (to avoid overriding specific failure info)
+        await db
+          .update(workflowExecution)
+          .set({
+            status: "failed",
+            completedAt: new Date(),
+            completedBy: "system",
+          })
+          .where(eq(workflowExecution.id, executionId))
+        Logger.info(`Workflow ${executionId} marked as failed due to background execution error`)
+      } else {
+        Logger.info(`Workflow ${executionId} already marked as failed, skipping status update`)
+      }
     } catch (dbError) {
-      Logger.error(dbError, `Failed to mark workflow ${executionId} as failed`)
+      Logger.error(dbError, `Failed to check or update workflow ${executionId} status`)
     }
 
     throw error
@@ -929,6 +947,71 @@ const executeWorkflowChain = async (
     // Execute the tool
     const toolResult = await executeWorkflowTool(tool, previousResults)
 
+    // Check if tool execution failed
+    if (toolResult.status !== "success") {
+      Logger.error(`Tool execution failed for step ${step.name}: ${JSON.stringify(toolResult.result)}`)
+      
+      // Create failed tool execution record
+      let toolExecutionRecord
+      try {
+        const [execution] = await db
+          .insert(toolExecution)
+          .values({
+            workflowToolId: tool.id,
+            workflowExecutionId: executionId,
+            status: "failed",
+            result: toolResult.result,
+            startedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .returning()
+        toolExecutionRecord = execution
+      } catch (dbError) {
+        Logger.warn("Database insert failed for failed tool, creating minimal record:", dbError)
+        const [execution] = await db
+          .insert(toolExecution)
+          .values({
+            workflowToolId: tool.id,
+            workflowExecutionId: executionId,
+            status: "failed",
+            result: {
+              error: "Tool execution failed and result could not be stored",
+              original_error: "Database storage failed"
+            },
+            startedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .returning()
+        toolExecutionRecord = execution
+      }
+
+      // Mark step as failed
+      await db
+        .update(workflowStepExecution)
+        .set({
+          status: "failed",
+          completedBy: "system",
+          completedAt: new Date(),
+          toolExecIds: [toolExecutionRecord.id],
+        })
+        .where(eq(workflowStepExecution.id, currentStepId))
+
+      // Mark workflow as failed
+      await db
+        .update(workflowExecution)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          completedBy: "system",
+        })
+        .where(eq(workflowExecution.id, executionId))
+
+      Logger.error(`Workflow ${executionId} marked as failed due to step ${step.name} failure`)
+      
+      // Return error result to stop further execution
+      throw new Error(`Step "${step.name}" failed: ${JSON.stringify(toolResult.result)}`)
+    }
+
     // Create tool execution record with error handling for unicode issues
     let toolExecutionRecord
     try {
@@ -937,7 +1020,7 @@ const executeWorkflowChain = async (
         .values({
           workflowToolId: tool.id,
           workflowExecutionId: executionId,
-          status: toolResult.status === "success" ? "completed" : "failed",
+          status: "completed",
           result: toolResult.result,
           startedAt: new Date(),
           completedAt: new Date(),
@@ -960,7 +1043,7 @@ const executeWorkflowChain = async (
           .values({
             workflowToolId: tool.id,
             workflowExecutionId: executionId,
-            status: toolResult.status === "success" ? "completed" : "failed",
+            status: "completed",
             result: {
               ...sanitizedResult,
               _note: "Result was sanitized due to unicode characters",
@@ -1733,22 +1816,9 @@ const executeWorkflowTool = async (
               emailBody = `No content found at path: ${contentPath}`
           }
           } else {
-            // Fallback to previous behavior - get from first step
-            const prevStepData = Object.values(previousStepResults)[0] as any
-
-            if (prevStepData?.result?.aiOutput) {
-              // From AI agent step
-              emailBody = prevStepData.result.aiOutput
-            } else if (prevStepData?.result?.output) {
-              // Generic output
-              emailBody = prevStepData.result.output
-            } else if (prevStepData?.result) {
-              // Fallback to stringified result
-              emailBody =
-                typeof prevStepData.result === "string"
-                  ? prevStepData.result
-                  : JSON.stringify(prevStepData.result, null, 2)
-            } else {
+            // Fallback to extracting from response.aiOutput path
+            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
+            if (!emailBody) {
               emailBody = "No content available from previous step"
             }
           }
@@ -1865,6 +1935,7 @@ const executeWorkflowTool = async (
         const geminiApiKey =
           aiConfig.gemini_api_key || process.env.GEMINI_API_KEY
 
+        Logger.info(`Using Gemini API key: ${geminiApiKey}`)
         try {
           let analysisInput = ""
           let inputMetadata = {}
@@ -2017,6 +2088,7 @@ const executeWorkflowTool = async (
 
           // Call Gemini API
           const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`
+          Logger.info(`Calling Gemini API at: ${geminiUrl}`)
           const fullPrompt = `${prompt}\n\nInput to analyze:\n${analysisInput.slice(0, 8000)}`
 
           const geminiResponse = await fetch(geminiUrl, {

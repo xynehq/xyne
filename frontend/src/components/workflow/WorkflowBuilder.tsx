@@ -156,6 +156,7 @@ import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
+import { TemplateSelectionModal } from "./TemplateSelectionModal"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -1635,6 +1636,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedResult, setSelectedResult] = useState<any>(null)
   const [showExecutionModal, setShowExecutionModal] = useState(false)
   const [createdTemplate, setCreatedTemplate] = useState<WorkflowTemplate | null>(null)
+  const [showTemplateSelectionModal, setShowTemplateSelectionModal] = useState(false)
+  const [availableTemplates, setAvailableTemplates] = useState<WorkflowTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [localSelectedTemplate, setLocalSelectedTemplate] = useState<WorkflowTemplate | null>(null)
   // Template workflow state (for creating the initial workflow)
   const [templateWorkflow] = useState<TemplateFlow | null>(
     null,
@@ -1653,21 +1659,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
   const { fitView, zoomTo, getViewport } = useReactFlow()
 
-  // Create nodes and edges from selectedTemplate
+  // Create nodes and edges from selectedTemplate or localSelectedTemplate
   useEffect(() => {
+    const templateToUse = localSelectedTemplate || selectedTemplate
     if (
-      selectedTemplate &&
-      (selectedTemplate.steps || selectedTemplate.stepExecutions)
+      templateToUse &&
+      (templateToUse.steps || templateToUse.stepExecutions)
     ) {
-      console.log("Creating workflow from template:", selectedTemplate)
+      console.log("Creating workflow from template:", templateToUse)
 
       // Check if this is an execution (has stepExecutions) or template (has steps)
       const isExecution =
-        selectedTemplate.stepExecutions &&
-        Array.isArray(selectedTemplate.stepExecutions)
+        templateToUse.stepExecutions &&
+        Array.isArray(templateToUse.stepExecutions)
       const stepsData = isExecution
-        ? selectedTemplate.stepExecutions
-        : selectedTemplate.steps
+        ? templateToUse.stepExecutions
+        : templateToUse.steps
 
       // Sort steps by step_order or creation order before creating nodes
       const sortedSteps = stepsData ? [...stepsData].sort((a, b) => {
@@ -1697,7 +1704,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         if (isExecution) {
           // For executions, get tool executions from toolExecIds
           toolExecutions =
-            selectedTemplate.toolExecutions?.filter((toolExec) =>
+            templateToUse.toolExecutions?.filter((toolExec) =>
               step.toolExecIds?.includes(toolExec.id),
             ) || []
 
@@ -1713,7 +1720,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         } else {
           // For templates, use workflow_tools
           stepTools =
-            selectedTemplate.workflow_tools?.filter((tool) =>
+            templateToUse.workflow_tools?.filter((tool) =>
               step.toolIds?.includes(tool.id),
             ) || []
         }
@@ -1800,7 +1807,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         fitView({ padding: 0.2 })
       }, 50)
     }
-  }, [selectedTemplate, setNodes, setEdges, fitView])
+  }, [selectedTemplate, localSelectedTemplate, setNodes, setEdges, fitView])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -1960,93 +1967,37 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }, 50)
   }, [setNodes, zoomTo])
 
-  const startWithTemplate = useCallback(() => {
-    if (!templateWorkflow) {
-      console.error("No template workflow available")
-      return
+  // Function to fetch available templates
+  const fetchTemplates = useCallback(async () => {
+    setTemplatesLoading(true)
+    setTemplatesError(null)
+    
+    try {
+      const response = await fetch('http://localhost:3000/api/v1/workflow/templates')
+      if (!response.ok) {
+        throw new Error(`Failed to fetch templates: ${response.status} ${response.statusText}`)
+      }
+      
+      const result = await response.json()
+      if (result.success && result.data) {
+        setAvailableTemplates(result.data)
+      } else {
+        throw new Error('Invalid response format')
+      }
+    } catch (error) {
+      console.error('Error fetching templates:', error)
+      setTemplatesError(error instanceof Error ? error.message : 'Failed to fetch templates')
+      setAvailableTemplates([])
+    } finally {
+      setTemplatesLoading(false)
     }
+  }, [])
 
-    // Convert template workflow template_steps to nodes
-    const templateNodes: Node[] = templateWorkflow.template_steps.map(
-      (templateStep, index) => {
-        // Find the associated tool for this step
-        const associatedTool = templateWorkflow.tools?.find(
-          (tool) => tool.id === templateStep.tool_id,
-        )
-
-        // Get all tools for this step (in case there are multiple)
-        const stepTools = templateStep.tool_id
-          ? templateWorkflow.tools?.filter(
-              (tool) => tool.id === templateStep.tool_id,
-            ) || []
-          : []
-
-        return {
-          id: templateStep.id,
-          type: "stepNode",
-          position: {
-            x: 200 + index * 300,
-            y: 200 + (index % 2 === 0 ? 0 : 100),
-          },
-          data: {
-            step: {
-              id: templateStep.id,
-              name: associatedTool
-                ? `${associatedTool.type === "delay" ? "Processing Delay" : associatedTool.type === "python_script" ? (index === 1 ? "Process Data" : "Send Notification") : `Step ${index + 1}: ${associatedTool.type}`}`
-                : index === 0
-                  ? "Start Workflow"
-                  : `Step ${index + 1}`,
-              status: "pending",
-              description:
-                associatedTool?.config.description || "Template step",
-              type: associatedTool?.type || "unknown",
-              tool_id: templateStep.tool_id,
-              prevStepIds: templateStep.prevStepIds,
-              nextStepIds: templateStep.nextStepIds,
-              contents: [],
-            },
-            tools: stepTools, // Pass tools data to the node
-            isActive: false,
-            isCompleted: false,
-          },
-          draggable: true,
-        }
-      },
-    )
-
-    // Create edges based on nextStepIds
-    const templateEdges: Edge[] = []
-    templateWorkflow.template_steps.forEach((templateStep) => {
-      templateStep.nextStepIds.forEach((nextStepId) => {
-        templateEdges.push({
-          id: `${templateStep.id}-${nextStepId}`,
-          source: templateStep.id,
-          target: nextStepId,
-          type: "straight",
-          animated: false,
-          style: {
-            stroke: "#3B82F6",
-            strokeWidth: 2,
-          },
-          markerEnd: {
-            type: "arrowclosed",
-            color: "#3B82F6",
-          },
-          sourceHandle: "bottom",
-          targetHandle: "top",
-          })
-      })
-    })
-
-    setNodes(templateNodes)
-    setEdges(templateEdges)
-    setNodeCounter(templateWorkflow.template_steps.length + 1)
-    setShowEmptyCanvas(false)
-
-    setTimeout(() => {
-      fitView({ padding: 0.2 })
-    }, 50)
-  }, [templateWorkflow, setNodes, setEdges, fitView])
+  const startWithTemplate = useCallback(async () => {
+    // Fetch templates and open the selection modal
+    setShowTemplateSelectionModal(true)
+    await fetchTemplates()
+  }, [fetchTemplates])
 
   const addNewNode = useCallback(() => {
     const newNode: Node = {
@@ -2894,6 +2845,46 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     setSelectedResult(null)
   }, [])
 
+  const handleTemplateSelect = useCallback(async (template: any) => {
+    console.log('Selected template:', template)
+    
+    // Find the full template data from availableTemplates
+    const fullTemplate = availableTemplates.find(t => t.id === template.id)
+    if (fullTemplate) {
+      try {
+        // Fetch detailed template data including steps and tools
+        const response = await fetch(`http://localhost:3000/api/v1/workflow/templates/${fullTemplate.id}`)
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success && result.data) {
+            console.log('Setting detailed template:', result.data)
+            // Set the detailed template which will trigger the useEffect to create nodes
+            setLocalSelectedTemplate(result.data)
+          } else {
+            console.error('Failed to get detailed template data')
+            setLocalSelectedTemplate(fullTemplate)
+          }
+        } else {
+          console.error('Failed to fetch detailed template')
+          setLocalSelectedTemplate(fullTemplate)
+        }
+      } catch (error) {
+        console.error('Error fetching detailed template:', error)
+        setLocalSelectedTemplate(fullTemplate)
+      }
+      
+      // Also trigger a custom event that the parent component can listen to (optional)
+      const event = new CustomEvent('templateSelected', { detail: fullTemplate })
+      window.dispatchEvent(event)
+    }
+    
+    setShowTemplateSelectionModal(false)
+  }, [availableTemplates])
+
+  const handleTemplateModalClose = useCallback(() => {
+    setShowTemplateSelectionModal(false)
+  }, [])
+
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-gray-900 relative">
       {/* Header */}
@@ -3263,6 +3254,23 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           workflowTemplate={(createdTemplate || selectedTemplate)!}
         />
       )}
+
+      {/* Template Selection Modal */}
+      <TemplateSelectionModal
+        isOpen={showTemplateSelectionModal}
+        onClose={handleTemplateModalClose}
+        templates={availableTemplates.map(template => ({
+          id: template.id,
+          name: template.name,
+          description: template.description,
+          icon: "🔧", // Default icon, you can map based on template type
+          iconBgColor: "bg-blue-50",
+          isPlaceholder: false,
+        }))}
+        loading={templatesLoading}
+        error={templatesError}
+        onSelectTemplate={handleTemplateSelect}
+      />
     </div>
   )
 }
