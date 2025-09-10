@@ -69,12 +69,38 @@ import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { processSpreadsheetFileWithSheetInfo } from "./attachment-utils"
 import { discoverMailFolders } from "./outlook"
 import { getUniqueEmails } from "../google"
-import { deleteWholeSpreadsheet } from "../google/sync"
+import {
+  deleteWholeSpreadsheet,
+  getDocumentOrSpreadsheet,
+} from "../google/sync"
 import { DriveMime } from "../google/utils"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "microsoft-sync",
 })
+
+// Validate Microsoft client credentials at module load time
+const validateMicrosoftCredentials = () => {
+  const clientId = process.env.MICROSOFT_CLIENT_ID
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET
+
+  if (!clientId) {
+    throw new Error(
+      "MICROSOFT_CLIENT_ID environment variable is required but not set",
+    )
+  }
+
+  if (!clientSecret) {
+    throw new Error(
+      "MICROSOFT_CLIENT_SECRET environment variable is required but not set",
+    )
+  }
+
+  return { clientId, clientSecret }
+}
+
+const { clientId: MICROSOFT_CLIENT_ID, clientSecret: MICROSOFT_CLIENT_SECRET } =
+  validateMicrosoftCredentials()
 
 // Microsoft-specific change token types
 type MicrosoftDriveChangeToken = {
@@ -477,27 +503,6 @@ export const handleOneDriveChange = async (
   }
 
   return stats
-}
-
-// Get document or spreadsheet (similar to Google implementation)
-export const getDocumentOrSpreadsheet = async (docId: string) => {
-  try {
-    const doc = await getDocumentOrNull(fileSchema, docId)
-    if (!doc) {
-      Logger.error(
-        `Found no document with ${docId}, checking for spreadsheet with ${docId}_0`,
-      )
-      const sheetsForSpreadSheet = await getDocumentOrNull(
-        fileSchema,
-        `${docId}_0`,
-      )
-      return sheetsForSpreadSheet
-    }
-    return doc
-  } catch (err) {
-    Logger.error(err, `Error getting document`)
-    throw err
-  }
 }
 
 // Discover current folders and detect changes
@@ -1167,8 +1172,8 @@ export const handleMicrosoftOAuthChanges = async (
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
         oauthTokens.refresh_token,
-        process.env.MICROSOFT_CLIENT_ID!,
-        process.env.MICROSOFT_CLIENT_SECRET!,
+        MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET,
       )
 
       let config: MicrosoftDriveChangeToken =
@@ -1310,8 +1315,8 @@ export const handleMicrosoftOAuthChanges = async (
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
         oauthTokens.refresh_token,
-        process.env.MICROSOFT_CLIENT_ID!,
-        process.env.MICROSOFT_CLIENT_SECRET!,
+        MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET,
       )
 
       let {
@@ -1416,8 +1421,8 @@ export const handleMicrosoftOAuthChanges = async (
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
         oauthTokens.refresh_token,
-        process.env.MICROSOFT_CLIENT_ID!,
-        process.env.MICROSOFT_CLIENT_SECRET!,
+        MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET,
       )
 
       let {

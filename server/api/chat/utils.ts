@@ -318,31 +318,33 @@ export const extractImageFileNames = (
     let imageContent = match[1].trim()
     try {
       if (imageContent) {
-        const docId = imageContent.split("_")[0]
-        // const docIndex =
-        //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
-        const docIndex =
-          results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
-
-        if (docIndex === -1) {
-          console.warn(
-            `No matching document found for docId: ${docId} in results for image content extraction.`,
-          )
-          continue
-        }
-
-        // Split by newlines and filter out empty strings
-        const fileNames = imageContent
-          .split("\n")
+        // Split by newlines and spaces to handle various formatting
+        const individualFileNames = imageContent
+          .split(/\s+/)
           .map((name) => name.trim())
           .filter((name) => name.length > 0)
-          // Additional safety: split by spaces and filter out empty strings
-          // in case multiple filenames are on the same line
-          .flatMap((name) =>
-            name.split(/\s+/).filter((part) => part.length > 0),
-          )
-          .map((name) => `${docIndex}_${name}`)
-        imageFileNames.push(...fileNames)
+
+        for (const fileName of individualFileNames) {
+          const lastUnderscoreIndex = fileName.lastIndexOf("_")
+          if (lastUnderscoreIndex === -1) {
+            console.warn(`Invalid image file name format: ${fileName}`)
+            continue
+          }
+
+          const docId = fileName.substring(0, lastUnderscoreIndex)
+
+          const docIndex =
+            results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
+
+          if (docIndex === -1) {
+            console.warn(
+              `No matching document found for docId: ${docId} in results for image content extraction.`,
+            )
+            continue
+          }
+
+          imageFileNames.push(`${docIndex}_${fileName}`)
+        }
       }
     } catch (error) {
       console.error(
@@ -434,7 +436,7 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       title: clFields.fileName || "Collection File",
       url: `/cl/${clFields.clId}`,
       app: Apps.KnowledgeBase,
-      entity: SystemEntity.SystemInfo,
+      entity: clFields.entity,
       itemId: clFields.itemId,
       clId: clFields.clId,
     }
@@ -505,6 +507,7 @@ export const getFileIdFromLink = (link: string) => {
 export const extractFileIdsFromMessage = async (
   message: string,
   email?: string,
+  pathRefId?: any,
 ): Promise<{
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
@@ -514,88 +517,92 @@ export const extractFileIdsFromMessage = async (
   const threadIds: string[] = []
   const driveItem: string[] = []
   const collectionFolderIds: string[] = []
-  const jsonMessage = JSON.parse(message) as UserQuery
+  if (pathRefId) {
+    collectionFolderIds.push(pathRefId)
+  }
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
+  try {
+    const jsonMessage = JSON.parse(message) as UserQuery
+    for (const obj of jsonMessage) {
+      if (obj?.type === "pill") {
+        if (
+          obj?.value &&
+          obj?.value?.entity &&
+          obj?.value?.entity == DriveEntity.Folder
+        ) {
+          driveItem.push(obj?.value?.docId)
+        } else fileIds.push(obj?.value?.docId)
+        // Check if this pill has a threadId (for email threads)
+        if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
+          threadIds.push(obj?.value?.threadId)
+        }
 
-  for (const obj of jsonMessage) {
-    if (obj?.type === "pill") {
-      if (
-        obj?.value &&
-        obj?.value?.entity &&
-        obj?.value?.entity == DriveEntity.Folder
-      ) {
-        driveItem.push(obj?.value?.docId)
-      } else fileIds.push(obj?.value?.docId)
-      // Check if this pill has a threadId (for email threads)
-      if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
-        threadIds.push(obj?.value?.threadId)
-      }
+        const pillValue = obj.value
+        const docId = pillValue.docId
 
-      const pillValue = obj.value
-      const docId = pillValue.docId
+        // Check if this is a Google Sheets reference with wholeSheet: true
+        if (pillValue.wholeSheet === true) {
+          // Extract the base docId (remove the "_X" suffix if present)
+          const baseDocId = docId.replace(/_\d+$/, "")
 
-      // Check if this is a Google Sheets reference with wholeSheet: true
-      if (pillValue.wholeSheet === true) {
-        // Extract the base docId (remove the "_X" suffix if present)
-        const baseDocId = docId.replace(/_\d+$/, "")
-
-        // Get the spreadsheet metadata to find all sub-sheets
-        const validFile = await getDocumentOrSpreadsheet(baseDocId)
-        if (validFile) {
-          const fields = validFile?.fields as VespaFile
-          if (
-            fields?.app === Apps.GoogleDrive &&
-            fields?.entity === DriveEntity.Sheets
-          ) {
-            const sheetsMetadata = JSON.parse(fields?.metadata as string)
-            const totalSheets = sheetsMetadata?.totalSheets
-            // Add all sub-sheet IDs
-            for (let i = 0; i < totalSheets; i++) {
-              fileIds.push(`${baseDocId}_${i}`)
+          // Get the spreadsheet metadata to find all sub-sheets
+          const validFile = await getDocumentOrSpreadsheet(baseDocId)
+          if (validFile) {
+            const fields = validFile?.fields as VespaFile
+            if (
+              fields?.app === Apps.GoogleDrive &&
+              fields?.entity === DriveEntity.Sheets
+            ) {
+              const sheetsMetadata = JSON.parse(fields?.metadata as string)
+              const totalSheets = sheetsMetadata?.totalSheets
+              // Add all sub-sheet IDs
+              for (let i = 0; i < totalSheets; i++) {
+                fileIds.push(`${baseDocId}_${i}`)
+              }
+            } else {
+              // Fallback: just add the docId if it's not a spreadsheet
+              fileIds.push(docId)
             }
           } else {
-            // Fallback: just add the docId if it's not a spreadsheet
+            // Fallback: just add the docId if we can't get metadata
             fileIds.push(docId)
           }
         } else {
-          // Fallback: just add the docId if we can't get metadata
+          // Regular pill behavior: just add the docId
           fileIds.push(docId)
         }
-      } else {
-        // Regular pill behavior: just add the docId
-        fileIds.push(docId)
-      }
-    } else if (obj?.type === "link") {
-      const fileId = getFileIdFromLink(obj?.value)
-      if (fileId) {
-        // Check if it's a valid Drive File Id ingested in Vespa
-        // Only works for fileSchema
-        const validFile = await getDocumentOrSpreadsheet(fileId)
-        if (validFile) {
-          totalValidFileIdsFromLinkCount++
-          if (validFileIdsFromLinkCount >= maxValidLinks) {
-            continue
-          }
-          const fields = validFile?.fields as VespaFile
-          // If any of them happens to a spreadsheet, add all its subsheet ids also here
-          if (
-            fields?.app === Apps.GoogleDrive &&
-            fields?.entity === DriveEntity.Sheets
-          ) {
-            const sheetsMetadata = JSON.parse(fields?.metadata as string)
-            const totalSheets = sheetsMetadata?.totalSheets
-            for (let i = 0; i < totalSheets; i++) {
-              fileIds.push(`${fileId}_${i}`)
+      } else if (obj?.type === "link") {
+        const fileId = getFileIdFromLink(obj?.value)
+        if (fileId) {
+          // Check if it's a valid Drive File Id ingested in Vespa
+          // Only works for fileSchema
+          const validFile = await getDocumentOrSpreadsheet(fileId)
+          if (validFile) {
+            totalValidFileIdsFromLinkCount++
+            if (validFileIdsFromLinkCount >= maxValidLinks) {
+              continue
             }
-          } else {
-            fileIds.push(fileId)
+            const fields = validFile?.fields as VespaFile
+            // If any of them happens to a spreadsheet, add all its subsheet ids also here
+            if (
+              fields?.app === Apps.GoogleDrive &&
+              fields?.entity === DriveEntity.Sheets
+            ) {
+              const sheetsMetadata = JSON.parse(fields?.metadata as string)
+              const totalSheets = sheetsMetadata?.totalSheets
+              for (let i = 0; i < totalSheets; i++) {
+                fileIds.push(`${fileId}_${i}`)
+              }
+            } else {
+              fileIds.push(fileId)
+            }
+            validFileIdsFromLinkCount++
           }
-          validFileIdsFromLinkCount++
         }
       }
     }
-  }
+  } catch (error) {}
 
   while (driveItem.length) {
     let curr = driveItem.shift()
@@ -637,6 +644,7 @@ export const extractFileIdsFromMessage = async (
     collectionFolderIds,
     db,
   )
+
   if (collectionFolderIds.length > 0) {
     const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
     const vespaIds = ids

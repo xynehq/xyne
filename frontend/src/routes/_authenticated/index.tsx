@@ -34,10 +34,6 @@ const Index = () => {
   const { theme } = useTheme()
   const [activeTab, setActiveTab] = useState<Tabs>(Tabs.Ask)
   const [query, setQuery] = useState("")
-  const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem("isReasoningGlobalState") // Consistent key
-    return storedValue ? JSON.parse(storedValue) : true
-  })
   const AGENTIC_STATE = "agenticState"
   const [isAgenticMode, setIsAgenticMode] = useState(() => {
     const storedValue = localStorage.getItem(AGENTIC_STATE)
@@ -129,13 +125,6 @@ const Index = () => {
     localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
   }, [isAgenticMode])
 
-  useEffect(() => {
-    localStorage.setItem(
-      "isReasoningGlobalState",
-      JSON.stringify(isReasoningActive),
-    )
-  }, [isReasoningActive])
-
   const [autocompleteResults, setAutocompleteResults] = useState<
     Autocomplete[]
   >([])
@@ -225,23 +214,19 @@ const Index = () => {
     selectedSources?: string[],
     agentId?: string | null,
     toolsList?: ToolsListItem[],
-    enableWebSearch?: boolean,
+    selectedModel?: string,
   ) => {
     if (messageToSend.trim()) {
       const searchParams: {
         q: string
-        reasoning?: boolean
         sources?: string
         agentId?: string
         toolsList?: ToolsListItem[]
         agentic?: boolean
         metadata?: AttachmentMetadata[]
-        enableWebSearch?: boolean
+        selectedModel?: string
       } = {
         q: encodeURIComponent(messageToSend.trim()),
-      }
-      if (isReasoningActive) {
-        searchParams.reasoning = true
       }
 
       if (selectedSources && selectedSources.length > 0) {
@@ -264,8 +249,8 @@ const Index = () => {
         searchParams.toolsList = toolsList
       }
 
-      if (enableWebSearch) {
-        searchParams.enableWebSearch = enableWebSearch
+      if (selectedModel) {
+        searchParams.selectedModel = selectedModel
       }
 
       navigate({
@@ -402,8 +387,6 @@ const Index = () => {
                     setQuery={setQuery}
                     handleSend={handleAsk}
                     allCitations={new Map()} // Change this line
-                    isReasoningActive={isReasoningActive}
-                    setIsReasoningActive={setIsReasoningActive}
                     isAgenticMode={isAgenticMode}
                     setIsAgenticMode={setIsAgenticMode}
                     agentIdFromChatData={persistedAgentId}

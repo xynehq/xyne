@@ -67,18 +67,15 @@ import type { DriveItem } from "@microsoft/microsoft-graph-types"
 import { Schema } from "zod"
 import { handleOutlookIngestion } from "./outlook"
 import { getUniqueEmails } from "../google"
-
+import { htmlToText } from "html-to-text"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 
 export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
   module: "microsoft",
 })
 
-// Convert HTML to text
-const htmlToText = require("html-to-text")
-
 export const getTextFromEventDescription = (description: string): string => {
-  return htmlToText.convert(description, { wordwrap: 130 })
+  return htmlToText(description, { wordwrap: 130 })
 }
 
 // Get attendees from Microsoft event
