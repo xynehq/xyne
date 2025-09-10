@@ -1027,15 +1027,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
     if (!chatId) {
-      loggerWithChild({ email: email }).info(
-        `MessageWithToolsApi before creating chat with dummy title.. ${chatId}`,
-      )
-      // Use dummy title initially for fast chat creation
-      title = `Chat ${new Date().toLocaleString()}`
-      
-      loggerWithChild({ email: email }).info(
-        `MessageWithToolsApi using dummy title: ${title}`,
-      )
 
       const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
       let [insertedChat, insertedMsg] = await db.transaction(
@@ -2733,15 +2724,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      loggerWithChild({ email: email }).info(
-        `AgentMessageApiRagOff before creating chat with dummy title.. ${chatId}`,
-      )
-      // Use dummy title initially for fast chat creation
-      title = `Chat ${new Date().toLocaleString()}`
-      
-      loggerWithChild({ email: email }).info(
-        `AgentMessageApiRagOff using dummy title: ${title}`,
-      )
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3497,15 +3479,6 @@ export const AgentMessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      loggerWithChild({ email: email }).info(
-        `AgentMessageApi before creating chat with dummy title.. ${chatId}`,
-      )
-      // Use dummy title initially for fast chat creation
-      title = `Chat ${new Date().toLocaleString()}`
-      
-      loggerWithChild({ email: email }).info(
-        `AgentMessageApi using dummy title: ${title}`,
-      )
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {

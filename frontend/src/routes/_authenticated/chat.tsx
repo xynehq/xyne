@@ -397,12 +397,10 @@ export const ChatPage = ({
   )
   const [isTitleUpdating, setIsTitleUpdating] = useState(false)
   const [streamingTitle, setStreamingTitle] = useState<string>("")
-  const [_, setFinalTitle] = useState<string>("")
 
   // Smooth title streaming function - animates from left to right
   const updateTitleWithAnimation = (newTitle: string) => {
     setIsTitleUpdating(true)
-    setFinalTitle(newTitle)
     setStreamingTitle("")
 
     const chars = newTitle.split("")
@@ -756,13 +754,13 @@ export const ChatPage = ({
   ])
 
   // Background title update for new chats
+  console.log(chatTitle)
   useEffect(() => {
     const shouldUpdateTitle =
       chatId &&
-      chatTitle &&
-      chatTitle.startsWith("Chat ") &&
+      !chatTitle &&
       !isStreaming &&
-      messages.length >= 2 && // At least user + assistant message
+      messages.length === 2 && // At least user + assistant message
       messages[0]?.messageRole === "user"
 
     if (shouldUpdateTitle && !isSharedChat) {
@@ -799,7 +797,6 @@ export const ChatPage = ({
                 },
               )
             }
-          } else {
           }
         })
         .catch((error: Error) => {

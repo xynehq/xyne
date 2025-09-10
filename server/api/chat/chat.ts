@@ -4217,15 +4217,6 @@ export const MessageApi = async (c: Context) => {
     let title = ""
     let attachmentStorageError: Error | null = null
     if (!chatId) {
-      loggerWithChild({ email: email }).info(
-        `MessageApi before creating chat with dummy title.. ${chatId}`,
-      )
-      // Use dummy title initially for fast chat creation
-      title = `Chat ${new Date().toLocaleString()}`
-
-      loggerWithChild({ email: email }).info(
-        `MessageApi before creating first message..`,
-      )
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
