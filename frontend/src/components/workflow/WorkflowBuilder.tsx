@@ -179,20 +179,23 @@ const StepNode: React.FC<NodeProps> = ({
     // Get config from step or tool
     const aiConfig =
       (step as any).config || (hasAIAgentTool && tools?.[0]?.val) || {}
-    const isConfigured = aiConfig?.name && aiConfig?.name.trim() !== ""
+    const isConfigured = 
+      (aiConfig?.name && aiConfig?.name.trim() !== "") || 
+      step.name || 
+      step.description ||
+      (hasAIAgentTool && tools?.[0])
 
     if (!isConfigured) {
       // Show only icon when not configured
       return (
         <>
           <div
-            className="relative cursor-pointer hover:shadow-lg transition-shadow"
+            className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
             style={{
               width: "80px",
               height: "80px",
               borderRadius: "12px",
               border: "2px solid #181B1D",
-              background: "#FFF",
               boxShadow: "0 0 0 2px #E2E2E2",
               display: "flex",
               alignItems: "center",
@@ -201,7 +204,7 @@ const StepNode: React.FC<NodeProps> = ({
           >
             {/* Blue bot icon with background */}
             <div
-              className="flex justify-center items-center flex-shrink-0"
+              className="flex justify-center items-center flex-shrink-0 bg-blue-50 dark:bg-blue-900/50"
               style={{
                 display: "flex",
                 width: "32px",
@@ -210,7 +213,6 @@ const StepNode: React.FC<NodeProps> = ({
                 justifyContent: "center",
                 alignItems: "center",
                 borderRadius: "6px",
-                background: "#EBF4FF",
               }}
             >
               <Bot width={20} height={20} color="#2563EB" />
@@ -286,13 +288,12 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
+          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
           style={{
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
             border: "2px solid #181B1D",
-            background: "#FFF",
             boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
@@ -300,7 +301,7 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
             {/* Blue bot icon with background */}
             <div
-              className="flex justify-center items-center flex-shrink-0"
+              className="flex justify-center items-center flex-shrink-0 bg-blue-50 dark:bg-blue-900/50"
               style={{
                 display: "flex",
                 width: "24px",
@@ -309,14 +310,13 @@ const StepNode: React.FC<NodeProps> = ({
                 justifyContent: "center",
                 alignItems: "center",
                 borderRadius: "4.8px",
-                background: "#EBF4FF",
               }}
             >
               <Bot width={16} height={16} color="#2563EB" />
             </div>
 
             <h3
-              className="text-gray-800 truncate flex-1"
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
               style={{
                 fontFamily: "Inter",
                 fontSize: "14px",
@@ -324,7 +324,6 @@ const StepNode: React.FC<NodeProps> = ({
                 fontWeight: "600",
                 lineHeight: "normal",
                 letterSpacing: "-0.14px",
-                color: "#3B4145",
               }}
             >
               {step.name || aiConfig?.name || "AI Agent"}
@@ -332,11 +331,11 @@ const StepNode: React.FC<NodeProps> = ({
           </div>
 
           {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
 
           {/* Description text */}
           <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
               {step.description ||
                 aiConfig?.description ||
                 `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`}
@@ -362,7 +361,7 @@ const StepNode: React.FC<NodeProps> = ({
 
           {/* Bottom center connection point - visual only */}
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
           </div>
 
           {/* Add Next Step Button */}
@@ -428,13 +427,12 @@ const StepNode: React.FC<NodeProps> = ({
       return (
         <>
           <div
-            className="relative cursor-pointer hover:shadow-lg transition-shadow"
+            className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
             style={{
               width: "80px",
               height: "80px",
               borderRadius: "12px",
               border: "2px solid #181B1D",
-              background: "#FFF",
               boxShadow: "0 0 0 2px #E2E2E2",
               display: "flex",
               alignItems: "center",
@@ -443,7 +441,7 @@ const StepNode: React.FC<NodeProps> = ({
           >
             {/* Purple mail icon with background */}
             <div
-              className="flex justify-center items-center flex-shrink-0"
+              className="flex justify-center items-center flex-shrink-0 bg-purple-50 dark:bg-purple-900/50"
               style={{
                 display: "flex",
                 width: "32px",
@@ -452,7 +450,6 @@ const StepNode: React.FC<NodeProps> = ({
                 justifyContent: "center",
                 alignItems: "center",
                 borderRadius: "6px",
-                background: "#F3E8FF",
               }}
             >
               <Mail width={20} height={20} color="#7C3AED" />
@@ -525,13 +522,12 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
+          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
           style={{
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
             border: "2px solid #181B1D",
-            background: "#FFF",
             boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
@@ -539,7 +535,7 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
             {/* Purple mail icon with background */}
             <div
-              className="flex justify-center items-center flex-shrink-0"
+              className="flex justify-center items-center flex-shrink-0 bg-purple-50 dark:bg-purple-900/50"
               style={{
                 display: "flex",
                 width: "24px",
@@ -548,14 +544,13 @@ const StepNode: React.FC<NodeProps> = ({
                 justifyContent: "center",
                 alignItems: "center",
                 borderRadius: "4.8px",
-                background: "#F3E8FF",
               }}
             >
               <Mail width={16} height={16} color="#7C3AED" />
             </div>
 
             <h3
-              className="text-gray-800 truncate flex-1"
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
               style={{
                 fontFamily: "Inter",
                 fontSize: "14px",
@@ -563,7 +558,6 @@ const StepNode: React.FC<NodeProps> = ({
                 fontWeight: "600",
                 lineHeight: "normal",
                 letterSpacing: "-0.14px",
-                color: "#3B4145",
               }}
             >
               {step.name || "Email"}
@@ -571,11 +565,11 @@ const StepNode: React.FC<NodeProps> = ({
           </div>
 
           {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
 
           {/* Description text */}
           <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
               {step.description ||
                 (emailAddresses && emailAddresses.length > 0
                   ? `Send emails to ${emailAddresses.join(", ")} via automated workflow.`
@@ -602,7 +596,7 @@ const StepNode: React.FC<NodeProps> = ({
 
           {/* Bottom center connection point - visual only */}
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
           </div>
 
           {/* Add Next Step Button */}
@@ -652,13 +646,12 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
+          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
           style={{
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
             border: "2px solid #181B1D",
-            background: "#FFF",
             boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
@@ -666,7 +659,7 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
             {/* Green document icon with background */}
             <div
-              className="flex justify-center items-center flex-shrink-0"
+              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
               style={{
                 display: "flex",
                 width: "24px",
@@ -675,14 +668,13 @@ const StepNode: React.FC<NodeProps> = ({
                 justifyContent: "center",
                 alignItems: "center",
                 borderRadius: "4.8px",
-                background: "#E8F9D1",
               }}
             >
               <FormDocumentIcon width={16} height={16} />
             </div>
 
             <h3
-              className="text-gray-800 truncate flex-1"
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
               style={{
                 fontFamily: "Inter",
                 fontSize: "14px",
@@ -690,7 +682,6 @@ const StepNode: React.FC<NodeProps> = ({
                 fontWeight: "600",
                 lineHeight: "normal",
                 letterSpacing: "-0.14px",
-                color: "#3B4145",
               }}
             >
               {step.name ||
@@ -701,11 +692,11 @@ const StepNode: React.FC<NodeProps> = ({
           </div>
 
           {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
 
           {/* Description text */}
           <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
               {(() => {
                 // If step has description, use it first
                 if (step.description) {
@@ -830,7 +821,7 @@ const StepNode: React.FC<NodeProps> = ({
 
           {/* Bottom center connection point - visual only */}
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
           </div>
 
           {/* Add Next Step Button */}
@@ -970,7 +961,7 @@ const StepNode: React.FC<NodeProps> = ({
               window.dispatchEvent(event)
             }}
           >
-            <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
+            <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
             <div
               className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors"
               style={{
@@ -2717,7 +2708,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           },
         }
 
-        // Update the AI Agent node with the configuration and add hasNext flag
+        // Update the AI Agent node with the configuration
         setNodes((nds) =>
           nds.map((node) =>
             node.id === selectedAgentNodeId
@@ -2741,7 +2732,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       },
                     },
                     tools: [aiAgentTool], // Add the tool object
-                    hasNext: true, // Add the + icon after saving
+                    // Show + icon only if this node is the last in the chain (no outgoing edges)
+                    hasNext: !edges.some(edge => edge.source === selectedAgentNodeId),
                   },
                 }
               : node,
@@ -2791,7 +2783,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           },
         }
 
-        // Update the Email node with the configuration and add hasNext flag
+        // Update the Email node with the configuration
         setNodes((nds) =>
           nds.map((node) =>
             node.id === selectedEmailNodeId
@@ -2815,7 +2807,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       },
                     },
                     tools: [emailTool], // Add the tool object
-                    hasNext: true, // Add the + icon after saving
+                    // Show + icon only if this node is the last in the chain (no outgoing edges)
+                    hasNext: !edges.some(edge => edge.source === selectedEmailNodeId),
                   },
                 }
               : node,
@@ -2871,7 +2864,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       config: formConfig,
                     },
                     tools: [formTool], // Add the tool object
-                    hasNext: true, // Enable + icon after configuration
+                    // Show + icon only if this node is the last in the chain (no outgoing edges)
+                    hasNext: !edges.some(edge => edge.source === selectedFormNodeId),
                   },
                 }
               : node,
@@ -2887,7 +2881,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         zoomTo(1)
       }, 50)
     },
-    [selectedFormNodeId, setNodes, zoomTo],
+    [selectedFormNodeId, setNodes, zoomTo, edges],
   )
 
   const handleResultClick = useCallback((result: any) => {
