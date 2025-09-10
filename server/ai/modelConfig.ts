@@ -1,14 +1,6 @@
 import { Models, AIProviders, ModelDisplayNames } from "@/ai/types"
 import config from "@/config"
-
-export interface ModelConfiguration {
-  actualName: string // The actual model identifier used in API calls
-  labelName: string // Display name for frontend
-  provider: AIProviders // Which provider this model belongs to
-  reasoning: boolean // Whether the model supports reasoning capabilities
-  websearch: boolean // Whether the model supports web search capabilities
-  deepResearch: boolean // Whether the model supports deep research capabilities
-}
+import type { ModelConfiguration } from "@/shared/types"
 
 export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   // AWS Bedrock - Claude Models
@@ -516,7 +508,7 @@ export const getAvailableModels = (config: {
       .filter((model) => model.provider === AIProviders.AwsBedrock)
       .forEach((model) => {
         availableModels.push({
-          actualName: model.actualName,
+          actualName: model.actualName ?? "",
           labelName: model.labelName,
           provider: "AWS Bedrock",
           reasoning: model.reasoning,
@@ -530,7 +522,7 @@ export const getAvailableModels = (config: {
       .filter((model) => model.provider === AIProviders.OpenAI)
       .forEach((model) => {
         availableModels.push({
-          actualName: model.actualName,
+          actualName: model.actualName ?? "",
           labelName: model.labelName,
           provider: "OpenAI",
           reasoning: model.reasoning,
@@ -574,7 +566,7 @@ export const getAvailableModels = (config: {
       .filter((model) => model.provider === AIProviders.GoogleAI)
       .forEach((model) => {
         availableModels.push({
-          actualName: model.actualName,
+          actualName: model.actualName ?? "",
           labelName: model.labelName,
           provider: "Google AI",
           reasoning: model.reasoning,
@@ -588,7 +580,7 @@ export const getAvailableModels = (config: {
       .filter((model) => model.provider === AIProviders.VertexAI)
       .forEach((model) => {
         availableModels.push({
-          actualName: model.actualName,
+          actualName: model.actualName ?? "",
           labelName: model.labelName,
           provider: "Vertex AI",
           reasoning: model.reasoning,

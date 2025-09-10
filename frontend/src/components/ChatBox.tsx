@@ -48,6 +48,7 @@ import {
   DataSourceEntity,
   AttachmentMetadata,
   FileType,
+  ModelConfiguration,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -572,14 +573,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [isUploadingFiles, setIsUploadingFiles] = useState(false)
 
     // Model selection state
-    const [availableModels, setAvailableModels] = useState<
-      Array<{
-        labelName: string
-        reasoning: boolean
-        websearch: boolean
-        deepResearch: boolean
-      }>
-    >([])
+    const [availableModels, setAvailableModels] = useState<ModelConfiguration[]>([])
 
     // State for mode-specific model selections
     const [reasoningModeModel, setReasoningModeModel] = useState<string>(() => {
@@ -665,12 +659,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // Check if a model is disabled in current mode
     const isModelDisabled = useCallback(
-      (model: {
-        labelName: string
-        reasoning: boolean
-        websearch: boolean
-        deepResearch: boolean
-      }) => {
+      (model: ModelConfiguration) => {
         if (selectedCapability === "websearch") {
           return model.labelName !== "Gemini 2.5 Flash"
         } else if (selectedCapability === "deepResearch") {
@@ -752,7 +741,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           } else if (availableModels.length > 0) {
             const defaultModel =
               availableModels.find(
-                (m: any) => m.labelName === "Claude Sonnet 4",
+                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
               ) || availableModels[0]
             setSelectedModel(defaultModel.labelName)
           }
@@ -768,7 +757,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           if (
             storedReasoningModel &&
             availableModels.find(
-              (m: any) => m.labelName === storedReasoningModel,
+              (m: ModelConfiguration) => m.labelName === storedReasoningModel,
             )
           ) {
             setSelectedModel(storedReasoningModel)
@@ -776,14 +765,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             // Default to Claude Sonnet 4 or first available model
             const defaultModel =
               availableModels.find(
-                (m: any) => m.labelName === "Claude Sonnet 4",
+                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
               ) || availableModels[0]
             setSelectedModel(defaultModel.labelName)
           }
         } else if (newCapability === "websearch") {
           // Auto-select Gemini 2.5 Flash for web search
           const geminiModel = availableModels.find(
-            (m: any) => m.labelName === "Gemini 2.5 Flash",
+            (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
           )
           if (geminiModel) {
             setSelectedModel(geminiModel.labelName)
@@ -811,13 +800,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               // Default to Claude Sonnet 4 or first available
               const defaultModel =
                 data.models.find(
-                  (m: any) => m.labelName === "Claude Sonnet 4",
+                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
                 ) || data.models[0]
               setSelectedModel(defaultModel.labelName)
               setReasoningModeModel(defaultModel.labelName)
             } else if (selectedCapability === "websearch") {
               const geminiModel = data.models.find(
-                (m: any) => m.labelName === "Gemini 2.5 Flash",
+                (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
               )
               if (geminiModel) {
                 setSelectedModel(geminiModel.labelName)
@@ -828,7 +817,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               // No capability selected - default to Claude Sonnet 4 or first available
               const defaultModel =
                 data.models.find(
-                  (m: any) => m.labelName === "Claude Sonnet 4",
+                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
                 ) || data.models[0]
               setSelectedModel(defaultModel.labelName)
               setReasoningModeModel(defaultModel.labelName)
