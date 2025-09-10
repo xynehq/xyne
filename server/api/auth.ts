@@ -86,7 +86,7 @@ export const GetUserApiKeys = async (c: Context) => {
       .select({
         id: apiKeys.id,
         name: apiKeys.name,
-        key: apiKeys.key,
+        keyPrefix: apiKeys.keyPrefix,
         config: apiKeys.config,
         createdAt: apiKeys.createdAt,
       })
@@ -101,10 +101,11 @@ export const GetUserApiKeys = async (c: Context) => {
 
     const formattedKeys = userApiKeys.map((key) => {
       const config = (key.config as any) || {}
+      const displayKey = `${key?.keyPrefix}${"*".repeat(28)}`
       return {
         id: key.id.toString(),
         name: key.name,
-        key: key.key,
+        key: displayKey,
         scopes: config.scopes || [],
         agents: config.agents || [],
         createdAt: key.createdAt.toISOString(),

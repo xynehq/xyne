@@ -380,6 +380,11 @@ const ApiKeyComponent = ({
   }
 
   const maskApiKey = (key: string) => {
+    // If the key is already masked (contains asterisks), return as is
+    if (key.includes("*")) {
+      return key
+    }
+    // Otherwise, mask it (fallback for newly created keys)
     const visiblePart = key.substring(0, 4)
     return `${visiblePart}${"*".repeat(28)}`
   }

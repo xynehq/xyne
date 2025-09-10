@@ -202,8 +202,10 @@ export async function createUserApiKey({
 }> {
   try {
     // Generate random MD5 hash
-
     const md5Hash = crypto.randomBytes(16).toString("hex")
+
+    // Extract first 4 characters for display
+    const keyPrefix = md5Hash.substring(0, 4)
 
     // Store encrypted API key in database
     const [inserted] = await db
@@ -213,6 +215,7 @@ export async function createUserApiKey({
         name,
         workspaceId,
         key: md5Hash,
+        keyPrefix: keyPrefix,
         config: scope,
       })
       .returning()
@@ -225,6 +228,7 @@ export async function createUserApiKey({
         id: inserted.id.toString(),
         name: inserted.name,
         key: md5Hash,
+        keyPrefix: keyPrefix,
         scopes: config.scopes || [],
         agents: config.agents || [],
         createdAt: inserted.createdAt.toISOString(),

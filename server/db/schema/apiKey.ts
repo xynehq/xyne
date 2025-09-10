@@ -23,7 +23,7 @@ export const apiKeys = pgTable("api_keys", {
     .references(() => workspaces.externalId, { onDelete: "cascade" })
     .notNull(),
   key: oneWayEncryption(apiKeyEncryption)("key").notNull(), // encrypted key
-
+  keyPrefix: text("key_prefix").notNull(), // first 4 characters for display
   createdAt: timestamp("created_at").defaultNow().notNull(),
   config: jsonb("config").notNull(),
 })
