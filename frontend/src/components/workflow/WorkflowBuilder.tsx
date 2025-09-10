@@ -191,12 +191,11 @@ const StepNode: React.FC<NodeProps> = ({
       return (
         <>
           <div
-            className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
+            className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
             style={{
               width: "80px",
               height: "80px",
               borderRadius: "12px",
-              border: "2px solid #181B1D",
               boxShadow: "0 0 0 2px #E2E2E2",
               display: "flex",
               alignItems: "center",
@@ -289,12 +288,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
+          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
           style={{
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: "2px solid #181B1D",
             boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
@@ -428,12 +426,11 @@ const StepNode: React.FC<NodeProps> = ({
       return (
         <>
           <div
-            className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
+            className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
             style={{
               width: "80px",
               height: "80px",
               borderRadius: "12px",
-              border: "2px solid #181B1D",
               boxShadow: "0 0 0 2px #E2E2E2",
               display: "flex",
               alignItems: "center",
@@ -523,12 +520,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
+          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
           style={{
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: "2px solid #181B1D",
             boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
@@ -647,12 +643,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
+          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
           style={{
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: "2px solid #181B1D",
             boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
