@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/Sidebar"
 import { useRouterState } from "@tanstack/react-router"
 import WorkflowBuilder from "@/components/workflow/WorkflowBuilder"
+import ExecutedWorkflowRenderer from "@/components/workflow/executedWorkflowRenderer"
 import { WorkflowCard } from "@/components/workflow/WorkflowCard"
 import { TemplateSelectionModal } from "@/components/workflow/TemplateSelectionModal"
 import { WorkflowExecutionsTable } from "@/components/workflow/WorkflowExecutionsTable"
@@ -137,6 +138,7 @@ function WorkflowComponent() {
   const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null)
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false)
   const [isEditableMode, setIsEditableMode] = useState(false)
+  const [isExecutionMode, setIsExecutionMode] = useState(false)
 
 
   const fetchWorkflows = async () => {
@@ -409,6 +411,7 @@ function WorkflowComponent() {
       
       setSelectedTemplate(template)
       setIsEditableMode(editable)
+      setIsExecutionMode(false)
       setViewMode("builder")
     } catch (error) {
       console.error('❌ Failed to fetch template:', error)
@@ -482,6 +485,7 @@ function WorkflowComponent() {
         )) {
           setSelectedTemplate(executionTemplate)
           setIsEditableMode(false) // Always read-only for executions
+          setIsExecutionMode(true) // Mark as execution mode
           setViewMode("builder")
           console.log('✅ Successfully set execution template for builder')
         } else {
@@ -566,6 +570,7 @@ function WorkflowComponent() {
             console.log('🏗️ Final workflow structure:', workflowFromExecution)
             setSelectedTemplate(workflowFromExecution)
             setIsEditableMode(false)
+            setIsExecutionMode(true)
             setViewMode("builder")
             console.log('✅ Successfully created and set workflow from execution data')
           } else {
@@ -951,17 +956,33 @@ function WorkflowComponent() {
         ) : (
           <div className="h-full flex flex-col">
             <div className="flex-1 overflow-hidden">
-              <WorkflowBuilder 
-                user={user} 
-                onBackToWorkflows={() => {
-                  setViewMode("list")
-                  setSelectedTemplate(null)
-                  setIsEditableMode(false)
-                }}
-                selectedTemplate={selectedTemplate}
-                isLoadingTemplate={isLoadingTemplate}
-                isEditableMode={isEditableMode}
-              />
+              {isExecutionMode ? (
+                <ExecutedWorkflowRenderer 
+                  user={user} 
+                  onBackToWorkflows={() => {
+                    setViewMode("list")
+                    setSelectedTemplate(null)
+                    setIsEditableMode(false)
+                    setIsExecutionMode(false)
+                  }}
+                  selectedTemplate={selectedTemplate}
+                  isLoadingTemplate={isLoadingTemplate}
+                  isEditableMode={isEditableMode}
+                />
+              ) : (
+                <WorkflowBuilder 
+                  user={user} 
+                  onBackToWorkflows={() => {
+                    setViewMode("list")
+                    setSelectedTemplate(null)
+                    setIsEditableMode(false)
+                    setIsExecutionMode(false)
+                  }}
+                  selectedTemplate={selectedTemplate}
+                  isLoadingTemplate={isLoadingTemplate}
+                  isEditableMode={isEditableMode}
+                />
+              )}
             </div>
           </div>
         )}
