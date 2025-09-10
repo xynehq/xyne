@@ -2128,6 +2128,46 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       fetchResults(currentSearchTerm, nextPage, true)
     }
 
+    const handleAtMentionClick = () => {
+      const input = inputRef.current
+      if (!input) return
+
+      const textContentBeforeAt = input.textContent || ""
+
+      const textToAppend =
+        textContentBeforeAt.length === 0 ||
+        textContentBeforeAt.endsWith(" ") ||
+        textContentBeforeAt.endsWith("\n") ||
+        textContentBeforeAt.endsWith("\u00A0")
+          ? "@"
+          : " @"
+
+      const atTextNode = document.createTextNode(textToAppend)
+
+      input.appendChild(atTextNode)
+
+      const newTextContent = input.textContent || ""
+      setQuery(newTextContent)
+      setIsPlaceholderVisible(newTextContent.length === 0)
+
+      const newAtSymbolIndex =
+        textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
+      setCaretPosition(input, newTextContent.length)
+
+      setActiveAtMentionIndex(newAtSymbolIndex)
+      setReferenceSearchTerm("")
+      setShowReferenceBox(true)
+      updateReferenceBoxPosition(newAtSymbolIndex)
+      setSearchMode("citations")
+      setGlobalResults([])
+      setGlobalError(null)
+      setPage(1)
+      setTotalCount(0)
+      setSelectedRefIndex(-1)
+
+      input.focus()
+    }
+
     useEffect(() => {
       if (
         showReferenceBox &&
@@ -2915,46 +2955,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   <AtSign
                     size={16}
                     className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-                    onClick={() => {
-                      const input = inputRef.current
-                      if (!input) return
-
-                      const textContentBeforeAt = input.textContent || ""
-
-                      const textToAppend =
-                        textContentBeforeAt.length === 0 ||
-                        textContentBeforeAt.endsWith(" ") ||
-                        textContentBeforeAt.endsWith("\n") ||
-                        textContentBeforeAt.endsWith("\u00A0")
-                          ? "@"
-                          : " @"
-
-                      const atTextNode = document.createTextNode(textToAppend)
-
-                      input.appendChild(atTextNode)
-
-                      const newTextContent = input.textContent || ""
-                      setQuery(newTextContent)
-                      setIsPlaceholderVisible(newTextContent.length === 0)
-
-                      const newAtSymbolIndex =
-                        textContentBeforeAt.length +
-                        (textToAppend === " @" ? 1 : 0)
-                      setCaretPosition(input, newTextContent.length)
-
-                      setActiveAtMentionIndex(newAtSymbolIndex)
-                      setReferenceSearchTerm("")
-                      setShowReferenceBox(true)
-                      updateReferenceBoxPosition(newAtSymbolIndex)
-                      setSearchMode("citations")
-                      setGlobalResults([])
-                      setGlobalError(null)
-                      setPage(1)
-                      setTotalCount(0)
-                      setSelectedRefIndex(-1)
-
-                      input.focus()
-                    }}
+                    onClick={handleAtMentionClick}
                   />
                 </TooltipWrapper>
 
@@ -2962,21 +2963,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
                   {/* Slider Background */}
                   <div
-                    className="absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out"
-                    style={{
-                      width: "40px", // Same as button width
-                      left:
-                        selectedCapability === "reasoning"
-                          ? "4px"
-                          : // Centered on first button
-                            selectedCapability === "websearch"
-                            ? "48px"
-                            : // Centered on second button
-                              selectedCapability === "deepResearch"
-                              ? "92px"
-                              : "4px", // Centered on third button
-                      opacity: selectedCapability ? 1 : 0,
-                    }}
+                    className={`absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out w-10 ${
+                      selectedCapability === "reasoning"
+                        ? "left-1"
+                        : selectedCapability === "websearch"
+                          ? "left-12"
+                          : selectedCapability === "deepResearch"
+                            ? "left-[5.75rem]"
+                            : "left-1"
+                    } ${selectedCapability ? "opacity-100" : "opacity-0"}`}
                   />
 
                   {/* Always show all three capability buttons */}
