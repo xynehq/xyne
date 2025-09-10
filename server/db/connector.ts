@@ -30,6 +30,7 @@ import { IsGoogleApp, IsMicrosoftApp } from "@/utils"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import { getErrorMessage } from "@/utils"
 import { syncJobs, syncHistory } from "@/db/schema"
+import { scopes } from "@/integrations/microsoft/config"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -261,7 +262,7 @@ export const getOAuthConnectorWithCredentials = async (
       const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
       const refreshedTokens = await microsoft.refreshAccessToken(
         tokens.refresh_token,
-        ["https://graph.microsoft.com/.default", "offline_access"]
+        scopes
       )
       // update the token values
       tokens.access_token = refreshedTokens.accessToken()
