@@ -59,82 +59,6 @@ export type ExecuteAgentResponse =
   | NonStreamingExecuteAgentResponse
   | ExecuteAgentErrorResponse
 
-async function* createStreamingWithDBSave(
-  originalIterator: AsyncIterableIterator<ConverseResponse>,
-  dbSaveParams: {
-    chatId: number
-    userId: number
-    chatExternalId: string
-    workspaceExternalId: string
-    email: string
-    modelId: string
-  }
-): AsyncIterableIterator<ConverseResponse> {
-
-
-  Logger.info("🌊 createStreamingWithDBSave: Starting...")
-  let answer = ""
-  let costArr: number[] = []
-  let tokenArr: { inputTokens: number; outputTokens: number }[] = []
-  let wasStreamClosedPrematurely = false
-
-  try {
-    Logger.info("🌊 createStreamingWithDBSave: About to start for-await loop...")
-
-    for await (const chunk of originalIterator) {
-      if (chunk.text) {
-        answer += chunk.text  // Accumulate full response
-        yield { text: chunk.text }  // Forward to client
-      }
-      Logger.info("🌊 createStreamingWithDBSave: Forwarded chunk to client:", chunk.text)
-
-      if (chunk.cost) {
-        costArr.push(chunk.cost)  // Accumulate costs
-        yield { cost: chunk.cost }
-      }
-
-      if (chunk.metadata?.usage) {
-        tokenArr.push({  // Accumulate token usage
-          inputTokens: chunk.metadata.usage.inputTokens,
-          outputTokens: chunk.metadata.usage.outputTokens,
-        })
-        yield { metadata: chunk.metadata }
-      }
-    }
-
-    Logger.info("🌊 createStreamingWithDBSave: Iterator completed, saving to DB...")
-
-    // Save to DB after stream completes (same pattern as AgentMessageApi)
-    if (answer || wasStreamClosedPrematurely) {
-      const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
-      const totalTokens = tokenArr.reduce(
-        (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
-        0,
-      )
-
-
-      await insertMessage(db, {
-        chatId: dbSaveParams.chatId,
-        userId: dbSaveParams.userId,
-        chatExternalId: dbSaveParams.chatExternalId,
-        workspaceExternalId: dbSaveParams.workspaceExternalId,
-        messageRole: MessageRole.Assistant,
-        email: dbSaveParams.email,
-        sources: [],
-        message: answer,  // Full accumulated text
-        modelId: dbSaveParams.modelId,
-        cost: totalCost.toString(),
-        tokensUsed: totalTokens,
-      })
-
-      Logger.info("Assistant message saved to database after streaming")
-    }
-
-  } catch (error) {
-    Logger.error(error, "Error during streaming or DB save")
-    throw error
-  }
-}
 
 /**
  * ExecuteAgentForWorkflow - Simplified agent execution function with attachment support
@@ -489,5 +413,82 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       success: false,
       error: getErrorMessage(error),
     }
+  }
+}
+ 
+async function* createStreamingWithDBSave(
+  originalIterator: AsyncIterableIterator<ConverseResponse>,
+  dbSaveParams: {
+    chatId: number
+    userId: number
+    chatExternalId: string
+    workspaceExternalId: string
+    email: string
+    modelId: string
+  }
+): AsyncIterableIterator<ConverseResponse> {
+
+
+  Logger.info("🌊 createStreamingWithDBSave: Starting...")
+  let answer = ""
+  let costArr: number[] = []
+  let tokenArr: { inputTokens: number; outputTokens: number }[] = []
+  let wasStreamClosedPrematurely = false
+
+  try {
+    Logger.info("🌊 createStreamingWithDBSave: About to start for-await loop...")
+
+    for await (const chunk of originalIterator) {
+      if (chunk.text) {
+        answer += chunk.text  // Accumulate full response
+        yield { text: chunk.text }  // Forward to client
+      }
+      Logger.info("🌊 createStreamingWithDBSave: Forwarded chunk to client:", chunk.text)
+
+      if (chunk.cost) {
+        costArr.push(chunk.cost)  // Accumulate costs
+        yield { cost: chunk.cost }
+      }
+
+      if (chunk.metadata?.usage) {
+        tokenArr.push({  // Accumulate token usage
+          inputTokens: chunk.metadata.usage.inputTokens,
+          outputTokens: chunk.metadata.usage.outputTokens,
+        })
+        yield { metadata: chunk.metadata }
+      }
+    }
+
+    Logger.info("🌊 createStreamingWithDBSave: Iterator completed, saving to DB...")
+
+    // Save to DB after stream completes (same pattern as AgentMessageApi)
+    if (answer || wasStreamClosedPrematurely) {
+      const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+      const totalTokens = tokenArr.reduce(
+        (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
+        0,
+      )
+
+
+      await insertMessage(db, {
+        chatId: dbSaveParams.chatId,
+        userId: dbSaveParams.userId,
+        chatExternalId: dbSaveParams.chatExternalId,
+        workspaceExternalId: dbSaveParams.workspaceExternalId,
+        messageRole: MessageRole.Assistant,
+        email: dbSaveParams.email,
+        sources: [],
+        message: answer,  // Full accumulated text
+        modelId: dbSaveParams.modelId,
+        cost: totalCost.toString(),
+        tokensUsed: totalTokens,
+      })
+
+      Logger.info("Assistant message saved to database after streaming")
+    }
+
+  } catch (error) {
+    Logger.error(error, "Error during streaming or DB save")
+    throw error
   }
 }
