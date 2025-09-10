@@ -806,7 +806,7 @@ const addErrMessageToMessage = async (
    * Used when: isAgentic && !enableWebSearch && !deepResearchEnabled
    * 
    * Features:
-   * - JAF (Just Another Framework) agent orchestration
+   * - JAF (Juspay Agentic Framework) agent orchestration
    * - MCP client integration for external tools
    * - Iterative search with context synthesis
    * - Advanced reasoning step tracking
