@@ -209,15 +209,6 @@ const ApiKeyComponent = ({
       return
     }
 
-    if (selectedAgents.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please select at least one agent",
-        variant: "destructive",
-      })
-      return
-    }
-
     setIsGenerating(true)
     try {
       const payload: CreateApiKeyPayload = {

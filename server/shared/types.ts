@@ -113,44 +113,39 @@ export enum OpenAIError {
 // File type categories enum for better type safety and consistency
 export enum FileType {
   IMAGE = "Image",
-  DOCUMENT = "Document", 
+  DOCUMENT = "Document",
   SPREADSHEET = "Spreadsheet",
   PRESENTATION = "Presentation",
   PDF = "PDF",
   TEXT = "Text",
-  FILE = "File" // Default fallback
+  FILE = "File", // Default fallback
 }
 
 // MIME type mappings for better organization
 export const MIME_TYPE_MAPPINGS = {
   [FileType.IMAGE]: [
     "image/jpeg",
-    "image/jpg", 
+    "image/jpg",
     "image/png",
     "image/gif",
-    "image/webp"
+    "image/webp",
   ],
   [FileType.DOCUMENT]: [
     "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ],
   [FileType.SPREADSHEET]: [
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/csv"
+    "text/csv",
   ],
   [FileType.PRESENTATION]: [
-    "application/vnd.ms-powerpoint", 
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ],
-  [FileType.PDF]: [
-    "application/pdf"
-  ],
-  [FileType.TEXT]: [
-    "text/plain",
-    "text/markdown"
-  ]
-} as const;
+  [FileType.PDF]: ["application/pdf"],
+  [FileType.TEXT]: ["text/plain", "text/markdown"],
+} as const
 
 // File extension mappings for fallback detection
 export const EXTENSION_MAPPINGS = {
@@ -159,8 +154,8 @@ export const EXTENSION_MAPPINGS = {
   [FileType.SPREADSHEET]: [".xls", ".xlsx", ".csv"],
   [FileType.PRESENTATION]: [".ppt", ".pptx"],
   [FileType.PDF]: [".pdf"],
-  [FileType.TEXT]: [".txt", ".md"]
-} as const;
+  [FileType.TEXT]: [".txt", ".md"],
+} as const
 export enum ApiKeyScopes {
   agent_chat = "CREATE_AGENT",
   create_agent = "AGENT_CHAT",
@@ -664,27 +659,10 @@ export const attachmentMetadataSchema = z.object({
 
 export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>
 
-export const ApiKeyPermissionsSchema = z
-  .object({
-    scopes: z.array(z.nativeEnum(ApiKeyScopes)),
-    agents: z.array(z.string()).optional(),
-  })
-  .refine(
-    (data) => {
-      // If scopes contains agent_chat, then agent_id array must be present and non-empty
-      const scopeSet = new Set(data.scopes)
-
-      // Agent-related validation
-      if (scopeSet.has(ApiKeyScopes.agent_chat) && !data.agents?.length) {
-        return false
-      }
-      return true
-    },
-    {
-      message: "agent_id array is required when scopes contains agent_chat",
-      path: ["agents"],
-    },
-  )
+export const ApiKeyPermissionsSchema = z.object({
+  scopes: z.array(z.nativeEnum(ApiKeyScopes)),
+  agents: z.array(z.string()).optional(),
+})
 
 export const CreateApiKeySchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -715,19 +693,26 @@ export const agentPromptPayloadSchema = z.preprocess(
       model: z.string().optional(),
       isPublic: z.boolean().optional(),
       isRagOn: z.boolean().optional(),
-      appIntegrations: z.record(z.object({
-        itemIds: z.array(z.string()),
-        selectedAll: z.boolean()
-      })).optional(),
-      docIds: z.array(z.object({
-        docId: z.string(),
-        name: z.string(),
-        app: z.string(),
-        entity: z.string()
-      })).optional(),
+      appIntegrations: z
+        .record(
+          z.object({
+            itemIds: z.array(z.string()),
+            selectedAll: z.boolean(),
+          }),
+        )
+        .optional(),
+      docIds: z
+        .array(
+          z.object({
+            docId: z.string(),
+            name: z.string(),
+            app: z.string(),
+            entity: z.string(),
+          }),
+        )
+        .optional(),
       userEmails: z.array(z.string()).optional(),
       allowWebSearch: z.boolean().optional(),
-      
     })
     .optional(),
 )
