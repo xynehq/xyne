@@ -28,6 +28,10 @@ import {
   X,
   File,
   Loader2,
+  FileText,
+  FileSpreadsheet,
+  Presentation,
+  FileImage,
   Globe,
 } from "lucide-react"
 import { siOpenai, siClaude, siGooglegemini } from "simple-icons"
@@ -43,6 +47,8 @@ import {
   UserRole,
   DataSourceEntity,
   AttachmentMetadata,
+  FileType,
+  ModelConfiguration,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -74,6 +80,7 @@ import {
   createToastNotifier,
   createImagePreview,
   cleanupPreviewUrls,
+  getFileType,
 } from "@/utils/fileUtils"
 import { authFetch } from "@/utils/authFetch"
 
@@ -84,6 +91,61 @@ interface SelectedFile {
   uploading?: boolean
   uploadError?: string
   preview?: string // URL for image preview
+  fileType?: FileType
+}
+
+export const getFileIcon = (fileType: FileType | string | undefined) => {
+  switch (fileType) {
+    case FileType.IMAGE:
+      return (
+        <FileImage
+          size={24}
+          className="text-blue-500 dark:text-blue-400 flex-shrink-0"
+        />
+      )
+    case FileType.DOCUMENT:
+      return (
+        <FileText
+          size={24}
+          className="text-blue-600 dark:text-blue-400 flex-shrink-0"
+        />
+      )
+    case FileType.SPREADSHEET:
+      return (
+        <FileSpreadsheet
+          size={24}
+          className="text-green-600 dark:text-green-400 flex-shrink-0"
+        />
+      )
+    case FileType.PRESENTATION:
+      return (
+        <Presentation
+          size={24}
+          className="text-orange-600 dark:text-orange-400 flex-shrink-0"
+        />
+      )
+    case FileType.PDF:
+      return (
+        <FileText
+          size={24}
+          className="text-red-600 dark:text-red-400 flex-shrink-0"
+        />
+      )
+    case FileType.TEXT:
+      return (
+        <FileText
+          size={24}
+          className="text-gray-600 dark:text-gray-400 flex-shrink-0"
+        />
+      )
+    default:
+      return (
+        <File
+          size={24}
+          className="text-gray-500 dark:text-gray-400 flex-shrink-0"
+        />
+      )
+  }
 }
 
 // Add attachment limit constant
@@ -150,6 +212,7 @@ interface ChatBoxProps {
   allCitations: Map<string, Citation>
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
+  hideButtons?: boolean // Add prop to hide mark step as done section
 }
 
 const availableSources: SourceItem[] = [
@@ -257,6 +320,22 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
+// Reusable tooltip wrapper component
+const TooltipWrapper: React.FC<{
+  children: React.ReactElement
+  content: string
+  delayDuration?: number
+}> = ({ children, content, delayDuration = 500 }) => (
+  <TooltipProvider delayDuration={delayDuration}>
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>
+        <p>{content}</p>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+)
+
 export interface ChatBoxRef {
   sendMessage: (message: string) => void
   getCurrentModelConfig: () => string | null
@@ -279,6 +358,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       setIsAgenticMode,
       isAgenticMode = false,
       overrideIsRagOn,
+      hideButtons = false, // Destructure new prop with default value
     } = props
     // Interface for fetched tools
     interface FetchedTool {
@@ -443,15 +523,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [initialLoadComplete, setInitialLoadComplete] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
     const [isUploadingFiles, setIsUploadingFiles] = useState(false)
-    
+
     // Model selection state
-    const [availableModels, setAvailableModels] = useState<Array<{
-      labelName: string
-      reasoning: boolean
-      websearch: boolean
-      deepResearch: boolean
-    }>>([])
-    
+    const [availableModels, setAvailableModels] = useState<
+      ModelConfiguration[]
+    >([])
+
     // State for mode-specific model selections
     const [reasoningModeModel, setReasoningModeModel] = useState<string>(() => {
       try {
@@ -460,16 +537,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         return ""
       }
     })
-    
+
     const [selectedModel, setSelectedModel] = useState<string>(() => {
       // Initialize based on current mode and localStorage
       try {
-        const savedCapability = localStorage.getItem("selectedCapability") as 'reasoning' | 'websearch' | 'deepResearch' | null
-        if (savedCapability === 'reasoning') {
+        const savedCapability = localStorage.getItem("selectedCapability") as
+          | "reasoning"
+          | "websearch"
+          | "deepResearch"
+          | null
+        if (savedCapability === "reasoning") {
           return localStorage.getItem("reasoningModeModel") || ""
-        } else if (savedCapability === 'websearch') {
+        } else if (savedCapability === "websearch") {
           return "Gemini 2.5 Flash" // Auto-select for web search
-        } else if (savedCapability === 'deepResearch') {
+        } else if (savedCapability === "deepResearch") {
           return "GPT O3 Research" // Auto-select for deep research
         }
         return localStorage.getItem("reasoningModeModel") || ""
@@ -477,20 +558,21 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         return ""
       }
     })
-    
+
     const [isModelsLoading, setIsModelsLoading] = useState(false)
-    
+
     // Animation state for model text changes
     const [isModelTextAnimating, setIsModelTextAnimating] = useState(false)
 
-
     // Selected model capabilities state - now single selection
-    const [selectedCapability, setSelectedCapability] = useState<'reasoning' | 'websearch' | 'deepResearch' | null>(() => {
+    const [selectedCapability, setSelectedCapability] = useState<
+      "reasoning" | "websearch" | "deepResearch" | null
+    >(() => {
       // Initialize from localStorage if available, default to null (no selection)
       try {
         const saved = localStorage.getItem("selectedCapability")
         if (saved) {
-          const capability = saved as 'reasoning' | 'websearch' | 'deepResearch'
+          const capability = saved as "reasoning" | "websearch" | "deepResearch"
           return capability
         }
         return null // Default to no selection
@@ -505,7 +587,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       labelName: "GPT O3 Research",
       reasoning: false,
       websearch: false,
-      deepResearch: true
+      deepResearch: true,
+      description: "Advanced research model with deep analysis capabilities.",
     }
 
     // Get all models including O3 for deep research mode
@@ -515,12 +598,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // Get the currently selected model's data
     const selectedModelData = useMemo(() => {
-      return allModelsWithO3.find(m => m.labelName === selectedModel)
+      return allModelsWithO3.find((m) => m.labelName === selectedModel)
     }, [allModelsWithO3, selectedModel])
 
     // Get models available for current mode
     const availableModelsForMode = useMemo(() => {
-      if (selectedCapability === 'deepResearch') {
+      if (selectedCapability === "deepResearch") {
         // Show all models including O3, but only O3 is enabled
         return allModelsWithO3
       } else {
@@ -530,28 +613,32 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [selectedCapability, allModelsWithO3])
 
     // Check if a model is disabled in current mode
-    const isModelDisabled = useCallback((model: { labelName: string; reasoning: boolean; websearch: boolean; deepResearch: boolean }) => {
-      if (selectedCapability === 'websearch') {
-        return model.labelName !== 'Gemini 2.5 Flash'
-      } else if (selectedCapability === 'deepResearch') {
-        return model.labelName !== 'GPT O3 Research'
-      } else if (selectedCapability === 'reasoning') {
-        // Reasoning mode: disable O3 Research
-        return model.labelName === 'GPT O3 Research'
-      } else {
-        // No capability selected: disable O3 Research only
-        return model.labelName === 'GPT O3 Research'
-      }
-    }, [selectedCapability])
+    const isModelDisabled = useCallback(
+      (model: ModelConfiguration) => {
+        if (selectedCapability === "websearch") {
+          return model.labelName !== "Gemini 2.5 Flash"
+        } else if (selectedCapability === "deepResearch") {
+          return model.labelName !== "GPT O3 Research"
+        } else if (selectedCapability === "reasoning") {
+          // Reasoning mode: disable O3 Research
+          return model.labelName === "GPT O3 Research"
+        } else {
+          // No capability selected: disable O3 Research only
+          return model.labelName === "GPT O3 Research"
+        }
+      },
+      [selectedCapability],
+    )
 
     // Filter models based on selected filters
     const filteredModels = useMemo(() => {
       return availableModelsForMode
     }, [availableModelsForMode])
-    
+
     const showAdvancedOptions =
-      overrideIsRagOn ??
-      (!selectedAgent || (selectedAgent && selectedAgent.isRagOn))
+      !hideButtons &&
+      (overrideIsRagOn ??
+        (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
 
     // localStorage keys for tool selection persistence
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -559,12 +646,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // Effect to persist reasoning mode model selection
     useEffect(() => {
-      if (selectedCapability === 'reasoning' && selectedModel) {
+      if (selectedCapability === "reasoning" && selectedModel) {
         try {
           localStorage.setItem("reasoningModeModel", selectedModel)
           setReasoningModeModel(selectedModel)
         } catch (error) {
-          console.warn("Failed to save reasoning mode model to localStorage:", error)
+          console.warn(
+            "Failed to save reasoning mode model to localStorage:",
+            error,
+          )
         }
       }
     }, [selectedModel, selectedCapability])
@@ -589,49 +679,66 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         const timer = setTimeout(() => {
           setIsModelTextAnimating(false)
         }, 300) // Match animation duration
-        
+
         return () => clearTimeout(timer)
       }
     }, [selectedModel])
 
     // Handle capability mode switching
-    const handleCapabilityChange = useCallback((newCapability: 'reasoning' | 'websearch' | 'deepResearch' | null) => {
-      if (newCapability === selectedCapability) {
-        // Clicking the same capability toggles it off (deselects)
-        setSelectedCapability(null)
-        // When deselected, restore reasoning mode model or default
-        if (reasoningModeModel) {
-          setSelectedModel(reasoningModeModel)
-        } else if (availableModels.length > 0) {
-          const defaultModel = availableModels.find((m: any) => m.labelName === 'Claude Sonnet 4') || availableModels[0]
-          setSelectedModel(defaultModel.labelName)
+    const handleCapabilityChange = useCallback(
+      (newCapability: "reasoning" | "websearch" | "deepResearch" | null) => {
+        if (newCapability === selectedCapability) {
+          // Clicking the same capability toggles it off (deselects)
+          setSelectedCapability(null)
+          // When deselected, restore reasoning mode model or default
+          if (reasoningModeModel) {
+            setSelectedModel(reasoningModeModel)
+          } else if (availableModels.length > 0) {
+            const defaultModel =
+              availableModels.find(
+                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
+              ) || availableModels[0]
+            setSelectedModel(defaultModel.labelName)
+          }
+          return
         }
-        return
-      }
 
-      setSelectedCapability(newCapability)
-      
-      if (newCapability === 'reasoning') {
-        // Switch to reasoning mode - restore previous reasoning model or default
-        const storedReasoningModel = reasoningModeModel || localStorage.getItem("reasoningModeModel")
-        if (storedReasoningModel && availableModels.find((m: any) => m.labelName === storedReasoningModel)) {
-          setSelectedModel(storedReasoningModel)
-        } else if (availableModels.length > 0) {
-          // Default to Claude Sonnet 4 or first available model
-          const defaultModel = availableModels.find((m: any) => m.labelName === 'Claude Sonnet 4') || availableModels[0]
-          setSelectedModel(defaultModel.labelName)
+        setSelectedCapability(newCapability)
+
+        if (newCapability === "reasoning") {
+          // Switch to reasoning mode - restore previous reasoning model or default
+          const storedReasoningModel =
+            reasoningModeModel || localStorage.getItem("reasoningModeModel")
+          if (
+            storedReasoningModel &&
+            availableModels.find(
+              (m: ModelConfiguration) => m.labelName === storedReasoningModel,
+            )
+          ) {
+            setSelectedModel(storedReasoningModel)
+          } else if (availableModels.length > 0) {
+            // Default to Claude Sonnet 4 or first available model
+            const defaultModel =
+              availableModels.find(
+                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
+              ) || availableModels[0]
+            setSelectedModel(defaultModel.labelName)
+          }
+        } else if (newCapability === "websearch") {
+          // Auto-select Gemini 2.5 Flash for web search
+          const geminiModel = availableModels.find(
+            (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
+          )
+          if (geminiModel) {
+            setSelectedModel(geminiModel.labelName)
+          }
+        } else if (newCapability === "deepResearch") {
+          // Auto-select O3 Research for deep research
+          setSelectedModel("GPT O3 Research")
         }
-      } else if (newCapability === 'websearch') {
-        // Auto-select Gemini 2.5 Flash for web search
-        const geminiModel = availableModels.find((m: any) => m.labelName === 'Gemini 2.5 Flash')
-        if (geminiModel) {
-          setSelectedModel(geminiModel.labelName)
-        }
-      } else if (newCapability === 'deepResearch') {
-        // Auto-select O3 Research for deep research
-        setSelectedModel('GPT O3 Research')
-      }
-    }, [selectedCapability, reasoningModeModel, availableModels])
+      },
+      [selectedCapability, reasoningModeModel, availableModels],
+    )
 
     // Fetch available models on component mount
     useEffect(() => {
@@ -641,24 +748,32 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           const response = await api.chat.models.$get()
           const data = await response.json()
           setAvailableModels(data.models)
-          
+
           // Set default model based on current mode
           if (data.models.length > 0 && !selectedModel) {
-            if (selectedCapability === 'reasoning') {
+            if (selectedCapability === "reasoning") {
               // Default to Claude Sonnet 4 or first available
-              const defaultModel = data.models.find((m: any) => m.labelName === 'Claude Sonnet 4') || data.models[0]
+              const defaultModel =
+                data.models.find(
+                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
+                ) || data.models[0]
               setSelectedModel(defaultModel.labelName)
               setReasoningModeModel(defaultModel.labelName)
-            } else if (selectedCapability === 'websearch') {
-              const geminiModel = data.models.find((m: any) => m.labelName === 'Gemini 2.5 Flash')
+            } else if (selectedCapability === "websearch") {
+              const geminiModel = data.models.find(
+                (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
+              )
               if (geminiModel) {
                 setSelectedModel(geminiModel.labelName)
               }
-            } else if (selectedCapability === 'deepResearch') {
-              setSelectedModel('GPT O3 Research')
+            } else if (selectedCapability === "deepResearch") {
+              setSelectedModel("GPT O3 Research")
             } else {
               // No capability selected - default to Claude Sonnet 4 or first available
-              const defaultModel = data.models.find((m: any) => m.labelName === 'Claude Sonnet 4') || data.models[0]
+              const defaultModel =
+                data.models.find(
+                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
+                ) || data.models[0]
               setSelectedModel(defaultModel.labelName)
               setReasoningModeModel(defaultModel.labelName)
             }
@@ -708,6 +823,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           id: generateFileId(),
           uploading: false,
           preview: createImagePreview(file),
+          fileType: getFileType({ type: file.type, name: file.name }),
         }))
 
         setSelectedFiles((prev) => {
@@ -1935,15 +2051,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       })
 
       htmlMessage = tempDiv.innerHTML
-      
+
       // Prepare model configuration with capability flags
       const modelConfig = {
         model: selectedModel,
-        reasoning: selectedCapability === 'reasoning',
-        websearch: selectedCapability === 'websearch', 
-        deepResearch: selectedCapability === 'deepResearch'
+        reasoning: selectedCapability === "reasoning",
+        websearch: selectedCapability === "websearch",
+        deepResearch: selectedCapability === "deepResearch",
       }
-      
+
       handleSend(
         htmlMessage,
         attachmentsMetadata,
@@ -2012,6 +2128,46 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       fetchResults(currentSearchTerm, nextPage, true)
     }
 
+    const handleAtMentionClick = () => {
+      const input = inputRef.current
+      if (!input) return
+
+      const textContentBeforeAt = input.textContent || ""
+
+      const textToAppend =
+        textContentBeforeAt.length === 0 ||
+        textContentBeforeAt.endsWith(" ") ||
+        textContentBeforeAt.endsWith("\n") ||
+        textContentBeforeAt.endsWith("\u00A0")
+          ? "@"
+          : " @"
+
+      const atTextNode = document.createTextNode(textToAppend)
+
+      input.appendChild(atTextNode)
+
+      const newTextContent = input.textContent || ""
+      setQuery(newTextContent)
+      setIsPlaceholderVisible(newTextContent.length === 0)
+
+      const newAtSymbolIndex =
+        textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
+      setCaretPosition(input, newTextContent.length)
+
+      setActiveAtMentionIndex(newAtSymbolIndex)
+      setReferenceSearchTerm("")
+      setShowReferenceBox(true)
+      updateReferenceBoxPosition(newAtSymbolIndex)
+      setSearchMode("citations")
+      setGlobalResults([])
+      setGlobalError(null)
+      setPage(1)
+      setTotalCount(0)
+      setSelectedRefIndex(-1)
+
+      input.focus()
+    }
+
     useEffect(() => {
       if (
         showReferenceBox &&
@@ -2062,7 +2218,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         getCurrentModelConfig: () => {
           const modelConfig = {
             model: selectedModel,
-            capability: selectedCapability
+            capability: selectedCapability,
           }
           return JSON.stringify(modelConfig)
         },
@@ -2325,10 +2481,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                 const items = e.clipboardData?.items
                 if (items) {
-                  // Handle image paste
+                  // Handle file paste (all supported file types)
                   for (let i = 0; i < items.length; i++) {
                     const item = items[i]
-                    if (item.type.indexOf("image") !== -1) {
+                    if (item.kind === "file") {
                       // Check attachment limit before processing
                       if (selectedFiles.length >= MAX_ATTACHMENTS) {
                         showToast(
@@ -2341,15 +2497,33 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                       const file = item.getAsFile()
                       if (file) {
-                        // Process the pasted image file directly
-                        // The file will be processed with a default name by the processFiles function
-                        processFiles([file])
-                        showToast(
-                          "Image pasted",
-                          "Image has been added to your message.",
-                          false,
+                        // Check if the file type is supported
+                        const isValid = validateAndDeduplicateFiles(
+                          [file],
+                          showToast,
                         )
-                        return // Exit early since we handled the image
+                        if (isValid.length > 0) {
+                          // Process the pasted file
+                          processFiles([file])
+                          const fileType = getFileType({
+                            type: file.type,
+                            name: file.name,
+                          })
+
+                          showToast(
+                            "File pasted",
+                            `${fileType} has been added to your message.`,
+                            false,
+                          )
+                          return // Exit early since we handled the file
+                        } else {
+                          showToast(
+                            "Unsupported file type",
+                            "This file type is not supported for attachments.",
+                            true,
+                          )
+                          return
+                        }
                       }
                     }
                   }
@@ -2477,17 +2651,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 let shouldTriggerBox = false
                 let newActiveMentionIndex = -1
 
-                // Check if the character right before the cursor is an '@' and if it's validly placed
-                const atCharIndex = cursorPosition - 1
-                if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
-                  const isFirstCharacter = atCharIndex === 0
-                  const isPrecededBySpace =
-                    atCharIndex > 0 &&
-                    (newValue[atCharIndex - 1] === " " ||
-                      newValue[atCharIndex - 1] === "\u00A0")
-                  if (isFirstCharacter || isPrecededBySpace) {
-                    shouldTriggerBox = true
-                    newActiveMentionIndex = atCharIndex
+                // Disable @ mention functionality when autoAddDocumentPill is provided
+                if (!hideButtons) {
+                  // Check if the character right before the cursor is an '@' and if it's validly placed
+                  const atCharIndex = cursorPosition - 1
+                  if (atCharIndex >= 0 && newValue[atCharIndex] === "@") {
+                    const isFirstCharacter = atCharIndex === 0
+                    const isPrecededBySpace =
+                      atCharIndex > 0 &&
+                      (newValue[atCharIndex - 1] === " " ||
+                        newValue[atCharIndex - 1] === "\u00A0")
+                    if (isFirstCharacter || isPrecededBySpace) {
+                      shouldTriggerBox = true
+                      newActiveMentionIndex = atCharIndex
+                    }
                   }
                 }
 
@@ -2678,14 +2855,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                               ? `${selectedFile.file.name.substring(0, 9)}...`
                               : selectedFile.file.name}
                           </span>
+                          <span className="text-white text-xs opacity-80 block">
+                            {selectedFile.fileType}
+                          </span>
                         </div>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 transition-colors min-w-0">
-                        <File
-                          size={24}
-                          className="text-gray-500 dark:text-gray-400 flex-shrink-0"
-                        />
+                        {getFileIcon(selectedFile.fileType)}
                         <div className="flex-1 min-w-0">
                           <span
                             className="text-sm text-gray-700 dark:text-gray-300 truncate block max-w-[120px]"
@@ -2697,7 +2874,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                             className="text-xs text-gray-500 dark:text-gray-400 truncate block max-w-[120px]"
                             title={getExtension(selectedFile.file)}
                           >
-                            {getExtension(selectedFile.file)}
+                            {selectedFile.fileType}
                           </span>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
@@ -2747,123 +2924,95 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           )}
 
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-            <Attach
-              className={`${
-                selectedFiles.length >= MAX_ATTACHMENTS
-                  ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                  : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
-              } transition-colors`}
-              onClick={
-                selectedFiles.length >= MAX_ATTACHMENTS
-                  ? undefined
-                  : handleFileSelect
-              }
-              title={
-                selectedFiles.length >= MAX_ATTACHMENTS
-                  ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
-                  : "Attach files"
-              }
-            />
-            
+            <TooltipWrapper content="attachment">
+              <Attach
+                className={`${
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                    : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
+                } transition-colors`}
+                onClick={
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? undefined
+                    : handleFileSelect
+                }
+                title={
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
+                    : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
+                }
+              />
+            </TooltipWrapper>
+
             {/* Vertical Divider */}
             {showAdvancedOptions && (
               <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
             )}
-            
+
             {showAdvancedOptions && (
               <>
-                <AtSign
-                  size={16}
-                  className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-                  onClick={() => {
-                    const input = inputRef.current
-                    if (!input) return
+                <TooltipWrapper content="find and attach specific document">
+                  <AtSign
+                    size={16}
+                    className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
+                    onClick={handleAtMentionClick}
+                  />
+                </TooltipWrapper>
 
-                    const textContentBeforeAt = input.textContent || ""
-
-                    const textToAppend =
-                      textContentBeforeAt.length === 0 ||
-                      textContentBeforeAt.endsWith(" ") ||
-                      textContentBeforeAt.endsWith("\n") ||
-                      textContentBeforeAt.endsWith("\u00A0")
-                        ? "@"
-                        : " @"
-
-                    const atTextNode = document.createTextNode(textToAppend)
-
-                    input.appendChild(atTextNode)
-
-                    const newTextContent = input.textContent || ""
-                    setQuery(newTextContent)
-                    setIsPlaceholderVisible(newTextContent.length === 0)
-
-                    const newAtSymbolIndex =
-                      textContentBeforeAt.length +
-                      (textToAppend === " @" ? 1 : 0)
-                    setCaretPosition(input, newTextContent.length)
-
-                    setActiveAtMentionIndex(newAtSymbolIndex)
-                    setReferenceSearchTerm("")
-                    setShowReferenceBox(true)
-                    updateReferenceBoxPosition(newAtSymbolIndex)
-                    setSearchMode("citations")
-                    setGlobalResults([])
-                    setGlobalError(null)
-                    setPage(1)
-                    setTotalCount(0)
-                    setSelectedRefIndex(-1)
-
-                    input.focus()
-                  }}
-                />
-                
                 {/* Capability Selector with Slider Animation */}
                 <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
                   {/* Slider Background */}
-                  <div 
-                    className="absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out"
-                    style={{
-                      width: '40px', // Same as button width
-                      left: selectedCapability === 'reasoning' ? '4px' :   // Centered on first button
-                             selectedCapability === 'websearch' ? '48px' :   // Centered on second button  
-                             selectedCapability === 'deepResearch' ? '92px' : '4px', // Centered on third button
-                      opacity: selectedCapability ? 1 : 0
-                    }}
+                  <div
+                    className={`absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out w-10 ${
+                      selectedCapability === "reasoning"
+                        ? "left-1"
+                        : selectedCapability === "websearch"
+                          ? "left-12"
+                          : selectedCapability === "deepResearch"
+                            ? "left-[5.75rem]"
+                            : "left-1"
+                    } ${selectedCapability ? "opacity-100" : "opacity-0"}`}
                   />
-                  
+
                   {/* Always show all three capability buttons */}
-                  <button
-                    onClick={() => handleCapabilityChange('reasoning')}
-                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                      selectedCapability === 'reasoning'
-                        ? 'text-gray-900 dark:text-gray-100'
-                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
-                    }`}
-                  >
-                    <Atom size={14} />
-                  </button>
-                  
-                  <button
-                    onClick={() => handleCapabilityChange('websearch')}
-                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                      selectedCapability === 'websearch'
-                        ? 'text-gray-900 dark:text-gray-100'
-                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
-                    }`}
-                  >
-                    <Globe size={14} />
-                  </button>
-                  
-                  <button
-                    onClick={() => handleCapabilityChange('deepResearch')}
-                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                      selectedCapability === 'deepResearch'
-                        ? 'text-gray-900 dark:text-gray-100'
-                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400'
-                    }`}
-                  >
-                    <Brain size={14} />
-                  </button>
+                  <TooltipWrapper content="reasoning">
+                    <button
+                      onClick={() => handleCapabilityChange("reasoning")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "reasoning"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Atom size={14} />
+                    </button>
+                  </TooltipWrapper>
+
+                  <TooltipWrapper content="websearch">
+                    <button
+                      onClick={() => handleCapabilityChange("websearch")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "websearch"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Globe size={14} />
+                    </button>
+                  </TooltipWrapper>
+
+                  <TooltipWrapper content="deepresearch">
+                    <button
+                      onClick={() => handleCapabilityChange("deepResearch")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "deepResearch"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Brain size={14} />
+                    </button>
+                  </TooltipWrapper>
                 </div>
               </>
             )}
@@ -3504,32 +3653,36 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             )}
 
             {/* Model Selection Dropdown */}
-            {showAdvancedOptions && (
+            {(showAdvancedOptions || hideButtons) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button 
+                  <button
                     className="flex items-center gap-1 px-3 py-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer mr-2 transition-all duration-200"
                     style={{ marginLeft: "auto" }}
                   >
-                    <span 
+                    <span
                       className={`font-semibold whitespace-nowrap transition-all duration-300 ease-in ${
-                        isModelTextAnimating 
-                          ? 'transform scale-105' 
-                          : 'transform scale-100'
+                        isModelTextAnimating
+                          ? "transform scale-105"
+                          : "transform scale-100"
                       }`}
                       style={{
-                        animation: isModelTextAnimating ? 'modelTextChange 0.3s ease-in' : 'none'
+                        animation: isModelTextAnimating
+                          ? "modelTextChange 0.3s ease-in"
+                          : "none",
                       }}
                     >
-                      {isModelsLoading 
-                        ? "Loading..." 
-                        : selectedModelData?.labelName || "Select Model"
-                      }
+                      {isModelsLoading
+                        ? "Loading..."
+                        : selectedModelData?.labelName || "Select Model"}
                     </span>
-                    <ChevronDown size={14} className="ml-1 transition-transform duration-200" />
+                    <ChevronDown
+                      size={14}
+                      className="ml-1 transition-transform duration-200"
+                    />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent 
+                <DropdownMenuContent
                   className="w-80 max-h-96 p-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg"
                   align="start"
                   side="bottom"
@@ -3539,23 +3692,33 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     {filteredModels.length > 0 ? (
                       (() => {
                         // Group models by provider
-                        const modelsByProvider = filteredModels.reduce((acc, model) => {
-                          let provider = 'Other'
-                          if (model.labelName.includes('Claude') || model.labelName.includes('Sonnet') || model.labelName.includes('Opus')) {
-                            provider = 'Claude'
-                          } else if (model.labelName.includes('GPT') || model.labelName.includes('OpenAI')) {
-                            provider = 'OpenAI'
-                          } else if (model.labelName.includes('Gemini')) {
-                            provider = 'Gemini'
-                          }
-                          
-                          if (!acc[provider]) acc[provider] = []
-                          acc[provider].push(model)
-                          return acc
-                        }, {} as Record<string, typeof filteredModels>)
+                        const modelsByProvider = filteredModels.reduce(
+                          (acc, model) => {
+                            let provider = "Other"
+                            if (
+                              model.labelName.includes("Claude") ||
+                              model.labelName.includes("Sonnet") ||
+                              model.labelName.includes("Opus")
+                            ) {
+                              provider = "Claude"
+                            } else if (
+                              model.labelName.includes("GPT") ||
+                              model.labelName.includes("OpenAI")
+                            ) {
+                              provider = "OpenAI"
+                            } else if (model.labelName.includes("Gemini")) {
+                              provider = "Gemini"
+                            }
+
+                            if (!acc[provider]) acc[provider] = []
+                            acc[provider].push(model)
+                            return acc
+                          },
+                          {} as Record<string, typeof filteredModels>,
+                        )
 
                         // Sort models within each provider - selected model first
-                        Object.keys(modelsByProvider).forEach(provider => {
+                        Object.keys(modelsByProvider).forEach((provider) => {
                           modelsByProvider[provider].sort((a, b) => {
                             const aSelected = selectedModel === a.labelName
                             const bSelected = selectedModel === b.labelName
@@ -3566,48 +3729,77 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         })
 
                         // Find which provider has the selected model
-                        const selectedModelProvider = Object.keys(modelsByProvider).find(provider =>
-                          modelsByProvider[provider].some(model => model.labelName === selectedModel)
+                        const selectedModelProvider = Object.keys(
+                          modelsByProvider,
+                        ).find((provider) =>
+                          modelsByProvider[provider].some(
+                            (model) => model.labelName === selectedModel,
+                          ),
                         )
 
                         // Reorder providers - selected model's provider first
-                        const baseProviderOrder = ['Claude', 'OpenAI', 'Gemini', 'Other'] as const
-                        const providerOrder = selectedModelProvider 
-                          ? [selectedModelProvider, ...baseProviderOrder.filter(p => p !== selectedModelProvider)]
+                        const baseProviderOrder = [
+                          "Claude",
+                          "OpenAI",
+                          "Gemini",
+                          "Other",
+                        ] as const
+                        const providerOrder = selectedModelProvider
+                          ? [
+                              selectedModelProvider,
+                              ...baseProviderOrder.filter(
+                                (p) => p !== selectedModelProvider,
+                              ),
+                            ]
                           : baseProviderOrder
-                        
+
                         // Provider icon components
-                        const ProviderIcon = ({ provider }: { provider: string }) => {
+                        const ProviderIcon = ({
+                          provider,
+                        }: { provider: string }) => {
                           switch (provider) {
-                            case 'Claude':
+                            case "Claude":
                               return (
-                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
-                                  <path 
-                                    fill="currentColor" 
-                                    d={siClaude.path}
-                                  />
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  className="text-gray-600 dark:text-gray-400"
+                                >
+                                  <path fill="currentColor" d={siClaude.path} />
                                 </svg>
                               )
-                            case 'OpenAI':
+                            case "OpenAI":
                               return (
-                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
-                                  <path 
-                                    fill="currentColor" 
-                                    d={siOpenai.path}
-                                  />
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  className="text-gray-600 dark:text-gray-400"
+                                >
+                                  <path fill="currentColor" d={siOpenai.path} />
                                 </svg>
                               )
-                            case 'Gemini':
+                            case "Gemini":
                               return (
-                                <svg width="16" height="16" viewBox="0 0 24 24" className="text-gray-600 dark:text-gray-400">
-                                  <path 
-                                    fill="currentColor" 
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  className="text-gray-600 dark:text-gray-400"
+                                >
+                                  <path
+                                    fill="currentColor"
                                     d={siGooglegemini.path}
                                   />
                                 </svg>
                               )
                             default:
-                              return <span className="text-sm text-gray-600 dark:text-gray-400">⚡</span>
+                              return (
+                                <span className="text-sm text-gray-600 dark:text-gray-400">
+                                  ⚡
+                                </span>
+                              )
                           }
                         }
 
@@ -3620,16 +3812,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                               {/* Provider Header */}
                               <div className="pl-4 pr-4 py-2 flex items-center gap-2">
                                 <ProviderIcon provider={provider} />
-                                <span className="text-sm font-medium" style={{ color: '#788187' }}>
+                                <span
+                                  className="text-sm font-medium"
+                                  style={{ color: "#788187" }}
+                                >
                                   {provider}
                                 </span>
                               </div>
-                              
+
                               {/* Provider Models */}
                               {models.map((model) => {
                                 const isDisabled = isModelDisabled(model)
-                                const isSelected = selectedModel === model.labelName
-                                
+                                const isSelected =
+                                  selectedModel === model.labelName
+
                                 return (
                                   <DropdownMenuItem
                                     key={model.labelName}
@@ -3637,15 +3833,17 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                       if (!isDisabled) {
                                         setSelectedModel(model.labelName)
                                         // Update reasoning mode model if in reasoning mode
-                                        if (selectedCapability === 'reasoning') {
+                                        if (
+                                          selectedCapability === "reasoning"
+                                        ) {
                                           setReasoningModeModel(model.labelName)
                                         }
                                       }
                                     }}
                                     className={`pl-4 pr-4 mb-1 rounded-lg hover:bg-transparent focus:bg-transparent data-[highlighted]:bg-transparent ${
-                                      isDisabled 
-                                        ? 'opacity-50 cursor-not-allowed' 
-                                        : 'cursor-pointer'
+                                      isDisabled
+                                        ? "opacity-50 cursor-not-allowed"
+                                        : "cursor-pointer"
                                     }`}
                                     disabled={isDisabled}
                                   >
@@ -3653,47 +3851,62 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                       {/* Checkmark aligned with model name baseline */}
                                       <div className="w-4 h-4 flex items-center justify-center flex-shrink-0 pt-2">
                                         {isSelected && (
-                                          <Check size={12} strokeWidth={2.5} className="text-gray-700 dark:text-gray-300" />
+                                          <Check
+                                            size={12}
+                                            strokeWidth={2.5}
+                                            className="text-gray-700 dark:text-gray-300"
+                                          />
                                         )}
                                       </div>
-                                      
+
                                       {/* Text aligned with provider name */}
                                       <div className="flex flex-col flex-1 min-w-0">
-                                        <span className={`font-medium text-sm ${
-                                          isDisabled ? 'text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'
-                                        }`}>
-                                          {model.labelName.replace(/^(Claude |GPT |Gemini )/i, '')}
+                                        <span
+                                          className={`font-medium text-sm ${
+                                            isDisabled
+                                              ? "text-gray-400 dark:text-gray-500"
+                                              : "text-gray-900 dark:text-white"
+                                          }`}
+                                        >
+                                          {model.labelName.replace(
+                                            /^(Claude |GPT |Gemini )/i,
+                                            "",
+                                          )}
                                         </span>
-                                        
-                                        {/* Model description based on name */}
+
+                                        {/* Model description from configuration */}
                                         <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                          {(model.labelName.includes('Sonnet 3.7') || model.labelName.includes('3.7 Sonnet') || model.labelName.includes('3.7 sonnet')) && 'Advanced reasoning with enhanced performance and longer context.'}
-                                          {(model.labelName.includes('Sonnet 3.5') || model.labelName.includes('3.5 Sonnet') || model.labelName.includes('3.5 sonnet')) && 'Designed for quick responses while ensuring solid reasoning.'}
-                                          {(model.labelName.includes('Sonnet 4') || model.labelName.includes('4 Sonnet') || model.labelName.includes('4 sonnet')) && 'Balanced for reasoning, long context windows.'}
-                                          {model.labelName.includes('Opus') && 'Ideal for in-depth research and thorough analysis.'}
-                                          {model.labelName.includes('GPT 5') && 'Features enhanced reasoning, creativity, and better multi-step planning.'}
-                                          {model.labelName.includes('GPT 4') && 'Great for programming, content generation, and logical structuring.'}
-                                          {model.labelName.includes('GPT O3') && 'Advanced research model with deep analysis capabilities.'}
-                                          {model.labelName.includes('Gemini 2.5 Pro') && 'Proficient in reasoning across text, visuals, and programming.'}
-                                          {model.labelName.includes('Gemini 2.5 Flash') && 'Tailored for cost-effectiveness and rapid response times.'}
+                                          {model.description || ""}
                                         </span>
-                                        
+
                                         {/* Disabled state messages */}
-                                        {isDisabled && selectedCapability === 'websearch' && model.labelName !== 'Gemini 2.5 Flash' && (
-                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
-                                            Not available in Web Search mode
-                                          </span>
-                                        )}
-                                        {isDisabled && selectedCapability === 'deepResearch' && model.labelName !== 'GPT O3 Research' && (
-                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
-                                            Not available in Deep Research mode
-                                          </span>
-                                        )}
-                                        {isDisabled && selectedCapability === 'reasoning' && model.labelName === 'GPT O3 Research' && (
-                                          <span className="text-xs text-red-400 dark:text-red-400 mt-1">
-                                            Only available in Deep Research mode
-                                          </span>
-                                        )}
+                                        {isDisabled &&
+                                          selectedCapability === "websearch" &&
+                                          model.labelName !==
+                                            "Gemini 2.5 Flash" && (
+                                            <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                              Not available in Web Search mode
+                                            </span>
+                                          )}
+                                        {isDisabled &&
+                                          selectedCapability ===
+                                            "deepResearch" &&
+                                          model.labelName !==
+                                            "GPT O3 Research" && (
+                                            <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                              Not available in Deep Research
+                                              mode
+                                            </span>
+                                          )}
+                                        {isDisabled &&
+                                          selectedCapability === "reasoning" &&
+                                          model.labelName ===
+                                            "GPT O3 Research" && (
+                                            <span className="text-xs text-red-400 dark:text-red-400 mt-1">
+                                              Only available in Deep Research
+                                              mode
+                                            </span>
+                                          )}
                                       </div>
                                     </div>
                                   </DropdownMenuItem>
@@ -3704,15 +3917,20 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         })
                       })()
                     ) : (
-                      <DropdownMenuItem disabled className="px-4 py-3 text-center">
-                        <span className="text-gray-500 dark:text-gray-400">No models available</span>
+                      <DropdownMenuItem
+                        disabled
+                        className="px-4 py-3 text-center"
+                      >
+                        <span className="text-gray-500 dark:text-gray-400">
+                          No models available
+                        </span>
                       </DropdownMenuItem>
                     )}
                   </div>
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            
+
             {(isStreaming || retryIsStreaming) && chatId ? (
               <button
                 onClick={handleStop}
@@ -3746,7 +3964,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           multiple
           className="hidden"
           onChange={handleFileChange}
-          accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+          accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,text/plain,text/csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/markdown,.txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md"
+          title="Supported file types: Images (JPEG, PNG, GIF, WebP), Documents (DOC, DOCX), Spreadsheets (XLS, XLSX, CSV), Presentations (PPT, PPTX), PDFs, and Text files (TXT, MD)"
         />
       </div>
     )

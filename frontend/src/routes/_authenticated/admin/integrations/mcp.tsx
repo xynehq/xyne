@@ -970,7 +970,7 @@ export const MCPClient = ({
 
   return (
     <div className="flex w-full h-full">
-      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} />
+      <Sidebar photoLink={user?.photoLink ?? ""} role={user?.role} isAgentMode={agentWhiteList} />
       <IntegrationsSidebar role={user.role} isAgentMode={agentWhiteList} />
       <div className="w-full h-full py-8 px-4 overflow-y-auto flex flex-col items-center justify-center">
         <div className="flex flex-col items-center">

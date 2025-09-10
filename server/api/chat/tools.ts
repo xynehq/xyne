@@ -53,7 +53,6 @@ import {
   parseAppSelections,
   searchToCitation,
 } from "./utils"
-export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
 import { appToSchemaMapper } from "@/search/mappers"
@@ -98,11 +97,12 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       selectedItems: selectedItem,
     }
   }
-
+  
   let agentPromptData: { appIntegrations?: string[] } = {}
 
   try {
     agentPromptData = JSON.parse(agentPrompt)
+    let selectedItem:any= {}
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
       const { selectedApps, selectedItems } = parseAppSelections(
         agentPromptData.appIntegrations,
@@ -112,6 +112,25 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       agentAppEnums = [...new Set(selectedApps)]
       // Handle selectedItems logic...
     }
+
+    if (selectedItem[Apps.KnowledgeBase]) {
+        for (const itemId of selectedItem[Apps.KnowledgeBase]) {
+          if (itemId.startsWith("cl-")) {
+            // Entire collection - remove cl- prefix
+            agentSpecificCollectionIds.push(itemId.replace(/^cl[-_]/, ""))
+          } else if (itemId.startsWith("clfd-")) {
+            // Collection folder - remove clfd- prefix
+            agentSpecificCollectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
+          } else if (itemId.startsWith("clf-")) {
+            // Collection file - remove clf- prefix
+            agentSpecificCollectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+          }
+        }
+        
+      } else {
+        Logger.info("No KnowledgeBase items found in selectedItems")
+      }
+
     Logger.debug({ agentPromptData }, "Parsed agent prompt data")
   } catch (error) {
     Logger.warn("Failed to parse agentPrompt JSON", {
@@ -127,6 +146,8 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       selectedItems: selectedItem,
     }
   }
+
+  
 
   if (
     !agentPromptData.appIntegrations ||
@@ -834,7 +855,7 @@ export const getSlackThreads: AgentTool = {
     filter_query: {
       type: "string",
       description: "Optional keywords to filter thread messages",
-      required: false,
+      required: true,
     },
     limit: {
       type: "number",

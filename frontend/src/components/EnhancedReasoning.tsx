@@ -13,6 +13,7 @@ import SearchIcon from "@/assets/search.svg?react"
 import XyneIcon from "@/assets/assistant-logo.svg?react"
 import SvgIcon from "@/assets/mcp.svg?react"
 import ExpandIcon from "@/assets/expand-text-input.svg?react"
+import { textToCitationIndex } from "@/utils/chatUtils"
 
 // Simple hash function to generate stable IDs from content
 const generateStableId = (content: string, index: number): number => {
@@ -50,9 +51,6 @@ interface EnhancedReasoningProps {
   citations?: Citation[]
   citationMap?: Record<number, number>
 }
-
-// Pattern to match citation references like [1], [2], etc.
-const textToCitationIndex = /\[(\d+)\]/g
 
 // Process reasoning content to include citation links and format parameters
 const processReasoningWithCitations = (

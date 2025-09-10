@@ -12,7 +12,7 @@ import {
   createImagePreview,
   cleanupPreviewUrls,
 } from "@/utils/fileUtils"
-import { isValidFile } from "../../../shared/filesutils"
+import { isValidFile } from "shared/fileUtils"
 import { authFetch } from "@/utils/authFetch"
 
 interface SelectedFile {

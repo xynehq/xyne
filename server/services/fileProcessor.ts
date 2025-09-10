@@ -26,6 +26,8 @@ export class FileProcessorService {
     fileName: string,
     vespaDocId: string,
     storagePath?: string,
+    extractImages: boolean = false,
+    describeImages: boolean = false,
   ): Promise<ProcessingResult> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
     let chunks: string[] = []
@@ -39,7 +41,8 @@ export class FileProcessorService {
         const result = await extractTextAndImagesWithChunksFromPDF(
           new Uint8Array(buffer),
           vespaDocId,
-          false,
+          extractImages,
+          describeImages,
         )
         chunks = result.text_chunks
         chunks_pos = result.text_chunk_pos
@@ -50,7 +53,8 @@ export class FileProcessorService {
         const result = await extractTextAndImagesWithChunksFromDocx(
           new Uint8Array(buffer),
           vespaDocId,
-          false,
+          extractImages,
+          describeImages,
         )
         chunks = result.text_chunks
         chunks_pos = result.text_chunk_pos
@@ -61,7 +65,8 @@ export class FileProcessorService {
         const result = await extractTextAndImagesWithChunksFromPptx(
           new Uint8Array(buffer),
           vespaDocId,
-          false,
+          extractImages,
+          describeImages,
         )
         chunks = result.text_chunks
         chunks_pos = result.text_chunk_pos
@@ -69,10 +74,12 @@ export class FileProcessorService {
         image_chunks_pos = result.image_chunk_pos || []
       } else if (isSheetFile(baseMimeType)) {
         // Process spreadsheet
+        let workbook: XLSX.WorkBook
         if (!storagePath) {
-          throw new Error("Storage path required for spreadsheet processing")
+          workbook = XLSX.read(buffer, { type: 'buffer' })
+        } else {
+          workbook = XLSX.readFile(storagePath)
         }
-        const workbook = XLSX.readFile(storagePath)
         const allChunks: string[] = []
 
         for (const sheetName of workbook.SheetNames) {
