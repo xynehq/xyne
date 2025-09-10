@@ -43,6 +43,7 @@ import {
   userContext,
 } from "@/ai/context"
 import { AnswerSSEvents, AuthType, ConnectorStatus } from "@/shared/types"
+import { agentPromptPayloadSchema } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -197,6 +198,7 @@ export const messageSchema = z.object({
       )
       .optional(),
   ),
+  agentPromptPayload: agentPromptPayloadSchema.optional(),
   streamOff: z
     .string()
     .optional()

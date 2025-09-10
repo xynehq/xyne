@@ -112,7 +112,6 @@ import {
   bookmarkChat,
 } from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
-import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
   Tooltip,
   TooltipProvider,
@@ -139,6 +138,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CitationPreview } from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
+import { processMessage } from "@/utils/chatUtils"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -241,7 +241,7 @@ interface ChatPageProps {
 }
 
 // Define the structure for parsed message parts, including app, entity, and pillType for pills
-type ParsedMessagePart =
+export type ParsedMessagePart =
   | { type: "text"; value: string }
   | {
       type: "pill"
@@ -258,7 +258,7 @@ type ParsedMessagePart =
   | { type: "link"; value: string }
 
 // Helper function to convert JSON message parts back to HTML using Pill component
-const jsonToHtmlMessage = (jsonString: string): string => {
+export const jsonToHtmlMessage = (jsonString: string): string => {
   try {
     const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
     if (!Array.isArray(parts)) {
@@ -1410,7 +1410,7 @@ interface ImageCitationComponentProps {
   className?: string
 }
 
-const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
+export const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   citationKey,
   imageCitations,
   className = "",
@@ -1597,9 +1597,6 @@ const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
     </>
   )
 }
-
-export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
 const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
 const Code = ({
@@ -2219,7 +2216,7 @@ const VirtualizedMessages = React.forwardRef<
             ;(ref as any).current = node
           }
         }}
-        className="h-full w-full overflow-auto flex flex-col items-center"
+        className={`h-full w-full overflow-auto flex flex-col ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
         onScroll={handleScroll}
         style={{
           height: "100%",
@@ -2461,46 +2458,7 @@ export const ChatMessage = ({
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
-  const processMessage = (text: string) => {
-    text = splitGroupedCitationsWithSpaces(text)
-    text = text.replace(
-      /(\[\d+_\d+\])/g,
-      (fullMatch, capturedCitation, offset, string) => {
-        // Check if this image citation appears earlier in the string
-        const firstIndex = string.indexOf(fullMatch)
-        if (firstIndex < offset) {
-          // remove duplicate image citations
-          return ""
-        }
-        return capturedCitation
-      },
-    )
-    text = text.replace(
-      textToImageCitationIndex,
-      (match, citationKey, offset, string) => {
-        // Check if this image citation appears earlier in the string
-        const firstIndex = string.indexOf(match)
-        if (firstIndex < offset) {
-          // remove duplicate image citations
-          return ""
-        }
-        return `![image-citation:${citationKey}](image-citation:${citationKey})`
-      },
-    )
 
-    if (citationMap) {
-      return text.replace(textToCitationIndex, (match, num) => {
-        const index = citationMap[num]
-        const url = citationUrls[index]
-        return typeof index === "number" && url ? `[${index + 1}](${url})` : ""
-      })
-    } else {
-      return text.replace(textToCitationIndex, (match, num) => {
-        const url = citationUrls[num - 1]
-        return url ? `[${num}](${url})` : ""
-      })
-    }
-  }
   return (
     <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
       {/* Render attachments above the message box for user messages */}
@@ -2558,7 +2516,7 @@ export const ChatMessage = ({
                   </div>
                 ) : message !== "" ? (
                   <MarkdownPreview
-                    source={processMessage(message)}
+                    source={processMessage(message, citationMap, citationUrls)}
                     wrapperElement={{
                       "data-color-mode": theme,
                     }}
@@ -2662,7 +2620,7 @@ export const ChatMessage = ({
                     onMouseDown={() => setIsCopied(true)}
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
-                      navigator.clipboard.writeText(processMessage(message))
+                      navigator.clipboard.writeText(processMessage(message, citationMap, citationUrls))
                     }
                   />
                   {/* Retry button temporarily hidden */}

@@ -62,7 +62,7 @@ import {
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { ChatSSEvents, OpenAIError, type MessageReqType } from "@/shared/types"
+import { ChatSSEvents, OpenAIError, type MessageReqType, DEFAULT_TEST_AGENT_ID } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
   delay,
@@ -168,6 +168,8 @@ import {
   parseAppSelections,
   isAppSelectionMap,
   findOptimalCitationInsertionPoint,
+  textToCitationIndex,
+  textToImageCitationIndex,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -191,6 +193,7 @@ import {
   getPublicAgentsByUser,
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
+import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 import type { GroundingSupport } from "@google/genai"
 import {
   processDeepSearchIterator,
@@ -364,8 +367,6 @@ export const GetChatTraceApi = async (c: Context) => {
   }
 }
 
-export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
@@ -450,6 +451,7 @@ const checkAndYieldCitations = async function* (
   baseIndex: number = 0,
   email: string,
   yieldedImageCitations: Set<number>,
+  isMsgWithSources?: boolean,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
@@ -461,7 +463,7 @@ const checkAndYieldCitations = async function* (
     if (match) {
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - baseIndex]
+        const item = isMsgWithSources ? results[baseIndex]: results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
           const f = (item as any)?.fields
@@ -475,7 +477,7 @@ const checkAndYieldCitations = async function* (
           yield {
             citation: {
               index: citationIndex,
-              item: searchToCitation(item as VespaSearchResults),
+              item: isMsgWithSources ? searchToCitation(item as VespaSearchResults, citationIndex) : searchToCitation(item as VespaSearchResults),
             },
           }
           yieldedCitations.add(citationIndex)
@@ -576,6 +578,7 @@ async function* processIterator(
   previousResultsLength: number = 0,
   userRequestsReasoning?: boolean,
   email?: string,
+  isMsgWithSources?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -604,6 +607,7 @@ async function* processIterator(
             previousResultsLength,
             email!,
             yieldedImageCitations,
+            isMsgWithSources,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -629,6 +633,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
+              isMsgWithSources,
             )
             yield { text: token, reasoning }
           }
@@ -666,6 +671,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
+              isMsgWithSources,
             )
             currentAnswer = parsed.answer
           }
@@ -1922,6 +1928,7 @@ async function* generateAnswerFromGivenContext(
   passedSpan?: Span,
   threadIds?: string[],
   attachmentFileIds?: string[],
+  isMsgWithSources?: boolean,
   modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
@@ -2090,6 +2097,7 @@ async function* generateAnswerFromGivenContext(
       v as z.infer<typeof VespaSearchResultsSchema>,
       0,
       true,
+      isMsgWithSources,
     )
     if (
       v.fields &&
@@ -2112,7 +2120,7 @@ async function* generateAnswerFromGivenContext(
         )
       }
     }
-    return `Index ${i + startIndex} \n ${content}`
+    return isMsgWithSources ? content : `Index ${i + startIndex} \n ${content}`
   })
 
   const resolvedContexts = contextPromises
@@ -2167,6 +2175,7 @@ async function* generateAnswerFromGivenContext(
       imageFileNames: finalImageFileNames,
     },
     true,
+    isMsgWithSources,
   )
 
   const answer = yield* processIterator(
@@ -2175,13 +2184,14 @@ async function* generateAnswerFromGivenContext(
     previousResultsLength,
     userRequestsReasoning,
     email,
+    isMsgWithSources,
   )
   if (answer) {
     generateAnswerSpan?.setAttribute("answer_found", true)
     generateAnswerSpan?.end()
     return
   } else if (!answer) {
-    if (attachmentFileIds && attachmentFileIds.length > 0) {
+    if(isMsgWithSources || (attachmentFileIds && attachmentFileIds.length > 0)) {
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
@@ -3842,6 +3852,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
   agentPrompt?: string,
+  isMsgWithSources?: boolean,
   modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
@@ -3872,6 +3883,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     passedSpan,
     threadIds,
     attachmentFileIds,
+    isMsgWithSources,
     modelId,
   )
 }
@@ -4079,8 +4091,9 @@ export const MessageApi = async (c: Context) => {
     }
     const webSearchEnabled = enableWebSearch ?? false
     const deepResearchEnabled = isDeepResearchEnabled ?? false
-    let agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
+    const agentPromptValue = agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID) ? agentId : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
+      
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
@@ -4104,11 +4117,12 @@ export const MessageApi = async (c: Context) => {
         agentPromptValue,
         userAndWorkspaceCheck.workspace.id,
       )
+
       if (
         !isAgentic &&
         !enableWebSearch &&
         !deepResearchEnabled &&
-        agentDetails
+        (agentDetails || agentPromptValue === DEFAULT_TEST_AGENT_ID)
       ) {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
@@ -4139,7 +4153,20 @@ export const MessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
-    let isMsgWithContext = isMessageWithContext(message)
+    // Extract sources from search parameters
+    const sources = c.req.query("selectedSources")
+    const isMsgWithSources = !!sources
+    let fileIds: string[] = []
+    if (sources) {
+      try {
+        const resp = await getCollectionFilesVespaIds(JSON.parse(sources), db)
+        fileIds = resp.map((file) => file.vespaDocId || "").filter((id) => id !== "")
+      } catch {
+        fileIds = []
+      }
+    }
+
+    const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
       : {
@@ -4147,10 +4174,9 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    isMsgWithContext =
-      isMsgWithContext ||
-      (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0)
-    let fileIds = extractedInfo?.fileIds
+    if(extractedInfo?.fileIds.length > 0) {
+      fileIds = fileIds.concat(extractedInfo?.fileIds)
+    }
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = fileIds.concat(nonImageAttachmentFileIds)
     }
@@ -4184,7 +4210,7 @@ export const MessageApi = async (c: Context) => {
       )
       // let llm decide a title
       const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
+        modelId: actualModelId as Models,
         stream: false,
       })
       loggerWithChild({ email: email }).info(
@@ -4363,7 +4389,7 @@ export const MessageApi = async (c: Context) => {
             })
           }
           if (
-            (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+            (fileIds && fileIds?.length > 0) ||
             (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
           ) {
             let answer = ""
@@ -4393,6 +4419,7 @@ export const MessageApi = async (c: Context) => {
               threadIds,
               imageAttachmentFileIds,
               agentPromptValue,
+              isMsgWithSources,
               actualModelId || config.defaultBestModel,
             )
             stream.writeSSE({
@@ -5124,6 +5151,7 @@ export const MessageApi = async (c: Context) => {
                     undefined,
                     undefined,
                     agentPromptValue,
+                    undefined,
                     actualModelId || config.defaultBestModel,
                   )
                 } else {
@@ -5740,6 +5768,10 @@ export const MessageRetryApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
 
+    // Extract sources from search parameters
+    const sources = c.req.query("selectedSources")
+    const isMsgWithSources = !!sources
+
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
     const prevUserMessage = isUserMessage
@@ -5835,6 +5867,7 @@ export const MessageRetryApi = async (c: Context) => {
               threadIds,
               ImageAttachmentFileIds,
               undefined,
+              isMsgWithSources,
               modelId,
             )
             stream.writeSSE({

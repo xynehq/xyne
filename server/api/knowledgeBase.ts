@@ -1472,7 +1472,7 @@ export const GetFilePreviewApi = async (c: Context) => {
 
     // Verify item belongs to this Collection by traversing up the hierarchy
     let currentItem = item
-    let belongsToCollection = false
+    let belongsToCollection = currentItem.collectionId === collectionId
     while (currentItem.parentId) {
       if (currentItem.parentId === collectionId) {
         belongsToCollection = true

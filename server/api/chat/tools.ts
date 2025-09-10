@@ -52,7 +52,6 @@ import {
   parseAppSelections,
   searchToCitation,
 } from "./utils"
-export const textToCitationIndex = /\[(\d+)\]/g
 import config from "@/config"
 import { is } from "drizzle-orm"
 import { getToolParameters, internalTools } from "@/api/chat/mapper"
