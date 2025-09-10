@@ -15,8 +15,6 @@ import { getErrorMessage } from "@/utils"
 import { HTTPException } from "hono/http-exception"
 
 const { JwtPayloadKey, agentWhiteList } = config
-const Logger = getLogger(Subsystem.Server)
-const userSecret = process.env.USER_SECRET!
 
 export const GetUserWorkspaceInfo = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)

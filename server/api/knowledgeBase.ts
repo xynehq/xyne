@@ -33,6 +33,7 @@ import {
   generateCollectionVespaDocId,
   // Legacy aliases for backward compatibility
   } from "@/db/knowledgeBase"
+import { cleanUpAgentDb } from "@/db/agent"
 import type { 
   Collection, 
   CollectionItem, 
@@ -392,8 +393,20 @@ export const DeleteCollectionApi = async (c: Context) => {
     // Use transaction to ensure database operations are atomic
     let deletedFilesCount = 0
     let deletedFoldersCount = 0
+    const deletedItemIds: string[] = []
 
     await db.transaction(async (tx) => {
+      // Collect item IDs for agent cleanup (with proper prefixes)
+      for (const item of collectionItemsToDelete) {
+        if (item.type === "file") {
+          deletedItemIds.push(`clf-${item.id}`)
+        } else if (item.type === "folder") {
+          deletedItemIds.push(`clfd-${item.id}`)
+        }
+      }
+      // Also include collection ID
+      deletedItemIds.push(`cl-${collectionId}`)
+
       // Soft delete all items in the collection first
       if (collectionItemsToDelete.length > 0) {
         const itemIds = collectionItemsToDelete.map((item) => item.id)
@@ -413,6 +426,11 @@ export const DeleteCollectionApi = async (c: Context) => {
 
       // Soft delete the collection itself
       await softDeleteCollection(tx, collectionId)
+
+      // Clean up agent references to deleted items
+      if (deletedItemIds.length > 0) {
+        await cleanUpAgentDb(tx, deletedItemIds, userEmail)
+      }
     })
 
     // After successful database transaction, clean up Vespa and storage
@@ -1325,10 +1343,25 @@ export const DeleteItemApi = async (c: Context) => {
     // Use transaction to ensure database operations are atomic first
     let deletedFilesCount = 0
     let deletedFoldersCount = 0
+    const deletedItemIds: string[] = []
 
     await db.transaction(async (tx) => {
+      // Collect item IDs for agent cleanup (with proper prefixes)
+      for (const itemToDelete of itemsToDelete) {
+        if (itemToDelete.type === "file") {
+          deletedItemIds.push(`clf-${itemToDelete.id}`)
+        } else if (itemToDelete.type === "folder") {
+          deletedItemIds.push(`clfd-${itemToDelete.id}`)
+        }
+      }
+
       // Soft delete the item (and all descendants if it's a folder)
       await softDeleteCollectionItem(tx, itemId)
+
+      // Clean up agent references to deleted items
+      if (deletedItemIds.length > 0) {
+        await cleanUpAgentDb(tx, deletedItemIds, userEmail)
+      }
     })
 
     // After successful database transaction, clean up Vespa and storage
@@ -1439,7 +1472,7 @@ export const GetFilePreviewApi = async (c: Context) => {
 
     // Verify item belongs to this Collection by traversing up the hierarchy
     let currentItem = item
-    let belongsToCollection = false
+    let belongsToCollection = currentItem.collectionId === collectionId
     while (currentItem.parentId) {
       if (currentItem.parentId === collectionId) {
         belongsToCollection = true

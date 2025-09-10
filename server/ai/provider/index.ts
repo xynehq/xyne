@@ -83,7 +83,9 @@ import {
   withToolQueryPrompt,
   ragOffPromptJson,
   nameToEmailResolutionPrompt,
+  deepResearchPrompt,
   webSearchSystemPrompt,
+  agentWithNoIntegrationsSystemPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -100,6 +102,8 @@ import { VertexAiProvider, VertexProvider } from "@/ai/provider/vertex_ai"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
+  agentBaselineFileContextPromptJson,
+  agentBaselineFilesContextPromptJson,
   agentBaselinePrompt,
   agentBaselinePromptJson,
   agentBaselineReasoningPromptJson,
@@ -150,8 +154,7 @@ function parseAgentPrompt(
     if (
       typeof parsed.name === "string" &&
       typeof parsed.description === "string" &&
-      typeof parsed.prompt === "string" &&
-      Array.isArray(parsed.appIntegrations)
+      typeof parsed.prompt === "string"
     ) {
       return {
         name: parsed.name,
@@ -369,13 +372,30 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
           ? AIProviders.Fireworks
           : GeminiAIModel
             ? AIProviders.GoogleAI
-            : VertexAIModel
+            : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
               : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
   }
+
+  // Special handling for Vertex AI models - create appropriate provider based on model type
+  if (providerType === AIProviders.VertexAI && VertexProjectId && VertexRegion) {
+    const isGeminiModel = modelId.toString().toLowerCase().includes('gemini')
+    const requiredProvider = isGeminiModel ? VertexProvider.GOOGLE : VertexProvider.ANTHROPIC
+    
+    // Create a new provider instance with the correct backend for this model
+    const vertexProvider = new VertexAiProvider({
+      projectId: VertexProjectId,
+      region: VertexRegion,
+      provider: requiredProvider,
+    })
+    
+    Logger.info(`Created VertexAI provider for model ${modelId} with ${requiredProvider} backend`)
+    return vertexProvider
+  }
+
   const provider = ProviderMap[providerType]
   if (!provider) {
     throw new Error("Invalid provider")
@@ -1090,6 +1110,7 @@ export const baselineRAGJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
+  isMsgWithSources?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -1103,10 +1124,24 @@ export const baselineRAGJsonStream = (
 
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
-    params.systemPrompt = baselineFilesContextPromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
+    if(isMsgWithSources) {
+      params.systemPrompt = agentBaselineFileContextPromptJson(
+        userCtx,
+        retrievedCtx,
+      )
+    }
+    else if(!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselineFilesContextPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselineFilesContextPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else if (defaultReasoning) {
     Logger.info("Using baselineReasoningPromptJson")
     if (!isAgentPromptEmpty(params.agentPrompt)) {
@@ -1811,11 +1846,12 @@ export const webSearchQuestion = (
     params.webSearch = true
 
     if (!params.systemPrompt) {
-      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
-        ? webSearchSystemPrompt(userCtx) +
-          "\n\n" +
-          parseAgentPrompt(params.agentPrompt)
-        : webSearchSystemPrompt(userCtx)
+      if (!isAgentPromptEmpty(params.agentPrompt)) {
+        const parsed = parseAgentPrompt(params.agentPrompt)
+        params.systemPrompt = webSearchSystemPrompt(userCtx, parsed)
+      } else {
+        params.systemPrompt = webSearchSystemPrompt(userCtx)
+      }
     }
 
     const baseMessage: Message = {
@@ -1841,6 +1877,89 @@ export const webSearchQuestion = (
     return vertexGoogleProvider.converseStream(messages, params)
   } catch (error) {
     Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const getDeepResearchResponse = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = Models.o3_Deep_Research
+    }
+
+    params.webSearch = true
+
+    if (!params.systemPrompt) {
+      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
+        ? deepResearchPrompt(userCtx) +
+          "\n\n" +
+          parseAgentPrompt(params.agentPrompt)
+        : deepResearchPrompt(userCtx)
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    const openAIKey = process.env["DS_OPENAI_API_KEY"]
+    const baseUrl = process.env["DS_BASE_URL"]
+    if (!openAIKey) {
+      Logger.warn("OpenAIKey not configured, moving with default provider.")
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
+
+    const openAIClient = new OpenAI({
+      apiKey: openAIKey,
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
+    })
+    const openaiProvider = new OpenAIProvider(openAIClient)
+
+    return openaiProvider.converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const agentWithNoIntegrationsQuestion = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+    if (!params.systemPrompt) {
+      if (!isAgentPromptEmpty(params.agentPrompt)) {
+        const agentPromptData = parseAgentPrompt(params.agentPrompt)
+        params.systemPrompt = askQuestionSystemPrompt + "\n\n" + agentPromptData.prompt
+      } else {
+        params.systemPrompt = agentWithNoIntegrationsSystemPrompt
+      }
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+
+    return getProviderByModel(params.modelId).converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in agentWithNoIntegrationsQuestion")
     throw error
   }
 }

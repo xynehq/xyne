@@ -39,8 +39,15 @@ interface ModelParameters {
 }
 
 // Interface for API request options
+type ToolDef = {
+  type: 'function'
+  function: { name: string; description?: string; parameters?: any }
+}
+
 interface RequestOptions extends ModelParameters {
   messages: ChatMessage[]
+  tools?: ToolDef[]
+  tool_choice?: 'auto' | 'none' | 'required'
 }
 
 // Interfaces for API responses
@@ -99,7 +106,7 @@ class Fireworks {
 
   private async _makeRequest(
     messages: ChatMessage[],
-    options: Partial<ModelParameters> = {},
+    options: Partial<RequestOptions> = {},
   ): Promise<Response> {
     const defaultOptions: ModelParameters = {
       model: "accounts/fireworks/models/deepseek-r1",
@@ -140,7 +147,7 @@ class Fireworks {
   // Non-streaming API call
   async complete(
     messages: ChatMessage[],
-    options: Partial<ModelParameters> = {},
+    options: Partial<RequestOptions> = {},
   ): Promise<CompletionResponse> {
     let retries = 0
 
@@ -174,8 +181,13 @@ class Fireworks {
   // Generator-based streaming API
   async *streamComplete(
     messages: ChatMessage[],
-    options: Partial<ModelParameters> = {},
-  ): AsyncGenerator<string, void, unknown> {
+    options: Partial<RequestOptions> = {},
+  ): AsyncGenerator<
+    | { type: 'text'; text: string }
+    | { type: 'tool_call'; name: string; arguments: string },
+    void,
+    unknown
+  > {
     let retries = 0
 
     while (retries < this.maxRetries) {
@@ -215,10 +227,21 @@ class Fireworks {
 
               try {
                 const parsedData = JSON.parse(jsonData) as CompletionResponse
-                const content = parsedData.choices[0]?.delta?.content
+                const choice = parsedData.choices?.[0]
+                const delta = choice?.delta
+                const content = delta?.content
+                const fn = delta?.function_call
+
+                if (fn && (fn.name || fn.arguments)) {
+                  yield {
+                    type: 'tool_call',
+                    name: fn.name || '',
+                    arguments: fn.arguments || '{}',
+                  }
+                }
 
                 if (content) {
-                  yield content
+                  yield { type: 'text', text: content }
                 }
               } catch (error) {
                 console.error("Error parsing JSON:", error)

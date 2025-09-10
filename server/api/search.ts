@@ -50,7 +50,7 @@ import {
   userContext,
 } from "@/ai/context"
 import { VespaSearchResultsSchema } from "@/search/types"
-import { AnswerSSEvents } from "@/shared/types"
+import { agentPromptPayloadSchema, AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -157,7 +157,8 @@ export const sharedAgentUsageSchema = z.object({
 export const agentChatMessageSchema = z.object({
   message: z.string(),
   chatId: z.string().optional(),
-  modelId: z.string().optional(),
+  path: z.string().optional(),
+  modelId: z.string().min(1),
   isReasoningEnabled: z
     .string()
     .optional()
@@ -177,23 +178,10 @@ export const agentChatMessageSchema = z.object({
 
 export const messageSchema = z.object({
   message: z.string().min(1),
+  path: z.string().optional(),
   chatId: z.string().optional(),
-  modelId: z.string().min(1),
-  isReasoningEnabled: z
-    .string()
-    .optional()
-    .transform((val) => {
-      if (!val) return false
-      return val.toLowerCase() === "true"
-    }),
+  selectedModelConfig: z.string().optional(), // JSON string containing model config
   agentId: z.string().optional(),
-  enableWebSearch: z
-    .string()
-    .optional()
-    .transform((val) => {
-      if (!val) return false
-      return val.toLowerCase() === "true"
-    }),
   toolsList: z.preprocess(
     (val) => {
       if (typeof val === "string") {
@@ -214,6 +202,7 @@ export const messageSchema = z.object({
       )
       .optional(),
   ),
+  agentPromptPayload: agentPromptPayloadSchema.optional(),
   streamOff: z
     .string()
     .optional()
@@ -228,13 +217,7 @@ export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
   agentId: z.string().optional(),
   agentic: z.string().optional().default("false"),
-  isReasoningEnabled: z
-    .string()
-    .optional()
-    .transform((val) => {
-      if (!val) return false
-      return val.toLowerCase() === "true"
-    }),
+  selectedModelConfig: z.string().optional(),
 })
 
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>

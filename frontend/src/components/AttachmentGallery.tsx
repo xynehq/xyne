@@ -122,16 +122,16 @@ export const AttachmentGallery: React.FC<AttachmentGalleryProps> = ({
 
       {/* Other Files */}
       {otherFiles.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <div className="space-y-1">
+          <h4 className="flex flex-wrap justify-end text-xs font-medium text-gray-700 dark:text-gray-300">
             Files ({otherFiles.length})
           </h4>
-          <div className="space-y-2">
+          <div className="flex justify-end flex-wrap gap-2">
             {otherFiles.map((file) => (
               <AttachmentPreview
                 key={file.fileId}
                 attachment={file}
-                className="w-full"
+                className="w-[40%]"
               />
             ))}
           </div>
