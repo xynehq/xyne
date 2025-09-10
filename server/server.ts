@@ -95,7 +95,12 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo, GenerateUserApiKey } from "@/api/auth"
+import {
+  GetUserWorkspaceInfo,
+  GenerateUserApiKey,
+  GetUserApiKeys,
+  DeleteUserApiKey,
+} from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -795,11 +800,13 @@ export const AppRoutes = app
     SearchSlackChannels,
   )
   .get("/me", GetUserWorkspaceInfo)
+  .get("/users/api-keys", GetUserApiKeys)
   .post(
     "/users/api-key",
     zValidator("json", CreateApiKeySchema),
     GenerateUserApiKey,
   )
+  .delete("/users/api-keys/:keyId", DeleteUserApiKey)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)

@@ -197,6 +197,7 @@ export async function createUserApiKey({
 }): Promise<{
   success: boolean
   key?: string
+  apiKey?: any
   error?: string
 }> {
   try {
@@ -205,14 +206,30 @@ export async function createUserApiKey({
     const md5Hash = crypto.randomBytes(16).toString("hex")
 
     // Store encrypted API key in database
-    const [inserted] = await db.insert(apiKeys).values({
-      userId,
-      name,
-      workspaceId,
+    const [inserted] = await db
+      .insert(apiKeys)
+      .values({
+        userId,
+        name,
+        workspaceId,
+        key: md5Hash,
+        config: scope,
+      })
+      .returning()
+
+    const config = (inserted.config as any) || {}
+    return {
+      success: true,
       key: md5Hash,
-      config: scope, // Direct encrypted string
-    })
-    return { success: true, key: md5Hash }
+      apiKey: {
+        id: inserted.id.toString(),
+        name: inserted.name,
+        key: md5Hash,
+        scopes: config.scopes || [],
+        agents: config.agents || [],
+        createdAt: inserted.createdAt.toISOString(),
+      },
+    }
   } catch (err) {
     console.error("[createAgentApiKey] Error:", err)
     return {

@@ -77,12 +77,6 @@ interface ApiKey {
   isVisible?: boolean
 }
 
-interface CreateApiKeyPayload {
-  name: string
-  scopes: string[]
-  agents: string[]
-}
-
 // Available scopes
 const AVAILABLE_SCOPES: ApiKeyScope[] = [
   {
@@ -141,31 +135,25 @@ const ApiKeyComponent = ({
   useEffect(() => {
     loadApiKeys()
     loadAvailableAgents()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadApiKeys = async () => {
     try {
       setIsLoading(true)
-      // Mock API call - replace with actual endpoint
-      const response = await authFetch("/api/v1/api-keys")
+      const response = await authFetch("/api/v1/users/api-keys")
       if (response.ok) {
         const data = await response.json()
-        setApiKeys(data.keys || [])
+        if (data.success) {
+          setApiKeys(data.keys || [])
+        }
       }
     } catch (err) {
       console.error("Failed to load API keys:", err)
-      // For now, use mock data
-      setApiKeys([
-        {
-          id: "1",
-          name: "Production API Key",
-          key: "xyne_api_12345678901234567890",
-          scopes: ["NORMAL_CHAT", "UPLOAD_KB"],
-          agents: [],
-          createdAt: "2024-01-15T10:30:00Z",
-          isVisible: false,
-        },
-      ])
+      toast({
+        title: "Error",
+        description: "Failed to load API keys",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
@@ -211,49 +199,46 @@ const ApiKeyComponent = ({
 
     setIsGenerating(true)
     try {
-      const payload: CreateApiKeyPayload = {
+      const payload = {
         name: keyName,
-        scopes: selectedScopes,
-        agents: selectedAgents,
+        permissions: {
+          scopes: selectedScopes,
+          agents: selectedAgents,
+        },
       }
 
-      // Mock API call - replace with actual endpoint
-      const response = await authFetch("/api/v1/api-keys", {
+      const response = await authFetch("/api/v1/users/api-key", {
         method: "POST",
         body: JSON.stringify(payload),
         headers: { "Content-Type": "application/json" },
       })
 
       if (response.ok) {
-        const newKey = await response.json()
-        setApiKeys((prev) => [...prev, newKey])
-        resetForm()
-        setIsCreateModalOpen(false)
-        toast({
-          title: "Success",
-          description: "API key created successfully!",
-        })
+        const result = await response.json()
+        if (result.success && result.apiKey) {
+          setApiKeys((prev) => [
+            ...prev,
+            { ...result.apiKey, isVisible: false },
+          ])
+          resetForm()
+          setIsCreateModalOpen(false)
+          toast({
+            title: "Success",
+            description: "API key created successfully!",
+          })
+        } else {
+          throw new Error("Failed to create API key")
+        }
       } else {
-        throw new Error("Failed to create API key")
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || "Failed to create API key")
       }
-    } catch {
-      // Mock success for demo
-      const mockKey: ApiKey = {
-        id: Date.now().toString(),
-        name: keyName,
-        key: `xyne_api_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`,
-        scopes: selectedScopes,
-        agents: selectedAgents,
-        createdAt: new Date().toISOString(),
-        isVisible: false,
-      }
-
-      setApiKeys((prev) => [...prev, mockKey])
-      resetForm()
-      setIsCreateModalOpen(false)
+    } catch (error) {
       toast({
-        title: "Success",
-        description: "API key created successfully!",
+        title: "Error",
+        description:
+          error instanceof Error ? error.message : "Failed to create API key",
+        variant: "destructive",
       })
     } finally {
       setIsGenerating(false)
@@ -268,20 +253,30 @@ const ApiKeyComponent = ({
 
   const handleRevokeApiKey = async (keyId: string) => {
     try {
-      // Mock API call - replace with actual endpoint
-      await authFetch(`/api/v1/api-keys/${keyId}`, {
+      const response = await authFetch(`/api/v1/users/api-keys/${keyId}`, {
         method: "DELETE",
       })
 
-      setApiKeys((prev) => prev.filter((key) => key.id !== keyId))
-      toast({
-        title: "Success",
-        description: "API key revoked successfully",
-      })
-    } catch {
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setApiKeys((prev) => prev.filter((key) => key.id !== keyId))
+          toast({
+            title: "Success",
+            description: "API key revoked successfully",
+          })
+        } else {
+          throw new Error(result.message || "Failed to revoke API key")
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || "Failed to revoke API key")
+      }
+    } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to revoke API key",
+        description:
+          error instanceof Error ? error.message : "Failed to revoke API key",
         variant: "destructive",
       })
     }
