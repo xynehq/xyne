@@ -1,4 +1,4 @@
-import { createAgentHelperInWorkflow } from "../db/agent"
+import { createAgentHelperInWorkflow } from "@/api/agent/workflowAgentUtils"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { CreateAgentPayload } from "@/api/agent"

@@ -14,6 +14,10 @@ import { GetDocumentsByDocIds } from "@/search/vespa" // Retrieve non-image atta
 import { answerContextMap, cleanContext } from "@/ai/context"  // Transform Vespa results to text
 import { VespaSearchResultsSchema } from "@/search/types"  // Type for Vespa results
 import { getTracer, type Span } from "@/tracer"
+import { createAgentSchema } from "@/api/agent"
+import type { CreateAgentPayload } from "@/api/agent"
+import { insertAgent } from "@/db/agent" 
+
 const Logger = getLogger(Subsystem.Server)
 
 export const executeAgentSchema = z.object({
@@ -415,7 +419,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     }
   }
 }
- 
+
 async function* createStreamingWithDBSave(
   originalIterator: AsyncIterableIterator<ConverseResponse>,
   dbSaveParams: {
@@ -490,5 +494,46 @@ async function* createStreamingWithDBSave(
   } catch (error) {
     Logger.error(error, "Error during streaming or DB save")
     throw error
+  }
+}
+
+
+//this function will be used to be called by workflow feature
+export const createAgentHelperInWorkflow = async (
+  agentData: CreateAgentPayload,
+  userId: number,
+  workspaceId: number
+): Promise<SelectAgent> => {
+  try {
+    const validatedBody = createAgentSchema.parse(agentData)
+
+    const agentDataForInsert = {
+      name: validatedBody.name,
+      description: validatedBody.description,
+      prompt: validatedBody.prompt,
+      model: validatedBody.model,
+      isPublic: validatedBody.isPublic,
+      appIntegrations: validatedBody.appIntegrations,
+      allowWebSearch: validatedBody.allowWebSearch,
+      isRagOn: validatedBody.isRagOn,
+      uploadedFileNames: validatedBody.uploadedFileNames,
+      docIds: validatedBody.docIds,
+    }
+
+    const newAgent = await db.transaction(async (tx) => {
+      return await insertAgent(tx, agentDataForInsert, userId, workspaceId)
+    })
+
+    return newAgent
+  } catch (error) {
+    // Re-throw validation errors as-is for the caller to handle
+    // Logger.error(error, `Failed to create agent: ${getErrorMessage(error)}`)
+    if (error instanceof z.ZodError) {
+      throw error
+    }
+
+    // Wrap other errors with more context
+    const errMsg = getErrorMessage(error)
+    throw new Error(`Failed to create agent: ${errMsg}`)
   }
 }
