@@ -764,7 +764,7 @@ export const ChatPage = ({
 
     if (shouldUpdateTitle && !isSharedChat) {
       // Update title in background using the first user message
-      api["chat"]["generate-title"]
+      api.chat.generateTitle
         .$post({
           json: {
             chatId: chatId,

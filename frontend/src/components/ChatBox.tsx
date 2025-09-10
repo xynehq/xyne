@@ -48,6 +48,7 @@ import {
   DataSourceEntity,
   AttachmentMetadata,
   FileType,
+  ModelConfiguration,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -319,6 +320,22 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
+// Reusable tooltip wrapper component
+const TooltipWrapper: React.FC<{
+  children: React.ReactElement
+  content: string
+  delayDuration?: number
+}> = ({ children, content, delayDuration = 500 }) => (
+  <TooltipProvider delayDuration={delayDuration}>
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>
+        <p>{content}</p>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+)
+
 export interface ChatBoxRef {
   sendMessage: (message: string) => void
   getCurrentModelConfig: () => string | null
@@ -509,12 +526,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // Model selection state
     const [availableModels, setAvailableModels] = useState<
-      Array<{
-        labelName: string
-        reasoning: boolean
-        websearch: boolean
-        deepResearch: boolean
-      }>
+      ModelConfiguration[]
     >([])
 
     // State for mode-specific model selections
@@ -576,6 +588,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       reasoning: false,
       websearch: false,
       deepResearch: true,
+      description: "Advanced research model with deep analysis capabilities.",
     }
 
     // Get all models including O3 for deep research mode
@@ -601,12 +614,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // Check if a model is disabled in current mode
     const isModelDisabled = useCallback(
-      (model: {
-        labelName: string
-        reasoning: boolean
-        websearch: boolean
-        deepResearch: boolean
-      }) => {
+      (model: ModelConfiguration) => {
         if (selectedCapability === "websearch") {
           return model.labelName !== "Gemini 2.5 Flash"
         } else if (selectedCapability === "deepResearch") {
@@ -688,7 +696,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           } else if (availableModels.length > 0) {
             const defaultModel =
               availableModels.find(
-                (m: any) => m.labelName === "Claude Sonnet 4",
+                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
               ) || availableModels[0]
             setSelectedModel(defaultModel.labelName)
           }
@@ -704,7 +712,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           if (
             storedReasoningModel &&
             availableModels.find(
-              (m: any) => m.labelName === storedReasoningModel,
+              (m: ModelConfiguration) => m.labelName === storedReasoningModel,
             )
           ) {
             setSelectedModel(storedReasoningModel)
@@ -712,14 +720,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             // Default to Claude Sonnet 4 or first available model
             const defaultModel =
               availableModels.find(
-                (m: any) => m.labelName === "Claude Sonnet 4",
+                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
               ) || availableModels[0]
             setSelectedModel(defaultModel.labelName)
           }
         } else if (newCapability === "websearch") {
           // Auto-select Gemini 2.5 Flash for web search
           const geminiModel = availableModels.find(
-            (m: any) => m.labelName === "Gemini 2.5 Flash",
+            (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
           )
           if (geminiModel) {
             setSelectedModel(geminiModel.labelName)
@@ -747,13 +755,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               // Default to Claude Sonnet 4 or first available
               const defaultModel =
                 data.models.find(
-                  (m: any) => m.labelName === "Claude Sonnet 4",
+                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
                 ) || data.models[0]
               setSelectedModel(defaultModel.labelName)
               setReasoningModeModel(defaultModel.labelName)
             } else if (selectedCapability === "websearch") {
               const geminiModel = data.models.find(
-                (m: any) => m.labelName === "Gemini 2.5 Flash",
+                (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
               )
               if (geminiModel) {
                 setSelectedModel(geminiModel.labelName)
@@ -764,7 +772,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               // No capability selected - default to Claude Sonnet 4 or first available
               const defaultModel =
                 data.models.find(
-                  (m: any) => m.labelName === "Claude Sonnet 4",
+                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
                 ) || data.models[0]
               setSelectedModel(defaultModel.labelName)
               setReasoningModeModel(defaultModel.labelName)
@@ -2120,6 +2128,46 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       fetchResults(currentSearchTerm, nextPage, true)
     }
 
+    const handleAtMentionClick = () => {
+      const input = inputRef.current
+      if (!input) return
+
+      const textContentBeforeAt = input.textContent || ""
+
+      const textToAppend =
+        textContentBeforeAt.length === 0 ||
+        textContentBeforeAt.endsWith(" ") ||
+        textContentBeforeAt.endsWith("\n") ||
+        textContentBeforeAt.endsWith("\u00A0")
+          ? "@"
+          : " @"
+
+      const atTextNode = document.createTextNode(textToAppend)
+
+      input.appendChild(atTextNode)
+
+      const newTextContent = input.textContent || ""
+      setQuery(newTextContent)
+      setIsPlaceholderVisible(newTextContent.length === 0)
+
+      const newAtSymbolIndex =
+        textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
+      setCaretPosition(input, newTextContent.length)
+
+      setActiveAtMentionIndex(newAtSymbolIndex)
+      setReferenceSearchTerm("")
+      setShowReferenceBox(true)
+      updateReferenceBoxPosition(newAtSymbolIndex)
+      setSearchMode("citations")
+      setGlobalResults([])
+      setGlobalError(null)
+      setPage(1)
+      setTotalCount(0)
+      setSelectedRefIndex(-1)
+
+      input.focus()
+    }
+
     useEffect(() => {
       if (
         showReferenceBox &&
@@ -2875,26 +2923,26 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             </div>
           )}
 
-          <div
-            className={`flex ml-[16px] ${hideButtons ? "justify-between mr-[16px]" : "mr-[6px]"} mb-[6px] items-center space-x-3 pt-1 pb-1`}
-          >
-            <Attach
-              className={`${
-                selectedFiles.length >= MAX_ATTACHMENTS
-                  ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                  : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
-              } transition-colors`}
-              onClick={
-                selectedFiles.length >= MAX_ATTACHMENTS
-                  ? undefined
-                  : handleFileSelect
-              }
-              title={
-                selectedFiles.length >= MAX_ATTACHMENTS
-                  ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
-                  : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
-              }
-            />
+          <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
+            <TooltipWrapper content="attachment">
+              <Attach
+                className={`${
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                    : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
+                } transition-colors`}
+                onClick={
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? undefined
+                    : handleFileSelect
+                }
+                title={
+                  selectedFiles.length >= MAX_ATTACHMENTS
+                    ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
+                    : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
+                }
+              />
+            </TooltipWrapper>
 
             {/* Vertical Divider */}
             {showAdvancedOptions && (
@@ -2903,105 +2951,68 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
             {showAdvancedOptions && (
               <>
-                <AtSign
-                  size={16}
-                  className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-                  onClick={() => {
-                    const input = inputRef.current
-                    if (!input) return
-
-                    const textContentBeforeAt = input.textContent || ""
-
-                    const textToAppend =
-                      textContentBeforeAt.length === 0 ||
-                      textContentBeforeAt.endsWith(" ") ||
-                      textContentBeforeAt.endsWith("\n") ||
-                      textContentBeforeAt.endsWith("\u00A0")
-                        ? "@"
-                        : " @"
-
-                    const atTextNode = document.createTextNode(textToAppend)
-
-                    input.appendChild(atTextNode)
-
-                    const newTextContent = input.textContent || ""
-                    setQuery(newTextContent)
-                    setIsPlaceholderVisible(newTextContent.length === 0)
-
-                    const newAtSymbolIndex =
-                      textContentBeforeAt.length +
-                      (textToAppend === " @" ? 1 : 0)
-                    setCaretPosition(input, newTextContent.length)
-
-                    setActiveAtMentionIndex(newAtSymbolIndex)
-                    setReferenceSearchTerm("")
-                    setShowReferenceBox(true)
-                    updateReferenceBoxPosition(newAtSymbolIndex)
-                    setSearchMode("citations")
-                    setGlobalResults([])
-                    setGlobalError(null)
-                    setPage(1)
-                    setTotalCount(0)
-                    setSelectedRefIndex(-1)
-
-                    input.focus()
-                  }}
-                />
+                <TooltipWrapper content="find and attach specific document">
+                  <AtSign
+                    size={16}
+                    className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
+                    onClick={handleAtMentionClick}
+                  />
+                </TooltipWrapper>
 
                 {/* Capability Selector with Slider Animation */}
                 <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
                   {/* Slider Background */}
                   <div
-                    className="absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out"
-                    style={{
-                      width: "40px", // Same as button width
-                      left:
-                        selectedCapability === "reasoning"
-                          ? "4px"
-                          : // Centered on first button
-                            selectedCapability === "websearch"
-                            ? "48px"
-                            : // Centered on second button
-                              selectedCapability === "deepResearch"
-                              ? "92px"
-                              : "4px", // Centered on third button
-                      opacity: selectedCapability ? 1 : 0,
-                    }}
+                    className={`absolute top-1 bottom-1 rounded-full bg-white dark:bg-slate-600 shadow-sm transition-all duration-300 ease-in-out w-10 ${
+                      selectedCapability === "reasoning"
+                        ? "left-1"
+                        : selectedCapability === "websearch"
+                          ? "left-12"
+                          : selectedCapability === "deepResearch"
+                            ? "left-[5.75rem]"
+                            : "left-1"
+                    } ${selectedCapability ? "opacity-100" : "opacity-0"}`}
                   />
 
                   {/* Always show all three capability buttons */}
-                  <button
-                    onClick={() => handleCapabilityChange("reasoning")}
-                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                      selectedCapability === "reasoning"
-                        ? "text-gray-900 dark:text-gray-100"
-                        : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
-                    }`}
-                  >
-                    <Atom size={14} />
-                  </button>
+                  <TooltipWrapper content="reasoning">
+                    <button
+                      onClick={() => handleCapabilityChange("reasoning")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "reasoning"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Atom size={14} />
+                    </button>
+                  </TooltipWrapper>
 
-                  <button
-                    onClick={() => handleCapabilityChange("websearch")}
-                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                      selectedCapability === "websearch"
-                        ? "text-gray-900 dark:text-gray-100"
-                        : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
-                    }`}
-                  >
-                    <Globe size={14} />
-                  </button>
+                  <TooltipWrapper content="websearch">
+                    <button
+                      onClick={() => handleCapabilityChange("websearch")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "websearch"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Globe size={14} />
+                    </button>
+                  </TooltipWrapper>
 
-                  <button
-                    onClick={() => handleCapabilityChange("deepResearch")}
-                    className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
-                      selectedCapability === "deepResearch"
-                        ? "text-gray-900 dark:text-gray-100"
-                        : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
-                    }`}
-                  >
-                    <Brain size={14} />
-                  </button>
+                  <TooltipWrapper content="deepresearch">
+                    <button
+                      onClick={() => handleCapabilityChange("deepResearch")}
+                      className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
+                        selectedCapability === "deepResearch"
+                          ? "text-gray-900 dark:text-gray-100"
+                          : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      }`}
+                    >
+                      <Brain size={14} />
+                    </button>
+                  </TooltipWrapper>
                 </div>
               </>
             )}
@@ -3863,54 +3874,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                           )}
                                         </span>
 
-                                        {/* Model description based on name */}
+                                        {/* Model description from configuration */}
                                         <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                          {(model.labelName.includes(
-                                            "Sonnet 3.7",
-                                          ) ||
-                                            model.labelName.includes(
-                                              "3.7 Sonnet",
-                                            ) ||
-                                            model.labelName.includes(
-                                              "3.7 sonnet",
-                                            )) &&
-                                            "Advanced reasoning with enhanced performance and longer context."}
-                                          {(model.labelName.includes(
-                                            "Sonnet 3.5",
-                                          ) ||
-                                            model.labelName.includes(
-                                              "3.5 Sonnet",
-                                            ) ||
-                                            model.labelName.includes(
-                                              "3.5 sonnet",
-                                            )) &&
-                                            "Designed for quick responses while ensuring solid reasoning."}
-                                          {(model.labelName.includes(
-                                            "Sonnet 4",
-                                          ) ||
-                                            model.labelName.includes(
-                                              "4 Sonnet",
-                                            ) ||
-                                            model.labelName.includes(
-                                              "4 sonnet",
-                                            )) &&
-                                            "Balanced for reasoning, long context windows."}
-                                          {model.labelName.includes("Opus") &&
-                                            "Ideal for in-depth research and thorough analysis."}
-                                          {model.labelName.includes("GPT 5") &&
-                                            "Features enhanced reasoning, creativity, and better multi-step planning."}
-                                          {model.labelName.includes("GPT 4") &&
-                                            "Great for programming, content generation, and logical structuring."}
-                                          {model.labelName.includes("GPT O3") &&
-                                            "Advanced research model with deep analysis capabilities."}
-                                          {model.labelName.includes(
-                                            "Gemini 2.5 Pro",
-                                          ) &&
-                                            "Proficient in reasoning across text, visuals, and programming."}
-                                          {model.labelName.includes(
-                                            "Gemini 2.5 Flash",
-                                          ) &&
-                                            "Tailored for cost-effectiveness and rapid response times."}
+                                          {model.description || ""}
                                         </span>
 
                                         {/* Disabled state messages */}
