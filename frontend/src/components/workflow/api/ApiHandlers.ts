@@ -135,7 +135,6 @@ async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        "ngrok-skip-browser-warning": "true",
         "Access-Control-Allow-Origin": "*",
         ...(token && { Authorization: `Bearer ${token}` }),
         ...options?.headers,
@@ -176,7 +175,6 @@ async function apiFormRequest<T>(url: string, formData: FormData): Promise<T> {
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        "ngrok-skip-browser-warning": "true",
         "Access-Control-Allow-Origin": "*",
         // Don't set Content-Type for FormData - browser will set it with boundary
       },
