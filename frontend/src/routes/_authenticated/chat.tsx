@@ -395,6 +395,31 @@ export const ChatPage = ({
   const [chatTitle, setChatTitle] = useState<string | null>(
     isWithChatId && data ? data?.chat?.title || null : null,
   )
+  const [isTitleUpdating, setIsTitleUpdating] = useState(false)
+  const [streamingTitle, setStreamingTitle] = useState<string>("")
+  const [_, setFinalTitle] = useState<string>("")
+
+  // Smooth title streaming function - animates from left to right
+  const updateTitleWithAnimation = (newTitle: string) => {
+    setIsTitleUpdating(true)
+    setFinalTitle(newTitle)
+    setStreamingTitle("")
+
+    const chars = newTitle.split("")
+    let currentIndex = 0
+
+    const streamInterval = setInterval(() => {
+      if (currentIndex < chars.length) {
+        setStreamingTitle((prev) => prev + chars[currentIndex])
+        currentIndex++
+      } else {
+        clearInterval(streamInterval)
+        setChatTitle(newTitle)
+        setIsTitleUpdating(false)
+        setStreamingTitle("")
+      }
+    }, 50) // 50ms per character for smooth streaming effect
+  }
 
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
@@ -730,6 +755,60 @@ export const ChatPage = ({
     router,
   ])
 
+  // Background title update for new chats
+  useEffect(() => {
+    const shouldUpdateTitle =
+      chatId &&
+      chatTitle &&
+      chatTitle.startsWith("Chat ") &&
+      !isStreaming &&
+      messages.length >= 2 && // At least user + assistant message
+      messages[0]?.messageRole === "user"
+
+    if (shouldUpdateTitle && !isSharedChat) {
+      // Update title in background using the first user message
+      api["chat"]["generate-title"]
+        .$post({
+          json: {
+            chatId: chatId,
+            message: messages[0].message,
+          },
+        })
+        .then(async (response: Response) => {
+          if (response.ok) {
+            const result = (await response.json()) as {
+              success: boolean
+              title: string
+            }
+            if (result.success) {
+              updateTitleWithAnimation(result.title)
+              // Update cached chat data
+              queryClient.setQueryData<any>(
+                ["chatHistory", chatId],
+                (old: any) => {
+                  if (old?.chat) {
+                    return {
+                      ...old,
+                      chat: {
+                        ...old.chat,
+                        title: result.title,
+                      },
+                    }
+                  }
+                  return old
+                },
+              )
+            }
+          } else {
+          }
+        })
+        .catch((error: Error) => {
+          console.error("Background title update failed:", error)
+          // Fail silently - this is a background operation
+        })
+    }
+  }, [chatId, chatTitle, isStreaming, messages, isSharedChat, queryClient])
+
   const handleSend = async (
     messageToSend: string,
     metadata?: AttachmentMetadata[],
@@ -869,10 +948,11 @@ export const ChatPage = ({
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
     setRetryIsStreaming(true)
-    
+
     // Get current model configuration from ChatBox
-    const currentModelConfig = chatBoxRef.current?.getCurrentModelConfig() || null
-    
+    const currentModelConfig =
+      chatBoxRef.current?.getCurrentModelConfig() || null
+
     await retryMessage(messageId, isAgenticMode, undefined, currentModelConfig)
   }
 
@@ -1098,9 +1178,14 @@ export const ChatPage = ({
                 value={editedTitle!}
               />
             ) : (
-              <span className="flex-grow text-[#1C1D1F] dark:text-gray-100 text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
-                {chatTitle}
-              </span>
+              <div className="flex items-center flex-grow">
+                <span className="text-[#1C1D1F] dark:text-gray-100 text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
+                  {isTitleUpdating ? streamingTitle : chatTitle}
+                  {isTitleUpdating && (
+                    <span className="inline-block w-0.5 h-4 bg-gray-400 dark:bg-gray-500 ml-1 animate-pulse" />
+                  )}
+                </span>
+              </div>
             )}
             {isSharedChat ? (
               <span className="text-[12px] text-gray-500 dark:text-gray-400 ml-2">
@@ -2620,7 +2705,9 @@ export const ChatMessage = ({
                     onMouseDown={() => setIsCopied(true)}
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
-                      navigator.clipboard.writeText(processMessage(message, citationMap, citationUrls))
+                      navigator.clipboard.writeText(
+                        processMessage(message, citationMap, citationUrls),
+                      )
                     }
                   />
                   {/* Retry button temporarily hidden */}

@@ -18,6 +18,7 @@ import {
   chatStopSchema,
   SearchSlackChannels,
   agentChatMessageSchema,
+  chatTitleSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -123,6 +124,7 @@ import {
   StopStreamingApi,
   GenerateFollowUpQuestionsApi,
   GetAvailableModelsApi,
+  GenerateChatTitleApi,
 } from "@/api/chat/chat"
 import {
   CreateSharedChatApi,
@@ -725,6 +727,7 @@ export const AppRoutes = app
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
+  .post("/chat/generate-title", zValidator("json", chatTitleSchema), GenerateChatTitleApi)
   .post(
     "/chat/bookmark",
     zValidator("json", chatBookmarkSchema),

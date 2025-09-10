@@ -62,7 +62,12 @@ import {
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { ChatSSEvents, OpenAIError, type MessageReqType, DEFAULT_TEST_AGENT_ID } from "@/shared/types"
+import {
+  ChatSSEvents,
+  OpenAIError,
+  type MessageReqType,
+  DEFAULT_TEST_AGENT_ID,
+} from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
   delay,
@@ -463,7 +468,9 @@ const checkAndYieldCitations = async function* (
     if (match) {
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
-        const item = isMsgWithSources ? results[baseIndex]: results[citationIndex - baseIndex]
+        const item = isMsgWithSources
+          ? results[baseIndex]
+          : results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
           const f = (item as any)?.fields
@@ -477,7 +484,9 @@ const checkAndYieldCitations = async function* (
           yield {
             citation: {
               index: citationIndex,
-              item: isMsgWithSources ? searchToCitation(item as VespaSearchResults, citationIndex) : searchToCitation(item as VespaSearchResults),
+              item: isMsgWithSources
+                ? searchToCitation(item as VespaSearchResults, citationIndex)
+                : searchToCitation(item as VespaSearchResults),
             },
           }
           yieldedCitations.add(citationIndex)
@@ -2191,7 +2200,10 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.end()
     return
   } else if (!answer) {
-    if(isMsgWithSources || (attachmentFileIds && attachmentFileIds.length > 0)) {
+    if (
+      isMsgWithSources ||
+      (attachmentFileIds && attachmentFileIds.length > 0)
+    ) {
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
@@ -4013,12 +4025,12 @@ export const MessageApi = async (c: Context) => {
       try {
         const config = JSON.parse(selectedModelConfig)
         modelId = config.model
-        
+
         // Handle new direct boolean format
         isReasoningEnabled = config.reasoning === true
         enableWebSearch = config.websearch === true
         isDeepResearchEnabled = config.deepResearch === true
-        
+
         // For deep research, always use Claude Sonnet 4 regardless of UI selection
         if (isDeepResearchEnabled) {
           modelId = "Claude Sonnet 4"
@@ -4091,9 +4103,11 @@ export const MessageApi = async (c: Context) => {
     }
     const webSearchEnabled = enableWebSearch ?? false
     const deepResearchEnabled = isDeepResearchEnabled ?? false
-    const agentPromptValue = agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID) ? agentId : undefined // Use undefined if not a valid CUID
+    const agentPromptValue =
+      agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID)
+        ? agentId
+        : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
-      
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
@@ -4160,7 +4174,9 @@ export const MessageApi = async (c: Context) => {
     if (sources) {
       try {
         const resp = await getCollectionFilesVespaIds(JSON.parse(sources), db)
-        fileIds = resp.map((file) => file.vespaDocId || "").filter((id) => id !== "")
+        fileIds = resp
+          .map((file) => file.vespaDocId || "")
+          .filter((id) => id !== "")
       } catch {
         fileIds = []
       }
@@ -4174,7 +4190,7 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    if(extractedInfo?.fileIds.length > 0) {
+    if (extractedInfo?.fileIds.length > 0) {
       fileIds = fileIds.concat(extractedInfo?.fileIds)
     }
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
@@ -4202,31 +4218,13 @@ export const MessageApi = async (c: Context) => {
     let attachmentStorageError: Error | null = null
     if (!chatId) {
       loggerWithChild({ email: email }).info(
-        `MessageApi before the span.. ${chatId}`,
+        `MessageApi before creating chat with dummy title.. ${chatId}`,
       )
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      loggerWithChild({ email: email }).info(
-        `MessageApi after the span.. ${titleSpan}`,
-      )
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      loggerWithChild({ email: email }).info(
-        `MessageApi after the titleResp.. ${titleResp}`,
-      )
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
+      // Use dummy title initially for fast chat creation
+      title = `Chat ${new Date().toLocaleString()}`
 
       loggerWithChild({ email: email }).info(
-        `MessageApi before the first message.. ${titleSpan}`,
+        `MessageApi before creating first message..`,
       )
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -7142,5 +7140,55 @@ export const GetAvailableModelsApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: "Could not fetch available models",
     })
+  }
+}
+
+// Generate chat title API - called after first response to update dummy title
+export const GenerateChatTitleApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+
+    // @ts-ignore
+    const { chatId, message } = c.req.valid("json")
+
+    const { user, workspace } = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+
+    // Generate proper title using LLM
+    loggerWithChild({ email: email }).info(
+      `Generating title for chat ${chatId} with message: ${String(message).substring(0, 100)}...`,
+    )
+
+    const titleResp = await generateTitleUsingQuery(message, {
+      modelId: defaultFastModel,
+      stream: false,
+    })
+
+    loggerWithChild({ email: email }).info(
+      `Generated title: ${titleResp.title}`,
+    )
+
+    // Update chat with proper title
+    await updateChatByExternalIdWithAuth(db, chatId, email, {
+      title: titleResp.title,
+    })
+
+    return c.json({
+      success: true,
+      title: titleResp.title,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Chat Title Generation Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    // Return error but don't throw - this is background operation
+    return c.json({ success: false, error: errMsg }, 500)
   }
 }
