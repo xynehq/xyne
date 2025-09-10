@@ -1,4 +1,4 @@
-import { ExecuteAgentForWorkflow } from "@/api/agent/executeAgent"
+import { ExecuteAgentForWorkflow } from "@/api/agent/workflowAgentUtils"
   import { getLogger } from "@/logger"
   import { Subsystem } from "@/types"
 
