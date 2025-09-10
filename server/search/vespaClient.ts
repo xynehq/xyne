@@ -32,6 +32,20 @@ type VespaConfigValues = {
   schema?: VespaSchema
   cluster?: string
 }
+interface VisitOptions {
+  namespace: string
+  schema: VespaSchema
+  continuation?: string
+  wantedDocumentCount?: number
+  fieldSet?: string
+  concurrency?: number
+  cluster?: string
+}
+interface VisitResponse {
+  documents: VespaGetResult[]
+  continuation?: string
+  documentCount: number
+}
 
 class VespaClient {
   private maxRetries: number
@@ -1348,6 +1362,55 @@ class VespaClient {
       throw new Error(
         `Error fetching folderItem with folderId ${docId.join(",")}: ${errMessage}`,
       )
+    }
+  }
+  async visit(options: VisitOptions): Promise<VisitResponse> {
+    const {
+      namespace,
+      schema = "mail",
+      continuation,
+      wantedDocumentCount = 50,
+      fieldSet = `${schema}:*`,
+      concurrency = 1,
+      cluster = "my_content",
+    } = options
+
+    const NAMESPACE = "namespace" // Replace with your actual namespace
+    const params = new URLSearchParams({
+      wantedDocumentCount: wantedDocumentCount.toString(),
+      cluster: cluster,
+      selection: schema,
+      ...(continuation ? { continuation } : {}),
+    })
+
+    const url = `${this.vespaEndpoint}/document/v1/${NAMESPACE}/${schema}/docid?${params.toString()}`
+
+    try {
+      // console.log(url)
+      const response = await this.fetchWithRetry(url, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = response.statusText
+        throw new Error(
+          `Visit failed: ${response.status} ${response.statusText} - ${errorText}`,
+        )
+      }
+
+      const data = await response.json()
+      return {
+        documents: data.documents || [],
+        continuation: data.continuation,
+        documentCount: data.documentCount || 0,
+      }
+    } catch (error) {
+      const errMessage = (error as Error).message
+      Logger.error(error, `Error visiting documents: ${errMessage}`)
+      throw new Error(`Error visiting documents: ${errMessage}`)
     }
   }
 }
