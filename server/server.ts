@@ -727,7 +727,7 @@ export const AppRoutes = app
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
-  .post("/chat/generate-title", zValidator("json", chatTitleSchema), GenerateChatTitleApi)
+  .post("/chat/generateTitle", zValidator("json", chatTitleSchema), GenerateChatTitleApi)
   .post(
     "/chat/bookmark",
     zValidator("json", chatBookmarkSchema),
