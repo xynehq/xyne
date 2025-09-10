@@ -1,15 +1,15 @@
-import { executeAgent } from "../api/agent/executeAgent"
+import { ExecuteAgentForWorkflow } from "@/api/agent/executeAgent"
   import { getLogger } from "@/logger"
   import { Subsystem } from "@/types"
 
   const Logger = getLogger(Subsystem.AI)
 
   async function testExecuteAgent() {
-    console.log('🧪 Testing executeAgent function...')
+    console.log('🧪 Testing ExecuteAgentForWorkflow function...')
 
     try {
-      console.log('🚀 Invoking executeAgent with test parameters...')
-      const result = await executeAgent({
+      console.log('🚀 Invoking ExecuteAgentForWorkflow with test parameters...')
+      const result = await ExecuteAgentForWorkflow({
         agentId: "zk3i1cycov8i5arrhk5u7y20",
         userQuery: "Can you summarize the attached resume?",
         workspaceId: "uxwyx18h74vdch0j8ir46aka",
@@ -20,7 +20,7 @@ import { executeAgent } from "../api/agent/executeAgent"
         attachmentFileIds: [], // Empty array for images
         nonImageAttachmentFileIds: ["att_a9b4896e-044a-4391-82d7-2befd06a40e7"], // Fresh Anant's resume
       })
-      console.log('🚀 Ending executeAgent with test parameters...')
+      console.log('🚀 Ending ExecuteAgentForWorkflow with test parameters...')
 
       if (!result.success) {
         console.error('❌ Failed:', result.error)
@@ -87,9 +87,9 @@ import { executeAgent } from "../api/agent/executeAgent"
 
   // Test with image attachment (when you have an image attachment ID)
   async function testExecuteAgentWithImageAttachment() {
-    console.log('🧪 Testing executeAgent with image attachment...')
+    console.log('🧪 Testing ExecuteAgentForWorkflow with image attachment...')
 
-    const result = await executeAgent({
+    const result = await ExecuteAgentForWorkflow({
       agentId: "zk3i1cycov8i5arrhk5u7y20",
       userQuery: "What does this image show?",
       workspaceId: "uxwyx18h74vdch0j8ir46aka",
@@ -108,9 +108,9 @@ import { executeAgent } from "../api/agent/executeAgent"
 
   // Test with both PDF content and embedded image
   async function testExecuteAgentWithMixedAttachments() {
-    console.log('🧪 Testing executeAgent with PDF text + embedded image...')
+    console.log('🧪 Testing ExecuteAgentForWorkflow with PDF text + embedded image...')
 
-    const result = await executeAgent({
+    const result = await ExecuteAgentForWorkflow({
       agentId: "zk3i1cycov8i5arrhk5u7y20",
       userQuery: "Analyze the resume content and describe any images or visual elements you see",
       workspaceId: "uxwyx18h74vdch0j8ir46aka",
@@ -129,9 +129,9 @@ import { executeAgent } from "../api/agent/executeAgent"
   }
 
   async function testExecuteAgentWithoutAttachments() {
-    console.log('🧪 Testing executeAgent without attachments...')
+    console.log('🧪 Testing ExecuteAgentForWorkflow without attachments...')
 
-    const result = await executeAgent({
+    const result = await ExecuteAgentForWorkflow({
       agentId: "zk3i1cycov8i5arrhk5u7y20",
       userQuery: "Hello! Can you tell me a joke?",
       workspaceId: "uxwyx18h74vdch0j8ir46aka",
@@ -150,21 +150,21 @@ import { executeAgent } from "../api/agent/executeAgent"
 
   // Run the tests
   async function runAllTests() {
-    console.log('🧪🧪🧪 Running all executeAgent tests...\n')
+    console.log('🧪🧪🧪 Running all ExecuteAgentForWorkflow tests...\n')
 
     // Test 1: PDF content analysis  
     await testExecuteAgent()
     console.log('\n' + '='.repeat(50) + '\n')
 
-    // // Test 2: Image analysis (PDF has embedded images!)
+    // Test 2: Image analysis (PDF has embedded images!)
     // await testExecuteAgentWithImageAttachment()
     // console.log('\n' + '='.repeat(50) + '\n')
 
     // // Test 3: Both text and images from same PDF
-    // await testExecuteAgentWithMixedAttachments()
-    // console.log('\n' + '='.repeat(50) + '\n')
+    await testExecuteAgentWithMixedAttachments()
+    console.log('\n' + '='.repeat(50) + '\n')
 
-    // Test 4: No attachments baseline
+    // // Test 4: No attachments baseline
     await testExecuteAgentWithoutAttachments()
 
     console.log('\n🎉 All tests completed!')

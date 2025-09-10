@@ -137,7 +137,7 @@ async function* createStreamingWithDBSave(
 }
 
 /**
- * ExecuteAgent - Simplified agent execution function with attachment support
+ * ExecuteAgentForWorkflow - Simplified agent execution function with attachment support
  * 
  * This function provides a simplified subset of AgentMessageApi functionality:
  * 1. Generate chat title and insert in DB
@@ -146,7 +146,7 @@ async function* createStreamingWithDBSave(
  * 4. Call LLM directly with agent prompt + user query + attachments
  * 5. Return response (no reasoning loop, no RAG, no tools)
  */
-export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteAgentResponse> => {
+export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promise<ExecuteAgentResponse> => {
   try {
     // Validate parameters
     const validatedParams = executeAgentSchema.parse(params)
@@ -178,6 +178,8 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
       workspaceId,
       userEmail,
     )
+
+
     const { user, workspace } = userAndWorkspace
     Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
 
@@ -219,6 +221,7 @@ export const executeAgent = async (params: ExecuteAgentParams): Promise<ExecuteA
         // Retrieve document content from Vespa (same as chat.ts:1974-1979)
         Logger.info(`🔍 Calling GetDocumentsByDocIds with IDs: ${JSON.stringify(nonImageAttachmentFileIds)}`)
 
+        //fetching document from VESPA
         const results = await GetDocumentsByDocIds(nonImageAttachmentFileIds, executeAgentSpan!)
 
         Logger.info(`📊 GetDocumentsByDocIds returned:`, {
