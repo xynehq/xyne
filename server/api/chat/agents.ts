@@ -13,7 +13,6 @@ import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
-  generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
   temporalPromptJsonStream,
@@ -1028,20 +1027,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
       let [insertedChat, insertedMsg] = await db.transaction(
@@ -2739,20 +2724,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3508,20 +3479,6 @@ export const AgentMessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
