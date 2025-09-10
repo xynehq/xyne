@@ -1,4 +1,4 @@
-import { createAgentHelper } from "../db/agent"
+import { createAgentHelperInWorkflow } from "../db/agent"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { CreateAgentPayload } from "@/api/agent"
@@ -37,7 +37,7 @@ async function testCreateAgentHelper() {
       // Better error handling around the actual function call
       let result
       try {
-        result = await createAgentHelper(agentData, testUserId, testWorkspaceId)
+        result = await createAgentHelperInWorkflow(agentData, testUserId, testWorkspaceId)
       } catch (createError) {
         if (createError instanceof Error) {
           if (createError.name === 'ZodError') {
@@ -84,7 +84,7 @@ async function testCreateAgentHelperWithInvalidData() {
             // Missing required fields
         } as CreateAgentPayload
 
-        await createAgentHelper(invalidAgentData, 1, 1)
+        await createAgentHelperInWorkflow(invalidAgentData, 1, 1)
         console.log('❌ This should have failed but didn\'t!')
 
     } catch (error) {

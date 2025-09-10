@@ -489,7 +489,9 @@ export const cleanUpAgentDb = async (
   }
 }
 
-export const createAgentHelper = async (
+
+//this function will be used to be called by workflow feature
+export const createAgentHelperInWorkflow = async (
   agentData: CreateAgentPayload,
   userId: number,
   workspaceId: number
