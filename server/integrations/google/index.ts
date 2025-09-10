@@ -82,7 +82,7 @@ import {
   type VespaEvent,
   type VespaFileWithDrivePermission,
   fileSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   UserListingError,
   CouldNotFinishJobSuccessfully,

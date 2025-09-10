@@ -9,7 +9,7 @@ import type {
   VespaSchema,
   VespaUserQueryHistory,
   VespaGetResult,
-} from "@/search/types" // VespaFile is already here
+} from "@xyne/vespa-ts/types" // VespaFile is already here
 import {
   // VespaSchema, // No longer imported as a value
   fileSchema,
@@ -23,7 +23,7 @@ import {
   chatMessageSchema,
   chatUserSchema,
   chatAttachment,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 
 async function getVespaSchemas(): Promise<string[]> {
   // Returns prefixed names e.g. "my_content.file"

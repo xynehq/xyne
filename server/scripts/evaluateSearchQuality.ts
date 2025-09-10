@@ -7,11 +7,11 @@ import {
   userSchema,
   eventSchema,
   mailAttachmentSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import fs from "fs"
 import path from "path" // Ensure path module is imported
 import crypto from "crypto" // Import crypto module
-import { SearchModes } from "@/search/types"
+import { SearchModes } from "@xyne/vespa-ts/types"
 // Configuration
 const Logger = getLogger(Subsystem.Eval)
 

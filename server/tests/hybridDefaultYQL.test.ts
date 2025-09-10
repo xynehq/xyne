@@ -1,4 +1,4 @@
-import { Apps, DriveEntity, SearchModes } from "@/search/types"
+import { Apps, DriveEntity, SearchModes } from "@xyne/vespa-ts/types"
 import { HybridDefaultProfile } from "@/search/vespa"
 import { expect, test, describe } from "bun:test"
 

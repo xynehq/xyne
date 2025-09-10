@@ -62,7 +62,12 @@ import {
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { ChatSSEvents, OpenAIError, type MessageReqType, DEFAULT_TEST_AGENT_ID } from "@/shared/types"
+import {
+  ChatSSEvents,
+  OpenAIError,
+  type MessageReqType,
+  DEFAULT_TEST_AGENT_ID,
+} from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
   delay,
@@ -103,8 +108,6 @@ import {
   dataSourceFileSchema,
   DriveEntity,
   GooglePeopleEntity,
-  isValidApp,
-  isValidEntity,
   MailAttachmentEntity,
   MailEntity,
   mailSchema,
@@ -121,8 +124,9 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   KnowledgeBaseEntity,
+  KbItemsSchema as string,
   KbItemsSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import {
   getChatTraceByExternalId,
@@ -170,6 +174,8 @@ import {
   findOptimalCitationInsertionPoint,
   textToCitationIndex,
   textToImageCitationIndex,
+  isValidApp,
+  isValidEntity,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -463,7 +469,9 @@ const checkAndYieldCitations = async function* (
     if (match) {
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
-        const item = isMsgWithSources ? results[baseIndex]: results[citationIndex - baseIndex]
+        const item = isMsgWithSources
+          ? results[baseIndex]
+          : results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
           const f = (item as any)?.fields
@@ -477,7 +485,9 @@ const checkAndYieldCitations = async function* (
           yield {
             citation: {
               index: citationIndex,
-              item: isMsgWithSources ? searchToCitation(item as VespaSearchResults, citationIndex) : searchToCitation(item as VespaSearchResults),
+              item: isMsgWithSources
+                ? searchToCitation(item as VespaSearchResults, citationIndex)
+                : searchToCitation(item as VespaSearchResults),
             },
           }
           yieldedCitations.add(citationIndex)
@@ -1173,7 +1183,7 @@ export function buildContext(
       ?.map(
         (v, i) =>
           `Index ${i + startIndex} \n ${answerContextMap(
-            v as z.infer<typeof VespaSearchResultsSchema>,
+            v as VespaSearchResults,
             maxSummaryCount,
           )}`,
       )
@@ -1418,7 +1428,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   if (classification.filterQuery) {
     message = classification.filterQuery
   }
-  let searchResults
+  let searchResults: VespaSearchResponse
   if (!agentPrompt) {
     searchResults = await searchVespa(message, email, null, null, {
       limit: pageSize,
@@ -1483,7 +1493,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
 
-      let results
+      let results: VespaSearchResponse
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
           limit: pageSize,
@@ -1607,7 +1617,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         //     ?.map((v: VespaSearchResult) => (v.fields as any).docId)
         //     ?.filter((v) => !!v),
         // })
-        let results
+        let results: VespaSearchResponse
         if (!agentPrompt) {
           results = await searchVespa(query, email, null, null, {
             limit: pageSize,
@@ -2054,7 +2064,7 @@ async function* generateAnswerFromGivenContext(
   //     ?.map(
   //       (v, i) =>
   //         `Index ${i + startIndex} \n ${answerContextMap(
-  //           v as z.infer<typeof VespaSearchResultsSchema>,
+  //           v as VespaSearchResults,
   //           0,
   //           true,
   //         )}`,
@@ -2094,7 +2104,7 @@ async function* generateAnswerFromGivenContext(
   const startIndex = isReasoning ? previousResultsLength : 0
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = answerContextMap(
-      v as z.infer<typeof VespaSearchResultsSchema>,
+      v as VespaSearchResults,
       0,
       true,
       isMsgWithSources,
@@ -2191,7 +2201,10 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.end()
     return
   } else if (!answer) {
-    if(isMsgWithSources || (attachmentFileIds && attachmentFileIds.length > 0)) {
+    if (
+      isMsgWithSources ||
+      (attachmentFileIds && attachmentFileIds.length > 0)
+    ) {
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
@@ -2226,7 +2239,7 @@ async function* generateAnswerFromGivenContext(
         ?.map(
           (v, i) =>
             `Index ${i + startIndex} \n ${answerContextMap(
-              v as z.infer<typeof VespaSearchResultsSchema>,
+              v as VespaSearchResults,
               20,
               true,
             )}`,
@@ -3221,7 +3234,7 @@ async function* generateMetadataQueryAnswer(
         `Search Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
 
-      let searchResults
+      let searchResults: VespaSearchResponse
       if (!agentPrompt) {
         searchResults = await searchVespa(
           classification.filterQuery,
@@ -3421,7 +3434,7 @@ async function* generateMetadataQueryAnswer(
         `[GetItems] Query parameters: ${JSON.stringify(getItemsParams)}`,
       )
 
-      searchResults = await getItems(getItemsParams)
+      searchResults = (await getItems(getItemsParams)) as VespaSearchResponse
       items = searchResults!.root.children || []
       loggerWithChild({ email: email }).info(
         `[GetItems] Query completed - Retrieved ${items.length} items`,
@@ -3526,7 +3539,7 @@ async function* generateMetadataQueryAnswer(
         `Search ${QueryType.SearchWithFilters} Iteration - ${iteration} : ${rankProfile}`,
       )
 
-      let searchResults
+      let searchResults: VespaSearchResponse
       if (!agentPrompt) {
         searchResults = await searchVespa(
           query,
@@ -4013,12 +4026,12 @@ export const MessageApi = async (c: Context) => {
       try {
         const config = JSON.parse(selectedModelConfig)
         modelId = config.model
-        
+
         // Handle new direct boolean format
         isReasoningEnabled = config.reasoning === true
         enableWebSearch = config.websearch === true
         isDeepResearchEnabled = config.deepResearch === true
-        
+
         // For deep research, always use Claude Sonnet 4 regardless of UI selection
         if (isDeepResearchEnabled) {
           modelId = "Claude Sonnet 4"
@@ -4091,9 +4104,11 @@ export const MessageApi = async (c: Context) => {
     }
     const webSearchEnabled = enableWebSearch ?? false
     const deepResearchEnabled = isDeepResearchEnabled ?? false
-    const agentPromptValue = agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID) ? agentId : undefined // Use undefined if not a valid CUID
+    const agentPromptValue =
+      agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID)
+        ? agentId
+        : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
-      
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
@@ -4160,7 +4175,9 @@ export const MessageApi = async (c: Context) => {
     if (sources) {
       try {
         const resp = await getCollectionFilesVespaIds(JSON.parse(sources), db)
-        fileIds = resp.map((file) => file.vespaDocId || "").filter((id) => id !== "")
+        fileIds = resp
+          .map((file) => file.vespaDocId || "")
+          .filter((id) => id !== "")
       } catch {
         fileIds = []
       }
@@ -4174,7 +4191,7 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    if(extractedInfo?.fileIds.length > 0) {
+    if (extractedInfo?.fileIds.length > 0) {
       fileIds = fileIds.concat(extractedInfo?.fileIds)
     }
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {

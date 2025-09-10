@@ -1,5 +1,4 @@
 import {
-  entitySchema,
   VespaFileSchema,
   VespaUserSchema,
   Apps,
@@ -12,7 +11,6 @@ import {
   userQuerySchema,
   MailAttachmentResponseSchema,
   mailAttachmentSchema,
-  scoredChunk,
   chatUserSchema,
   ChatMessageResponseSchema,
   dataSourceFileSchema,
@@ -20,7 +18,18 @@ import {
   VespaChatContainerSchema,
   KbItemsSchema,
   VespaKbFileSchemaBase,
-} from "search/types"
+  DriveEntity,
+  MailEntity,
+  MailAttachmentEntity,
+  CalendarEntity,
+  SystemEntity,
+  DataSourceEntity,
+  WebSearchEntity,
+  KnowledgeBaseEntity,
+  NotionEntity,
+  GooglePeopleEntity,
+  SlackEntity,
+} from "@xyne/vespa-ts/types"
 export {
   GooglePeopleEntity,
   DriveEntity,
@@ -35,8 +44,43 @@ export {
   DataSourceEntity,
   WebSearchEntity,
   KnowledgeBaseEntity,
-} from "search/types"
-export type { Entity, VespaDataSourceFile, VespaGetResult } from "search/types"
+  datasourceSchema,
+} from "@xyne/vespa-ts/types"
+export type {
+  Entity,
+  VespaDataSourceFile,
+  VespaGetResult,
+  FileResponse,
+  SearchResultsSchema,
+  SearchResponse,
+  SearchResultDiscriminatedUnion,
+} from "@xyne/vespa-ts/types"
+
+export const FileEntitySchema = z.nativeEnum(DriveEntity)
+export const MailEntitySchema = z.nativeEnum(MailEntity)
+export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
+export const EventEntitySchema = z.nativeEnum(CalendarEntity)
+export const SystemEntitySchema = z.nativeEnum(SystemEntity)
+export const DataSourceEntitySchema = z.nativeEnum(DataSourceEntity)
+export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
+export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
+const NotionEntitySchema = z.nativeEnum(NotionEntity)
+export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
+export const ChatEntitySchema = z.nativeEnum(SlackEntity)
+
+export const entitySchema = z.union([
+  SystemEntitySchema,
+  PeopleEntitySchema,
+  FileEntitySchema,
+  NotionEntitySchema,
+  MailEntitySchema,
+  EventEntitySchema,
+  MailAttachmentEntitySchema,
+  ChatEntitySchema,
+  DataSourceEntitySchema,
+  WebSearchEntitySchema,
+  KnowledgeBaseEntitySchema,
+])
 
 // Define an enum for connection types - MOVED HERE FROM server/types.ts
 export enum ConnectorType {
@@ -113,44 +157,39 @@ export enum OpenAIError {
 // File type categories enum for better type safety and consistency
 export enum FileType {
   IMAGE = "Image",
-  DOCUMENT = "Document", 
+  DOCUMENT = "Document",
   SPREADSHEET = "Spreadsheet",
   PRESENTATION = "Presentation",
   PDF = "PDF",
   TEXT = "Text",
-  FILE = "File" // Default fallback
+  FILE = "File", // Default fallback
 }
 
 // MIME type mappings for better organization
 export const MIME_TYPE_MAPPINGS = {
   [FileType.IMAGE]: [
     "image/jpeg",
-    "image/jpg", 
+    "image/jpg",
     "image/png",
     "image/gif",
-    "image/webp"
+    "image/webp",
   ],
   [FileType.DOCUMENT]: [
     "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ],
   [FileType.SPREADSHEET]: [
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/csv"
+    "text/csv",
   ],
   [FileType.PRESENTATION]: [
-    "application/vnd.ms-powerpoint", 
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ],
-  [FileType.PDF]: [
-    "application/pdf"
-  ],
-  [FileType.TEXT]: [
-    "text/plain",
-    "text/markdown"
-  ]
-} as const;
+  [FileType.PDF]: ["application/pdf"],
+  [FileType.TEXT]: ["text/plain", "text/markdown"],
+} as const
 
 // File extension mappings for fallback detection
 export const EXTENSION_MAPPINGS = {
@@ -159,8 +198,8 @@ export const EXTENSION_MAPPINGS = {
   [FileType.SPREADSHEET]: [".xls", ".xlsx", ".csv"],
   [FileType.PRESENTATION]: [".ppt", ".pptx"],
   [FileType.PDF]: [".pdf"],
-  [FileType.TEXT]: [".txt", ".md"]
-} as const;
+  [FileType.TEXT]: [".txt", ".md"],
+} as const
 
 export const AutocompleteFileSchema = z
   .object({
@@ -290,6 +329,11 @@ export type UserQueryHAutocomplete = z.infer<
 export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
 // search result
+export const scoredChunk = z.object({
+  chunk: z.string(),
+  score: z.number(),
+  index: z.number(),
+})
 
 export const FileResponseSchema = VespaFileSchema.pick({
   docId: true,
@@ -417,32 +461,6 @@ export const ChatContainerResponseSchema = VespaChatContainerSchema.pick({
     rankfeatures: z.any().optional(),
   })
   .strip()
-
-// Search Response Schema
-export const SearchResultsSchema = z.discriminatedUnion("type", [
-  UserResponseSchema,
-  FileResponseSchema,
-  DataSourceFileResponseSchema,
-  MailResponseSchema,
-  EventResponseSchema,
-  MailAttachmentResponseSchema,
-  ChatMessageResponseSchema,
-  ChatContainerResponseSchema,
-  KbFileResponseSchema,
-])
-
-export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
-
-export const SearchResponseSchema = z.object({
-  count: z.number(),
-  results: z.array(SearchResultsSchema),
-  groupCount: z.any(),
-  trace: z.any().optional(),
-})
-
-export type FileResponse = z.infer<typeof FileResponseSchema>
-
-export type SearchResponse = z.infer<typeof SearchResponseSchema>
 
 export const AnswerResponseSchema = z.object({})
 
@@ -678,19 +696,26 @@ export const agentPromptPayloadSchema = z.preprocess(
       model: z.string().optional(),
       isPublic: z.boolean().optional(),
       isRagOn: z.boolean().optional(),
-      appIntegrations: z.record(z.object({
-        itemIds: z.array(z.string()),
-        selectedAll: z.boolean()
-      })).optional(),
-      docIds: z.array(z.object({
-        docId: z.string(),
-        name: z.string(),
-        app: z.string(),
-        entity: z.string()
-      })).optional(),
+      appIntegrations: z
+        .record(
+          z.object({
+            itemIds: z.array(z.string()),
+            selectedAll: z.boolean(),
+          }),
+        )
+        .optional(),
+      docIds: z
+        .array(
+          z.object({
+            docId: z.string(),
+            name: z.string(),
+            app: z.string(),
+            entity: z.string(),
+          }),
+        )
+        .optional(),
       userEmails: z.array(z.string()).optional(),
       allowWebSearch: z.boolean().optional(),
-      
     })
     .optional(),
 )

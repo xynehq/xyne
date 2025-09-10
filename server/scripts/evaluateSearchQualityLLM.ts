@@ -7,7 +7,7 @@ import {
   userSchema,
   eventSchema,
   mailAttachmentSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import fs from "fs"
 import path from "path"
 import crypto from "crypto"
@@ -21,7 +21,7 @@ import type {
 } from "@/ai/types" // Corrected imports
 import { getSortedScoredChunks } from "@xyne/vespa-ts/mappers" // Import the sorter
 import pLimit from "p-limit" // Added: Import p-limit
-import { SearchModes } from "@/search/types"
+import { SearchModes } from "@xyne/vespa-ts/types"
 // Configuration
 const Logger = getLogger(Subsystem.Eval)
 const USER_EMAIL_FOR_SEARCH = process.env.EVALUATION_USER_EMAIL

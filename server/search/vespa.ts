@@ -8,7 +8,18 @@ import {
 import config from "@/config"
 const prodUrl = process.env.PRODUCTION_SERVER_URL
 const apiKey = process.env.API_KEY
-import { fileSchema, mailSchema, userSchema } from "@/search/types"
+import {
+  Apps,
+  DriveEntity,
+  fileSchema,
+  mailSchema,
+  userSchema,
+  type Entity,
+  type VespaQueryConfig,
+} from "@xyne/vespa-ts/types"
+import { db, getConnectorByAppAndEmailId } from "@/db/connector"
+import { AuthType, ConnectorStatus } from "@/shared/types"
+import { extractDriveIds, extractCollectionVespaIds } from "./utils"
 // Define your Vespa endpoint and schema name
 const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
 export const NAMESPACE = "namespace" // Replace with your actual namespace
@@ -43,10 +54,54 @@ export const getDocumentOrNull = vespa.getDocumentOrNull.bind(vespa)
 export const UpdateDocument = vespa.UpdateDocument.bind(vespa)
 export const DeleteDocument = vespa.DeleteDocument.bind(vespa)
 
-// Search operations
-export const searchVespa = vespa.searchVespa.bind(vespa)
+export const searchVespa = async (
+  query: string,
+  email: string,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
+  options: Partial<VespaQueryConfig> = {},
+) => {
+  let isSlackConnected = false
+  try {
+    const connector = await getConnectorByAppAndEmailId(
+      db,
+      Apps.Slack,
+      AuthType.OAuth,
+      email,
+    )
+    isSlackConnected =
+      connector && connector.status === ConnectorStatus.Connected
+  } catch (error) {
+    Logger.error(error, "Error fetching Slack connector")
+  }
+
+  return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
+    ...options,
+    isSlackConnected,
+  })
+}
+
+export const searchVespaAgent = async (
+  query: string,
+  email: string,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
+  AgentApps: Apps[] | null,
+  options: Partial<VespaQueryConfig> = {},
+) => {
+  const driveIds = await extractDriveIds(options, email)
+  const clVespaIds = await extractCollectionVespaIds(options)
+  return await vespa.searchVespaAgent.bind(vespa)(
+    query,
+    email,
+    app,
+    entity,
+    AgentApps,
+    { ...options, driveIds, clVespaIds },
+  )
+}
+
 export const searchVespaInFiles = vespa.searchVespaInFiles.bind(vespa)
-export const searchVespaAgent = vespa.searchVespaAgent.bind(vespa)
 export const groupVespaSearch = vespa.groupVespaSearch.bind(vespa)
 export const autocomplete = vespa.autocomplete.bind(vespa)
 export const deduplicateAutocomplete = vespa.deduplicateAutocomplete.bind(vespa)

@@ -19,7 +19,7 @@ import {
   type VespaDataSourceFile,
   datasourceSchema,
   dataSourceFileSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { type SelectUser } from "@/db/schema"
@@ -28,7 +28,7 @@ import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { UserRole } from "@/shared/types"
 import { DeleteDocument } from "@/search/vespa"
-import type { VespaSchema } from "@/search/types"
+import type { VespaSchema } from "@xyne/vespa-ts/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
 import {

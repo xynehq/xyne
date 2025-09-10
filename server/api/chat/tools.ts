@@ -25,8 +25,6 @@ import {
   eventSchema,
   fileSchema,
   GooglePeopleEntity,
-  isValidApp,
-  isValidEntity,
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
@@ -44,11 +42,13 @@ import {
   type VespaSearchResults,
   type VespaSearchResultsSchema,
   type VespaUser,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 
 import {
   getChannelIdsFromAgentPrompt,
   isAppSelectionMap,
+  isValidApp,
+  isValidEntity,
   parseAppSelections,
   searchToCitation,
 } from "./utils"

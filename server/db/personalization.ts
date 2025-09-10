@@ -11,7 +11,7 @@ import { eq, sql } from "drizzle-orm"
 import { type TxnOrClient } from "@/types"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { SearchModes } from "@/search/types"
+import { SearchModes } from "@xyne/vespa-ts/types"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "personalization" })
 

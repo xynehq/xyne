@@ -142,6 +142,7 @@ import {
   SystemEntity,
   VespaSearchResultsSchema,
   type VespaSearchResult,
+  type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import {
@@ -547,11 +548,11 @@ const vespaResultToMinimalAgentFragment = (
 ): MinimalAgentFragment => ({
   id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
   content: answerContextMap(
-    child as z.infer<typeof VespaSearchResultsSchema>,
+    child as VespaSearchResults,
     0,
     true,
   ),
-  source: searchToCitation(child as z.infer<typeof VespaSearchResultsSchema>),
+  source: searchToCitation(child as VespaSearchResults),
   confidence: 1.0,
 })
 
@@ -1633,7 +1634,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   const contextPromises = results?.root?.children?.map(
                     async (v, i) => {
                       let content = answerContextMap(
-                        v as z.infer<typeof VespaSearchResultsSchema>,
+                        v as VespaSearchResults,
                         0,
                         true,
                       )

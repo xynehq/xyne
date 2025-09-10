@@ -56,7 +56,7 @@ import {
   type VespaChatMessage,
   VespaChatUserSchema,
   type ChatUserCore,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   insert,
   NAMESPACE,

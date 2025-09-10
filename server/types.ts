@@ -16,7 +16,7 @@ import type {
   MailAttachmentEntity,
   MailEntity,
   PeopleEntity,
-} from "./search/types"
+} from "@xyne/vespa-ts/types"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -170,7 +170,7 @@ export const addApiKeyMCPConnectorSchema = z.object({
   url: z.string().url({ message: 'must be a valid HTTP(S) URL' }),
   name: z.string(),
   mode: z.nativeEnum(MCPConnectorMode),
-  headers: z.record(z.string()),
+  headers: z.record(z.string(), z.string()),
 });
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>

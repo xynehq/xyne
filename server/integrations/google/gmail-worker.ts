@@ -15,7 +15,7 @@ import {
   type Attachment,
   type Mail,
   type MailAttachment,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   ifDocumentsExist,
   ifMailDocumentsExist,

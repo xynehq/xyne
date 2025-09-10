@@ -22,7 +22,7 @@ import { isValidFile, isImageFile } from "shared/fileUtils"
 import { generateThumbnail, getThumbnailPath } from "@/utils/image"
 import type { AttachmentMetadata } from "@/shared/types"
 import { FileProcessorService } from "@/services/fileProcessor"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 
 const { JwtPayloadKey } = config

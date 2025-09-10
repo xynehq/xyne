@@ -1,9 +1,12 @@
-import { Apps } from "@/search/types"
+import { Apps } from "@xyne/vespa-ts/types"
 import { chunkDocument } from "@/chunks"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { insertDataSourceFile, NAMESPACE } from "@/search/vespa"
-import { type VespaDataSourceFile, datasourceSchema } from "@/search/types"
+import {
+  type VespaDataSourceFile,
+  datasourceSchema,
+} from "@xyne/vespa-ts/types"
 import { createId } from "@paralleldrive/cuid2"
 import path from "path"
 import * as XLSX from "xlsx"

@@ -13,7 +13,7 @@ import {
   SlackEntity,
   type VespaChatContainer,
   type VespaChatMessage,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   ifDocumentsExist,
   ifDocumentsExistInSchema,

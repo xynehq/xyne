@@ -4,7 +4,7 @@ import type {
   VespaEventSearch,
   VespaFileSearch,
   VespaMailSearch,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { searchVespa } from "@/search/vespa"
 import type { SearchResponse } from "@/shared/types"
 import { describe, expect, test, beforeAll, mock, beforeEach } from "bun:test"

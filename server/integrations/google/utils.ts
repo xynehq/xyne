@@ -19,7 +19,7 @@ import {
   MAX_GD_PDF_SIZE,
   scopes,
 } from "@/integrations/google/config"
-import type { Attachment, VespaFileWithDrivePermission } from "@/search/types"
+import type { Attachment, VespaFileWithDrivePermission } from "@xyne/vespa-ts/types"
 import { DownloadDocumentError } from "@/errors"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
 import type { Document } from "@langchain/core/documents"

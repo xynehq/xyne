@@ -26,7 +26,7 @@ import {
   userSchema,
   eventSchema,
   mailAttachmentSchema,
-} from "@/search/types" // Import schema names/types
+} from "@xyne/vespa-ts/types" // Import schema names/types
 import { upsertUserPersonalization } from "@/db/personalization" // Import personalization upsert
 import { db } from "@/db/client" // Import db client
 import { getUserByEmail } from "@/db/user" // Import user getter
@@ -38,7 +38,7 @@ import {
 import type { SelectPersonalization } from "@/db/schema" // Import personalization type
 import { Ollama } from "ollama" // Import the base Ollama client library
 import { OllamaProvider } from "@/ai/provider/ollama" // Import our specific provider wrapper
-import { SearchModes } from "@/search/types" // Import SearchModes enum
+import { SearchModes } from "@xyne/vespa-ts/types" // Import SearchModes enum
 // --- Define and Export WS Connections Map --- (Defined ONCE)
 export const tuningWsConnections = new Map<
   string,

@@ -1,13 +1,13 @@
 import VespaClient from "@xyne/vespa-ts/client"
 import { GetDocument, UpdateDocument, DeleteDocument } from "@/search/vespa"
-import type { VespaSearchResponse, VespaSchema } from "@/search/types"
+import type { VespaSearchResponse, VespaSchema } from "@xyne/vespa-ts/types"
 import {
   fileSchema,
   userSchema,
   mailSchema,
   eventSchema,
   mailAttachmentSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import config from "@/config"
