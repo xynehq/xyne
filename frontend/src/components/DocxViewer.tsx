@@ -171,16 +171,18 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
 
         // Remove width constraints from all wrappers
         const wrappers = containerRef.current.querySelectorAll(
-          '.docx, .docx-wrapper, .docx-preview-wrapper'
+          '.docx, .docx-wrapper, .docx-preview-wrapper, .docx-preview'
         );
         wrappers.forEach((el) => {
           const wrapper = el as HTMLElement;
           wrapper.style.removeProperty('width');
           wrapper.style.removeProperty('max-width');
           wrapper.style.removeProperty('min-width');
+          wrapper.style.removeProperty('padding');
           wrapper.style.width = '100%';
           wrapper.style.maxWidth = '100%';
           wrapper.style.minWidth = 'auto';
+          wrapper.style.padding = '12%';
         });
 
         // Make tables responsive
@@ -198,8 +200,8 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
             const cellEl = cell as HTMLElement;
             cellEl.style.overflowWrap = 'break-word';
             cellEl.style.whiteSpace = 'normal';
-            cellEl.style.maxWidth = '0'; // Forces text wrapping
-            cellEl.style.minWidth = '100px';
+            cellEl.style.maxWidth = '100px';
+            cellEl.style.minWidth = '0';
             cellEl.style.boxSizing = 'border-box';
             cellEl.style.padding = '5px';
           });
@@ -229,9 +231,7 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
       className={`enhanced-docx-viewer ${className}`}
       style={{
         backgroundColor: "white",
-        minHeight: "100%",
-        height: "auto",
-        width: "100%",
+        minHeight: "100vh",
         ...style,
       }}
     >
@@ -258,186 +258,7 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
           </div>
         </div>
       )}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-         .enhanced-docx-viewer {
-           background: white !important;
-           min-height: 100% !important;
-           height: auto !important;
-           width: 100% !important;
-         }
-         
-         .docx-preview-wrapper { 
-           background: white !important; 
-           padding: 0; 
-           display: flex; 
-           flex-flow: column; 
-           align-items: center; 
-           min-height: 100% !important;
-           height: auto !important;
-           width: 100% !important;
-         }
-         
-         .docx-preview-wrapper > section.docx-preview, 
-         section.docx-viewer { 
-           background: white; 
-           box-shadow: none !important; 
-           padding-top: 40px !important;
-           margin: 0;
-           padding: 40px 60px;
-           /* Make it fully responsive */
-           width: auto !important;
-           max-width: none !important;
-           min-width: auto !important;
-           box-sizing: border-box !important;
-         }
-         
-         /* Responsive padding for different screen sizes */
-         @media (min-width: 640px) {
-           .docx-preview-wrapper > section.docx-preview,
-           section.docx-viewer {
-             padding: 30px 40px;
-           }
-         }
-         
-         @media (min-width: 768px) {
-           .docx-preview-wrapper > section.docx-preview,
-           section.docx-viewer {
-             padding: 40px 60px;
-           }
-         }
-         
-         @media (min-width: 1024px) {
-           .docx-preview-wrapper > section.docx-preview,
-           section.docx-viewer {
-             padding: 50px 80px;
-           }
-         }
-         
-         .docx-preview { 
-           color: #333; 
-           font-family: 'Calibri', 'Arial', sans-serif;
-           line-height: 1.6;
-           word-wrap: break-word;
-           overflow-wrap: break-word;
-           white-space: normal;
-         }
-         
-         .docx-preview p,
-         .docx-preview span,
-         .docx-preview div {
-           word-wrap: break-word;
-           overflow-wrap: break-word;
-           white-space: normal;
-           max-width: 100%;
-         }
-        
-        .docx-preview table { 
-          border-collapse: collapse; 
-          width: 100% !important;
-          max-width: 100% !important;
-          min-width: auto !important;
-          margin: 1em 0;
-          table-layout: fixed !important; /* Better for responsive tables */
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-          overflow-x: auto; /* Allow horizontal scroll if needed */
-        }
-        
-        .docx-preview table td, 
-        .docx-preview table th { 
-          border: 1px solid #ddd;
-          padding: 8px;
-          vertical-align: top;
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-          white-space: normal;
-          max-width: 0; /* Forces text wrapping */
-          min-width: 100px; /* Minimum width for readability */
-        }
-        
-        .docx-preview p { 
-          margin: 0.5em 0; 
-        }
-        
-        .docx-preview h1 { font-size: 2.5em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview h2 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview h3 { font-size: 1.75em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview h4 { font-size: 1.5em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview h5 { font-size: 1.25em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview h6 { font-size: 1em; font-weight: bold; margin: 0.67em 0; }
-
-        .docx-preview_heading1 { font-size: 2.5em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview_heading2 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview_heading3 { font-size: 1.75em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview_heading4 { font-size: 1.5em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview_heading5 { font-size: 1.25em; font-weight: bold; margin: 0.67em 0; }
-        .docx-preview_heading6 { font-size: 1em; font-weight: bold; margin: 0.67em 0; }
-        
-        .docx-preview img { 
-          max-width: 100%; 
-          height: auto; 
-        }
-        
-        .docx-preview a { 
-          color: #0066cc; 
-          text-decoration: underline; 
-        }
-        
-        .docx-preview ul, 
-        .docx-preview ol { 
-          margin: 0.5em 0; 
-          padding-left: 2em; 
-        }
-        
-        .docx-preview li { 
-           margin: 0.25em 0; 
-         }
-         
-         .docx-preview-comment-ref { 
-           cursor: pointer;
-           color: #0066cc;
-           text-decoration: none;
-           font-weight: bold;
-         }
-         
-         .docx-preview-comment-popover { 
-           background: #f9f9f9;
-           border: 1px solid #ddd;
-           border-radius: 4px;
-           padding: 0.5rem;
-           box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-         }
-         
-         .docx-preview section + section {
-           margin-top: 2em;
-           padding-top: 2em;
-           border-top: 1px dashed #ccc;
-         }
-         
-         @media print {
-           .docx-preview-wrapper {
-             background: white !important;
-             padding: 0;
-           }
-           
-           .docx-preview-wrapper > section.docx-preview {
-             box-shadow: none !important;
-             margin: 0;
-             padding: 0;
-           }
-           
-           .docx-preview section + section {
-             page-break-before: always;
-             border-top: none;
-             margin-top: 0;
-             padding-top: 0;
-           }
-         }
-      `,
-        }}
-      />
+      
       <div ref={containerRef} />
     </div>
   )
