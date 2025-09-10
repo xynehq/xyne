@@ -1857,11 +1857,13 @@ const executeWorkflowTool = async (
       case "ai_agent":
         // Enhanced AI agent with Text/Form input type support
         const aiConfig = tool.config || {}
+        const aiValue = tool.value || {}
+        
         const inputType = aiConfig.inputType || "text" // Default to text
         const aiModel = aiConfig.aiModel || aiConfig.model || "gemini-1.5-flash"
-        const prompt = aiConfig.prompt || "Please analyze the provided content"
+        const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
         const geminiApiKey =
-          aiConfig.gemini_api_key || "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw"
+          aiConfig.gemini_api_key || process.env.GEMINI_API_KEY
 
         try {
           let analysisInput = ""
@@ -2015,7 +2017,6 @@ const executeWorkflowTool = async (
 
           // Call Gemini API
           const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`
-
           const fullPrompt = `${prompt}\n\nInput to analyze:\n${analysisInput.slice(0, 8000)}`
 
           const geminiResponse = await fetch(geminiUrl, {
@@ -2183,12 +2184,40 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     }, [])
     
     for (const tool of uniqueTools) {
+      // Process form tools to ensure file fields use "document_file" as ID
+      let processedValue = tool.value || {}
+      
+      if (tool.type === "form" && processedValue.fields && Array.isArray(processedValue.fields)) {
+        processedValue = {
+          ...processedValue,
+          fields: processedValue.fields.map((field: any) => {
+            if (field.type === "file") {
+              return {
+                ...field,
+                id: "document_file"
+              }
+            }
+            return field
+          })
+        }
+      }
+      
+      // Process AI agent tools to add inputType: "form" in config
+      let processedConfig = tool.config || {}
+      
+      if (tool.type === "ai_agent") {
+        processedConfig = {
+          ...processedConfig,
+          inputType: "form"
+        }
+      }
+      
       const [createdTool] = await db
         .insert(workflowTool)
         .values({
           type: tool.type,
-          value: tool.value || {},
-          config: tool.config || {},
+          value: processedValue,
+          config: processedConfig,
           createdBy: "demo",
         })
         .returning()
@@ -2223,7 +2252,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           workflowTemplateId: templateId,
           name: stepData.name,
           description: stepData.description || "",
-          type: stepData.type === "form_submission" ? "manual" : "automated",
+          type: stepData.type === "form_submission" || stepData.type === "manual" ? "manual" : "automated",
           timeEstimate: 180, // Default time estimate
           metadata: {
             icon: stepData.metadata?.icon,
@@ -2853,13 +2882,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       })
     }
 
-    // 3. Get all steps in the workflow
-    const allSteps = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
-
-    // 4. Handle step chain reconnection
+    // 3. Handle step chain reconnection
     const prevStepIds = stepToDelete.prevStepIds || []
     const nextStepIds = stepToDelete.nextStepIds || []
 
@@ -2944,8 +2967,8 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
 
     // Reorder remaining steps
     const sortedSteps = remainingSteps.sort((a, b) => {
-      const orderA = a.metadata?.step_order || 0
-      const orderB = b.metadata?.step_order || 0
+      const orderA = (a.metadata as any)?.step_order || 0
+      const orderB = (b.metadata as any)?.step_order || 0
       return orderA - orderB
     })
 
@@ -2953,12 +2976,12 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       const step = sortedSteps[i]
       const newOrder = i + 1
 
-      if (step.metadata?.step_order !== newOrder) {
+      if ((step.metadata as any)?.step_order !== newOrder) {
         await db
           .update(workflowStepTemplate)
           .set({
             metadata: {
-              ...step.metadata,
+              ...(step.metadata || {}),
               step_order: newOrder,
             },
             updatedAt: new Date(),

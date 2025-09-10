@@ -53,7 +53,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         placeholder: field.placeholder || "",
         type: field.type === "upload" ? "file" : field.type || "text",
         options: field.options || [],
-        fileTypes: field.fileTypes || [],
+        fileTypes: field.fileTypes && field.fileTypes.length > 0 ? field.fileTypes : (field.type === "file" || field.type === "upload" ? ["pdf", "doc", "docx", "txt", "jpg", "png"] : []),
         required: field.required || false,
         maxSize: field.maxSize || "",
       }))
@@ -101,6 +101,19 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<{
     [fieldId: string]: File[]
   }>({})
+
+  // Ensure file fields have default file types when component mounts
+  React.useEffect(() => {
+    setFormConfig(prev => ({
+      ...prev,
+      fields: prev.fields.map(field => ({
+        ...field,
+        fileTypes: field.type === "file" && (!field.fileTypes || field.fileTypes.length === 0) 
+          ? ["pdf", "doc", "docx", "txt", "jpg", "png"] 
+          : field.fileTypes
+      }))
+    }))
+  }, [])
 
   const handleSave = async () => {
     try {
@@ -415,7 +428,6 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                                     .filter(Boolean),
                                 })
                               }
-                              placeholder=".pdf, .docx, .jpg"
                               className="w-full"
                             />
                           </div>
