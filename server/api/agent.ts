@@ -131,7 +131,6 @@ const safeGet = <T>(c: Context, key: string): T | undefined => {
 type Auth = { email: string; workspaceExternalId: string; via_apiKey: boolean }
 
 const getAuth = (c: Context): Auth => {
-  console.log("getAuth run")
   const jwt = safeGet<{ sub: string; workspaceId: string }>(c, JwtPayloadKey)
   return {
     email: jwt?.sub ?? safeGet<string>(c, "userEmail") ?? "",
@@ -143,11 +142,17 @@ const getAuth = (c: Context): Auth => {
 
 export const CreateAgentApi = async (c: Context) => {
   const { email, workspaceExternalId, via_apiKey } = getAuth(c)
-  console.log("via_apiKey", via_apiKey)
-  console.log("email", email)
-  console.log("workspaceExternalId", workspaceExternalId)
 
-  // todo if via_apiKey is true, then check if the api key has CREATE_AGENT scope
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes("CREATE_AGENT")) {
+      return c.json(
+        { message: "API key does not have scope to create agents" },
+        403,
+      )
+    }
+  }
   try {
     const body = await c.req.json<CreateAgentPayload>()
 
