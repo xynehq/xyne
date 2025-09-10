@@ -157,11 +157,17 @@ export const EXTENSION_MAPPINGS = {
   [FileType.TEXT]: [".txt", ".md"],
 } as const
 export enum ApiKeyScopes {
-  agent_chat = "CREATE_AGENT",
-  create_agent = "AGENT_CHAT",
-  agent_chat_stop = "AGENT_CHAT_STOP",
-  normal_chat = "NORMAL_CHAT",
-  upload_kb = "UPLOAD_KB",
+  CREATE_AGENT = "CREATE_AGENT",
+  AGENT_CHAT = "AGENT_CHAT",
+  AGENT_CHAT_STOP = "AGENT_CHAT_STOP",
+  UPDATE_AGENT = "UPDATE_AGENT",
+  DELETE_AGENT = "DELETE_AGENT",
+  CHAT_HISTORY = "CHAT_HISTORY",
+  CREATE_COLLECTION = "CREATE_COLLECTION",
+  LIST_COLLECTIONS = "LIST_COLLECTIONS",
+  SEARCH_COLLECTION = "SEARCH_COLLECTION",
+  DELETE_COLLECTION = "DELETE_COLLECTION",
+  DELETE_COLLECTION_ITEM = "DELETE_COLLECTION_ITEM",
 }
 
 export const AutocompleteFileSchema = z

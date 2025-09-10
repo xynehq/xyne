@@ -48,6 +48,7 @@ import {
 import { errorComponent } from "@/components/error"
 import { authFetch } from "@/utils/authFetch"
 import { api } from "@/api"
+import { ApiKeyScopes } from "shared/types"
 import type {
   PublicUser,
   PublicWorkspace,
@@ -80,29 +81,59 @@ interface ApiKey {
 // Available scopes
 const AVAILABLE_SCOPES: ApiKeyScope[] = [
   {
-    id: "CREATE_AGENT",
+    id: ApiKeyScopes.CREATE_AGENT,
     name: "Create Agent",
     description: "Allows creating new agents",
   },
   {
-    id: "AGENT_CHAT",
+    id: ApiKeyScopes.AGENT_CHAT,
     name: "Agent Chat",
-    description: "Allows chatting with specific agents",
+    description: "Allows chatting with agents",
   },
   {
-    id: "AGENT_CHAT_STOP",
+    id: ApiKeyScopes.AGENT_CHAT_STOP,
     name: "Agent Chat Stop",
     description: "Allows stopping agent conversations",
   },
   {
-    id: "NORMAL_CHAT",
-    name: "Normal Chat",
-    description: "Allows normal chat functionality",
+    id: ApiKeyScopes.UPDATE_AGENT,
+    name: "Update Agent",
+    description: "Allows updating existing agents",
   },
   {
-    id: "UPLOAD_KB",
-    name: "Upload Knowledge Base",
-    description: "Allows uploading files to knowledge base",
+    id: ApiKeyScopes.DELETE_AGENT,
+    name: "Delete Agent",
+    description: "Allows deleting agents",
+  },
+  {
+    id: ApiKeyScopes.CHAT_HISTORY,
+    name: "Chat History",
+    description: "Allows accessing chat history",
+  },
+  {
+    id: ApiKeyScopes.CREATE_COLLECTION,
+    name: "Create Collection",
+    description: "Allows creating knowledge base collections",
+  },
+  {
+    id: ApiKeyScopes.LIST_COLLECTIONS,
+    name: "List Collections",
+    description: "Allows listing all knowledge base collections",
+  },
+  {
+    id: ApiKeyScopes.SEARCH_COLLECTION,
+    name: "Search Collection",
+    description: "Allows searching within knowledge base collections",
+  },
+  {
+    id: ApiKeyScopes.DELETE_COLLECTION,
+    name: "Delete Collection",
+    description: "Allows deleting knowledge base collections",
+  },
+  {
+    id: ApiKeyScopes.DELETE_COLLECTION_ITEM,
+    name: "Delete Collection Item",
+    description: "Allows deleting items from knowledge base collections",
   },
 ]
 
