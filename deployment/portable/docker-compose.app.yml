@@ -2,9 +2,9 @@ services:
   app-storage-init:
     image: busybox
     volumes:
-      - ./data/app-uploads:/app-uploads
-      - ./data/app-logs:/app-logs
-      - ./data/app-migrations:/app-migrations
+      - ${XYNE_DATA_DIR:-./data}/app-uploads:/app-uploads
+      - ${XYNE_DATA_DIR:-./data}/app-logs:/app-logs
+      - ${XYNE_DATA_DIR:-./data}/app-migrations:/app-migrations
     command: |
       sh -c '
         mkdir -p /app-uploads /app-logs /app-migrations
@@ -41,10 +41,10 @@ services:
       - HOST=http://localhost
     volumes:
       # Application data volumes
-      - ./data/app-uploads:/usr/src/app/server/storage
-      - ./data/app-logs:/usr/src/app/server/logs
-      - ./data/app-assets:/usr/src/app/server/dist/assets/videos
-      - ./data/app-migrations:/usr/src/app/server/migrations
+      - ${XYNE_DATA_DIR:-./data}/app-uploads:/usr/src/app/server/storage
+      - ${XYNE_DATA_DIR:-./data}/app-logs:/usr/src/app/server/logs
+      - ${XYNE_DATA_DIR:-./data}/app-assets:/usr/src/app/server/dist/assets/videos
+      - ${XYNE_DATA_DIR:-./data}/app-migrations:/usr/src/app/server/migrations
     networks:
       - xyne
     restart: unless-stopped

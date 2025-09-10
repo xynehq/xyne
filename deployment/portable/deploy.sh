@@ -37,6 +37,10 @@ show_help() {
     echo "  --force-gpu        Force GPU mode even if GPU not detected"
     echo "  --force-cpu        Force CPU-only mode even if GPU detected"
     echo ""
+    echo "Environment Variables:"
+    echo "  XYNE_DATA_DIR      Data directory path (default: ./data)"
+    echo "                     Example: XYNE_DATA_DIR=../xyne-data ./deploy.sh start"
+    echo ""
     echo "Examples:"
     echo "  $0 start           # Start all services (auto-detect GPU/CPU)"
     echo "  $0 start --force-cpu    # Force CPU-only mode"
@@ -45,6 +49,7 @@ show_help() {
     echo "  $0 db-generate     # Generate migrations after schema changes"
     echo "  $0 db-migrate      # Apply pending migrations"
     echo "  $0 revert v1.2.3   # Revert app to Docker image tag v1.2.3"
+    echo "  XYNE_DATA_DIR=../xyne-data $0 start  # Use existing data directory"
 }
 
 detect_gpu_support() {
@@ -122,18 +127,21 @@ done
 setup_environment() {
     echo -e "${YELLOW} Setting up environment...${NC}"
     
+    # Load data directory from environment or use default
+    DATA_DIR="${XYNE_DATA_DIR:-./data}"
+    
     # Create necessary directories with proper permissions
     echo " Creating data directories..."
-    mkdir -p ./data/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data}
+    mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data}
     
     # Create Vespa tmp directory
-    mkdir -p ./data/vespa-data/tmp
+    mkdir -p "$DATA_DIR"/vespa-data/tmp
     
     # Set proper permissions for services
     echo " Setting up permissions..."
-    chmod -f 755 ./data 2>/dev/null || true
-    chmod -f 755 ./data/* 2>/dev/null || true
-    chmod -f 755 ./data/vespa-data/tmp 2>/dev/null || true
+    chmod -f 755 "$DATA_DIR" 2>/dev/null || true
+    chmod -f 755 "$DATA_DIR"/* 2>/dev/null || true
+    chmod -f 755 "$DATA_DIR"/vespa-data/tmp 2>/dev/null || true
     
     # Copy .env.example to .env if .env doesn't exist
     if [ ! -f .env ] && [ -f .env.example ]; then
@@ -172,24 +180,27 @@ setup_environment() {
 setup_permissions() {
     echo -e "${YELLOW} Setting directory permissions using Docker containers...${NC}"
     
+    # Load data directory from environment or use default
+    DATA_DIR="${XYNE_DATA_DIR:-./data}"
+    
     # Set UID and GID to 1000 to avoid permission issues
     USER_UID="1000"
     USER_GID="1000"
     
     # Use busybox containers to set permissions without requiring sudo
-    docker run --rm -v "$(pwd)/data/postgres-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/vespa-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-uploads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-logs:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-assets:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-migrations:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/grafana-storage:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/ollama-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/postgres-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/vespa-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-uploads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-logs:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-assets:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-migrations:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/grafana-storage:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/ollama-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     
     # Initialize prometheus and loki directories with correct permissions
-    docker run --rm -v "$(pwd)/data/prometheus-data:/data" busybox sh -c 'mkdir -p /data && chown -R 65534:65534 /data' 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/loki-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/promtail-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/prometheus-data:/data" busybox sh -c 'mkdir -p /data && chown -R 65534:65534 /data' 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/loki-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/promtail-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
     
     echo -e "${GREEN} Permissions configured${NC}"
 }
