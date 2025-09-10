@@ -119,7 +119,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
 
   return (
     <div
-      className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
         isVisible ? "translate-x-0 w-[400px]" : "translate-x-full w-0"
       }`}
     >
@@ -147,14 +147,13 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             cursor: "pointer",
           }}
         >
-          <ArrowLeft className="w-5 h-5 text-gray-600" />
+          <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
 
         <h2
-          className="flex-1"
+          className="flex-1 text-gray-900 dark:text-gray-100"
           style={{
             alignSelf: "stretch",
-            color: "var(--gray-900, #181B1D)",
             fontFamily: "Inter",
             fontSize: "16px",
             fontStyle: "normal",
@@ -179,7 +178,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             cursor: "pointer",
           }}
         >
-          <X className="w-5 h-5 text-gray-600" />
+          <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
       </div>
 
@@ -190,7 +189,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
           <div className="space-y-2">
             <Label
               htmlFor="sending-from"
-              className="text-sm font-medium text-slate-700"
+              className="text-sm font-medium text-slate-700 dark:text-gray-300"
             >
               Sending from
             </Label>
@@ -204,17 +203,17 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 }))
               }
               placeholder="Enter sender email"
-              className="w-full bg-gray-100"
+              className="w-full bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               disabled
             />
-            <p className="text-xs text-slate-500">Email isn't editable</p>
+            <p className="text-xs text-slate-500 dark:text-gray-400">Email isn't editable</p>
           </div>
 
           {/* Add Email Address */}
           <div className="space-y-2">
             <Label
               htmlFor="add-email"
-              className="text-sm font-medium text-slate-700"
+              className="text-sm font-medium text-slate-700 dark:text-gray-300"
             >
               Add Email Address
             </Label>
@@ -225,10 +224,10 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 onChange={(e) => setNewEmailAddress(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="type email address"
-                className="w-full pr-16"
+                className="w-full pr-16 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               />
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                <span className="text-xs text-slate-400 dark:text-gray-500 bg-slate-100 dark:bg-gray-700 px-2 py-1 rounded">
                   click "enter" to add
                 </span>
               </div>
@@ -258,7 +257,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                   return (
                     <div
                       key={index}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
                     >
                       <div className="flex items-center gap-3">
                         <div
@@ -266,15 +265,15 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                         >
                           {firstLetter}
                         </div>
-                        <div className="text-sm font-medium text-slate-900">
+                        <div className="text-sm font-medium text-slate-900 dark:text-gray-300">
                           {email}
                         </div>
                       </div>
                       <button
                         onClick={() => handleRemoveEmail(email)}
-                        className="p-1 hover:bg-gray-200 rounded transition-colors"
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                       >
-                        <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500" />
+                        <Trash2 className="w-4 h-4 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400" />
                       </button>
                     </div>
                   )

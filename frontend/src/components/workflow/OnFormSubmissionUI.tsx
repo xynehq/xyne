@@ -205,7 +205,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 
   return (
     <div
-      className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out w-[400px]`}
+      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out w-[400px]`}
     >
       {/* Panel Header */}
       <div
@@ -235,10 +235,9 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         </button>
 
         <h2
-          className="flex-1"
+          className="flex-1 text-gray-900 dark:text-gray-100"
           style={{
             alignSelf: "stretch",
-            color: "var(--gray-900, #181B1D)",
             fontFamily: "Inter",
             fontSize: "16px",
             fontStyle: "normal",
@@ -268,13 +267,13 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
       </div>
 
       {/* Panel Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 overflow-y-auto px-4 py-3 dark:bg-gray-900">
         <div className="space-y-4">
           {/* Form Title */}
           <div className="space-y-2">
             <Label
               htmlFor="form-title"
-              className="text-sm font-medium text-slate-700"
+              className="text-sm font-medium text-slate-700 dark:text-gray-300"
             >
               Form Title
             </Label>
@@ -285,7 +284,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                 setFormConfig((prev) => ({ ...prev, title: e.target.value }))
               }
               placeholder="type here"
-              className="w-full"
+              className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
             />
           </div>
 
@@ -293,7 +292,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
           <div className="space-y-2">
             <Label
               htmlFor="form-description"
-              className="text-sm font-medium text-slate-700"
+              className="text-sm font-medium text-slate-700 dark:text-gray-300"
             >
               Form Description
             </Label>
@@ -307,16 +306,16 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                 }))
               }
               placeholder="type here"
-              className="w-full min-h-[80px] resize-none"
+              className="w-full min-h-[80px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
             />
           </div>
 
           {/* Divider */}
-          <div className="w-full h-px bg-slate-200"></div>
+          <div className="w-full h-px bg-slate-200 dark:bg-gray-700"></div>
 
           {/* Form Elements */}
           <div className="space-y-3">
-            <Label className="text-sm font-medium text-slate-700">
+            <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
               Form Elements
             </Label>
 
@@ -324,11 +323,11 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
               {formConfig.fields.map((field) => (
                 <div
                   key={field.id}
-                  className="border border-slate-200 rounded-lg bg-white"
+                  className="border border-slate-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800"
                 >
                   {/* Field Header */}
                   <div
-                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
+                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
                     onClick={() =>
                       setCollapsedFieldIds((prev) => {
                         const newSet = new Set(prev)
@@ -343,12 +342,12 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                   >
                     <div className="flex items-center gap-3">
                       {getFieldTypeIcon(field.type)}
-                      <span className="font-medium text-slate-900">
+                      <span className="font-medium text-slate-900 dark:text-gray-300">
                         {field.name}
                       </span>
                     </div>
                     <ChevronDown
-                      className={`w-4 h-4 text-slate-500 transition-transform ${
+                      className={`w-4 h-4 text-slate-500 dark:text-gray-400 transition-transform ${
                         !collapsedFieldIds.has(field.id) ? "rotate-180" : ""
                       }`}
                     />
@@ -356,10 +355,10 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 
                   {/* Field Configuration */}
                   {!collapsedFieldIds.has(field.id) && (
-                    <div className="border-t border-slate-200 p-4 space-y-4">
+                    <div className="border-t border-slate-200 dark:border-gray-700 p-4 space-y-4">
                       {/* Field Name */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-slate-700">
+                        <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                           Field Name
                         </Label>
                         <Input
@@ -368,7 +367,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                             updateField(field.id, { name: e.target.value })
                           }
                           placeholder="type here"
-                          className="w-full"
+                          className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
                         />
                       </div>
 
@@ -379,7 +378,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                           {uploadedFiles[field.id] &&
                             uploadedFiles[field.id].length > 0 && (
                               <div className="space-y-2">
-                                <Label className="text-sm font-medium text-slate-700">
+                                <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                                   Uploaded Files
                                 </Label>
                                 <div className="space-y-2">
@@ -387,14 +386,14 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                                     (file, index) => (
                                       <div
                                         key={index}
-                                        className="flex items-center justify-between p-2 bg-slate-50 rounded-md"
+                                        className="flex items-center justify-between p-2 bg-slate-50 dark:bg-gray-700 rounded-md"
                                       >
                                         <div className="flex items-center gap-2">
-                                          <File className="w-4 h-4 text-slate-500" />
-                                          <span className="text-sm text-slate-700 truncate">
+                                          <File className="w-4 h-4 text-slate-500 dark:text-gray-400" />
+                                          <span className="text-sm text-slate-700 dark:text-gray-300 truncate">
                                             {file.name}
                                           </span>
-                                          <span className="text-xs text-slate-500">
+                                          <span className="text-xs text-slate-500 dark:text-gray-400">
                                             ({(file.size / 1024).toFixed(1)} KB)
                                           </span>
                                         </div>
@@ -402,9 +401,9 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                                           onClick={() =>
                                             removeFile(field.id, index)
                                           }
-                                          className="p-1 hover:bg-slate-200 rounded transition-colors"
+                                          className="p-1 hover:bg-slate-200 dark:hover:bg-gray-600 rounded transition-colors"
                                         >
-                                          <X className="w-4 h-4 text-slate-400 hover:text-red-500" />
+                                          <X className="w-4 h-4 text-slate-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400" />
                                         </button>
                                       </div>
                                     ),
@@ -415,7 +414,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 
                           {/* File Type Configuration */}
                           <div className="space-y-2">
-                            <Label className="text-sm font-medium text-slate-700">
+                            <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                               Allowed File Types (comma-separated)
                             </Label>
                             <Input
@@ -428,13 +427,13 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                                     .filter(Boolean),
                                 })
                               }
-                              className="w-full"
+                              className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
                             />
                           </div>
                         </div>
                       ) : field.type === "dropdown" ? (
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-slate-700">
+                          <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                             Dropdown Options (comma-separated)
                           </Label>
                           <Textarea
@@ -448,12 +447,12 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                               })
                             }
                             placeholder="Option 1, Option 2, Option 3"
-                            className="w-full min-h-[60px] resize-none"
+                            className="w-full min-h-[60px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
                           />
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-slate-700">
+                          <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                             Placeholder Text
                           </Label>
                           <Input
@@ -464,13 +463,13 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                               })
                             }
                             placeholder="type here"
-                            className="w-full"
+                            className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
                           />
                         </div>
                       )}
                       {/* Element Type */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-slate-700">
+                        <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                           Element Type
                         </Label>
                         <div className="relative">
@@ -481,7 +480,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                                 type: e.target.value as FormField["type"],
                               })
                             }
-                            className="w-full h-9 px-3 py-1 bg-white border border-slate-200 rounded-md text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400 appearance-none cursor-pointer"
+                            className="w-full h-9 px-3 py-1 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md text-sm text-slate-900 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-gray-500 focus:border-slate-400 dark:focus:border-gray-500 appearance-none cursor-pointer"
                             style={{
                               background: "white",
                               color: "#1f2937",
@@ -524,7 +523,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                               Dropdown
                             </option>
                           </select>
-                          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500 dark:text-gray-400 pointer-events-none" />
                         </div>
                       </div>
 
@@ -539,11 +538,11 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                               required: e.target.checked,
                             })
                           }
-                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                          className="w-4 h-4 text-blue-600 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 dark:focus:ring-blue-400"
                         />
                         <Label
                           htmlFor={`required-${field.id}`}
-                          className="text-sm font-medium text-slate-700"
+                          className="text-sm font-medium text-slate-700 dark:text-gray-300"
                         >
                           Required field
                         </Label>
@@ -555,7 +554,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                           variant="outline"
                           size="sm"
                           onClick={() => removeField(field.id)}
-                          className="w-full text-red-600 border-red-200 hover:bg-red-50"
+                          className="w-full text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
                         >
                           Remove Field
                         </Button>

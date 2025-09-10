@@ -372,13 +372,13 @@ export function WorkflowExecutionModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 relative">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full mx-4 relative">
         {/* Close Button */}
         <button
           onClick={handleClose}
-          className="absolute top-4 right-4 p-1 hover:bg-gray-100 rounded-full transition-colors z-10"
+          className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors z-10"
         >
-          <X className="w-6 h-6 text-gray-500" />
+          <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
         </button>
 
         {isCompleted ? (
@@ -386,15 +386,15 @@ export function WorkflowExecutionModal({
           <>
             {/* Header */}
             <div className="p-8 pb-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">{workflowDescription}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
             </div>
 
             {/* Completion Content */}
             <div className="px-8 pb-8">
-              <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
+              <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl px-6 py-16 text-center bg-gray-50 dark:bg-gray-800 w-full min-h-[280px] flex flex-col items-center justify-center">
                 {/* Success Icon */}
                 <div className="w-16 h-16 flex items-center justify-center mb-6">
                   <img
@@ -405,7 +405,7 @@ export function WorkflowExecutionModal({
                 </div>
 
                 {/* Success Message */}
-                <p className="text-gray-900 text-lg font-medium">
+                <p className="text-gray-900 dark:text-gray-100 text-lg font-medium">
                   Process completed successfully!
                 </p>
               </div>
@@ -426,19 +426,19 @@ export function WorkflowExecutionModal({
           <>
             {/* Header */}
             <div className="p-8 pb-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">{workflowDescription}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
             </div>
 
             {/* Processing Content */}
             <div className="px-8 pb-8">
-              <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
+              <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl px-6 py-16 text-center bg-gray-50 dark:bg-gray-800 w-full min-h-[280px] flex flex-col items-center justify-center">
                 <div className="w-12 h-12 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin mb-6"></div>
                 {/* <p className="text-gray-900 text-lg font-medium mb-2">Processing the File</p> */}
                 {processingMessage && (
-                  <p className="text-gray-900 text-lg font-medium mb-2">
+                  <p className="text-gray-900 dark:text-gray-100 text-lg font-medium mb-2">
                     {processingMessage}
                   </p>
                 )}
@@ -460,20 +460,20 @@ export function WorkflowExecutionModal({
           <>
             {/* Header */}
             <div className="p-8 pb-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                 {workflowName}
               </h2>
-              <p className="text-gray-600 text-base">{workflowDescription}</p>
+              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
             </div>
 
             {/* File Upload Area */}
             <div className="px-8 pb-6">
               {selectedFile ? (
                 // Selected File Display
-                <div className="border border-dashed border-gray-300 rounded-xl px-6 py-16 text-center bg-gray-50 w-full min-h-[280px] flex flex-col items-center justify-center">
-                  <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm">
+                <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl px-6 py-16 text-center bg-gray-50 dark:bg-gray-800 w-full min-h-[280px] flex flex-col items-center justify-center">
+                  <div className="flex items-center gap-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-4 py-3 shadow-sm">
                     <svg
-                      className="w-6 h-6 text-gray-600"
+                      className="w-6 h-6 text-gray-600 dark:text-gray-400"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -485,12 +485,12 @@ export function WorkflowExecutionModal({
                         d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                       />
                     </svg>
-                    <span className="text-gray-900 font-medium">
+                    <span className="text-gray-900 dark:text-gray-100 font-medium">
                       {selectedFile.name}
                     </span>
                     <button
                       onClick={handleDiscardFile}
-                      className="ml-2 text-gray-400 hover:text-gray-600 transition-colors"
+                      className="ml-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     >
                       <svg
                         className="w-5 h-5"
@@ -511,7 +511,7 @@ export function WorkflowExecutionModal({
               ) : (
                 // Upload Area
                 <div
-                  className="border border-dashed border-gray-300 rounded-xl px-6 py-10 text-center cursor-pointer hover:border-gray-400 transition-colors bg-gray-50 w-full min-h-[280px]"
+                  className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl px-6 py-10 text-center cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors bg-gray-50 dark:bg-gray-800 w-full min-h-[280px]"
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
                   onClick={() => fileInputRef.current?.click()}
@@ -524,7 +524,7 @@ export function WorkflowExecutionModal({
 
                     {/* Upload Button */}
                     <Button
-                      className="bg-white hover:bg-gray-50 text-gray-800 border border-gray-300 px-6 py-2 rounded-full uppercase font-medium text-sm leading-6 tracking-normal"
+                      className="bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-600 px-6 py-2 rounded-full uppercase font-medium text-sm leading-6 tracking-normal"
                       style={{ fontFamily: "Inter" }}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -535,10 +535,10 @@ export function WorkflowExecutionModal({
                     </Button>
 
                     {/* Or text */}
-                    <p className="text-gray-600">or drag & drop files</p>
+                    <p className="text-gray-600 dark:text-gray-400">or drag & drop files</p>
 
                     {/* Supported formats */}
-                    <p className="text-gray-500 text-sm text-center leading-relaxed">
+                    <p className="text-gray-500 dark:text-gray-500 text-sm text-center leading-relaxed">
                       Supported formats include text, image, CSV, PDF, Word,
                       Excel, and PowerPoint files
                       <br />
@@ -558,8 +558,8 @@ export function WorkflowExecutionModal({
 
               {/* Error Display */}
               {uploadError && (
-                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{uploadError}</p>
+                <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <p className="text-sm text-red-800 dark:text-red-400">{uploadError}</p>
                 </div>
               )}
             </div>
