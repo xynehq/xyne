@@ -36,15 +36,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
-import {
-  Key,
-  Plus,
-  Copy,
-  Trash2,
-  Eye,
-  EyeOff,
-  MoreHorizontal,
-} from "lucide-react"
+import { Key, Plus, Copy, Trash2, MoreHorizontal } from "lucide-react"
 import { errorComponent } from "@/components/error"
 import { authFetch } from "@/utils/authFetch"
 import { api } from "@/api"
@@ -75,7 +67,7 @@ interface ApiKey {
   scopes: string[]
   agents: string[]
   createdAt: string
-  isVisible?: boolean
+  isNewlyCreated?: boolean
 }
 
 // Available scopes
@@ -156,6 +148,8 @@ const ApiKeyComponent = ({
     useState<ApiKey | null>(null)
   const [selectedApiKeyForAgents, setSelectedApiKeyForAgents] =
     useState<ApiKey | null>(null)
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<ApiKey | null>(null)
+  const [showNewKeyDialog, setShowNewKeyDialog] = useState(false)
 
   // Form state
   const [keyName, setKeyName] = useState("")
@@ -247,16 +241,12 @@ const ApiKeyComponent = ({
       if (response.ok) {
         const result = await response.json()
         if (result.success && result.apiKey) {
-          setApiKeys((prev) => [
-            ...prev,
-            { ...result.apiKey, isVisible: false },
-          ])
+          const newApiKey = { ...result.apiKey, isNewlyCreated: true }
+          setApiKeys((prev) => [...prev, newApiKey])
+          setNewlyCreatedKey(newApiKey)
           resetForm()
           setIsCreateModalOpen(false)
-          toast({
-            title: "Success",
-            description: "API key created successfully!",
-          })
+          setShowNewKeyDialog(true)
         } else {
           throw new Error("Failed to create API key")
         }
@@ -311,14 +301,6 @@ const ApiKeyComponent = ({
         variant: "destructive",
       })
     }
-  }
-
-  const toggleKeyVisibility = (keyId: string) => {
-    setApiKeys((prev) =>
-      prev.map((key) =>
-        key.id === keyId ? { ...key, isVisible: !key.isVisible } : key,
-      ),
-    )
   }
 
   const copyToClipboard = async (text: string) => {
@@ -390,17 +372,16 @@ const ApiKeyComponent = ({
   }
 
   const getFirstAgentName = (agentExternalIds: string[]) => {
-    if (agentExternalIds.length === 0) return "No agents"
+    if (agentExternalIds.length === 0) return "All agents"
     const firstAgent = availableAgents.find(
       (a) => a.externalId === agentExternalIds[0],
     )
     return firstAgent?.name || agentExternalIds[0]
   }
 
-  const maskApiKey = (key: string, isVisible: boolean) => {
-    if (isVisible) return key
-    const visiblePart = key.substring(0, 12)
-    return `${visiblePart}${"•".repeat(20)}`
+  const maskApiKey = (key: string) => {
+    const visiblePart = key.substring(0, 4)
+    return `${visiblePart}${"*".repeat(28)}`
   }
 
   return (
@@ -592,32 +573,9 @@ const ApiKeyComponent = ({
                           {truncateName(apiKey.name)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                              {maskApiKey(
-                                apiKey.key,
-                                apiKey.isVisible || false,
-                              )}
-                            </code>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => toggleKeyVisibility(apiKey.id)}
-                            >
-                              {apiKey.isVisible ? (
-                                <EyeOff className="w-4 h-4" />
-                              ) : (
-                                <Eye className="w-4 h-4" />
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyToClipboard(apiKey.key)}
-                            >
-                              <Copy className="w-4 h-4" />
-                            </Button>
-                          </div>
+                          <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
+                            {maskApiKey(apiKey.key)}
+                          </code>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -782,6 +740,68 @@ const ApiKeyComponent = ({
                   })
                 )}
               </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* New API Key Success Modal */}
+          <Dialog open={showNewKeyDialog} onOpenChange={setShowNewKeyDialog}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Key className="w-5 h-5 text-green-600" />
+                  API Key Created Successfully!
+                </DialogTitle>
+                <DialogDescription>
+                  Your API key has been created. Copy it now - you won't be able
+                  to see it again!
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>API Key Name</Label>
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="font-medium">{newlyCreatedKey?.name}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>API Key</Label>
+                  <div className="flex items-center space-x-2">
+                    <code className="flex-1 text-sm font-mono bg-muted px-3 py-2 rounded-lg break-all">
+                      {newlyCreatedKey?.key}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        copyToClipboard(newlyCreatedKey?.key || "")
+                      }
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Important:</strong> This is the only time you'll be
+                    able to see the full API key. Make sure to copy and store it
+                    securely. After closing this dialog, you won't be able to
+                    see the whole API key
+                  </p>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  onClick={() => setShowNewKeyDialog(false)}
+                  className="w-full"
+                >
+                  I've Saved My API Key
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
