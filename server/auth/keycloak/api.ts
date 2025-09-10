@@ -3,6 +3,7 @@ import { cors } from "hono/cors"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { getKeycloakConfig } from "./config"
+import { getClientResolver } from "./client-resolver"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
@@ -47,21 +48,27 @@ app.get("/callback", zValidator("query", oauthCallbackSchema), async (c) => {
   }
 
   try {
+    // Resolve client for authorization code flow
+    const clientResolver = getClientResolver(keycloakConfig)
+    const client = await clientResolver.resolveClient('authorization-code')
+
     // Exchange authorization code for tokens
     const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
+
+    const baseParams = {
+      grant_type: "authorization_code",
+      code: code,
+      redirect_uri: `${c.req.header("host")}/api/keycloak/callback`,
+    }
+
+    const body = clientResolver.buildTokenParams(client, baseParams)
 
     const tokenResponse = await fetch(tokenUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        client_id: keycloakConfig.clientId,
-        client_secret: keycloakConfig.clientSecret,
-        code: code,
-        redirect_uri: `${c.req.header("host")}/api/keycloak/callback`,
-      }),
+      body: body,
     })
 
     if (!tokenResponse.ok) {
@@ -99,20 +106,20 @@ app.post("/callback", async (c) => {
 
     Logger.info("Exchanging authorization code for tokens")
 
+    // Resolve client for authorization code flow
+    const clientResolver = getClientResolver(keycloakConfig)
+    const client = await clientResolver.resolveClient('authorization-code')
+
     // Exchange authorization code for tokens
     const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
 
-    const body = new URLSearchParams({
+    const baseParams = {
       grant_type: "authorization_code",
-      client_id: keycloakConfig.clientId,
       code: code,
       redirect_uri: "http://localhost:5173/auth", // Fixed redirect URI
-    })
-
-    // Add client secret if available (for confidential clients)
-    if (keycloakConfig.clientSecret) {
-      body.append("client_secret", keycloakConfig.clientSecret)
     }
+
+    const body = clientResolver.buildTokenParams(client, baseParams)
 
     const tokenResponse = await fetch(tokenUrl, {
       method: "POST",
@@ -182,11 +189,16 @@ app.post("/callback", async (c) => {
       ? `refresh-token=${tokens.refresh_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=1800`
       : null
 
-    // Set multiple cookies properly - each cookie needs its own header
-    c.header("Set-Cookie", accessCookie)
+    // Set multiple cookies properly - use an array to set multiple cookies
+    const cookies = [accessCookie]
     if (refreshCookie) {
-      c.header("Set-Cookie", refreshCookie)
+      cookies.push(refreshCookie)
     }
+    
+    // Set all cookies using multiple header calls
+    cookies.forEach(cookie => {
+      c.res.headers.append("Set-Cookie", cookie)
+    })
 
     // Return the access token to the frontend
     return c.json({
@@ -219,19 +231,25 @@ app.post("/refresh", async (c) => {
   }
 
   try {
+    // Resolve client for token refresh
+    const clientResolver = getClientResolver(keycloakConfig)
+    const client = await clientResolver.resolveClient('token-refresh')
+
     const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
+
+    const baseParams = {
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }
+
+    const body = clientResolver.buildTokenParams(client, baseParams)
 
     const response = await fetch(tokenUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        client_id: keycloakConfig.clientId,
-        client_secret: keycloakConfig.clientSecret,
-        refresh_token: refreshToken,
-      }),
+      body: body,
     })
 
     if (!response.ok) {
@@ -265,23 +283,18 @@ app.post("/login", async (c) => {
 
     Logger.info("Attempting password grant for user:", email)
 
-    // Use password grant type with Keycloak
+    // Use client resolver with automatic fallback
+    const clientResolver = getClientResolver(keycloakConfig)
     const tokenUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/token`
 
-    const response = await fetch(tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "password",
-        client_id: keycloakConfig.clientId,
-        client_secret: keycloakConfig.clientSecret,
-        username: email,
-        password: password,
-        scope: "openid email profile",
-      }),
-    })
+    const baseParams = {
+      grant_type: "password",
+      username: email,
+      password: password,
+      scope: "openid email profile",
+    }
+
+    const response = await clientResolver.performTokenRequest(tokenUrl, 'password-grant', baseParams)
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -315,11 +328,16 @@ app.post("/login", async (c) => {
       ? `refresh-token=${tokens.refresh_token}; Path=/; HttpOnly=true; SameSite=Strict; Max-Age=1800`
       : null
 
-    // Set multiple cookies properly - each cookie needs its own header
-    c.header("Set-Cookie", accessCookie)
+    // Set multiple cookies properly - use an array to set multiple cookies
+    const cookies = [accessCookie]
     if (refreshCookie) {
-      c.header("Set-Cookie", refreshCookie)
+      cookies.push(refreshCookie)
     }
+    
+    // Set all cookies using multiple header calls
+    cookies.forEach(cookie => {
+      c.res.headers.append("Set-Cookie", cookie)
+    })
 
     // Also return the tokens to the frontend
     return c.json({
@@ -349,19 +367,25 @@ app.post("/logout", async (c) => {
 
   try {
     if (refreshToken) {
+      // Resolve client for logout operation
+      const clientResolver = getClientResolver(keycloakConfig)
+      const client = await clientResolver.resolveClient('admin-api')
+
       // Revoke token in Keycloak
       const logoutUrl = `${keycloakConfig.baseUrl}/realms/${keycloakConfig.defaultRealm}/protocol/openid-connect/logout`
+
+      const baseParams = {
+        refresh_token: refreshToken,
+      }
+
+      const body = clientResolver.buildTokenParams(client, baseParams)
 
       await fetch(logoutUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({
-          client_id: keycloakConfig.clientId,
-          client_secret: keycloakConfig.clientSecret,
-          refresh_token: refreshToken,
-        }),
+        body: body,
       })
     }
 

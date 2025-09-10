@@ -16,6 +16,7 @@ import { createId } from "@paralleldrive/cuid2"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
+import { hashPassword, verifyPassword } from "@/utils/password"
 
 export const getPublicUserAndWorkspaceByEmail = async (
   trx: TxnOrClient,
@@ -119,6 +120,13 @@ export const createUser = async (
   password?: string,
 ) => {
   const externalId = createId()
+  
+  // Hash password if provided (for email/password users)
+  let hashedPassword: string | undefined = undefined
+  if (password && password.trim() !== "") {
+    hashedPassword = await hashPassword(password)
+  }
+  
   return await trx
     .insert(users)
     .values({
@@ -133,7 +141,7 @@ export const createUser = async (
       lastLogin: new Date(),
       role,
       refreshToken: "",
-      password,
+      password: hashedPassword,
     })
     .returning()
 }
@@ -180,4 +188,68 @@ export const getUserById = async (
     throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
   }
   return parsedRes.data
+}
+
+/**
+ * Verify user password for email/password authentication
+ * @param trx - Database transaction or client
+ * @param email - User email
+ * @param password - Plaintext password to verify
+ * @returns Promise<SelectUser | null> - User if password is correct, null otherwise
+ */
+export const verifyUserPassword = async (
+  trx: TxnOrClient,
+  email: string,
+  password: string,
+): Promise<SelectUser | null> => {
+  try {
+    // Get user with password
+    const userResult = await trx
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1)
+    
+    if (!userResult || userResult.length === 0) {
+      return null // User not found
+    }
+    
+    const user = userResult[0]
+    
+    // Check if user has a password set (OAuth users might not have passwords)
+    if (!user.password) {
+      return null // User doesn't have password authentication enabled
+    }
+    
+    // Verify password
+    const isPasswordValid = await verifyPassword(password, user.password)
+    
+    if (!isPasswordValid) {
+      return null // Invalid password
+    }
+    
+    return user
+  } catch (error) {
+    throw new Error(`Password verification failed: ${error}`)
+  }
+}
+
+/**
+ * Update user password (for password reset functionality)
+ * @param trx - Database transaction or client
+ * @param email - User email
+ * @param newPassword - New plaintext password
+ * @returns Promise<void>
+ */
+export const updateUserPassword = async (
+  trx: TxnOrClient,
+  email: string,
+  newPassword: string,
+): Promise<void> => {
+  const hashedPassword = await hashPassword(newPassword)
+  
+  await trx
+    .update(users)
+    .set({ password: hashedPassword })
+    .where(eq(users.email, email))
 }

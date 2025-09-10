@@ -6,6 +6,7 @@
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@faker-js/faker": "^9.3.0",
+    "@types/bcryptjs": "^3.0.0",
     "@types/bun": "latest",
     "@types/html-to-text": "^9.0.4",
     "@types/uuid": "^10.0.0",
@@ -55,7 +56,8 @@
     "arctic": "^3.3.0",
     "async-mutex": "^0.5.0",
     "autoevals": "^0.0.119",
-    "canvas": "^3.1.0",
+    "bcryptjs": "^3.0.2",
+    "canvas": "^3.2.0",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.33.0",
     "drizzle-zod": "^0.5.1",

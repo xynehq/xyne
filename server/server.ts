@@ -101,6 +101,7 @@ import { GetUserWorkspaceInfo } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import keycloakRoutes from "@/auth/keycloak/routes"
 import { enhancedJwtMiddleware } from "@/auth/keycloak/middleware"
+import passwordAuthRoutes from "@/api/password-auth"
 import {
   ListDataSourcesApi,
   ListDataSourceFilesApi,
@@ -1070,6 +1071,9 @@ const generateTokens = async (
 
 // Mount Keycloak routes
 app.route("/api/keycloak", keycloakRoutes)
+
+// Mount Password Authentication routes
+app.route("/api/password", passwordAuthRoutes)
 
 // After google oauth is done, google redirects user
 // here and this is where all the onboarding will happen

@@ -8,11 +8,46 @@ import config from "@/config"
 import { db } from "@/db/client"
 import { createUser, getUserByEmail } from "@/db/user"
 import { UserRole } from "@/shared/types"
+import { eq } from "drizzle-orm"
+import { workspaces } from "@/db/schema"
 
 const Logger = getLogger(Subsystem.Server)
 const { JwtPayloadKey } = config
 const userSecret = process.env.USER_SECRET!
 const keycloakConfig = getKeycloakConfig()
+
+// Get default workspace configuration for new user creation
+async function getDefaultWorkspaceConfig(): Promise<{
+  workspaceId: number
+  workspaceExternalId: string
+}> {
+  // Try to get from environment variables first
+  const envWorkspaceId = process.env.KEYCLOAK_DEFAULT_WORKSPACE_ID
+  const envWorkspaceExternalId = process.env.KEYCLOAK_DEFAULT_WORKSPACE_EXTERNAL_ID
+
+  if (envWorkspaceId && envWorkspaceExternalId) {
+    return {
+      workspaceId: parseInt(envWorkspaceId),
+      workspaceExternalId: envWorkspaceExternalId,
+    }
+  }
+
+  // Fallback: get the first available workspace from database
+  try {
+    const firstWorkspace = await db.select().from(workspaces).limit(1)
+    if (firstWorkspace.length > 0) {
+      return {
+        workspaceId: firstWorkspace[0].id,
+        workspaceExternalId: firstWorkspace[0].externalId,
+      }
+    }
+  } catch (error) {
+    Logger.error("Error fetching default workspace:", error)
+  }
+
+  // Last resort: throw error if no workspace found
+  throw new Error("No default workspace configured and no workspaces available in database")
+}
 
 export interface AuthContext {
   sub: string
@@ -173,15 +208,19 @@ async function validateKeycloakToken(
       const existingUsers = await getUserByEmail(db, userEmail)
 
       if (!existingUsers || existingUsers.length === 0) {
-        // Create user with default values - XYNE doesn't have projects like DPIP
+        // Get default workspace configuration
+        const defaultWorkspace = await getDefaultWorkspaceConfig()
+        Logger.info("Creating new user with workspace:", defaultWorkspace)
+
+        // Create user with configurable workspace values
         await createUser(
           db,
-          1, // Default workspace ID (juspay.in)
+          defaultWorkspace.workspaceId,
           userEmail,
           userName,
           "", // No photo link from Keycloak by default
           primaryRole,
-          "wkh5nwq7o0es10kpcgg8lu9o", // juspay.in workspace external ID
+          defaultWorkspace.workspaceExternalId,
           undefined, // No password for Keycloak users
         )
       }
@@ -191,15 +230,27 @@ async function validateKeycloakToken(
     }
 
     // Get the actual workspace external ID from the database
-    let workspaceExternalId = "wkh5nwq7o0es10kpcgg8lu9o" // Default to juspay.in workspace
+    let workspaceExternalId: string
     
     try {
       const existingUsers = await getUserByEmail(db, userEmail)
       if (existingUsers && existingUsers.length > 0) {
         workspaceExternalId = existingUsers[0].workspaceExternalId
+      } else {
+        // Fallback to default workspace configuration
+        const defaultWorkspace = await getDefaultWorkspaceConfig()
+        workspaceExternalId = defaultWorkspace.workspaceExternalId
       }
     } catch (error) {
       Logger.error("Error getting workspace external ID:", error)
+      // Last resort fallback to default workspace configuration
+      try {
+        const defaultWorkspace = await getDefaultWorkspaceConfig()
+        workspaceExternalId = defaultWorkspace.workspaceExternalId
+      } catch (fallbackError) {
+        Logger.error("Error getting fallback workspace:", fallbackError)
+        throw new Error("Unable to determine workspace for user authentication")
+      }
     }
 
     // Create auth context with role information
