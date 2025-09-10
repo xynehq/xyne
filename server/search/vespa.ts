@@ -643,13 +643,13 @@ export const HybridDefaultProfileForAgent = async (
     return `${
       app
         ? (Array.isArray(app) && app.length > 0)
-          ? `and ${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")}`
+          ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
           : "and app contains @app"
         : ""
     } ${
       entity
         ? Array.isArray(entity) && entity.length > 0
-          ? `and ${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")}`
+          ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
           : "and entity contains @entity"
         : ""
     }`.trim()
