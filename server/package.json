@@ -19,6 +19,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
     "dev": "bun run --watch server.ts",
+    "dev:sync": "bun run --watch sync-server.ts",
     "build": "bunx --bun vite build",
     "lint": "eslint .",
     "preview": "vite preview",

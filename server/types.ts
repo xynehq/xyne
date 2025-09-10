@@ -432,6 +432,7 @@ export enum WorkerResponseTypes {
 
 export enum Subsystem {
   Server = "Server",
+  SyncServer = "SyncServer",
   Auth = "Auth",
   Cronjob = "Cronjob",
   Ingest = "Ingest",
