@@ -113,44 +113,39 @@ export enum OpenAIError {
 // File type categories enum for better type safety and consistency
 export enum FileType {
   IMAGE = "Image",
-  DOCUMENT = "Document", 
+  DOCUMENT = "Document",
   SPREADSHEET = "Spreadsheet",
   PRESENTATION = "Presentation",
   PDF = "PDF",
   TEXT = "Text",
-  FILE = "File" // Default fallback
+  FILE = "File", // Default fallback
 }
 
 // MIME type mappings for better organization
 export const MIME_TYPE_MAPPINGS = {
   [FileType.IMAGE]: [
     "image/jpeg",
-    "image/jpg", 
+    "image/jpg",
     "image/png",
     "image/gif",
-    "image/webp"
+    "image/webp",
   ],
   [FileType.DOCUMENT]: [
     "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ],
   [FileType.SPREADSHEET]: [
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/csv"
+    "text/csv",
   ],
   [FileType.PRESENTATION]: [
-    "application/vnd.ms-powerpoint", 
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ],
-  [FileType.PDF]: [
-    "application/pdf"
-  ],
-  [FileType.TEXT]: [
-    "text/plain",
-    "text/markdown"
-  ]
-} as const;
+  [FileType.PDF]: ["application/pdf"],
+  [FileType.TEXT]: ["text/plain", "text/markdown"],
+} as const
 
 // File extension mappings for fallback detection
 export const EXTENSION_MAPPINGS = {
@@ -159,8 +154,8 @@ export const EXTENSION_MAPPINGS = {
   [FileType.SPREADSHEET]: [".xls", ".xlsx", ".csv"],
   [FileType.PRESENTATION]: [".ppt", ".pptx"],
   [FileType.PDF]: [".pdf"],
-  [FileType.TEXT]: [".txt", ".md"]
-} as const;
+  [FileType.TEXT]: [".txt", ".md"],
+} as const
 
 export const AutocompleteFileSchema = z
   .object({
@@ -678,21 +673,38 @@ export const agentPromptPayloadSchema = z.preprocess(
       model: z.string().optional(),
       isPublic: z.boolean().optional(),
       isRagOn: z.boolean().optional(),
-      appIntegrations: z.record(z.object({
-        itemIds: z.array(z.string()),
-        selectedAll: z.boolean()
-      })).optional(),
-      docIds: z.array(z.object({
-        docId: z.string(),
-        name: z.string(),
-        app: z.string(),
-        entity: z.string()
-      })).optional(),
+      appIntegrations: z
+        .record(
+          z.object({
+            itemIds: z.array(z.string()),
+            selectedAll: z.boolean(),
+          }),
+        )
+        .optional(),
+      docIds: z
+        .array(
+          z.object({
+            docId: z.string(),
+            name: z.string(),
+            app: z.string(),
+            entity: z.string(),
+          }),
+        )
+        .optional(),
       userEmails: z.array(z.string()).optional(),
       allowWebSearch: z.boolean().optional(),
-      
     })
     .optional(),
 )
 
 export type AgentPromptPayload = z.infer<typeof agentPromptPayloadSchema>
+
+export interface ModelConfiguration {
+  actualName?: string
+  labelName: string
+  provider?: string
+  reasoning: boolean
+  websearch: boolean
+  deepResearch: boolean
+  description: string
+}

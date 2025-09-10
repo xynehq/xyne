@@ -7129,6 +7129,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
       reasoning: model.reasoning,
       websearch: model.websearch,
       deepResearch: model.deepResearch,
+      description: model.description,
     }))
 
     return c.json({ models: filteredModels })
