@@ -205,11 +205,8 @@ import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
 import {
-  checkGrafanaHealth,
-  checkLokiHealth,
   checkOverallSystemHealth,
   checkPostgresHealth,
-  checkPrometheusHealth,
   checkVespaHealth,
 } from "./health"
 import {
@@ -1396,29 +1393,10 @@ app.get(
   "/health/postgres",
   createHealthCheckHandler(checkPostgresHealth, ServiceName.postgres),
 )
-
-// Grafana health check endpoint
-app.get(
-  "/health/grafana",
-  createHealthCheckHandler(checkGrafanaHealth, ServiceName.grafana),
-)
-
 // Vespa health check endpoint
 app.get(
   "/health/vespa",
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
-)
-
-// Prometheus health check endpoint
-app.get(
-  "/health/prometheus",
-  createHealthCheckHandler(checkPrometheusHealth, ServiceName.prometheus),
-)
-
-//Loki health check endpoint
-app.get(
-  "/health/loki",
-  createHealthCheckHandler(checkLokiHealth, ServiceName.loki),
 )
 
 export const init = async () => {

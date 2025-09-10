@@ -14,10 +14,7 @@ export interface HealthStatusResponse {
 
 export interface ServiceHealthCheck {
   postgres: HealthStatusResponse
-  grafana: HealthStatusResponse
   vespa: HealthStatusResponse
-  loki: HealthStatusResponse
-  prometheus: HealthStatusResponse
 }
 
 export interface OverallSystemHealthResponse {
