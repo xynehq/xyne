@@ -45,7 +45,7 @@
     "@slack/socket-mode": "^2.0.4",
     "@slack/web-api": "^7.8.0",
     "@types/jszip": "^3.4.1",
-    "@xynehq/jaf": "^0.1.7",
+    "@xynehq/jaf": "^0.1.8",
     "arctic": "^3.3.0",
     "async-mutex": "^0.5.0",
     "autoevals": "^0.0.119",
