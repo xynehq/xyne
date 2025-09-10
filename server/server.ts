@@ -95,11 +95,7 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import {
-  GetUserWorkspaceInfo,
-  GenerateApiKey,
-  GenerateUserApiKey,
-} from "@/api/auth"
+import { GetUserWorkspaceInfo, GenerateUserApiKey } from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,

@@ -104,7 +104,7 @@ export const selectAgentSchema = createSelectSchema(agents, {
     .optional()
     .default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
-  via_apiKey: z.boolean().default(false),
+  via_apiKey: z.boolean().default(false).optional(),
 })
 export type SelectAgent = z.infer<typeof selectAgentSchema>
 
