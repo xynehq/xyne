@@ -1316,6 +1316,11 @@ app.get(
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )
+app.get(
+  "/integrations/apiKey",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
 // Catch-all for any other integration routes
 app.get(
   "/integrations/*",
@@ -1350,7 +1355,6 @@ app.get(
 app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
-app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/knowledgeManagement",
   AuthRedirect,

@@ -21,7 +21,6 @@ import { Route as AuthenticatedSearchImport } from './routes/_authenticated/sear
 import { Route as AuthenticatedKnowledgeManagementImport } from './routes/_authenticated/knowledgeManagement'
 import { Route as AuthenticatedDashboardImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
-import { Route as AuthenticatedApiKeyImport } from './routes/_authenticated/api-key'
 import { Route as AuthenticatedAgentImport } from './routes/_authenticated/agent'
 import { Route as AuthenticatedIntegrationsIndexImport } from './routes/_authenticated/integrations/index'
 import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authenticated/integrations/slack'
@@ -96,12 +95,6 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardImport.update({
 const AuthenticatedChatRoute = AuthenticatedChatImport.update({
   id: '/chat',
   path: '/chat',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-
-const AuthenticatedApiKeyRoute = AuthenticatedApiKeyImport.update({
-  id: '/api-key',
-  path: '/api-key',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
@@ -224,13 +217,6 @@ declare module '@tanstack/react-router' {
       path: '/agent'
       fullPath: '/agent'
       preLoaderRoute: typeof AuthenticatedAgentImport
-      parentRoute: typeof AuthenticatedImport
-    }
-    '/_authenticated/api-key': {
-      id: '/_authenticated/api-key'
-      path: '/api-key'
-      fullPath: '/api-key'
-      preLoaderRoute: typeof AuthenticatedApiKeyImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/chat': {
@@ -398,7 +384,6 @@ const AuthenticatedChatRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAgentRoute: typeof AuthenticatedAgentRoute
-  AuthenticatedApiKeyRoute: typeof AuthenticatedApiKeyRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedKnowledgeManagementRoute: typeof AuthenticatedKnowledgeManagementRoute
@@ -422,7 +407,6 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAgentRoute: AuthenticatedAgentRoute,
-  AuthenticatedApiKeyRoute: AuthenticatedApiKeyRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedKnowledgeManagementRoute: AuthenticatedKnowledgeManagementRoute,
@@ -457,7 +441,6 @@ export interface FileRoutesByFullPath {
   '': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
   '/agent': typeof AuthenticatedAgentRoute
-  '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
@@ -484,7 +467,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/agent': typeof AuthenticatedAgentRoute
-  '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
@@ -513,7 +495,6 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/agent': typeof AuthenticatedAgentRoute
-  '/_authenticated/api-key': typeof AuthenticatedApiKeyRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
@@ -543,7 +524,6 @@ export interface FileRouteTypes {
     | ''
     | '/auth'
     | '/agent'
-    | '/api-key'
     | '/chat'
     | '/dashboard'
     | '/knowledgeManagement'
@@ -569,7 +549,6 @@ export interface FileRouteTypes {
   to:
     | '/auth'
     | '/agent'
-    | '/api-key'
     | '/chat'
     | '/dashboard'
     | '/knowledgeManagement'
@@ -596,7 +575,6 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/agent'
-    | '/_authenticated/api-key'
     | '/_authenticated/chat'
     | '/_authenticated/dashboard'
     | '/_authenticated/knowledgeManagement'
@@ -652,7 +630,6 @@ export const routeTree = rootRoute
       "filePath": "_authenticated.tsx",
       "children": [
         "/_authenticated/agent",
-        "/_authenticated/api-key",
         "/_authenticated/chat",
         "/_authenticated/dashboard",
         "/_authenticated/knowledgeManagement",
@@ -679,10 +656,6 @@ export const routeTree = rootRoute
     },
     "/_authenticated/agent": {
       "filePath": "_authenticated/agent.tsx",
-      "parent": "/_authenticated"
-    },
-    "/_authenticated/api-key": {
-      "filePath": "_authenticated/api-key.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/chat": {
