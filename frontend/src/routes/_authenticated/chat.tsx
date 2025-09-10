@@ -754,7 +754,6 @@ export const ChatPage = ({
   ])
 
   // Background title update for new chats
-  console.log(chatTitle)
   useEffect(() => {
     const shouldUpdateTitle =
       chatId &&
