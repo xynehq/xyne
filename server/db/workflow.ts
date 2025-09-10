@@ -1,11 +1,10 @@
-import { and, eq, desc, isNull } from "drizzle-orm"
-import { createId } from "@paralleldrive/cuid2"
+import { and, eq, desc } from "drizzle-orm"
 import type { TxnOrClient } from "@/types"
 import {
-  workflowTemplates,
-  workflowStepTemplates,
-  workflowExecutions,
-  workflowStepExecutions,
+  workflowTemplate,
+  workflowStepTemplate,
+  workflowExecution,
+  workflowStepExecution,
   users,
   selectWorkflowTemplateSchema,
   selectWorkflowStepTemplateSchema,
@@ -24,27 +23,24 @@ import {
 // Workflow Template Operations
 export const createWorkflowTemplate = async (
   trx: TxnOrClient,
-  workspaceId: number,
-  createdBy: number,
   data: {
     name: string
     description?: string
     version?: string
     config?: any
+    createdBy?: string
+    rootWorkflowStepTemplateId?: string
   },
 ): Promise<SelectWorkflowTemplate> => {
-  const externalId = createId()
-
   const [template] = await trx
-    .insert(workflowTemplates)
+    .insert(workflowTemplate)
     .values({
-      externalId,
-      workspaceId,
-      createdBy,
       name: data.name,
       description: data.description,
       version: data.version || "1.0.0",
       config: data.config || {},
+      createdBy: data.createdBy,
+      rootWorkflowStepTemplateId: data.rootWorkflowStepTemplateId,
     })
     .returning()
 
@@ -53,61 +49,40 @@ export const createWorkflowTemplate = async (
 
 export const getWorkflowTemplateById = async (
   trx: TxnOrClient,
-  externalId: string,
-  workspaceId: number,
+  id: string,
 ): Promise<SelectWorkflowTemplate | null> => {
   const [template] = await trx
     .select()
-    .from(workflowTemplates)
-    .where(
-      and(
-        eq(workflowTemplates.externalId, externalId),
-        eq(workflowTemplates.workspaceId, workspaceId),
-        isNull(workflowTemplates.deletedAt),
-      ),
-    )
+    .from(workflowTemplate)
+    .where(eq(workflowTemplate.id, id))
     .limit(1)
 
   return template ? selectWorkflowTemplateSchema.parse(template) : null
 }
 
-export const getWorkflowTemplatesByWorkspace = async (
+export const getAllWorkflowTemplates = async (
   trx: TxnOrClient,
-  workspaceId: number,
 ): Promise<SelectWorkflowTemplate[]> => {
   const templates = await trx
     .select()
-    .from(workflowTemplates)
-    .where(
-      and(
-        eq(workflowTemplates.workspaceId, workspaceId),
-        isNull(workflowTemplates.deletedAt),
-      ),
-    )
-    .orderBy(desc(workflowTemplates.createdAt))
+    .from(workflowTemplate)
+    .orderBy(desc(workflowTemplate.createdAt))
 
   return templates as SelectWorkflowTemplate[]
 }
 
 export const updateWorkflowTemplate = async (
   trx: TxnOrClient,
-  externalId: string,
-  workspaceId: number,
+  id: string,
   data: Partial<InsertWorkflowTemplate>,
 ): Promise<SelectWorkflowTemplate | null> => {
   const [updated] = await trx
-    .update(workflowTemplates)
+    .update(workflowTemplate)
     .set({
       ...data,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(workflowTemplates.externalId, externalId),
-        eq(workflowTemplates.workspaceId, workspaceId),
-        isNull(workflowTemplates.deletedAt),
-      ),
-    )
+    .where(eq(workflowTemplate.id, id))
     .returning()
 
   return updated ? (updated as SelectWorkflowTemplate) : null
@@ -117,30 +92,29 @@ export const updateWorkflowTemplate = async (
 export const createWorkflowStepTemplate = async (
   trx: TxnOrClient,
   data: {
-    workflowTemplateId: number
+    workflowTemplateId: string
     name: string
     description?: string
     type: "manual" | "automated"
     parentStepId?: string
+    prevStepIds?: string[]
     nextStepIds?: string[]
-    toolIds?: string
+    toolIds?: string[]
     timeEstimate?: number
     metadata?: any
   },
 ): Promise<SelectWorkflowStepTemplate> => {
-  const externalId = createId()
-
   const [step] = await trx
-    .insert(workflowStepTemplates)
+    .insert(workflowStepTemplate)
     .values({
-      externalId,
       workflowTemplateId: data.workflowTemplateId,
       name: data.name,
       description: data.description,
       type: data.type,
       parentStepId: data.parentStepId,
+      prevStepIds: data.prevStepIds || [],
       nextStepIds: data.nextStepIds || [],
-      toolIds: data.toolIds,
+      toolIds: data.toolIds || [],
       timeEstimate: data.timeEstimate || 0,
       metadata: data.metadata || {},
     })
@@ -151,18 +125,13 @@ export const createWorkflowStepTemplate = async (
 
 export const getWorkflowStepTemplatesByTemplate = async (
   trx: TxnOrClient,
-  workflowTemplateId: number,
+  workflowTemplateId: string,
 ): Promise<SelectWorkflowStepTemplate[]> => {
   const steps = await trx
     .select()
-    .from(workflowStepTemplates)
-    .where(
-      and(
-        eq(workflowStepTemplates.workflowTemplateId, workflowTemplateId),
-        isNull(workflowStepTemplates.deletedAt),
-      ),
-    )
-    .orderBy(workflowStepTemplates.createdAt)
+    .from(workflowStepTemplate)
+    .where(eq(workflowStepTemplate.workflowTemplateId, workflowTemplateId))
+    .orderBy(workflowStepTemplate.createdAt)
 
   return steps as SelectWorkflowStepTemplate[]
 }
@@ -171,25 +140,20 @@ export const getWorkflowStepTemplatesByTemplate = async (
 export const createWorkflowExecution = async (
   trx: TxnOrClient,
   data: {
-    workspaceId: number
-    workflowTemplateId: number
-    createdBy: number
+    workflowTemplateId: string
     name: string
     description?: string
+    createdBy?: string
     metadata?: any
   },
 ): Promise<SelectWorkflowExecution> => {
-  const externalId = createId()
-
   const [execution] = await trx
-    .insert(workflowExecutions)
+    .insert(workflowExecution)
     .values({
-      externalId,
-      workspaceId: data.workspaceId,
       workflowTemplateId: data.workflowTemplateId,
-      createdBy: data.createdBy,
       name: data.name,
       description: data.description,
+      createdBy: data.createdBy,
       metadata: data.metadata || {},
     })
     .returning()
@@ -199,154 +163,119 @@ export const createWorkflowExecution = async (
 
 export const getWorkflowExecutionById = async (
   trx: TxnOrClient,
-  externalId: string,
-  workspaceId: number,
+  id: string,
 ): Promise<SelectWorkflowExecution | null> => {
   const [execution] = await trx
     .select()
-    .from(workflowExecutions)
-    .where(
-      and(
-        eq(workflowExecutions.externalId, externalId),
-        eq(workflowExecutions.workspaceId, workspaceId),
-        isNull(workflowExecutions.deletedAt),
-      ),
-    )
+    .from(workflowExecution)
+    .where(eq(workflowExecution.id, id))
     .limit(1)
 
   return execution ? (execution as SelectWorkflowExecution) : null
 }
 
-export const getWorkflowExecutionsByWorkspace = async (
+export const getAllWorkflowExecutions = async (
   trx: TxnOrClient,
-  workspaceId: number,
 ): Promise<SelectWorkflowExecution[]> => {
   const executions = await trx
     .select()
-    .from(workflowExecutions)
-    .where(
-      and(
-        eq(workflowExecutions.workspaceId, workspaceId),
-        isNull(workflowExecutions.deletedAt),
-      ),
-    )
-    .orderBy(desc(workflowExecutions.createdAt))
+    .from(workflowExecution)
+    .orderBy(desc(workflowExecution.createdAt))
 
   return executions as SelectWorkflowExecution[]
 }
 
 export const updateWorkflowExecution = async (
   trx: TxnOrClient,
-  externalId: string,
-  workspaceId: number,
+  id: string,
   data: Partial<InsertWorkflowExecution>,
 ): Promise<SelectWorkflowExecution | null> => {
   const [updated] = await trx
-    .update(workflowExecutions)
+    .update(workflowExecution)
     .set({
       ...data,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(workflowExecutions.externalId, externalId),
-        eq(workflowExecutions.workspaceId, workspaceId),
-        isNull(workflowExecutions.deletedAt),
-      ),
-    )
+    .where(eq(workflowExecution.id, id))
     .returning()
 
-  return updated || null
+  return updated ? ({ ...updated, metadata: updated.metadata as any }) : null
 }
 
 // Workflow Step Execution Operations
 export const createWorkflowStepExecution = async (
   trx: TxnOrClient,
   data: {
-    workflowExecutionId: number
-    workflowStepTemplateId: number
+    workflowExecutionId: string
+    workflowStepTemplateId: string
     name: string
     type: "manual" | "automated"
     parentStepId?: string
+    prevStepIds?: string[]
     nextStepIds?: string[]
-    toolIds?: string
+    toolExecIds?: string[]
     timeEstimate?: number
     metadata?: any
   },
 ): Promise<SelectWorkflowStepExecution> => {
-  const externalId = createId()
-
   const [stepExecution] = await trx
-    .insert(workflowStepExecutions)
+    .insert(workflowStepExecution)
     .values({
-      externalId,
       workflowExecutionId: data.workflowExecutionId,
       workflowStepTemplateId: data.workflowStepTemplateId,
       name: data.name,
       type: data.type,
       parentStepId: data.parentStepId,
+      prevStepIds: data.prevStepIds || [],
       nextStepIds: data.nextStepIds || [],
-      toolIds: data.toolIds,
+      toolExecIds: data.toolExecIds || [],
       timeEstimate: data.timeEstimate || 0,
       metadata: data.metadata || {},
     })
     .returning()
 
-  return stepExecution
+  return stepExecution as SelectWorkflowStepExecution
 }
 
 export const getWorkflowStepExecutionsByExecution = async (
   trx: TxnOrClient,
-  workflowExecutionId: number,
+  workflowExecutionId: string,
 ): Promise<SelectWorkflowStepExecution[]> => {
-  return await trx
+  const results = await trx
     .select()
-    .from(workflowStepExecutions)
-    .where(
-      and(
-        eq(workflowStepExecutions.workflowExecutionId, workflowExecutionId),
-        isNull(workflowStepExecutions.deletedAt),
-      ),
-    )
-    .orderBy(workflowStepExecutions.createdAt)
+    .from(workflowStepExecution)
+    .where(eq(workflowStepExecution.workflowExecutionId, workflowExecutionId))
+    .orderBy(workflowStepExecution.createdAt)
+  
+  return results.map(result => ({ ...result, metadata: result.metadata as any }))
 }
 
 export const getWorkflowStepExecutionById = async (
   trx: TxnOrClient,
-  externalId: string,
+  id: string,
 ): Promise<SelectWorkflowStepExecution | null> => {
   const [stepExecution] = await trx
     .select()
-    .from(workflowStepExecutions)
-    .where(
-      and(
-        eq(workflowStepExecutions.externalId, externalId),
-        isNull(workflowStepExecutions.deletedAt),
-      ),
-    )
+    .from(workflowStepExecution)
+    .where(eq(workflowStepExecution.id, id))
     .limit(1)
 
-  return stepExecution || null
+  return stepExecution ? ({ ...stepExecution, metadata: stepExecution.metadata as any }) : null
 }
 
 export const updateWorkflowStepExecution = async (
   trx: TxnOrClient,
-  externalId: string,
+  id: string,
   data: Partial<InsertWorkflowStepExecution>,
 ): Promise<SelectWorkflowStepExecution | null> => {
   const [updated] = await trx
-    .update(workflowStepExecutions)
+    .update(workflowStepExecution)
     .set({
       ...data,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(workflowStepExecutions.externalId, externalId),
-        isNull(workflowStepExecutions.deletedAt),
-      ),
-    )
+    .where(eq(workflowStepExecution.id, id))
     .returning()
 
-  return updated || null
+  return updated ? ({ ...updated, metadata: updated.metadata as any }) : null
 }

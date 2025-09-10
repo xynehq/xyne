@@ -1996,7 +1996,12 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               case "assistant_message": {
                 const messageSpan = jafStreamingSpan.startSpan("assistant_message")
-                const content = getTextContent(evt.data.message.content) || ""
+                const rawContent = evt.data.message.content || ""
+                // Ensure content is a string for SSE streaming
+                const content = typeof rawContent === 'string' ? rawContent : 
+                  Array.isArray(rawContent) ? rawContent.map(part => 
+                    typeof part === 'string' ? part : part.text || ''
+                  ).join('') : ""
                 const hasToolCalls = Array.isArray(evt.data.message?.tool_calls) &&
                   (evt.data.message.tool_calls?.length ?? 0) > 0
 
@@ -2241,8 +2246,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                       messageId: lastMessage.externalId,
                     }),
                   })
-                  // Check the status before accessing error property
-                  const err = outcome?.status === 'error' ? outcome.error : undefined
+                  const err = (outcome && 'error' in outcome ? outcome.error : undefined) as JAFError | undefined
                   const errTag = err?._tag || "run_error"
                   let errMsg = "Model did not return a response."
                   if (err) {

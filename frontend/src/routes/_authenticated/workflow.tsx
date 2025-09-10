@@ -7,7 +7,7 @@ import ExecutedWorkflowRenderer from "@/components/workflow/executedWorkflowRend
 import { WorkflowCard } from "@/components/workflow/WorkflowCard"
 import { TemplateSelectionModal } from "@/components/workflow/TemplateSelectionModal"
 import { WorkflowExecutionsTable } from "@/components/workflow/WorkflowExecutionsTable"
-import { userWorkflowsAPI, templatesAPI, workflowExecutionsAPI } from "@/components/workflow/api/ApiHandlers"
+import { userWorkflowsAPI, workflowExecutionsAPI } from "@/components/workflow/api/ApiHandlers"
 import sitemapIcon from "@/assets/sitemap.svg"
 import vectorIcon from "@/assets/vector.svg"
 import gridDashboardIcon from "@/assets/grid-dashboard-01.svg"
@@ -137,7 +137,6 @@ function WorkflowComponent() {
   const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null)
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false)
-  const [isEditableMode, setIsEditableMode] = useState(false)
   const [isExecutionMode, setIsExecutionMode] = useState(false)
 
 
@@ -410,7 +409,6 @@ function WorkflowComponent() {
       console.log('📋 Template data to use:', template)
       
       setSelectedTemplate(template)
-      setIsEditableMode(editable)
       setIsExecutionMode(false)
       setViewMode("builder")
     } catch (error) {
@@ -484,7 +482,6 @@ function WorkflowComponent() {
           (executionTemplate.steps && executionTemplate.steps.length > 0)
         )) {
           setSelectedTemplate(executionTemplate)
-          setIsEditableMode(false) // Always read-only for executions
           setIsExecutionMode(true) // Mark as execution mode
           setViewMode("builder")
           console.log('✅ Successfully set execution template for builder')
@@ -569,7 +566,6 @@ function WorkflowComponent() {
             
             console.log('🏗️ Final workflow structure:', workflowFromExecution)
             setSelectedTemplate(workflowFromExecution)
-            setIsEditableMode(false)
             setIsExecutionMode(true)
             setViewMode("builder")
             console.log('✅ Successfully created and set workflow from execution data')
@@ -637,7 +633,7 @@ function WorkflowComponent() {
         isAgentMode={agentWhiteList}
       />
       
-      <div className="flex flex-col flex-1 h-full md:ml-[60px]">
+      <div className="flex flex-col flex-1 h-full md:ml-[52px]">
         {viewMode === "list" ? (
           <div className="p-8 bg-gray-50 dark:bg-[#1E1E1E] overflow-y-auto h-full">
             <div className="w-full">
@@ -666,24 +662,6 @@ function WorkflowComponent() {
                 >
                   <img src={vectorIcon} alt="Workflow" className="w-4 h-4" />
                   Workflow
-                </button>
-                <button
-                  onClick={() => setActiveTab("templates")}
-                  className={`pb-3 px-1 border-b-2 transition-colors flex items-center gap-2 ${
-                    activeTab === "templates"
-                      ? "border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100"
-                      : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-                  }`}
-                  style={{
-                    fontFamily: 'var(--font-family-body)',
-                    fontWeight: 500,
-                    fontSize: 'var(--font-size-body-md)',
-                    lineHeight: 'var(--font-line-height-20)',
-                    letterSpacing: 'var(--font-letter-spacing-normal)'
-                  }}
-                >
-                  <img src={gridDashboardIcon} alt="Templates" className="w-4 h-4" />
-                  Templates
                 </button>
                 <button
                   onClick={() => setActiveTab("executions")}
@@ -829,7 +807,7 @@ function WorkflowComponent() {
                   </h2>
                   
                   {loading ? (
-                    <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, 327px)' }}>
+                    <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fill, 327px)', justifyContent: 'start' }}>
                       {[1, 2, 3].map((i) => (
                         <div key={i} className="animate-pulse">
                           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
@@ -845,7 +823,7 @@ function WorkflowComponent() {
                       ))}
                     </div>
                   ) : workflows.length > 0 ? (
-                    <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, 327px)' }}>
+                    <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fill, 327px)', justifyContent: 'start' }}>
                       {workflows.map((workflow) => (
                         <WorkflowCard 
                           key={workflow.id} 
@@ -874,17 +852,17 @@ function WorkflowComponent() {
               <div className="space-y-6">
                 {/* Header with Search and Filters */}
                 <div className="flex items-center justify-between">
-                  <div className="w-80 h-10 bg-gray-100 rounded-lg p-1 flex items-center">
-                    <div className="flex-1 bg-white border border-gray-200 rounded-md px-3 py-1.5 flex items-center justify-between shadow-sm">
-                      <span className="text-gray-900 font-medium text-sm">All Executions</span>
-                      <div className="bg-gray-800 text-white rounded px-1.5 py-0.5 text-xs font-medium">
+                  <div className="w-80 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 flex items-center">
+                    <div className="flex-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 flex items-center justify-between shadow-sm">
+                      <span className="text-gray-900 dark:text-gray-100 font-medium text-sm">All Executions</span>
+                      <div className="bg-gray-800 dark:bg-gray-300 text-white dark:text-gray-900 rounded px-1.5 py-0.5 text-xs font-medium">
                         {executionsTotal}
                       </div>
                     </div>
                     
                     <div className="flex-1 px-3 py-1.5 flex items-center justify-between opacity-50 cursor-not-allowed">
-                      <span className="text-gray-500 font-medium text-sm">My Executions</span>
-                      <div className="bg-gray-400 text-white rounded px-1.5 py-0.5 text-xs font-medium">
+                      <span className="text-gray-500 dark:text-gray-400 font-medium text-sm">My Executions</span>
+                      <div className="bg-gray-400 dark:bg-gray-600 text-white dark:text-gray-300 rounded px-1.5 py-0.5 text-xs font-medium">
                         0
                       </div>
                     </div>
@@ -900,16 +878,16 @@ function WorkflowComponent() {
                           setSearchTerm(e.target.value);
                           setExecutionsPage(1);
                         }}
-                        className="pl-10 pr-4 h-10 bg-white border border-gray-300 rounded-[10px] focus:outline-none focus:ring-1 focus:ring-gray-600 focus:border-gray-600 w-64"
+                        className="pl-10 pr-4 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none focus:ring-1 focus:ring-gray-600 dark:focus:ring-gray-400 focus:border-gray-600 dark:focus:border-gray-400 w-64 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                       />
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                        <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
                         </svg>
                       </div>
                     </div>
                     
-                    <select className="px-3 h-10 bg-white border border-gray-300 rounded-[10px] focus:outline-none font-medium text-sm leading-5 tracking-normal align-middle">
+                    <select className="px-3 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none font-medium text-sm leading-5 tracking-normal align-middle text-gray-900 dark:text-gray-100">
                       <option>All Workflows</option>
                     </select>
                     <select 
@@ -918,7 +896,7 @@ function WorkflowComponent() {
                         setDateFilter(e.target.value);
                         setExecutionsPage(1);
                       }}
-                      className="px-3 h-10 bg-white border border-gray-300 rounded-[10px] focus:outline-none font-medium text-sm leading-5 tracking-normal align-middle"
+                      className="px-3 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none font-medium text-sm leading-5 tracking-normal align-middle text-gray-900 dark:text-gray-100"
                     >
                       <option>This month</option>
                       <option>Last 7 days</option>
@@ -962,12 +940,10 @@ function WorkflowComponent() {
                   onBackToWorkflows={() => {
                     setViewMode("list")
                     setSelectedTemplate(null)
-                    setIsEditableMode(false)
-                    setIsExecutionMode(false)
+                            setIsExecutionMode(false)
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
-                  isEditableMode={isEditableMode}
                 />
               ) : (
                 <WorkflowBuilder 
@@ -975,12 +951,10 @@ function WorkflowComponent() {
                   onBackToWorkflows={() => {
                     setViewMode("list")
                     setSelectedTemplate(null)
-                    setIsEditableMode(false)
-                    setIsExecutionMode(false)
+                            setIsExecutionMode(false)
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
-                  isEditableMode={isEditableMode}
                 />
               )}
             </div>

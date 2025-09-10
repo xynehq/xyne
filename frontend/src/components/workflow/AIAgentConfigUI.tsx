@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, X, ChevronDown, Search } from "lucide-react"
+import { ArrowLeft, X, ChevronDown } from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface AIAgentConfigUIProps {
@@ -74,13 +74,11 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
         })
       }
       setIsModelDropdownOpen(false)
-      setIsKnowledgeDropdownOpen(false)
       setIsEnhancingPrompt(false)
     }
   }, [isVisible, toolData, stepData])
 
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
-  const [isKnowledgeDropdownOpen, setIsKnowledgeDropdownOpen] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
 
   const models = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"]

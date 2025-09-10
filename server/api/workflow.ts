@@ -197,10 +197,10 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Handle both JSON and multipart form data
     if (contentType.includes("multipart/form-data")) {
       const formData = await c.req.formData()
-      const entries = Array.from(formData.entries()) as [
-        string,
-        FormDataEntryValue,
-      ][]
+      const entries: [string, FormDataEntryValue][] = []
+      formData.forEach((value, key) => {
+        entries.push([key, value])
+      })
 
       requestData.rootStepInput = {}
       for (const [key, value] of entries) {
@@ -1254,6 +1254,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
     const contentType = c.req.header("content-type") || ""
     let stepId: string
     let formData: any = {}
+    let currentStepExecution: any = undefined
 
     if (contentType.includes("multipart/form-data")) {
       // Handle multipart form data (with file uploads) using handleAttachmentUpload
@@ -1266,10 +1267,10 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       }
 
       // Extract form fields (non-file data)
-      const entries = Array.from(multipartData.entries()) as [
-        string,
-        FormDataEntryValue,
-      ][]
+      const entries: [string, FormDataEntryValue][] = []
+      multipartData.forEach((value, key) => {
+        entries.push([key, value])
+      })
       for (const [key, value] of entries) {
         if (key !== "stepId" && typeof value === "string") {
           formData[key] = value
@@ -1288,7 +1289,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         })
       }
 
-      const currentStepExecution = stepExecution[0]
+      currentStepExecution = stepExecution[0]
 
       // Get step template to access form definition for validation
       const stepTemplate = await db
@@ -1957,7 +1958,7 @@ const executeWorkflowTool = async (
             // Process uploaded files
             const fileContents = []
             for (const [key, value] of Object.entries(formSubmission)) {
-              if (value && typeof value === "object" && value.absolutePath) {
+              if (value && typeof value === "object" && (value as any).absolutePath) {
                 try {
                   const fileData = value as any
                   const fileExt = fileData.fileExtension?.toLowerCase()
@@ -2032,7 +2033,7 @@ const executeWorkflowTool = async (
                       )
                     } catch (imageError) {
                       fileContents.push(
-                        `File: ${fileData.originalFileName}\nError: Image processing failed - ${imageError.message}`,
+                        `File: ${fileData.originalFileName}\nError: Image processing failed - ${(imageError as Error).message}`,
                       )
                     }
                   } else if (["doc", "docx"].includes(fileExt)) {
@@ -2048,7 +2049,7 @@ const executeWorkflowTool = async (
                   }
                 } catch (fileError) {
                   fileContents.push(
-                    `File: ${value.originalFileName}\nError: Could not read file - ${fileError.message}`,
+                    `File: ${(value as any).originalFileName}\nError: Could not read file - ${(fileError as Error).message}`,
                   )
                 }
               }
