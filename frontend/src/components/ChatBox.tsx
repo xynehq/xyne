@@ -190,54 +190,6 @@ function slackTs(ts: any) {
   return ts.replace(".", "").padEnd(16, "0")
 }
 
-// Model description mapping utility
-const getModelDescription = (modelName: string): string => {
-  const modelDescriptions = new Map([
-    // Claude Sonnet variants
-    [
-      /sonnet 3\.7|3\.7 sonnet/i,
-      "Advanced reasoning with enhanced performance and longer context.",
-    ],
-    [
-      /sonnet 3\.5|3\.5 sonnet/i,
-      "Designed for quick responses while ensuring solid reasoning.",
-    ],
-    [/sonnet 4|4 sonnet/i, "Balanced for reasoning, long context windows."],
-
-    // Claude Opus
-    [/opus/i, "Ideal for in-depth research and thorough analysis."],
-
-    // GPT variants
-    [
-      /gpt 5/i,
-      "Features enhanced reasoning, creativity, and better multi-step planning.",
-    ],
-    [
-      /gpt 4/i,
-      "Great for programming, content generation, and logical structuring.",
-    ],
-    [/gpt o3/i, "Advanced research model with deep analysis capabilities."],
-
-    // Gemini variants
-    [
-      /gemini 2\.5 pro/i,
-      "Proficient in reasoning across text, visuals, and programming.",
-    ],
-    [
-      /gemini 2\.5 flash/i,
-      "Tailored for cost-effectiveness and rapid response times.",
-    ],
-  ])
-
-  for (const [pattern, description] of modelDescriptions) {
-    if (pattern.test(modelName)) {
-      return description
-    }
-  }
-
-  return "" // Return empty string if no match found
-}
-
 interface ChatBoxProps {
   role: UserRole
   query: string
@@ -573,7 +525,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [isUploadingFiles, setIsUploadingFiles] = useState(false)
 
     // Model selection state
-    const [availableModels, setAvailableModels] = useState<ModelConfiguration[]>([])
+    const [availableModels, setAvailableModels] = useState<
+      ModelConfiguration[]
+    >([])
 
     // State for mode-specific model selections
     const [reasoningModeModel, setReasoningModeModel] = useState<string>(() => {
@@ -634,6 +588,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       reasoning: false,
       websearch: false,
       deepResearch: true,
+      description: "Advanced research model with deep analysis capabilities.",
     }
 
     // Get all models including O3 for deep research mode
@@ -681,9 +636,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [availableModelsForMode])
 
     const showAdvancedOptions =
-    !hideButtons &&
-    (overrideIsRagOn ??
-      (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
+      !hideButtons &&
+      (overrideIsRagOn ??
+        (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
 
     // localStorage keys for tool selection persistence
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -3924,9 +3879,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                           )}
                                         </span>
 
-                                        {/* Model description based on name */}
+                                        {/* Model description from configuration */}
                                         <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                          {getModelDescription(model.labelName)}
+                                          {model.description || ""}
                                         </span>
 
                                         {/* Disabled state messages */}
