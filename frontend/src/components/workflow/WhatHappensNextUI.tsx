@@ -190,23 +190,23 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
 
   return (
     <div
-      className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
         isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
       }`}
     >
       {/* Header */}
-      <div className="px-6 pt-5 pb-4 border-b border-slate-200">
+      <div className="px-6 pt-5 pb-4 border-b border-slate-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-1.5">
-          <div className="text-sm font-semibold text-gray-700 tracking-wider uppercase">
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 tracking-wider uppercase">
             {showPythonConfig
               ? "Python Code Configuration"
               : "What Happens Next?"}
           </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
           >
-            <X className="w-4 h-4 text-gray-500" />
+            <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
       </div>
@@ -214,13 +214,13 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       {/* Conditional Content Based on Tool Type */}
       {showPythonConfig ? (
         /* Python Code Configuration */
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4 dark:bg-gray-900">
           <div className="space-y-6">
             {/* Python Code */}
             <div className="space-y-2">
               <Label
                 htmlFor="python-code"
-                className="text-sm font-medium text-slate-700"
+                className="text-sm font-medium text-slate-700 dark:text-gray-300"
               >
                 Python Code
               </Label>
@@ -235,7 +235,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
                 }
                 placeholder="# Enter your Python code here
 print('Hello, World!')"
-                className="w-full h-96 font-mono text-sm"
+                className="w-full h-96 font-mono text-sm dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               />
             </div>
 
@@ -253,7 +253,7 @@ print('Hello, World!')"
         </div>
       ) : (
         /* Default Actions List */
-        <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-1">
+        <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-1 dark:bg-gray-900">
           {/* Available Actions */}
           {availableActions.map((action) => (
             <div
@@ -267,26 +267,26 @@ print('Hello, World!')"
                   setSelectedAction(action.id)
                 }
               }}
-              className="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 min-h-[60px] bg-transparent hover:bg-slate-50 text-slate-700 cursor-pointer"
+              className="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 min-h-[60px] bg-transparent hover:bg-slate-50 dark:hover:bg-gray-800 text-slate-700 dark:text-gray-300 cursor-pointer"
             >
-              <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-slate-500">
+              <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-slate-500 dark:text-gray-400">
                 {action.icon}
               </div>
               <div className="flex-1">
-                <div className="text-sm font-medium leading-5 text-slate-700">
+                <div className="text-sm font-medium leading-5 text-slate-700 dark:text-gray-300">
                   {action.name}
                 </div>
-                <div className="text-xs leading-4 mt-1 text-slate-500">
+                <div className="text-xs leading-4 mt-1 text-slate-500 dark:text-gray-400">
                   {action.description}
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <ChevronRight className="w-4 h-4 text-slate-400 dark:text-gray-500 flex-shrink-0" />
             </div>
           ))}
 
           {/* Coming Soon Section */}
           <div className="mt-6 mb-4">
-            <div className="text-xs font-semibold text-slate-500 tracking-wider uppercase mb-3">
+            <div className="text-xs font-semibold text-slate-500 dark:text-gray-500 tracking-wider uppercase mb-3">
               COMING SOON
             </div>
           </div>
@@ -295,16 +295,16 @@ print('Hello, World!')"
           {comingSoonActions.map((action) => (
             <div
               key={action.id}
-              className="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 min-h-[60px] bg-transparent text-slate-400 cursor-not-allowed opacity-60"
+              className="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 min-h-[60px] bg-transparent text-slate-400 dark:text-gray-600 cursor-not-allowed opacity-60"
             >
-              <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-slate-400">
+              <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-slate-400 dark:text-gray-600">
                 {action.icon}
               </div>
               <div className="flex-1">
-                <div className="text-sm font-medium leading-5 text-slate-400">
+                <div className="text-sm font-medium leading-5 text-slate-400 dark:text-gray-600">
                   {action.name}
                 </div>
-                <div className="text-xs leading-4 mt-1 text-slate-400">
+                <div className="text-xs leading-4 mt-1 text-slate-400 dark:text-gray-600">
                   {action.description}
                 </div>
               </div>

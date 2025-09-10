@@ -235,7 +235,7 @@ Always strive for accuracy and helpfulness in your responses.`
 
   return (
     <div
-      className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
         isVisible ? "translate-x-0 w-[400px]" : "translate-x-full w-0"
       }`}
     >
@@ -263,14 +263,13 @@ Always strive for accuracy and helpfulness in your responses.`
             cursor: "pointer",
           }}
         >
-          <ArrowLeft className="w-5 h-5 text-gray-600" />
+          <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
 
         <h2
-          className="flex-1"
+          className="flex-1 text-gray-900 dark:text-gray-100"
           style={{
             alignSelf: "stretch",
-            color: "var(--gray-900, #181B1D)",
             fontFamily: "Inter",
             fontSize: "16px",
             fontStyle: "normal",
@@ -295,7 +294,7 @@ Always strive for accuracy and helpfulness in your responses.`
             cursor: "pointer",
           }}
         >
-          <X className="w-5 h-5 text-gray-600" />
+          <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
       </div>
 
@@ -306,7 +305,7 @@ Always strive for accuracy and helpfulness in your responses.`
           <div className="space-y-2">
             <Label
               htmlFor="agent-name"
-              className="text-sm font-medium text-slate-700"
+              className="text-sm font-medium text-slate-700 dark:text-gray-300"
             >
               Agent Name
             </Label>
@@ -317,7 +316,7 @@ Always strive for accuracy and helpfulness in your responses.`
                 setAgentConfig((prev) => ({ ...prev, name: e.target.value }))
               }
               placeholder="Enter agent name"
-              className="w-full"
+              className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
             />
           </div>
 
@@ -325,7 +324,7 @@ Always strive for accuracy and helpfulness in your responses.`
           <div className="space-y-2">
             <Label
               htmlFor="agent-description"
-              className="text-sm font-medium text-slate-700"
+              className="text-sm font-medium text-slate-700 dark:text-gray-300"
             >
               Agent Description
             </Label>
@@ -339,28 +338,28 @@ Always strive for accuracy and helpfulness in your responses.`
                 }))
               }
               placeholder="Describe what this agent does"
-              className="w-full min-h-[80px] resize-none"
+              className="w-full min-h-[80px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
             />
           </div>
 
           {/* Choose Model */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-slate-700">
+            <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
               Choose Model
             </Label>
             <div className="relative">
               <button
                 onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                className="w-full h-10 px-3 py-2 bg-white border border-slate-200 rounded-md text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
+                className="w-full h-10 px-3 py-2 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md text-sm text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-gray-500 focus:border-slate-400 dark:focus:border-gray-500"
               >
-                <span className="text-slate-900">{agentConfig.model}</span>
+                <span className="text-slate-900 dark:text-gray-300">{agentConfig.model}</span>
                 <ChevronDown
-                  className={`w-4 h-4 text-slate-500 transition-transform ${isModelDropdownOpen ? "rotate-180" : ""}`}
+                  className={`w-4 h-4 text-slate-500 dark:text-gray-400 transition-transform ${isModelDropdownOpen ? "rotate-180" : ""}`}
                 />
               </button>
 
               {isModelDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-md shadow-lg">
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md shadow-lg">
                   {models.map((model) => (
                     <button
                       key={model}
@@ -368,7 +367,7 @@ Always strive for accuracy and helpfulness in your responses.`
                         setAgentConfig((prev) => ({ ...prev, model }))
                         setIsModelDropdownOpen(false)
                       }}
-                      className="w-full px-3 py-2 text-sm text-left hover:bg-slate-50 text-slate-900"
+                      className="w-full px-3 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-gray-700 text-slate-900 dark:text-gray-300"
                     >
                       {model}
                     </button>
@@ -383,14 +382,14 @@ Always strive for accuracy and helpfulness in your responses.`
             <div className="flex items-center justify-between">
               <Label
                 htmlFor="system-prompt"
-                className="text-sm font-medium text-slate-700"
+                className="text-sm font-medium text-slate-700 dark:text-gray-300"
               >
                 System Prompt
               </Label>
               <button
                 onClick={enhanceSystemPrompt}
                 disabled={isEnhancingPrompt || !agentConfig.systemPrompt.trim()}
-                className="p-1 hover:bg-gray-100 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Enhance with AI"
               >
                 {isEnhancingPrompt ? (
@@ -482,9 +481,9 @@ Always strive for accuracy and helpfulness in your responses.`
                 }))
               }
               placeholder="Enter system prompt"
-              className="w-full min-h-[120px] resize-none"
+              className="w-full min-h-[120px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
             />
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-gray-400">
               A system prompt is the initial instruction that sets an AI model's
               behavior, style, and constraints.
             </p>
