@@ -221,10 +221,14 @@ start_infrastructure() {
 }
 
 start_app() {
-    echo -e "${YELLOW} Starting application service...${NC}"
+    echo -e "${YELLOW} Starting application services...${NC}"
     INFRA_COMPOSE=$(get_infrastructure_compose)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d app
-    echo -e "${GREEN} Application service started${NC}"
+    echo -e "${GREEN} Main application service started${NC}"
+    
+    echo -e "${YELLOW} Starting sync server...${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d app-sync
+    echo -e "${GREEN} Sync server started${NC}"
 }
 
 get_infrastructure_compose() {
@@ -243,18 +247,21 @@ stop_all() {
 }
 
 update_app() {
-    echo -e "${YELLOW} Updating application service only...${NC}"
+    echo -e "${YELLOW} Updating application services only...${NC}"
     
     # Build new image
     echo "  Building new app image..."
     INFRA_COMPOSE=$(get_infrastructure_compose)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml build app
     
-    # Stop and recreate only the app service
-    echo " Recreating app service..."
+    # Stop and recreate both app services
+    echo " Recreating main app service..."
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app
     
-    echo -e "${GREEN} Application updated successfully${NC}"
+    echo " Recreating sync server..."
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app-sync
+    
+    echo -e "${GREEN} Application services updated successfully${NC}"
     echo -e "${BLUE}  Database and Vespa services were not affected${NC}"
 }
 
@@ -285,6 +292,7 @@ show_status() {
     echo ""
     echo -e "${YELLOW} Access URLs:${NC}"
     echo "  • Xyne Application: http://localhost:3000"
+    echo "  • Xyne Sync Server: http://localhost:3010"
     echo "  • Grafana: http://localhost:3002"
     echo "  • Prometheus: http://localhost:9090"
     echo "  • Loki: http://localhost:3100"
@@ -307,10 +315,10 @@ cleanup() {
 db_generate() {
     echo -e "${YELLOW}  Generating database migrations...${NC}"
     
-    # Check if app is running
+    # Check if main app is running
     INFRA_COMPOSE=$(get_infrastructure_compose)
     if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
-        echo -e "${RED} App service is not running. Start with: ./deploy.sh start${NC}"
+        echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
     
@@ -324,10 +332,10 @@ db_generate() {
 db_migrate() {
     echo -e "${YELLOW}  Applying database migrations...${NC}"
     
-    # Check if app is running
+    # Check if main app is running
     INFRA_COMPOSE=$(get_infrastructure_compose)
     if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
-        echo -e "${RED} App service is not running. Start with: ./deploy.sh start${NC}"
+        echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
     
@@ -342,10 +350,10 @@ db_studio() {
     echo -e "${BLUE}  Drizzle Studio will be available at: http://localhost:4983${NC}"
     echo -e "${BLUE}  Press Ctrl+C to stop Drizzle Studio${NC}"
     
-    # Check if app is running
+    # Check if main app is running
     INFRA_COMPOSE=$(get_infrastructure_compose)
     if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
-        echo -e "${RED} App service is not running. Start with: ./deploy.sh start${NC}"
+        echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
     
@@ -380,13 +388,16 @@ revert_app() {
     echo -e "${YELLOW}Tagging xyne:$target_tag as xyne:latest${NC}"
     docker tag "xyne:$target_tag" "xyne:latest"
     
-    # Stop and recreate only the app service with the reverted image
+    # Stop and recreate both app services with the reverted image
     INFRA_COMPOSE=$(get_infrastructure_compose)
-    echo -e "${YELLOW}Stopping current app service${NC}"
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml stop app
+    echo -e "${YELLOW}Stopping current app services${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml stop app app-sync
     
-    echo -e "${YELLOW}Starting app service with reverted image${NC}"
+    echo -e "${YELLOW}Starting main app service with reverted image${NC}"
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app
+    
+    echo -e "${YELLOW}Starting sync server with reverted image${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app-sync
     
     echo -e "${GREEN}Application successfully reverted to tag: $target_tag${NC}"
     echo -e "${BLUE}INFO: Database and Vespa services were not affected${NC}"
