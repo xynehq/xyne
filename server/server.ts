@@ -206,6 +206,16 @@ import { sendMailHelper } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
+import {
+  checkOverallSystemHealth,
+  checkPostgresHealth,
+  checkVespaHealth,
+} from "./health"
+import {
+  HealthStatusType,
+  ServiceName,
+  type HealthStatusResponse,
+} from "@/health/type"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -1323,6 +1333,73 @@ app.get(
   "/knowledgeManagement",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
+)
+
+// START of Health Check Endpoints
+// Comprehensive health check endpoint
+
+const createHealthCheckHandler = (
+  checkFn: () => Promise<HealthStatusResponse>,
+  serviceName: ServiceName,
+) => {
+  return async (c: Context) => {
+    try {
+      const health = await checkFn()
+      const statusCode =
+        health.status === HealthStatusType.Healthy ||
+        health.status === HealthStatusType.Degraded
+          ? 200
+          : 503
+      return c.json(health, statusCode)
+    } catch (error) {
+      Logger.error(error, `Health check endpoint failed for ${serviceName}`)
+      return c.json(
+        {
+          status: HealthStatusType.Unhealthy,
+          timestamp: new Date().toISOString(),
+          error: "Health check failed",
+          details: error instanceof Error ? error.message : "Unknown error",
+        },
+        503,
+      )
+    }
+  }
+}
+
+app.get("/health", async (c) => {
+  try {
+    const health = await checkOverallSystemHealth()
+    const statusCode =
+      health.status === HealthStatusType.Healthy
+        ? 200
+        : health.status === HealthStatusType.Degraded
+          ? 200
+          : 503
+
+    return c.json(health, statusCode)
+  } catch (error) {
+    Logger.error(error, "Health check endpoint failed")
+    return c.json(
+      {
+        status: HealthStatusType.Unhealthy,
+        timestamp: new Date().toISOString(),
+        error: "Health check failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      503,
+    )
+  }
+})
+
+// Postgres health check endpoint
+app.get(
+  "/health/postgres",
+  createHealthCheckHandler(checkPostgresHealth, ServiceName.postgres),
+)
+// Vespa health check endpoint
+app.get(
+  "/health/vespa",
+  createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
 )
 
 export const init = async () => {
