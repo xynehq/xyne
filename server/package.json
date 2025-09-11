@@ -7,6 +7,7 @@
     "@biomejs/biome": "1.9.4",
     "@commitlint/cli": "^19.8.1",
     "@commitlint/config-conventional": "^19.8.1",
+    "@digitalroute/cz-conventional-changelog-for-jira": "^8.0.1",
     "@faker-js/faker": "^9.3.0",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.1",
@@ -16,7 +17,6 @@
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
     "cz-conventional-changelog": "^3.3.0",
-    "cz-customizable": "^7.5.1",
     "drizzle-kit": "^0.24.2",
     "husky": "^9.1.7",
     "p-queue": "^8.0.1",
@@ -101,10 +101,8 @@
   },
   "config": {
     "commitizen": {
-      "path": "./server/node_modules/cz-customizable"
-    },
-    "cz-customizable" : {
-      "config": "./.cz-config.cjs"
+      "path": "./server/node_modules/@digitalroute/cz-conventional-changelog-for-jira",
+      "linearPrefix": "XYNE-"
     }
   }
 }
