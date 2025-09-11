@@ -99,10 +99,13 @@
     "xlsx": "^0.18.5",
     "zod": "^3.24.1"
   },
-  "config": {
-    "commitizen": {
-      "path": "./server/node_modules/@digitalroute/cz-conventional-changelog-for-jira",
-      "linearPrefix": "XYNE-"
-    }
+"config": {
+  "commitizen": {
+    "path": "@digitalroute/cz-conventional-changelog-for-jira",
+    "jiraPrefix": "XYN-",
+    "jiraOptional": false,
+    "jiraPrompt": "Enter LINEAR issue (e.g. XYN-123):"
   }
+}
+
 }
