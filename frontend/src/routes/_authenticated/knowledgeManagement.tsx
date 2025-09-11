@@ -1454,8 +1454,8 @@ function RouteComponent() {
                     </div>
                   )}
 
-                {collections.map((collection, index) => (
-                  <div key={index} className="mb-8">
+                {collections.map((collection) => (
+                  <div key={collection.id} className="mb-8">
                     <div
                       className="sticky mb-2 cursor-pointer top-0 bg-white dark:bg-[#1E1E1E] py-1"
                       onClick={async () => {
@@ -1501,7 +1501,7 @@ function RouteComponent() {
                       {/* Collection header aligned with table grid */}
                       <div className="grid grid-cols-12 gap-4 items-center">
                         <div className="col-span-5">
-                          <h2 className="text-18px font-semibold text-gray-800 dark:text-gray-200">
+                          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
                             {collection.name}
                           </h2>
                         </div>
