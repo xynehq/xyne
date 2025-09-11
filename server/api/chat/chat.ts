@@ -3994,8 +3994,28 @@ function buildTopicConversationThread(
 
   return conversationThread
 }
-
-export const MessageApi = async (c: Context) => {
+/**
+   * MessageApi - Main chat endpoint with intelligent routing
+   * 
+   * Routes chat requests to specialized handlers based on configuration:
+   * - MessageWithToolsApi: For agentic mode without web search
+   * - AgentMessageApi: For agent conversations
+   * - Default RAG flow: For standard chat with search capabilities
+   * 
+   * Features:
+   * - Model config parsing (reasoning, websearch, deepResearch)
+   * - Attachment handling (images and documents)
+   * - Real-time streaming with Server-Sent Events
+   * - Agent permission checks and context extraction
+   * - Cost tracking and comprehensive error handling
+   * 
+   * @param c - Hono context with request data and JWT payload
+   * @returns StreamSSE response with real-time chat data
+   * @throws HTTPException(400) - Invalid model or missing parameters
+   * @throws HTTPException(403) - Agent access denied
+   * @throws HTTPException(500) - Server errors or model failures
+   */
+  export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
 
@@ -4222,33 +4242,6 @@ export const MessageApi = async (c: Context) => {
     let title = ""
     let attachmentStorageError: Error | null = null
     if (!chatId) {
-      loggerWithChild({ email: email }).info(
-        `MessageApi before the span.. ${chatId}`,
-      )
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      loggerWithChild({ email: email }).info(
-        `MessageApi after the span.. ${titleSpan}`,
-      )
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      loggerWithChild({ email: email }).info(
-        `MessageApi after the titleResp.. ${titleResp}`,
-      )
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
-
-      loggerWithChild({ email: email }).info(
-        `MessageApi before the first message.. ${titleSpan}`,
-      )
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
@@ -6386,8 +6379,8 @@ export const MessageRetryApi = async (c: Context) => {
                   sortDirection,
                   startTime,
                   count,
-                  offset: parsed.filters.offset || 0,
-                  intent: parsed.filters.intent || {},
+                  offset: parsed?.filters?.offset || 0,
+                  intent: parsed?.filters?.intent || {},
                 },
               } as QueryRouterLLMResponse
 
@@ -7150,6 +7143,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
       reasoning: model.reasoning,
       websearch: model.websearch,
       deepResearch: model.deepResearch,
+      description: model.description,
     }))
 
     return c.json({ models: filteredModels })
@@ -7163,5 +7157,55 @@ export const GetAvailableModelsApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: "Could not fetch available models",
     })
+  }
+}
+
+// Generate chat title API - called after first response to update dummy title
+export const GenerateChatTitleApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+
+    // @ts-ignore
+    const { chatId, message } = c.req.valid("json")
+
+    const { user, workspace } = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+
+    // Generate proper title using LLM
+    loggerWithChild({ email: email }).info(
+      `Generating title for chat ${chatId} with message: ${String(message).substring(0, 100)}...`,
+    )
+
+    const titleResp = await generateTitleUsingQuery(message, {
+      modelId: defaultFastModel,
+      stream: false,
+    })
+
+    loggerWithChild({ email: email }).info(
+      `Generated title: ${titleResp.title}`,
+    )
+
+    // Update chat with proper title
+    await updateChatByExternalIdWithAuth(db, chatId, email, {
+      title: titleResp.title,
+    })
+
+    return c.json({
+      success: true,
+      title: titleResp.title,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Chat Title Generation Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    // Return error but don't throw - this is background operation
+    return c.json({ success: false, error: errMsg }, 500)
   }
 }

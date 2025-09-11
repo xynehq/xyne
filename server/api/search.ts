@@ -115,6 +115,11 @@ export const chatDeleteSchema = z.object({
   chatId: z.string().min(1),
 })
 
+export const chatTitleSchema = z.object({
+  chatId: z.string().min(1),
+  message: z.string().min(1),
+})
+
 export const chatHistorySchema = z.object({
   page: z
     .string()

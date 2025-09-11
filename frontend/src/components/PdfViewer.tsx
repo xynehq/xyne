@@ -454,8 +454,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {error && !loading && (
         <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#1E1E1E] z-10">
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 max-w-md">
-            <p className="text-red-800 dark:text-red-200 font-semibold">Error loading PDF</p>
-            <p className="text-red-600 dark:text-red-300 text-sm mt-1">{error}</p>
+            <p className="text-red-800 dark:text-red-200 font-semibold">
+              Error loading PDF
+            </p>
+            <p className="text-red-600 dark:text-red-300 text-sm mt-1">
+              {error}
+            </p>
             <button
               onClick={() => {
                 setError(null)
@@ -490,7 +494,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 )}
 
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 dark:text-gray-300">Page</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                    Page
+                  </span>
                   <input
                     type="number"
                     min="1"
@@ -503,7 +509,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     onChange={(e) => goToPage(parseInt(e.target.value) || 1)}
                     className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-center bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
                   />
-                  <span className="text-sm text-gray-600 dark:text-gray-300">of {totalPages}</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                    of {totalPages}
+                  </span>
                 </div>
 
                 {displayMode === "paginated" && (

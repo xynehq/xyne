@@ -35,7 +35,10 @@ import {
   deleteCollection,
   deleteItem,
 } from "@/utils/fileUtils"
-import type { Collection as CollectionType, CollectionItem } from "@/types/knowledgeBase"
+import type {
+  Collection as CollectionType,
+  CollectionItem,
+} from "@/types/knowledgeBase"
 import { api } from "@/api"
 import DocxViewer from "@/components/DocxViewer"
 import PdfViewer from "@/components/PdfViewer"
@@ -128,7 +131,9 @@ const DocumentViewerContainer = memo(
           <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mx-auto mb-4"></div>
-              <p className="text-gray-600 dark:text-gray-300">Loading document...</p>
+              <p className="text-gray-600 dark:text-gray-300">
+                Loading document...
+              </p>
             </div>
           </div>
         )}
@@ -203,7 +208,9 @@ const DocumentViewerContainer = memo(
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500 dark:text-gray-400">Select a document to view</p>
+            <p className="text-gray-500 dark:text-gray-400">
+              Select a document to view
+            </p>
           </div>
         )}
       </div>
@@ -457,7 +464,8 @@ function RouteComponent() {
           const data = await response.json()
           const existingCollection = data.find(
             (collection: CollectionType) =>
-              collection.name.toLowerCase() === uploadingCollectionName.toLowerCase(),
+              collection.name.toLowerCase() ===
+              uploadingCollectionName.toLowerCase(),
           )
 
           if (
@@ -476,24 +484,29 @@ function RouteComponent() {
             clearUploadState()
 
             // Refresh collections to show the new one
-            const updatedCollections = data.map((collection: CollectionType) => ({
-              id: collection.id,
-              name: collection.name,
-              description: collection.description,
-              files: collection.totalCount || 0,
-              items: [],
-              isOpen: false,
-              lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
+            const updatedCollections = data.map(
+              (collection: CollectionType) => ({
+                id: collection.id,
+                name: collection.name,
+                description: collection.description,
+                files: collection.totalCount || 0,
+                items: [],
+                isOpen: false,
+                lastUpdated: new Date(collection.updatedAt).toLocaleString(
+                  "en-GB",
+                  {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  },
+                ),
+                updatedBy: collection.lastUpdatedByEmail || "Unknown",
+                totalCount: collection.totalCount,
+                isPrivate: collection.isPrivate,
               }),
-              updatedBy: collection.lastUpdatedByEmail || "Unknown",
-              totalCount: collection.totalCount,
-              isPrivate: collection.isPrivate,
-            }))
+            )
             setCollections(updatedCollections)
 
             showToast(
@@ -519,26 +532,29 @@ function RouteComponent() {
         const response = await api.cl.$get()
         if (response.ok) {
           const data = await response.json()
-            setCollections(
-              data.map((collection: CollectionType) => ({
-                id: collection.id,
-                name: collection.name,
-                description: collection.description,
-                files: collection.totalItems || 0,
-                items: [],
-                isOpen: false,
-                lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
+          setCollections(
+            data.map((collection: CollectionType) => ({
+              id: collection.id,
+              name: collection.name,
+              description: collection.description,
+              files: collection.totalItems || 0,
+              items: [],
+              isOpen: false,
+              lastUpdated: new Date(collection.updatedAt).toLocaleString(
+                "en-GB",
+                {
                   day: "numeric",
                   month: "short",
                   year: "numeric",
                   hour: "2-digit",
                   minute: "2-digit",
-                }),
-                updatedBy: collection.lastUpdatedByEmail || "Unknown",
-                totalCount: collection.totalItems,
-                isPrivate: collection.isPrivate,
-              })),
-            )
+                },
+              ),
+              updatedBy: collection.lastUpdatedByEmail || "Unknown",
+              totalCount: collection.totalItems,
+              isPrivate: collection.isPrivate,
+            })),
+          )
         } else {
           showToast("Error", "Failed to fetch knowledge bases.", true)
         }
@@ -679,7 +695,10 @@ function RouteComponent() {
     setSelectedFiles([])
   }
 
-  const handleOpenAddFilesModal = (collection: Collection, folder?: FileNode) => {
+  const handleOpenAddFilesModal = (
+    collection: Collection,
+    folder?: FileNode,
+  ) => {
     setAddingToCollection(collection)
     setTargetFolder(folder || null)
     setCollectionName(collection.name)
@@ -720,7 +739,11 @@ function RouteComponent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-        await uploadFileBatch(batchFiles, addingToCollection.id, targetFolder?.id)
+        await uploadFileBatch(
+          batchFiles,
+          addingToCollection.id,
+          targetFolder?.id,
+        )
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -1732,7 +1755,7 @@ function RouteComponent() {
               <div className="flex justify-between items-center">
                 <h2 className="pl-2  font-medium text-gray-400 dark:text-gray-200 font-mono">
                   {addingToCollection
-                    ? `Add files to ${addingToCollection.name}${targetFolder ? ` / ${targetFolder.name}` : ''}`
+                    ? `Add files to ${addingToCollection.name}${targetFolder ? ` / ${targetFolder.name}` : ""}`
                     : "CREATE NEW COLLECTION"}
                 </h2>
                 <Button
