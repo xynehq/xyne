@@ -13,7 +13,6 @@ import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
-  generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
   temporalPromptJsonStream,
@@ -842,6 +841,24 @@ const addErrMessageToMessage = async (
     })
   }
 }
+/**
+   * MessageWithToolsApi - Advanced JAF-powered chat with MCP tool integration
+   * 
+   * Used when: isAgentic && !enableWebSearch && !deepResearchEnabled
+   * 
+   * Features:
+   * - JAF (Juspay Agentic Framework) agent orchestration
+   * - MCP client integration for external tools
+   * - Iterative search with context synthesis
+   * - Advanced reasoning step tracking
+   * - Fallback search on max iterations
+   * - Real-time tool execution feedback
+   * 
+   * Flow: Auth → MCP setup → JAF agent config → Tool execution → Context building → Response
+   * 
+   * @param c - Hono Context with request data
+   * @returns StreamSSE with JAF execution events
+   */
 export const MessageWithToolsApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
@@ -1028,20 +1045,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
       let [insertedChat, insertedMsg] = await db.transaction(
@@ -2739,20 +2742,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3304,7 +3293,24 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   }
 }
 
-export const AgentMessageApi = async (c: Context) => {
+/**
+   * AgentMessageApi - Legacy agent chat endpoint for simple agent conversations
+   * 
+   * Used when: !isAgentic && !enableWebSearch && !deepResearchEnabled && agentDetails
+   * 
+   * Features:
+   * - Basic agent conversations with custom prompts
+   * - RAG with document retrieval and citation tracking
+   * - Query classification (conversation vs search)
+   * - Streaming/non-streaming modes
+   * - Context from file references and attachments
+   * 
+   * Flow: Auth → Agent validation → Context extraction → Query classification → RAG processing → Response
+   * 
+   * @param c - Hono Context with JWT payload
+   * @returns StreamSSE with chat events or JSON response
+   */
+  export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
   const tracer: Tracer = getTracer("chat")
@@ -3508,20 +3514,6 @@ export const AgentMessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
