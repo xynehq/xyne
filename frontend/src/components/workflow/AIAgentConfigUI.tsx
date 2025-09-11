@@ -85,14 +85,48 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
 
-  const models = ["googleai-gemini-2-5-flash"]
+  const [models, setModels] = useState<string[]>(["googleai-gemini-2-5-flash"])
+  const [isLoadingModels, setIsLoadingModels] = useState(false)
+  const [modelsLoaded, setModelsLoaded] = useState(false)
+
+  // Fetch Gemini models from API only when sidebar becomes visible and not already loaded
+  React.useEffect(() => {
+    if (isVisible && !modelsLoaded) {
+      const fetchGeminiModels = async () => {
+        setIsLoadingModels(true)
+        try {
+          const BACKEND_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
+          const response = await fetch(`${BACKEND_BASE_URL}/api/v1/workflow/models/gemini`)
+          
+          if (response.ok) {
+            const data = await response.json()
+            if (data.success && data.data && Array.isArray(data.data)) {
+              // Extract enum values for the dropdown
+              const enumValues = data.data.map((model: any) => model.enumValue)
+              setModels(enumValues)
+              setModelsLoaded(true)
+              console.log('Loaded Gemini model enums:', enumValues)
+            }
+          } else {
+            console.warn('Failed to fetch Gemini models from API, using defaults')
+          }
+        } catch (error) {
+          console.warn('Error fetching Gemini models:', error)
+        } finally {
+          setIsLoadingModels(false)
+        }
+      }
+
+      fetchGeminiModels()
+    }
+  }, [isVisible, modelsLoaded])
   
   // Hidden text that gets appended to system prompts but not shown to user
   const HIDDEN_APPEND_TEXT = "\n\nPlease convert the text output of the previous step in pure textual representation removing any html tags/escape sequences"
   
   // Helper function to ensure valid model ID
   const getValidModelId = (modelId: string | undefined): string => {
-    return models.includes(modelId || "") ? (modelId as string) : "googleai-gemini-2-5-flash"
+    return models.includes(modelId || "") ? (modelId as string) : (models[0] || "googleai-gemini-2-5-flash")
   }
 
   // Helper function to remove the hidden append text for display
@@ -401,18 +435,25 @@ Always strive for accuracy and helpfulness in your responses.`
 
               {isModelDropdownOpen && (
                 <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md shadow-lg">
-                  {models.map((model) => (
-                    <button
-                      key={model}
-                      onClick={() => {
-                        setAgentConfig((prev) => ({ ...prev, model }))
-                        setIsModelDropdownOpen(false)
-                      }}
-                      className="w-full px-3 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-gray-700 text-slate-900 dark:text-gray-300"
-                    >
-                      {model}
-                    </button>
-                  ))}
+                  {isLoadingModels ? (
+                    <div className="px-3 py-2 text-sm text-slate-500 dark:text-gray-400 flex items-center">
+                      <div className="animate-spin w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full mr-2"></div>
+                      Loading models...
+                    </div>
+                  ) : (
+                    models.map((model) => (
+                      <button
+                        key={model}
+                        onClick={() => {
+                          setAgentConfig((prev) => ({ ...prev, model }))
+                          setIsModelDropdownOpen(false)
+                        }}
+                        className="w-full px-3 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-gray-700 text-slate-900 dark:text-gray-300"
+                      >
+                        {model}
+                      </button>
+                    ))
+                  )}
                 </div>
               )}
             </div>
