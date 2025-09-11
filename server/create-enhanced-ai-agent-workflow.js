@@ -19,7 +19,7 @@ async function createEnhancedAIAgentWorkflow() {
         version: "2.0.0",
         status: "active",
         config: {
-          recipients: ["yash.daga@juspay.in", "aman.asrani@juspay.in"],
+          recipients: [],
           maxFileSize: "25MB",
           analysisType: "enhanced-ai-agent",
           supportedFormats: [
@@ -439,8 +439,8 @@ analysis_data = previous_step_results.get("Enhanced AI Content Analysis", {}).ge
 form_data = previous_step_results.get("Document Upload", {}).get("formSubmission", {}).get("formData", {})
 
 # Get recipients from workflow config
-recipients = ["yash.daga@juspay.in", "aman.asrani@juspay.in"]  # Default recipients
-from_email = "aman.asrani@juspay.in"
+recipients = []  # Default recipients
+from_email = "no-reply@xyne.io"
 
 if analysis_data.get("status") != "success":
     error_msg = analysis_data.get("error", "Unknown error occurred")
@@ -585,8 +585,8 @@ else:
         type: "email",
         value: enhancedEmailScriptContent.trim(),
         config: {
-          recipients: ["yash.daga@juspay.in", "aman.asrani@juspay.in"],
-          from_email: "aman.asrani@juspay.in",
+          recipients: [],
+          from_email: "no-reply@xyne.io",
           content_type: "html",
         },
         createdBy: "system",

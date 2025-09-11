@@ -1,7 +1,7 @@
 import fs from "fs"
 
 const scriptContent = fs.readFileSync(
-  "/Users/yash.daga/repo/xyne/server/llm-analysis-script.py",
+  "/Users/user.name/repo/xyne/server/llm-analysis-script.py",
   "utf-8",
 )
 

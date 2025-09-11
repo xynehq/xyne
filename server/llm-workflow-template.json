@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "status": "active",
   "config": {
-    "recipient": "yash.daga@juspay.in",
+    "recipient": "avirupsinha10@gmail.com",
     "maxFileSize": "25MB",
     "analysisType": "llm-powered",
     "supportedFormats": [
@@ -52,7 +52,7 @@
     },
     {
       "name": "LLM Analysis Email",
-      "description": "Send LLM analysis results to yash.daga@juspay.in",
+      "description": "Send LLM analysis results to avirup.sinha@juspay.in",
       "type": "automated",
       "parentStepId": null,
       "prevStepIds": [],
