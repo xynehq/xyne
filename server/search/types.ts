@@ -296,7 +296,7 @@ export const VespaFileSchema = z.object({
   chunks: z.array(z.string()),
   owner: z.string().nullable(),
   ownerEmail: z.string().nullable(),
-  photoLink: z.string().nullable(),
+  photoLink: z.string().nullable().optional(),
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
   metadata: Metadata,
