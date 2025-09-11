@@ -118,7 +118,7 @@ from datetime import datetime
 import requests
 
 # Gemini API Configuration
-GEMINI_API_KEY = "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw"
+GEMINI_API_KEY = ""
 
 # Document processing libraries
 try:
@@ -357,7 +357,7 @@ else:
         value: agenticAiScriptContent.trim(),
         config: {
           timeout: 600,
-          gemini_api_key: "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw",
+          gemini_api_key: "",
           agentic_approach: true,
           reasoning_enabled: true,
           model: "gemini-1.5-flash",
