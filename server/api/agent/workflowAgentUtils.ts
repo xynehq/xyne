@@ -283,7 +283,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
 
     const insertedChat = await insertChat(db, {
       workspaceId: workspace.id,
-      workspaceExternalId: workspaceId,
+      workspaceExternalId: workspace.externalId,
       userId: user.id,
       email: userEmail,
       title,
@@ -295,7 +295,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       chatId: insertedChat.id,
       userId: user.id,
       chatExternalId: insertedChat.externalId,
-      workspaceExternalId: workspaceId,
+      workspaceExternalId: workspace.externalId,
       messageRole: MessageRole.User,
       email: userEmail,
       sources: [],
@@ -379,7 +379,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         chatId: insertedChat.id,
         userId: user.id,
         chatExternalId: insertedChat.externalId,
-        workspaceExternalId: workspaceId,
+        workspaceExternalId: workspace.externalId,
         messageRole: MessageRole.Assistant,
         email: userEmail,
         sources: [],
