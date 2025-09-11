@@ -79,7 +79,7 @@ export function WorkflowCard({ workflow, onViewClick }: WorkflowCardProps) {
 
   return (
     <div
-      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow rounded-2xl p-6 flex flex-col min-h-52 w-full"
+      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow rounded-2xl p-6 flex flex-col min-h-52 w-full max-w-[400px]"
     >
       <div className="flex flex-col flex-1">
         <div className="w-10 h-10 bg-[#F2F2F3] dark:bg-blue-900/20 rounded-lg flex items-center justify-center mb-5">

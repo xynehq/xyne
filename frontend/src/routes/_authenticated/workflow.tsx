@@ -8,11 +8,9 @@ import { WorkflowCard } from "@/components/workflow/WorkflowCard"
 import { TemplateSelectionModal } from "@/components/workflow/TemplateSelectionModal"
 import { WorkflowExecutionsTable } from "@/components/workflow/WorkflowExecutionsTable"
 import { userWorkflowsAPI, workflowExecutionsAPI } from "@/components/workflow/api/ApiHandlers"
-import sitemapIcon from "@/assets/sitemap.svg"
 import vectorIcon from "@/assets/vector.svg"
 import playIcon from "@/assets/play.svg"
-import importDslIcon from "@/assets/import-dsl.svg"
-import plusIcon from "@/assets/plus.svg"
+import { ChevronDown, Plus, Layout, Upload, ChevronRight, Search } from "lucide-react"
 
 interface WorkflowTemplate {
   id: string;
@@ -137,6 +135,7 @@ function WorkflowComponent() {
   const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null)
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false)
   const [isExecutionMode, setIsExecutionMode] = useState(false)
+  const [workflowSearchTerm, setWorkflowSearchTerm] = useState("")
 
 
   const fetchWorkflows = async () => {
@@ -700,9 +699,9 @@ function WorkflowComponent() {
                     onClick={() => setViewMode("builder")}
                   >
                     <div className="flex items-center justify-between h-full">
-                      <div className="flex items-center" style={{ gap: '12px' }}>
+                      <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-[#F2F2F3] dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                          <img src={plusIcon} alt="Plus" className="w-5 h-5" />
+                          <Plus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                         </div>
                         <span 
                           className="text-gray-900 dark:text-gray-100"
@@ -719,7 +718,7 @@ function WorkflowComponent() {
                         </span>
                       </div>
                       <div className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors">
-                        ›
+                        <ChevronRight className="w-5 h-5" />
                       </div>
                     </div>
                   </div>
@@ -735,9 +734,9 @@ function WorkflowComponent() {
                     onClick={handleTemplateModalOpen}
                   >
                     <div className="flex items-center justify-between h-full">
-                      <div className="flex items-center" style={{ gap: '12px' }}>
+                      <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-[#F2F2F3] dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                          <img src={sitemapIcon} alt="Templates" className="w-5 h-5" />
+                          <Layout className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                         </div>
                         <span 
                           className="text-gray-900 dark:text-gray-100"
@@ -754,27 +753,26 @@ function WorkflowComponent() {
                         </span>
                       </div>
                       <div className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors">
-                        ›
+                        <ChevronRight className="w-5 h-5" />
                       </div>
                     </div>
                   </div>
 
                   <div 
-                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow cursor-pointer group w-full"
+                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 w-full opacity-50 cursor-not-allowed"
                     style={{
                       height: '64px',
                       borderRadius: '16px',
-                      padding: '12px',
-                      opacity: 1
+                      padding: '12px'
                     }}
                   >
                     <div className="flex items-center justify-between h-full">
-                      <div className="flex items-center" style={{ gap: '12px' }}>
+                      <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-[#F2F2F3] dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                          <img src={importDslIcon} alt="Import DSL" className="w-5 h-5" />
+                          <Upload className="w-5 h-5 text-gray-400 dark:text-gray-500" />
                         </div>
                         <span 
-                          className="text-gray-900 dark:text-gray-100"
+                          className="text-gray-400 dark:text-gray-500"
                           style={{
                             fontFamily: 'Inter',
                             fontWeight: 600,
@@ -787,8 +785,8 @@ function WorkflowComponent() {
                           Import DSL file
                         </span>
                       </div>
-                      <div className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors">
-                        ›
+                      <div className="text-gray-300 dark:text-gray-600">
+                        <ChevronRight className="w-5 h-5" />
                       </div>
                     </div>
                   </div>
@@ -796,15 +794,32 @@ function WorkflowComponent() {
 
                 {/* Your Workflows Section */}
                 <div>
-                  <h2 className="text-gray-900 dark:text-gray-400 uppercase mb-6" style={{
-                    fontFamily: 'JetBrains Mono',
-                    fontWeight: 500,
-                    fontSize: '16px',
-                    lineHeight: '14px',
-                    letterSpacing: '6%'
-                  }}>
-                    YOUR WORKFLOWS
-                  </h2>
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-gray-900 dark:text-gray-400 uppercase" style={{
+                      fontFamily: 'JetBrains Mono',
+                      fontWeight: 500,
+                      fontSize: '16px',
+                      lineHeight: '14px',
+                      letterSpacing: '6%'
+                    }}>
+                      YOUR WORKFLOWS
+                    </h2>
+                    <div className="relative">
+                      <style>
+                        {`.workflow-search-input::placeholder { color: #C9CCCF; }`}
+                      </style>
+                      <input
+                        type="text"
+                        placeholder="Search workflows..."
+                        value={workflowSearchTerm}
+                        onChange={(e) => setWorkflowSearchTerm(e.target.value)}
+                        className="workflow-search-input pl-10 pr-4 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none focus:ring-1 focus:ring-gray-600 dark:focus:ring-gray-400 focus:border-gray-600 dark:focus:border-gray-400 w-64 text-gray-900 dark:text-gray-100"
+                      />
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Search className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+                      </div>
+                    </div>
+                  </div>
                   
                   {loading ? (
                     <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
@@ -822,21 +837,38 @@ function WorkflowComponent() {
                         </div>
                       ))}
                     </div>
-                  ) : workflows.length > 0 ? (
-                    <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
-                      {workflows.map((workflow) => (
-                        <WorkflowCard 
-                          key={workflow.id} 
-                          workflow={workflow} 
-                          onViewClick={(templateId) => handleViewWorkflow(templateId, false)} // false = view-only mode
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12">
-                      <p className="text-gray-600 dark:text-gray-400">No workflows found.</p>
-                    </div>
-                  )}
+                  ) : (() => {
+                    // Filter workflows based on search term
+                    const filteredWorkflows = workflows.filter(workflow =>
+                      workflow.name.toLowerCase().includes(workflowSearchTerm.toLowerCase())
+                    )
+                    
+                    if (filteredWorkflows.length > 0) {
+                      return (
+                        <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
+                          {filteredWorkflows.map((workflow) => (
+                            <WorkflowCard 
+                              key={workflow.id} 
+                              workflow={workflow} 
+                              onViewClick={(templateId) => handleViewWorkflow(templateId, false)} // false = view-only mode
+                            />
+                          ))}
+                        </div>
+                      )
+                    } else if (workflowSearchTerm) {
+                      return (
+                        <div className="text-center py-12">
+                          <p className="text-gray-600 dark:text-gray-400">No workflows found matching "{workflowSearchTerm}".</p>
+                        </div>
+                      )
+                    } else {
+                      return (
+                        <div className="text-center py-12">
+                          <p className="text-gray-600 dark:text-gray-400">No workflows found.</p>
+                        </div>
+                      )
+                    }
+                  })()}
                 </div>
               </div>
             )}
@@ -870,6 +902,9 @@ function WorkflowComponent() {
 
                   <div className="flex items-center gap-4">
                     <div className="relative">
+                      <style>
+                        {`.executions-search-input::placeholder { color: #C9CCCF; }`}
+                      </style>
                       <input
                         type="text"
                         placeholder="Search by name or ID"
@@ -878,7 +913,7 @@ function WorkflowComponent() {
                           setSearchTerm(e.target.value);
                           setExecutionsPage(1);
                         }}
-                        className="pl-10 pr-4 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none focus:ring-1 focus:ring-gray-600 dark:focus:ring-gray-400 focus:border-gray-600 dark:focus:border-gray-400 w-64 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                        className="executions-search-input pl-10 pr-4 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none focus:ring-1 focus:ring-gray-600 dark:focus:ring-gray-400 focus:border-gray-600 dark:focus:border-gray-400 w-64 text-gray-900 dark:text-gray-100"
                       />
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" viewBox="0 0 20 20" fill="currentColor">
@@ -887,22 +922,32 @@ function WorkflowComponent() {
                       </div>
                     </div>
                     
-                    <select className="px-3 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none font-medium text-sm leading-5 tracking-normal align-middle text-gray-900 dark:text-gray-100">
-                      <option>All Workflows</option>
-                    </select>
-                    <select 
-                      value={dateFilter}
-                      onChange={(e) => {
-                        setDateFilter(e.target.value);
-                        setExecutionsPage(1);
-                      }}
-                      className="px-3 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none font-medium text-sm leading-5 tracking-normal align-middle text-gray-900 dark:text-gray-100"
-                    >
-                      <option>This month</option>
-                      <option>Last 7 days</option>
-                      <option>Last 15 days</option>
-                      <option>Last 3 months</option>
-                    </select>
+                    <div className="relative">
+                      <select className="appearance-none px-3 pr-8 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none font-medium text-sm leading-5 tracking-normal align-middle text-gray-900 dark:text-gray-100 w-full">
+                        <option>All Workflows</option>
+                      </select>
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <select 
+                        value={dateFilter}
+                        onChange={(e) => {
+                          setDateFilter(e.target.value);
+                          setExecutionsPage(1);
+                        }}
+                        className="appearance-none px-3 pr-8 h-10 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-[10px] focus:outline-none font-medium text-sm leading-5 tracking-normal align-middle text-gray-900 dark:text-gray-100 w-full"
+                      >
+                        <option>This month</option>
+                        <option>Last 7 days</option>
+                        <option>Last 15 days</option>
+                        <option>Last 3 months</option>
+                      </select>
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
