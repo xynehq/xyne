@@ -73,11 +73,7 @@ export function makeXyneJAFProvider<Ctx extends { userCtx?: string; agentPrompt?
       // 1) Tool planning path: prompt-driven selection using Xyne’s tool selector
       if (shouldPlanTool) {
         try {
-          const rawContent = lastMsg?.content || state.context?.userMessage || ""
-          const userQuery = typeof rawContent === 'string' ? rawContent : 
-            Array.isArray(rawContent) ? rawContent.map(part => 
-              typeof part === 'string' ? part : part.text || ''
-            ).join('') : ""
+          const userQuery = lastMsg?.content || state.context?.userMessage || ""
           const toolListStr = buildToolsOverview(agent.tools ? [...agent.tools] : [])
 
           const params: ModelParams = {
