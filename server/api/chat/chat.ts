@@ -62,7 +62,13 @@ import {
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { ChatSSEvents, OpenAIError, type MessageReqType, DEFAULT_TEST_AGENT_ID } from "@/shared/types"
+import {
+  ChatSSEvents,
+  OpenAIError,
+  type MessageReqType,
+  DEFAULT_TEST_AGENT_ID,
+  ApiKeyScopes,
+} from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
   delay,
@@ -200,6 +206,7 @@ import {
   processOpenAICitations,
   processWebSearchCitations,
 } from "./deepsearch"
+import { getAuth, safeGet } from "../agent"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -463,7 +470,9 @@ const checkAndYieldCitations = async function* (
     if (match) {
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
-        const item = isMsgWithSources ? results[baseIndex]: results[citationIndex - baseIndex]
+        const item = isMsgWithSources
+          ? results[baseIndex]
+          : results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
           const f = (item as any)?.fields
@@ -477,7 +486,9 @@ const checkAndYieldCitations = async function* (
           yield {
             citation: {
               index: citationIndex,
-              item: isMsgWithSources ? searchToCitation(item as VespaSearchResults, citationIndex) : searchToCitation(item as VespaSearchResults),
+              item: isMsgWithSources
+                ? searchToCitation(item as VespaSearchResults, citationIndex)
+                : searchToCitation(item as VespaSearchResults),
             },
           }
           yieldedCitations.add(citationIndex)
@@ -2191,7 +2202,10 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.end()
     return
   } else if (!answer) {
-    if(isMsgWithSources || (attachmentFileIds && attachmentFileIds.length > 0)) {
+    if (
+      isMsgWithSources ||
+      (attachmentFileIds && attachmentFileIds.length > 0)
+    ) {
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
@@ -4013,12 +4027,12 @@ export const MessageApi = async (c: Context) => {
       try {
         const config = JSON.parse(selectedModelConfig)
         modelId = config.model
-        
+
         // Handle new direct boolean format
         isReasoningEnabled = config.reasoning === true
         enableWebSearch = config.websearch === true
         isDeepResearchEnabled = config.deepResearch === true
-        
+
         // For deep research, always use Claude Sonnet 4 regardless of UI selection
         if (isDeepResearchEnabled) {
           modelId = "Claude Sonnet 4"
@@ -4091,9 +4105,11 @@ export const MessageApi = async (c: Context) => {
     }
     const webSearchEnabled = enableWebSearch ?? false
     const deepResearchEnabled = isDeepResearchEnabled ?? false
-    const agentPromptValue = agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID) ? agentId : undefined // Use undefined if not a valid CUID
+    const agentPromptValue =
+      agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID)
+        ? agentId
+        : undefined // Use undefined if not a valid CUID
     if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
-      
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
@@ -4160,7 +4176,9 @@ export const MessageApi = async (c: Context) => {
     if (sources) {
       try {
         const resp = await getCollectionFilesVespaIds(JSON.parse(sources), db)
-        fileIds = resp.map((file) => file.vespaDocId || "").filter((id) => id !== "")
+        fileIds = resp
+          .map((file) => file.vespaDocId || "")
+          .filter((id) => id !== "")
       } catch {
         fileIds = []
       }
@@ -4174,7 +4192,7 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    if(extractedInfo?.fileIds.length > 0) {
+    if (extractedInfo?.fileIds.length > 0) {
       fileIds = fileIds.concat(extractedInfo?.fileIds)
     }
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
@@ -6718,18 +6736,17 @@ export const MessageRetryApi = async (c: Context) => {
 
 // New API Endpoint to stop streaming
 export const StopStreamingApi = async (c: Context) => {
-  // const { sub } = c.get(JwtPayloadKey) ?? {}
-  let email = ""
+  const { email, via_apiKey } = getAuth(c)
 
-  let jwtPayload
-  try {
-    jwtPayload = c.get(JwtPayloadKey)
-  } catch (e) {}
-
-  if (jwtPayload) {
-    email = jwtPayload?.sub
-  } else {
-    email = c.get("userEmail") ?? ""
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.AGENT_CHAT_STOP)) {
+      return c.json(
+        { message: "API key does not have scope to stop agent chat" },
+        403,
+      )
+    }
   }
 
   try {

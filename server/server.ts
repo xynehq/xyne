@@ -1047,7 +1047,6 @@ app
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
-  // todo add schema here
   .post("/cl", CreateCollectionApi) // Create collection (KB)
   .get("/cl", ListCollectionsApi) // List all collections
   .get(

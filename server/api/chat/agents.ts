@@ -80,6 +80,7 @@ import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   AgentReasoningStepType,
   AgentToolName,
+  ApiKeyScopes,
   ChatSSEvents,
   ContextSysthesisState,
   OpenAIError,
@@ -221,6 +222,7 @@ import {
 } from "@/api/chat/jaf-adapter"
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
+import { getAuth, safeGet } from "../agent"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -247,13 +249,13 @@ const generateStepSummary = async (
 ): Promise<string> => {
   const tracer = getTracer("chat")
   const span = tracer.startSpan("generateStepSummary")
-  
+
   try {
     span.setAttribute("step_type", step.type)
     span.setAttribute("step_iteration", step.iteration || 0)
     span.setAttribute("user_query_length", userQuery.length)
     span.setAttribute("has_context_info", !!contextInfo)
-    
+
     const prompt = generateAgentStepSummaryPromptJson(
       step,
       userQuery,
@@ -281,7 +283,7 @@ const generateStepSummary = async (
     parseSpan.setAttribute("parse_success", !!parsed)
     parseSpan.setAttribute("has_summary", !!(parsed && parsed.summary))
     parseSpan.end()
-    
+
     Logger.debug("Parsed reasoning step:", { parsed })
     Logger.debug("Generated summary:", { summary: parsed.summary })
     const finalSummary = parsed.summary || generateFallbackSummary(step)
@@ -330,11 +332,11 @@ const createMockAgentFromFormData = (
   agentPromptPayload: any,
   user: any,
   workspace: any,
-  email: string
+  email: string,
 ): { agentForDb: SelectAgent; agentPromptForLLM: string } => {
   try {
-    const formData = agentPromptPayload;
-    
+    const formData = agentPromptPayload
+
     // Create mock SelectAgent from form data without DB call
     const agentForDb = {
       name: formData.name || "Test Agent",
@@ -354,22 +356,29 @@ const createMockAgentFromFormData = (
       externalId: `test-agent-${Date.now()}`,
       workspaceId: workspace.id,
       allowWebSearch: formData.allowWebSearch || null,
-    };
-    
-    const agentPromptForLLM = JSON.stringify(agentForDb);
-    loggerWithChild({ email }).info("Created mock agent from form data for testing");
-    
-    return { agentForDb, agentPromptForLLM };
+    }
+
+    const agentPromptForLLM = JSON.stringify(agentForDb)
+    loggerWithChild({ email }).info(
+      "Created mock agent from form data for testing",
+    )
+
+    return { agentForDb, agentPromptForLLM }
   } catch (error) {
-    loggerWithChild({ email }).error(error, "Failed to parse agentPromptPayload");
+    loggerWithChild({ email }).error(
+      error,
+      "Failed to parse agentPromptPayload",
+    )
     throw new HTTPException(400, {
       message: "Invalid agent form data provided",
-    });
+    })
   }
-};
+}
 
 // Check if agent has no app integrations and should use the no-integrations flow
-export const checkAgentWithNoIntegrations = (agentForDb: SelectAgent | null): boolean => {
+export const checkAgentWithNoIntegrations = (
+  agentForDb: SelectAgent | null,
+): boolean => {
   if (!agentForDb?.appIntegrations) return true
 
   if (typeof agentForDb.appIntegrations === "object") {
@@ -393,14 +402,14 @@ const checkAndYieldCitationsForAgent = async function* (
 ) {
   const tracer = getTracer("chat")
   const span = tracer.startSpan("checkAndYieldCitationsForAgent")
-  
+
   try {
     span.setAttribute("text_input_length", textInput.length)
     span.setAttribute("results_count", results.length)
     span.setAttribute("yielded_citations_size", yieldedCitations.size)
-    span.setAttribute("has_image_citations", !!(yieldedImageCitations))
+    span.setAttribute("has_image_citations", !!yieldedImageCitations)
     span.setAttribute("user_email", email)
-    
+
     const text = splitGroupedCitationsWithSpaces(textInput)
     let match
     let imgMatch
@@ -408,7 +417,7 @@ const checkAndYieldCitationsForAgent = async function* (
     let imageCitationsProcessed = 0
     let citationsYielded = 0
     let imageCitationsYielded = 0
-    
+
     while (
       (match = textToCitationIndex.exec(text)) !== null ||
       (imgMatch = textToImageCitationIndex.exec(text)) !== null
@@ -426,11 +435,10 @@ const checkAndYieldCitationsForAgent = async function* (
             continue
           }
 
-        // we dont want citations for attachments in the chat
-        if(item.source.entity === KnowledgeBaseEntity.Attachment) {
-          continue
-        }
-
+          // we dont want citations for attachments in the chat
+          if (item.source.entity === KnowledgeBaseEntity.Attachment) {
+            continue
+          }
 
           yield {
             citation: {
@@ -453,12 +461,14 @@ const checkAndYieldCitationsForAgent = async function* (
           ) {
             const item = results[docIndex]
             if (item) {
-              const imageProcessingSpan = span.startSpan("process_image_citation")
+              const imageProcessingSpan = span.startSpan(
+                "process_image_citation",
+              )
               try {
                 imageProcessingSpan.setAttribute("citation_key", imgMatch[1])
                 imageProcessingSpan.setAttribute("doc_index", docIndex)
                 imageProcessingSpan.setAttribute("image_index", imageIndex)
-                
+
                 const imageData = await getCitationToImage(
                   imgMatch[1],
                   {
@@ -476,8 +486,14 @@ const checkAndYieldCitationsForAgent = async function* (
                       "Invalid imageData structure returned",
                       { citationKey: imgMatch[1], imageData },
                     )
-                    imageProcessingSpan.setAttribute("processing_success", false)
-                    imageProcessingSpan.setAttribute("error_reason", "invalid_image_data")
+                    imageProcessingSpan.setAttribute(
+                      "processing_success",
+                      false,
+                    )
+                    imageProcessingSpan.setAttribute(
+                      "error_reason",
+                      "invalid_image_data",
+                    )
                     imageProcessingSpan.end()
                     continue
                   }
@@ -494,8 +510,14 @@ const checkAndYieldCitationsForAgent = async function* (
                   }
                   imageCitationsYielded++
                   imageProcessingSpan.setAttribute("processing_success", true)
-                  imageProcessingSpan.setAttribute("image_size", imageData.imageBuffer.length)
-                  imageProcessingSpan.setAttribute("image_extension", imageData.extension || "unknown")
+                  imageProcessingSpan.setAttribute(
+                    "image_size",
+                    imageData.imageBuffer.length,
+                  )
+                  imageProcessingSpan.setAttribute(
+                    "image_extension",
+                    imageData.extension || "unknown",
+                  )
                 }
                 imageProcessingSpan.end()
               } catch (error) {
@@ -505,7 +527,7 @@ const checkAndYieldCitationsForAgent = async function* (
                 })
                 imageProcessingSpan.setAttribute("processing_success", false)
                 imageProcessingSpan.end()
-                
+
                 loggerWithChild({ email: email }).error(
                   error,
                   "Error processing image citation",
@@ -528,7 +550,7 @@ const checkAndYieldCitationsForAgent = async function* (
         }
       }
     }
-    
+
     span.setAttribute("citations_processed", citationsProcessed)
     span.setAttribute("image_citations_processed", imageCitationsProcessed)
     span.setAttribute("citations_yielded", citationsYielded)
@@ -597,7 +619,7 @@ async function* getToolContinuationIterator(
       ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
     )
   }
-  
+
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -715,7 +737,7 @@ async function performSynthesis(
 ): Promise<SynthesisResponse | null> {
   const tracer = getTracer("chat")
   const span = tracer.startSpan("performSynthesis")
-  
+
   let parseSynthesisOutput: SynthesisResponse | null = null
 
   try {
@@ -724,9 +746,15 @@ async function performSynthesis(
     span.setAttribute("gathered_fragments_count", gatheredFragments.length)
     span.setAttribute("messages_count", messagesWithNoErrResponse.length)
     span.setAttribute("user_email", sub)
-    span.setAttribute("has_attachment_file_ids", !!(attachmentFileIds && attachmentFileIds.length > 0))
-    span.setAttribute("attachment_file_ids_count", attachmentFileIds?.length || 0)
-    
+    span.setAttribute(
+      "has_attachment_file_ids",
+      !!(attachmentFileIds && attachmentFileIds.length > 0),
+    )
+    span.setAttribute(
+      "attachment_file_ids_count",
+      attachmentFileIds?.length || 0,
+    )
+
     await logAndStreamReasoning({
       type: AgentReasoningStepType.Synthesis,
       details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
@@ -749,7 +777,10 @@ async function performSynthesis(
       },
     )
     synthesisSpan.setAttribute("model_id", defaultBestModel)
-    synthesisSpan.setAttribute("response_length", synthesisResponse.text?.length || 0)
+    synthesisSpan.setAttribute(
+      "response_length",
+      synthesisResponse.text?.length || 0,
+    )
     synthesisSpan.end()
 
     if (synthesisResponse.text) {
@@ -757,10 +788,19 @@ async function performSynthesis(
       try {
         parseSynthesisOutput = jsonParseLLMOutput(synthesisResponse.text)
         parseSpan.setAttribute("parse_success", !!parseSynthesisOutput)
-        parseSpan.setAttribute("has_synthesis_state", !!(parseSynthesisOutput && parseSynthesisOutput.synthesisState))
-        parseSpan.setAttribute("synthesis_state", parseSynthesisOutput?.synthesisState || "unknown")
-        parseSpan.setAttribute("has_answer", !!(parseSynthesisOutput && parseSynthesisOutput.answer))
-        
+        parseSpan.setAttribute(
+          "has_synthesis_state",
+          !!(parseSynthesisOutput && parseSynthesisOutput.synthesisState),
+        )
+        parseSpan.setAttribute(
+          "synthesis_state",
+          parseSynthesisOutput?.synthesisState || "unknown",
+        )
+        parseSpan.setAttribute(
+          "has_answer",
+          !!(parseSynthesisOutput && parseSynthesisOutput.answer),
+        )
+
         if (!parseSynthesisOutput || !parseSynthesisOutput.synthesisState) {
           loggerWithChild({ email: sub }).error(
             "Synthesis response was valid JSON but missing 'synthesisState' key.",
@@ -781,7 +821,7 @@ async function performSynthesis(
         })
         parseSpan.setAttribute("parse_success", false)
         parseSpan.end()
-        
+
         loggerWithChild({ email: sub }).error(
           jsonError,
           "Failed to parse synthesis LLM output as JSON.",
@@ -802,16 +842,22 @@ async function performSynthesis(
       }
       span.setAttribute("no_text_response", true)
     }
-    
-    span.setAttribute("final_synthesis_state", parseSynthesisOutput?.synthesisState || "unknown")
-    span.setAttribute("final_answer_length", parseSynthesisOutput?.answer?.length || 0)
+
+    span.setAttribute(
+      "final_synthesis_state",
+      parseSynthesisOutput?.synthesisState || "unknown",
+    )
+    span.setAttribute(
+      "final_answer_length",
+      parseSynthesisOutput?.answer?.length || 0,
+    )
     span.end()
   } catch (synthesisError) {
     span.addEvent("synthesis_error", {
       message: getErrorMessage(synthesisError),
       stack: (synthesisError as Error).stack || "",
     })
-    
+
     loggerWithChild({ email: sub }).error(
       synthesisError,
       "Error during synthesis LLM call.",
@@ -871,61 +917,68 @@ export const MessageWithToolsApi = async (c: Context) => {
       toolsList,
       agentId,
     }: MessageReqType = body
-    
+
     // Parse the model configuration JSON
     let modelId: string | null = null
     let isReasoningEnabled = false
     let enableWebSearch = false
     let isDeepResearchEnabled = false
-    
+
     if (selectedModelConfig) {
       try {
         const modelConfig = JSON.parse(selectedModelConfig)
         modelId = modelConfig.model || null
-        
+
         // Handle new direct boolean format
         isReasoningEnabled = modelConfig.reasoning === true
         enableWebSearch = modelConfig.websearch === true
         isDeepResearchEnabled = modelConfig.deepResearch === true
-        
+
         // For deep research, always use Claude Sonnet 4 regardless of UI selection
         if (isDeepResearchEnabled) {
           modelId = "Claude Sonnet 4"
           loggerWithChild({ email: email }).info(
-            `[MessageWithToolsApi] Deep research enabled - forcing model to Claude Sonnet 4`
+            `[MessageWithToolsApi] Deep research enabled - forcing model to Claude Sonnet 4`,
           )
         }
-        
+
         // Check capabilities - handle both array and object formats for backward compatibility
-        if (modelConfig.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+        if (
+          modelConfig.capabilities &&
+          !isReasoningEnabled &&
+          !enableWebSearch &&
+          !isDeepResearchEnabled
+        ) {
           if (Array.isArray(modelConfig.capabilities)) {
-            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
-            enableWebSearch = modelConfig.capabilities.includes('websearch')
-            isDeepResearchEnabled = modelConfig.capabilities.includes('deepResearch')
-          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.includes("reasoning")
+            enableWebSearch = modelConfig.capabilities.includes("websearch")
+            isDeepResearchEnabled =
+              modelConfig.capabilities.includes("deepResearch")
+          } else if (typeof modelConfig.capabilities === "object") {
             isReasoningEnabled = modelConfig.capabilities.reasoning === true
             enableWebSearch = modelConfig.capabilities.websearch === true
-            isDeepResearchEnabled = modelConfig.capabilities.deepResearch === true
+            isDeepResearchEnabled =
+              modelConfig.capabilities.deepResearch === true
           }
-          
+
           // For deep research from old format, also force Claude Sonnet 4
           if (isDeepResearchEnabled) {
             modelId = "Claude Sonnet 4"
           }
         }
-        
+
         loggerWithChild({ email: email }).info(
-          `[MessageWithToolsApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+          `[MessageWithToolsApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
         )
       } catch (error) {
-        console.error('Failed to parse selectedModelConfig:', error)
+        console.error("Failed to parse selectedModelConfig:", error)
       }
     }
-    
+
     // Convert friendly model label to actual model value
     let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
     if (modelId) {
-      if (!actualModelId && (modelId in Models)) {
+      if (!actualModelId && modelId in Models) {
         actualModelId = modelId as Models
       } else if (!actualModelId) {
         throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
@@ -933,17 +986,21 @@ export const MessageWithToolsApi = async (c: Context) => {
     } else {
       actualModelId = defaultBestModel
     }
-    
+
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
     )
-    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
-    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
+    const imageAttachmentFileIds = attachmentMetadata
+      .filter((m) => m.isImage)
+      .map((m) => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata
+      .filter((m) => !m.isImage)
+      .map((m) => m.fileId)
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
-    
+
     const contextExtractionSpan = initSpan.startSpan("context_extraction")
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
@@ -958,18 +1015,28 @@ export const MessageWithToolsApi = async (c: Context) => {
     }
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
-    loggerWithChild({ email: email }).info(
-      `Extracted ${fileIds  } extractedInfo`,
-    )
+    loggerWithChild({ email: email }).info(`Extracted ${fileIds} extractedInfo`)
     loggerWithChild({ email: email }).info(
       `Total attachment files received: ${attachmentFileIds.length}`,
     )
     const hasReferencedContext = fileIds && fileIds.length > 0
     contextExtractionSpan.setAttribute("file_ids_count", fileIds?.length || 0)
-    contextExtractionSpan.setAttribute("has_referenced_context", hasReferencedContext)
-    contextExtractionSpan.setAttribute("is_message_with_context", isMsgWithContext)
-    contextExtractionSpan.setAttribute("total_valid_file_ids_from_link_count", totalValidFileIdsFromLinkCount)
-    contextExtractionSpan.setAttribute("extracted_file_ids", JSON.stringify(fileIds || []))
+    contextExtractionSpan.setAttribute(
+      "has_referenced_context",
+      hasReferencedContext,
+    )
+    contextExtractionSpan.setAttribute(
+      "is_message_with_context",
+      isMsgWithContext,
+    )
+    contextExtractionSpan.setAttribute(
+      "total_valid_file_ids_from_link_count",
+      totalValidFileIdsFromLinkCount,
+    )
+    contextExtractionSpan.setAttribute(
+      "extracted_file_ids",
+      JSON.stringify(fileIds || []),
+    )
     contextExtractionSpan.end()
 
     if (!message) {
@@ -990,7 +1057,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     userLookupSpan.setAttribute("user_id", user.id)
     userLookupSpan.setAttribute("workspace_id", workspace.id)
     userLookupSpan.end()
-    
+
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
@@ -1001,7 +1068,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
-    
+
     if (agentId && isCuid(agentId)) {
       const agentLookupSpan = chatCreationSpan.startSpan("agent_lookup")
       // Use the numeric workspace.id for the database query with permission check
@@ -1043,7 +1110,9 @@ export const MessageWithToolsApi = async (c: Context) => {
       titleSpan.setAttribute("title", title)
       titleSpan.end()
 
-      const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
+      const dbTransactionSpan = chatCreationSpan.startSpan(
+        "db_transaction_new_chat",
+      )
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
@@ -1088,10 +1157,16 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
-      dbTransactionSpan.setAttribute("chat_external_id", insertedChat.externalId)
-      dbTransactionSpan.setAttribute("message_external_id", insertedMsg.externalId)
+      dbTransactionSpan.setAttribute(
+        "chat_external_id",
+        insertedChat.externalId,
+      )
+      dbTransactionSpan.setAttribute(
+        "message_external_id",
+        insertedMsg.externalId,
+      )
       dbTransactionSpan.end()
-      
+
       loggerWithChild({ email: sub }).info(
         "First mesage of the conversation, successfully created the chat",
       )
@@ -1099,7 +1174,9 @@ export const MessageWithToolsApi = async (c: Context) => {
       messages.push(insertedMsg) // Add the inserted message to messages array
       chatCreationSpan.end()
     } else {
-      const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_existing_chat")
+      const dbTransactionSpan = chatCreationSpan.startSpan(
+        "db_transaction_existing_chat",
+      )
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
@@ -1144,11 +1221,20 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
-      dbTransactionSpan.setAttribute("chat_external_id", existingChat.externalId)
-      dbTransactionSpan.setAttribute("message_external_id", insertedMsg.externalId)
-      dbTransactionSpan.setAttribute("previous_messages_count", allMessages.length)
+      dbTransactionSpan.setAttribute(
+        "chat_external_id",
+        existingChat.externalId,
+      )
+      dbTransactionSpan.setAttribute(
+        "message_external_id",
+        insertedMsg.externalId,
+      )
+      dbTransactionSpan.setAttribute(
+        "previous_messages_count",
+        allMessages.length,
+      )
       dbTransactionSpan.end()
-      
+
       loggerWithChild({ email: sub }).info(
         "Existing conversation, fetched previous messages",
       )
@@ -1156,1329 +1242,1433 @@ export const MessageWithToolsApi = async (c: Context) => {
       chat = existingChat
       chatCreationSpan.end()
     }
-    return streamSSE(
-      c,
-      async (stream) => {
-        // Store MCP clients for cleanup to prevent memory leaks
-        const mcpClients: Client[] = []
-        let finalReasoningLogString = ""
-        let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
-        // Track steps per iteration for limiting display
-        let currentIterationSteps = 0
-        let currentIterationNumber = 0
-        const MAX_STEPS_PER_ITERATION = 3
-        let currentIterationAllSteps: AgentReasoningStep[] = [] // Track all steps in current iteration for summary
+    return streamSSE(c, async (stream) => {
+      // Store MCP clients for cleanup to prevent memory leaks
+      const mcpClients: Client[] = []
+      let finalReasoningLogString = ""
+      let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
+      // Track steps per iteration for limiting display
+      let currentIterationSteps = 0
+      let currentIterationNumber = 0
+      const MAX_STEPS_PER_ITERATION = 3
+      let currentIterationAllSteps: AgentReasoningStep[] = [] // Track all steps in current iteration for summary
 
-        const logAndStreamReasoning = async (
-          reasoningStep: AgentReasoningStep,
-          userQuery: string = message, // Default to the current message
-        ): Promise<void> => {
-          const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-          const timestamp = Date.now()
+      const logAndStreamReasoning = async (
+        reasoningStep: AgentReasoningStep,
+        userQuery: string = message, // Default to the current message
+      ): Promise<void> => {
+        const stepId = `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        const timestamp = Date.now()
 
-          // Check if this is a new iteration
-          if (reasoningStep.type === AgentReasoningStepType.Iteration) {
-            // Generate summary for previous iteration if it exists
-            if (
-              currentIterationNumber > 0 &&
-              currentIterationAllSteps.length > 0
-            ) {
-              await generateAndStreamIterationSummary(
-                currentIterationNumber,
-                currentIterationAllSteps,
-                userQuery,
-              )
-            }
-
-            currentIterationNumber =
-              reasoningStep.iteration ?? currentIterationNumber + 1
-            currentIterationSteps = 0 // Reset step counter for new iteration
-            currentIterationAllSteps = [] // Reset all steps for new iteration
-          } else {
-            // Track all steps in current iteration for summary
-            currentIterationAllSteps.push(reasoningStep)
-
-            // Skip steps beyond the limit for current iteration
-            if (currentIterationSteps >= MAX_STEPS_PER_ITERATION) {
-              // For skipped steps, only generate fallback summary (no AI call)
-              const enhancedStep: AgentReasoningStep = {
-                ...reasoningStep,
-                stepId,
-                timestamp,
-                status: "in_progress",
-                stepSummary: generateFallbackSummary(reasoningStep), // Only fallback summary
-              }
-
-              const humanReadableLog = convertReasoningStepToText(enhancedStep)
-              structuredReasoningSteps.push(enhancedStep)
-              return // Don't stream to frontend
-            }
-            currentIterationSteps++
+        // Check if this is a new iteration
+        if (reasoningStep.type === AgentReasoningStepType.Iteration) {
+          // Generate summary for previous iteration if it exists
+          if (
+            currentIterationNumber > 0 &&
+            currentIterationAllSteps.length > 0
+          ) {
+            await generateAndStreamIterationSummary(
+              currentIterationNumber,
+              currentIterationAllSteps,
+              userQuery,
+            )
           }
 
-          // Generate AI summary ONLY for displayed steps (first 3 per iteration)
-          const aiGeneratedSummary = await generateStepSummary(
-            reasoningStep,
+          currentIterationNumber =
+            reasoningStep.iteration ?? currentIterationNumber + 1
+          currentIterationSteps = 0 // Reset step counter for new iteration
+          currentIterationAllSteps = [] // Reset all steps for new iteration
+        } else {
+          // Track all steps in current iteration for summary
+          currentIterationAllSteps.push(reasoningStep)
+
+          // Skip steps beyond the limit for current iteration
+          if (currentIterationSteps >= MAX_STEPS_PER_ITERATION) {
+            // For skipped steps, only generate fallback summary (no AI call)
+            const enhancedStep: AgentReasoningStep = {
+              ...reasoningStep,
+              stepId,
+              timestamp,
+              status: "in_progress",
+              stepSummary: generateFallbackSummary(reasoningStep), // Only fallback summary
+            }
+
+            const humanReadableLog = convertReasoningStepToText(enhancedStep)
+            structuredReasoningSteps.push(enhancedStep)
+            return // Don't stream to frontend
+          }
+          currentIterationSteps++
+        }
+
+        // Generate AI summary ONLY for displayed steps (first 3 per iteration)
+        const aiGeneratedSummary = await generateStepSummary(
+          reasoningStep,
+          userQuery,
+          undefined,
+          actualModelId || undefined,
+        )
+
+        const enhancedStep: AgentReasoningStep = {
+          ...reasoningStep,
+          stepId,
+          timestamp,
+          status: "in_progress",
+          stepSummary: generateFallbackSummary(reasoningStep), // Quick fallback
+          aiGeneratedSummary, // AI-generated summary only for displayed steps
+        }
+
+        const humanReadableLog = convertReasoningStepToText(enhancedStep)
+        structuredReasoningSteps.push(enhancedStep)
+
+        // Stream both summaries
+        await stream.writeSSE({
+          event: ChatSSEvents.Reasoning,
+          data: JSON.stringify({
+            text: humanReadableLog,
+            step: enhancedStep,
+            quickSummary: enhancedStep.stepSummary,
+            aiSummary: enhancedStep.aiGeneratedSummary,
+          }),
+        })
+      }
+
+      // Helper function to create iteration summary steps
+      const createIterationSummaryStep = (
+        summary: string,
+        iterationNumber: number,
+      ): AgentReasoningStep => ({
+        type: AgentReasoningStepType.LogMessage,
+        stepId: `iteration_summary_${iterationNumber}_${Date.now()}`,
+        timestamp: Date.now(),
+        status: "completed",
+        iteration: iterationNumber,
+        message: summary,
+        stepSummary: summary,
+        aiGeneratedSummary: summary,
+        isIterationSummary: true,
+      })
+
+      // Generate and stream iteration summary
+      const generateAndStreamIterationSummary = async (
+        iterationNumber: number,
+        allSteps: AgentReasoningStep[],
+        userQuery: string,
+      ): Promise<void> => {
+        try {
+          const prompt = generateConsolidatedStepSummaryPromptJson(
+            allSteps,
             userQuery,
-            undefined,
-            actualModelId || undefined,
+            iterationNumber,
+            `Iteration ${iterationNumber} complete summary`,
           )
 
-          const enhancedStep: AgentReasoningStep = {
-            ...reasoningStep,
-            stepId,
-            timestamp,
-            status: "in_progress",
-            stepSummary: generateFallbackSummary(reasoningStep), // Quick fallback
-            aiGeneratedSummary, // AI-generated summary only for displayed steps
-          }
+          // Use the selected model or fallback to fast model for summary generation
+          const summaryResult = await generateSynthesisBasedOnToolOutput(
+            prompt,
+            "",
+            "",
+            {
+              modelId: (actualModelId as Models) || defaultFastModel,
+              stream: false,
+              json: true,
+              reasoning: false,
+              messages: [],
+            },
+          )
 
-          const humanReadableLog = convertReasoningStepToText(enhancedStep)
-          structuredReasoningSteps.push(enhancedStep)
+          const summaryResponse = summaryResult.text || ""
 
-          // Stream both summaries
+          // Parse the JSON response
+          const parsed = jsonParseLLMOutput(summaryResponse)
+          const summary =
+            parsed.summary ||
+            `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
+
+          // Create the iteration summary step
+          const iterationSummaryStep = createIterationSummaryStep(
+            summary,
+            iterationNumber,
+          )
+
+          // Add to structured reasoning steps so it gets saved to DB
+          structuredReasoningSteps.push(iterationSummaryStep)
+
+          // Stream the iteration summary
           await stream.writeSSE({
             event: ChatSSEvents.Reasoning,
             data: JSON.stringify({
-              text: humanReadableLog,
-              step: enhancedStep,
-              quickSummary: enhancedStep.stepSummary,
-              aiSummary: enhancedStep.aiGeneratedSummary,
+              text: summary,
+              step: iterationSummaryStep,
+              quickSummary: summary,
+              aiSummary: summary,
+              isIterationSummary: true,
+            }),
+          })
+        } catch (error) {
+          Logger.error(`Error generating iteration summary: ${error}`)
+          // Fallback summary
+          const fallbackSummary = `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
+
+          // Create the fallback iteration summary step
+          const fallbackSummaryStep = createIterationSummaryStep(
+            fallbackSummary,
+            iterationNumber,
+          )
+
+          // Add to structured reasoning steps so it gets saved to DB
+          structuredReasoningSteps.push(fallbackSummaryStep)
+
+          await stream.writeSSE({
+            event: ChatSSEvents.Reasoning,
+            data: JSON.stringify({
+              text: fallbackSummary,
+              step: fallbackSummaryStep,
+              quickSummary: fallbackSummary,
+              aiSummary: fallbackSummary,
+              isIterationSummary: true,
             }),
           })
         }
+      }
 
-        // Helper function to create iteration summary steps
-        const createIterationSummaryStep = (
-          summary: string,
-          iterationNumber: number,
-        ): AgentReasoningStep => ({
-          type: AgentReasoningStepType.LogMessage,
-          stepId: `iteration_summary_${iterationNumber}_${Date.now()}`,
-          timestamp: Date.now(),
-          status: "completed",
-          iteration: iterationNumber,
-          message: summary,
-          stepSummary: summary,
-          aiGeneratedSummary: summary,
-          isIterationSummary: true,
+      streamKey = `${chat.externalId}` // Create the stream key
+      activeStreams.set(streamKey, stream) // Add stream to the map
+      loggerWithChild({ email: sub }).info(
+        `Added stream ${streamKey} to active streams map.`,
+      )
+      const streamSpan = rootSpan.startSpan("stream_response")
+      streamSpan.setAttribute("chatId", chat.externalId)
+      let wasStreamClosedPrematurely = false
+      try {
+        if (!chatId) {
+          const titleUpdateSpan = streamSpan.startSpan("send_title_update")
+          await stream.writeSSE({
+            data: title,
+            event: ChatSSEvents.ChatTitleUpdate,
+          })
+          titleUpdateSpan.end()
+        }
+
+        loggerWithChild({ email: sub }).info("Chat stream started")
+        // we do not set the message Id as we don't have it
+        await stream.writeSSE({
+          event: ChatSSEvents.ResponseMetadata,
+          data: JSON.stringify({
+            chatId: chat.externalId,
+          }),
         })
 
-        // Generate and stream iteration summary
-        const generateAndStreamIterationSummary = async (
-          iterationNumber: number,
-          allSteps: AgentReasoningStep[],
-          userQuery: string,
-        ): Promise<void> => {
-          try {
-            const prompt = generateConsolidatedStepSummaryPromptJson(
-              allSteps,
-              userQuery,
-              iterationNumber,
-              `Iteration ${iterationNumber} complete summary`,
-            )
-
-            // Use the selected model or fallback to fast model for summary generation
-            const summaryResult = await generateSynthesisBasedOnToolOutput(
-              prompt,
-              "",
-              "",
-              {
-                modelId: (actualModelId as Models) || defaultFastModel,
-                stream: false,
-                json: true,
-                reasoning: false,
-                messages: [],
-              },
-            )
-
-            const summaryResponse = summaryResult.text || ""
-
-            // Parse the JSON response
-            const parsed = jsonParseLLMOutput(summaryResponse)
-            const summary =
-              parsed.summary ||
-              `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
-
-            // Create the iteration summary step
-            const iterationSummaryStep = createIterationSummaryStep(
-              summary,
-              iterationNumber,
-            )
-
-            // Add to structured reasoning steps so it gets saved to DB
-            structuredReasoningSteps.push(iterationSummaryStep)
-
-            // Stream the iteration summary
-            await stream.writeSSE({
-              event: ChatSSEvents.Reasoning,
-              data: JSON.stringify({
-                text: summary,
-                step: iterationSummaryStep,
-                quickSummary: summary,
-                aiSummary: summary,
-                isIterationSummary: true,
-              }),
-            })
-          } catch (error) {
-            Logger.error(`Error generating iteration summary: ${error}`)
-            // Fallback summary
-            const fallbackSummary = `Completed iteration ${iterationNumber} with ${allSteps.length} steps.`
-
-            // Create the fallback iteration summary step
-            const fallbackSummaryStep = createIterationSummaryStep(
-              fallbackSummary,
-              iterationNumber,
-            )
-
-            // Add to structured reasoning steps so it gets saved to DB
-            structuredReasoningSteps.push(fallbackSummaryStep)
-
-            await stream.writeSSE({
-              event: ChatSSEvents.Reasoning,
-              data: JSON.stringify({
-                text: fallbackSummary,
-                step: fallbackSummaryStep,
-                quickSummary: fallbackSummary,
-                aiSummary: fallbackSummary,
-                isIterationSummary: true,
-              }),
-            })
-          }
-        }
-
-        streamKey = `${chat.externalId}` // Create the stream key
-        activeStreams.set(streamKey, stream) // Add stream to the map
-        loggerWithChild({ email: sub }).info(
-          `Added stream ${streamKey} to active streams map.`,
-        )
-        const streamSpan = rootSpan.startSpan("stream_response")
-        streamSpan.setAttribute("chatId", chat.externalId)
-        let wasStreamClosedPrematurely = false
-        try {
-          if (!chatId) {
-            const titleUpdateSpan = streamSpan.startSpan("send_title_update")
-            await stream.writeSSE({
-              data: title,
-              event: ChatSSEvents.ChatTitleUpdate,
-            })
-            titleUpdateSpan.end()
-          }
-
-          loggerWithChild({ email: sub }).info("Chat stream started")
-          // we do not set the message Id as we don't have it
+        // Send attachment metadata immediately if attachments exist
+        if (attachmentMetadata && attachmentMetadata.length > 0) {
+          const userMessage = messages[messages.length - 1]
           await stream.writeSSE({
-            event: ChatSSEvents.ResponseMetadata,
+            event: ChatSSEvents.AttachmentUpdate,
             data: JSON.stringify({
-              chatId: chat.externalId,
+              messageId: userMessage.externalId,
+              attachments: attachmentMetadata,
             }),
           })
+        }
 
-          // Send attachment metadata immediately if attachments exist
-          if (attachmentMetadata && attachmentMetadata.length > 0) {
-            const userMessage = messages[messages.length - 1]
-            await stream.writeSSE({
-              event: ChatSSEvents.AttachmentUpdate,
-              data: JSON.stringify({
-                messageId: userMessage.externalId,
-                attachments: attachmentMetadata,
-              }),
-            })
-          }
-
-          // Notify client if attachment storage failed
-          if (attachmentStorageError) {
-            await stream.writeSSE({
-              event: ChatSSEvents.Error,
-              data: JSON.stringify({
-                error: "attachment_storage_failed",
-                message:
-                  "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
-                details: attachmentStorageError.message,
-              }),
-            })
-          }
-
-          let messagesWithNoErrResponse = messages
-            .slice(0, messages.length - 1)
-            .filter((msg) => !msg?.errorMessage)
-            .map((m) => ({
-              role: m.messageRole as ConversationRole,
-              content: [{ text: m.message }],
-            }))
-
-          loggerWithChild({ email: sub }).info(
-            "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
-          )
-          const finalToolsList: Record<
-            string,
-            {
-              tools: SelectTool[]
-              client: Client
-            }
-          > = {}
-          const maxIterations = 10
-          let iterationCount = 0
-          let answered = false
-          let isCustomMCP = false
-          await logAndStreamReasoning({
-            type: AgentReasoningStepType.LogMessage,
-            message: `We're reading your question and figuring out the best way to find the answer — whether it's checking documents, searching emails, or gathering helpful info. This might take a few seconds... hang tight! <br> <br> We’re analyzing your query and choosing the best path forward — whether it’s searching internal docs, retrieving emails, or piecing together context. Hang tight while we think through it step by step.`,
+        // Notify client if attachment storage failed
+        if (attachmentStorageError) {
+          await stream.writeSSE({
+            event: ChatSSEvents.Error,
+            data: JSON.stringify({
+              error: "attachment_storage_failed",
+              message:
+                "Failed to store attachment metadata. Your message was saved but attachments may not be available for future reference.",
+              details: attachmentStorageError.message,
+            }),
           })
-          if (toolsList && toolsList.length > 0) {
-            for (const item of toolsList) {
-              const { connectorId, tools: toolExternalIds } = item
-              // Fetch connector info and create client
-              const connector = await getConnectorById(
-                db,
-                parseInt(connectorId, 10),
-                user.id,
+        }
+
+        let messagesWithNoErrResponse = messages
+          .slice(0, messages.length - 1)
+          .filter((msg) => !msg?.errorMessage)
+          .map((m) => ({
+            role: m.messageRole as ConversationRole,
+            content: [{ text: m.message }],
+          }))
+
+        loggerWithChild({ email: sub }).info(
+          "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
+        )
+        const finalToolsList: Record<
+          string,
+          {
+            tools: SelectTool[]
+            client: Client
+          }
+        > = {}
+        const maxIterations = 10
+        let iterationCount = 0
+        let answered = false
+        let isCustomMCP = false
+        await logAndStreamReasoning({
+          type: AgentReasoningStepType.LogMessage,
+          message: `We're reading your question and figuring out the best way to find the answer — whether it's checking documents, searching emails, or gathering helpful info. This might take a few seconds... hang tight! <br> <br> We’re analyzing your query and choosing the best path forward — whether it’s searching internal docs, retrieving emails, or piecing together context. Hang tight while we think through it step by step.`,
+        })
+        if (toolsList && toolsList.length > 0) {
+          for (const item of toolsList) {
+            const { connectorId, tools: toolExternalIds } = item
+            // Fetch connector info and create client
+            const connector = await getConnectorById(
+              db,
+              parseInt(connectorId, 10),
+              user.id,
+            )
+            if (!connector) {
+              loggerWithChild({ email: sub }).warn(
+                `Connector not found or access denied for connectorId: ${connectorId}`,
               )
-              if (!connector) {
-                loggerWithChild({ email: sub }).warn(
-                  `Connector not found or access denied for connectorId: ${connectorId}`,
-                )
-                continue
+              continue
+            }
+            const client = new Client({
+              name: `connector-${connectorId}`,
+              version: connector.config.version,
+            })
+            try {
+              const loadedConfig = connector.config as {
+                url?: string
+                command?: string
+                args?: string[]
+                mode?: "sse" | "streamable-http"
+                version: string
               }
-              const client = new Client({
-                name: `connector-${connectorId}`,
-                version: connector.config.version,
-              })
-              try {
-                const loadedConfig = connector.config as {
-                  url?: string
-                  command?: string
-                  args?: string[]
-                  mode?: "sse" | "streamable-http"
-                  version: string
-                }
 
-                if (loadedConfig.url) {
-                  // This is an HTTP-based connector (SSE or Streamable)
-                  isCustomMCP = true
-                  const loadedUrl = loadedConfig.url
-                  const loadedMode = loadedConfig.mode || "sse" // Default to 'sse' for old connectors
+              if (loadedConfig.url) {
+                // This is an HTTP-based connector (SSE or Streamable)
+                isCustomMCP = true
+                const loadedUrl = loadedConfig.url
+                const loadedMode = loadedConfig.mode || "sse" // Default to 'sse' for old connectors
 
-                  let loadedHeaders: Record<string, string> = {}
-                  if (connector.credentials) {
-                    // New format: credentials contain the headers object
-                    try {
-                      loadedHeaders = JSON.parse(connector.credentials)
-                    } catch (error) {
-                      loggerWithChild({ email: sub }).error(
-                        error,
-                        `Failed to parse connector credentials for connectorId: ${connectorId}. Using empty headers.`,
-                      )
-                      loadedHeaders = {}
-                    }
-                  } else if (connector.apiKey) {
-                    // Old format: for backwards compatibility
-                    loadedHeaders["Authorization"] =
-                      `Bearer ${connector.apiKey}`
-                  }
-                  loggerWithChild({ email: sub }).info(
-                    `Connecting to MCP client at ${loadedUrl} with mode: ${loadedMode}`,
-                  )
-
-                  if (loadedMode === "streamable-http") {
-                    const transportOptions: StreamableHTTPClientTransportOptions =
-                      {
-                        requestInit: {
-                          headers: loadedHeaders,
-                        },
-                      }
-                    await client.connect(
-                      new StreamableHTTPClientTransport(
-                        new URL(loadedUrl),
-                        transportOptions,
-                      ),
+                let loadedHeaders: Record<string, string> = {}
+                if (connector.credentials) {
+                  // New format: credentials contain the headers object
+                  try {
+                    loadedHeaders = JSON.parse(connector.credentials)
+                  } catch (error) {
+                    loggerWithChild({ email: sub }).error(
+                      error,
+                      `Failed to parse connector credentials for connectorId: ${connectorId}. Using empty headers.`,
                     )
-                  } else {
-                    // 'sse' mode
-                    const transportOptions: SSEClientTransportOptions = {
+                    loadedHeaders = {}
+                  }
+                } else if (connector.apiKey) {
+                  // Old format: for backwards compatibility
+                  loadedHeaders["Authorization"] = `Bearer ${connector.apiKey}`
+                }
+                loggerWithChild({ email: sub }).info(
+                  `Connecting to MCP client at ${loadedUrl} with mode: ${loadedMode}`,
+                )
+
+                if (loadedMode === "streamable-http") {
+                  const transportOptions: StreamableHTTPClientTransportOptions =
+                    {
                       requestInit: {
                         headers: loadedHeaders,
                       },
                     }
-                    await client.connect(
-                      new SSEClientTransport(
-                        new URL(loadedUrl),
-                        transportOptions,
-                      ),
-                    )
-                  }
-                } else if (loadedConfig.command) {
-                  // This is an Stdio-based connector
-                  loggerWithChild({ email: sub }).info(
-                    `Connecting to MCP Stdio client with command: ${loadedConfig.command}`,
-                  )
                   await client.connect(
-                    new StdioClientTransport({
-                      command: loadedConfig.command,
-                      args: loadedConfig.args || [],
-                    }),
+                    new StreamableHTTPClientTransport(
+                      new URL(loadedUrl),
+                      transportOptions,
+                    ),
                   )
                 } else {
-                  throw new Error(
-                    "Invalid MCP connector configuration: missing url or command.",
+                  // 'sse' mode
+                  const transportOptions: SSEClientTransportOptions = {
+                    requestInit: {
+                      headers: loadedHeaders,
+                    },
+                  }
+                  await client.connect(
+                    new SSEClientTransport(
+                      new URL(loadedUrl),
+                      transportOptions,
+                    ),
                   )
                 }
-              } catch (error) {
-                loggerWithChild({ email: sub }).error(
-                  error,
-                  `Failed to connect to MCP client for connector ${connectorId}`,
+              } else if (loadedConfig.command) {
+                // This is an Stdio-based connector
+                loggerWithChild({ email: sub }).info(
+                  `Connecting to MCP Stdio client with command: ${loadedConfig.command}`,
                 )
-                continue
-              }
-              // Store client for cleanup
-              mcpClients.push(client)
-              const tools = await getToolsByConnectorId(
-                db,
-                workspace.id,
-                connector.id,
-              )
-
-              const filteredTools = tools.filter((tool) => {
-                const isIncluded = toolExternalIds.includes(tool.externalId!)
-                if (!isIncluded) {
-                  loggerWithChild({ email: sub }).info(
-                    `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
-                  )
-                }
-                return isIncluded
-              })
-
-              finalToolsList[connector.id] = {
-                tools: filteredTools,
-                client: client,
-              }
-              // Fetch all available tools from the client
-              // TODO: look in the DB. cache logic has to be discussed.
-              // const respone = await client.listTools()
-              // const clientTools = response.tools
-
-              // // Update tool definitions in the database for future use
-              // await syncConnectorTools(
-              //   db,
-              //   workspace.id,
-              //   connector.id,
-              //   clientTools.map((tool) => ({
-              //     toolName: tool.name,
-              //     toolSchema: JSON.stringify(tool),
-              //     description: tool.description,
-              //   })),
-              // )
-              // // Create a map for quick lookup
-              // const toolSchemaMap = new Map(
-              //   clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
-              // )
-              // // Filter to only the requested tools, or use all tools if toolNames is empty
-              // const filteredTools = []
-              // if (toolNames.length === 0) {
-              //   // If toolNames is empty, add all tools
-              //   for (const [toolName, schema] of toolSchemaMap.entries()) {
-              //     filteredTools.push({
-              //       name: toolName,
-              //       schema: schema || "",
-              //     })
-              //   }
-              // } else {
-              //   // Otherwise, filter to only the requested tools
-              //   for (const toolName of toolNames) {
-              //     if (toolSchemaMap.has(toolName)) {
-              //       filteredTools.push({
-              //         name: toolName,
-              //         schema: toolSchemaMap.get(toolName) || "",
-              //       })
-              //     } else {
-              //       Logger.info(
-              //         `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
-              //       )
-              //     }
-              //   }
-              // }
-              // finalToolsList[connectorId] = {
-              //   tools: filteredTools,
-              //   client: client,
-              // }
-            }
-          }
-          // ====== JAF-based agent loop starts here (replaces manual loop) ======
-          const jafProcessingSpan = streamSpan.startSpan("jaf_processing")
-          
-          // Prepare streaming state holders
-          let answer = ""
-          const citations: any[] = []
-          const imageCitations: any[] = []
-          const citationMap: Record<number, number> = {}
-          const citationValues: Record<number, string> = {}
-          let gatheredFragments: MinimalAgentFragment[] = []
-          let planningContext = ""
-          let parseSynthesisResult = null
-
-          if (hasReferencedContext && iterationCount === 0) {
-              const contextFetchSpan = rootSpan.startSpan(
-                "fetchDocumentContext",
-              )
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.Iteration,
-                iteration: iterationCount,
-              })
-              try {
-                const results = await GetDocumentsByDocIds(
-                  fileIds,
-                  contextFetchSpan,
+                await client.connect(
+                  new StdioClientTransport({
+                    command: loadedConfig.command,
+                    args: loadedConfig.args || [],
+                  }),
                 )
-                if (
-                  results?.root?.children &&
-                  results.root.children.length > 0
-                ) {
-                  const contextPromises = results?.root?.children?.map(
-                    async (v, i) => {
-                      let content = answerContextMap(
-                        v as z.infer<typeof VespaSearchResultsSchema>,
-                        0,
-                        true,
-                      )
-                      if (
-                        v.fields &&
-                        "sddocname" in v.fields &&
-                        v.fields.sddocname === chatContainerSchema &&
-                        (v.fields as any).creator
-                      ) {
-                        const creator = await getDocumentOrNull(
-                          chatUserSchema,
-                          (v.fields as any).creator,
-                        )
-                        if (creator) {
-                          content += `\nCreator: ${(creator.fields as any).name}`
-                        }
-                      }
-                      return `Index ${i + 1} \n ${content}`
-                    },
-                  )
-                  const resolvedContexts = contextPromises
-                    ? await Promise.all(contextPromises)
-                    : []
-
-                  const chatContexts: VespaSearchResult[] = []
-                  const threadContexts: VespaSearchResult[] = []
-                  if (results?.root?.children) {
-                    for (const v of results.root.children) {
-                      if (
-                        v.fields &&
-                        "sddocname" in v.fields &&
-                        v.fields.sddocname === chatContainerSchema
-                      ) {
-                        const channelId = (v.fields as any).docId
-
-                        if (channelId) {
-                          const searchResults = await searchSlackInVespa(
-                            message,
-                            email,
-                            {
-                              limit: 10,
-                              channelIds: [channelId],
-                            },
-                          )
-                          if (searchResults.root.children) {
-                            chatContexts.push(...searchResults.root.children)
-                            const threadMessages = await getThreadContext(
-                              searchResults,
-                              email,
-                              contextFetchSpan,
-                            )
-                            if (
-                              threadMessages &&
-                              threadMessages.root.children
-                            ) {
-                              threadContexts.push(
-                                ...threadMessages.root.children,
-                              )
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                  planningContext = cleanContext(resolvedContexts?.join("\n"))
-                  if (chatContexts.length > 0) {
-                    planningContext += "\n" + buildContext(chatContexts, 10)
-                  }
-                  if (threadContexts.length > 0) {
-                    planningContext += "\n" + buildContext(threadContexts, 10)
-                  }
-
-                  gatheredFragments = results.root.children.map(
-                    (child: VespaSearchResult, idx) =>
-                      vespaResultToMinimalAgentFragment(child, idx),
-                  )
-                  if (chatContexts.length > 0) {
-                    gatheredFragments.push(
-                      ...chatContexts.map((child, idx) =>
-                        vespaResultToMinimalAgentFragment(child, idx),
-                      ),
-                    )
-                  }
-                  if (threadContexts.length > 0) {
-                    gatheredFragments.push(
-                      ...threadContexts.map((child, idx) =>
-                        vespaResultToMinimalAgentFragment(child, idx),
-                      ),
-                    )
-                  }
-                  const parseSynthesisOutput = await performSynthesis(
-                    ctx,
-                    message,
-                    planningContext,
-                    gatheredFragments,
-                    messagesWithNoErrResponse,
-                    logAndStreamReasoning,
-                    sub,
-                    imageAttachmentFileIds,
-                    actualModelId || undefined,
-                  )
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.LogMessage,
-                    message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
-                  })
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.LogMessage,
-                    message: ` Synthesis: ${
-                      parseSynthesisOutput?.answer || "No Synthesis details"
-                    }`,
-                  })
-                  const isContextSufficient =
-                    parseSynthesisOutput?.synthesisState ===
-                    ContextSysthesisState.Complete
-
-                    console.log("SYNTHESIS OUTPUT", parseSynthesisOutput?.answer)
-
-                  if (isContextSufficient) {
-                    parseSynthesisResult = JSON.stringify(parseSynthesisOutput)
-                    // Context is complete. We can break the loop and generate the final answer.
-                    await logAndStreamReasoning({
-                      type: AgentReasoningStepType.LogMessage,
-                      message:
-                        "Context is sufficient. Proceeding to generate final answer.",
-                    })
-                  }
-                }
-
-              } catch (error) {
-                loggerWithChild({ email: sub }).error(
-                  error,
-                  "Failed to fetch document context for agent tools",
+              } else {
+                throw new Error(
+                  "Invalid MCP connector configuration: missing url or command.",
                 )
-              } finally {
-                contextFetchSpan?.end()
               }
-            }
-          
-
-          // Compose JAF tools: internal + MCP
-          const toolsCompositionSpan = jafProcessingSpan.startSpan("tools_composition")
-          const baseCtx: JAFAdapterCtx = {
-            email: sub,
-            userCtx: ctx,
-            agentPrompt: agentPromptForLLM,
-            userMessage: message,
-          }
-          const internalJAFTools: JAFTool<any, JAFAdapterCtx>[] = buildInternalJAFTools()
-          const mcpJAFTools: JAFTool<any, JAFAdapterCtx>[] =
-            buildMCPJAFTools(finalToolsList as unknown as JAFinalToolsList)
-          const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
-          toolsCompositionSpan.setAttribute("internal_tools_count", internalJAFTools.length)
-          toolsCompositionSpan.setAttribute("mcp_tools_count", mcpJAFTools.length)
-          toolsCompositionSpan.setAttribute("total_tools_count", allJAFTools.length)
-          toolsCompositionSpan.end()
-
-          // Build dynamic instructions that include tools + current context fragments
-          const agentInstructions = (_state: any) => {
-            const toolOverview = buildToolsOverview(allJAFTools)
-            const contextSection = buildContextSection(gatheredFragments)
-            const agentSection = agentPromptForLLM
-              ? `\n\nAgent Constraints:\n${agentPromptForLLM}`
-              : ""
-            const synthesisSection = parseSynthesisResult;
-            return (
-              `You are Xyne, an enterprise search assistant.\n` +
-              `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
-              `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
-              `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
-              `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
-              `- Be concise, accurate, and avoid hallucinations.\n` +
-              `- If there is a parseSynthesisOutput, use it to respond to the user without doing any further tool calls. Add missing citations and return the answer.\n` +
-              `\nAvailable Tools:\n${toolOverview}` +
-              contextSection +
-              agentSection +
-              `\n<parseSynthesisOutput>${synthesisSection}</parseSynthesisOutput>`
-            )
-          }
-
-          const jafSetupSpan = jafProcessingSpan.startSpan("jaf_setup")
-          const runId = generateRunId()
-          const traceId = generateTraceId()
-          const initialMessages: JAFMessage[] = messages
-            .filter((m) => !m?.errorMessage)
-            .map((m) => ({
-              role:
-                m.messageRole === MessageRole.User
-                  ? ("user" as const)
-                  : ("assistant" as const),
-              content: m.message,
-            }))
-            
-          const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
-            name: "xyne-agent",
-            instructions: () => agentInstructions(null),
-            tools: allJAFTools,
-            modelConfig: { name: (defaultBestModel) as unknown as string },
-          }
-
-          const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
-
-          const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
-            [jafAgent.name, jafAgent],
-          ])
-
-          const runState: JAFRunState<JAFAdapterCtx> = {
-            runId,
-            traceId,
-            messages: initialMessages,
-            currentAgentName: jafAgent.name,
-            context: baseCtx,
-            turnCount: 0,
-          }
-
-          const runCfg: JAFRunConfig<JAFAdapterCtx> = {
-            agentRegistry,
-            modelProvider,
-            maxTurns: 10,
-            modelOverride: (defaultBestModel) as unknown as string,
-          }
-          jafSetupSpan.setAttribute("run_id", runId)
-          jafSetupSpan.setAttribute("trace_id", traceId)
-          jafSetupSpan.setAttribute("initial_messages_count", initialMessages.length)
-          jafSetupSpan.setAttribute("max_turns", 10)
-          jafSetupSpan.end()
-
-          // Note: ResponseMetadata was already sent above with chatId
-
-          // Stream JAF events → existing SSE protocol
-          const jafStreamingSpan = jafProcessingSpan.startSpan("jaf_streaming")
-          const yieldedCitations = new Set<number>()
-          const yieldedImageCitations = new Map<number, Set<number>>()
-          let currentTurn = 0
-          let totalToolCalls = 0
-          
-          for await (const evt of runStream<JAFAdapterCtx, string>(runState, runCfg)) {
-            if (stream.closed) {
-              wasStreamClosedPrematurely = true
-              break
-            }
-            switch (evt.type) {
-              case "turn_start": {
-                currentTurn = evt.data.turn
-                const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
-                turnSpan.setAttribute("turn_number", currentTurn)
-                turnSpan.setAttribute("agent_name", evt.data.agentName)
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
-                    text: `Iteration ${evt.data.turn} started (agent: ${evt.data.agentName})`,
-                    step: {
-                      type: AgentReasoningStepType.Iteration,
-                      iteration: evt.data.turn,
-                      status: "in_progress",
-                      stepSummary: `Planning search iteration ${evt.data.turn}`,
-                    },
-                  }),
-                })
-                turnSpan.end()
-                break
-              }
-              case "tool_requests": {
-                const toolRequestsSpan = jafStreamingSpan.startSpan("tool_requests")
-                totalToolCalls += evt.data.toolCalls.length
-                toolRequestsSpan.setAttribute("tool_calls_count", evt.data.toolCalls.length)
-                toolRequestsSpan.setAttribute("total_tool_calls", totalToolCalls)
-                
-                for (const r of evt.data.toolCalls) {
-                  const toolSelectionSpan = toolRequestsSpan.startSpan("tool_selection")
-                  toolSelectionSpan.setAttribute("tool_name", r.name)
-                  toolSelectionSpan.setAttribute("args_count", Object.keys(r.args || {}).length)
-                  
-                  await stream.writeSSE({
-                    event: ChatSSEvents.Reasoning,
-                    data: JSON.stringify({
-                      text: `Tool selected: ${r.name}`,
-                      step: {
-                        type: AgentReasoningStepType.ToolSelected,
-                        toolName: r.name,
-                        status: "in_progress",
-                        stepSummary: `Executing ${r.name} tool`,
-                      },
-                    }),
-                  })
-                  await stream.writeSSE({
-                    event: ChatSSEvents.Reasoning,
-                    data: JSON.stringify({
-                      text: `Parameters: ${JSON.stringify(r.args)}`,
-                      step: {
-                        type: AgentReasoningStepType.ToolParameters,
-                        parameters: r.args,
-                        status: "in_progress",
-                        stepSummary: "Reviewing tool parameters",
-                      },
-                    }),
-                  })
-                  toolSelectionSpan.end()
-                }
-                toolRequestsSpan.end()
-                break
-              }
-              case "tool_call_start": {
-                const toolStartSpan = jafStreamingSpan.startSpan("tool_call_start")
-                toolStartSpan.setAttribute("tool_name", evt.data.toolName)
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
-                    text: `Executing ${evt.data.toolName}...`,
-                    step: {
-                      type: AgentReasoningStepType.ToolExecuting,
-                      toolName: evt.data.toolName,
-                      status: "in_progress",
-                      stepSummary: `Executing ${evt.data.toolName} tool`,
-                    },
-                  }),
-                })
-                toolStartSpan.end()
-                break
-              }
-              case "tool_call_end": {
-                const toolEndSpan = jafStreamingSpan.startSpan("tool_call_end")
-                type ToolCallEndEventData = Extract<
-                  JAFTraceEvent,
-                  { type: "tool_call_end" }
-                >["data"]
-                const contexts = (evt.data as ToolCallEndEventData)?.toolResult?.metadata?.contexts
-                const contextsCount = Array.isArray(contexts) ? contexts.length : 0
-                
-                if (Array.isArray(contexts) && contexts.length) {
-                  gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
-                }
-                
-                toolEndSpan.setAttribute("tool_name", evt.data.toolName)
-                toolEndSpan.setAttribute("status", evt.data.status || "completed")
-                toolEndSpan.setAttribute("contexts_found", contextsCount)
-                toolEndSpan.setAttribute("total_fragments", gatheredFragments.length)
-                
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
-                    text: `Tool result: ${evt.data.toolName}`,
-                    step: {
-                      type: AgentReasoningStepType.ToolResult,
-                      toolName: evt.data.toolName,
-                      status: evt.data.status || "completed",
-                      resultSummary: "Tool execution completed",
-                      itemsFound: contextsCount,
-                      stepSummary: `Found ${contextsCount} results`,
-                    },
-                  }),
-                })
-                toolEndSpan.end()
-                break
-              }
-              case "assistant_message": {
-                const messageSpan = jafStreamingSpan.startSpan("assistant_message")
-                const content = evt.data.message.content || ""
-                const hasToolCalls = Array.isArray(evt.data.message?.tool_calls) &&
-                  (evt.data.message.tool_calls?.length ?? 0) > 0
-
-                if (!content || content.length === 0) {
-                  break
-                }
-
-                if (hasToolCalls) {
-                  // Treat assistant content that accompanies tool calls as planning/reasoning,
-                  // not as final answer text. Emit as a reasoning step and do not send 'u' updates.
-                  await stream.writeSSE({
-                    event: ChatSSEvents.Reasoning,
-                    data: JSON.stringify({
-                      text: content,
-                      step: {
-                        type: AgentReasoningStepType.LogMessage,
-                        status: "in_progress",
-                        stepSummary: "Model planned tool usage",
-                      },
-                    }),
-                  })
-                  break
-                }
-
-                // No tool calls: stream as user-visible answer text, with on-the-fly citations
-                const chunkSize = 200
-                for (let i = 0; i < content.length; i += chunkSize) {
-                  const chunk = content.slice(i, i + chunkSize)
-                  answer += chunk
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: chunk,
-                  })
-
-                  for await (const cit of checkAndYieldCitationsForAgent(
-                    answer,
-                    yieldedCitations,
-                    gatheredFragments,
-                    yieldedImageCitations,
-                    email ?? "",
-                  )) {
-                    if (cit.citation) {
-                      const { index, item } = cit.citation as any
-                      citations.push(item)
-                      citationMap[index] = citations.length - 1
-                      await stream.writeSSE({
-                        event: ChatSSEvents.CitationsUpdate,
-                        data: JSON.stringify({
-                          contextChunks: citations,
-                          citationMap,
-                        }),
-                      })
-                      citationValues[index] = item
-                    }
-                    if (cit.imageCitation) {
-                      imageCitations.push(cit.imageCitation)
-                      await stream.writeSSE({
-                        event: ChatSSEvents.ImageCitationUpdate,
-                        data: JSON.stringify(cit.imageCitation),
-                      })
-                    }
-                  }
-                }
-                messageSpan.setAttribute("content_length", content.length)
-                messageSpan.setAttribute("answer_length", answer.length)
-                messageSpan.setAttribute("citations_count", citations.length)
-                messageSpan.setAttribute("image_citations_count", imageCitations.length)
-                messageSpan.end()
-                break
-              }
-              case "token_usage": {
-                const tokenUsageSpan = jafStreamingSpan.startSpan("token_usage")
-                const inputTokens = (evt.data.prompt as number) || 0
-                const outputTokens = (evt.data.completion as number) || 0
-                tokenArr.push({
-                  inputTokens,
-                  outputTokens,
-                })
-                tokenUsageSpan.setAttribute("input_tokens", inputTokens)
-                tokenUsageSpan.setAttribute("output_tokens", outputTokens)
-                tokenUsageSpan.setAttribute("total_tokens", inputTokens + outputTokens)
-                tokenUsageSpan.end()
-                break
-              }
-              case "guardrail_violation": {
-                const guardrailSpan = jafStreamingSpan.startSpan("guardrail_violation")
-                guardrailSpan.setAttribute("reason", evt.data.reason)
-                await stream.writeSSE({
-                  event: ChatSSEvents.Error,
-                  data: JSON.stringify({
-                    error: "guardrail_violation",
-                    message: evt.data.reason,
-                  }),
-                })
-                guardrailSpan.end()
-                break
-              }
-              case "decode_error": {
-                const decodeErrorSpan = jafStreamingSpan.startSpan("decode_error")
-                await stream.writeSSE({
-                  event: ChatSSEvents.Error,
-                  data: JSON.stringify({
-                    error: "decode_error",
-                    message: "Failed to decode model output",
-                  }),
-                })
-                decodeErrorSpan.end()
-                break
-              }
-              case "handoff_denied": {
-                const handoffSpan = jafStreamingSpan.startSpan("handoff_denied")
-                handoffSpan.setAttribute("reason", evt.data.reason)
-                await stream.writeSSE({
-                  event: ChatSSEvents.Error,
-                  data: JSON.stringify({
-                    error: "handoff_denied",
-                    message: evt.data.reason,
-                  }),
-                })
-                handoffSpan.end()
-                break
-              }
-              case "turn_end": {
-                const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
-                turnEndSpan.setAttribute("turn_number", evt.data.turn)
-                // Emit an iteration summary (fallback version)
-                await stream.writeSSE({
-                  event: ChatSSEvents.Reasoning,
-                  data: JSON.stringify({
-                    text: `Completed iteration ${evt.data.turn}.`,
-                    step: {
-                      type: AgentReasoningStepType.LogMessage,
-                      status: "completed",
-                      message: `Completed iteration ${evt.data.turn}.`,
-                      iteration: evt.data.turn,
-                      stepSummary: `Completed iteration ${evt.data.turn}.`,
-                      isIterationSummary: true,
-                    },
-                  }),
-                })
-                turnEndSpan.end()
-                break
-              }
-              case "final_output": {
-                const finalOutputSpan = jafStreamingSpan.startSpan("final_output")
-                const out = evt.data.output
-                if (typeof out === "string" && out.trim().length) {
-                  // Ensure any remainder is streamed
-                  const remaining = out.slice(answer.length)
-                  if (remaining.length) {
-                    await stream.writeSSE({
-                      event: ChatSSEvents.ResponseUpdate,
-                      data: remaining,
-                    })
-                    answer = out
-                  }
-                }
-                // Store the actual output instead of just length
-                finalOutputSpan.setAttribute("final_output", typeof out === "string" ? out : "")
-                finalOutputSpan.setAttribute("final_output_length", typeof out === "string" ? out.length : 0)
-                finalOutputSpan.setAttribute("citation_map", JSON.stringify(citationMap))
-                finalOutputSpan.setAttribute("citation_values", JSON.stringify(citationValues))
-                finalOutputSpan.setAttribute("citations_count", citations.length)
-                finalOutputSpan.setAttribute("image_citations_count", imageCitations.length)
-                finalOutputSpan.end()
-                break
-              }
-              case "run_end": {
-                const runEndSpan = jafStreamingSpan.startSpan("run_end")
-                const outcome = evt.data.outcome as JAFRunResult<string>["outcome"]
-                runEndSpan.setAttribute("outcome_status", outcome?.status || "unknown")
-                
-                if (outcome?.status === "completed") {
-                  const costCalculationSpan = runEndSpan.startSpan("cost_calculation")
-                  const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
-                  const totalTokens = tokenArr.reduce(
-                    (sum, t) => sum + t.inputTokens + t.outputTokens,
-                    0,
-                  )
-                  costCalculationSpan.setAttribute("total_cost", totalCost)
-                  costCalculationSpan.setAttribute("total_tokens", totalTokens)
-                  costCalculationSpan.setAttribute("total_tool_calls", totalToolCalls)
-                  costCalculationSpan.setAttribute("final_answer_length", answer.length)
-                  costCalculationSpan.setAttribute("citations_count", citations.length)
-                  costCalculationSpan.end()
-                  
-                  const dbInsertSpan = runEndSpan.startSpan("insert_assistant_message")
-                  const msg = await insertMessage(db, {
-                    chatId: chat.id,
-                    userId: user.id,
-                    workspaceExternalId: workspace.externalId,
-                    chatExternalId: chat.externalId,
-                    messageRole: MessageRole.Assistant,
-                    email: user.email,
-                    sources: citations,
-                    imageCitations: imageCitations,
-                    message: processMessage(answer, citationMap),
-                    thinking: "",
-                    modelId: defaultBestModel,
-                    cost: totalCost.toString(),
-                    tokensUsed: totalTokens,
-                  })
-                  assistantMessageId = msg.externalId
-                  dbInsertSpan.setAttribute("message_external_id", assistantMessageId)
-                  dbInsertSpan.end()
-                  
-                  const traceInsertSpan = runEndSpan.startSpan("insert_chat_trace")
-                  const traceJson = tracer.serializeToJson()
-                  await insertChatTrace({
-                    workspaceId: workspace.id,
-                    userId: user.id,
-                    chatId: chat.id,
-                    messageId: msg.id,
-                    chatExternalId: chat.externalId,
-                    email: user.email,
-                    messageExternalId: msg.externalId,
-                    traceJson,
-                  })
-                  traceInsertSpan.end()
-                  
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseMetadata,
-                    data: JSON.stringify({
-                      chatId: chat.externalId,
-                      messageId: assistantMessageId,
-                    }),
-                  })
-                  await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
-                } else {
-                  // Error outcome: stream error and do not insert assistant message
-                  const errorHandlingSpan = runEndSpan.startSpan("error_handling")
-                  const allMessages = await getChatMessagesWithAuth(
-                    db,
-                    chat?.externalId,
-                    email,
-                  )
-                  const lastMessage = allMessages[allMessages.length - 1]
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseMetadata,
-                    data: JSON.stringify({
-                      chatId: chat.externalId,
-                      messageId: lastMessage.externalId,
-                    }),
-                  })
-                  const err = outcome?.error as JAFError | undefined
-                  const errTag = err?._tag || "run_error"
-                  let errMsg = "Model did not return a response."
-                  if (err) {
-                    switch (err._tag) {
-                      case "ModelBehaviorError":
-                      case "ToolCallError":
-                      case "HandoffError":
-                        errMsg = err.detail
-                        break
-                      case "InputGuardrailTripwire":
-                      case "OutputGuardrailTripwire":
-                        errMsg = err.reason
-                        break
-                      case "DecodeError":
-                        errMsg = "Failed to decode model output"
-                        break
-                      case "AgentNotFound":
-                        errMsg = `Agent not found: ${err.agentName}`
-                        break
-                      case "MaxTurnsExceeded":
-                        // Execute fallback tool directly using messages from runState
-                        try {
-                          await stream.writeSSE({
-                            event: ChatSSEvents.Reasoning,
-                            data: JSON.stringify({
-                              text: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
-                              step: {
-                                type: AgentReasoningStepType.LogMessage,
-                                message: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
-                                status: "in_progress",
-                                stepSummary: "Activating fallback search",
-                              },
-                            }),
-                          })
-
-                          // Extract all context from runState.messages array
-                          const allMessages = runState.messages || []
-                          const agentScratchpad = allMessages
-                            .map((msg, index) => `${msg.role}: ${msg.content}`)
-                            .join('\n')
-                          console.log("Agent scratchpad:", agentScratchpad)
-                          console.log('all messages:', allMessages)
-
-                          // Build tool log from any tool executions in the conversation
-                          const toolLog = allMessages
-                            .filter(msg => msg.role === 'tool' || (msg as any).tool_calls || (msg as any).tool_call_id)
-                            .map((msg, index) => `Tool Execution ${index + 1}: ${msg.content}`)
-                            .join('\n')
-                          console.log("Tool log:", toolLog)
-                          // Prepare fallback tool parameters with context from runState.messages
-                          const fallbackParams = {
-                            originalQuery: message,
-                            agentScratchpad: agentScratchpad,
-                            toolLog: toolLog,
-                            gatheredFragments: gatheredFragments,
-                          }
-
-                          await stream.writeSSE({
-                            event: ChatSSEvents.Reasoning,
-                            data: JSON.stringify({
-                              text: `Executing fallback tool with context from ${allMessages.length} messages...`,
-                              step: {
-                                type: AgentReasoningStepType.ToolExecuting,
-                                toolName: "fall_back",
-                                status: "in_progress",
-                                stepSummary: "Executing fallback tool",
-                              },
-                            }),
-                          })
-
-                          // Execute fallback tool directly
-                          const fallbackResponse = await agentTools["fall_back"].execute(
-                            fallbackParams,
-                            streamSpan.startSpan("fallback_search_execution"),
-                            email,
-                            ctx,
-                            agentPromptForLLM,
-                            message,
-                          )
-
-                          await stream.writeSSE({
-                            event: ChatSSEvents.Reasoning,
-                            data: JSON.stringify({
-                              text: `Fallback tool execution completed`,
-                              step: {
-                                type: AgentReasoningStepType.ToolResult,
-                                toolName: "fall_back",
-                                status: "completed",
-                                resultSummary: fallbackResponse.result || "Fallback response generated",
-                                itemsFound: fallbackResponse.contexts?.length || 0,
-                                stepSummary: `Generated fallback response`,
-                              },
-                            }),
-                          })
-
-                          // Stream the fallback response if available
-                          if (fallbackResponse.fallbackReasoning || fallbackResponse.result) {
-                            const fallbackAnswer = fallbackResponse.fallbackReasoning || fallbackResponse.result || ""
-                            
-                            await stream.writeSSE({
-                              event: ChatSSEvents.ResponseUpdate,
-                              data: fallbackAnswer,
-                            })
-
-                            // Handle any contexts returned by fallback tool
-                            if (fallbackResponse.contexts && Array.isArray(fallbackResponse.contexts)) {
-                              fallbackResponse.contexts.forEach((context: any, index: number) => {
-                                citations.push(context)
-                                citationMap[citations.length] = citations.length - 1
-                              })
-                              
-                              if (citations.length > 0) {
-                                await stream.writeSSE({
-                                  event: ChatSSEvents.CitationsUpdate,
-                                  data: JSON.stringify({
-                                    contextChunks: citations,
-                                    citationMap,
-                                  }),
-                                })
-                              }
-                            }
-
-                            if (fallbackAnswer.trim()) {
-                              // Insert successful fallback message
-                              const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
-                              const totalTokens = tokenArr.reduce(
-                                (sum, t) => sum + t.inputTokens + t.outputTokens,
-                                0,
-                              )
-                              const msg = await insertMessage(db, {
-                                chatId: chat.id,
-                                userId: user.id,
-                                workspaceExternalId: workspace.externalId,
-                                chatExternalId: chat.externalId,
-                                messageRole: MessageRole.Assistant,
-                                email: user.email,
-                                sources: citations,
-                                imageCitations: imageCitations,
-                                message: processMessage(fallbackAnswer, citationMap),
-                                thinking: "",
-                                modelId: modelId || defaultBestModel,
-                                cost: totalCost.toString(),
-                                tokensUsed: totalTokens,
-                              })
-                              assistantMessageId = msg.externalId
-                              await stream.writeSSE({
-                                event: ChatSSEvents.ResponseMetadata,
-                                data: JSON.stringify({
-                                  chatId: chat.externalId,
-                                  messageId: assistantMessageId,
-                                }),
-                              })
-                              await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
-                              return // Successfully handled with fallback response
-                            }
-                          }
-                        } catch (fallbackError) {
-                          Logger.error(fallbackError, "Error during MaxTurnsExceeded fallback tool execution")
-                          await stream.writeSSE({
-                            event: ChatSSEvents.Reasoning,
-                            data: JSON.stringify({
-                              text: `Fallback search failed: ${getErrorMessage(fallbackError)}. Will generate best-effort answer.`,
-                              step: {
-                                type: AgentReasoningStepType.LogMessage,
-                                message: `Fallback search failed: ${getErrorMessage(fallbackError)}`,
-                                status: "error",
-                                stepSummary: "Fallback search failed",
-                              },
-                            }),
-                          })
-                          // Fall through to default error handling if fallback fails
-                        }
-                        
-                        // Default error handling if fallback fails or produces no response
-                        errMsg = `Max turns exceeded: ${err.turns}`
-                        break
-                      default:
-                        errMsg = errTag
-                    }
-                  }
-                  const errPayload = {
-                    error: errTag,
-                    message: errMsg,
-                  }
-                  errorHandlingSpan.setAttribute("error_tag", errTag)
-                  errorHandlingSpan.setAttribute("error_message", errMsg)
-                  errorHandlingSpan.end()
-                  
-                  await stream.writeSSE({
-                    event: ChatSSEvents.Error,
-                    data: JSON.stringify(errPayload),
-                  })
-                  await addErrMessageToMessage(lastMessage, JSON.stringify(errPayload))
-                  await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
-                }
-                runEndSpan.end()
-                break
-              }
-            }
-          }
-          
-          jafStreamingSpan.setAttribute("total_turns", currentTurn)
-          jafStreamingSpan.setAttribute("total_tool_calls", totalToolCalls)
-          jafStreamingSpan.setAttribute("final_answer_length", answer.length)
-          jafStreamingSpan.setAttribute("citations_count", citations.length)
-          jafStreamingSpan.setAttribute("image_citations_count", imageCitations.length)
-          jafStreamingSpan.end()
-          
-          jafProcessingSpan.end()
-
-          // Early return to skip legacy manual loop
-          streamSpan.end()
-          rootSpan.end()
-          return
-        } finally {
-          // Cleanup MCP clients to prevent memory leaks
-          for (const client of mcpClients) {
-            try {
-              await client.close()
             } catch (error) {
               loggerWithChild({ email: sub }).error(
                 error,
-                "Failed to close MCP client",
+                `Failed to connect to MCP client for connector ${connectorId}`,
               )
+              continue
             }
-          }
-
-          // Remove stream from active streams map
-          if (streamKey && activeStreams.has(streamKey)) {
-            activeStreams.delete(streamKey)
-            loggerWithChild({ email: sub }).info(
-              `Removed stream ${streamKey} from active streams map.`,
+            // Store client for cleanup
+            mcpClients.push(client)
+            const tools = await getToolsByConnectorId(
+              db,
+              workspace.id,
+              connector.id,
             )
-          }
 
-          // Close SSE stream (defensive)
-          if (stream) {
-            await stream.close()
+            const filteredTools = tools.filter((tool) => {
+              const isIncluded = toolExternalIds.includes(tool.externalId!)
+              if (!isIncluded) {
+                loggerWithChild({ email: sub }).info(
+                  `[MessageWithToolsApi] Tool ${tool.externalId}:${tool.toolName} not in requested toolExternalIds.`,
+                )
+              }
+              return isIncluded
+            })
+
+            finalToolsList[connector.id] = {
+              tools: filteredTools,
+              client: client,
+            }
+            // Fetch all available tools from the client
+            // TODO: look in the DB. cache logic has to be discussed.
+            // const respone = await client.listTools()
+            // const clientTools = response.tools
+
+            // // Update tool definitions in the database for future use
+            // await syncConnectorTools(
+            //   db,
+            //   workspace.id,
+            //   connector.id,
+            //   clientTools.map((tool) => ({
+            //     toolName: tool.name,
+            //     toolSchema: JSON.stringify(tool),
+            //     description: tool.description,
+            //   })),
+            // )
+            // // Create a map for quick lookup
+            // const toolSchemaMap = new Map(
+            //   clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
+            // )
+            // // Filter to only the requested tools, or use all tools if toolNames is empty
+            // const filteredTools = []
+            // if (toolNames.length === 0) {
+            //   // If toolNames is empty, add all tools
+            //   for (const [toolName, schema] of toolSchemaMap.entries()) {
+            //     filteredTools.push({
+            //       name: toolName,
+            //       schema: schema || "",
+            //     })
+            //   }
+            // } else {
+            //   // Otherwise, filter to only the requested tools
+            //   for (const toolName of toolNames) {
+            //     if (toolSchemaMap.has(toolName)) {
+            //       filteredTools.push({
+            //         name: toolName,
+            //         schema: toolSchemaMap.get(toolName) || "",
+            //       })
+            //     } else {
+            //       Logger.info(
+            //         `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
+            //       )
+            //     }
+            //   }
+            // }
+            // finalToolsList[connectorId] = {
+            //   tools: filteredTools,
+            //   client: client,
+            // }
           }
         }
+        // ====== JAF-based agent loop starts here (replaces manual loop) ======
+        const jafProcessingSpan = streamSpan.startSpan("jaf_processing")
+
+        // Prepare streaming state holders
+        let answer = ""
+        const citations: any[] = []
+        const imageCitations: any[] = []
+        const citationMap: Record<number, number> = {}
+        const citationValues: Record<number, string> = {}
+        let gatheredFragments: MinimalAgentFragment[] = []
+        let planningContext = ""
+        let parseSynthesisResult = null
+
+        if (hasReferencedContext && iterationCount === 0) {
+          const contextFetchSpan = rootSpan.startSpan("fetchDocumentContext")
+          await logAndStreamReasoning({
+            type: AgentReasoningStepType.Iteration,
+            iteration: iterationCount,
+          })
+          try {
+            const results = await GetDocumentsByDocIds(
+              fileIds,
+              contextFetchSpan,
+            )
+            if (results?.root?.children && results.root.children.length > 0) {
+              const contextPromises = results?.root?.children?.map(
+                async (v, i) => {
+                  let content = answerContextMap(
+                    v as z.infer<typeof VespaSearchResultsSchema>,
+                    0,
+                    true,
+                  )
+                  if (
+                    v.fields &&
+                    "sddocname" in v.fields &&
+                    v.fields.sddocname === chatContainerSchema &&
+                    (v.fields as any).creator
+                  ) {
+                    const creator = await getDocumentOrNull(
+                      chatUserSchema,
+                      (v.fields as any).creator,
+                    )
+                    if (creator) {
+                      content += `\nCreator: ${(creator.fields as any).name}`
+                    }
+                  }
+                  return `Index ${i + 1} \n ${content}`
+                },
+              )
+              const resolvedContexts = contextPromises
+                ? await Promise.all(contextPromises)
+                : []
+
+              const chatContexts: VespaSearchResult[] = []
+              const threadContexts: VespaSearchResult[] = []
+              if (results?.root?.children) {
+                for (const v of results.root.children) {
+                  if (
+                    v.fields &&
+                    "sddocname" in v.fields &&
+                    v.fields.sddocname === chatContainerSchema
+                  ) {
+                    const channelId = (v.fields as any).docId
+
+                    if (channelId) {
+                      const searchResults = await searchSlackInVespa(
+                        message,
+                        email,
+                        {
+                          limit: 10,
+                          channelIds: [channelId],
+                        },
+                      )
+                      if (searchResults.root.children) {
+                        chatContexts.push(...searchResults.root.children)
+                        const threadMessages = await getThreadContext(
+                          searchResults,
+                          email,
+                          contextFetchSpan,
+                        )
+                        if (threadMessages && threadMessages.root.children) {
+                          threadContexts.push(...threadMessages.root.children)
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              planningContext = cleanContext(resolvedContexts?.join("\n"))
+              if (chatContexts.length > 0) {
+                planningContext += "\n" + buildContext(chatContexts, 10)
+              }
+              if (threadContexts.length > 0) {
+                planningContext += "\n" + buildContext(threadContexts, 10)
+              }
+
+              gatheredFragments = results.root.children.map(
+                (child: VespaSearchResult, idx) =>
+                  vespaResultToMinimalAgentFragment(child, idx),
+              )
+              if (chatContexts.length > 0) {
+                gatheredFragments.push(
+                  ...chatContexts.map((child, idx) =>
+                    vespaResultToMinimalAgentFragment(child, idx),
+                  ),
+                )
+              }
+              if (threadContexts.length > 0) {
+                gatheredFragments.push(
+                  ...threadContexts.map((child, idx) =>
+                    vespaResultToMinimalAgentFragment(child, idx),
+                  ),
+                )
+              }
+              const parseSynthesisOutput = await performSynthesis(
+                ctx,
+                message,
+                planningContext,
+                gatheredFragments,
+                messagesWithNoErrResponse,
+                logAndStreamReasoning,
+                sub,
+                imageAttachmentFileIds,
+                actualModelId || undefined,
+              )
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.LogMessage,
+                message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+              })
+              await logAndStreamReasoning({
+                type: AgentReasoningStepType.LogMessage,
+                message: ` Synthesis: ${
+                  parseSynthesisOutput?.answer || "No Synthesis details"
+                }`,
+              })
+              const isContextSufficient =
+                parseSynthesisOutput?.synthesisState ===
+                ContextSysthesisState.Complete
+
+              console.log("SYNTHESIS OUTPUT", parseSynthesisOutput?.answer)
+
+              if (isContextSufficient) {
+                parseSynthesisResult = JSON.stringify(parseSynthesisOutput)
+                // Context is complete. We can break the loop and generate the final answer.
+                await logAndStreamReasoning({
+                  type: AgentReasoningStepType.LogMessage,
+                  message:
+                    "Context is sufficient. Proceeding to generate final answer.",
+                })
+              }
+            }
+          } catch (error) {
+            loggerWithChild({ email: sub }).error(
+              error,
+              "Failed to fetch document context for agent tools",
+            )
+          } finally {
+            contextFetchSpan?.end()
+          }
+        }
+
+        // Compose JAF tools: internal + MCP
+        const toolsCompositionSpan =
+          jafProcessingSpan.startSpan("tools_composition")
+        const baseCtx: JAFAdapterCtx = {
+          email: sub,
+          userCtx: ctx,
+          agentPrompt: agentPromptForLLM,
+          userMessage: message,
+        }
+        const internalJAFTools: JAFTool<any, JAFAdapterCtx>[] =
+          buildInternalJAFTools()
+        const mcpJAFTools: JAFTool<any, JAFAdapterCtx>[] = buildMCPJAFTools(
+          finalToolsList as unknown as JAFinalToolsList,
+        )
+        const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
+        toolsCompositionSpan.setAttribute(
+          "internal_tools_count",
+          internalJAFTools.length,
+        )
+        toolsCompositionSpan.setAttribute("mcp_tools_count", mcpJAFTools.length)
+        toolsCompositionSpan.setAttribute(
+          "total_tools_count",
+          allJAFTools.length,
+        )
+        toolsCompositionSpan.end()
+
+        // Build dynamic instructions that include tools + current context fragments
+        const agentInstructions = (_state: any) => {
+          const toolOverview = buildToolsOverview(allJAFTools)
+          const contextSection = buildContextSection(gatheredFragments)
+          const agentSection = agentPromptForLLM
+            ? `\n\nAgent Constraints:\n${agentPromptForLLM}`
+            : ""
+          const synthesisSection = parseSynthesisResult
+          return (
+            `You are Xyne, an enterprise search assistant.\n` +
+            `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
+            `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
+            `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
+            `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
+            `- Be concise, accurate, and avoid hallucinations.\n` +
+            `- If there is a parseSynthesisOutput, use it to respond to the user without doing any further tool calls. Add missing citations and return the answer.\n` +
+            `\nAvailable Tools:\n${toolOverview}` +
+            contextSection +
+            agentSection +
+            `\n<parseSynthesisOutput>${synthesisSection}</parseSynthesisOutput>`
+          )
+        }
+
+        const jafSetupSpan = jafProcessingSpan.startSpan("jaf_setup")
+        const runId = generateRunId()
+        const traceId = generateTraceId()
+        const initialMessages: JAFMessage[] = messages
+          .filter((m) => !m?.errorMessage)
+          .map((m) => ({
+            role:
+              m.messageRole === MessageRole.User
+                ? ("user" as const)
+                : ("assistant" as const),
+            content: m.message,
+          }))
+
+        const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
+          name: "xyne-agent",
+          instructions: () => agentInstructions(null),
+          tools: allJAFTools,
+          modelConfig: { name: defaultBestModel as unknown as string },
+        }
+
+        const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
+
+        const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
+          [jafAgent.name, jafAgent],
+        ])
+
+        const runState: JAFRunState<JAFAdapterCtx> = {
+          runId,
+          traceId,
+          messages: initialMessages,
+          currentAgentName: jafAgent.name,
+          context: baseCtx,
+          turnCount: 0,
+        }
+
+        const runCfg: JAFRunConfig<JAFAdapterCtx> = {
+          agentRegistry,
+          modelProvider,
+          maxTurns: 10,
+          modelOverride: defaultBestModel as unknown as string,
+        }
+        jafSetupSpan.setAttribute("run_id", runId)
+        jafSetupSpan.setAttribute("trace_id", traceId)
+        jafSetupSpan.setAttribute(
+          "initial_messages_count",
+          initialMessages.length,
+        )
+        jafSetupSpan.setAttribute("max_turns", 10)
+        jafSetupSpan.end()
+
+        // Note: ResponseMetadata was already sent above with chatId
+
+        // Stream JAF events → existing SSE protocol
+        const jafStreamingSpan = jafProcessingSpan.startSpan("jaf_streaming")
+        const yieldedCitations = new Set<number>()
+        const yieldedImageCitations = new Map<number, Set<number>>()
+        let currentTurn = 0
+        let totalToolCalls = 0
+
+        for await (const evt of runStream<JAFAdapterCtx, string>(
+          runState,
+          runCfg,
+        )) {
+          if (stream.closed) {
+            wasStreamClosedPrematurely = true
+            break
+          }
+          switch (evt.type) {
+            case "turn_start": {
+              currentTurn = evt.data.turn
+              const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
+              turnSpan.setAttribute("turn_number", currentTurn)
+              turnSpan.setAttribute("agent_name", evt.data.agentName)
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: JSON.stringify({
+                  text: `Iteration ${evt.data.turn} started (agent: ${evt.data.agentName})`,
+                  step: {
+                    type: AgentReasoningStepType.Iteration,
+                    iteration: evt.data.turn,
+                    status: "in_progress",
+                    stepSummary: `Planning search iteration ${evt.data.turn}`,
+                  },
+                }),
+              })
+              turnSpan.end()
+              break
+            }
+            case "tool_requests": {
+              const toolRequestsSpan =
+                jafStreamingSpan.startSpan("tool_requests")
+              totalToolCalls += evt.data.toolCalls.length
+              toolRequestsSpan.setAttribute(
+                "tool_calls_count",
+                evt.data.toolCalls.length,
+              )
+              toolRequestsSpan.setAttribute("total_tool_calls", totalToolCalls)
+
+              for (const r of evt.data.toolCalls) {
+                const toolSelectionSpan =
+                  toolRequestsSpan.startSpan("tool_selection")
+                toolSelectionSpan.setAttribute("tool_name", r.name)
+                toolSelectionSpan.setAttribute(
+                  "args_count",
+                  Object.keys(r.args || {}).length,
+                )
+
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: `Tool selected: ${r.name}`,
+                    step: {
+                      type: AgentReasoningStepType.ToolSelected,
+                      toolName: r.name,
+                      status: "in_progress",
+                      stepSummary: `Executing ${r.name} tool`,
+                    },
+                  }),
+                })
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: `Parameters: ${JSON.stringify(r.args)}`,
+                    step: {
+                      type: AgentReasoningStepType.ToolParameters,
+                      parameters: r.args,
+                      status: "in_progress",
+                      stepSummary: "Reviewing tool parameters",
+                    },
+                  }),
+                })
+                toolSelectionSpan.end()
+              }
+              toolRequestsSpan.end()
+              break
+            }
+            case "tool_call_start": {
+              const toolStartSpan =
+                jafStreamingSpan.startSpan("tool_call_start")
+              toolStartSpan.setAttribute("tool_name", evt.data.toolName)
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: JSON.stringify({
+                  text: `Executing ${evt.data.toolName}...`,
+                  step: {
+                    type: AgentReasoningStepType.ToolExecuting,
+                    toolName: evt.data.toolName,
+                    status: "in_progress",
+                    stepSummary: `Executing ${evt.data.toolName} tool`,
+                  },
+                }),
+              })
+              toolStartSpan.end()
+              break
+            }
+            case "tool_call_end": {
+              const toolEndSpan = jafStreamingSpan.startSpan("tool_call_end")
+              type ToolCallEndEventData = Extract<
+                JAFTraceEvent,
+                { type: "tool_call_end" }
+              >["data"]
+              const contexts = (evt.data as ToolCallEndEventData)?.toolResult
+                ?.metadata?.contexts
+              const contextsCount = Array.isArray(contexts)
+                ? contexts.length
+                : 0
+
+              if (Array.isArray(contexts) && contexts.length) {
+                gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
+              }
+
+              toolEndSpan.setAttribute("tool_name", evt.data.toolName)
+              toolEndSpan.setAttribute("status", evt.data.status || "completed")
+              toolEndSpan.setAttribute("contexts_found", contextsCount)
+              toolEndSpan.setAttribute(
+                "total_fragments",
+                gatheredFragments.length,
+              )
+
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: JSON.stringify({
+                  text: `Tool result: ${evt.data.toolName}`,
+                  step: {
+                    type: AgentReasoningStepType.ToolResult,
+                    toolName: evt.data.toolName,
+                    status: evt.data.status || "completed",
+                    resultSummary: "Tool execution completed",
+                    itemsFound: contextsCount,
+                    stepSummary: `Found ${contextsCount} results`,
+                  },
+                }),
+              })
+              toolEndSpan.end()
+              break
+            }
+            case "assistant_message": {
+              const messageSpan =
+                jafStreamingSpan.startSpan("assistant_message")
+              const content = evt.data.message.content || ""
+              const hasToolCalls =
+                Array.isArray(evt.data.message?.tool_calls) &&
+                (evt.data.message.tool_calls?.length ?? 0) > 0
+
+              if (!content || content.length === 0) {
+                break
+              }
+
+              if (hasToolCalls) {
+                // Treat assistant content that accompanies tool calls as planning/reasoning,
+                // not as final answer text. Emit as a reasoning step and do not send 'u' updates.
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: content,
+                    step: {
+                      type: AgentReasoningStepType.LogMessage,
+                      status: "in_progress",
+                      stepSummary: "Model planned tool usage",
+                    },
+                  }),
+                })
+                break
+              }
+
+              // No tool calls: stream as user-visible answer text, with on-the-fly citations
+              const chunkSize = 200
+              for (let i = 0; i < content.length; i += chunkSize) {
+                const chunk = content.slice(i, i + chunkSize)
+                answer += chunk
+                await stream.writeSSE({
+                  event: ChatSSEvents.ResponseUpdate,
+                  data: chunk,
+                })
+
+                for await (const cit of checkAndYieldCitationsForAgent(
+                  answer,
+                  yieldedCitations,
+                  gatheredFragments,
+                  yieldedImageCitations,
+                  email ?? "",
+                )) {
+                  if (cit.citation) {
+                    const { index, item } = cit.citation as any
+                    citations.push(item)
+                    citationMap[index] = citations.length - 1
+                    await stream.writeSSE({
+                      event: ChatSSEvents.CitationsUpdate,
+                      data: JSON.stringify({
+                        contextChunks: citations,
+                        citationMap,
+                      }),
+                    })
+                    citationValues[index] = item
+                  }
+                  if (cit.imageCitation) {
+                    imageCitations.push(cit.imageCitation)
+                    await stream.writeSSE({
+                      event: ChatSSEvents.ImageCitationUpdate,
+                      data: JSON.stringify(cit.imageCitation),
+                    })
+                  }
+                }
+              }
+              messageSpan.setAttribute("content_length", content.length)
+              messageSpan.setAttribute("answer_length", answer.length)
+              messageSpan.setAttribute("citations_count", citations.length)
+              messageSpan.setAttribute(
+                "image_citations_count",
+                imageCitations.length,
+              )
+              messageSpan.end()
+              break
+            }
+            case "token_usage": {
+              const tokenUsageSpan = jafStreamingSpan.startSpan("token_usage")
+              const inputTokens = (evt.data.prompt as number) || 0
+              const outputTokens = (evt.data.completion as number) || 0
+              tokenArr.push({
+                inputTokens,
+                outputTokens,
+              })
+              tokenUsageSpan.setAttribute("input_tokens", inputTokens)
+              tokenUsageSpan.setAttribute("output_tokens", outputTokens)
+              tokenUsageSpan.setAttribute(
+                "total_tokens",
+                inputTokens + outputTokens,
+              )
+              tokenUsageSpan.end()
+              break
+            }
+            case "guardrail_violation": {
+              const guardrailSpan = jafStreamingSpan.startSpan(
+                "guardrail_violation",
+              )
+              guardrailSpan.setAttribute("reason", evt.data.reason)
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: JSON.stringify({
+                  error: "guardrail_violation",
+                  message: evt.data.reason,
+                }),
+              })
+              guardrailSpan.end()
+              break
+            }
+            case "decode_error": {
+              const decodeErrorSpan = jafStreamingSpan.startSpan("decode_error")
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: JSON.stringify({
+                  error: "decode_error",
+                  message: "Failed to decode model output",
+                }),
+              })
+              decodeErrorSpan.end()
+              break
+            }
+            case "handoff_denied": {
+              const handoffSpan = jafStreamingSpan.startSpan("handoff_denied")
+              handoffSpan.setAttribute("reason", evt.data.reason)
+              await stream.writeSSE({
+                event: ChatSSEvents.Error,
+                data: JSON.stringify({
+                  error: "handoff_denied",
+                  message: evt.data.reason,
+                }),
+              })
+              handoffSpan.end()
+              break
+            }
+            case "turn_end": {
+              const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
+              turnEndSpan.setAttribute("turn_number", evt.data.turn)
+              // Emit an iteration summary (fallback version)
+              await stream.writeSSE({
+                event: ChatSSEvents.Reasoning,
+                data: JSON.stringify({
+                  text: `Completed iteration ${evt.data.turn}.`,
+                  step: {
+                    type: AgentReasoningStepType.LogMessage,
+                    status: "completed",
+                    message: `Completed iteration ${evt.data.turn}.`,
+                    iteration: evt.data.turn,
+                    stepSummary: `Completed iteration ${evt.data.turn}.`,
+                    isIterationSummary: true,
+                  },
+                }),
+              })
+              turnEndSpan.end()
+              break
+            }
+            case "final_output": {
+              const finalOutputSpan = jafStreamingSpan.startSpan("final_output")
+              const out = evt.data.output
+              if (typeof out === "string" && out.trim().length) {
+                // Ensure any remainder is streamed
+                const remaining = out.slice(answer.length)
+                if (remaining.length) {
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: remaining,
+                  })
+                  answer = out
+                }
+              }
+              // Store the actual output instead of just length
+              finalOutputSpan.setAttribute(
+                "final_output",
+                typeof out === "string" ? out : "",
+              )
+              finalOutputSpan.setAttribute(
+                "final_output_length",
+                typeof out === "string" ? out.length : 0,
+              )
+              finalOutputSpan.setAttribute(
+                "citation_map",
+                JSON.stringify(citationMap),
+              )
+              finalOutputSpan.setAttribute(
+                "citation_values",
+                JSON.stringify(citationValues),
+              )
+              finalOutputSpan.setAttribute("citations_count", citations.length)
+              finalOutputSpan.setAttribute(
+                "image_citations_count",
+                imageCitations.length,
+              )
+              finalOutputSpan.end()
+              break
+            }
+            case "run_end": {
+              const runEndSpan = jafStreamingSpan.startSpan("run_end")
+              const outcome = evt.data
+                .outcome as JAFRunResult<string>["outcome"]
+              runEndSpan.setAttribute(
+                "outcome_status",
+                outcome?.status || "unknown",
+              )
+
+              if (outcome?.status === "completed") {
+                const costCalculationSpan =
+                  runEndSpan.startSpan("cost_calculation")
+                const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+                const totalTokens = tokenArr.reduce(
+                  (sum, t) => sum + t.inputTokens + t.outputTokens,
+                  0,
+                )
+                costCalculationSpan.setAttribute("total_cost", totalCost)
+                costCalculationSpan.setAttribute("total_tokens", totalTokens)
+                costCalculationSpan.setAttribute(
+                  "total_tool_calls",
+                  totalToolCalls,
+                )
+                costCalculationSpan.setAttribute(
+                  "final_answer_length",
+                  answer.length,
+                )
+                costCalculationSpan.setAttribute(
+                  "citations_count",
+                  citations.length,
+                )
+                costCalculationSpan.end()
+
+                const dbInsertSpan = runEndSpan.startSpan(
+                  "insert_assistant_message",
+                )
+                const msg = await insertMessage(db, {
+                  chatId: chat.id,
+                  userId: user.id,
+                  workspaceExternalId: workspace.externalId,
+                  chatExternalId: chat.externalId,
+                  messageRole: MessageRole.Assistant,
+                  email: user.email,
+                  sources: citations,
+                  imageCitations: imageCitations,
+                  message: processMessage(answer, citationMap),
+                  thinking: "",
+                  modelId: defaultBestModel,
+                  cost: totalCost.toString(),
+                  tokensUsed: totalTokens,
+                })
+                assistantMessageId = msg.externalId
+                dbInsertSpan.setAttribute(
+                  "message_external_id",
+                  assistantMessageId,
+                )
+                dbInsertSpan.end()
+
+                const traceInsertSpan =
+                  runEndSpan.startSpan("insert_chat_trace")
+                const traceJson = tracer.serializeToJson()
+                await insertChatTrace({
+                  workspaceId: workspace.id,
+                  userId: user.id,
+                  chatId: chat.id,
+                  messageId: msg.id,
+                  chatExternalId: chat.externalId,
+                  email: user.email,
+                  messageExternalId: msg.externalId,
+                  traceJson,
+                })
+                traceInsertSpan.end()
+
+                await stream.writeSSE({
+                  event: ChatSSEvents.ResponseMetadata,
+                  data: JSON.stringify({
+                    chatId: chat.externalId,
+                    messageId: assistantMessageId,
+                  }),
+                })
+                await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
+              } else {
+                // Error outcome: stream error and do not insert assistant message
+                const errorHandlingSpan = runEndSpan.startSpan("error_handling")
+                const allMessages = await getChatMessagesWithAuth(
+                  db,
+                  chat?.externalId,
+                  email,
+                )
+                const lastMessage = allMessages[allMessages.length - 1]
+                await stream.writeSSE({
+                  event: ChatSSEvents.ResponseMetadata,
+                  data: JSON.stringify({
+                    chatId: chat.externalId,
+                    messageId: lastMessage.externalId,
+                  }),
+                })
+                const err = outcome?.error as JAFError | undefined
+                const errTag = err?._tag || "run_error"
+                let errMsg = "Model did not return a response."
+                if (err) {
+                  switch (err._tag) {
+                    case "ModelBehaviorError":
+                    case "ToolCallError":
+                    case "HandoffError":
+                      errMsg = err.detail
+                      break
+                    case "InputGuardrailTripwire":
+                    case "OutputGuardrailTripwire":
+                      errMsg = err.reason
+                      break
+                    case "DecodeError":
+                      errMsg = "Failed to decode model output"
+                      break
+                    case "AgentNotFound":
+                      errMsg = `Agent not found: ${err.agentName}`
+                      break
+                    case "MaxTurnsExceeded":
+                      // Execute fallback tool directly using messages from runState
+                      try {
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: JSON.stringify({
+                            text: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                            step: {
+                              type: AgentReasoningStepType.LogMessage,
+                              message:
+                                "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                              status: "in_progress",
+                              stepSummary: "Activating fallback search",
+                            },
+                          }),
+                        })
+
+                        // Extract all context from runState.messages array
+                        const allMessages = runState.messages || []
+                        const agentScratchpad = allMessages
+                          .map((msg, index) => `${msg.role}: ${msg.content}`)
+                          .join("\n")
+                        console.log("Agent scratchpad:", agentScratchpad)
+                        console.log("all messages:", allMessages)
+
+                        // Build tool log from any tool executions in the conversation
+                        const toolLog = allMessages
+                          .filter(
+                            (msg) =>
+                              msg.role === "tool" ||
+                              (msg as any).tool_calls ||
+                              (msg as any).tool_call_id,
+                          )
+                          .map(
+                            (msg, index) =>
+                              `Tool Execution ${index + 1}: ${msg.content}`,
+                          )
+                          .join("\n")
+                        console.log("Tool log:", toolLog)
+                        // Prepare fallback tool parameters with context from runState.messages
+                        const fallbackParams = {
+                          originalQuery: message,
+                          agentScratchpad: agentScratchpad,
+                          toolLog: toolLog,
+                          gatheredFragments: gatheredFragments,
+                        }
+
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: JSON.stringify({
+                            text: `Executing fallback tool with context from ${allMessages.length} messages...`,
+                            step: {
+                              type: AgentReasoningStepType.ToolExecuting,
+                              toolName: "fall_back",
+                              status: "in_progress",
+                              stepSummary: "Executing fallback tool",
+                            },
+                          }),
+                        })
+
+                        // Execute fallback tool directly
+                        const fallbackResponse = await agentTools[
+                          "fall_back"
+                        ].execute(
+                          fallbackParams,
+                          streamSpan.startSpan("fallback_search_execution"),
+                          email,
+                          ctx,
+                          agentPromptForLLM,
+                          message,
+                        )
+
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: JSON.stringify({
+                            text: `Fallback tool execution completed`,
+                            step: {
+                              type: AgentReasoningStepType.ToolResult,
+                              toolName: "fall_back",
+                              status: "completed",
+                              resultSummary:
+                                fallbackResponse.result ||
+                                "Fallback response generated",
+                              itemsFound:
+                                fallbackResponse.contexts?.length || 0,
+                              stepSummary: `Generated fallback response`,
+                            },
+                          }),
+                        })
+
+                        // Stream the fallback response if available
+                        if (
+                          fallbackResponse.fallbackReasoning ||
+                          fallbackResponse.result
+                        ) {
+                          const fallbackAnswer =
+                            fallbackResponse.fallbackReasoning ||
+                            fallbackResponse.result ||
+                            ""
+
+                          await stream.writeSSE({
+                            event: ChatSSEvents.ResponseUpdate,
+                            data: fallbackAnswer,
+                          })
+
+                          // Handle any contexts returned by fallback tool
+                          if (
+                            fallbackResponse.contexts &&
+                            Array.isArray(fallbackResponse.contexts)
+                          ) {
+                            fallbackResponse.contexts.forEach(
+                              (context: any, index: number) => {
+                                citations.push(context)
+                                citationMap[citations.length] =
+                                  citations.length - 1
+                              },
+                            )
+
+                            if (citations.length > 0) {
+                              await stream.writeSSE({
+                                event: ChatSSEvents.CitationsUpdate,
+                                data: JSON.stringify({
+                                  contextChunks: citations,
+                                  citationMap,
+                                }),
+                              })
+                            }
+                          }
+
+                          if (fallbackAnswer.trim()) {
+                            // Insert successful fallback message
+                            const totalCost = costArr.reduce(
+                              (sum, cost) => sum + cost,
+                              0,
+                            )
+                            const totalTokens = tokenArr.reduce(
+                              (sum, t) => sum + t.inputTokens + t.outputTokens,
+                              0,
+                            )
+                            const msg = await insertMessage(db, {
+                              chatId: chat.id,
+                              userId: user.id,
+                              workspaceExternalId: workspace.externalId,
+                              chatExternalId: chat.externalId,
+                              messageRole: MessageRole.Assistant,
+                              email: user.email,
+                              sources: citations,
+                              imageCitations: imageCitations,
+                              message: processMessage(
+                                fallbackAnswer,
+                                citationMap,
+                              ),
+                              thinking: "",
+                              modelId: modelId || defaultBestModel,
+                              cost: totalCost.toString(),
+                              tokensUsed: totalTokens,
+                            })
+                            assistantMessageId = msg.externalId
+                            await stream.writeSSE({
+                              event: ChatSSEvents.ResponseMetadata,
+                              data: JSON.stringify({
+                                chatId: chat.externalId,
+                                messageId: assistantMessageId,
+                              }),
+                            })
+                            await stream.writeSSE({
+                              event: ChatSSEvents.End,
+                              data: "",
+                            })
+                            return // Successfully handled with fallback response
+                          }
+                        }
+                      } catch (fallbackError) {
+                        Logger.error(
+                          fallbackError,
+                          "Error during MaxTurnsExceeded fallback tool execution",
+                        )
+                        await stream.writeSSE({
+                          event: ChatSSEvents.Reasoning,
+                          data: JSON.stringify({
+                            text: `Fallback search failed: ${getErrorMessage(fallbackError)}. Will generate best-effort answer.`,
+                            step: {
+                              type: AgentReasoningStepType.LogMessage,
+                              message: `Fallback search failed: ${getErrorMessage(fallbackError)}`,
+                              status: "error",
+                              stepSummary: "Fallback search failed",
+                            },
+                          }),
+                        })
+                        // Fall through to default error handling if fallback fails
+                      }
+
+                      // Default error handling if fallback fails or produces no response
+                      errMsg = `Max turns exceeded: ${err.turns}`
+                      break
+                    default:
+                      errMsg = errTag
+                  }
+                }
+                const errPayload = {
+                  error: errTag,
+                  message: errMsg,
+                }
+                errorHandlingSpan.setAttribute("error_tag", errTag)
+                errorHandlingSpan.setAttribute("error_message", errMsg)
+                errorHandlingSpan.end()
+
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: JSON.stringify(errPayload),
+                })
+                await addErrMessageToMessage(
+                  lastMessage,
+                  JSON.stringify(errPayload),
+                )
+                await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
+              }
+              runEndSpan.end()
+              break
+            }
+          }
+        }
+
+        jafStreamingSpan.setAttribute("total_turns", currentTurn)
+        jafStreamingSpan.setAttribute("total_tool_calls", totalToolCalls)
+        jafStreamingSpan.setAttribute("final_answer_length", answer.length)
+        jafStreamingSpan.setAttribute("citations_count", citations.length)
+        jafStreamingSpan.setAttribute(
+          "image_citations_count",
+          imageCitations.length,
+        )
+        jafStreamingSpan.end()
+
+        jafProcessingSpan.end()
+
+        // Early return to skip legacy manual loop
+        streamSpan.end()
+        rootSpan.end()
+        return
+      } finally {
+        // Cleanup MCP clients to prevent memory leaks
+        for (const client of mcpClients) {
+          try {
+            await client.close()
+          } catch (error) {
+            loggerWithChild({ email: sub }).error(
+              error,
+              "Failed to close MCP client",
+            )
+          }
+        }
+
+        // Remove stream from active streams map
+        if (streamKey && activeStreams.has(streamKey)) {
+          activeStreams.delete(streamKey)
+          loggerWithChild({ email: sub }).info(
+            `Removed stream ${streamKey} from active streams map.`,
+          )
+        }
+
+        // Close SSE stream (defensive)
+        if (stream) {
+          await stream.close()
+        }
+      }
     })
   } catch (error) {
     loggerWithChild({ email: email }).error(
@@ -2602,7 +2792,6 @@ async function* nonRagIterator(
   }
 }
 
-
 export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
@@ -2611,25 +2800,14 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let email = ""
-  let workspaceId = ""
-  let via_apiKey = false
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   let body
 
   try {
-    let jwtPayload
-    try {
-      jwtPayload = c.get(JwtPayloadKey)
-    } catch (e) {}
-    if (jwtPayload) {
-      email = jwtPayload?.sub
-      workspaceId = jwtPayload?.workspaceId
+    if (!via_apiKey) {
       // @ts-ignore
       body = c.req.valid("query")
     } else {
-      email = c.get("userEmail") ?? ""
-      workspaceId = c.get("workspaceId") ?? ""
-      via_apiKey = true
       // @ts-ignore
       body = c.req.valid("json")
     }
@@ -2643,35 +2821,35 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       selectedModelConfig,
       agentId,
       streamOff,
-      agentPromptPayload
+      agentPromptPayload,
     }: MessageReqType = body
-    
+
     // Parse the model configuration JSON
     let modelId: string | null = null
     let isReasoningEnabled = false
-    
+
     if (selectedModelConfig) {
       try {
         const modelConfig = JSON.parse(selectedModelConfig)
         modelId = modelConfig.model || null
-        
+
         // Check capabilities - handle both array and object formats
         if (modelConfig.capabilities) {
           if (Array.isArray(modelConfig.capabilities)) {
-            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
-          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.includes("reasoning")
+          } else if (typeof modelConfig.capabilities === "object") {
             isReasoningEnabled = modelConfig.capabilities.reasoning === true
           }
         }
       } catch (error) {
-        console.error('Failed to parse selectedModelConfig:', error)
+        console.error("Failed to parse selectedModelConfig:", error)
       }
     }
-    
+
     // Convert friendly model label to actual model value
     let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
     if (modelId) {
-      if (!actualModelId && (modelId in Models)) {
+      if (!actualModelId && modelId in Models) {
         actualModelId = modelId as Models
       } else if (!actualModelId) {
         throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
@@ -2679,7 +2857,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     } else {
       actualModelId = defaultBestModel
     }
-    
+
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId, // This workspaceId is the externalId from JWT
@@ -2688,12 +2866,17 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const { user, workspace } = userAndWorkspace // workspace.id is the numeric ID
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
-    
+
     // Handle test current form config case
     if (agentPromptPayload !== undefined) {
-      const mockAgentResult = createMockAgentFromFormData(agentPromptPayload, user, workspace, email);
-      agentForDb = mockAgentResult.agentForDb;
-      agentPromptForLLM = mockAgentResult.agentPromptForLLM;
+      const mockAgentResult = createMockAgentFromFormData(
+        agentPromptPayload,
+        user,
+        workspace,
+        email,
+      )
+      agentForDb = mockAgentResult.agentForDb
+      agentPromptForLLM = mockAgentResult.agentPromptForLLM
     } else if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
@@ -3314,36 +3497,44 @@ export const AgentMessageApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let email = ""
-  let workspaceId = ""
-  let via_apiKey = false
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   let body
 
   try {
-    let jwtPayload
-    try {
-      jwtPayload = c.get(JwtPayloadKey)
-    } catch (e) {}
-
-    if (jwtPayload) {
-      email = jwtPayload?.sub
-      workspaceId = jwtPayload?.workspaceId
+    if (!via_apiKey) {
       // @ts-ignore
       body = c.req.valid("query")
     } else {
-      // fallback if JwtPayloadKey is not available
-      email = c.get("userEmail") ?? ""
-      workspaceId = c.get("workspaceId") ?? ""
-      via_apiKey = true
       // @ts-ignore
       body = c.req.valid("json")
+      const apiKeyScopes =
+        safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+      const agentAccess =
+        safeGet<{ agents?: string[] }>(c, "config")?.agents || []
+      if (
+        !apiKeyScopes.includes(ApiKeyScopes.AGENT_CHAT) ||
+        //@ts-ignore
+        !agentAccess.includes(body?.agentId)
+      ) {
+        return c.json(
+          {
+            message:
+              "API key does not have scope to chat with agents or not authorized for this agent",
+          },
+          403,
+        )
+      }
     }
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
-    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
+    const imageAttachmentFileIds = attachmentMetadata
+      .filter((m) => m.isImage)
+      .map((m) => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata
+      .filter((m) => !m.isImage)
+      .map((m) => m.fileId)
     let attachmentStorageError: Error | null = null
     let {
       message,
@@ -3354,83 +3545,91 @@ export const AgentMessageApi = async (c: Context) => {
       streamOff,
       path,
     }: MessageReqType = body
-    
+
     // Parse selectedModelConfig JSON to extract individual values
     let modelId: string | undefined = undefined
     let isReasoningEnabled = false
     let enableWebSearch = false
     let isDeepResearchEnabled = false
-    
+
     if (selectedModelConfig) {
       try {
         const config = JSON.parse(selectedModelConfig)
         modelId = config.model
-        
+
         // Handle new direct boolean format
         isReasoningEnabled = config.reasoning === true
         enableWebSearch = config.websearch === true
         isDeepResearchEnabled = config.deepResearch === true
-        
+
         // For deep research, always use Claude Sonnet 4 regardless of UI selection
         if (isDeepResearchEnabled) {
           modelId = "Claude Sonnet 4"
           loggerWithChild({ email: email }).info(
-            `[AgentMessageApi] Deep research enabled - forcing model to Claude Sonnet 4`
+            `[AgentMessageApi] Deep research enabled - forcing model to Claude Sonnet 4`,
           )
         }
-        
+
         // Check capabilities - handle both array and object formats for backward compatibility
-        if (config.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+        if (
+          config.capabilities &&
+          !isReasoningEnabled &&
+          !enableWebSearch &&
+          !isDeepResearchEnabled
+        ) {
           if (Array.isArray(config.capabilities)) {
             // Array format: ["reasoning", "websearch"]
-            isReasoningEnabled = config.capabilities.includes('reasoning')
-            enableWebSearch = config.capabilities.includes('websearch')
-            isDeepResearchEnabled = config.capabilities.includes('deepResearch')
-          } else if (typeof config.capabilities === 'object') {
+            isReasoningEnabled = config.capabilities.includes("reasoning")
+            enableWebSearch = config.capabilities.includes("websearch")
+            isDeepResearchEnabled = config.capabilities.includes("deepResearch")
+          } else if (typeof config.capabilities === "object") {
             // Object format: { reasoning: true, websearch: false }
             isReasoningEnabled = config.capabilities.reasoning === true
             enableWebSearch = config.capabilities.websearch === true
             isDeepResearchEnabled = config.capabilities.deepResearch === true
           }
-          
+
           // For deep research from old format, also force Claude Sonnet 4
           if (isDeepResearchEnabled) {
             modelId = "Claude Sonnet 4"
           }
         }
-        
+
         loggerWithChild({ email: email }).info(
-          `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+          `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
         )
       } catch (e) {
         loggerWithChild({ email }).warn(
-          `[AgentMessageApi] Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
+          `[AgentMessageApi] Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`,
         )
         modelId = defaultBestModel as string // fallback
       }
     } else {
       // Fallback if no model config provided
       modelId = defaultBestModel as string
-      loggerWithChild({ email: email }).info("[AgentMessageApi] No model config provided, using default")
+      loggerWithChild({ email: email }).info(
+        "[AgentMessageApi] No model config provided, using default",
+      )
     }
-    
+
     // Convert friendly model label to actual model value
-    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    let actualModelId: string = modelId || "gemini-2-5-pro"
     if (modelId) {
+      // Ensure we always have a string
       const convertedModelId = getModelValueFromLabel(modelId)
       if (convertedModelId) {
         actualModelId = convertedModelId as string // Can be Models enum or string
         loggerWithChild({ email: email }).info(
-          `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`
+          `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`,
         )
       } else {
         loggerWithChild({ email: email }).warn(
-          `[AgentMessageApi] Could not convert model label "${modelId}" to value, will use as-is`
+          `[AgentMessageApi] Could not convert model label "${modelId}" to value, will use as-is`,
         )
         actualModelId = modelId // fallback to using the label as-is
       }
     }
-    
+
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -3441,12 +3640,17 @@ export const AgentMessageApi = async (c: Context) => {
 
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
-    
-    // Handle test current form config case
+
     if (agentPromptPayload !== undefined) {
-      const mockAgentResult = createMockAgentFromFormData(agentPromptPayload, user, workspace, email);
-      agentForDb = mockAgentResult.agentForDb;
-      agentPromptForLLM = mockAgentResult.agentPromptForLLM;
+      // Handle test current form config case
+      const mockAgentResult = createMockAgentFromFormData(
+        agentPromptPayload,
+        user,
+        workspace,
+        email,
+      )
+      agentForDb = mockAgentResult.agentForDb
+      agentPromptForLLM = mockAgentResult.agentPromptForLLM
     } else if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
@@ -3461,7 +3665,11 @@ export const AgentMessageApi = async (c: Context) => {
         })
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
-      if (config.ragOffFeature && agentForDb.isRagOn === false && !(attachmentMetadata && attachmentMetadata.length > 0)) {
+      if (
+        config.ragOffFeature &&
+        agentForDb.isRagOn === false &&
+        !(attachmentMetadata && attachmentMetadata.length > 0)
+      ) {
         return AgentMessageApiRagOff(c)
       }
     }
@@ -3482,11 +3690,11 @@ export const AgentMessageApi = async (c: Context) => {
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
       isMsgWithContext || (path && ids)
-      ? await extractFileIdsFromMessage(message, email, ids)
-      : {
-          totalValidFileIdsFromLinkCount: 0,
-          fileIds: [],
-        }
+        ? await extractFileIdsFromMessage(message, email, ids)
+        : {
+            totalValidFileIdsFromLinkCount: 0,
+            fileIds: [],
+          }
     let fileIds = extractedInfo?.fileIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
@@ -3989,26 +4197,33 @@ export const AgentMessageApi = async (c: Context) => {
                   }
                 }
               }
-              const agentWithNoIntegrations = checkAgentWithNoIntegrations(agentForDb)
+              const agentWithNoIntegrations =
+                checkAgentWithNoIntegrations(agentForDb)
               let searchOrAnswerIterator
-              
+
               if (agentWithNoIntegrations) {
                 loggerWithChild({ email: email }).info(
                   "Using agent with no integrations for the question",
                 )
 
-                searchOrAnswerIterator = agentWithNoIntegrationsQuestion(message, ctx, {
-                  modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-                  stream: true,
-                  json: false,
-                  agentPrompt: agentPromptForLLM,
-                  reasoning:
-                    userRequestsReasoning &&
-                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                  messages: limitedMessages,
-                  agentWithNoIntegrations: true,
-                })
+                searchOrAnswerIterator = agentWithNoIntegrationsQuestion(
+                  message,
+                  ctx,
+                  {
+                    modelId:
+                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                        .modelId,
+                    stream: true,
+                    json: false,
+                    agentPrompt: agentPromptForLLM,
+                    reasoning:
+                      userRequestsReasoning &&
+                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                        .reasoning,
+                    messages: limitedMessages,
+                    agentWithNoIntegrations: true,
+                  },
+                )
               } else {
                 searchOrAnswerIterator =
                   generateSearchQueryOrAnswerFromConversation(
@@ -4088,7 +4303,7 @@ export const AgentMessageApi = async (c: Context) => {
                     wasStreamClosedPrematurely = true
                     break
                   }
-                  
+
                   if (chunk.text) {
                     answer += chunk.text
                     stream.writeSSE({
@@ -4650,7 +4865,8 @@ export const AgentMessageApi = async (c: Context) => {
             imageCitations: params.imageCitations,
             message: processed,
             thinking: params.thinking,
-            modelId: (actualModelId as Models) || 
+            modelId:
+              (actualModelId as Models) ||
               ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             cost: totalCost.toString(),
             tokensUsed: totalTokens,
@@ -4748,7 +4964,6 @@ export const AgentMessageApi = async (c: Context) => {
             )
           }
         }
-
       } catch (error) {
         const streamErrorSpan = streamSpan.startSpan("handle_nonstream_error")
         streamErrorSpan.addEvent("error", {
