@@ -13,7 +13,6 @@ import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
-  generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
   temporalPromptJsonStream,
@@ -182,7 +181,7 @@ import {
   processMessage,
   searchToCitation,
 } from "./utils"
-export const textToCitationIndex = /\[(\d+)\]/g
+import { textToCitationIndex, textToImageCitationIndex } from "./utils"
 import config from "@/config"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
@@ -191,7 +190,6 @@ import {
   cleanBuffer,
   getThreadContext,
   isContextSelected,
-  textToImageCitationIndex,
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
@@ -325,6 +323,49 @@ const generateFallbackSummary = (step: AgentReasoningStep): string => {
       return "Processing step"
   }
 }
+
+// Create mock agent from form data for testing
+const createMockAgentFromFormData = (
+  agentPromptPayload: any,
+  user: any,
+  workspace: any,
+  email: string
+): { agentForDb: SelectAgent; agentPromptForLLM: string } => {
+  try {
+    const formData = agentPromptPayload;
+    
+    // Create mock SelectAgent from form data without DB call
+    const agentForDb = {
+      name: formData.name || "Test Agent",
+      description: formData.description || null,
+      prompt: formData.prompt || null,
+      model: formData.model || Models.Claude_Sonnet_4,
+      isPublic: formData.isPublic || false,
+      isRagOn: formData.isRagOn !== false,
+      appIntegrations: formData.appIntegrations || null,
+      docIds: formData.docIds || null,
+      // Dummy values for required DB fields
+      id: -1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      userId: user.id,
+      deletedAt: null,
+      externalId: `test-agent-${Date.now()}`,
+      workspaceId: workspace.id,
+      allowWebSearch: formData.allowWebSearch || null,
+    };
+    
+    const agentPromptForLLM = JSON.stringify(agentForDb);
+    loggerWithChild({ email }).info("Created mock agent from form data for testing");
+    
+    return { agentForDb, agentPromptForLLM };
+  } catch (error) {
+    loggerWithChild({ email }).error(error, "Failed to parse agentPromptPayload");
+    throw new HTTPException(400, {
+      message: "Invalid agent form data provided",
+    });
+  }
+};
 
 // Check if agent has no app integrations and should use the no-integrations flow
 export const checkAgentWithNoIntegrations = (agentForDb: SelectAgent | null): boolean => {
@@ -555,7 +596,7 @@ async function* getToolContinuationIterator(
       ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
     )
   }
-
+  
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -1004,20 +1045,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
       let [insertedChat, insertedMsg] = await db.transaction(
@@ -2619,6 +2646,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       selectedModelConfig,
       agentId,
       streamOff,
+      agentPromptPayload
     }: MessageReqType = body
     
     // Parse the model configuration JSON
@@ -2663,7 +2691,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const { user, workspace } = userAndWorkspace // workspace.id is the numeric ID
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
-    if (agentId && isCuid(agentId)) {
+    
+    // Handle test current form config case
+    if (agentPromptPayload !== undefined) {
+      const mockAgentResult = createMockAgentFromFormData(agentPromptPayload, user, workspace, email);
+      agentForDb = mockAgentResult.agentForDb;
+      agentPromptForLLM = mockAgentResult.agentPromptForLLM;
+    } else if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -2708,20 +2742,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3336,6 +3356,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
       chatId,
       selectedModelConfig,
       agentId,
+      agentPromptPayload,
       streamOff,
       path,
     }: MessageReqType = body
@@ -3426,7 +3447,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
-    if (agentId && isCuid(agentId)) {
+    
+    // Handle test current form config case
+    if (agentPromptPayload !== undefined) {
+      const mockAgentResult = createMockAgentFromFormData(agentPromptPayload, user, workspace, email);
+      agentForDb = mockAgentResult.agentForDb;
+      agentPromptForLLM = mockAgentResult.agentPromptForLLM;
+    } else if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -3458,7 +3485,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     if (path) {
       ids = await getRecordBypath(path, db)
     }
-    let isMsgWithContext = isMessageWithContext(message)
+    const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
       isMsgWithContext || (path && ids)
       ? await extractFileIdsFromMessage(message, email, ids)
@@ -3466,7 +3493,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
         }
-    isMsgWithContext = isMsgWithContext || (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0)
     let fileIds = extractedInfo?.fileIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
@@ -3488,20 +3514,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3661,7 +3673,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             }
 
             if (
-              (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+              (fileIds && fileIds?.length > 0) ||
               (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
             ) {
               Logger.info(
@@ -4664,7 +4676,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
         // Path A: user provided explicit context (fileIds / attachments)
         if (
-          (isMsgWithContext && fileIds && fileIds.length > 0) ||
+          (fileIds && fileIds.length > 0) ||
           (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
         ) {
           const ragSpan = streamSpan.startSpan("rag_processing")

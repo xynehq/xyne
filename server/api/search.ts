@@ -50,7 +50,7 @@ import {
   userContext,
 } from "@/ai/context"
 import { VespaSearchResultsSchema } from "@/search/types"
-import { AnswerSSEvents } from "@/shared/types"
+import { agentPromptPayloadSchema, AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -112,6 +112,11 @@ export const chatTraceSchema = z.object({
 
 export const chatDeleteSchema = z.object({
   chatId: z.string().min(1),
+})
+
+export const chatTitleSchema = z.object({
+  chatId: z.string().min(1),
+  message: z.string().min(1),
 })
 
 export const chatHistorySchema = z.object({
@@ -202,6 +207,7 @@ export const messageSchema = z.object({
       )
       .optional(),
   ),
+  agentPromptPayload: agentPromptPayloadSchema.optional(),
   streamOff: z
     .string()
     .optional()
