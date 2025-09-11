@@ -126,7 +126,7 @@ except ImportError as e:
     print(f"Missing library: {e}")
 
 # Gemini API Configuration
-GEMINI_API_KEY = "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw"
+GEMINI_API_KEY = ""
 
 # System prompt for all analyses
 SYSTEM_PROMPT = "After analysis please return response in html format with proper structure, headings, and formatting to make it easily readable."
@@ -412,7 +412,7 @@ else:
         value: enhancedAiAgentScriptContent.trim(),
         config: {
           timeout: 600,
-          gemini_api_key: "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw",
+          gemini_api_key: "",
           supported_models: [
             "gemini-1.5-flash",
             "gemini-1.5-pro",
