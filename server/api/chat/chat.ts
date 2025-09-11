@@ -3989,8 +3989,28 @@ function buildTopicConversationThread(
 
   return conversationThread
 }
-
-export const MessageApi = async (c: Context) => {
+/**
+   * MessageApi - Main chat endpoint with intelligent routing
+   * 
+   * Routes chat requests to specialized handlers based on configuration:
+   * - MessageWithToolsApi: For agentic mode without web search
+   * - AgentMessageApi: For agent conversations
+   * - Default RAG flow: For standard chat with search capabilities
+   * 
+   * Features:
+   * - Model config parsing (reasoning, websearch, deepResearch)
+   * - Attachment handling (images and documents)
+   * - Real-time streaming with Server-Sent Events
+   * - Agent permission checks and context extraction
+   * - Cost tracking and comprehensive error handling
+   * 
+   * @param c - Hono context with request data and JWT payload
+   * @returns StreamSSE response with real-time chat data
+   * @throws HTTPException(400) - Invalid model or missing parameters
+   * @throws HTTPException(403) - Agent access denied
+   * @throws HTTPException(500) - Server errors or model failures
+   */
+  export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
 
