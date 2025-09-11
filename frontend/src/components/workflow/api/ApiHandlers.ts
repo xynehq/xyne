@@ -1,182 +1,519 @@
-import { Flow, TemplateFlow } from '../Types';
+import { Flow, TemplateFlow } from "../Types"
 
-// API response types
-interface ApiResponse<T> {
-  data?: T;
-  error?: string;
-  status: number;
+// API request/response types for workflow templates
+
+interface WorkflowTemplateResponse {
+  data: WorkflowTemplate[]
+}
+interface WorkflowTemplate {
+  id: string
+  name: string
+  description: string
+  version: string
+  status: string
+  config: {
+    ai_model?: string
+    max_file_size?: string
+    auto_execution?: boolean
+    schema_version?: string
+    allowed_file_types?: string[]
+    supports_file_upload?: boolean
+  }
+  createdBy: string
+  rootWorkflowStepTemplateId: string
+  createdAt: string
+  updatedAt: string
+  rootStep?: {
+    id: string
+    workflowTemplateId: string
+    name: string
+    description: string
+    type: string
+    timeEstimate: number
+    metadata: {
+      icon?: string
+      step_order?: number
+      schema_version?: string
+      user_instructions?: string
+    }
+    tool?: {
+      id: string
+      type: string
+      value: any
+      config: any
+      createdBy: string
+      createdAt: string
+      updatedAt: string
+    }
+  }
 }
 
-// Base URL for workflow service
-const WORKFLOW_BASE_URL = `${import.meta.env.VITE_API_BASE_URL}/v1` || 'http://localhost:3000/v1';
+interface ApiTemplate {
+  id: number
+  workspaceId: string
+  name: string
+  description: string
+  version: string
+  status: string
+  config: {
+    steps?: Array<{
+      id: number
+      name: string
+      type: string
+    }>
+    features?: string[]
+    description?: string
+    steps_count?: number
+    ai_model?: string
+    max_file_size?: string
+    allowed_file_types?: string[]
+    supports_file_upload?: boolean
+    auto_execution?: boolean
+  }
+  createdBy: string
+  rootWorkflowStepTemplateId: string | null
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
 
-async function apiRequest<T>(
-  url: string,
-  options?: RequestInit
-): Promise<ApiResponse<T>> {
+interface ApiWorkflowExecution {
+  id: string
+  workflowTemplateId: string
+  name: string
+  description: string
+  status: "completed" | "active" | "failed"
+  metadata: any
+  rootWorkflowStepExeId: string
+  createdBy: string
+  completedBy: string | null
+  createdAt: string
+  updatedAt: string
+  completedAt: string | null
+}
+
+interface WorkflowExecutionsResponse {
+  data: ApiWorkflowExecution[]
+  pagination: {
+    page: number
+    limit: number
+    totalCount: string
+    totalPages: number
+    hasNextPage: boolean
+    hasPreviousPage: boolean
+  }
+  filters: {
+    id: string | null
+    name: string | null
+    from_date: string
+    to_date: string
+  }
+}
+
+// Centralized backend URL configuration from environment
+const BACKEND_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
+
+// Base URL for workflow service
+const WORKFLOW_BASE_URL = `${BACKEND_BASE_URL}/v1`
+
+// Base URL for workflow templates
+const WORKFLOW_TEMPLATES_BASE_URL = `${BACKEND_BASE_URL}/api/v1`
+
+// Base URL for user service
+const USER_SERVICE_BASE_URL = BACKEND_BASE_URL
+
+// Base URL for workflow execution
+const WORKFLOW_EXECUTION_BASE_URL = `${BACKEND_BASE_URL}/api/v1`
+
+async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
   try {
-    const init: RequestInit = {
+    const token = localStorage.getItem("authToken")
+
+    const response = await fetch(url, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...(options?.headers ?? {}),
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Access-Control-Allow-Origin": "*",
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options?.headers,
       },
-    };
-    const response = await fetch(url, init);
+      mode: "cors",
+    })
 
-    const contentType = response.headers.get('content-type') ?? '';
-    let data: any = undefined;
-    if (response.status !== 204 && response.status !== 205) {
-      if (contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        const text = await response.text();
-        try { data = JSON.parse(text); } catch { data = text; }
+    const responseData = await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        responseData.message ||
+          `HTTP ${response.status}: ${response.statusText}`,
+      )
+    }
+
+    // Preserve full response structure while extracting from success wrapper
+    // If API returns: { success: true, data: {...}, pagination: {...}, filters: {...} }
+    // Extract everything except the success flag
+    let extractedData
+    if (responseData.success) {
+      // Remove the success flag and return the rest of the response
+      const { success, ...rest } = responseData
+      extractedData = rest
+    } else {
+      extractedData = responseData
+    }
+
+    return extractedData
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "Network error")
+  }
+}
+
+// FormData API request handler for file uploads
+async function apiFormRequest<T>(url: string, formData: FormData): Promise<T> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        // Don't set Content-Type for FormData - browser will set it with boundary
+      },
+      mode: "cors",
+      body: formData,
+    })
+
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get("content-type")
+    let responseData: any
+
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        responseData = await response.json()
+      } catch (jsonError) {
+        // If JSON parsing fails, get text content for better error message
+        const textContent = await response.text()
+        throw new Error(`Invalid JSON response: ${textContent.substring(0, 200)}...`)
+      }
+    } else {
+      // If not JSON, get text content (likely HTML error page)
+      const textContent = await response.text()
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status} ${response.statusText}. Response: ${textContent.substring(0, 200)}...`)
+      }
+      // Try to parse as JSON anyway in case content-type header is missing
+      try {
+        responseData = JSON.parse(textContent)
+      } catch {
+        throw new Error(`Non-JSON response: ${textContent.substring(0, 200)}...`)
       }
     }
 
     if (!response.ok) {
-      return {
-        error: (data && (data.message || data.error)) || `HTTP ${response.status}: ${response.statusText}`,
-        status: response.status,
-      };
+      throw new Error(
+        responseData?.message ||
+          `HTTP ${response.status}: ${response.statusText}`,
+      )
     }
 
-    return { data: data as T, status: response.status };
+    // Return the complete response data
+    return responseData
   } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : 'Network error',
-      status: 0,
-    };
+    throw new Error(error instanceof Error ? error.message : "Network error")
   }
 }
 
 // Workflow Templates API
 export const workflowTemplatesAPI = {
-
   /**
    * Fetch a specific workflow template by ID
    */
-  async fetchById(id: string): Promise<ApiResponse<TemplateFlow>> {
-    return apiRequest<TemplateFlow>(`${WORKFLOW_BASE_URL}/workflow-template/${id}`);
+  async fetchById(id: string): Promise<TemplateFlow> {
+    return apiRequest<TemplateFlow>(
+      `${WORKFLOW_BASE_URL}/workflow-template/${id}`,
+    )
   },
 
   /**
    * Instantiate a workflow template
    */
-  async instantiate(id: string, options: { name: string; metadata?: any }): Promise<ApiResponse<{ workflowId: string; rootStepId: string }>> {
-    return apiRequest<{ workflowId: string; rootStepId: string }>(`${WORKFLOW_BASE_URL}/workflow-template/${id}/instantiate`, {
-      method: 'POST',
-      body: JSON.stringify(options),
-    });
+  async instantiate(
+    id: string,
+    options: { name: string; metadata?: any },
+  ): Promise<{ workflowId: string; rootStepId: string }> {
+    return apiRequest<{ workflowId: string; rootStepId: string }>(
+      `${WORKFLOW_BASE_URL}/workflow-template/${id}/instantiate`,
+      {
+        method: "POST",
+        body: JSON.stringify(options),
+      },
+    )
   },
-};
+}
 
 // Workflows API
 export const workflowsAPI = {
-
   /**
    * Fetch a specific workflow by ID
    */
-  async fetchById(id: string): Promise<ApiResponse<Flow>> {
-    return apiRequest<Flow>(`${WORKFLOW_BASE_URL}/workflow/${id}`);
+  async fetchById(id: string): Promise<Flow> {
+    return apiRequest<Flow>(`${WORKFLOW_BASE_URL}/workflow/${id}`)
   },
 
   /**
    * Run a workflow
    */
-  async run(id: string): Promise<ApiResponse<any>> {
+  async run(id: string): Promise<any> {
     return apiRequest<any>(`${WORKFLOW_BASE_URL}/workflow/${id}/run`, {
-      method: 'POST',
-    });
+      method: "POST",
+    })
   },
 
   /**
    * Complete a workflow step
    */
-  async completeStep(stepId: string): Promise<ApiResponse<any>> {
-    return apiRequest<any>(`${WORKFLOW_BASE_URL}/workflow/step/${stepId}/complete`, {
-      method: 'POST',
-    });
+  async completeStep(stepId: string): Promise<any> {
+    return apiRequest<any>(
+      `${WORKFLOW_BASE_URL}/workflow/step/${stepId}/complete`,
+      {
+        method: "POST",
+      },
+    )
+  },
+}
+
+// Workflow Templates API (for "Your Workflows" section)
+export const userWorkflowsAPI = {
+  /**
+   * Fetch workflow templates
+   */
+  async fetchWorkflows(): Promise<WorkflowTemplateResponse> {
+    return apiRequest<WorkflowTemplateResponse>(
+      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/templates`,
+    )
   },
 
   /**
-   * Poll for workflow process completion status
+   * Fetch a specific workflow template by ID
    */
-  async pollProcessStatus(): Promise<ApiResponse<{ status: string; message?: string }>> {
-    return apiRequest<{ status: string; message?: string }>(`${WORKFLOW_BASE_URL}/status`, {
-      method: 'GET',
-    });
+  async fetchTemplateById(templateId: string): Promise<WorkflowTemplate> {
+    return apiRequest<WorkflowTemplate>(
+      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/templates/${templateId}`,
+    )
   },
+}
 
+// Templates API
+export const templatesAPI = {
   /**
-   * Start polling for process completion with callback
-   * @param onComplete - Callback function called when process is completed
-   * @param onError - Callback function called on polling error
-   * @param interval - Polling interval in milliseconds (default: 2000)
-   * @returns Function to stop polling
+   * Fetch all templates
    */
-  startPolling(
-    onComplete: () => void,
-    onError?: (error: string) => void,
-    interval: number = 2000
-  ): () => void {
-    const pollingInterval = setInterval(async () => {
-      try {
-        const response = await this.pollProcessStatus();
-        
-        if (response.data) {
-          if (response.data.status === 'completed' || response.data.message === 'process completed') {
-            clearInterval(pollingInterval);
-            onComplete();
-          }
-        }
-      } catch (error) {
-        console.error('Polling error:', error);
-        if (onError) {
-          onError(error instanceof Error ? error.message : 'Polling error');
-        }
-      }
-    }, interval);
-    
-    // Return function to stop polling
-    return () => {
-      clearInterval(pollingInterval);
-    };
+  async fetchAll(): Promise<ApiTemplate[]> {
+    return apiRequest<ApiTemplate[]>(
+      `${USER_SERVICE_BASE_URL}/template/fetch/all`,
+    )
   },
+}
 
+
+// Workflow Executions API
+export const workflowExecutionsAPI = {
   /**
-   * Upload a file to the workflow service
+   * Fetch workflow executions with filters using query parameters
    */
-  async uploadFile(file: File, uploadUrl: string = `${WORKFLOW_BASE_URL}/upload`): Promise<ApiResponse<any>> {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
+  async fetchAll(params: {
+    limit: number
+    page: number
+    from_date?: string
+    to_date?: string
+    name?: string
+    id?: string
+  }): Promise<WorkflowExecutionsResponse> {
+    // Build query string from parameters
+    const queryParams = new URLSearchParams()
+    queryParams.append("limit", params.limit.toString())
+    queryParams.append("page", params.page.toString())
 
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return {
-          error: data.message || `Upload failed (${response.status}): ${response.statusText}`,
-          status: response.status,
-        };
-      }
-
-      return {
-        data,
-        status: response.status,
-      };
-    } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : 'Upload failed: Please check your connection and try again.',
-        status: 0,
-      };
+    if (params.from_date) {
+      queryParams.append("from_date", params.from_date)
     }
+    if (params.to_date) {
+      queryParams.append("to_date", params.to_date)
+    }
+    if (params.name) {
+      queryParams.append("name", params.name)
+    }
+    if (params.id) {
+      queryParams.append("id", params.id)
+    }
+
+    const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions?${queryParams.toString()}`
+    return apiRequest<WorkflowExecutionsResponse>(url)
   },
-};
+
+  /**
+   * Fetch workflow execution status by execution ID
+   */
+  async fetchStatus(executionId: string): Promise<{
+    success: boolean
+    status: "draft" | "active" | "paused" | "completed" | "failed"
+  }> {
+    const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions/${executionId}/status`
+    return apiRequest<{
+      success: boolean
+      status: "draft" | "active" | "paused" | "completed" | "failed"
+    }>(url)
+  },
+
+  /**
+   * Fetch full workflow execution details by execution ID
+   */
+  async fetchById(executionId: string): Promise<any> {
+    const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions/${executionId}`
+    return apiRequest<any>(url)
+  },
+
+  /**
+   * Execute workflow template with input data and file
+   */
+  async executeTemplate(
+    templateId: string,
+    executionData: {
+      name: string
+      description: string
+      file?: File
+      formData: Record<string, any>
+    },
+  ): Promise<any> {
+    const formData = new FormData()
+
+    // Add required fields matching the curl command
+    formData.append("name", executionData.name)
+    formData.append("description", executionData.description)
+
+    // Add the uploaded file if provided
+    if (executionData.file) {
+      formData.append("document_file", executionData.file)
+    }
+
+    // Add additional form data fields (excluding name and description to avoid duplicates)
+    Object.entries(executionData.formData).forEach(([key, value]) => {
+      if (key !== "name" && key !== "description") {
+        formData.append(key, String(value))
+      }
+    })
+
+    return apiFormRequest<any>(
+      `${WORKFLOW_EXECUTION_BASE_URL}/workflow/templates/${templateId}/execute-with-input`,
+      formData,
+    )
+  },
+}
+
+// Workflow Tools API for editing tools
+export const workflowToolsAPI = {
+  /**
+   * Update a workflow tool
+   */
+  async updateTool(
+    toolId: string,
+    toolData: {
+      type: string
+      value: any
+      config: any
+    },
+  ): Promise<any> {
+    return apiRequest<any>(
+      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/tools/${toolId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(toolData),
+      },
+    )
+  },
+
+  /**
+   * Create a new workflow tool
+   */
+  async createTool(toolData: {
+    type: string
+    value: any
+    config: any
+  }): Promise<any> {
+    return apiRequest<any>(`${WORKFLOW_TEMPLATES_BASE_URL}/workflow/tools`, {
+      method: "POST",
+      body: JSON.stringify(toolData),
+    })
+  },
+}
+
+// Workflow Steps API for adding and editing steps
+export const workflowStepsAPI = {
+  /**
+   * Create a new step in a workflow template with inline tool creation
+   */
+  async createStep(
+    templateId: string,
+    stepData: {
+      name: string
+      description: string
+      type: string
+      tool: {
+        type: string
+        value: any
+        config: any
+      }
+      parentStepId?: string
+      prevStepIds?: string[]
+      nextStepIds?: string[]
+      timeEstimate?: number
+      metadata?: any
+    },
+  ): Promise<any> {
+    return apiRequest<any>(
+      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/templates/${templateId}/steps`,
+      {
+        method: "POST",
+        body: JSON.stringify(stepData),
+      },
+    )
+  },
+
+  /**
+   * Update an existing step
+   */
+  async updateStep(
+    stepId: string,
+    stepData: {
+      name?: string
+      description?: string
+      type?: string
+      parentStepId?: string
+      prevStepIds?: string[]
+      nextStepIds?: string[]
+      toolIds?: string[]
+      timeEstimate?: number
+      metadata?: any
+    },
+  ): Promise<any> {
+    return apiRequest<any>(
+      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/steps/${stepId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(stepData),
+      },
+    )
+  },
+
+  /**
+   * Link a step to another step (add to nextStepIds)
+   */
+  async linkSteps(sourceStepId: string, targetStepId: string): Promise<any> {
+    return apiRequest<any>(
+      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/steps/${sourceStepId}/link`,
+      {
+        method: "POST",
+        body: JSON.stringify({ targetStepId }),
+      },
+    )
+  },
+}
