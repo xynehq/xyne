@@ -1737,7 +1737,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
-          limit: pageSize,
+          limit: pageSize + pageSize * pageNumber,
           offset: pageNumber * pageSize,
           alpha: userAlpha,
           excludedIds: latestIds,
@@ -1751,7 +1751,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           null,
           agentAppEnums,
           {
-            limit: pageSize,
+            limit: pageSize + pageSize * pageNumber,
             offset: pageNumber * pageSize,
             alpha: userAlpha,
             excludedIds: latestIds,
@@ -1796,7 +1796,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
-          limit: pageSize,
+          limit: pageSize + pageSize * pageNumber,
           offset: pageNumber * pageSize,
           alpha: userAlpha,
           span: searchSpan,
@@ -1809,7 +1809,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           null,
           agentAppEnums,
           {
-            limit: pageSize,
+            limit: pageSize + pageSize * pageNumber,
             offset: pageNumber * pageSize,
             alpha: userAlpha,
             span: searchSpan,
@@ -3243,6 +3243,7 @@ async function* generateMetadataQueryAnswer(
           entities ?? null,
           {
             ...searchOps,
+            limit: pageSize + pageSize * iteration,
             offset: pageSize * iteration,
             span: pageSpan,
           },
@@ -3257,6 +3258,7 @@ async function* generateMetadataQueryAnswer(
           agentAppEnums,
           {
             ...searchOps,
+            limit: pageSize + pageSize * iteration,
             offset: pageSize * iteration,
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
@@ -3402,7 +3404,7 @@ async function* generateMetadataQueryAnswer(
           app: apps ?? null,
           entity: entities ?? null,
           timestampRange,
-          limit: userSpecifiedCountLimit,
+          limit: userSpecifiedCountLimit + classification.filters.offset || 0,
           offset: classification.filters.offset || 0,
           asc: sortDirection === "asc",
           intent: resolvedIntent || {},
@@ -3424,7 +3426,7 @@ async function* generateMetadataQueryAnswer(
         app: apps ?? null,
         entity: entities ?? null,
         timestampRange,
-        limit: userSpecifiedCountLimit,
+        limit: userSpecifiedCountLimit + classification.filters.offset || 0,
         offset: classification.filters.offset || 0,
         asc: sortDirection === "asc",
         intent: resolvedIntent || {},
@@ -3548,6 +3550,7 @@ async function* generateMetadataQueryAnswer(
           entities ?? null,
           {
             ...searchOptions,
+            limit: pageSize + pageSize * iteration,
             offset: pageSize * iteration,
           },
         )
@@ -3562,6 +3565,7 @@ async function* generateMetadataQueryAnswer(
           {
             ...searchOptions,
             offset: pageSize * iteration,
+            limit: pageSize + pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             selectedItem: selectedItem,
