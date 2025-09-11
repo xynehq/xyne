@@ -889,10 +889,18 @@ export const ChatDeleteApi = async (c: Context) => {
 }
 
 export const ChatHistory = async (c: Context) => {
-  let email = ""
+  const { email, via_apiKey } = getAuth(c)
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.CHAT_HISTORY)) {
+      return c.json(
+        { message: "API key does not have scope to view chat history" },
+        403,
+      )
+    }
+  }
   try {
-    const { sub } = c.get(JwtPayloadKey)
-    const email = sub
     // @ts-ignore
     const { page, from, to } = c.req.valid("query")
     const offset = page * chatHistoryPageSize
