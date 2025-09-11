@@ -231,6 +231,7 @@ export const CreateCollectionApi = async (c: Context) => {
 export const ListCollectionsApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const showOnlyOwn = c.req.query("ownOnly") === "true"
+  const includeItems = c.req.query("includeItems") === "true"
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -243,6 +244,41 @@ export const ListCollectionsApi = async (c: Context) => {
     const collections = showOnlyOwn
       ? await getCollectionsByOwner(db, user.id)
       : await getAccessibleCollections(db, user.id)
+    
+    // If includeItems is requested, fetch items for each collection
+    if (includeItems) {
+      const collectionsWithItems = await Promise.all(
+        collections.map(async (collection) => {
+          try {
+            // Check access: owner can always access, others only if Collection is public
+            if (collection.ownerId !== user.id && collection.isPrivate) {
+              return {
+                ...collection,
+                items: [], // Return empty items array for inaccessible collections
+              }
+            }
+            
+            const items = await getCollectionItemsByParent(db, collection.id, null)
+            return {
+              ...collection,
+              items,
+            }
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              error,
+              `Failed to fetch items for collection ${collection.id}: ${getErrorMessage(error)}`,
+            )
+            return {
+              ...collection,
+              items: [], // Return empty items array on error
+            }
+          }
+        })
+      )
+      
+      return c.json(collectionsWithItems)
+    }
+    
     return c.json(collections)
   } catch (error) {
     const errMsg = getErrorMessage(error)

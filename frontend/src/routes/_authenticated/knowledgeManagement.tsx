@@ -9,6 +9,8 @@ import {
   ArrowLeft,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
 import { useState, useCallback, useEffect, memo } from "react"
@@ -394,7 +396,9 @@ function RouteComponent() {
 
         // Check if the collection exists and has files
         try {
-          const response = await api.cl.$get()
+          const response = await api.cl.$get({
+            query: { includeItems: "true" }
+          })
           if (response.ok) {
             const data = await response.json()
             const existingCollection = data.find(
@@ -452,7 +456,9 @@ function RouteComponent() {
 
     const checkUploadProgress = async () => {
       try {
-        const response = await api.cl.$get()
+        const response = await api.cl.$get({
+          query: { includeItems: "true" }
+        })
         if (response.ok) {
           const data = await response.json()
           const existingCollection = data.find(
@@ -476,13 +482,23 @@ function RouteComponent() {
             clearUploadState()
 
             // Refresh collections to show the new one
-            const updatedCollections = data.map((collection: CollectionType) => ({
+            const updatedCollections = data.map((collection: CollectionType & { items?: CollectionItem[] }) => ({
               id: collection.id,
               name: collection.name,
               description: collection.description,
-              files: collection.totalCount || 0,
-              items: [],
-              isOpen: false,
+              files: collection.totalItems || 0,
+              items: buildFileTree(
+                (collection.items || []).map((item: CollectionItem) => ({
+                  name: item.name,
+                  type: item.type as "file" | "folder",
+                  totalFileCount: item.totalFileCount,
+                  updatedAt: item.updatedAt,
+                  id: item.id,
+                  updatedBy:
+                    item.lastUpdatedByEmail || user?.email || "Unknown",
+                })),
+              ),
+              isOpen: (collection.items || []).length > 0, // Open if has items
               lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
                 day: "numeric",
                 month: "short",
@@ -491,7 +507,7 @@ function RouteComponent() {
                 minute: "2-digit",
               }),
               updatedBy: collection.lastUpdatedByEmail || "Unknown",
-              totalCount: collection.totalCount,
+              totalCount: collection.totalItems,
               isPrivate: collection.isPrivate,
             }))
             setCollections(updatedCollections)
@@ -516,17 +532,29 @@ function RouteComponent() {
   useEffect(() => {
     const fetchCollections = async () => {
       try {
-        const response = await api.cl.$get()
+        const response = await api.cl.$get({
+          query: { includeItems: "true" }
+        })
         if (response.ok) {
           const data = await response.json()
             setCollections(
-              data.map((collection: CollectionType) => ({
+              data.map((collection: CollectionType & { items?: CollectionItem[] }) => ({
                 id: collection.id,
                 name: collection.name,
                 description: collection.description,
                 files: collection.totalItems || 0,
-                items: [],
-                isOpen: false,
+                items: buildFileTree(
+                  (collection.items || []).map((item: CollectionItem) => ({
+                    name: item.name,
+                    type: item.type as "file" | "folder",
+                    totalFileCount: item.totalFileCount,
+                    updatedAt: item.updatedAt,
+                    id: item.id,
+                    updatedBy:
+                      item.lastUpdatedByEmail || user?.email || "Unknown",
+                  })),
+                ),
+                isOpen: (collection.items || []).length > 0, // Open if has items
                 lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
                   day: "numeric",
                   month: "short",
@@ -552,7 +580,7 @@ function RouteComponent() {
     }
 
     fetchCollections()
-  }, [showToast])
+  }, [showToast, user?.email])
 
   const handleCloseModal = () => {
     setShowNewCollection(false)
@@ -1243,7 +1271,7 @@ function RouteComponent() {
               <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex">
                 <div className="bg-gray-100 flex flex-col border-r border-gray-200 w-[30%] max-w-[400px] min-w-[250px] dark:bg-[#1E1E1E] dark:border-gray-700 lg:w-[300px] lg:min-w-[250px] lg:max-w-[400px] h-64 lg:h-full">
                   {/* Collection Header */}
-                  <div className="px-4 py-4 h-12 bg-gray-50 dark:bg-[#1E1E1E] border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                  <div className="px-4 py-4 h-12 bg-gray-50 dark:bg-[#1E1E1E] flex items-center justify-between sticky top-0 z-20">
                     <h2 className="text-sm font-bold font-mono text-gray-400 dark:text-gray-500 uppercase tracking-wider truncate">
                       {selectedDocument.collection.name}
                     </h2>
@@ -1409,7 +1437,7 @@ function RouteComponent() {
                 {collections.map((collection, index) => (
                   <div key={index} className="mb-8">
                     <div
-                      className="flex justify-between items-center mb-4 cursor-pointer"
+                      className="sticky mb-2 cursor-pointer top-0 bg-white dark:bg-[#1E1E1E] py-1"
                       onClick={async () => {
                         const updatedCollections = [...collections]
                         const coll = updatedCollections.find(
@@ -1442,26 +1470,38 @@ function RouteComponent() {
                         }
                       }}
                     >
-                      <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                        {collection.name}
-                      </h2>
-                      <div className="flex items-center gap-4">
+                      <div className="absolute left-[-24px] top-1/2 transform -translate-y-1/2">
+                        {collection.isOpen ? (
+                          <ChevronDown size={16} className="text-gray-600 dark:text-gray-400" />
+                        ) : (
+                          <ChevronRight size={16} className="text-gray-600 dark:text-gray-400" />
+                        )}
+                      </div>
+
+                      {/* Collection header aligned with table grid */}
+                      <div className="grid grid-cols-12 gap-4 items-center">
+                        <div className="col-span-5">
+                          <h2 className="text-18px font-semibold text-gray-800 dark:text-gray-200">
+                            {collection.name}
+                          </h2>
+                        </div>
+                        <div className="col-span-7 flex justify-end items-center gap-4">
                           <Plus
                             size={16}
-                          className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                            className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
                             onClick={(e) => {
                               e.stopPropagation()
-                            !isUploading && handleOpenAddFilesModal(collection)
-                          }}
-                        />
-                        <DropdownMenu
-                          open={openDropdown === collection.id}
-                          onOpenChange={(open) => setOpenDropdown(open ? collection.id : null)}
-                        >
-                          <DropdownMenuTrigger asChild>
-                            <MoreHorizontal
-                              size={16}
-                              className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                              !isUploading && handleOpenAddFilesModal(collection)
+                            }}
+                          />
+                          <DropdownMenu
+                            open={openDropdown === collection.id}
+                            onOpenChange={(open) => setOpenDropdown(open ? collection.id : null)}
+                          >
+                            <DropdownMenuTrigger asChild>
+                              <MoreHorizontal
+                                size={16}
+                                className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
                                 onClick={(e) => e.stopPropagation()}
                               />
                             </DropdownMenuTrigger>
@@ -1469,33 +1509,34 @@ function RouteComponent() {
                               <DropdownMenuItem
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                !isUploading && handleEditCollection(collection)
-                              }}
-                              disabled={isUploading}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              <span>Edit</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (!isUploading) {
-                                  setDeletingCollection(collection)
-                                  setOpenDropdown(null)
-                                }
-                              }}
-                              disabled={isUploading}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              <span>Delete</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                  !isUploading && handleEditCollection(collection)
+                                }}
+                                disabled={isUploading}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                <span>Edit</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!isUploading) {
+                                    setDeletingCollection(collection)
+                                    setOpenDropdown(null)
+                                  }
+                                }}
+                                disabled={isUploading}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </div>
                     {collection.isOpen && (
                       <>
-                        <div className="grid grid-cols-12 gap-4 text-sm text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
+                        <div className="grid grid-cols-12 gap-4 text-sm font-mono text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
                           <div className="col-span-5">FOLDER</div>
                           <div className="col-span-2"></div>
                           <div className="col-span-1 text-center">FILES</div>

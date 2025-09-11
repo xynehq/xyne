@@ -19,7 +19,7 @@ const FileUploadSkeleton: React.FC<FileUploadSkeletonProps> = ({
   return (
     <div className="w-full">
       {/* Table header */}
-      <div className="grid grid-cols-12 gap-4 text-sm text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
+      <div className="grid grid-cols-12 gap-4 text-sm font-mono text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
         <div className="col-span-5">FOLDER</div>
         <div className="col-span-2"></div>
         <div className="col-span-1 text-center">FILES</div>
