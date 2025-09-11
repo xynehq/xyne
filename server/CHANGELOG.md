@@ -1,3 +1,26 @@
+# [1.1.0](https://github.com/xynehq/xyne/compare/v1.0.1...v1.1.0) (2025-09-11)
+
+
+### Bug Fixes
+
+*  attachement support in executeAgent ([fb2c1ec](https://github.com/xynehq/xyne/commit/fb2c1eca4f162d5a9550c35188328333fe5a86d1))
+*  unneccessary comments ([2819722](https://github.com/xynehq/xyne/commit/281972223e6900d0980cbd592d77475b3d340929))
+* **agents:**  user can chat with current config and already created agents  ([#783](https://github.com/xynehq/xyne/issues/783)) ([67c5973](https://github.com/xynehq/xyne/commit/67c59738bed059bafc420a5618bbd34eac299ba4))
+* **chats:** Ensure agent web-search respects agent prompts ([#790](https://github.com/xynehq/xyne/issues/790)) ([2261f73](https://github.com/xynehq/xyne/commit/2261f736732f69daaae2e587e34e49e58ed1eb49))
+* model issues ([#802](https://github.com/xynehq/xyne/issues/802)) ([e46a8b9](https://github.com/xynehq/xyne/commit/e46a8b9cbc08e9787158e87bbb2a85274834112c))
+* slack selected entity to get included in app Integration ([#784](https://github.com/xynehq/xyne/issues/784)) ([d78b6b1](https://github.com/xynehq/xyne/commit/d78b6b102814042a9ada175ab868235b835d5f25))
+* title generation flow ([#808](https://github.com/xynehq/xyne/issues/808)) ([272f7c2](https://github.com/xynehq/xyne/commit/272f7c24cc3b087aebde9d1cf4a010184cb1b730))
+* update @xynehq/jaf dependency to version 0.1.11 ([#807](https://github.com/xynehq/xyne/issues/807)) ([9f5a90c](https://github.com/xynehq/xyne/commit/9f5a90c17e536a3bbab958a109f987f89f3a7fe3)), closes [#812](https://github.com/xynehq/xyne/issues/812)
+
+
+### Features
+
+* add attachement support in executeAgent ([f57cb3f](https://github.com/xynehq/xyne/commit/f57cb3fe3de63b87c6a70cbab915921cd153491f))
+* add new sync-server which listen on port 3010 ([#809](https://github.com/xynehq/xyne/issues/809)) ([5b683ba](https://github.com/xynehq/xyne/commit/5b683ba9b7b3a2b47140b4e0f0519f041808fc09))
+* added tooltips for chatBox functionalities ([#797](https://github.com/xynehq/xyne/issues/797)) ([199ca52](https://github.com/xynehq/xyne/commit/199ca52617658a5a9afbfd1011cee4b5abf31164))
+* **deep-research:** Add DeepResearch support via OpenAI ([#761](https://github.com/xynehq/xyne/issues/761)) ([f57e5fb](https://github.com/xynehq/xyne/commit/f57e5fb4182eee88af96dc93c64917191e089209))
+* **docker:** rewrite build and deployment pipeline ([#723](https://github.com/xynehq/xyne/issues/723)) ([35a4d84](https://github.com/xynehq/xyne/commit/35a4d84663014f687780b4c914369d04838d1de7))
+
 ## [1.0.1](https://github.com/xynehq/xyne/compare/v1.0.0...v1.0.1) (2025-09-11)
 
 
