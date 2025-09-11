@@ -1026,7 +1026,6 @@ app.get(
 )
 
 // Consumer API endpoints, authenticated by ApiKeyMiddleware
-// todo search apis over KB and All agent access condition
 app
   .basePath("/api/consumer")
   .use("*", ApiKeyMiddleware)
@@ -1050,6 +1049,11 @@ app
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
   .post("/cl", CreateCollectionApi) // Create collection (KB)
   .get("/cl", ListCollectionsApi) // List all collections
+  .get(
+    "/cl/search",
+    zValidator("query", searchKnowledgeBaseSchema), // Search over KB
+    SearchKnowledgeBaseApi,
+  )
   .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
   .post("/cl/:clId/items/upload", UploadFilesApi)
   .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB
