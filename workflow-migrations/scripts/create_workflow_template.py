@@ -256,7 +256,6 @@ def make_api_request():
         'sec-ch-ua': '"Not;A=Brand";v="99", "Google Chrome";v="139", "Chromium";v="139"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"macOS"',
-        'ngrok-skip-browser-warning': 'true',
         'Access-Control-Allow-Origin': '*'
     }
     
