@@ -38,7 +38,7 @@ import {
   and,
   gte,
   lte,
-  like,
+  ilike,
   desc,
   asc,
   ne,
@@ -2521,7 +2521,7 @@ export const ListWorkflowExecutionsApi = async (c: Context) => {
 
     // Filter by name (partial match, case-insensitive)
     if (query.name) {
-      whereConditions.push(like(workflowExecution.name, `%${query.name}%`))
+      whereConditions.push(ilike(workflowExecution.name, `%${query.name}%`))
     }
 
     // Filter by date range (using createdAt as startDate)
