@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render } from "@testing-library/react"
 import { vi } from "vitest"
 import { ChatMessage, THINKING_PLACEHOLDER } from "./chat"
 import { ThemeProvider } from "@/components/ThemeContext"
@@ -82,7 +82,7 @@ describe("Thinking State Scenarios", () => {
   describe('when response is stopped (even if message becomes empty), "Thinking..." text disappears and action buttons are shown', () => {
     test('it ensures "Thinking..." text disappears and relevant action buttons are shown', () => {
       // 1. Initial render: component is actively streaming/thinking
-      const { rerender } = render(
+      const { rerender, getByText, queryByText } = render(
         <ThemeProvider>
           <ChatMessage
             {...baseProps}
@@ -96,7 +96,7 @@ describe("Thinking State Scenarios", () => {
       )
 
       expect(
-        screen.getByText(new RegExp(`${THINKING_PLACEHOLDER}\\.\\.\\.`, "i")),
+        getByText(new RegExp(`${THINKING_PLACEHOLDER}\\.\\.\\.`, "i")),
         'Initial: "Thinking..." text should be visible',
       ).toBeInTheDocument()
 
@@ -120,7 +120,7 @@ describe("Thinking State Scenarios", () => {
         </ThemeProvider>,
       )
       expect(
-        screen.queryByText(new RegExp(THINKING_PLACEHOLDER, "i")),
+        queryByText(new RegExp(THINKING_PLACEHOLDER, "i")),
         'After stop (empty message): "Thinking" text should NOT be visible',
       ).not.toBeInTheDocument()
     })
@@ -131,7 +131,7 @@ describe("Thinking State Scenarios", () => {
       const originalMessage = "This message will be retried."
 
       // 1. Initial render: A completed message is shown
-      const { rerender } = render(
+      const { rerender, getByText, queryByText } = render(
         <ThemeProvider>
           <ChatMessage
             {...baseProps}
@@ -146,7 +146,7 @@ describe("Thinking State Scenarios", () => {
       )
 
       expect(
-        screen.queryByText(new RegExp(THINKING_PLACEHOLDER, "i")),
+        queryByText(new RegExp(THINKING_PLACEHOLDER, "i")),
         'Initial completed: "Thinking" should not be visible',
       ).not.toBeInTheDocument()
       // 2. Simulate "Retry" action:
@@ -171,7 +171,7 @@ describe("Thinking State Scenarios", () => {
 
       // Assert "Thinking..." text IS visible during retry
       expect(
-        screen.getByText(new RegExp(`${THINKING_PLACEHOLDER}\\.\\.\\.`, "i")),
+        getByText(new RegExp(`${THINKING_PLACEHOLDER}\\.\\.\\.`, "i")),
         'During retry: "Thinking..." text should be visible',
       ).toBeInTheDocument()
       // Assert original message is gone (if message prop was cleared)
@@ -198,7 +198,7 @@ describe("Thinking State Scenarios", () => {
 
       // Assert "Thinking..." text is NOT visible after stopping retry
       expect(
-        screen.queryByText(new RegExp(THINKING_PLACEHOLDER, "i")),
+        queryByText(new RegExp(THINKING_PLACEHOLDER, "i")),
         'After stopping retry: "Thinking" text should NOT be visible',
       ).not.toBeInTheDocument()
     })
