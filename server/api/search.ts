@@ -101,6 +101,16 @@ export const chatRenameSchema = z.object({
   title: z.string().min(1),
 })
 
+export const highlightSchema = z.object({
+  chunkText: z.string().min(1),
+  documentContent: z.string().min(1),
+  options: z.object({
+    matchThreshold: z.number().min(0).max(1).default(0.15),
+    maxChunkLength: z.number().min(10).max(1000).default(200),
+    caseSensitive: z.boolean().default(false),
+  }).default({}),
+})
+
 export const chatStopSchema = z.object({
   chatId: z.string().min(1),
 })
@@ -633,3 +643,230 @@ export const AnswerApi = async (c: Context) => {
     })
   })
 }
+
+export const HighlightApi = async (c: Context) => {
+  try {
+    const { chunkText, documentContent, options = {} } = await c.req.json();
+    
+    if (!chunkText || !documentContent) {
+      throw new HTTPException(400, {
+        message: "Missing required fields: chunkText and documentContent"
+      });
+    }
+
+    const {
+      matchThreshold = 0.15,
+      maxChunkLength = 200,
+      caseSensitive = false
+    } = options;
+
+    // Normalize text for matching
+    const normalizeText = (text: string) => {
+      return text
+        .replace(/[-*•]\s+/g, "")      // strip list bullets
+        .replace(/^#+\s+/gm, "")       // strip markdown headers
+        .replace(/^\s+/gm, "")         // strip leading whitespace/indentation from each line
+        .replace(/\s+/g, " ")          // collapse all whitespace to single spaces
+        .replace(/\t/g, " ")           // convert tabs to spaces
+        .replace(/\n\s*\n/g, "\n")     // remove empty lines with whitespace
+        .trim();
+    };
+
+    // Process each line from the chunk
+    const processLine = (line: string) => {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) return null;
+      
+      const limitedLine = trimmed.slice(0, maxChunkLength);
+      
+      if (limitedLine.length > maxChunkLength * 0.75) {
+        const words = limitedLine.split(/\s+/);
+        if (words.length > 10) {
+          const startIdx = Math.floor(words.length * 0.2);
+          const endIdx = Math.floor(words.length * 0.8);
+          const middleSection = words.slice(startIdx, endIdx).join(' ');
+          if (middleSection.length > 20 && middleSection.length < maxChunkLength) {
+            return normalizeText(middleSection);
+          }
+        }
+      }
+      
+      return normalizeText(limitedLine);
+    };
+
+    const findBestMatch = (haystack: string, needle: string) => {
+      const hay = caseSensitive ? haystack : haystack.toLowerCase();
+      const ned = caseSensitive ? needle : needle.toLowerCase();
+      
+      if (ned.length > hay.length || ned.length < 3) return null;
+      
+      let bestMatch = { index: -1, similarity: 0, length: 0 };
+      
+      const windowSizes = [ned.length, ned.length + 20, ned.length + 40, ned.length + 60];
+      
+      for (const windowSize of windowSizes) {
+        for (let i = 0; i <= hay.length - windowSize; i++) {
+          const window = hay.substring(i, i + windowSize);
+          
+          // Calculate similarity using character overlap with whitespace tolerance
+          let matches = 0;
+          let hayPos = 0;
+          let nedPos = 0;
+          
+          while (hayPos < window.length && nedPos < ned.length) {
+            const hayChar = window[hayPos];
+            const nedChar = ned[nedPos];
+            
+            if (hayChar === nedChar) {
+              matches++;
+              hayPos++;
+              nedPos++;
+            } else if (/\s/.test(hayChar)) {
+              hayPos++;
+            } else if (/\s/.test(nedChar)) {
+              nedPos++;
+            } else {
+              hayPos++;
+              nedPos++;
+            }
+          }
+          
+          // Calculate similarity based on matched characters vs total characters
+          const totalChars = Math.max(ned.length, window.length);
+          const similarity = matches / totalChars;
+          
+          if (similarity > bestMatch.similarity && similarity >= matchThreshold) {
+            bestMatch = { index: i, similarity, length: windowSize };
+          }
+        }
+      }
+      
+      return bestMatch.similarity > 0 ? bestMatch : null;
+    };
+    
+    const lines = chunkText.split('\n');
+    const matches: Array<{
+      startIndex: number;
+      endIndex: number;
+      length: number;
+      similarity: number;
+      highlightedText: string;
+      originalLine: string;
+      processedLine: string;
+    }> = [];
+
+    const processedLines: string[] = [];
+    
+    for (const line of lines) {
+      const processedLine = processLine(line);
+      if (processedLine) {
+        processedLines.push(processedLine);
+        const match = findBestMatch(documentContent, processedLine);
+        
+        if (match) {
+          matches.push({
+            startIndex: match.index,
+            endIndex: match.index + match.length,
+            length: match.length,
+            similarity: match.similarity,
+            highlightedText: documentContent.substring(match.index, match.index + match.length),
+            originalLine: line.trim(),
+            processedLine: processedLine
+          });
+        }
+      }
+    }
+
+    matches.sort((a, b) => a.startIndex - b.startIndex);
+
+    const filteredMatches: Array<{
+      startIndex: number;
+      endIndex: number;
+      length: number;
+      similarity: number;
+      highlightedText: string;
+      originalLine: string;
+      processedLine: string;
+    }> = [];
+    
+    for (let i = 0; i < matches.length; i++) {
+      const current = matches[i];
+      let merged = false;
+      
+      for (let j = 0; j < filteredMatches.length; j++) {
+        const existing = filteredMatches[j];
+        
+        if (
+          (current.startIndex >= existing.startIndex && current.startIndex < existing.endIndex) ||
+          (current.endIndex > existing.startIndex && current.endIndex <= existing.endIndex) ||
+          (current.startIndex <= existing.startIndex && current.endIndex >= existing.endIndex)
+        ) {
+          const combinedStartIndex = Math.min(existing.startIndex, current.startIndex);
+          const combinedEndIndex = Math.max(existing.endIndex, current.endIndex);
+          const combinedLength = combinedEndIndex - combinedStartIndex;
+          const combinedSimilarity = Math.max(existing.similarity, current.similarity);
+          const combinedHighlightedText = documentContent.substring(combinedStartIndex, combinedEndIndex);
+          
+          const combinedOriginalLines: string = [existing.originalLine, current.originalLine]
+            .filter((line, index, arr) => arr.indexOf(line) === index)
+            .join(' | ');
+          
+          const combinedProcessedLines: string = [existing.processedLine, current.processedLine]
+            .filter((line, index, arr) => arr.indexOf(line) === index)
+            .join(' | ');
+          
+          filteredMatches[j] = {
+            startIndex: combinedStartIndex,
+            endIndex: combinedEndIndex,
+            length: combinedLength,
+            similarity: combinedSimilarity,
+            highlightedText: combinedHighlightedText,
+            originalLine: combinedOriginalLines,
+            processedLine: combinedProcessedLines
+          };
+          
+          merged = true;
+          break;
+        }
+      }
+      
+      if (!merged) {
+        filteredMatches.push(current);
+      }
+    }
+
+    if (filteredMatches.length === 0) {
+      return c.json({ 
+        success: false, 
+        message: "No suitable matches found for any lines",
+        debug: { 
+          processedLines,
+          totalLines: lines.length,
+          documentLength: documentContent.length,
+          matchThreshold,
+          maxChunkLength
+        }
+      });
+    }
+
+    return c.json({
+      success: true,
+      matches: filteredMatches,
+      totalMatches: filteredMatches.length,
+      debug: {
+        processedLines,
+        totalLines: lines.length,
+        documentLength: documentContent.length,
+        matchThreshold,
+        maxChunkLength
+      }
+    });
+
+  } catch (error) {
+    console.error("Error in highlight endpoint:", error);
+    return c.json({ 
+      error: "Internal server error during highlighting",
+      details: error instanceof Error ? error.message : "Unknown error"
+    }, 500);
+  }
+};

@@ -11,7 +11,7 @@ import {
   PanelLeftOpen,
 } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
-import { useState, useCallback, useEffect, memo } from "react"
+import { useState, useCallback, useEffect, memo, useRef, useMemo } from "react"
 import { Input } from "@/components/ui/input"
 import CollectionFileUpload, {
   SelectedFile as FileUploadSelectedFile,
@@ -46,9 +46,12 @@ import ReadmeViewer from "@/components/ReadmeViewer"
 import { DocumentChat } from "@/components/DocumentChat"
 import { authFetch } from "@/utils/authFetch"
 import { generateUUID } from "@/utils/chatUtils"
+import { useScopedFind } from "@/hooks/useScopedFind"
+import { PersistentMap } from "@/utils/chatUtils"
 
-// Module-level map to store documentId -> tempChatId mapping (frontend-generated UUIDs)
-const documentToTempChatMap = new Map<string, string>()
+// Persistent storage for documentId -> tempChatId mapping using sessionStorage
+const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
+const documentToTempChatMap = new PersistentMap(DOCUMENT_CHAT_MAP_KEY)
 
 export const Route = createFileRoute("/_authenticated/knowledgeManagement")({
   component: RouteComponent,
@@ -125,6 +128,64 @@ const DocumentViewerContainer = memo(
     }
     loadingDocument: boolean
   }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    
+    const {
+      highlightText,
+      clearHighlights,
+      scrollToMatch,
+    } = useScopedFind(containerRef);
+
+    // Expose the highlight functions globally for use by DocumentChat
+    useEffect(() => {
+      // Only expose once when the component mounts
+      if ((window as any).__highlightTextInDocument) {
+        return;
+      }
+      
+      (window as any).__highlightTextInDocument = async (text: string) => {
+        if (!containerRef.current) {
+          const container = document.querySelector('[data-container-ref="true"]');
+          if (container) {
+            (containerRef as any).current = container;
+          } else {
+            return false;
+          }
+        }
+
+        try {
+          const success = await highlightText(text);
+          if (success) {
+            scrollToMatch(0);
+          }
+          
+          return success;
+        } catch (error) {
+          console.error('Error calling highlightText:', error);
+          return false;
+        }
+      };
+      
+      (window as any).__clearDocumentHighlights = clearHighlights;
+      (window as any).__scrollToDocumentMatch = scrollToMatch;
+      
+      return () => {
+        delete (window as any).__highlightTextInDocument;
+        delete (window as any).__clearDocumentHighlights;
+        delete (window as any).__scrollToDocumentMatch;
+      };
+    }, []);
+
+    useEffect(() => {
+      clearHighlights();
+    }, [selectedDocument?.file.id, clearHighlights]);
+
+    useEffect(() => {
+      return () => {
+        clearHighlights();
+      };
+    }, [clearHighlights]);
+
     return (
       <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
         {loadingDocument && (
@@ -139,72 +200,84 @@ const DocumentViewerContainer = memo(
         )}
         {selectedDocument.content ? (
           <div className="h-full">
-            {selectedDocument.file.name.toLowerCase().endsWith(".pdf") ? (
-              <PdfViewer
-                key={selectedDocument.file.id}
-                source={
-                  new File(
-                    [selectedDocument.content],
-                    selectedDocument.file.name,
-                    {
-                      type: selectedDocument.content.type || "application/pdf",
-                    },
-                  )
-                }
-                className="h-full"
-                style={{ height: "100%", overflow: "auto" }}
-                scale={1.2}
-                showNavigation={true}
-                displayMode="continuous"
-              />
-            ) : selectedDocument.file.name.toLowerCase().endsWith(".md") ? (
-              <ReadmeViewer
-                source={
-                  new File(
-                    [selectedDocument.content],
-                    selectedDocument.file.name,
-                    {
-                      type: selectedDocument.content.type || "text/markdown",
-                    },
-                  )
-                }
-                className="h-full"
-                style={{ height: "100%", overflow: "auto" }}
-              />
-            ) : (
-              <div className="h-full p-6 overflow-auto">
-                <DocxViewer
-                  key={selectedDocument.file.id}
-                  source={
-                    new File(
-                      [selectedDocument.content],
-                      selectedDocument.file.name,
-                      {
-                        type:
-                          selectedDocument.content.type ||
-                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                      },
-                    )
-                  }
-                  className="h-full max-w-4xl mx-auto"
-                  style={{ height: "100%" }}
-                  options={{
-                    renderHeaders: true,
-                    renderFooters: true,
-                    renderFootnotes: true,
-                    renderEndnotes: true,
-                    renderComments: false,
-                    renderChanges: false,
-                    breakPages: true,
-                    ignoreLastRenderedPageBreak: true,
-                    inWrapper: true,
-                    ignoreWidth: false,
-                    ignoreHeight: false,
-                    ignoreFonts: false,
-                  }}
-                />
-              </div>
-            )}
+            {useMemo(() => {
+              if (!selectedDocument.content) return null;
+              
+              if (selectedDocument.file.name.toLowerCase().endsWith(".pdf")) {
+                return (
+                  <div ref={containerRef} data-container-ref="true" className="h-full">
+                    <PdfViewer
+                      source={
+                        new File(
+                          [selectedDocument.content],
+                          selectedDocument.file.name,
+                          {
+                            type: selectedDocument.content.type || "application/pdf",
+                          },
+                        )
+                      }
+                      className="h-full"
+                      style={{ height: "100%", overflow: "auto" }}
+                      scale={1.2}
+                      showNavigation={true}
+                      displayMode="continuous"
+                    />
+                  </div>
+                );
+              } else if (selectedDocument.file.name.toLowerCase().endsWith(".md")) {
+                return (
+                  <div ref={containerRef} data-container-ref="true" className="h-full">
+                    <ReadmeViewer
+                      source={
+                        new File(
+                          [selectedDocument.content],
+                          selectedDocument.file.name,
+                          {
+                            type: selectedDocument.content.type || "text/markdown",
+                          },
+                        )
+                      }
+                      className="h-full"
+                      style={{ height: "100%", overflow: "auto" }}
+                    />
+                  </div>
+                );
+              } else {
+                return (
+                  <div ref={containerRef} data-container-ref="true" className="h-full p-6 overflow-auto">
+                    <DocxViewer
+                      source={
+                        new File(
+                          [selectedDocument.content],
+                          selectedDocument.file.name,
+                          {
+                            type:
+                              selectedDocument.content.type ||
+                              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                          },
+                        )
+                      }
+                      className="h-full max-w-4xl mx-auto"
+                      style={{ height: "100%" }}
+                      options={{
+                        renderHeaders: true,
+                        renderFooters: true,
+                        renderFootnotes: true,
+                        renderEndnotes: true,
+                        renderComments: false,
+                        renderChanges: false,
+                        breakPages: true,
+                        ignoreLastRenderedPageBreak: true,
+                        inWrapper: true,
+                        ignoreWidth: false,
+                        ignoreHeight: false,
+                        ignoreFonts: false,
+                      }}
+                    />
+                  </div>
+                );
+              }
+            }, [selectedDocument.file.id, selectedDocument.content])}
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
@@ -1121,8 +1194,32 @@ function RouteComponent() {
   }
 
   // Handle chunk index changes from DocumentChat
-  const handleChunkIndexChange = (newChunkIndex: number | null) => {
-    // setChunkIndex(newChunkIndex)
+  const handleChunkIndexChange = async (newChunkIndex: number | null, documentId: string) => {
+    if (newChunkIndex && selectedDocument?.file.id === documentId) {
+      const chunkContentResponse = await api.c[":cId"].files[":itemId"].content.$get({
+        param: { cId: newChunkIndex.toString(), itemId: documentId || "" },
+      })
+      const chunkContent = await chunkContentResponse.json()
+      
+      if (chunkContent && chunkContent.chunkContent) {
+        if ((window as any).__clearDocumentHighlights) {
+          (window as any).__clearDocumentHighlights()
+        }
+        
+        if ((window as any).__highlightTextInDocument) {
+          try {
+            const success = await (window as any).__highlightTextInDocument(chunkContent.chunkContent);
+            if (success) {
+              if ((window as any).__scrollToDocumentMatch) {
+                (window as any).__scrollToDocumentMatch(0);
+              }
+            }
+          } catch (error) {
+            console.error('Error highlighting chunk text:', chunkContent.chunkContent, error);
+          }
+        }
+      }
+    }
   }
 
   return (

@@ -50,6 +50,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set())
   const [currentVisiblePage, setCurrentVisiblePage] = useState<number>(1)
   const observerRef = useRef<IntersectionObserver | null>(null)
+  const [allPagesRendered, setAllPagesRendered] = useState<boolean>(false)
 
   // Use a stable key for the source to avoid unnecessary re-renders
   const sourceKey = useMemo(() => {
@@ -71,6 +72,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         setPdf(null)
         setTotalPages(0)
         setRenderedPages(new Set())
+        setAllPagesRendered(false)
 
         if (!source) {
           throw new Error("No document source provided")
@@ -305,6 +307,23 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
   }
 
+  // Render all pages for highlighting purposes
+  const renderAllPagesForHighlighting = async () => {
+    if (!pdf || allPagesRendered || displayMode !== "continuous") return
+    
+    try {
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        if (!renderedPages.has(pageNum)) {
+          await renderPageToContinuousCanvas(pageNum)
+        }
+      }
+      
+      setAllPagesRendered(true)
+    } catch (e) {
+      console.error('Failed to render all pages for highlighting:', e)
+    }
+  }
+
   // Setup IntersectionObserver for lazy loading in continuous mode
   useEffect(() => {
     if (!pdf || displayMode !== "continuous") return
@@ -431,6 +450,17 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       }
     }
   }
+
+  // Expose the renderAllPagesForHighlighting function globally for highlighting system
+  useEffect(() => {
+    if (displayMode === "continuous") {
+      (window as any).__renderAllPdfPages = renderAllPagesForHighlighting;
+      
+      return () => {
+        delete (window as any).__renderAllPdfPages;
+      };
+    }
+  }, [displayMode, renderAllPagesForHighlighting]);
 
   return (
     <div
