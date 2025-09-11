@@ -85,7 +85,10 @@ export function makeXyneJAFProvider<Ctx extends { userCtx?: string; agentPrompt?
           }
 
           const selection = await generateToolSelectionOutput(
-            userQuery,
+            typeof userQuery === 'string' ? userQuery : 
+              Array.isArray(userQuery) ? userQuery.map(part => 
+                typeof part === 'string' ? part : part.text || ''
+              ).join('') : "",
             state.context?.userCtx || "",
             toolListStr,
             "",
