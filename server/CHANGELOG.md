@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/xynehq/xyne/compare/v1.0.0...v1.0.1) (2025-09-11)
+
+
+### Bug Fixes
+
+* XYN-155 Removed version ([a52ef75](https://github.com/xynehq/xyne/commit/a52ef75f24f6f1d57b7866d59b377bc4e439d8c8))
+
 # [1.0.0](https://github.com/xynehq/xyne/compare/v0.3.0...v1.0.0) (2025-09-11)
 
 
