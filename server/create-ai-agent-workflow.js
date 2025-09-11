@@ -20,7 +20,7 @@ async function createAIAgentWorkflow() {
         version: "1.0.0",
         status: "active",
         config: {
-          recipients: ["yash.daga@juspay.in", "aman.asrani@juspay.in"],
+          recipients: [],
           maxFileSize: "25MB",
           analysisType: "ai-agent-powered",
           supportedFormats: [
@@ -126,7 +126,7 @@ except ImportError as e:
     print(f"Missing library: {e}")
 
 # Gemini API Configuration
-GEMINI_API_KEY = "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw"
+GEMINI_API_KEY = ""
 
 def call_gemini_api(content, prompt, model_name, file_name):
     """Make actual Gemini API call for document analysis"""
@@ -323,7 +323,7 @@ else:
         value: aiAgentScriptContent.trim(),
         config: {
           timeout: 600,
-          gemini_api_key: "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw",
+          gemini_api_key: "",
           supported_models: [
             "gemini-1.5-flash",
             "gemini-1.5-pro",
@@ -348,8 +348,8 @@ analysis_data = previous_step_results.get("AI Content Analysis", {}).get("result
 form_data = previous_step_results.get("Document Upload", {}).get("formSubmission", {}).get("formData", {})
 
 # Get recipients from workflow config
-recipients = ["yash.daga@juspay.in", "aman.asrani@juspay.in"]  # Default recipients
-from_email = "aman.asrani@juspay.in"
+recipients = []  # Default recipients
+from_email = "no-reply@xyne.io"
 
 if analysis_data.get("status") != "success":
     error_msg = analysis_data.get("error", "Unknown error occurred")
@@ -486,8 +486,8 @@ else:
         type: "email",
         value: emailScriptContent.trim(),
         config: {
-          recipients: ["yash.daga@juspay.in", "aman.asrani@juspay.in"],
-          from_email: "aman.asrani@juspay.in",
+          recipients: [],
+          from_email: "no-reply@xyne.io",
           content_type: "html",
         },
         createdBy: "system",

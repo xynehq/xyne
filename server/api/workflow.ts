@@ -1800,7 +1800,7 @@ const executeWorkflowTool = async (
         // Enhanced email tool using config for recipients and configurable path for content extraction
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
-        const fromEmail = emailConfig.from_email || "aman.asrani@juspay.in"
+        const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
         const subject = emailConfig.subject || "Workflow Results"
         const contentType = emailConfig.content_type || "html"
 
