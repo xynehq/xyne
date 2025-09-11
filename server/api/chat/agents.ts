@@ -199,6 +199,7 @@ import {
   runStream,
   generateRunId,
   generateTraceId,
+  getTextContent,
   type Agent as JAFAgent,
   type Tool as JAFTool,
   type Message as JAFMessage,
@@ -1996,7 +1997,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               case "assistant_message": {
                 const messageSpan = jafStreamingSpan.startSpan("assistant_message")
-                const content = evt.data.message.content || ""
+                const content = getTextContent(evt.data.message.content) || ""
                 const hasToolCalls = Array.isArray(evt.data.message?.tool_calls) &&
                   (evt.data.message.tool_calls?.length ?? 0) > 0
 
@@ -2241,7 +2242,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                       messageId: lastMessage.externalId,
                     }),
                   })
-                  const err = outcome?.error as JAFError | undefined
+                  // Check the status before accessing error property
+                  const err = outcome?.status === 'error' ? outcome.error : undefined
                   const errTag = err?._tag || "run_error"
                   let errMsg = "Model did not return a response."
                   if (err) {
@@ -2280,7 +2282,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                           // Extract all context from runState.messages array
                           const allMessages = runState.messages || []
                           const agentScratchpad = allMessages
-                            .map((msg, index) => `${msg.role}: ${msg.content}`)
+                            .map((msg, index) => `${msg.role}: ${getTextContent(msg.content)}`)
                             .join('\n')
                           console.log("Agent scratchpad:", agentScratchpad)
                           console.log('all messages:', allMessages)
@@ -2288,7 +2290,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                           // Build tool log from any tool executions in the conversation
                           const toolLog = allMessages
                             .filter(msg => msg.role === 'tool' || (msg as any).tool_calls || (msg as any).tool_call_id)
-                            .map((msg, index) => `Tool Execution ${index + 1}: ${msg.content}`)
+                            .map((msg, index) => `Tool Execution ${index + 1}: ${getTextContent(msg.content)}`)
                             .join('\n')
                           console.log("Tool log:", toolLog)
                           // Prepare fallback tool parameters with context from runState.messages
