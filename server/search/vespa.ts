@@ -10,8 +10,13 @@ const prodUrl = process.env.PRODUCTION_SERVER_URL
 const apiKey = process.env.API_KEY
 import {
   Apps,
+  chatContainerSchema,
+  chatMessageSchema,
+  chatUserSchema,
   DriveEntity,
+  eventSchema,
   fileSchema,
+  mailAttachmentSchema,
   mailSchema,
   userSchema,
   type Entity,
@@ -38,11 +43,23 @@ const vespaConfig = createDefaultConfig({
   vespaMaxRetryAttempts: config.vespaMaxRetryAttempts,
   vespaRetryDelay: config.vespaRetryDelay,
 })
-
+const AllSources = [
+  fileSchema,
+  userSchema,
+  mailSchema,
+  eventSchema,
+  mailAttachmentSchema,
+  chatUserSchema,
+  chatMessageSchema,
+  chatContainerSchema,
+  // Not adding datasource or datasource_file to AllSources by default,
+  // as they are for a specific app functionality.
+  // dataSourceFileSchema and collection file schemas are intentionally excluded from search
+]
 const dependencies: VespaDependencies = {
   logger: Logger,
   config: vespaConfig,
-  sourceSchemas: [fileSchema, userSchema, mailSchema],
+  sourceSchemas: AllSources,
   vespaEndpoint: vespaEndpoint,
 }
 
