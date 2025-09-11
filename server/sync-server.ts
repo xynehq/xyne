@@ -5,10 +5,7 @@ import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { InitialisationError } from "@/errors"
 import metricRegister from "@/metrics/sharedRegistry"
-import {
-  isSlackEnabled,
-  startSocketMode,
-} from "@/integrations/slack/client"
+import { isSlackEnabled, startSocketMode } from "@/integrations/slack/client"
 
 const Logger = getLogger(Subsystem.SyncServer)
 
@@ -74,7 +71,7 @@ const server = Bun.serve({
   fetch: app.fetch,
   port: syncServerPort,
   idleTimeout: 180,
-  development: true,
+  development: process.env.NODE_ENV != "production",
   error: errorHandler,
 })
 
@@ -88,5 +85,11 @@ const errorEvents: string[] = [
 errorEvents.forEach((eventType: string) =>
   process.on(eventType, (error: Error) => {
     Logger.error(error, `Sync Server caught via event: ${eventType}`)
+    if (
+      eventType === "uncaughtException" ||
+      eventType === "unhandledRejection"
+    ) {
+      process.exit(1)
+    }
   }),
 )

@@ -1323,7 +1323,6 @@ app.get(
 )
 
 export const init = async () => {
-  // await initQueue() moved to sync-server
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
