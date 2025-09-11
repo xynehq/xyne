@@ -6,7 +6,6 @@ import path, { join } from "node:path"
 import {
   insertDataSource,
   getDataSourceByNameAndCreator,
-  NAMESPACE,
   fetchAllDataSourceFilesByName,
   getDataSourcesByCreator,
   GetDocument,
@@ -389,9 +388,7 @@ export const DeleteDocumentApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errorMessage = (error as any).errors
-        .map((err: any) => `${err.path.join(".")}: ${err.message}`)
-        .join(", ")
+      const errorMessage = JSON.stringify(error)
       loggerWithChild().warn(
         `Validation error in DeleteDocumentApi: ${errorMessage}`,
       )

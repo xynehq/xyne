@@ -5,9 +5,7 @@ import {
   createDefaultConfig,
   type VespaDependencies,
 } from "@xyne/vespa-ts"
-import config from "@/config"
-const prodUrl = process.env.PRODUCTION_SERVER_URL
-const apiKey = process.env.API_KEY
+import config, { CLUSTER, NAMESPACE } from "@/config"
 import {
   Apps,
   chatContainerSchema,
@@ -26,18 +24,13 @@ import { db, getConnectorByAppAndEmailId } from "@/db/connector"
 import { AuthType, ConnectorStatus } from "@/shared/types"
 import { extractDriveIds, extractCollectionVespaIds } from "./utils"
 // Define your Vespa endpoint and schema name
-const vespaEndpoint = `http://${config.vespaBaseHost}:8080`
-export const NAMESPACE = "namespace" // Replace with your actual namespace
-const CLUSTER = "my_content"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
 
 const vespaConfig = createDefaultConfig({
   vespaBaseHost: config.vespaBaseHost,
-  page: 20,
-  isDebugMode: false,
-  productionServerUrl: prodUrl,
-  apiKey: apiKey,
+  page: config.VespaPageSize,
+  isDebugMode: config.isDebugMode,
   namespace: NAMESPACE,
   cluster: CLUSTER,
   vespaMaxRetryAttempts: config.vespaMaxRetryAttempts,
@@ -60,7 +53,7 @@ const dependencies: VespaDependencies = {
   logger: Logger,
   config: vespaConfig,
   sourceSchemas: AllSources,
-  vespaEndpoint: vespaEndpoint,
+  vespaEndpoint: config.vespaEndpoint,
 }
 
 const vespa = createVespaService(dependencies)
