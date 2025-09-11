@@ -5,11 +5,12 @@ services:
       - ${XYNE_DATA_DIR:-./data}/app-uploads:/app-uploads
       - ${XYNE_DATA_DIR:-./data}/app-logs:/app-logs
       - ${XYNE_DATA_DIR:-./data}/app-migrations:/app-migrations
+      - ${XYNE_DATA_DIR:-./data}/app-downloads:/app-downloads
     command: |
       sh -c '
-        mkdir -p /app-uploads /app-logs /app-migrations
-        chown -R 1000:1000 /app-uploads /app-logs /app-migrations
-        chmod 755 /app-uploads /app-logs /app-migrations
+        mkdir -p /app-uploads /app-logs /app-migrations /app-downloads
+        chown -R 1000:1000 /app-uploads /app-logs /app-migrations /app-downloads
+        chmod 755 /app-uploads /app-logs /app-migrations /app-downloads
       '
     user: "0:0"
     networks:
@@ -45,6 +46,7 @@ services:
       - ${XYNE_DATA_DIR:-./data}/app-logs:/usr/src/app/server/logs
       - ${XYNE_DATA_DIR:-./data}/app-assets:/usr/src/app/server/dist/assets/videos
       - ${XYNE_DATA_DIR:-./data}/app-migrations:/usr/src/app/server/migrations
+      - ${XYNE_DATA_DIR:-./data}/app-downloads:/usr/src/app/server/downloads
     networks:
       - xyne
     restart: unless-stopped
@@ -91,6 +93,7 @@ services:
       - ${XYNE_DATA_DIR:-./data}/app-logs:/usr/src/app/server/logs
       - ${XYNE_DATA_DIR:-./data}/app-assets:/usr/src/app/server/dist/assets/videos
       - ${XYNE_DATA_DIR:-./data}/app-migrations:/usr/src/app/server/migrations
+      - ${XYNE_DATA_DIR:-./data}/app-downloads:/usr/src/app/server/downloads
     networks:
       - xyne
     restart: unless-stopped

@@ -132,7 +132,7 @@ setup_environment() {
     
     # Create necessary directories with proper permissions
     echo " Creating data directories..."
-    mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data}
+    mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,app-downloads,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data}
     
     # Create Vespa tmp directory
     mkdir -p "$DATA_DIR"/vespa-data/tmp
@@ -194,6 +194,7 @@ setup_permissions() {
     docker run --rm -v "$(pwd)/$DATA_DIR/app-logs:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/app-assets:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/app-migrations:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-downloads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/grafana-storage:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/ollama-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     
