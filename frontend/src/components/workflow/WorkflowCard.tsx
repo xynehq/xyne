@@ -79,8 +79,7 @@ export function WorkflowCard({ workflow, onViewClick }: WorkflowCardProps) {
 
   return (
     <div
-      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow rounded-2xl p-6 flex flex-col min-h-52"
-      style={{ width: "327px" }}
+      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow rounded-2xl p-6 flex flex-col min-h-52 w-full"
     >
       <div className="flex flex-col flex-1">
         <div className="w-10 h-10 bg-[#F2F2F3] dark:bg-blue-900/20 rounded-lg flex items-center justify-center mb-5">
@@ -101,15 +100,14 @@ export function WorkflowCard({ workflow, onViewClick }: WorkflowCardProps) {
       <div className="flex gap-2 mt-5 pt-2 border-t border-transparent">
         <Button
           size="sm"
-          className="bg-gray-800 hover:bg-gray-700 text-white"
+          className="bg-gray-800 hover:bg-gray-700 text-white rounded-full w-16 px-3"
           onClick={() => setShowExecutionModal(true)}
         >
           Run
         </Button>
         <Button
           size="sm"
-          variant="outline"
-          className="border-gray-300 dark:border-gray-600"
+          className="bg-white hover:bg-gray-50 text-gray-800 border border-gray-300 rounded-full w-16 px-3"
           onClick={() => onViewClick?.(workflow.id)}
         >
           View

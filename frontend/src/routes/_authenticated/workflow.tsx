@@ -10,7 +10,6 @@ import { WorkflowExecutionsTable } from "@/components/workflow/WorkflowExecution
 import { userWorkflowsAPI, workflowExecutionsAPI } from "@/components/workflow/api/ApiHandlers"
 import sitemapIcon from "@/assets/sitemap.svg"
 import vectorIcon from "@/assets/vector.svg"
-import gridDashboardIcon from "@/assets/grid-dashboard-01.svg"
 import playIcon from "@/assets/play.svg"
 import importDslIcon from "@/assets/import-dsl.svg"
 import plusIcon from "@/assets/plus.svg"
@@ -147,7 +146,8 @@ function WorkflowComponent() {
       
       console.log('Workflows API Response:', workflows)
       if (Array.isArray(workflows.data)) {
-        const filteredWorkflows = workflows.data //temporary
+        const filteredWorkflows = workflows.data
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first (creation date)
         setWorkflows(filteredWorkflows)
       } else {
         console.error('Workflows response is not an array')
@@ -184,6 +184,7 @@ function WorkflowComponent() {
 
 
         const convertedTemplates: Template[] = templates.data
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first (creation date)
           .map((workflowTemplate) => ({
             id: workflowTemplate.id,
             name: workflowTemplate.name,
@@ -688,7 +689,7 @@ function WorkflowComponent() {
             {activeTab === "workflow" && (
               <div className="space-y-8">
                 {/* Creation Options */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
                   <div 
                     className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow cursor-pointer group w-full"
                     style={{
@@ -807,10 +808,10 @@ function WorkflowComponent() {
                   </h2>
                   
                   {loading ? (
-                    <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fill, 327px)', justifyContent: 'start' }}>
+                    <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
                       {[1, 2, 3].map((i) => (
                         <div key={i} className="animate-pulse">
-                          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+                          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 w-full">
                             <div className="w-12 h-12 bg-gray-200 dark:bg-gray-700 rounded-lg mb-4"></div>
                             <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
                             <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-2/3 mb-4"></div>
@@ -823,7 +824,7 @@ function WorkflowComponent() {
                       ))}
                     </div>
                   ) : workflows.length > 0 ? (
-                    <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fill, 327px)', justifyContent: 'start' }}>
+                    <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
                       {workflows.map((workflow) => (
                         <WorkflowCard 
                           key={workflow.id} 
@@ -955,6 +956,7 @@ function WorkflowComponent() {
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
+                  isEditableMode={selectedTemplate === null}
                 />
               )}
             </div>

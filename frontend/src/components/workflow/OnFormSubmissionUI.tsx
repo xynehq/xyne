@@ -8,11 +8,14 @@ import { BackArrowIcon, CloseIcon } from "./WorkflowIcons"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface OnFormSubmissionUIProps {
+  isVisible?: boolean // Whether the sidebar is visible
   onBack: () => void
+  onClose?: () => void // New prop for closing all sidebars
   onSave?: (formConfig: FormConfig) => void
   initialConfig?: FormConfig
   toolData?: any // Tool data from the backend
   toolId?: string // Tool ID for API updates
+  showBackButton?: boolean // Whether to show the back button
 }
 
 interface FormField {
@@ -33,11 +36,14 @@ export interface FormConfig {
 }
 
 const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
+  isVisible = true,
   onBack,
+  onClose,
   onSave,
   initialConfig,
   toolData,
   toolId,
+  showBackButton = false,
 }) => {
   const initialFieldId = crypto.randomUUID()
 
@@ -205,7 +211,9 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 
   return (
     <div
-      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out w-[400px]`}
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-50 ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
+      }`}
     >
       {/* Panel Header */}
       <div
@@ -219,20 +227,22 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
           borderBottom: "1px solid var(--gray-300, #E4E6E7)",
         }}
       >
-        <button
-          onClick={onBack}
-          className="flex items-center justify-center"
-          style={{
-            width: "24px",
-            height: "24px",
-            padding: "0",
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-          }}
-        >
-          <BackArrowIcon width={24} height={24} />
-        </button>
+        {showBackButton && (
+          <button
+            onClick={onBack}
+            className="flex items-center justify-center"
+            style={{
+              width: "24px",
+              height: "24px",
+              padding: "0",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+            }}
+          >
+            <BackArrowIcon width={24} height={24} />
+          </button>
+        )}
 
         <h2
           className="flex-1 text-gray-900 dark:text-gray-100"
@@ -251,7 +261,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         </h2>
 
         <button
-          onClick={onBack}
+          onClick={onClose || onBack}
           className="flex items-center justify-center"
           style={{
             width: "24px",
@@ -267,8 +277,8 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
       </div>
 
       {/* Panel Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 dark:bg-gray-900">
-        <div className="space-y-4">
+      <div className="flex-1 overflow-y-auto p-6 dark:bg-gray-900 flex flex-col">
+        <div className="space-y-4 flex-1">
           {/* Form Title */}
           <div className="space-y-2">
             <Label
@@ -371,6 +381,66 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                         />
                       </div>
 
+                      {/* Input Type */}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
+                          Input Type
+                        </Label>
+                        <div className="relative">
+                          <select
+                            value={field.type}
+                            onChange={(e) =>
+                              updateField(field.id, {
+                                type: e.target.value as FormField["type"],
+                              })
+                            }
+                            className="w-full h-9 px-3 py-1 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md text-sm text-slate-900 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-gray-500 focus:border-slate-400 dark:focus:border-gray-500 appearance-none cursor-pointer"
+                            style={{
+                              background: "white",
+                              color: "#1f2937",
+                            }}
+                          >
+                            <option
+                              value="file"
+                              style={{ background: "white", color: "#1f2937" }}
+                            >
+                              File
+                            </option>
+                            <option
+                              value="text"
+                              style={{ background: "white", color: "#1f2937" }}
+                            >
+                              Text
+                            </option>
+                            <option
+                              value="email"
+                              style={{ background: "white", color: "#1f2937" }}
+                            >
+                              Email
+                            </option>
+                            <option
+                              value="number"
+                              style={{ background: "white", color: "#1f2937" }}
+                            >
+                              Number
+                            </option>
+                            <option
+                              value="textarea"
+                              style={{ background: "white", color: "#1f2937" }}
+                            >
+                              Textarea
+                            </option>
+                            <option
+                              value="dropdown"
+                              style={{ background: "white", color: "#1f2937" }}
+                            >
+                              Dropdown
+                            </option>
+                          </select>
+                          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500 dark:text-gray-400 pointer-events-none" />
+                        </div>
+                      </div>
+
                       {/* Field Type Specific Content */}
                       {field.type === "file" ? (
                         <div className="space-y-4">
@@ -467,65 +537,6 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                           />
                         </div>
                       )}
-                      {/* Element Type */}
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                          Element Type
-                        </Label>
-                        <div className="relative">
-                          <select
-                            value={field.type}
-                            onChange={(e) =>
-                              updateField(field.id, {
-                                type: e.target.value as FormField["type"],
-                              })
-                            }
-                            className="w-full h-9 px-3 py-1 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md text-sm text-slate-900 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-gray-500 focus:border-slate-400 dark:focus:border-gray-500 appearance-none cursor-pointer"
-                            style={{
-                              background: "white",
-                              color: "#1f2937",
-                            }}
-                          >
-                            <option
-                              value="file"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              File
-                            </option>
-                            <option
-                              value="text"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Text
-                            </option>
-                            <option
-                              value="email"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Email
-                            </option>
-                            <option
-                              value="number"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Number
-                            </option>
-                            <option
-                              value="textarea"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Textarea
-                            </option>
-                            <option
-                              value="dropdown"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Dropdown
-                            </option>
-                          </select>
-                          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500 dark:text-gray-400 pointer-events-none" />
-                        </div>
-                      </div>
 
                       {/* Required Field Checkbox */}
                       <div className="flex items-center space-x-2">
@@ -566,16 +577,16 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Panel Footer */}
-      <div className="px-4 py-3 border-t border-slate-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <Button
-          onClick={handleSave}
-          className="w-full bg-black hover:bg-gray-800 text-white"
-        >
-          Save Configuration
-        </Button>
+        
+        {/* Save Button - Sticky to bottom */}
+        <div className="pt-6 px-0">
+          <Button
+            onClick={handleSave}
+            className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-full"
+          >
+            Save Configuration
+          </Button>
+        </div>
       </div>
     </div>
   )

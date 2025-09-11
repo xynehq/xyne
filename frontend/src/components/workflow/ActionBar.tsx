@@ -4,25 +4,41 @@ interface ActionBarProps {
   onExecute?: () => void
   zoomLevel?: number
   onZoomChange?: (zoom: number) => void
+  disabled?: boolean
 }
 
 const ActionBar: React.FC<ActionBarProps> = ({
   onExecute,
   zoomLevel = 100,
   onZoomChange,
+  disabled = false,
 }) => {
-  const handleZoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newZoom = parseInt(e.target.value, 10)
-    if (onZoomChange) {
-      onZoomChange(newZoom)
+  const handleZoomIn = () => {
+    const zoomLevels = [50, 75, 100, 125, 150]
+    const currentIndex = zoomLevels.indexOf(zoomLevel)
+    if (currentIndex < zoomLevels.length - 1 && onZoomChange) {
+      onZoomChange(zoomLevels[currentIndex + 1])
+    }
+  }
+
+  const handleZoomOut = () => {
+    const zoomLevels = [50, 75, 100, 125, 150]
+    const currentIndex = zoomLevels.indexOf(zoomLevel)
+    if (currentIndex > 0 && onZoomChange) {
+      onZoomChange(zoomLevels[currentIndex - 1])
     }
   }
 
   return (
-    <div className="flex items-center gap-2 bg-white p-1.5 rounded-lg shadow-sm border border-blue-100 border-dashed">
+    <div className="flex items-center gap-2 bg-white p-1.5 rounded-full shadow-sm border border-blue-100 border-dashed">
       <button
-        onClick={onExecute}
-        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white border-none rounded-md cursor-pointer text-sm font-medium flex items-center gap-1.5 transition-all duration-200"
+        onClick={disabled ? undefined : onExecute}
+        disabled={disabled}
+        className={`px-4 py-2 border-none rounded-full text-sm font-medium flex items-center gap-1.5 transition-all duration-200 ${
+          disabled 
+            ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+            : 'bg-slate-800 hover:bg-slate-700 text-white cursor-pointer'
+        }`}
       >
         <svg
           className="w-4 h-4"
@@ -36,37 +52,43 @@ const ActionBar: React.FC<ActionBarProps> = ({
         Execute
       </button>
 
-      <div className="flex items-center gap-1 border border-slate-200 rounded-md px-2 py-1.5 bg-white">
-        <svg
-          className="w-4 h-4 text-slate-500"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
+      <div className="flex items-center gap-1 border border-slate-200 rounded-full px-1 py-1 bg-white">
+        <button
+          onClick={handleZoomOut}
+          disabled={zoomLevel <= 50}
+          className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-        <select
-          className="border-none bg-transparent text-sm font-medium text-slate-700 cursor-pointer appearance-none pr-4 outline-none"
-          value={zoomLevel}
-          onChange={handleZoomChange}
+          <svg
+            className="w-3 h-3 text-slate-600"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        
+        <span className="text-sm font-medium text-slate-700 px-2 min-w-[45px] text-center">
+          {zoomLevel}%
+        </span>
+        
+        <button
+          onClick={handleZoomIn}
+          disabled={zoomLevel >= 150}
+          className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          <option value="50">50%</option>
-          <option value="75">75%</option>
-          <option value="100">100%</option>
-          <option value="125">125%</option>
-          <option value="150">150%</option>
-        </select>
-        <svg
-          className="w-4 h-4 text-slate-500 ml-1"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
+          <svg
+            className="w-3 h-3 text-slate-600"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
       </div>
     </div>
   )

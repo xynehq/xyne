@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from "react"
+import React, { useCallback, useState, useEffect, useRef } from "react"
 import { Bot, Mail } from "lucide-react"
 import {
   ReactFlow,
@@ -135,8 +135,6 @@ interface WorkflowTemplate {
 }
 import ActionBar from "./ActionBar"
 import {
-  EditorIcon,
-  SettingsIcon,
   ManualTriggerIcon,
   AppEventIcon,
   ScheduleIcon,
@@ -165,12 +163,61 @@ const StepNode: React.FC<NodeProps> = ({
   selected,
   id,
 }) => {
-  const { step, isActive, isCompleted, tools, hasNext } = data as {
+  const { step, isActive, isCompleted, tools, hasNext, isTriggerSelector } = data as {
     step: Step
     isActive?: boolean
     isCompleted?: boolean
     tools?: Tool[]
     hasNext?: boolean
+    isTriggerSelector?: boolean
+  }
+
+  // Special rendering for "Select trigger from the sidebar" node
+  if (isTriggerSelector || step.name === "Select trigger from the sidebar" || step.type === "trigger_selector") {
+    return (
+      <>
+        <div
+          className="px-8 py-5 bg-white dark:bg-gray-800 border-2 border-dashed border-slate-300 dark:border-gray-600 hover:border-slate-400 dark:hover:border-gray-500 rounded-xl text-slate-700 dark:text-gray-300 text-base font-medium cursor-pointer flex items-center gap-3 transition-all duration-200 min-w-[200px] justify-center hover:bg-slate-50 dark:hover:bg-gray-700 hover:-translate-y-px hover:shadow-md"
+          onClick={(e) => {
+            e.stopPropagation()
+            // This will open the triggers sidebar
+            const event = new CustomEvent("openTriggersSidebar", {
+              detail: { nodeId: id },
+            })
+            window.dispatchEvent(event)
+          }}
+        >
+          <svg
+            className="w-5 h-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Select trigger from sidebar
+        </div>
+
+        {/* ReactFlow Handles - invisible but functional */}
+        <Handle
+          type="target"
+          position={Position.Top}
+          id="top"
+          isConnectable={isConnectable}
+          className="opacity-0"
+        />
+
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="bottom"
+          isConnectable={isConnectable}
+          className="opacity-0"
+        />
+      </>
+    )
   }
 
   // Special rendering for AI Agent nodes and steps with ai_agent tools
@@ -191,7 +238,11 @@ const StepNode: React.FC<NodeProps> = ({
       return (
         <>
           <div
-            className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+              selected 
+                ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+                : "border-gray-300 dark:border-gray-600"
+            }`}
             style={{
               width: "80px",
               height: "80px",
@@ -288,7 +339,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
             width: "320px",
             minHeight: "122px",
@@ -426,7 +481,11 @@ const StepNode: React.FC<NodeProps> = ({
       return (
         <>
           <div
-            className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+              selected 
+                ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+                : "border-gray-300 dark:border-gray-600"
+            }`}
             style={{
               width: "80px",
               height: "80px",
@@ -520,7 +579,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
             width: "320px",
             minHeight: "122px",
@@ -643,7 +706,11 @@ const StepNode: React.FC<NodeProps> = ({
     return (
       <>
         <div
-          className="relative cursor-pointer hover:shadow-lg transition-shadow bg-white dark:bg-gray-800 border-2 border-gray-800 dark:border-gray-300"
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
             width: "320px",
             minHeight: "122px",
@@ -987,38 +1054,91 @@ const StepNode: React.FC<NodeProps> = ({
 const Header = ({
   onBackToWorkflows,
   workflowName,
-}: { onBackToWorkflows?: () => void; workflowName?: string }) => {
+  selectedTemplate,
+  onWorkflowNameChange,
+  isEditable = true,
+}: { 
+  onBackToWorkflows?: () => void; 
+  workflowName?: string;
+  selectedTemplate?: WorkflowTemplate | null;
+  onWorkflowNameChange?: (newName: string) => void;
+  isEditable?: boolean;
+}) => {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingName, setEditingName] = useState("")
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const currentName = workflowName || selectedTemplate?.name || "Untitled Workflow"
+
+  const handleDoubleClick = () => {
+    setEditingName(currentName)
+    setIsEditing(true)
+  }
+
+  const handleSave = () => {
+    if (editingName.trim() && editingName !== currentName) {
+      onWorkflowNameChange?.(editingName.trim())
+    }
+    setIsEditing(false)
+  }
+
+  const handleCancel = () => {
+    setEditingName("")
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSave()
+    } else if (e.key === "Escape") {
+      handleCancel()
+    }
+  }
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [isEditing])
+
   return (
-    <div className="flex flex-col items-start px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px] gap-3">
+    <div className="flex items-center justify-start px-6 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px]">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 w-full">
-        <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
-          <span
-            className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
-            onClick={onBackToWorkflows}
-          >
-            Workflow
-          </span>
-          <span className="text-[#3B4145] dark:text-gray-300 text-sm font-medium leading-5">
-            {" "}
-            / Untitled Workflow
-          </span>
-        </div>
-      </div>
-
-      {/* Full-width divider */}
-      <div className="w-full h-px bg-slate-200 dark:bg-gray-700 -mx-6 self-stretch" />
-
-      {/* Editor/Settings Toggle - positioned below divider */}
-      <div className="flex items-center rounded-xl overflow-hidden border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800">
-        <button className="my-1 mx-1 px-4 py-1.5 bg-white dark:bg-gray-700 text-slate-800 dark:text-gray-200 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center rounded-lg shadow-sm">
-          <EditorIcon />
-          Editor
-        </button>
-        <button className="px-4 py-1.5 bg-transparent text-slate-500 dark:text-gray-400 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center">
-          <SettingsIcon />
-          Settings
-        </button>
+      <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
+        <span
+          className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
+          onClick={onBackToWorkflows}
+        >
+          Workflow
+        </span>
+        <span className="text-[#3B4145] dark:text-gray-300 text-sm font-medium leading-5">
+          {" "}
+          / {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onBlur={handleSave}
+              onKeyDown={handleKeyDown}
+              className="bg-transparent border-b border-blue-500 dark:border-blue-400 outline-none text-[#3B4145] dark:text-gray-300 text-sm font-medium min-w-[120px] max-w-[300px]"
+              style={{ width: `${Math.max(120, editingName.length * 8)}px` }}
+            />
+          ) : (
+            <span 
+              className={isEditable 
+                ? "cursor-pointer hover:text-[#1a1d20] dark:hover:text-gray-100 transition-colors"
+                : "text-[#3B4145] dark:text-gray-300"
+              }
+              onDoubleClick={isEditable ? handleDoubleClick : undefined}
+              title={isEditable ? "Double-click to edit workflow name" : undefined}
+            >
+              {currentName}
+            </span>
+          )}
+        </span>
       </div>
     </div>
   )
@@ -1103,7 +1223,7 @@ const ToolsSidebar = ({
 }) => {
   return (
     <div
-      className={`h-full bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ease-in-out z-40 ${
         isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
       }`}
     >
@@ -1412,7 +1532,7 @@ const TriggersSidebar = ({
 
   return (
     <div
-      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-40 ${
         isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
       }`}
     >
@@ -1601,7 +1721,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   isEditableMode,
 }) => {
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([])
-  const [selectedEdges, setSelectedEdges] = useState<Edge[]>([])
   const [nodeCounter, setNodeCounter] = useState(1)
   const [showEmptyCanvas, setShowEmptyCanvas] = useState(true)
   const [showTriggersSidebar, setShowTriggersSidebar] = useState(false)
@@ -1645,6 +1764,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
     null,
   )
+  // Workflow name state
+  const [currentWorkflowName, setCurrentWorkflowName] = useState<string>("")
 
   // Empty initial state
   const initialNodes: Node[] = []
@@ -1652,6 +1773,27 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+  
+  // Helper function to get workflow name consistently across components
+  const getWorkflowName = useCallback(() => {
+    // If user has set a custom name, use it
+    if (currentWorkflowName && currentWorkflowName.trim() !== "") {
+      return currentWorkflowName
+    }
+    
+    // If we have a selected template, use its name
+    if (selectedTemplate?.name) {
+      return selectedTemplate.name
+    }
+    
+    // For blank workflows without a custom name, use "Untitled Workflow"
+    if (!selectedTemplate && nodes.length > 0) {
+      return "Untitled Workflow"
+    }
+    
+    // Final fallback
+    return "Untitled Workflow"
+  }, [currentWorkflowName, selectedTemplate?.name, selectedTemplate, nodes.length])
   const { fitView, zoomTo, getViewport } = useReactFlow()
 
   // Create nodes and edges from selectedTemplate or localSelectedTemplate
@@ -1797,12 +1939,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setEdges(templateEdges)
       setNodeCounter((stepsData?.length || 0) + 1)
       setShowEmptyCanvas(false)
+      
+      // Initialize current workflow name with template name
+      if (!currentWorkflowName && templateToUse.name) {
+        setCurrentWorkflowName(templateToUse.name)
+      }
 
       setTimeout(() => {
         fitView({ padding: 0.2 })
       }, 50)
     }
-  }, [selectedTemplate, localSelectedTemplate, setNodes, setEdges, fitView])
+  }, [selectedTemplate, localSelectedTemplate, setNodes, setEdges, fitView, currentWorkflowName, setCurrentWorkflowName])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -1829,7 +1976,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     setSelectedNodes(params.nodes)
-    setSelectedEdges(params.edges)
   }, [])
 
   const onNodeClick = useCallback(
@@ -1858,20 +2004,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         step.type,
       )
 
-      // Don't override sidebar state if What Happens Next is currently showing and this node is the selected one
-      if (showWhatHappensNextUI && selectedNodeForNext === node.id) {
-        console.log(
-          "🔄 What Happens Next is open for this node, preserving state",
-        )
-        return
-      }
+      // Always override sidebar with clicked node data
 
-      // Close all sidebars first
+      // Close menu sidebars when nodes are clicked
       setShowTriggersSidebar(false)
       setShowWhatHappensNextUI(false)
+      
+      // Close all node config sidebars and clear selected node IDs
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setSelectedNodeForNext(null)
+      setSelectedAgentNodeId(null)
+      setSelectedEmailNodeId(null)
+      setSelectedFormNodeId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -1917,7 +2063,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           break
       }
     },
-    [onStepClick, showWhatHappensNextUI, selectedNodeForNext],
+    [
+      onStepClick, 
+      showWhatHappensNextUI, 
+      selectedNodeForNext,
+      showAIAgentConfigUI,
+      selectedAgentNodeId,
+      showEmailConfigUI,
+      selectedEmailNodeId,
+      showOnFormSubmissionUI,
+      selectedFormNodeId
+    ],
   )
 
   const onNodesDelete = useCallback<OnNodesDelete>(
@@ -1945,9 +2101,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           name: "Select trigger from the sidebar",
           status: "PENDING",
           contents: [],
+          type: "trigger_selector", // Special type to identify this node
         },
         isActive: false,
         isCompleted: false,
+        isTriggerSelector: true, // Flag for immediate identification
       },
       draggable: true,
     }
@@ -2091,7 +2249,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       const { nodeId } = event.detail
       console.log("Plus button clicked, opening What Happens Next for node:", nodeId)
       
-      // Close all other sidebars to ensure What Happens Next is shown
+      // Close all other sidebars when What Happens Next opens
       setShowTriggersSidebar(false)
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
@@ -2102,9 +2260,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowWhatHappensNextUI(true)
     }
 
+    const handleOpenTriggersSidebar = (event: CustomEvent) => {
+      const { nodeId } = event.detail
+      console.log("Add first step clicked, opening triggers sidebar for node:", nodeId)
+      
+      // Close all other sidebars
+      setShowWhatHappensNextUI(false)
+      setShowAIAgentConfigUI(false)
+      setShowEmailConfigUI(false)
+      setShowOnFormSubmissionUI(false)
+      
+      // Open Triggers sidebar
+      setShowTriggersSidebar(true)
+    }
+
     window.addEventListener(
       "openWhatHappensNext" as any,
       handleOpenWhatHappensNext,
+    )
+
+    window.addEventListener(
+      "openTriggersSidebar" as any,
+      handleOpenTriggersSidebar,
     )
 
     return () => {
@@ -2112,8 +2289,26 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         "openWhatHappensNext" as any,
         handleOpenWhatHappensNext,
       )
+      window.removeEventListener(
+        "openTriggersSidebar" as any,
+        handleOpenTriggersSidebar,
+      )
     }
   }, [])
+
+  // Update all nodes with anyNodeSelected flag
+  useEffect(() => {
+    const anySelected = selectedNodes.length > 0
+    setNodes((prevNodes) => 
+      prevNodes.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          anyNodeSelected: anySelected
+        }
+      }))
+    )
+  }, [selectedNodes, setNodes])
 
   // Function to stop polling
   const stopPolling = useCallback(() => {
@@ -2310,8 +2505,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }
 
       // Create the workflow state payload for the complex template API
+      // Use the centralized name resolution function to ensure consistency
+      const derivedName = getWorkflowName()
+      
+      console.log("🔍 Debug workflow name values:", {
+        currentWorkflowName,
+        selectedTemplateName: selectedTemplate?.name,
+        derivedName,
+        isBlankWorkflow: !selectedTemplate,
+        nodesCount: nodes.length
+      })
+      
       const workflowState = {
-        name: selectedTemplate?.name || `Custom Workflow ${new Date().toLocaleDateString()}`,
+        name: derivedName,
         description: selectedTemplate?.description || "Workflow created from builder",
         version: "1.0.0",
         config: {
@@ -2394,52 +2600,21 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         throw error
       }
     }
-  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling])
+  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName])
 
   const handleTriggerClick = useCallback(
     (triggerId: string) => {
       if (triggerId === "form") {
-        // Create form submission node immediately so user can see and drag it
-        const formNode: Node = {
-          id: "form-submission",
-          type: "stepNode",
-          position: { x: 400, y: 100 }, // Consistent X position for straight line connections
-          data: {
-            step: {
-              id: "form-submission",
-              name: "Form Submission",
-              status: "PENDING",
-              contents: [],
-              type: "form_submission",
-              config: {
-                title: "",
-                description: "",
-                fields: [
-                  {
-                    id: crypto.randomUUID(),
-                    name: "Field 1",
-                    placeholder: "",
-                    type: "file",
-                  },
-                ],
-              },
-            },
-            isActive: false,
-            isCompleted: false,
-            hasNext: false, // Will be set to true after configuration
-          },
-          draggable: true,
-          selectable: true,
-        }
-
-        setNodes([formNode])
-        setNodeCounter(2)
-        setShowEmptyCanvas(false)
-        setSelectedFormNodeId("form-submission")
-        setShowOnFormSubmissionUI(true)
+        // Don't create form submission node yet, just open configuration sidebar
+        console.log("🎯 Form trigger selected - opening form config sidebar")
+        
+        // Close TriggersSidebar with slide-out animation when OnFormSubmissionUI opens
         setShowTriggersSidebar(false)
+        setSelectedFormNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowOnFormSubmissionUI(true)
+        setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
 
-        // Reset zoom to 100% to match AI Agent/Email zoom level
+        // Reset zoom to 100%
         setZoomLevel(100)
         setTimeout(() => {
           zoomTo(1)
@@ -2447,205 +2622,167 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }
       // Handle other triggers here as needed
     },
-    [setNodes, zoomTo],
+    [zoomTo],
   )
 
-  const handleWhatHappensNextClose = useCallback(() => {
-    setShowWhatHappensNextUI(false)
-    setSelectedNodeForNext(null)
-  }, [])
 
   const handleWhatHappensNextAction = useCallback(async (actionId: string) => {
     console.log("Selected action:", actionId)
     
     if (actionId === "ai_agent") {
-      // When AI Agent is selected from WhatHappensNextUI, create a blank AI Agent node and open AIAgentConfigUI
+      // When AI Agent is selected from WhatHappensNextUI, keep it visible in background
       if (selectedNodeForNext) {
-        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
-        if (sourceNode) {
-          const newNodeId = `step-${nodeCounter}`
-          
-          // Create new AI Agent node positioned below the source node
-          const newNode = {
-            id: newNodeId,
-            type: "stepNode",
-            position: {
-              x: 400, // Consistent X position for perfect straight line alignment
-              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
-            },
-            data: {
-              step: {
-                id: newNodeId,
-                name: "AI Agent",
-                description: "",
-                type: "ai_agent",
-                status: "pending",
-                contents: [],
-                config: {},
-              },
-              tools: [],
-              isActive: false,
-              isCompleted: false,
-              hasNext: false, // Will be set to true after configuration
-            },
-            draggable: true,
-          }
-
-          // Create edge connecting source to new node
-          const newEdge: Edge = {
-            id: `${selectedNodeForNext}-${newNodeId}`,
-            source: selectedNodeForNext,
-            target: newNodeId,
-            type: "straight",
-            animated: false,
-            style: {
-              stroke: "#D1D5DB",
-              strokeWidth: 2,
-            },
-            markerEnd: {
-              type: "arrowclosed" as const,
-              color: "#D1D5DB",
-            },
-            sourceHandle: "bottom",
-            targetHandle: "top",
-          }
-
-          // Update nodes and edges
-          setNodes((prevNodes) => [...prevNodes, newNode])
-          setEdges((prevEdges) => [...prevEdges, newEdge])
-          setNodeCounter((prev) => prev + 1)
-
-          // Remove hasNext from source node since it now has a next step
-          setNodes((prevNodes) =>
-            prevNodes.map((node) =>
-              node.id === selectedNodeForNext
-                ? {
-                    ...node,
-                    data: {
-                      ...node.data,
-                      hasNext: false,
-                    },
-                  }
-                : node,
-            ),
-          )
-
-          // Close WhatHappensNextUI and open AIAgentConfigUI for the new node
-          setShowWhatHappensNextUI(false)
-          setSelectedNodeForNext(null)
-          setSelectedAgentNodeId(newNodeId)
-          setShowAIAgentConfigUI(true)
-        }
+        // Keep selectedNodeForNext for later node creation on save
+        setSelectedAgentNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowAIAgentConfigUI(true)
+        // Note: Keep WhatHappensNextUI visible in background (z-40)
+        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
     } else if (actionId === "email") {
-      // When Email is selected from WhatHappensNextUI, create a blank Email node and open EmailConfigUI
+      // When Email is selected from WhatHappensNextUI, keep it visible in background
       if (selectedNodeForNext) {
-        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
-        if (sourceNode) {
-          const newNodeId = `step-${nodeCounter}`
-          
-          // Create new Email node positioned below the source node
-          const newNode = {
-            id: newNodeId,
-            type: "stepNode",
-            position: {
-              x: 400, // Consistent X position for perfect straight line alignment
-              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
-            },
-            data: {
-              step: {
-                id: newNodeId,
-                name: "Email",
-                description: "",
-                type: "email",
-                status: "pending",
-                contents: [],
-                config: {},
-              },
-              tools: [],
-              isActive: false,
-              isCompleted: false,
-              hasNext: false, // Will be set to true after configuration
-            },
-            draggable: true,
-          }
-
-          // Create edge connecting source to new node
-          const newEdge: Edge = {
-            id: `${selectedNodeForNext}-${newNodeId}`,
-            source: selectedNodeForNext,
-            target: newNodeId,
-            type: "straight",
-            animated: false,
-            style: {
-              stroke: "#D1D5DB",
-              strokeWidth: 2,
-            },
-            markerEnd: {
-              type: "arrowclosed" as const,
-              color: "#D1D5DB",
-            },
-            sourceHandle: "bottom",
-            targetHandle: "top",
-          }
-
-          // Update nodes and edges
-          setNodes((prevNodes) => [...prevNodes, newNode])
-          setEdges((prevEdges) => [...prevEdges, newEdge])
-          setNodeCounter((prev) => prev + 1)
-
-          // Remove hasNext from source node since it now has a next step
-          setNodes((prevNodes) =>
-            prevNodes.map((node) =>
-              node.id === selectedNodeForNext
-                ? {
-                    ...node,
-                    data: {
-                      ...node.data,
-                      hasNext: false,
-                    },
-                  }
-                : node,
-            ),
-          )
-
-          // Close WhatHappensNextUI and open EmailConfigUI for the new node
-          setShowWhatHappensNextUI(false)
-          setSelectedNodeForNext(null)
-          setSelectedEmailNodeId(newNodeId)
-          setShowEmailConfigUI(true)
-        }
+        // Keep selectedNodeForNext for later node creation on save
+        setSelectedEmailNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowEmailConfigUI(true)
+        // Note: Keep WhatHappensNextUI visible in background (z-40)
+        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
     }
-  }, [selectedNodeForNext, nodes, nodeCounter, setNodes, setEdges, setNodeCounter])
+  }, [selectedNodeForNext])
 
   const handleAIAgentConfigBack = useCallback(() => {
     setShowAIAgentConfigUI(false)
-    setSelectedAgentNodeId(null)
-  }, [])
+    
+    // If we're in creation mode (pending), go back to the "What Happens Next" menu
+    if (selectedAgentNodeId === "pending" && selectedNodeForNext) {
+      // Ensure WhatHappensNextUI is visible when we go back
+      setShowWhatHappensNextUI(true)
+      setSelectedAgentNodeId(null)
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedAgentNodeId(null)
+      setSelectedNodeForNext(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedAgentNodeId, selectedNodeForNext, setNodes])
 
   const handleAIAgentConfigSave = useCallback(
     (agentConfig: AIAgentConfig) => {
-      if (selectedAgentNodeId) {
-        // Format description with model information
+      console.log("🔧 AI Agent Config Save - selectedAgentNodeId:", selectedAgentNodeId, "selectedNodeForNext:", selectedNodeForNext)
+      
+      if (selectedAgentNodeId === "pending" && selectedNodeForNext) {
+        // Create new AI Agent node when saving configuration
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        console.log("📍 Source node found:", sourceNode)
+        if (sourceNode) {
+          const newNodeId = `ai-agent-${nodeCounter}`
+          
+          // Format description with model information
+          const formattedDescription = agentConfig.description
+            ? `${agentConfig.description} using ${agentConfig.model}`
+            : `AI agent to analyze and summarize documents using ${agentConfig.model}`
+
+          // Create the tool object for AI Agent
+          const aiAgentTool = {
+            id: `tool-${newNodeId}`,
+            type: "ai_agent",
+            val: agentConfig, // Use 'val' to match template structure
+            value: agentConfig, // Also include 'value' for compatibility
+            config: {
+              model: agentConfig.model,
+              name: agentConfig.name,
+              description: formattedDescription,
+              to_email: [],
+            },
+          }
+
+          // Create new node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: agentConfig.name,
+                description: formattedDescription,
+                type: "ai_agent",
+                status: "pending",
+                contents: [],
+                config: {
+                  ...agentConfig,
+                  description: formattedDescription,
+                },
+              },
+              tools: [aiAgentTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+            },
+            draggable: true,
+            selected: true, // Select the newly created node
+          }
+
+          // Create edge connecting source to new node
+          const newEdge: Edge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "straight",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          }
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      hasNext: false,
+                    },
+                    selected: false, // Deselect source node
+                  }
+                : node.id === newNodeId
+                  ? node // Keep new node selected
+                  : { ...node, selected: false }, // Deselect all other nodes
+            ),
+          )
+        }
+      } else if (selectedAgentNodeId && selectedAgentNodeId !== "pending") {
+        // Update existing AI Agent node with the configuration
         const formattedDescription = agentConfig.description
           ? `${agentConfig.description} using ${agentConfig.model}`
           : `AI agent to analyze and summarize documents using ${agentConfig.model}`
 
-        // Find the source node that this AI Agent connects from
-        const sourceEdge = edges.find(
-          (edge) => edge.target === selectedAgentNodeId,
-        )
-        const sourceNode = sourceEdge
-          ? nodes.find((n) => n.id === sourceEdge.source)
-          : null
-
-        // Create the tool object for AI Agent
         const aiAgentTool = {
           id: `tool-${selectedAgentNodeId}`,
           type: "ai_agent",
-          val: agentConfig, // Use 'val' to match template structure
-          value: agentConfig, // Also include 'value' for compatibility
+          val: agentConfig,
+          value: agentConfig,
           config: {
             model: agentConfig.model,
             name: agentConfig.name,
@@ -2654,19 +2791,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           },
         }
 
-        // Update the AI Agent node with the configuration
         setNodes((nds) =>
           nds.map((node) =>
             node.id === selectedAgentNodeId
               ? {
                   ...node,
-                  // Reposition node to ensure consistent X alignment for straight lines
-                  position: sourceNode
-                    ? {
-                        x: 400, // Consistent X position for perfect straight line alignment
-                        y: node.position.y, // Keep same Y position for straight line connection
-                      }
-                    : node.position,
                   data: {
                     ...node.data,
                     step: {
@@ -2677,8 +2806,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                         description: formattedDescription,
                       },
                     },
-                    tools: [aiAgentTool], // Add the tool object
-                    // Show + icon only if this node is the last in the chain (no outgoing edges)
+                    tools: [aiAgentTool],
                     hasNext: !edges.some(edge => edge.source === selectedAgentNodeId),
                   },
                 }
@@ -2695,32 +2823,137 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       setShowAIAgentConfigUI(false)
       setSelectedAgentNodeId(null)
+      setSelectedNodeForNext(null)
     },
-    [selectedAgentNodeId, edges, nodes, setNodes, zoomTo],
+    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, zoomTo],
   )
 
   const handleEmailConfigBack = useCallback(() => {
     setShowEmailConfigUI(false)
-    setSelectedEmailNodeId(null)
-  }, [])
+    
+    // If we're in creation mode (pending), go back to the "What Happens Next" menu
+    if (selectedEmailNodeId === "pending" && selectedNodeForNext) {
+      // Ensure WhatHappensNextUI is visible when we go back
+      setShowWhatHappensNextUI(true)
+      setSelectedEmailNodeId(null)
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedEmailNodeId(null)
+      setSelectedNodeForNext(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedEmailNodeId, selectedNodeForNext, setNodes])
 
   const handleEmailConfigSave = useCallback(
     (emailConfig: EmailConfig) => {
-      if (selectedEmailNodeId) {
-        // Find the source node that this Email connects from
-        const sourceEdge = edges.find(
-          (edge) => edge.target === selectedEmailNodeId,
-        )
-        const sourceNode = sourceEdge
-          ? nodes.find((n) => n.id === sourceEdge.source)
-          : null
+      console.log("📧 Email Config Save - selectedEmailNodeId:", selectedEmailNodeId, "selectedNodeForNext:", selectedNodeForNext)
+      
+      if (selectedEmailNodeId === "pending" && selectedNodeForNext) {
+        // Create new Email node when saving configuration
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        console.log("📍 Source node found:", sourceNode)
+        if (sourceNode) {
+          const newNodeId = `email-${nodeCounter}`
+          
+          // Create the tool object for Email
+          const emailTool = {
+            id: `tool-${newNodeId}`,
+            type: "email",
+            val: emailConfig, // Use 'val' to match template structure
+            value: emailConfig, // Also include 'value' for compatibility
+            config: {
+              to_email: emailConfig.emailAddresses,
+              from_email: emailConfig.sendingFrom,
+              sendingFrom: emailConfig.sendingFrom,
+              emailAddresses: emailConfig.emailAddresses,
+            },
+          }
 
-        // Create the tool object for Email
+          // Create new node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: "Email",
+                description: emailConfig.emailAddresses && emailConfig.emailAddresses.length > 0
+                  ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
+                  : "Send automated email notifications to specified recipients.",
+                type: "email",
+                status: "pending",
+                contents: [],
+                config: {
+                  sendingFrom: emailConfig.sendingFrom,
+                  emailAddresses: emailConfig.emailAddresses,
+                },
+              },
+              tools: [emailTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+            },
+            draggable: true,
+            selected: true, // Select the newly created node
+          }
+
+          // Create edge connecting source to new node
+          const newEdge: Edge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "straight",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          }
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      hasNext: false,
+                    },
+                    selected: false, // Deselect source node
+                  }
+                : node.id === newNodeId
+                  ? node // Keep new node selected
+                  : { ...node, selected: false }, // Deselect all other nodes
+            ),
+          )
+        }
+      } else if (selectedEmailNodeId && selectedEmailNodeId !== "pending") {
+        // Update existing Email node with the configuration
         const emailTool = {
           id: `tool-${selectedEmailNodeId}`,
           type: "email",
-          val: emailConfig, // Use 'val' to match template structure
-          value: emailConfig, // Also include 'value' for compatibility
+          val: emailConfig,
+          value: emailConfig,
           config: {
             to_email: emailConfig.emailAddresses,
             from_email: emailConfig.sendingFrom,
@@ -2729,19 +2962,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           },
         }
 
-        // Update the Email node with the configuration
         setNodes((nds) =>
           nds.map((node) =>
             node.id === selectedEmailNodeId
               ? {
                   ...node,
-                  // Reposition node to ensure consistent X alignment for straight lines
-                  position: sourceNode
-                    ? {
-                        x: 400, // Consistent X position for perfect straight line alignment
-                        y: node.position.y, // Keep same Y position for straight line connection
-                      }
-                    : node.position,
                   data: {
                     ...node.data,
                     step: {
@@ -2752,8 +2977,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                         emailAddresses: emailConfig.emailAddresses,
                       },
                     },
-                    tools: [emailTool], // Add the tool object
-                    // Show + icon only if this node is the last in the chain (no outgoing edges)
+                    tools: [emailTool],
                     hasNext: !edges.some(edge => edge.source === selectedEmailNodeId),
                   },
                 }
@@ -2770,26 +2994,92 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       setShowEmailConfigUI(false)
       setSelectedEmailNodeId(null)
+      setSelectedNodeForNext(null)
     },
-    [selectedEmailNodeId, edges, nodes, setNodes, zoomTo],
+    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, zoomTo],
   )
 
   const handleOnFormSubmissionBack = useCallback(() => {
     setShowOnFormSubmissionUI(false)
-    setSelectedFormNodeId(null)
-    // Go back to main workflow view
-  }, [])
+    
+    // If we're in creation mode (pending), go back to triggers sidebar
+    if (selectedFormNodeId === "pending") {
+      setShowTriggersSidebar(true)
+      setSelectedFormNodeId(null)
+      // If we were in pending mode (creating new trigger), show empty canvas again
+      if (nodes.length === 0) {
+        setShowEmptyCanvas(true)
+      }
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedFormNodeId(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedFormNodeId, nodes.length, setNodes])
 
   const handleOnFormSubmissionSave = useCallback(
     (formConfig: FormConfig) => {
-      // Always update the existing form submission node (since we create it immediately on trigger click)
-      if (selectedFormNodeId) {
+      console.log("📝 Form Config Save - selectedFormNodeId:", selectedFormNodeId)
+      
+      if (selectedFormNodeId === "pending") {
+        // Create new form submission node when saving configuration
+        console.log("✨ Creating new form submission node")
+        
+        const newNodeId = "form-submission"
+        
         // Create the tool object for Form
         const formTool = {
-          id: `tool-${selectedFormNodeId}`,
+          id: `tool-${newNodeId}`,
           type: "form",
           val: formConfig, // Use 'val' to match template structure
           value: formConfig, // Also include 'value' for compatibility
+          config: {
+            title: formConfig.title,
+            description: formConfig.description,
+            fields: formConfig.fields,
+          },
+        }
+
+        // Create form submission node
+        const formNode: Node = {
+          id: newNodeId,
+          type: "stepNode",
+          position: { x: 400, y: 100 }, // Consistent X position for straight line connections
+          data: {
+            step: {
+              id: newNodeId,
+              name: formConfig.title || "Form Submission",
+              status: "PENDING",
+              contents: [],
+              type: "form_submission",
+              config: formConfig,
+            },
+            tools: [formTool],
+            isActive: false,
+            isCompleted: false,
+            hasNext: true, // Show + icon since this is the starting node
+            anyNodeSelected: false,
+          },
+          draggable: true,
+          selectable: true,
+          selected: true, // Select the newly created node
+        }
+
+        setNodes([formNode])
+        setNodeCounter(2)
+        setSelectedNodes([formNode]) // Update selectedNodes for the anyNodeSelected flag
+
+      } else if (selectedFormNodeId && selectedFormNodeId !== "pending") {
+        // Update existing form submission node
+        const formTool = {
+          id: `tool-${selectedFormNodeId}`,
+          type: "form",
+          val: formConfig,
+          value: formConfig,
           config: {
             title: formConfig.title,
             description: formConfig.description,
@@ -2809,8 +3099,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       name: formConfig.title || "Form Submission",
                       config: formConfig,
                     },
-                    tools: [formTool], // Add the tool object
-                    // Show + icon only if this node is the last in the chain (no outgoing edges)
+                    tools: [formTool],
                     hasNext: !edges.some(edge => edge.source === selectedFormNodeId),
                   },
                 }
@@ -2827,7 +3116,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         zoomTo(1)
       }, 50)
     },
-    [selectedFormNodeId, setNodes, zoomTo, edges],
+    [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges],
   )
 
   const handleResultClick = useCallback((result: any) => {
@@ -2880,12 +3169,26 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     setShowTemplateSelectionModal(false)
   }, [])
 
+
+  // Handler for workflow name change
+  const handleWorkflowNameChange = useCallback((newName: string) => {
+    console.log("🏷️ Workflow name changing from:", currentWorkflowName, "to:", newName)
+    setCurrentWorkflowName(newName)
+    // Here you could also update the selectedTemplate if needed
+    // or make an API call to save the name change
+  }, [currentWorkflowName])
+
+  // Use the centralized workflow name function for display consistency
+
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-gray-900 relative">
       {/* Header */}
       <Header
         onBackToWorkflows={onBackToWorkflows}
-        workflowName={selectedTemplate?.name}
+        workflowName={getWorkflowName()}
+        selectedTemplate={selectedTemplate}
+        onWorkflowNameChange={handleWorkflowNameChange}
+        isEditable={isEditableMode}
       />
 
       {/* Main content area */}
@@ -2927,26 +3230,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }}
             proOptions={{ hideAttribution: true }}
           >
-            {/* Selection Info Panel */}
-            {(selectedNodes.length > 0 || selectedEdges.length > 0) && (
-              <Panel position="top-right">
-                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-md border border-slate-200 dark:border-gray-700 min-w-[200px]">
-                  <div className="text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">
-                    Selection Info
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    Nodes: {selectedNodes.length} | Edges:{" "}
-                    {selectedEdges.length}
-                  </div>
-                  {selectedNodes.length === 1 && selectedNodes[0].data?.step ? (
-                    <div className="text-xs mt-1 text-gray-700 dark:text-gray-300">
-                      <strong>Step:</strong>{" "}
-                      {(selectedNodes[0].data.step as Step).name || "Unnamed"}
-                    </div>
-                  ) : null}
-                </div>
-              </Panel>
-            )}
 
             {/* Empty Canvas Content */}
             {showEmptyCanvas && !isLoadingTemplate && (
@@ -2989,6 +3272,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                   }}
                   zoomLevel={zoomLevel}
                   onZoomChange={handleZoomChange}
+                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector)}
                 />
               </Panel>
             )}
@@ -3012,17 +3296,30 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             <TriggersSidebar
               isVisible={showTriggersSidebar}
               onTriggerClick={handleTriggerClick}
-              onClose={() => setShowTriggersSidebar(false)}
+              onClose={() => {
+                setShowTriggersSidebar(false)
+                // Clear all node selections when sidebar closes
+                setNodes((prevNodes) => 
+                  prevNodes.map(node => ({ ...node, selected: false }))
+                )
+                setSelectedNodes([])
+              }}
             />
           )}
 
-        {/* What Happens Next Sidebar */}
-        {!showAIAgentConfigUI &&
-          !showEmailConfigUI &&
-          !showOnFormSubmissionUI && (
-            <WhatHappensNextUI
+        {/* What Happens Next Sidebar - stays visible in background when node sidebars open */}
+        <WhatHappensNextUI
               isVisible={showWhatHappensNextUI}
-              onClose={handleWhatHappensNextClose}
+              onClose={() => {
+                setShowWhatHappensNextUI(false)
+                // Don't clear selectedNodeForNext here since it's needed for node creation
+                // Only clear it when AI Agent/Email config is actually cancelled
+                // Clear all node selections when sidebar closes
+                setNodes((prevNodes) => 
+                  prevNodes.map(node => ({ ...node, selected: false }))
+                )
+                setSelectedNodes([])
+              }}
               onSelectAction={handleWhatHappensNextAction}
               selectedNodeId={selectedNodeForNext}
               toolType={
@@ -3121,14 +3418,23 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 }
               }}
             />
-          )}
 
         {/* AI Agent Config Sidebar */}
         {!showEmailConfigUI && !showOnFormSubmissionUI && (
           <AIAgentConfigUI
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
+            onClose={() => {
+              setShowAIAgentConfigUI(false)
+              setSelectedAgentNodeId(null)
+              setSelectedNodeForNext(null)
+              setNodes((prevNodes) => 
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+            }}
             onSave={handleAIAgentConfigSave}
+            showBackButton={selectedAgentNodeId === "pending"}
             toolData={
               selectedAgentNodeId
                 ? (() => {
@@ -3163,7 +3469,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           <EmailConfigUI
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
+            onClose={() => {
+              setShowEmailConfigUI(false)
+              setSelectedEmailNodeId(null)
+              setSelectedNodeForNext(null)
+              setNodes((prevNodes) => 
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+            }}
             onSave={handleEmailConfigSave}
+            showBackButton={selectedEmailNodeId === "pending"}
             toolData={
               selectedEmailNodeId
                 ? (() => {
@@ -3194,10 +3510,23 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
 
         {/* On Form Submission Config Sidebar */}
-        {showOnFormSubmissionUI && (
-          <OnFormSubmissionUI
+        <OnFormSubmissionUI
+            isVisible={showOnFormSubmissionUI}
             onBack={handleOnFormSubmissionBack}
+            onClose={() => {
+              setShowOnFormSubmissionUI(false)
+              setSelectedFormNodeId(null)
+              setNodes((prevNodes) => 
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+              // If we were in pending mode (creating new trigger), show empty canvas again
+              if (nodes.length === 0) {
+                setShowEmptyCanvas(true)
+              }
+            }}
             onSave={handleOnFormSubmissionSave}
+            showBackButton={selectedFormNodeId === "pending"}
             initialConfig={
               selectedFormNodeId
                 ? (
@@ -3225,7 +3554,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 : undefined
             }
           />
-        )}
       </div>
 
       {/* Execution Result Modal */}
@@ -3254,14 +3582,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       <TemplateSelectionModal
         isOpen={showTemplateSelectionModal}
         onClose={handleTemplateModalClose}
-        templates={availableTemplates.map(template => ({
-          id: template.id,
-          name: template.name,
-          description: template.description,
-          icon: "🔧", // Default icon, you can map based on template type
-          iconBgColor: "bg-blue-50",
-          isPlaceholder: false,
-        }))}
+        templates={availableTemplates
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first
+          .map(template => ({
+            id: template.id,
+            name: template.name,
+            description: template.description,
+            icon: "🔧", // Default icon, you can map based on template type
+            iconBgColor: "bg-blue-50",
+            isPlaceholder: false,
+          }))}
         loading={templatesLoading}
         error={templatesError}
         onSelectTemplate={handleTemplateSelect}
