@@ -3511,15 +3511,23 @@ export const AgentMessageApi = async (c: Context) => {
         safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
       const agentAccess =
         safeGet<{ agents?: string[] }>(c, "config")?.agents || []
-      if (
-        !apiKeyScopes.includes(ApiKeyScopes.AGENT_CHAT) ||
-        //@ts-ignore
-        !agentAccess.includes(body?.agentId)
-      ) {
+
+      // Check if API key has agent chat scope
+      if (!apiKeyScopes.includes(ApiKeyScopes.AGENT_CHAT)) {
         return c.json(
           {
-            message:
-              "API key does not have scope to chat with agents or not authorized for this agent",
+            message: "API key does not have scope to chat with agents",
+          },
+          403,
+        )
+      }
+
+      // Check agent access: if agentAccess is empty, allow all agents; otherwise check specific access
+      //@ts-ignore
+      if (agentAccess.length > 0 && !agentAccess.includes(body?.agentId)) {
+        return c.json(
+          {
+            message: "API key is not authorized for this agent",
           },
           403,
         )

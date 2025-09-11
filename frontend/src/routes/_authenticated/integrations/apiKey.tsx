@@ -366,7 +366,7 @@ const ApiKeyComponent = ({
   }
 
   const getAgentNames = (agentExternalIds: string[]) => {
-    if (agentExternalIds.length === 0) return "No agents selected"
+    if (agentExternalIds.length === 0) return "All agents"
     return agentExternalIds
       .map(
         (externalId) =>
@@ -485,6 +485,14 @@ const ApiKeyComponent = ({
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <Label>Agent Access</Label>
+                    </div>
+
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800">
+                        <strong>Note:</strong> If no agents are selected, the
+                        API key will have access to all agents in your
+                        workspace. Select specific agents to restrict access.
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
@@ -714,13 +722,11 @@ const ApiKeyComponent = ({
               <div className="space-y-3">
                 {selectedApiKeyForAgents?.agents.length === 0 ? (
                   <div className="flex items-start space-x-3">
-                    <div className="w-2 h-2 rounded-full bg-gray-400 mt-2 flex-shrink-0" />
+                    <div className="w-2 h-2 rounded-full bg-green-500 mt-2 flex-shrink-0" />
                     <div>
-                      <p className="font-medium text-muted-foreground">
-                        No agents selected
-                      </p>
+                      <p className="font-medium">All agents</p>
                       <p className="text-sm text-muted-foreground">
-                        This API key has no agent access
+                        This API key has access to all agents in the workspace
                       </p>
                     </div>
                   </div>
@@ -799,7 +805,7 @@ const ApiKeyComponent = ({
                     <strong>Important:</strong> This is the only time you'll be
                     able to see the full API key. Make sure to copy and store it
                     securely. After closing this dialog, you won't be able to
-                    see the whole API key
+                    see the whole API key.
                   </p>
                 </div>
               </div>
