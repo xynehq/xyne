@@ -433,7 +433,6 @@ function WorkflowComponent() {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
           'Access-Control-Allow-Origin': '*',
           ...(token && { 'Authorization': `Bearer ${token}` }),
         },
