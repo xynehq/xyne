@@ -39,7 +39,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
     name: "AI Agent",
     description: "",
-    model: "gemini-1.5-flash",
+    model: "googleai-gemini-2-5-flash",
     inputPrompt: "$json.input",
     systemPrompt: "",
     knowledgeBase: "",
@@ -61,7 +61,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
         setAgentConfig({
           name: existingConfig.name || "AI Agent",
           description: existingConfig.description || "",
-          model: existingConfig.model || "gemini-1.5-flash",
+          model: getValidModelId(existingConfig.model),
           inputPrompt: existingConfig.inputPrompt || "$json.input",
           systemPrompt: existingConfig.systemPrompt || "",
           knowledgeBase: existingConfig.knowledgeBase || "",
@@ -71,7 +71,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
         setAgentConfig({
           name: "AI Agent",
           description: "",
-          model: "gemini-1.5-flash",
+          model: getValidModelId(undefined), // This will return the default valid model
           inputPrompt: "$json.input",
           systemPrompt: "",
           knowledgeBase: "",
@@ -85,10 +85,35 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
 
-  const models = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"]
+  const models = ["googleai-gemini-2-5-flash"]
+  
+  // Hidden text that gets appended to system prompts but not shown to user
+  const HIDDEN_APPEND_TEXT = "\n\nPlease convert the text output of the previous step in pure textual representation removing any html tags/escape sequences"
+  
+  // Helper function to ensure valid model ID
+  const getValidModelId = (modelId: string | undefined): string => {
+    return models.includes(modelId || "") ? (modelId as string) : "googleai-gemini-2-5-flash"
+  }
+
+  // Helper function to remove the hidden append text for display
+  const getDisplaySystemPrompt = (systemPrompt: string): string => {
+    if (systemPrompt.endsWith(HIDDEN_APPEND_TEXT)) {
+      return systemPrompt.slice(0, -HIDDEN_APPEND_TEXT.length)
+    }
+    return systemPrompt
+  }
+
+  // Helper function to add the hidden append text for saving
+  const getFullSystemPrompt = (displayPrompt: string): string => {
+    if (displayPrompt.endsWith(HIDDEN_APPEND_TEXT)) {
+      return displayPrompt // Already has the append text
+    }
+    return displayPrompt + HIDDEN_APPEND_TEXT
+  }
 
   const enhanceSystemPrompt = async () => {
-    if (!agentConfig.systemPrompt.trim()) {
+    const displayPrompt = getDisplaySystemPrompt(agentConfig.systemPrompt)
+    if (!displayPrompt.trim()) {
       alert("Please enter a system prompt first")
       return
     }
@@ -99,7 +124,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
       // Use Xyne's existing prompt generation endpoint with Bedrock
       const requirements = `Enhance this AI agent system prompt to be more professional, clear, and effective. Make it more structured and comprehensive while preserving the original intent.
 
-Original prompt: "${agentConfig.systemPrompt}"
+Original prompt: "${displayPrompt}"
 
 Please provide an enhanced version that:
 1. Is clear and specific about the AI agent's role
@@ -110,45 +135,57 @@ Please provide an enhanced version that:
 Return only the enhanced system prompt without any additional explanation.`
 
       // Create EventSource for streaming response from Xyne's Bedrock implementation
-      const url = `/agent/generate-prompt?requirements=${encodeURIComponent(requirements)}&modelId=${encodeURIComponent(agentConfig.model)}`
-      const eventSource = new EventSource(url)
-
+      const BACKEND_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
+      const url = `${BACKEND_BASE_URL}/api/v1/agent/generate-prompt?requirements=${encodeURIComponent(requirements)}&modelId=${encodeURIComponent(agentConfig.model)}`
+      
       let enhancedPrompt = ""
       let timeoutId: ReturnType<typeof setTimeout>
+      
+      // Create EventSource but don't connect yet
+      const eventSource = new EventSource(url, { withCredentials: true })
 
       // Set a timeout to prevent hanging
       timeoutId = setTimeout(() => {
         eventSource.close()
         setIsEnhancingPrompt(false)
-        // TODO: surface a toast to the user about timeout
       }, 30000) // 30s
 
-      eventSource.onmessage = (event) => {
+      // Handle ResponseUpdate events (text chunks)
+      eventSource.addEventListener("u", (event) => {
+        enhancedPrompt += event.data
+      })
+
+      // Handle End events (completion)
+      eventSource.addEventListener("e", (event) => {
+        clearTimeout(timeoutId)
+        eventSource.close()
+
         try {
           const data = JSON.parse(event.data)
-
-          if (event.type === "ResponseUpdate" || data.type === "update") {
-            enhancedPrompt += data.text || data.content || ""
-          } else if (event.type === "End" || data.type === "end") {
-            clearTimeout(timeoutId)
-            eventSource.close()
-
-            const finalPrompt = data.fullPrompt || enhancedPrompt.trim()
-            if (finalPrompt) {
-              setAgentConfig((prev) => ({
-                ...prev,
-                systemPrompt: finalPrompt,
-              }))
-            }
-            setIsEnhancingPrompt(false)
+          const finalPrompt = data.fullPrompt || enhancedPrompt.trim()
+          if (finalPrompt) {
+            setAgentConfig((prev) => ({
+              ...prev,
+              systemPrompt: getFullSystemPrompt(finalPrompt),
+            }))
           }
-        } catch (parseError) {
-          // Handle non-JSON responses (raw text chunks)
-          if (typeof event.data === "string") {
-            enhancedPrompt += event.data
+        } catch (error) {
+          if (enhancedPrompt.trim()) {
+            setAgentConfig((prev) => ({
+              ...prev,
+              systemPrompt: getFullSystemPrompt(enhancedPrompt.trim()),
+            }))
           }
         }
-      }
+        setIsEnhancingPrompt(false)
+      })
+
+      // Handle Error events
+      eventSource.addEventListener("er", (event) => {
+        clearTimeout(timeoutId)
+        eventSource.close()
+        setIsEnhancingPrompt(false)
+      })
 
       eventSource.onerror = (error) => {
         console.error("EventSource error:", error)
@@ -160,7 +197,7 @@ Return only the enhanced system prompt without any additional explanation.`
         const fallbackEnhancement = `You are a professional ${agentConfig.name.toLowerCase()} AI agent specialized in ${agentConfig.description || "data processing"}.
 
 CORE RESPONSIBILITIES:
-${agentConfig.systemPrompt}
+${getDisplaySystemPrompt(agentConfig.systemPrompt)}
 
 BEHAVIORAL GUIDELINES:
 - Maintain a professional and helpful tone at all times
@@ -179,7 +216,7 @@ Always strive for excellence and helpfulness in your responses while adhering to
 
         setAgentConfig((prev) => ({
           ...prev,
-          systemPrompt: fallbackEnhancement,
+          systemPrompt: getFullSystemPrompt(fallbackEnhancement),
         }))
       }
     } catch (error) {
@@ -187,7 +224,7 @@ Always strive for excellence and helpfulness in your responses while adhering to
       setIsEnhancingPrompt(false)
 
       // Fallback enhancement for any other errors
-      const fallbackEnhancement = `You are a professional ${agentConfig.name.toLowerCase()} AI agent. ${agentConfig.systemPrompt}
+      const fallbackEnhancement = `You are a professional ${agentConfig.name.toLowerCase()} AI agent. ${getDisplaySystemPrompt(agentConfig.systemPrompt)}
 
 Key responsibilities:
 - Analyze and process the provided input thoroughly
@@ -200,7 +237,7 @@ Always strive for accuracy and helpfulness in your responses.`
 
       setAgentConfig((prev) => ({
         ...prev,
-        systemPrompt: fallbackEnhancement,
+        systemPrompt: getFullSystemPrompt(fallbackEnhancement),
       }))
 
       alert("Enhancement failed. A basic improvement has been applied.")
@@ -392,7 +429,7 @@ Always strive for accuracy and helpfulness in your responses.`
               </Label>
               <button
                 onClick={enhanceSystemPrompt}
-                disabled={isEnhancingPrompt || !agentConfig.systemPrompt.trim()}
+                disabled={isEnhancingPrompt || !getDisplaySystemPrompt(agentConfig.systemPrompt).trim()}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Enhance with AI"
               >
@@ -477,11 +514,11 @@ Always strive for accuracy and helpfulness in your responses.`
             </div>
             <Textarea
               id="system-prompt"
-              value={agentConfig.systemPrompt}
+              value={getDisplaySystemPrompt(agentConfig.systemPrompt)}
               onChange={(e) =>
                 setAgentConfig((prev) => ({
                   ...prev,
-                  systemPrompt: e.target.value,
+                  systemPrompt: getFullSystemPrompt(e.target.value),
                 }))
               }
               placeholder="Enter system prompt"
