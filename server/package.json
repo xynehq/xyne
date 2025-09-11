@@ -23,7 +23,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../",
-    "prepare": "cd .. && husky .husky"
+    "prepare": "cd .. && husky .husky",
+    "postinstall": "mkdir -p node_modules/@xynehq/jaf/dependencies && ln -sf $(pwd)/node_modules/pdf-parse node_modules/@xynehq/jaf/dependencies/pdf-parse && sed -i '' 's/let isDebugMode = !module.parent;/let isDebugMode = false;/' node_modules/pdf-parse/index.js"
   },
   "dependencies": {
     "@anthropic-ai/vertex-sdk": "^0.13.1",
@@ -70,6 +71,7 @@
     "ora": "^8.1.1",
     "p-limit": "^6.2.0",
     "partial-json": "^0.1.7",
+    "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^5.3.31",
     "pg-boss": "^10.1.5",
     "picocolors": "^1.1.1",
