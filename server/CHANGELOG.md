@@ -240,8 +240,3 @@
 ### Reverts
 
 * Revert "feat/knowledge base ([#658](https://github.com/xynehq/xyne/issues/658))" ([#722](https://github.com/xynehq/xyne/issues/722)) ([3c7a7fa](https://github.com/xynehq/xyne/commit/3c7a7fa0c6b5783ad16a0dbf6dba706e4bac4aa2))
-
-
-### BREAKING CHANGES
-
-* **dx:** N
