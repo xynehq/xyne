@@ -94,7 +94,7 @@ html {
   body {
     @apply bg-background text-foreground;
   }
-  
+
   /* Custom checkbox styling */
   input[type="checkbox"] {
     appearance: none;
@@ -110,24 +110,24 @@ html {
     cursor: pointer;
     position: relative;
   }
-  
+
   .dark input[type="checkbox"] {
     border-color: #4b5563;
     background-color: #1f2937;
   }
-  
+
   input[type="checkbox"]:checked {
-    background-color: #FC7878;
-    border-color: #FC7878;
+    background-color: #fc7878;
+    border-color: #fc7878;
   }
-  
+
   .dark input[type="checkbox"]:checked {
-    background-color: #FC7878;
-    border-color: #FC7878;
+    background-color: #fc7878;
+    border-color: #fc7878;
   }
-  
+
   input[type="checkbox"]:checked::after {
-    content: '';
+    content: "";
     width: 5px;
     height: 10px;
     border: solid white;
@@ -172,15 +172,14 @@ html {
   word-break: break-all;
 }
 
-
 /* Hide scrollbars while keeping scroll functionality */
 .scrollbar-hide {
-  -ms-overflow-style: none;  /* Internet Explorer 10+ */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+  scrollbar-width: none; /* Firefox */
 }
 
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;  /* Safari and Chrome */
+  display: none; /* Safari and Chrome */
 }
 .favorite-agents-container::-webkit-scrollbar {
   display: none;

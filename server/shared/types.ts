@@ -725,3 +725,13 @@ export const agentPromptPayloadSchema = z.preprocess(
 )
 
 export type AgentPromptPayload = z.infer<typeof agentPromptPayloadSchema>
+
+export interface ModelConfiguration {
+  actualName?: string
+  labelName: string
+  provider?: string
+  reasoning: boolean
+  websearch: boolean
+  deepResearch: boolean
+  description: string
+}

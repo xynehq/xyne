@@ -24,15 +24,18 @@ import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedAgentImport } from './routes/_authenticated/agent'
 import { Route as AuthenticatedIntegrationsIndexImport } from './routes/_authenticated/integrations/index'
 import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authenticated/integrations/slack'
+import { Route as AuthenticatedIntegrationsMicrosoftImport } from './routes/_authenticated/integrations/microsoft'
 import { Route as AuthenticatedIntegrationsMcpImport } from './routes/_authenticated/integrations/mcp'
 import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
 import { Route as AuthenticatedIntegrationsFileuploadImport } from './routes/_authenticated/integrations/fileupload'
+import { Route as AuthenticatedIntegrationsCreatetoolImport } from './routes/_authenticated/integrations/createtool'
 import { Route as AuthenticatedIntegrationsApiKeyImport } from './routes/_authenticated/integrations/apiKey'
 import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
 import { Route as AuthenticatedTraceChatIdMsgIdImport } from './routes/_authenticated/trace.$chatId.$msgId'
 import { Route as AuthenticatedAdminIntegrationsSlackImport } from './routes/_authenticated/admin/integrations/slack'
+import { Route as AuthenticatedAdminIntegrationsMicrosoftImport } from './routes/_authenticated/admin/integrations/microsoft'
 import { Route as AuthenticatedAdminIntegrationsMcpImport } from './routes/_authenticated/admin/integrations/mcp'
 import { Route as AuthenticatedAdminIntegrationsGoogleImport } from './routes/_authenticated/admin/integrations/google'
 
@@ -118,6 +121,13 @@ const AuthenticatedIntegrationsSlackRoute =
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
+const AuthenticatedIntegrationsMicrosoftRoute =
+  AuthenticatedIntegrationsMicrosoftImport.update({
+    id: '/integrations/microsoft',
+    path: '/integrations/microsoft',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
 const AuthenticatedIntegrationsMcpRoute =
   AuthenticatedIntegrationsMcpImport.update({
     id: '/integrations/mcp',
@@ -136,6 +146,13 @@ const AuthenticatedIntegrationsFileuploadRoute =
   AuthenticatedIntegrationsFileuploadImport.update({
     id: '/integrations/fileupload',
     path: '/integrations/fileupload',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedIntegrationsCreatetoolRoute =
+  AuthenticatedIntegrationsCreatetoolImport.update({
+    id: '/integrations/createtool',
+    path: '/integrations/createtool',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -177,6 +194,13 @@ const AuthenticatedAdminIntegrationsSlackRoute =
   AuthenticatedAdminIntegrationsSlackImport.update({
     id: '/admin/integrations/slack',
     path: '/admin/integrations/slack',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedAdminIntegrationsMicrosoftRoute =
+  AuthenticatedAdminIntegrationsMicrosoftImport.update({
+    id: '/admin/integrations/microsoft',
+    path: '/admin/integrations/microsoft',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -289,6 +313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDataSourceDocIdImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/integrations/createtool': {
+      id: '/_authenticated/integrations/createtool'
+      path: '/integrations/createtool'
+      fullPath: '/integrations/createtool'
+      preLoaderRoute: typeof AuthenticatedIntegrationsCreatetoolImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/integrations/apiKey': {
       id: '/_authenticated/integrations/apiKey'
       path: '/integrations/apiKey'
@@ -317,6 +348,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIntegrationsMcpImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/integrations/microsoft': {
+      id: '/_authenticated/integrations/microsoft'
+      path: '/integrations/microsoft'
+      fullPath: '/integrations/microsoft'
+      preLoaderRoute: typeof AuthenticatedIntegrationsMicrosoftImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/integrations/slack': {
       id: '/_authenticated/integrations/slack'
       path: '/integrations/slack'
@@ -343,6 +381,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/integrations/mcp'
       fullPath: '/admin/integrations/mcp'
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsMcpImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/admin/integrations/microsoft': {
+      id: '/_authenticated/admin/integrations/microsoft'
+      path: '/admin/integrations/microsoft'
+      fullPath: '/admin/integrations/microsoft'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsMicrosoftImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/admin/integrations/slack': {
@@ -392,14 +437,17 @@ interface AuthenticatedRouteChildren {
   AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
+  AuthenticatedIntegrationsCreatetoolRoute: typeof AuthenticatedIntegrationsCreatetoolRoute
   AuthenticatedIntegrationsApiKeyRoute: typeof AuthenticatedIntegrationsApiKeyRoute
   AuthenticatedIntegrationsFileuploadRoute: typeof AuthenticatedIntegrationsFileuploadRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
   AuthenticatedIntegrationsMcpRoute: typeof AuthenticatedIntegrationsMcpRoute
+  AuthenticatedIntegrationsMicrosoftRoute: typeof AuthenticatedIntegrationsMicrosoftRoute
   AuthenticatedIntegrationsSlackRoute: typeof AuthenticatedIntegrationsSlackRoute
   AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute
   AuthenticatedAdminIntegrationsGoogleRoute: typeof AuthenticatedAdminIntegrationsGoogleRoute
   AuthenticatedAdminIntegrationsMcpRoute: typeof AuthenticatedAdminIntegrationsMcpRoute
+  AuthenticatedAdminIntegrationsMicrosoftRoute: typeof AuthenticatedAdminIntegrationsMicrosoftRoute
   AuthenticatedAdminIntegrationsSlackRoute: typeof AuthenticatedAdminIntegrationsSlackRoute
   AuthenticatedTraceChatIdMsgIdRoute: typeof AuthenticatedTraceChatIdMsgIdRoute
   AuthenticatedAdminIntegrationsIndexRoute: typeof AuthenticatedAdminIntegrationsIndexRoute
@@ -415,17 +463,23 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
+  AuthenticatedIntegrationsCreatetoolRoute:
+    AuthenticatedIntegrationsCreatetoolRoute,
   AuthenticatedIntegrationsApiKeyRoute: AuthenticatedIntegrationsApiKeyRoute,
   AuthenticatedIntegrationsFileuploadRoute:
     AuthenticatedIntegrationsFileuploadRoute,
   AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
   AuthenticatedIntegrationsMcpRoute: AuthenticatedIntegrationsMcpRoute,
+  AuthenticatedIntegrationsMicrosoftRoute:
+    AuthenticatedIntegrationsMicrosoftRoute,
   AuthenticatedIntegrationsSlackRoute: AuthenticatedIntegrationsSlackRoute,
   AuthenticatedIntegrationsIndexRoute: AuthenticatedIntegrationsIndexRoute,
   AuthenticatedAdminIntegrationsGoogleRoute:
     AuthenticatedAdminIntegrationsGoogleRoute,
   AuthenticatedAdminIntegrationsMcpRoute:
     AuthenticatedAdminIntegrationsMcpRoute,
+  AuthenticatedAdminIntegrationsMicrosoftRoute:
+    AuthenticatedAdminIntegrationsMicrosoftRoute,
   AuthenticatedAdminIntegrationsSlackRoute:
     AuthenticatedAdminIntegrationsSlackRoute,
   AuthenticatedTraceChatIdMsgIdRoute: AuthenticatedTraceChatIdMsgIdRoute,
@@ -451,14 +505,17 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/integrations/createtool': typeof AuthenticatedIntegrationsCreatetoolRoute
   '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
+  '/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
   '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
   '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
+  '/admin/integrations/microsoft': typeof AuthenticatedAdminIntegrationsMicrosoftRoute
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
   '/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
@@ -477,14 +534,17 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/integrations/createtool': typeof AuthenticatedIntegrationsCreatetoolRoute
   '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
+  '/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
   '/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
   '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
+  '/admin/integrations/microsoft': typeof AuthenticatedAdminIntegrationsMicrosoftRoute
   '/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
   '/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
@@ -505,14 +565,17 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/_authenticated/integrations/createtool': typeof AuthenticatedIntegrationsCreatetoolRoute
   '/_authenticated/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/_authenticated/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/_authenticated/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/_authenticated/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
+  '/_authenticated/integrations/microsoft': typeof AuthenticatedIntegrationsMicrosoftRoute
   '/_authenticated/integrations/slack': typeof AuthenticatedIntegrationsSlackRoute
   '/_authenticated/integrations/': typeof AuthenticatedIntegrationsIndexRoute
   '/_authenticated/admin/integrations/google': typeof AuthenticatedAdminIntegrationsGoogleRoute
   '/_authenticated/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
+  '/_authenticated/admin/integrations/microsoft': typeof AuthenticatedAdminIntegrationsMicrosoftRoute
   '/_authenticated/admin/integrations/slack': typeof AuthenticatedAdminIntegrationsSlackRoute
   '/_authenticated/trace/$chatId/$msgId': typeof AuthenticatedTraceChatIdMsgIdRoute
   '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
@@ -534,14 +597,17 @@ export interface FileRouteTypes {
     | '/'
     | '/chat/$chatId'
     | '/dataSource/$docId'
+    | '/integrations/createtool'
     | '/integrations/apiKey'
     | '/integrations/fileupload'
     | '/integrations/google'
     | '/integrations/mcp'
+    | '/integrations/microsoft'
     | '/integrations/slack'
     | '/integrations'
     | '/admin/integrations/google'
     | '/admin/integrations/mcp'
+    | '/admin/integrations/microsoft'
     | '/admin/integrations/slack'
     | '/trace/$chatId/$msgId'
     | '/admin/integrations'
@@ -559,14 +625,17 @@ export interface FileRouteTypes {
     | '/'
     | '/chat/$chatId'
     | '/dataSource/$docId'
+    | '/integrations/createtool'
     | '/integrations/apiKey'
     | '/integrations/fileupload'
     | '/integrations/google'
     | '/integrations/mcp'
+    | '/integrations/microsoft'
     | '/integrations/slack'
     | '/integrations'
     | '/admin/integrations/google'
     | '/admin/integrations/mcp'
+    | '/admin/integrations/microsoft'
     | '/admin/integrations/slack'
     | '/trace/$chatId/$msgId'
     | '/admin/integrations'
@@ -585,14 +654,17 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dataSource/$docId'
+    | '/_authenticated/integrations/createtool'
     | '/_authenticated/integrations/apiKey'
     | '/_authenticated/integrations/fileupload'
     | '/_authenticated/integrations/google'
     | '/_authenticated/integrations/mcp'
+    | '/_authenticated/integrations/microsoft'
     | '/_authenticated/integrations/slack'
     | '/_authenticated/integrations/'
     | '/_authenticated/admin/integrations/google'
     | '/_authenticated/admin/integrations/mcp'
+    | '/_authenticated/admin/integrations/microsoft'
     | '/_authenticated/admin/integrations/slack'
     | '/_authenticated/trace/$chatId/$msgId'
     | '/_authenticated/admin/integrations/'
@@ -638,14 +710,17 @@ export const routeTree = rootRoute
         "/_authenticated/workflow",
         "/_authenticated/",
         "/_authenticated/dataSource/$docId",
+        "/_authenticated/integrations/createtool",
         "/_authenticated/integrations/apiKey",
         "/_authenticated/integrations/fileupload",
         "/_authenticated/integrations/google",
         "/_authenticated/integrations/mcp",
+        "/_authenticated/integrations/microsoft",
         "/_authenticated/integrations/slack",
         "/_authenticated/integrations/",
         "/_authenticated/admin/integrations/google",
         "/_authenticated/admin/integrations/mcp",
+        "/_authenticated/admin/integrations/microsoft",
         "/_authenticated/admin/integrations/slack",
         "/_authenticated/trace/$chatId/$msgId",
         "/_authenticated/admin/integrations/"
@@ -700,6 +775,10 @@ export const routeTree = rootRoute
       "filePath": "_authenticated/dataSource.$docId.tsx",
       "parent": "/_authenticated"
     },
+    "/_authenticated/integrations/createtool": {
+      "filePath": "_authenticated/integrations/createtool.tsx",
+      "parent": "/_authenticated"
+    },
     "/_authenticated/integrations/apiKey": {
       "filePath": "_authenticated/integrations/apiKey.tsx",
       "parent": "/_authenticated"
@@ -716,6 +795,10 @@ export const routeTree = rootRoute
       "filePath": "_authenticated/integrations/mcp.tsx",
       "parent": "/_authenticated"
     },
+    "/_authenticated/integrations/microsoft": {
+      "filePath": "_authenticated/integrations/microsoft.tsx",
+      "parent": "/_authenticated"
+    },
     "/_authenticated/integrations/slack": {
       "filePath": "_authenticated/integrations/slack.tsx",
       "parent": "/_authenticated"
@@ -730,6 +813,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/admin/integrations/mcp": {
       "filePath": "_authenticated/admin/integrations/mcp.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/integrations/microsoft": {
+      "filePath": "_authenticated/admin/integrations/microsoft.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/admin/integrations/slack": {

@@ -13,7 +13,6 @@ import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
-  generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
   temporalPromptJsonStream,
@@ -201,6 +200,7 @@ import {
   runStream,
   generateRunId,
   generateTraceId,
+  getTextContent,
   type Agent as JAFAgent,
   type Tool as JAFTool,
   type Message as JAFMessage,
@@ -888,6 +888,24 @@ const addErrMessageToMessage = async (
     })
   }
 }
+/**
+   * MessageWithToolsApi - Advanced JAF-powered chat with MCP tool integration
+   * 
+   * Used when: isAgentic && !enableWebSearch && !deepResearchEnabled
+   * 
+   * Features:
+   * - JAF (Juspay Agentic Framework) agent orchestration
+   * - MCP client integration for external tools
+   * - Iterative search with context synthesis
+   * - Advanced reasoning step tracking
+   * - Fallback search on max iterations
+   * - Real-time tool execution feedback
+   * 
+   * Flow: Auth → MCP setup → JAF agent config → Tool execution → Context building → Response
+   * 
+   * @param c - Hono Context with request data
+   * @returns StreamSSE with JAF execution events
+   */
 export const MessageWithToolsApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
@@ -1095,24 +1113,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
-
-      const dbTransactionSpan = chatCreationSpan.startSpan(
-        "db_transaction_new_chat",
-      )
+      const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
@@ -1948,157 +1949,137 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         // Note: ResponseMetadata was already sent above with chatId
 
-        // Stream JAF events → existing SSE protocol
-        const jafStreamingSpan = jafProcessingSpan.startSpan("jaf_streaming")
-        const yieldedCitations = new Set<number>()
-        const yieldedImageCitations = new Map<number, Set<number>>()
-        let currentTurn = 0
-        let totalToolCalls = 0
-
-        for await (const evt of runStream<JAFAdapterCtx, string>(
-          runState,
-          runCfg,
-        )) {
-          if (stream.closed) {
-            wasStreamClosedPrematurely = true
-            break
-          }
-          switch (evt.type) {
-            case "turn_start": {
-              currentTurn = evt.data.turn
-              const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
-              turnSpan.setAttribute("turn_number", currentTurn)
-              turnSpan.setAttribute("agent_name", evt.data.agentName)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Iteration ${evt.data.turn} started (agent: ${evt.data.agentName})`,
-                  step: {
-                    type: AgentReasoningStepType.Iteration,
-                    iteration: evt.data.turn,
-                    status: "in_progress",
-                    stepSummary: `Planning search iteration ${evt.data.turn}`,
-                  },
-                }),
-              })
-              turnSpan.end()
+          // Stream JAF events → existing SSE protocol
+          const jafStreamingSpan = jafProcessingSpan.startSpan("jaf_streaming")
+          const yieldedCitations = new Set<number>()
+          const yieldedImageCitations = new Map<number, Set<number>>()
+          let currentTurn = 0
+          let totalToolCalls = 0
+          
+          for await (const evt of runStream<JAFAdapterCtx, string>(runState, runCfg)) {
+            if (stream.closed) {
+              wasStreamClosedPrematurely = true
               break
             }
-            case "tool_requests": {
-              const toolRequestsSpan =
-                jafStreamingSpan.startSpan("tool_requests")
-              totalToolCalls += evt.data.toolCalls.length
-              toolRequestsSpan.setAttribute(
-                "tool_calls_count",
-                evt.data.toolCalls.length,
-              )
-              toolRequestsSpan.setAttribute("total_tool_calls", totalToolCalls)
-
-              for (const r of evt.data.toolCalls) {
-                const toolSelectionSpan =
-                  toolRequestsSpan.startSpan("tool_selection")
-                toolSelectionSpan.setAttribute("tool_name", r.name)
-                toolSelectionSpan.setAttribute(
-                  "args_count",
-                  Object.keys(r.args || {}).length,
-                )
-
+            switch (evt.type) {
+              case "turn_start": {
+                currentTurn = evt.data.turn
+                const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
+                turnSpan.setAttribute("turn_number", currentTurn)
+                turnSpan.setAttribute("agent_name", evt.data.agentName)
                 await stream.writeSSE({
                   event: ChatSSEvents.Reasoning,
                   data: JSON.stringify({
-                    text: `Tool selected: ${r.name}`,
+                    text: `Iteration ${evt.data.turn} started (agent: ${evt.data.agentName})`,
                     step: {
-                      type: AgentReasoningStepType.ToolSelected,
-                      toolName: r.name,
+                      type: AgentReasoningStepType.Iteration,
+                      iteration: evt.data.turn,
                       status: "in_progress",
-                      stepSummary: `Executing ${r.name} tool`,
+                      stepSummary: `Planning search iteration ${evt.data.turn}`,
                     },
                   }),
                 })
+                turnSpan.end()
+                break
+              }
+              case "tool_requests": {
+                const toolRequestsSpan = jafStreamingSpan.startSpan("tool_requests")
+                totalToolCalls += evt.data.toolCalls.length
+                toolRequestsSpan.setAttribute("tool_calls_count", evt.data.toolCalls.length)
+                toolRequestsSpan.setAttribute("total_tool_calls", totalToolCalls)
+                
+                for (const r of evt.data.toolCalls) {
+                  const toolSelectionSpan = toolRequestsSpan.startSpan("tool_selection")
+                  toolSelectionSpan.setAttribute("tool_name", r.name)
+                  toolSelectionSpan.setAttribute("args_count", Object.keys(r.args || {}).length)
+                  
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: JSON.stringify({
+                      text: `Tool selected: ${r.name}`,
+                      step: {
+                        type: AgentReasoningStepType.ToolSelected,
+                        toolName: r.name,
+                        status: "in_progress",
+                        stepSummary: `Executing ${r.name} tool`,
+                      },
+                    }),
+                  })
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: JSON.stringify({
+                      text: `Parameters: ${JSON.stringify(r.args)}`,
+                      step: {
+                        type: AgentReasoningStepType.ToolParameters,
+                        parameters: r.args,
+                        status: "in_progress",
+                        stepSummary: "Reviewing tool parameters",
+                      },
+                    }),
+                  })
+                  toolSelectionSpan.end()
+                }
+                toolRequestsSpan.end()
+                break
+              }
+              case "tool_call_start": {
+                const toolStartSpan = jafStreamingSpan.startSpan("tool_call_start")
+                toolStartSpan.setAttribute("tool_name", evt.data.toolName)
                 await stream.writeSSE({
                   event: ChatSSEvents.Reasoning,
                   data: JSON.stringify({
-                    text: `Parameters: ${JSON.stringify(r.args)}`,
+                    text: `Executing ${evt.data.toolName}...`,
                     step: {
-                      type: AgentReasoningStepType.ToolParameters,
-                      parameters: r.args,
+                      type: AgentReasoningStepType.ToolExecuting,
+                      toolName: evt.data.toolName,
                       status: "in_progress",
-                      stepSummary: "Reviewing tool parameters",
+                      stepSummary: `Executing ${evt.data.toolName} tool`,
                     },
                   }),
                 })
-                toolSelectionSpan.end()
+                toolStartSpan.end()
+                break
               }
-              toolRequestsSpan.end()
-              break
-            }
-            case "tool_call_start": {
-              const toolStartSpan =
-                jafStreamingSpan.startSpan("tool_call_start")
-              toolStartSpan.setAttribute("tool_name", evt.data.toolName)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Executing ${evt.data.toolName}...`,
-                  step: {
-                    type: AgentReasoningStepType.ToolExecuting,
-                    toolName: evt.data.toolName,
-                    status: "in_progress",
-                    stepSummary: `Executing ${evt.data.toolName} tool`,
-                  },
-                }),
-              })
-              toolStartSpan.end()
-              break
-            }
-            case "tool_call_end": {
-              const toolEndSpan = jafStreamingSpan.startSpan("tool_call_end")
-              type ToolCallEndEventData = Extract<
-                JAFTraceEvent,
-                { type: "tool_call_end" }
-              >["data"]
-              const contexts = (evt.data as ToolCallEndEventData)?.toolResult
-                ?.metadata?.contexts
-              const contextsCount = Array.isArray(contexts)
-                ? contexts.length
-                : 0
-
-              if (Array.isArray(contexts) && contexts.length) {
-                gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
+              case "tool_call_end": {
+                const toolEndSpan = jafStreamingSpan.startSpan("tool_call_end")
+                type ToolCallEndEventData = Extract<
+                  JAFTraceEvent,
+                  { type: "tool_call_end" }
+                >["data"]
+                const contexts = (evt.data as ToolCallEndEventData)?.toolResult?.metadata?.contexts
+                const contextsCount = Array.isArray(contexts) ? contexts.length : 0
+                
+                if (Array.isArray(contexts) && contexts.length) {
+                  gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
+                }
+                
+                toolEndSpan.setAttribute("tool_name", evt.data.toolName)
+                toolEndSpan.setAttribute("status", evt.data.status || "completed")
+                toolEndSpan.setAttribute("contexts_found", contextsCount)
+                toolEndSpan.setAttribute("total_fragments", gatheredFragments.length)
+                
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: `Tool result: ${evt.data.toolName}`,
+                    step: {
+                      type: AgentReasoningStepType.ToolResult,
+                      toolName: evt.data.toolName,
+                      status: evt.data.status || "completed",
+                      resultSummary: "Tool execution completed",
+                      itemsFound: contextsCount,
+                      stepSummary: `Found ${contextsCount} results`,
+                    },
+                  }),
+                })
+                toolEndSpan.end()
+                break
               }
-
-              toolEndSpan.setAttribute("tool_name", evt.data.toolName)
-              toolEndSpan.setAttribute("status", evt.data.status || "completed")
-              toolEndSpan.setAttribute("contexts_found", contextsCount)
-              toolEndSpan.setAttribute(
-                "total_fragments",
-                gatheredFragments.length,
-              )
-
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Tool result: ${evt.data.toolName}`,
-                  step: {
-                    type: AgentReasoningStepType.ToolResult,
-                    toolName: evt.data.toolName,
-                    status: evt.data.status || "completed",
-                    resultSummary: "Tool execution completed",
-                    itemsFound: contextsCount,
-                    stepSummary: `Found ${contextsCount} results`,
-                  },
-                }),
-              })
-              toolEndSpan.end()
-              break
-            }
-            case "assistant_message": {
-              const messageSpan =
-                jafStreamingSpan.startSpan("assistant_message")
-              const content = evt.data.message.content || ""
-              const hasToolCalls =
-                Array.isArray(evt.data.message?.tool_calls) &&
-                (evt.data.message.tool_calls?.length ?? 0) > 0
+              case "assistant_message": {
+                const messageSpan = jafStreamingSpan.startSpan("assistant_message")
+                const content = getTextContent(evt.data.message.content) || ""
+                const hasToolCalls = Array.isArray(evt.data.message?.tool_calls) &&
+                  (evt.data.message.tool_calls?.length ?? 0) > 0
 
               if (!content || content.length === 0) {
                 break
@@ -2131,325 +2112,274 @@ export const MessageWithToolsApi = async (c: Context) => {
                   data: chunk,
                 })
 
-                for await (const cit of checkAndYieldCitationsForAgent(
-                  answer,
-                  yieldedCitations,
-                  gatheredFragments,
-                  yieldedImageCitations,
-                  email ?? "",
-                )) {
-                  if (cit.citation) {
-                    const { index, item } = cit.citation as any
-                    citations.push(item)
-                    citationMap[index] = citations.length - 1
-                    await stream.writeSSE({
-                      event: ChatSSEvents.CitationsUpdate,
-                      data: JSON.stringify({
-                        contextChunks: citations,
-                        citationMap,
-                      }),
-                    })
-                    citationValues[index] = item
-                  }
-                  if (cit.imageCitation) {
-                    imageCitations.push(cit.imageCitation)
-                    await stream.writeSSE({
-                      event: ChatSSEvents.ImageCitationUpdate,
-                      data: JSON.stringify(cit.imageCitation),
-                    })
+                  for await (const cit of checkAndYieldCitationsForAgent(
+                    answer,
+                    yieldedCitations,
+                    gatheredFragments,
+                    yieldedImageCitations,
+                    email ?? "",
+                  )) {
+                    if (cit.citation) {
+                      const { index, item } = cit.citation as any
+                      citations.push(item)
+                      citationMap[index] = citations.length - 1
+                      await stream.writeSSE({
+                        event: ChatSSEvents.CitationsUpdate,
+                        data: JSON.stringify({
+                          contextChunks: citations,
+                          citationMap,
+                        }),
+                      })
+                      citationValues[index] = item
+                    }
+                    if (cit.imageCitation) {
+                      imageCitations.push(cit.imageCitation)
+                      await stream.writeSSE({
+                        event: ChatSSEvents.ImageCitationUpdate,
+                        data: JSON.stringify(cit.imageCitation),
+                      })
+                    }
                   }
                 }
+                messageSpan.setAttribute("content_length", content.length)
+                messageSpan.setAttribute("answer_length", answer.length)
+                messageSpan.setAttribute("citations_count", citations.length)
+                messageSpan.setAttribute("image_citations_count", imageCitations.length)
+                messageSpan.end()
+                break
               }
-              messageSpan.setAttribute("content_length", content.length)
-              messageSpan.setAttribute("answer_length", answer.length)
-              messageSpan.setAttribute("citations_count", citations.length)
-              messageSpan.setAttribute(
-                "image_citations_count",
-                imageCitations.length,
-              )
-              messageSpan.end()
-              break
-            }
-            case "token_usage": {
-              const tokenUsageSpan = jafStreamingSpan.startSpan("token_usage")
-              const inputTokens = (evt.data.prompt as number) || 0
-              const outputTokens = (evt.data.completion as number) || 0
-              tokenArr.push({
-                inputTokens,
-                outputTokens,
-              })
-              tokenUsageSpan.setAttribute("input_tokens", inputTokens)
-              tokenUsageSpan.setAttribute("output_tokens", outputTokens)
-              tokenUsageSpan.setAttribute(
-                "total_tokens",
-                inputTokens + outputTokens,
-              )
-              tokenUsageSpan.end()
-              break
-            }
-            case "guardrail_violation": {
-              const guardrailSpan = jafStreamingSpan.startSpan(
-                "guardrail_violation",
-              )
-              guardrailSpan.setAttribute("reason", evt.data.reason)
-              await stream.writeSSE({
-                event: ChatSSEvents.Error,
-                data: JSON.stringify({
-                  error: "guardrail_violation",
-                  message: evt.data.reason,
-                }),
-              })
-              guardrailSpan.end()
-              break
-            }
-            case "decode_error": {
-              const decodeErrorSpan = jafStreamingSpan.startSpan("decode_error")
-              await stream.writeSSE({
-                event: ChatSSEvents.Error,
-                data: JSON.stringify({
-                  error: "decode_error",
-                  message: "Failed to decode model output",
-                }),
-              })
-              decodeErrorSpan.end()
-              break
-            }
-            case "handoff_denied": {
-              const handoffSpan = jafStreamingSpan.startSpan("handoff_denied")
-              handoffSpan.setAttribute("reason", evt.data.reason)
-              await stream.writeSSE({
-                event: ChatSSEvents.Error,
-                data: JSON.stringify({
-                  error: "handoff_denied",
-                  message: evt.data.reason,
-                }),
-              })
-              handoffSpan.end()
-              break
-            }
-            case "turn_end": {
-              const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
-              turnEndSpan.setAttribute("turn_number", evt.data.turn)
-              // Emit an iteration summary (fallback version)
-              await stream.writeSSE({
-                event: ChatSSEvents.Reasoning,
-                data: JSON.stringify({
-                  text: `Completed iteration ${evt.data.turn}.`,
-                  step: {
-                    type: AgentReasoningStepType.LogMessage,
-                    status: "completed",
-                    message: `Completed iteration ${evt.data.turn}.`,
-                    iteration: evt.data.turn,
-                    stepSummary: `Completed iteration ${evt.data.turn}.`,
-                    isIterationSummary: true,
-                  },
-                }),
-              })
-              turnEndSpan.end()
-              break
-            }
-            case "final_output": {
-              const finalOutputSpan = jafStreamingSpan.startSpan("final_output")
-              const out = evt.data.output
-              if (typeof out === "string" && out.trim().length) {
-                // Ensure any remainder is streamed
-                const remaining = out.slice(answer.length)
-                if (remaining.length) {
-                  await stream.writeSSE({
-                    event: ChatSSEvents.ResponseUpdate,
-                    data: remaining,
+              case "token_usage": {
+                const tokenUsageSpan = jafStreamingSpan.startSpan("token_usage")
+                const inputTokens = (evt.data.prompt as number) || 0
+                const outputTokens = (evt.data.completion as number) || 0
+                tokenArr.push({
+                  inputTokens,
+                  outputTokens,
+                })
+                tokenUsageSpan.setAttribute("input_tokens", inputTokens)
+                tokenUsageSpan.setAttribute("output_tokens", outputTokens)
+                tokenUsageSpan.setAttribute("total_tokens", inputTokens + outputTokens)
+                tokenUsageSpan.end()
+                break
+              }
+              case "guardrail_violation": {
+                const guardrailSpan = jafStreamingSpan.startSpan("guardrail_violation")
+                guardrailSpan.setAttribute("reason", evt.data.reason)
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: JSON.stringify({
+                    error: "guardrail_violation",
+                    message: evt.data.reason,
+                  }),
+                })
+                guardrailSpan.end()
+                break
+              }
+              case "decode_error": {
+                const decodeErrorSpan = jafStreamingSpan.startSpan("decode_error")
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: JSON.stringify({
+                    error: "decode_error",
+                    message: "Failed to decode model output",
+                  }),
+                })
+                decodeErrorSpan.end()
+                break
+              }
+              case "handoff_denied": {
+                const handoffSpan = jafStreamingSpan.startSpan("handoff_denied")
+                handoffSpan.setAttribute("reason", evt.data.reason)
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: JSON.stringify({
+                    error: "handoff_denied",
+                    message: evt.data.reason,
+                  }),
+                })
+                handoffSpan.end()
+                break
+              }
+              case "turn_end": {
+                const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
+                turnEndSpan.setAttribute("turn_number", evt.data.turn)
+                // Emit an iteration summary (fallback version)
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: `Completed iteration ${evt.data.turn}.`,
+                    step: {
+                      type: AgentReasoningStepType.LogMessage,
+                      status: "completed",
+                      message: `Completed iteration ${evt.data.turn}.`,
+                      iteration: evt.data.turn,
+                      stepSummary: `Completed iteration ${evt.data.turn}.`,
+                      isIterationSummary: true,
+                    },
+                  }),
+                })
+                turnEndSpan.end()
+                break
+              }
+              case "final_output": {
+                const finalOutputSpan = jafStreamingSpan.startSpan("final_output")
+                const out = evt.data.output
+                if (typeof out === "string" && out.trim().length) {
+                  // Ensure any remainder is streamed
+                  const remaining = out.slice(answer.length)
+                  if (remaining.length) {
+                    await stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: remaining,
+                    })
+                    answer = out
+                  }
+                }
+                // Store the actual output instead of just length
+                finalOutputSpan.setAttribute("final_output", typeof out === "string" ? out : "")
+                finalOutputSpan.setAttribute("final_output_length", typeof out === "string" ? out.length : 0)
+                finalOutputSpan.setAttribute("citation_map", JSON.stringify(citationMap))
+                finalOutputSpan.setAttribute("citation_values", JSON.stringify(citationValues))
+                finalOutputSpan.setAttribute("citations_count", citations.length)
+                finalOutputSpan.setAttribute("image_citations_count", imageCitations.length)
+                finalOutputSpan.end()
+                break
+              }
+              case "run_end": {
+                const runEndSpan = jafStreamingSpan.startSpan("run_end")
+                const outcome = evt.data.outcome as JAFRunResult<string>["outcome"]
+                runEndSpan.setAttribute("outcome_status", outcome?.status || "unknown")
+                
+                if (outcome?.status === "completed") {
+                  const costCalculationSpan = runEndSpan.startSpan("cost_calculation")
+                  const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+                  const totalTokens = tokenArr.reduce(
+                    (sum, t) => sum + t.inputTokens + t.outputTokens,
+                    0,
+                  )
+                  costCalculationSpan.setAttribute("total_cost", totalCost)
+                  costCalculationSpan.setAttribute("total_tokens", totalTokens)
+                  costCalculationSpan.setAttribute("total_tool_calls", totalToolCalls)
+                  costCalculationSpan.setAttribute("final_answer_length", answer.length)
+                  costCalculationSpan.setAttribute("citations_count", citations.length)
+                  costCalculationSpan.end()
+                  
+                  const dbInsertSpan = runEndSpan.startSpan("insert_assistant_message")
+                  const msg = await insertMessage(db, {
+                    chatId: chat.id,
+                    userId: user.id,
+                    workspaceExternalId: workspace.externalId,
+                    chatExternalId: chat.externalId,
+                    messageRole: MessageRole.Assistant,
+                    email: user.email,
+                    sources: citations,
+                    imageCitations: imageCitations,
+                    message: processMessage(answer, citationMap),
+                    thinking: "",
+                    modelId: defaultBestModel,
+                    cost: totalCost.toString(),
+                    tokensUsed: totalTokens,
                   })
-                  answer = out
-                }
-              }
-              // Store the actual output instead of just length
-              finalOutputSpan.setAttribute(
-                "final_output",
-                typeof out === "string" ? out : "",
-              )
-              finalOutputSpan.setAttribute(
-                "final_output_length",
-                typeof out === "string" ? out.length : 0,
-              )
-              finalOutputSpan.setAttribute(
-                "citation_map",
-                JSON.stringify(citationMap),
-              )
-              finalOutputSpan.setAttribute(
-                "citation_values",
-                JSON.stringify(citationValues),
-              )
-              finalOutputSpan.setAttribute("citations_count", citations.length)
-              finalOutputSpan.setAttribute(
-                "image_citations_count",
-                imageCitations.length,
-              )
-              finalOutputSpan.end()
-              break
-            }
-            case "run_end": {
-              const runEndSpan = jafStreamingSpan.startSpan("run_end")
-              const outcome = evt.data
-                .outcome as JAFRunResult<string>["outcome"]
-              runEndSpan.setAttribute(
-                "outcome_status",
-                outcome?.status || "unknown",
-              )
+                  assistantMessageId = msg.externalId
+                  dbInsertSpan.setAttribute("message_external_id", assistantMessageId)
+                  dbInsertSpan.end()
+                  
+                  const traceInsertSpan = runEndSpan.startSpan("insert_chat_trace")
+                  const traceJson = tracer.serializeToJson()
+                  await insertChatTrace({
+                    workspaceId: workspace.id,
+                    userId: user.id,
+                    chatId: chat.id,
+                    messageId: msg.id,
+                    chatExternalId: chat.externalId,
+                    email: user.email,
+                    messageExternalId: msg.externalId,
+                    traceJson,
+                  })
+                  traceInsertSpan.end()
+                  
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseMetadata,
+                    data: JSON.stringify({
+                      chatId: chat.externalId,
+                      messageId: assistantMessageId,
+                    }),
+                  })
+                  await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
+                } else {
+                  // Error outcome: stream error and do not insert assistant message
+                  const errorHandlingSpan = runEndSpan.startSpan("error_handling")
+                  const allMessages = await getChatMessagesWithAuth(
+                    db,
+                    chat?.externalId,
+                    email,
+                  )
+                  const lastMessage = allMessages[allMessages.length - 1]
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseMetadata,
+                    data: JSON.stringify({
+                      chatId: chat.externalId,
+                      messageId: lastMessage.externalId,
+                    }),
+                  })
+                  // Check the status before accessing error property
+                  const err = outcome?.status === 'error' ? outcome.error : undefined
+                  const errTag = err?._tag || "run_error"
+                  let errMsg = "Model did not return a response."
+                  if (err) {
+                    switch (err._tag) {
+                      case "ModelBehaviorError":
+                      case "ToolCallError":
+                      case "HandoffError":
+                        errMsg = err.detail
+                        break
+                      case "InputGuardrailTripwire":
+                      case "OutputGuardrailTripwire":
+                        errMsg = err.reason
+                        break
+                      case "DecodeError":
+                        errMsg = "Failed to decode model output"
+                        break
+                      case "AgentNotFound":
+                        errMsg = `Agent not found: ${err.agentName}`
+                        break
+                      case "MaxTurnsExceeded":
+                        // Execute fallback tool directly using messages from runState
+                        try {
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                              step: {
+                                type: AgentReasoningStepType.LogMessage,
+                                message: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                                status: "in_progress",
+                                stepSummary: "Activating fallback search",
+                              },
+                            }),
+                          })
 
-              if (outcome?.status === "completed") {
-                const costCalculationSpan =
-                  runEndSpan.startSpan("cost_calculation")
-                const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
-                const totalTokens = tokenArr.reduce(
-                  (sum, t) => sum + t.inputTokens + t.outputTokens,
-                  0,
-                )
-                costCalculationSpan.setAttribute("total_cost", totalCost)
-                costCalculationSpan.setAttribute("total_tokens", totalTokens)
-                costCalculationSpan.setAttribute(
-                  "total_tool_calls",
-                  totalToolCalls,
-                )
-                costCalculationSpan.setAttribute(
-                  "final_answer_length",
-                  answer.length,
-                )
-                costCalculationSpan.setAttribute(
-                  "citations_count",
-                  citations.length,
-                )
-                costCalculationSpan.end()
+                          // Extract all context from runState.messages array
+                          const allMessages = runState.messages || []
+                          const agentScratchpad = allMessages
+                            .map((msg, index) => `${msg.role}: ${getTextContent(msg.content)}`)
+                            .join('\n')
+                          console.log("Agent scratchpad:", agentScratchpad)
+                          console.log('all messages:', allMessages)
 
-                const dbInsertSpan = runEndSpan.startSpan(
-                  "insert_assistant_message",
-                )
-                const msg = await insertMessage(db, {
-                  chatId: chat.id,
-                  userId: user.id,
-                  workspaceExternalId: workspace.externalId,
-                  chatExternalId: chat.externalId,
-                  messageRole: MessageRole.Assistant,
-                  email: user.email,
-                  sources: citations,
-                  imageCitations: imageCitations,
-                  message: processMessage(answer, citationMap),
-                  thinking: "",
-                  modelId: defaultBestModel,
-                  cost: totalCost.toString(),
-                  tokensUsed: totalTokens,
-                })
-                assistantMessageId = msg.externalId
-                dbInsertSpan.setAttribute(
-                  "message_external_id",
-                  assistantMessageId,
-                )
-                dbInsertSpan.end()
-
-                const traceInsertSpan =
-                  runEndSpan.startSpan("insert_chat_trace")
-                const traceJson = tracer.serializeToJson()
-                await insertChatTrace({
-                  workspaceId: workspace.id,
-                  userId: user.id,
-                  chatId: chat.id,
-                  messageId: msg.id,
-                  chatExternalId: chat.externalId,
-                  email: user.email,
-                  messageExternalId: msg.externalId,
-                  traceJson,
-                })
-                traceInsertSpan.end()
-
-                await stream.writeSSE({
-                  event: ChatSSEvents.ResponseMetadata,
-                  data: JSON.stringify({
-                    chatId: chat.externalId,
-                    messageId: assistantMessageId,
-                  }),
-                })
-                await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
-              } else {
-                // Error outcome: stream error and do not insert assistant message
-                const errorHandlingSpan = runEndSpan.startSpan("error_handling")
-                const allMessages = await getChatMessagesWithAuth(
-                  db,
-                  chat?.externalId,
-                  email,
-                )
-                const lastMessage = allMessages[allMessages.length - 1]
-                await stream.writeSSE({
-                  event: ChatSSEvents.ResponseMetadata,
-                  data: JSON.stringify({
-                    chatId: chat.externalId,
-                    messageId: lastMessage.externalId,
-                  }),
-                })
-                const err = outcome?.error as JAFError | undefined
-                const errTag = err?._tag || "run_error"
-                let errMsg = "Model did not return a response."
-                if (err) {
-                  switch (err._tag) {
-                    case "ModelBehaviorError":
-                    case "ToolCallError":
-                    case "HandoffError":
-                      errMsg = err.detail
-                      break
-                    case "InputGuardrailTripwire":
-                    case "OutputGuardrailTripwire":
-                      errMsg = err.reason
-                      break
-                    case "DecodeError":
-                      errMsg = "Failed to decode model output"
-                      break
-                    case "AgentNotFound":
-                      errMsg = `Agent not found: ${err.agentName}`
-                      break
-                    case "MaxTurnsExceeded":
-                      // Execute fallback tool directly using messages from runState
-                      try {
-                        await stream.writeSSE({
-                          event: ChatSSEvents.Reasoning,
-                          data: JSON.stringify({
-                            text: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
-                            step: {
-                              type: AgentReasoningStepType.LogMessage,
-                              message:
-                                "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
-                              status: "in_progress",
-                              stepSummary: "Activating fallback search",
-                            },
-                          }),
-                        })
-
-                        // Extract all context from runState.messages array
-                        const allMessages = runState.messages || []
-                        const agentScratchpad = allMessages
-                          .map((msg, index) => `${msg.role}: ${msg.content}`)
-                          .join("\n")
-                        console.log("Agent scratchpad:", agentScratchpad)
-                        console.log("all messages:", allMessages)
-
-                        // Build tool log from any tool executions in the conversation
-                        const toolLog = allMessages
-                          .filter(
-                            (msg) =>
-                              msg.role === "tool" ||
-                              (msg as any).tool_calls ||
-                              (msg as any).tool_call_id,
-                          )
-                          .map(
-                            (msg, index) =>
-                              `Tool Execution ${index + 1}: ${msg.content}`,
-                          )
-                          .join("\n")
-                        console.log("Tool log:", toolLog)
-                        // Prepare fallback tool parameters with context from runState.messages
-                        const fallbackParams = {
-                          originalQuery: message,
-                          agentScratchpad: agentScratchpad,
-                          toolLog: toolLog,
-                          gatheredFragments: gatheredFragments,
-                        }
+                          // Build tool log from any tool executions in the conversation
+                          const toolLog = allMessages
+                            .filter(msg => msg.role === 'tool' || (msg as any).tool_calls || (msg as any).tool_call_id)
+                            .map((msg, index) => `Tool Execution ${index + 1}: ${getTextContent(msg.content)}`)
+                            .join('\n')
+                          console.log("Tool log:", toolLog)
+                          // Prepare fallback tool parameters with context from runState.messages
+                          const fallbackParams = {
+                            originalQuery: message,
+                            agentScratchpad: agentScratchpad,
+                            toolLog: toolLog,
+                            gatheredFragments: gatheredFragments,
+                          }
 
                         await stream.writeSSE({
                           event: ChatSSEvents.Reasoning,
@@ -2922,20 +2852,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3487,7 +3403,24 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   }
 }
 
-export const AgentMessageApi = async (c: Context) => {
+/**
+   * AgentMessageApi - Legacy agent chat endpoint for simple agent conversations
+   * 
+   * Used when: !isAgentic && !enableWebSearch && !deepResearchEnabled && agentDetails
+   * 
+   * Features:
+   * - Basic agent conversations with custom prompts
+   * - RAG with document retrieval and citation tracking
+   * - Query classification (conversation vs search)
+   * - Streaming/non-streaming modes
+   * - Context from file references and attachments
+   * 
+   * Flow: Auth → Agent validation → Context extraction → Query classification → RAG processing → Response
+   * 
+   * @param c - Hono Context with JWT payload
+   * @returns StreamSSE with chat events or JSON response
+   */
+  export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
   const tracer: Tracer = getTracer("chat")
@@ -3724,20 +3657,6 @@ export const AgentMessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: actualModelId as Models,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
