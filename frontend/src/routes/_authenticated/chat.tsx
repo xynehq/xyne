@@ -123,6 +123,7 @@ import { Tip } from "@/components/Tooltip"
 import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
+import { ToastAction } from "@/components/ui/toast"
 import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
 import React from "react"
 // import { jsonToHtmlMessage } from "@/lib/messageUtils"
@@ -879,9 +880,66 @@ export const ChatPage = ({
   ) => {
     if (!messageId) return
 
-    // Open the enhanced feedback modal
-    setPendingFeedback({ messageId, type: feedback })
-    setFeedbackModalOpen(true)
+    // Optimistically update the UI
+    setFeedbackMap((prev) => ({
+      ...prev,
+      [messageId]: feedback,
+    }))
+
+    try {
+      // Submit basic feedback immediately
+      const response = await api.message.feedback.$post({
+        json: {
+          messageId,
+          feedback,
+        },
+      })
+
+      if (response.ok) {
+        if (feedback === MessageFeedback.Like) {
+          // For thumbs up, just show success toast
+          toast({
+            title: "Thank you!",
+            description: "Your feedback has been recorded.",
+            duration: 3000,
+          })
+        } else if (feedback === MessageFeedback.Dislike) {
+          // For thumbs down, directly show detailed feedback toast
+          toast({
+            title: "Help us improve",
+            description: "Would you like to provide more detailed feedback?",
+            duration: 3000,
+            action: (
+              <ToastAction
+                altText="Provide detailed feedback"
+                onClick={() => {
+                  setPendingFeedback({ messageId, type: feedback })
+                  setFeedbackModalOpen(true)
+                }}
+              >
+                Yes
+              </ToastAction>
+            ),
+          })
+        }
+      } else {
+        throw new Error("Failed to submit feedback")
+      }
+    } catch (error) {
+      console.error("Failed to submit feedback:", error)
+      // Revert optimistic update on error
+      setFeedbackMap((prev) => {
+        const newMap = { ...prev }
+        delete newMap[messageId]
+        return newMap
+      })
+      toast({
+        title: "Error",
+        description: "Failed to submit feedback. Please try again.",
+        variant: "destructive",
+        duration: 3000,
+      })
+    }
   }
 
   const handleEnhancedFeedbackSubmit = async (data: {
@@ -921,7 +979,7 @@ export const ChatPage = ({
           " Feedback submitted, but share token generation failed."
       }
 
-      toast({ title: "Success", description: successMessage })
+      toast({ title: "Success", description: successMessage, duration: 2000 })
     } catch (error) {
       console.error("Failed to submit enhanced feedback", error)
       // Revert optimistic update on error

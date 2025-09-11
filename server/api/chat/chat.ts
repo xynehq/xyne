@@ -6354,8 +6354,8 @@ export const MessageRetryApi = async (c: Context) => {
                   sortDirection,
                   startTime,
                   count,
-                  offset: parsed.filters.offset || 0,
-                  intent: parsed.filters.intent || {},
+                  offset: parsed?.filters?.offset || 0,
+                  intent: parsed?.filters?.intent || {},
                 },
               } as QueryRouterLLMResponse
 
