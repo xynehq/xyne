@@ -14,8 +14,8 @@ API_BASE_URL = "http://localhost:3000"
 ENDPOINT = "/api/v1/workflow/templates/complex"
 
 # Authentication tokens (from your curl command)
-ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdmlydXAuc2luaGFAanVzcGF5LmluIiwicm9sZSI6IlVzZXIiLCJ3b3Jrc3BhY2VJZCI6ImRodms1czh4cXlib3drMGoxNDB4Z3o5aiIsInRva2VuVHlwZSI6ImFjY2VzcyIsImV4cCI6MTc1NzUwNTc5M30.UiGzNXb0bEiE9Fs25hm9DbCQSGvhe5XrY2gXE7qPEYk"
-REFRESH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdmlydXAuc2luaGFAanVzcGF5LmluIiwicm9sZSI6IlVzZXIiLCJ3b3Jrc3BhY2VJZCI6ImRodms1czh4cXlib3drMGoxNDB4Z3o5aiIsInRva2VuVHlwZSI6InJlZnJlc2giLCJleHAiOjE3NjAwOTQxOTN9.FCWyhiVLVPWMGlsNilchJdR64Lys-aZooqSPbxhvYl8"
+ACCESS_TOKEN = input("Enter your access token: ").strip()
+REFRESH_TOKEN = input("Enter your refresh token: ").strip()
 
 def create_workflow_payload():
     """Create the workflow template payload matching the curl request."""
@@ -178,7 +178,7 @@ def create_workflow_payload():
                         "status": "pending",
                         "contents": [],
                         "config": {
-                            "sendingFrom": "aman.asrani@juspay.in",
+                            "sendingFrom": "no-reply@xyne.io",
                             "emailAddresses": ["avirupsinha10@gmail.com", "debajyoti.das@juspay.in"]
                         }
                     },
@@ -187,17 +187,17 @@ def create_workflow_payload():
                             "id": "tool-step-3",
                             "type": "email",
                             "val": {
-                                "sendingFrom": "aman.asrani@juspay.in",
+                                "sendingFrom": "no-reply@xyne.io",
                                 "emailAddresses": ["avirupsinha10@gmail.com", "debajyoti.das@juspay.in"]
                             },
                             "value": {
-                                "sendingFrom": "aman.asrani@juspay.in",
+                                "sendingFrom": "no-reply@xyne.io",
                                 "emailAddresses": ["avirupsinha10@gmail.com", "debajyoti.das@juspay.in"]
                             },
                             "config": {
                                 "to_email": ["avirupsinha10@gmail.com", "debajyoti.das@juspay.in"],
-                                "from_email": "aman.asrani@juspay.in",
-                                "sendingFrom": "aman.asrani@juspay.in",
+                                "from_email": "no-reply@xyne.io",
+                                "sendingFrom": "no-reply@xyne.io",
                                 "emailAddresses": ["avirupsinha10@gmail.com", "debajyoti.das@juspay.in"]
                             }
                         }

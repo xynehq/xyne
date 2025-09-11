@@ -22,7 +22,7 @@ async function createAgenticAIWorkflow() {
           ai_model: "gemini-1.5-flash",
           max_file_size: "25MB",
           auto_execution: true,
-          recipients: ["yash.daga@juspay.in", "aman.asrani@juspay.in"],
+          recipients: [],
           agentic_ai_enabled: true,
         },
         createdBy: "system",
@@ -380,8 +380,8 @@ analysis_data = previous_step_results.get("Agentic AI Analysis", {}).get("result
 form_data = previous_step_results.get("Document Upload", {}).get("formSubmission", {}).get("formData", {})
 
 # Email configuration
-recipients = ["yash.daga@juspay.in", "aman.asrani@juspay.in"]
-from_email = "aman.asrani@juspay.in"
+recipients = []
+from_email = "no-reply@xyne.io"
 
 if analysis_data.get("status") != "success":
     error_msg = analysis_data.get("error", "Unknown error occurred")
@@ -537,8 +537,8 @@ else:
         type: "email",
         value: emailScriptContent.trim(),
         config: {
-          recipients: ["yash.daga@juspay.in", "aman.asrani@juspay.in"],
-          from_email: "aman.asrani@juspay.in",
+          recipients: [],
+          from_email: "no-reply@xyne.io",
           content_type: "html",
           template_type: "agentic_ai_results",
         },

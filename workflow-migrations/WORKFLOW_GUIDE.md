@@ -58,7 +58,7 @@ xyne/server/
 
 ```bash
 # Navigate to server directory
-cd /Users/yash.daga/repo/xyne/server
+cd /Users/avirup.sinha/repo/xyne/server
 
 # Install server dependencies (if needed)
 npm install
