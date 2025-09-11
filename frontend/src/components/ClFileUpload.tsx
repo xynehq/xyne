@@ -72,15 +72,24 @@ const CollectionFileUpload = ({
         isFile: boolean
         isDirectory: boolean
         name: string
-        file?: (success: (file: File) => void, error: (err: Error) => void) => void
+        file?: (
+          success: (file: File) => void,
+          error: (err: Error) => void,
+        ) => void
         createReader?: () => FileSystemDirectoryReader
       }
 
       interface FileSystemDirectoryReader {
-        readEntries: (success: (entries: FileSystemEntry[]) => void, error: (err: Error) => void) => void
+        readEntries: (
+          success: (entries: FileSystemEntry[]) => void,
+          error: (err: Error) => void,
+        ) => void
       }
 
-      const traverseFileTree = (entry: FileSystemEntry, path: string): Promise<File[]> => {
+      const traverseFileTree = (
+        entry: FileSystemEntry,
+        path: string,
+      ): Promise<File[]> => {
         return new Promise((resolve, reject) => {
           if (entry.isFile) {
             entry.file?.(

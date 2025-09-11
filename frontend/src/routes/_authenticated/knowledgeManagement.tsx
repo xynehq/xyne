@@ -1,6 +1,15 @@
 import { createFileRoute, useRouterState } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
-import { Plus, X, MoreHorizontal, Edit, Trash2, ArrowLeft } from "lucide-react"
+import {
+  Plus,
+  X,
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  ArrowLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
 import { useState, useCallback, useEffect, memo } from "react"
 import { Input } from "@/components/ui/input"
@@ -26,12 +35,20 @@ import {
   deleteCollection,
   deleteItem,
 } from "@/utils/fileUtils"
-import type { Collection as CollectionType, CollectionItem } from "@/types/knowledgeBase"
+import type {
+  Collection as CollectionType,
+  CollectionItem,
+} from "@/types/knowledgeBase"
 import { api } from "@/api"
 import DocxViewer from "@/components/DocxViewer"
 import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
+import { DocumentChat } from "@/components/DocumentChat"
 import { authFetch } from "@/utils/authFetch"
+import { generateUUID } from "@/utils/chatUtils"
+
+// Module-level map to store documentId -> tempChatId mapping (frontend-generated UUIDs)
+const documentToTempChatMap = new Map<string, string>()
 
 export const Route = createFileRoute("/_authenticated/knowledgeManagement")({
   component: RouteComponent,
@@ -109,12 +126,14 @@ const DocumentViewerContainer = memo(
     loadingDocument: boolean
   }) => {
     return (
-      <div className="flex-1 overflow-y-auto bg-white dark:bg-[#1E1E1E] relative">
+      <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
         {loadingDocument && (
           <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mx-auto mb-4"></div>
-              <p className="text-gray-600 dark:text-gray-300">Loading document...</p>
+              <p className="text-gray-600 dark:text-gray-300">
+                Loading document...
+              </p>
             </div>
           </div>
         )}
@@ -122,7 +141,7 @@ const DocumentViewerContainer = memo(
           <div className="h-full">
             {selectedDocument.file.name.toLowerCase().endsWith(".pdf") ? (
               <PdfViewer
-                key={selectedDocument.file.id} // Force re-render when file changes
+                key={selectedDocument.file.id}
                 source={
                   new File(
                     [selectedDocument.content],
@@ -155,7 +174,7 @@ const DocumentViewerContainer = memo(
             ) : (
               <div className="h-full p-6 overflow-auto">
                 <DocxViewer
-                  key={selectedDocument.file.id} // Force re-render when file changes
+                  key={selectedDocument.file.id}
                   source={
                     new File(
                       [selectedDocument.content],
@@ -178,7 +197,7 @@ const DocumentViewerContainer = memo(
                     renderChanges: false,
                     breakPages: true,
                     ignoreLastRenderedPageBreak: true,
-                    inWrapper: false,
+                    inWrapper: true,
                     ignoreWidth: false,
                     ignoreHeight: false,
                     ignoreFonts: false,
@@ -189,7 +208,9 @@ const DocumentViewerContainer = memo(
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500 dark:text-gray-400">Select a document to view</p>
+            <p className="text-gray-500 dark:text-gray-400">
+              Select a document to view
+            </p>
           </div>
         )}
       </div>
@@ -240,6 +261,20 @@ function RouteComponent() {
   } | null>(null)
   const [loadingDocument, setLoadingDocument] = useState(false)
 
+  // Chat management state
+  const [currentInitialChatId, setCurrentInitialChatId] = useState<
+    string | null
+  >(null)
+
+  // File tree visibility state
+  const [isFileTreeCollapsed, setIsFileTreeCollapsed] = useState(true)
+  
+  // Chat visibility state based on zoom level
+  const [isChatHidden, setIsChatHidden] = useState(false)
+  
+  // Chat overlay state - only used when isChatHidden is true
+  const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false)
+
   // Load upload state from localStorage on mount
   const savedState = loadUploadState()
   const [isUploading, setIsUploading] = useState(savedState.isUploading)
@@ -248,6 +283,52 @@ function RouteComponent() {
     savedState.uploadingCollectionName,
   )
 
+  // Zoom detection for chat component
+  useEffect(() => {
+    // Guard for SSR
+    if (typeof window === 'undefined') return
+
+    const measureZoom = () => {
+      // Method 1: Using window dimensions ratio
+      const zoomLevel1 = window.outerWidth / window.innerWidth
+
+      // Method 3: Using screen width vs window width
+      const zoomLevel2 = screen.width / window.innerWidth
+
+      // Use devicePixelRatio as primary method, with fallbacks
+      let zoom = zoomLevel1
+
+      // Fallback to window dimensions ratio if devicePixelRatio seems unreliable
+      if (zoom < 0.5 || zoom > 5) {
+        zoom = zoomLevel2
+      }
+
+      // Hide chat if zoom is 150% or higher
+      setIsChatHidden(zoom >= 1.5 || window.innerWidth < 1133)
+    }
+
+    // Initial check
+    measureZoom()
+
+    // Recalculate on viewport-affecting events
+    const onResize = () => measureZoom()
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    
+    // Some browsers expose visualViewport events that fire on zoom
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', onResize)
+    }
+
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', onResize)
+      }
+    }
+  }, [])
+          
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
 
   // Save upload state to localStorage whenever it changes
@@ -383,7 +464,8 @@ function RouteComponent() {
           const data = await response.json()
           const existingCollection = data.find(
             (collection: CollectionType) =>
-              collection.name.toLowerCase() === uploadingCollectionName.toLowerCase(),
+              collection.name.toLowerCase() ===
+              uploadingCollectionName.toLowerCase(),
           )
 
           if (
@@ -402,24 +484,29 @@ function RouteComponent() {
             clearUploadState()
 
             // Refresh collections to show the new one
-            const updatedCollections = data.map((collection: CollectionType) => ({
-              id: collection.id,
-              name: collection.name,
-              description: collection.description,
-              files: collection.totalCount || 0,
-              items: [],
-              isOpen: false,
-              lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
+            const updatedCollections = data.map(
+              (collection: CollectionType) => ({
+                id: collection.id,
+                name: collection.name,
+                description: collection.description,
+                files: collection.totalCount || 0,
+                items: [],
+                isOpen: false,
+                lastUpdated: new Date(collection.updatedAt).toLocaleString(
+                  "en-GB",
+                  {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  },
+                ),
+                updatedBy: collection.lastUpdatedByEmail || "Unknown",
+                totalCount: collection.totalCount,
+                isPrivate: collection.isPrivate,
               }),
-              updatedBy: collection.lastUpdatedByEmail || "Unknown",
-              totalCount: collection.totalCount,
-              isPrivate: collection.isPrivate,
-            }))
+            )
             setCollections(updatedCollections)
 
             showToast(
@@ -445,26 +532,29 @@ function RouteComponent() {
         const response = await api.cl.$get()
         if (response.ok) {
           const data = await response.json()
-            setCollections(
-              data.map((collection: CollectionType) => ({
-                id: collection.id,
-                name: collection.name,
-                description: collection.description,
-                files: collection.totalItems || 0,
-                items: [],
-                isOpen: false,
-                lastUpdated: new Date(collection.updatedAt).toLocaleString("en-GB", {
+          setCollections(
+            data.map((collection: CollectionType) => ({
+              id: collection.id,
+              name: collection.name,
+              description: collection.description,
+              files: collection.totalItems || 0,
+              items: [],
+              isOpen: false,
+              lastUpdated: new Date(collection.updatedAt).toLocaleString(
+                "en-GB",
+                {
                   day: "numeric",
                   month: "short",
                   year: "numeric",
                   hour: "2-digit",
                   minute: "2-digit",
-                }),
-                updatedBy: collection.lastUpdatedByEmail || "Unknown",
-                totalCount: collection.totalItems,
-                isPrivate: collection.isPrivate,
-              })),
-            )
+                },
+              ),
+              updatedBy: collection.lastUpdatedByEmail || "Unknown",
+              totalCount: collection.totalItems,
+              isPrivate: collection.isPrivate,
+            })),
+          )
         } else {
           showToast("Error", "Failed to fetch knowledge bases.", true)
         }
@@ -605,7 +695,10 @@ function RouteComponent() {
     setSelectedFiles([])
   }
 
-  const handleOpenAddFilesModal = (collection: Collection, folder?: FileNode) => {
+  const handleOpenAddFilesModal = (
+    collection: Collection,
+    folder?: FileNode,
+  ) => {
     setAddingToCollection(collection)
     setTargetFolder(folder || null)
     setCollectionName(collection.name)
@@ -646,7 +739,11 @@ function RouteComponent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-        await uploadFileBatch(batchFiles, addingToCollection.id, targetFolder?.id)
+        await uploadFileBatch(
+          batchFiles,
+          addingToCollection.id,
+          targetFolder?.id,
+        )
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -855,10 +952,10 @@ function RouteComponent() {
       // Delete the collection
       await deleteCollection(deletingCollection.id)
 
-      // Remove from state
-      setCollections((prev) =>
-        prev.filter((c) => c.id !== deletingCollection.id),
-      )
+        // Remove from state
+        setCollections((prev) =>
+          prev.filter((c) => c.id !== deletingCollection.id),
+        )
       setDeletingCollection(null)
       showToast(
         "Collection Deleted",
@@ -885,8 +982,15 @@ function RouteComponent() {
         !fileName.endsWith(".pdf") &&
         !fileName.endsWith(".md"))
     ) {
+      showToast(
+        "Preview Not Available",
+        "Preview is only available for .docx, .pdf, and .md files.",
+        false
+      );
       return
     }
+
+    setIsFileTreeCollapsed(true)
 
     // Don't reload if it's the same file
     if (selectedDocument && selectedDocument.file.id === file.id) {
@@ -895,11 +999,39 @@ function RouteComponent() {
 
     setLoadingDocument(true)
     try {
-      // Fetch the file content directly from the API endpoint
-      const response = await authFetch(
+      // First check if the file supports preview
+      const previewResponse = await authFetch(
+        `/api/v1/cl/${collection.id}/files/${file.id}/preview`,
+        {
+          method: "GET",
+          credentials: "include",
+        },
+      )
+
+      if (!previewResponse.ok) {
+        let errorMessage = "Failed to preview file download the file instead."
+        try {
+          const errorData = await previewResponse.json()
+          errorMessage = errorData.message || errorMessage
+        } catch {
+          // If JSON parsing fails, try to get text
+          try {
+            errorMessage = await previewResponse.text()
+          } catch {
+            // If both fail, use default message
+          }
+        }
+        showToast("Preview Not Available", errorMessage, false)
+        return
+      }
+
+      // If preview is supported, fetch the file content with cache-busting
+      const fileName = file.name.toLowerCase()
+      const contentResponse = await authFetch(
         `/api/v1/cl/${collection.id}/files/${file.id}/content`,
         {
           method: "GET",
+          credentials: "include",
           headers: {
             Accept: fileName.endsWith(".md")
               ? "text/plain, text/markdown"
@@ -908,11 +1040,26 @@ function RouteComponent() {
         },
       )
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch document: ${response.statusText}`)
+      if (!contentResponse.ok) {
+        let errorMessage = 'Failed to fetch document';
+        try {
+          // Try to get detailed error message from response
+          const errorData = await contentResponse.json();
+          errorMessage = errorData.message || `${errorMessage}: ${contentResponse.statusText}`;
+        } catch {
+          // If JSON parsing fails, use status text
+          errorMessage = `${errorMessage}: ${contentResponse.statusText}`;
+        }
+  
+        showToast(
+          "Document Error",
+          errorMessage,
+          true
+        );
+        throw new Error(errorMessage);
       }
 
-      const blob = await response.blob()
+      const blob = await contentResponse.blob()
 
       setSelectedDocument({
         file,
@@ -927,8 +1074,55 @@ function RouteComponent() {
     }
   }
 
+  // Chat management functions
+  const handleChatCreated = useCallback(
+    (chatId: string) => {
+      if (
+        selectedDocument &&
+        selectedDocument.file.id &&
+        currentInitialChatId
+      ) {
+        // Store the mapping from documentId to tempChatId
+        documentToTempChatMap.set(
+          selectedDocument.file.id,
+          currentInitialChatId,
+        )
+      }
+    },
+    [selectedDocument, currentInitialChatId],
+  )
+
+  const loadChatForDocument = useCallback(async (documentId: string) => {
+    const existingTempChatId = documentToTempChatMap.get(documentId)
+
+    if (existingTempChatId) {
+      // We have an existing tempChatId for this document
+      setCurrentInitialChatId(existingTempChatId)
+    } else {
+      // No existing chat, generate a new tempChatId for new chat
+      const newTempChatId = generateUUID()
+      setCurrentInitialChatId(newTempChatId)
+      documentToTempChatMap.set(documentId, newTempChatId)
+    }
+  }, [])
+
+  // Reset chat state when document changes
+  useEffect(() => {
+    if (selectedDocument && selectedDocument.file.id) {
+      loadChatForDocument(selectedDocument.file.id)
+    }
+  }, [selectedDocument?.file.id, loadChatForDocument])
+
   const handleBackToCollections = () => {
     setSelectedDocument(null)
+    setCurrentInitialChatId(null)
+    setIsFileTreeCollapsed(true) // Reset file tree state when going back
+    setIsChatOverlayOpen(false) // Reset chat overlay state when going back
+  }
+
+  // Handle chunk index changes from DocumentChat
+  const handleChunkIndexChange = (newChunkIndex: number | null) => {
+    // setChunkIndex(newChunkIndex)
   }
 
   return (
@@ -940,137 +1134,251 @@ function RouteComponent() {
       />
       <div className="flex-1 flex flex-col h-full md:ml-[52px] ml-0">
         {selectedDocument ? (
-          // Document viewer layout
-          <div className="flex h-full flex-col lg:flex-row">
-            {/* Left pane - File tree */}
-            <div className="bg-gray-100 dark:bg-[#1E1E1E] flex flex-col border-r border-gray-200 dark:border-gray-700 w-full lg:w-[300px] lg:min-w-[250px] lg:max-w-[400px] h-64 lg:h-full">
-              {/* Collection Header */}
-              <div className="px-4 py-4">
-                <h2 className="text-sm font-bold font-mono text-gray-400 dark:text-gray-500 uppercase tracking-wider truncate">
-                  {selectedDocument.collection.name}
-                </h2>
-              </div>
-
-              {/* File tree */}
-              <div className="flex-1 overflow-y-auto">
-                <SimpleFileTree
-                  items={selectedDocument.collection.items}
-                  collection={selectedDocument.collection}
-                  onFileClick={(file) => {
-                    handleFileClick(file, selectedDocument.collection)
-                  }}
-                  selectedFile={selectedDocument.file}
-                  onToggle={async (node) => {
-                    if (node.type !== "folder") return
-
-                    const updatedCollections = [...collections]
-                    const coll = updatedCollections.find(
-                      (c) => c.id === selectedDocument.collection.id,
-                    )
-                    if (coll) {
-                      const toggleNode = async (
-                        nodes: FileNode[],
-                      ): Promise<FileNode[]> => {
-                        const updatedNodes = [...nodes]
-                        for (let i = 0; i < updatedNodes.length; i++) {
-                          const n = updatedNodes[i]
-                          if (n === node) {
-                            n.isOpen = !n.isOpen
-
-                            if (n.isOpen && n.id) {
-                              try {
-                                const response = await api.cl[":id"].items.$get(
-                                  {
-                                    param: {
-                                      id: selectedDocument.collection.id,
-                                    },
-                                    query: { parentId: n.id },
-                                  },
-                                )
-                                if (response.ok) {
-                                  const items = await response.json()
-
-                                  n.children = items.map((item: CollectionItem) => ({
-                                    id: item.id,
-                                    name: item.name,
-                                    type: item.type as "file" | "folder",
-                                    updatedAt: item.updatedAt,
-                                    updatedBy:
-                                      item.lastUpdatedByEmail ||
-                                      user?.email ||
-                                      "Unknown",
-                                    isOpen: true,
-                                    children:
-                                      item.type === "folder" ? [] : undefined,
-                                  }))
-                                }
-                              } catch (error) {
-                                console.error(
-                                  `Failed to fetch folder contents for ${n.name}:`,
-                                  error,
-                                )
-                                showToast(
-                                  "Error",
-                                  `Failed to load folder contents`,
-                                  true,
-                                )
-                              }
-                            }
-                          } else if (n.children) {
-                            n.children = await toggleNode(n.children)
-                          }
-                        }
-                        return updatedNodes
-                      }
-
-                      coll.items = await toggleNode(coll.items)
-                      setCollections(updatedCollections)
-
-                      // Update the selected document's collection items
-                      setSelectedDocument((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              collection: {
-                                ...prev.collection,
-                                items: coll.items,
-                              },
-                            }
-                          : null,
-                      )
-                    }
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Right pane - Document viewer */}
-            <div className="flex-1 flex flex-col bg-white dark:bg-[#1E1E1E] min-h-0">
-              {/* Document header */}
-              <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-4">
-                  <Button
-                    onClick={handleBackToCollections}
-                    variant="ghost"
-                    size="sm"
-                    className="flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-[#2d2d2d] px-2 py-1 h-auto"
-                  >
-                    <ArrowLeft size={16} />
-                  </Button>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
-                      {selectedDocument.file.name}
-                    </span>
+          // Document viewer layout with flex column
+          <div className="flex flex-col h-full lg:flex-row">
+            {/* Top section - File tree and Document viewer */}
+            <div className="flex flex-1 h-full overflow-hidden">
+              {/* Center pane - Document viewer (scrollable) */}
+              <div className="flex-1 flex flex-col bg-white h-full">
+                {/* Document header (sticky) */}
+                <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
+                  <div className="flex items-center gap-4">
+                    <Button
+                      onClick={handleBackToCollections}
+                      variant="ghost"
+                      size="sm"
+                      className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto"
+                    >
+                      <ArrowLeft size={16} />
+                    </Button>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+                        {selectedDocument.file.name}
+                      </span>
+                    </div>
                   </div>
+                  <div className="ml-auto">
+                    <Button
+                      onClick={() => setIsFileTreeCollapsed(!isFileTreeCollapsed)}
+                      variant="ghost"
+                      size="sm"
+                      className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto"
+                      title={isFileTreeCollapsed ? "Show file tree" : "Hide file tree"}
+                    >
+                      {isFileTreeCollapsed ? (
+                        <PanelLeftOpen className="z-50" size={16} />
+                      ) : (
+                        <PanelLeftClose className="z-50" size={16} />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Document content (scrollable) */}
+                <div className="flex-1 overflow-hidden">
+                  <DocumentViewerContainer
+                    selectedDocument={selectedDocument}
+                    loadingDocument={loadingDocument}
+                  />
                 </div>
               </div>
 
-              {/* Document content */}
-              <DocumentViewerContainer
-                selectedDocument={selectedDocument}
-                loadingDocument={loadingDocument}
-              />
+              {/* Right pane - Chat component (sticky) or overlay toggle */}
+              {!isChatHidden ? (
+                <div className="flex flex-col bg-white dark:bg-[#1E1E1E] sticky top-0 border-l border-gray-200 dark:border-gray-700 w-[40%]">
+                  <DocumentChat
+                    key={currentInitialChatId}
+                    user={user}
+                    documentId={selectedDocument.file.id || ""}
+                    documentName={selectedDocument.file.name}
+                    initialChatId={currentInitialChatId}
+                    onChatCreated={handleChatCreated}
+                    onChunkIndexChange={handleChunkIndexChange}
+                  />
+                </div>
+              ) : (
+                /* Chat overlay toggle button when hidden */
+                <div className="fixed bottom-4 right-4 z-40 transform -translate-y-1/2">
+                  <Button
+                    onClick={() => setIsChatOverlayOpen(true)}
+                    className="bg-red-500 hover:bg-red-600 text-white rounded-full p-3 shadow-lg transition-all duration-200 hover:scale-105 hover:animate-none"
+                    title="Open chat overlay"
+                  >
+                    <svg 
+                      width="20" 
+                      height="20" 
+                      viewBox="0 0 24 24" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      strokeWidth="2" 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </Button>
+                </div>
+              )}
             </div>
+
+            {/* Chat overlay when isChatHidden is true */}
+            {isChatHidden && isChatOverlayOpen && (
+              <div className="fixed inset-0 z-50 flex justify-end">
+                {/* Backdrop */}
+                <div 
+                  className="absolute inset-0 bg-black bg-opacity-30" 
+                  onClick={() => setIsChatOverlayOpen(false)}
+                />
+                
+                {/* Chat overlay panel */}
+                <div className="relative bg-white dark:bg-[#1E1E1E] w-[50%] max-w-[50%] max-w-[90vw] h-full shadow-2xl transform transition-transform duration-300 ease-in-out">
+                  {/* Close button */}
+                  <div className="absolute top-2 right-4 z-10">
+                    <Button
+                      onClick={() => setIsChatOverlayOpen(false)}
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+                      title="Close chat"
+                    >
+                      <X size={16} />
+                    </Button>
+                  </div>
+                  
+                  {/* Chat component */}
+                  <div className="h-full">
+                    <DocumentChat
+                      key={currentInitialChatId}
+                      user={user}
+                      documentId={selectedDocument.file.id || ""}
+                      documentName={selectedDocument.file.name}
+                      initialChatId={currentInitialChatId}
+                      onChatCreated={handleChatCreated}
+                      onChunkIndexChange={handleChunkIndexChange}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* File tree overlay */}
+            {!isFileTreeCollapsed && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex">
+                <div className="bg-gray-100 flex flex-col border-r border-gray-200 w-[30%] max-w-[400px] min-w-[250px] dark:bg-[#1E1E1E] dark:border-gray-700 lg:w-[300px] lg:min-w-[250px] lg:max-w-[400px] h-64 lg:h-full">
+                  {/* Collection Header */}
+                  <div className="px-4 py-4 h-12 bg-gray-50 dark:bg-[#1E1E1E] border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h2 className="text-sm font-bold font-mono text-gray-400 dark:text-gray-500 uppercase tracking-wider truncate">
+                      {selectedDocument.collection.name}
+                    </h2>
+                    <Button
+                      onClick={() => setIsFileTreeCollapsed(true)}
+                      variant="ghost"
+                      size="sm"
+                      className="p-1 rounded-full text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+                    >
+                      <X size={16} />
+                    </Button>
+                  </div>
+
+                  {/* File tree */}
+                  <div className="flex-1 overflow-y-auto">
+                    <SimpleFileTree
+                      items={selectedDocument.collection.items}
+                      collection={selectedDocument.collection}
+                      onFileClick={(file) => {
+                        handleFileClick(file, selectedDocument.collection)
+                      }}
+                      selectedFile={selectedDocument.file}
+                      onToggle={async (node) => {
+                        if (node.type !== "folder") return
+
+                        const updatedCollections = [...collections]
+                        const coll = updatedCollections.find(
+                          (c) => c.id === selectedDocument.collection.id,
+                        )
+                        if (coll) {
+                          const toggleNode = async (
+                            nodes: FileNode[],
+                          ): Promise<FileNode[]> => {
+                            const updatedNodes = [...nodes]
+                            for (let i = 0; i < updatedNodes.length; i++) {
+                              const n = updatedNodes[i]
+                              if (n === node) {
+                                n.isOpen = !n.isOpen
+
+                                if (n.isOpen && n.id) {
+                                  try {
+                                const response = await api.cl[":id"].items.$get(
+                                  {
+                                      param: {
+                                        id: selectedDocument.collection.id,
+                                      },
+                                      query: { parentId: n.id },
+                                  },
+                                )
+                                    if (response.ok) {
+                                      const items = await response.json()
+
+                                  n.children = items.map((item: CollectionItem) => ({
+                                        id: item.id,
+                                        name: item.name,
+                                        type: item.type as "file" | "folder",
+                                        updatedAt: item.updatedAt,
+                                        updatedBy:
+                                          item.lastUpdatedByEmail ||
+                                          user?.email ||
+                                          "Unknown",
+                                        isOpen: true,
+                                        children:
+                                          item.type === "folder" ? [] : undefined,
+                                      }))
+                                    }
+                                  } catch (error) {
+                                    console.error(
+                                      `Failed to fetch folder contents for ${n.name}:`,
+                                      error,
+                                    )
+                                    showToast(
+                                      "Error",
+                                      `Failed to load folder contents`,
+                                      true,
+                                    )
+                                  }
+                                }
+                              } else if (n.children) {
+                                n.children = await toggleNode(n.children)
+                              }
+                            }
+                            return updatedNodes
+                          }
+
+                          coll.items = await toggleNode(coll.items)
+                          setCollections(updatedCollections)
+
+                          // Update the selected document's collection items
+                          setSelectedDocument((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  collection: {
+                                    ...prev.collection,
+                                    items: coll.items,
+                                  },
+                                }
+                              : null,
+                          )
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                {/* Click outside to close */}
+                <div 
+                  className="flex-1" 
+                  onClick={() => setIsFileTreeCollapsed(true)}
+                />
+              </div>
+            )}
           </div>
         ) : (
           // Collections list view
@@ -1081,45 +1389,45 @@ function RouteComponent() {
                   KNOWLEDGE MANAGEMENT
                 </h1>
                 <div className="flex items-center gap-4">
-                  {/* <Search className="text-gray-400 h-6 w-6" /> */}
-                  <Button
-                    onClick={() => setShowNewCollection(true)}
-                    disabled={isUploading}
+                  {/* <Search className="text-gray-400 dark:text-gray-500 h-6 w-6" /> */}
+                    <Button
+                      onClick={() => setShowNewCollection(true)}
+                      disabled={isUploading}
                     className="bg-slate-800 hover:bg-slate-700 dark:bg-[#2d2d2d] dark:hover:bg-[#404040] text-white rounded-full px-4 py-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Plus size={16} />
-                    <span className="font-mono text-[12px] font-medium">
-                      NEW COLLECTION
-                    </span>
-                  </Button>
+                    >
+                      <Plus size={16} />
+                      <span className="font-mono text-[12px] font-medium">
+                        NEW COLLECTION
+                      </span>
+                    </Button>
                 </div>
               </div>
               <div className="mt-12">
                 {/* Show skeleton loader when uploading */}
                 {isUploading && batchProgress.total > 0 && (
-                  <div className="mb-8">
-                    <div className="flex justify-between items-center mb-4">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                          {uploadingCollectionName}
-                        </h2>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          uploading files...
-                        </span>
+                    <div className="mb-8">
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                            {uploadingCollectionName}
+                          </h2>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            uploading files...
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {batchProgress.current} / {batchProgress.total} files
+                          processed
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {batchProgress.current} / {batchProgress.total} files
-                        processed
-                      </div>
+                      <FileUploadSkeleton
+                        totalFiles={batchProgress.total}
+                        processedFiles={batchProgress.current}
+                        currentBatch={batchProgress.batch}
+                        totalBatches={batchProgress.totalBatches}
+                      />
                     </div>
-                    <FileUploadSkeleton
-                      totalFiles={batchProgress.total}
-                      processedFiles={batchProgress.current}
-                      currentBatch={batchProgress.batch}
-                      totalBatches={batchProgress.totalBatches}
-                    />
-                  </div>
-                )}
+                  )}
 
                 {collections.map((collection, index) => (
                   <div key={index} className="mb-8">
@@ -1161,11 +1469,11 @@ function RouteComponent() {
                         {collection.name}
                       </h2>
                       <div className="flex items-center gap-4">
-                        <Plus
-                          size={16}
+                          <Plus
+                            size={16}
                           className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
+                            onClick={(e) => {
+                              e.stopPropagation()
                             !isUploading && handleOpenAddFilesModal(collection)
                           }}
                         />
@@ -1177,13 +1485,13 @@ function RouteComponent() {
                             <MoreHorizontal
                               size={16}
                               className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
                                 !isUploading && handleEditCollection(collection)
                               }}
                               disabled={isUploading}
@@ -1325,7 +1633,7 @@ function RouteComponent() {
                           }}
                         />
                       </>
-                    )}
+                      )}
                   </div>
                 ))}
               </div>
@@ -1447,7 +1755,7 @@ function RouteComponent() {
               <div className="flex justify-between items-center">
                 <h2 className="pl-2  font-medium text-gray-400 dark:text-gray-200 font-mono">
                   {addingToCollection
-                    ? `Add files to ${addingToCollection.name}${targetFolder ? ` / ${targetFolder.name}` : ''}`
+                    ? `Add files to ${addingToCollection.name}${targetFolder ? ` / ${targetFolder.name}` : ""}`
                     : "CREATE NEW COLLECTION"}
                 </h2>
                 <Button
@@ -1494,19 +1802,19 @@ function RouteComponent() {
                   </div>
                 </div>
                 <CollectionFileUpload
-                  onFilesSelect={handleFilesSelect}
-                  onRemoveFile={handleRemoveFile}
-                  onRemoveAllFiles={handleRemoveAllFiles}
-                  selectedFiles={selectedFiles}
-                  onUpload={
-                    addingToCollection
-                      ? handleAddFilesToCollection
-                      : handleUpload
-                  }
-                  isUploading={isUploading}
-                  collectionName={collectionName}
-                  batchProgress={batchProgress}
-                />
+                      onFilesSelect={handleFilesSelect}
+                      onRemoveFile={handleRemoveFile}
+                      onRemoveAllFiles={handleRemoveAllFiles}
+                      selectedFiles={selectedFiles}
+                      onUpload={
+                        addingToCollection
+                          ? handleAddFilesToCollection
+                          : handleUpload
+                      }
+                      isUploading={isUploading}
+                      collectionName={collectionName}
+                      batchProgress={batchProgress}
+                    />
               </div>
             </div>
           </div>

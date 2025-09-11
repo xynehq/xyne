@@ -327,8 +327,7 @@ export const DeepResearchReasoning: React.FC<DeepResearchReasoningProps> = ({
                         <div className="text-xs text-slate-600 dark:text-gray-400 mt-1">
                           <details className="cursor-pointer">
                             <summary className="text-slate-600 hover:text-slate-700">
-                              View complete reasoning (
-                              {step.fullReasoningContent.length} chars)
+                              View complete reasoning
                             </summary>
                             <div className="mt-2 p-4 bg-slate-50 dark:bg-slate-600/20 rounded text-sm whitespace-pre-wrap max-h-80 overflow-y-auto">
                               {step.fullReasoningContent}
