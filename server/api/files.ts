@@ -13,7 +13,6 @@ import {
   checkIfDataSourceFileExistsByNameAndId,
   getDataSourceByNameAndCreator,
   insert,
-  NAMESPACE,
 } from "../search/vespa"
 import { NoUserFound } from "@/errors"
 import config from "@/config"
@@ -230,9 +229,11 @@ export const handleAttachmentUpload = async (c: Context) => {
       try {
         if (isImage) {
           // For images: save to disk and generate thumbnail
-          const baseDir = path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db")
+          const baseDir = path.resolve(
+            process.env.IMAGE_DIR || "downloads/xyne_images_db",
+          )
           outputDir = path.join(baseDir, fileId)
-          
+
           await mkdir(outputDir, { recursive: true })
           const filePath = path.join(outputDir, fullFileName)
           await Bun.write(filePath, new Uint8Array(fileBuffer))
@@ -242,7 +243,7 @@ export const handleAttachmentUpload = async (c: Context) => {
           await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath)
         } else {
           // For non-images: process through FileProcessorService and ingest into Vespa
-          
+
           // Process the file content using FileProcessorService
           const processingResult = await FileProcessorService.processFile(
             Buffer.from(fileBuffer),
@@ -253,16 +254,17 @@ export const handleAttachmentUpload = async (c: Context) => {
             true,
             false,
           )
-          
+
           // TODO: Ingest the processed content into Vespa
           // This would typically involve calling your Vespa ingestion service
           // For now, we'll log the processing result
           loggerWithChild({ email }).info(
-            `Processed non-image file "${file.name}" with ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`
+            `Processed non-image file "${file.name}" with ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`,
           )
 
-          const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
-          
+          const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
+            processingResult
+
           const vespaDoc = {
             docId: fileId,
             clId: "attachment",
@@ -302,9 +304,10 @@ export const handleAttachmentUpload = async (c: Context) => {
           fileType: file.type,
           fileSize: file.size,
           isImage,
-          thumbnailPath: (thumbnailPath && outputDir)
-            ? path.relative(outputDir, thumbnailPath)
-            : "",
+          thumbnailPath:
+            thumbnailPath && outputDir
+              ? path.relative(outputDir, thumbnailPath)
+              : "",
           createdAt: new Date(),
           url: `/api/v1/attachments/${fileId}`,
         }
@@ -388,8 +391,9 @@ export const handleAttachmentServe = async (c: Context) => {
     const file = Bun.file(filePath || "")
     if (!(await file.exists())) {
       // File not found on disk - it might be a non-image file processed through Vespa
-      throw new HTTPException(404, { 
-        message: "File not found. Non-image files are processed through Vespa and not stored on disk." 
+      throw new HTTPException(404, {
+        message:
+          "File not found. Non-image files are processed through Vespa and not stored on disk.",
       })
     }
 

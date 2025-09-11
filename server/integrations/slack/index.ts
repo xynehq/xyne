@@ -19,7 +19,6 @@ import {
   ifDocumentsExistInSchema,
   insert,
   insertWithRetry,
-  NAMESPACE,
   UpdateDocument,
   UpdateDocumentPermissions,
 } from "@/search/vespa"
@@ -77,7 +76,7 @@ import {
   totalConversationsSkipped,
   totalConversationsToBeInserted,
 } from "@/metrics/slack/slack-metrics"
-import config from "@/config"
+import config, { NAMESPACE } from "@/config"
 import { periodicSaveState } from "./config"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {

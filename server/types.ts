@@ -363,7 +363,7 @@ const MicrosoftDriveDeltaTokenSchema = z.object({
 const MicrosoftOutlookDeltaTokenSchema = z.object({
   type: z.literal("microsoftOutlookDeltaToken"),
   deltaToken: z.string().optional(), // Backward compatibility
-  deltaTokens: z.record(z.string()).optional(), // New multi-folder approach
+  deltaTokens: z.record(z.string(), z.string()).optional(), // New multi-folder approach
   lastSyncedAt: z.coerce.date(),
 })
 

@@ -2,7 +2,7 @@ import { Apps } from "@xyne/vespa-ts/types"
 import { chunkDocument } from "@/chunks"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { insertDataSourceFile, NAMESPACE } from "@/search/vespa"
+import { insertDataSourceFile } from "@/search/vespa"
 import {
   type VespaDataSourceFile,
   datasourceSchema,
@@ -36,6 +36,7 @@ import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import imageType from "image-type"
+import { NAMESPACE } from "@/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",

@@ -59,7 +59,6 @@ import {
 } from "@xyne/vespa-ts/types"
 import {
   insert,
-  NAMESPACE,
   UpdateDocument,
   insertDocument,
   insertUser,

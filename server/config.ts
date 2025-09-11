@@ -9,8 +9,11 @@ let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
+
+// Vespa configuration constants
 export const NAMESPACE = "namespace"
 export const CLUSTER = "my_content"
+
 if (process.env.NODE_ENV === "production") {
   postgresBaseHost = process.env.DATABASE_HOST!
   vespaBaseHost = process.env.VESPA_HOST!
