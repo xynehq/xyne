@@ -32,13 +32,9 @@ import {
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
   // Legacy aliases for backward compatibility
-  } from "@/db/knowledgeBase"
+} from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"
-import type { 
-  Collection, 
-  CollectionItem, 
-  File as DbFile, 
-} from "@/db/schema"
+import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument } from "@/search/vespa"
@@ -49,6 +45,8 @@ import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
+import { getAuth, safeGet } from "./agent"
+import { ApiKeyScopes } from "@/shared/types"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
@@ -127,7 +125,18 @@ function getStoragePath(
 
 // Create a new Collection
 export const CreateCollectionApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.CREATE_COLLECTION)) {
+      return c.json(
+        { message: "API key does not have scope to create collections" },
+        403,
+      )
+    }
+  }
 
   // Get user from database like other APIs do
   const users = await getUserByEmail(db, userEmail)
@@ -159,10 +168,11 @@ export const CreateCollectionApi = async (c: Context) => {
       isPrivate: validatedData.isPrivate ?? true,
       lastUpdatedById: user.id,
       lastUpdatedByEmail: user.email,
-      metadata:{
-        ...validatedData.metadata || {},
+      metadata: {
+        ...(validatedData.metadata || {}),
         vespaDocId: vespaDocId, // Store the vespaDocId in metadata
       },
+      via_apiKey,
     }
 
     loggerWithChild({ email: userEmail }).info(
@@ -189,7 +199,7 @@ export const CreateCollectionApi = async (c: Context) => {
         metadata: JSON.stringify({
           version: "1.0",
           lastModified: Date.now(),
-          ...validatedData.metadata
+          ...validatedData.metadata,
         }),
         createdBy: user.email,
         duration: 0,
@@ -229,7 +239,18 @@ export const CreateCollectionApi = async (c: Context) => {
 
 // List Collections for a user
 export const ListCollectionsApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.LIST_COLLECTIONS)) {
+      return c.json(
+        { message: "API key does not have scope to list collections" },
+        403,
+      )
+    }
+  }
   const showOnlyOwn = c.req.query("ownOnly") === "true"
 
   // Get user from database
@@ -356,7 +377,18 @@ export const UpdateCollectionApi = async (c: Context) => {
 
 // Delete a Collection
 export const DeleteCollectionApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.DELETE_COLLECTION)) {
+      return c.json(
+        { message: "API key does not have scope to delete collections" },
+        403,
+      )
+    }
+  }
   const collectionId = c.req.param("clId")
 
   // Get user from database
@@ -386,8 +418,8 @@ export const DeleteCollectionApi = async (c: Context) => {
       .where(
         and(
           eq(collectionItems.collectionId, collectionId),
-          isNull(collectionItems.deletedAt)
-        )
+          isNull(collectionItems.deletedAt),
+        ),
       )
 
     // Use transaction to ensure database operations are atomic
@@ -619,7 +651,7 @@ export const CreateFolderApi = async (c: Context) => {
         user.id,
         user.email,
       )
-      
+
       // Use the vespaDocId from the folder record (generated in createFolder)
       const vespaDoc = {
         docId: createdFolder.vespaDocId!,
@@ -631,9 +663,9 @@ export const CreateFolderApi = async (c: Context) => {
         description: folderMetadata.description || "",
         storagePath: "",
         chunks: [],
-        image_chunks: [], 
-        chunks_pos: [], 
-        image_chunks_pos: [], 
+        image_chunks: [],
+        chunks_pos: [],
+        image_chunks_pos: [],
         metadata: JSON.stringify({
           version: "1.0",
           lastModified: Date.now(),
@@ -641,7 +673,7 @@ export const CreateFolderApi = async (c: Context) => {
         }),
         createdBy: user.email,
         duration: 0,
-        mimeType: "folder", 
+        mimeType: "folder",
         fileSize: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -745,7 +777,11 @@ async function ensureFolderPath(
   const folderName = pathParts[0]
 
   // Check if folder already exists at this level (case-insensitive)
-  const existingItems = await getCollectionItemsByParent(db, collectionId, parentId)
+  const existingItems = await getCollectionItemsByParent(
+    db,
+    collectionId,
+    parentId,
+  )
   const existingFolder = existingItems.find(
     (item) =>
       item.type === "folder" &&
@@ -772,17 +808,17 @@ async function ensureFolderPath(
       version: "1.0",
       autoCreatedReason: "folder_structure_from_file_path",
     }
-    
-    // Use transaction to ensure both folder creation and Vespa insertion succeed together  
+
+    // Use transaction to ensure both folder creation and Vespa insertion succeed together
     const newFolder = await db.transaction(async (tx: any) => {
       const createdFolder = await createFolder(
-        tx, 
-        collectionId, 
-        parentId, 
-        folderName, 
-        autoCreatedFolderMetadata
+        tx,
+        collectionId,
+        parentId,
+        folderName,
+        autoCreatedFolderMetadata,
       )
-      
+
       // Use the vespaDocId from the newly created folder (no duplication!)
       const vespaDoc = {
         docId: createdFolder.vespaDocId!, // Use the ID generated by createFolder
@@ -798,7 +834,7 @@ async function ensureFolderPath(
         chunks_pos: [],
         image_chunks_pos: [],
         metadata: JSON.stringify({
-          version: "1.0", 
+          version: "1.0",
           lastModified: Date.now(),
           autoCreated: true,
           originalPath: pathParts.join("/"),
@@ -814,7 +850,7 @@ async function ensureFolderPath(
       await insert(vespaDoc, KbItemsSchema)
       return createdFolder
     })
-    
+
     currentFolderId = newFolder.id
 
     loggerWithChild().info(
@@ -839,7 +875,18 @@ async function ensureFolderPath(
 
 // Upload files
 export const UploadFilesApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.UPLOAD_FILES)) {
+      return c.json(
+        { message: "API key does not have scope to upload files to KB" },
+        403,
+      )
+    }
+  }
   const collectionId = c.req.param("clId")
   const requestPath = c.req.path
 
@@ -1050,7 +1097,11 @@ export const UploadFilesApi = async (c: Context) => {
           }
         }
 
-        const existingItems = await getCollectionItemsByParent(db, collectionId, targetParentId)
+        const existingItems = await getCollectionItemsByParent(
+          db,
+          collectionId,
+          targetParentId,
+        )
         // Create a mutable copy of existing names that we can update during batch processing
         const currentNames = [...existingItems.map((item) => item.name)]
 
@@ -1072,9 +1123,15 @@ export const UploadFilesApi = async (c: Context) => {
 
         if (existingFile) {
           // File with same name exists - check checksum to decide action
-          const existingCollectionFile = await getCollectionFileByItemId(db, existingFile.id)
+          const existingCollectionFile = await getCollectionFileByItemId(
+            db,
+            existingFile.id,
+          )
 
-          if (existingCollectionFile && existingCollectionFile.checksum === checksum) {
+          if (
+            existingCollectionFile &&
+            existingCollectionFile.checksum === checksum
+          ) {
             // Same content - skip the upload
             uploadResults.push({
               success: false,
@@ -1105,7 +1162,10 @@ export const UploadFilesApi = async (c: Context) => {
 
               if (existingCollectionFile) {
                 if (existingCollectionFile.vespaDocId) {
-                  await DeleteDocument(existingCollectionFile.vespaDocId, KbItemsSchema)
+                  await DeleteDocument(
+                    existingCollectionFile.vespaDocId,
+                    KbItemsSchema,
+                  )
                 }
                 try {
                   if (existingCollectionFile.storagePath) {
@@ -1143,10 +1203,11 @@ export const UploadFilesApi = async (c: Context) => {
           file.type || "text/plain",
           fileName,
           vespaDocId,
-          storagePath
+          storagePath,
         )
-        
-        const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
+
+        const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
+          processingResult
 
         // Use transaction for atomic file creation AND Vespa insertion
         const item = await db.transaction(async (tx) => {
@@ -1180,7 +1241,10 @@ export const UploadFilesApi = async (c: Context) => {
             docId: vespaDocId,
             clId: collectionId,
             itemId: createdItem.id,
-            fileName: targetPath === '/' ? collection.name + targetPath + filePath : collection.name + targetPath + fileName,
+            fileName:
+              targetPath === "/"
+                ? collection.name + targetPath + filePath
+                : collection.name + targetPath + fileName,
             app: Apps.KnowledgeBase as const,
             entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
             description: "", // Default description for uploaded files
@@ -1271,7 +1335,18 @@ export const UploadFilesApi = async (c: Context) => {
 
 // Delete an item
 export const DeleteItemApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.DELETE_COLLECTION_ITEM)) {
+      return c.json(
+        { message: "API key does not have scope to delete collection items" },
+        403,
+      )
+    }
+  }
   const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
 
@@ -1315,11 +1390,18 @@ export const DeleteItemApi = async (c: Context) => {
       itemsToDelete.push(item)
     } else if (item.type === "folder") {
       // For folders, get all descendants recursively
-      const getAllDescendants = async (parentId: string): Promise<CollectionItem[]> => {
+      const getAllDescendants = async (
+        parentId: string,
+      ): Promise<CollectionItem[]> => {
         const children = await db
           .select()
           .from(collectionItems)
-          .where(and(eq(collectionItems.parentId, parentId), isNull(collectionItems.deletedAt)))
+          .where(
+            and(
+              eq(collectionItems.parentId, parentId),
+              isNull(collectionItems.deletedAt),
+            ),
+          )
 
         const allDescendants: CollectionItem[] = [...children]
 
@@ -1522,8 +1604,7 @@ export const GetFileContentApi = async (c: Context) => {
   const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
 
- 
-  try{
+  try {
     const collectionFile = await getCollectionFileByItemId(db, itemId)
     if (!collectionFile) {
       throw new HTTPException(404, { message: "File data not found" })

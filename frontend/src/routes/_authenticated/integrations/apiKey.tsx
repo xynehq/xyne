@@ -113,6 +113,11 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
     description: "Allows listing all knowledge base collections",
   },
   {
+    id: ApiKeyScopes.UPLOAD_FILES,
+    name: "Upload Files",
+    description: "Allows uploading files to knowledge base collections",
+  },
+  {
     id: ApiKeyScopes.SEARCH_COLLECTION,
     name: "Search Collection",
     description: "Allows searching within knowledge base collections",
