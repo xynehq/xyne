@@ -1054,7 +1054,7 @@ const Header = ({
   workflowName,
 }: { onBackToWorkflows?: () => void; workflowName?: string }) => {
   return (
-    <div className="flex flex-col items-start px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px] gap-3">
+    <div className="flex items-center justify-start px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px]">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 w-full">
         <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
@@ -1069,21 +1069,6 @@ const Header = ({
             / {workflowName || "Untitled Workflow"}
           </span>
         </div>
-      </div>
-
-      {/* Full-width divider */}
-      <div className="w-full h-px bg-slate-200 dark:bg-gray-700 -mx-6 self-stretch" />
-
-      {/* Editor/Settings Toggle - positioned below divider */}
-      <div className="flex items-center rounded-xl overflow-hidden border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800">
-        <button className="my-1 mx-1 px-4 py-1.5 bg-white dark:bg-gray-700 text-slate-800 dark:text-gray-200 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center rounded-lg shadow-sm">
-          <EditorIcon />
-          Editor
-        </button>
-        <button className="px-4 py-1.5 bg-transparent text-slate-500 dark:text-gray-400 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center">
-          <SettingsIcon />
-          Settings
-        </button>
       </div>
     </div>
   )
@@ -2382,26 +2367,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             snapGrid={[15, 15]}
             proOptions={{ hideAttribution: true }}
           >
-            {/* Selection Info Panel */}
-            {(selectedNodes.length > 0 || selectedEdges.length > 0) && (
-              <Panel position="top-right">
-                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-md border border-slate-200 dark:border-gray-700 min-w-[200px]">
-                  <div className="text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">
-                    Selection Info
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    Nodes: {selectedNodes.length} | Edges:{" "}
-                    {selectedEdges.length}
-                  </div>
-                  {selectedNodes.length === 1 && selectedNodes[0].data?.step ? (
-                    <div className="text-xs mt-1 text-gray-700 dark:text-gray-300">
-                      <strong>Step:</strong>{" "}
-                      {(selectedNodes[0].data.step as Step).name || "Unnamed"}
-                    </div>
-                  ) : null}
-                </div>
-              </Panel>
-            )}
 
 
             {/* Loading Template Content */}
