@@ -5,14 +5,11 @@ import {
   mailSchema,
   userSchema,
   fileSchema,
-  MailResponseSchema,
   eventSchema,
   VespaEventSchema,
   userQuerySchema,
-  MailAttachmentResponseSchema,
   mailAttachmentSchema,
   chatUserSchema,
-  ChatMessageResponseSchema,
   dataSourceFileSchema,
   chatContainerSchema,
   VespaChatContainerSchema,
@@ -29,6 +26,7 @@ import {
   NotionEntity,
   GooglePeopleEntity,
   SlackEntity,
+  MicrosoftPeopleEntity,
 } from "@xyne/vespa-ts/types"
 export {
   GooglePeopleEntity,
@@ -67,10 +65,11 @@ export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
 export const ChatEntitySchema = z.nativeEnum(SlackEntity)
-
+export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
+  MicrosoftPeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
   MailEntitySchema,
@@ -698,6 +697,7 @@ export const agentPromptPayloadSchema = z.preprocess(
       isRagOn: z.boolean().optional(),
       appIntegrations: z
         .record(
+          z.string(),
           z.object({
             itemIds: z.array(z.string()),
             selectedAll: z.boolean(),
