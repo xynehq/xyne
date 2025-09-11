@@ -124,11 +124,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Initialize data directory from environment or use default
+DATA_DIR="${XYNE_DATA_DIR:-./data}"
+
 setup_environment() {
     echo -e "${YELLOW} Setting up environment...${NC}"
-    
-    # Load data directory from environment or use default
-    DATA_DIR="${XYNE_DATA_DIR:-./data}"
     
     # Create necessary directories with proper permissions
     echo " Creating data directories..."
@@ -179,9 +179,6 @@ setup_environment() {
 
 setup_permissions() {
     echo -e "${YELLOW} Setting directory permissions using Docker containers...${NC}"
-    
-    # Load data directory from environment or use default
-    DATA_DIR="${XYNE_DATA_DIR:-./data}"
     
     # Set UID and GID to 1000 to avoid permission issues
     USER_UID="1000"
