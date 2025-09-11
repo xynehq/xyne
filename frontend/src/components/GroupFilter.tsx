@@ -6,6 +6,7 @@ import {
   Entity,
   GooglePeopleEntity,
   isMailAttachment,
+  KnowledgeBaseEntity,
   SlackEntity,
   SystemEntity,
   WebSearchEntity,
@@ -94,9 +95,36 @@ export const getName = (app: Apps, entity: Entity): string => {
     } else {
       return "Drive"
     }
+  } else if (app === Apps.MicrosoftDrive) {
+    if (entity === DriveEntity.PDF) {
+      return "Pdf"
+    } else if (entity === DriveEntity.Folder) {
+      return "Folder"
+    } else if (entity === DriveEntity.Sheets) {
+      return "Sheets"
+    } else if (entity === DriveEntity.Slides) {
+      return "Slides"
+    } else if (entity === DriveEntity.Docs) {
+      return "Docs"
+    } else if (entity === DriveEntity.Image) {
+      return "Images"
+    } else if (entity === DriveEntity.WordDocument) {
+      return "Docx"
+    } else if (entity === DriveEntity.Presentation) {
+      return "Slides"
+    } else if (entity === GooglePeopleEntity.Contacts) {
+      return "Contacts"
+    } else if (entity === GooglePeopleEntity.OtherContacts) {
+      return "OtherContacts"
+    } else {
+      return "OneDrive"
+    }
   } else if (app == Apps.GoogleWorkspace) {
     return "People"
-  } else if (app == Apps.GoogleCalendar && entity === CalendarEntity.Event) {
+  } else if (
+    app == Apps.GoogleCalendar ||
+    (app == Apps.MicrosoftCalendar && entity === CalendarEntity.Event)
+  ) {
     return "Event"
   } else if (app === Apps.Slack && entity === SlackEntity.Message) {
     return "Slack Message"
@@ -111,10 +139,25 @@ export const getName = (app: Apps, entity: Entity): string => {
     entity === DataSourceEntity.DataSourceFile
   ) {
     return "Data-Source"
-  } else if (app === Apps.KnowledgeBase && entity === SystemEntity.SystemInfo) {
-    return "Knowledge-Base"
+  } else if (app === Apps.KnowledgeBase) {
+    // Handle all KnowledgeBase entities with fallback for string values
+    if (entity === SystemEntity.SystemInfo) {
+      return "Knowledge-Base"
+    } else if (entity === KnowledgeBaseEntity.File || entity === "file") {
+      return "KB Files"
+    } else if (entity === KnowledgeBaseEntity.Folder || entity === "folder") {
+      return "KB Folders"
+    } else {
+      // Fallback for any unhandled KnowledgeBase entity
+      return "Knowledge-Base"
+    }
   } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
     return "Web Search"
+  } else if (app === Apps.MicrosoftOutlook) {
+    if (isMailAttachment(entity)) {
+      return "OutLook-Attachments"
+    }
+    return "Outlook"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

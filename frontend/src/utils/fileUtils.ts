@@ -1,27 +1,38 @@
-import { isValidFile } from "../../../shared/filesutils"
+import { isValidFile, isImageFile } from "shared/fileUtils"
 import { SelectedFile } from "@/components/ClFileUpload"
 import { authFetch } from "./authFetch"
+import { FileType, MIME_TYPE_MAPPINGS, EXTENSION_MAPPINGS } from "shared/types"
 
 // Generate unique ID for files
 export const generateFileId = () => Math.random().toString(36).substring(2, 9)
 
-// Check if file is an image
-const isImageFile = (file: File): boolean => {
-  return (
-    file.type.startsWith("image/") &&
-    [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-    ].includes(file.type)
-  )
+export const getFileType = ({ type, name }: { type: string, name: string }): FileType => {
+  const fileName = name.toLowerCase()
+  const mimeType = type.toLowerCase()
+  const baseMime = mimeType.split(";")[0]
+
+  // Check each file type category using the mappings
+  for (const [fileType, mimeTypes] of Object.entries(MIME_TYPE_MAPPINGS)) {
+    // Check MIME type first (more reliable)
+    if (mimeTypes.some(mime => baseMime === mime)) {
+      return fileType as FileType
+    }
+  }
+
+  // Fallback to extension-based detection
+  for (const [fileType, extensions] of Object.entries(EXTENSION_MAPPINGS)) {
+    if (extensions.some(ext => fileName.endsWith(ext))) {
+      return fileType as FileType
+    }
+  }
+
+  // Default fallback
+  return FileType.FILE
 }
 
 // Create preview URL for image files
 export const createImagePreview = (file: File): string | undefined => {
-  if (isImageFile(file)) {
+  if (isImageFile(file.type)) {
     return URL.createObjectURL(file)
   }
   return undefined
@@ -138,144 +149,191 @@ export const createToastNotifier = (
 
 // build file tree
 export interface FileNode {
-  id?: string;
-  name: string;
-  type: 'folder' | 'file';
-  children?: FileNode[];
-  files?: number;
-  lastUpdated?: string;
-  updatedBy?: string;
-  isOpen?: boolean;
+  id?: string
+  name: string
+  type: "folder" | "file"
+  children?: FileNode[]
+  files?: number
+  lastUpdated?: string
+  updatedBy?: string
+  isOpen?: boolean
 }
 
-export const buildFileTree = (files: { id?: string, name: string, type: 'file' | 'folder', totalFileCount?: number, updatedAt?: string, updatedBy?: string }[]): FileNode[] => {
-  const root: FileNode = { name: 'root', type: 'folder', children: [], files: 0, lastUpdated: '', updatedBy: '' };
+export const buildFileTree = (
+  files: {
+    id?: string
+    name: string
+    type: "file" | "folder"
+    totalFileCount?: number
+    updatedAt?: string
+    updatedBy?: string
+  }[],
+): FileNode[] => {
+  const root: FileNode = {
+    name: "root",
+    type: "folder",
+    children: [],
+    files: 0,
+    lastUpdated: "",
+    updatedBy: "",
+  }
 
   for (const file of files) {
-    const parts = file.name.split('/');
-    let currentNode = root;
+    const parts = file.name.split("/")
+    let currentNode = root
 
     for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isFile = i === parts.length - 1;
+      const part = parts[i]
+      const isFile = i === parts.length - 1
 
-      let childNode = currentNode.children?.find(child => child.name === part);
+      let childNode = currentNode.children?.find((child) => child.name === part)
 
       if (!childNode) {
         childNode = {
           id: isFile && file.id ? file.id : undefined,
           name: part,
-          type: isFile ? file.type : 'folder',
+          type: isFile ? file.type : "folder",
           children: isFile ? undefined : [],
           files: file.totalFileCount,
           lastUpdated: file.updatedAt,
           updatedBy: file.updatedBy,
-        };
-        if (!currentNode.children) {
-            currentNode.children = [];
         }
-        currentNode.children.push(childNode);
+        if (!currentNode.children) {
+          currentNode.children = []
+        }
+        currentNode.children.push(childNode)
         currentNode.children.sort((a, b) => {
-            if (a.type === 'folder' && b.type === 'file') return -1;
-            if (a.type === 'file' && b.type === 'folder') return 1;
-            return a.name.localeCompare(b.name);
-        });
+          if (a.type === "folder" && b.type === "file") return -1
+          if (a.type === "file" && b.type === "folder") return 1
+          return a.name.localeCompare(b.name)
+        })
       }
-      
-      if (childNode.type === 'folder') {
-        currentNode = childNode;
+
+      if (childNode.type === "folder") {
+        currentNode = childNode
       }
     }
   }
 
-  return root.children || [];
-};
+  return root.children || []
+}
 
 // API functions for Collection operations
-export const uploadFileBatch = async (files: File[], collectionId: string, parentId?: string | null): Promise<any> => {
-  const formData = new FormData();
-  
+export const uploadFileBatch = async (
+  files: File[],
+  collectionId: string,
+  parentId?: string | null,
+): Promise<any> => {
+  const formData = new FormData()
+
   // If parentId is provided, add it to formData
   if (parentId !== undefined && parentId !== null) {
-    formData.append('parentId', parentId);
+    formData.append("parentId", parentId)
   }
-  
+
   // Add files with their paths
-  files.forEach(file => {
-    formData.append('files', file);
+  files.forEach((file) => {
+    formData.append("files", file)
     // Add file paths if available (for maintaining folder structure)
-    const relativePath = (file as any).webkitRelativePath || file.name;
-    formData.append('paths', relativePath);
-  });
+    const relativePath = (file as any).webkitRelativePath || file.name
+    formData.append("paths", relativePath)
+  })
 
-  
   try {
-    const response = await authFetch(`/api/v1/cl/${collectionId}/items/upload`, {
-      method: 'POST',
-      body: formData,
-    });
+    const response = await authFetch(
+      `/api/v1/cl/${collectionId}/items/upload`,
+      {
+        method: "POST",
+        body: formData,
+      },
+    )
 
-    const responseText = await response.text();
+    const responseText = await response.text()
 
     if (!response.ok) {
-      throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${responseText}`);
+      throw new Error(
+        `Upload failed: ${response.status} ${response.statusText} - ${responseText}`,
+      )
     }
 
     try {
-      return JSON.parse(responseText);
+      return JSON.parse(responseText)
     } catch (e) {
-      console.error('Failed to parse response as JSON:', e);
-      return { success: true, message: responseText };
+      console.error("Failed to parse response as JSON:", e)
+      return { success: true, message: responseText }
     }
   } catch (error) {
-    console.error('Upload error:', error);
-    throw error;
+    console.error("Upload error:", error)
+    throw error
   }
-};
+}
 
-export const createCollection = async (name: string, description?: string): Promise<any> => {
-  const response = await authFetch('/api/v1/cl', {
-    method: 'POST',
+export const createCollection = async (
+  name: string,
+  description?: string,
+): Promise<any> => {
+  const response = await authFetch("/api/v1/cl", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       name,
       description,
       isPrivate: true,
     }),
-  });
+  })
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to create collection: ${response.status} ${response.statusText} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to create collection: ${response.status} ${response.statusText} - ${errorText}`,
+    )
   }
 
-  return response.json();
-};
+  return response.json()
+}
 
 export const deleteCollection = async (collectionId: string): Promise<void> => {
   const response = await authFetch(`/api/v1/cl/${collectionId}`, {
-    method: 'DELETE',
-  });
+    method: "DELETE",
+  })
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to delete collection: ${response.status} ${response.statusText} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to delete collection: ${response.status} ${response.statusText} - ${errorText}`,
+    )
   }
-};
+}
 
-export const deleteItem = async (collectionId: string, itemId: string): Promise<void> => {
-  const response = await authFetch(`/api/v1/cl/${collectionId}/items/${itemId}`, {
-    method: 'DELETE',
-  });
+export const deleteItem = async (
+  collectionId: string,
+  itemId: string,
+): Promise<void> => {
+  const response = await authFetch(
+    `/api/v1/cl/${collectionId}/items/${itemId}`,
+    {
+      method: "DELETE",
+    },
+  )
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to delete item: ${response.status} ${response.statusText} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to delete item: ${response.status} ${response.statusText} - ${errorText}`,
+    )
   }
-};
+}
 
-export const addFilesToExistingCollection = async (files: SelectedFile[], collectionId: string, parentId?: string | null): Promise<any> => {
-  return uploadFileBatch(files.map(f => f.file), collectionId, parentId);
-};
+export const addFilesToExistingCollection = async (
+  files: SelectedFile[],
+  collectionId: string,
+  parentId?: string | null,
+): Promise<any> => {
+  return uploadFileBatch(
+    files.map((f) => f.file),
+    collectionId,
+    parentId,
+  )
+}

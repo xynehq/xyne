@@ -24,6 +24,7 @@ import {
   syncJobSuccess,
 } from "@/metrics/sync/sync-metrics"
 import { Auth } from "googleapis"
+import { handleMicrosoftOAuthChanges } from "@/integrations/microsoft/sync"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 
@@ -178,6 +179,7 @@ const initWorkers = async () => {
     const startTime = Date.now()
     try {
       await handleGoogleOAuthChanges(boss, job)
+      await handleMicrosoftOAuthChanges(boss, job)
       const endTime = Date.now()
       syncJobSuccess.inc(
         {

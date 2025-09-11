@@ -318,31 +318,33 @@ export const extractImageFileNames = (
     let imageContent = match[1].trim()
     try {
       if (imageContent) {
-        const docId = imageContent.split("_")[0]
-        // const docIndex =
-        //   results?.findIndex((c) => (c.fields as any).docId === docId) || -1
-        const docIndex =
-          results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
-
-        if (docIndex === -1) {
-          console.warn(
-            `No matching document found for docId: ${docId} in results for image content extraction.`,
-          )
-          continue
-        }
-
-        // Split by newlines and filter out empty strings
-        const fileNames = imageContent
-          .split("\n")
+        // Split by newlines and spaces to handle various formatting
+        const individualFileNames = imageContent
+          .split(/\s+/)
           .map((name) => name.trim())
           .filter((name) => name.length > 0)
-          // Additional safety: split by spaces and filter out empty strings
-          // in case multiple filenames are on the same line
-          .flatMap((name) =>
-            name.split(/\s+/).filter((part) => part.length > 0),
-          )
-          .map((name) => `${docIndex}_${name}`)
-        imageFileNames.push(...fileNames)
+
+        for (const fileName of individualFileNames) {
+          const lastUnderscoreIndex = fileName.lastIndexOf("_")
+          if (lastUnderscoreIndex === -1) {
+            console.warn(`Invalid image file name format: ${fileName}`)
+            continue
+          }
+
+          const docId = fileName.substring(0, lastUnderscoreIndex)
+
+          const docIndex =
+            results?.findIndex((c) => (c.fields as any).docId === docId) ?? -1
+
+          if (docIndex === -1) {
+            console.warn(
+              `No matching document found for docId: ${docId} in results for image content extraction.`,
+            )
+            continue
+          }
+
+          imageFileNames.push(`${docIndex}_${fileName}`)
+        }
       }
     } catch (error) {
       console.error(
@@ -355,7 +357,7 @@ export const extractImageFileNames = (
   return { imageFileNames }
 }
 
-export const searchToCitation = (result: VespaSearchResults): Citation => {
+export const searchToCitation = (result: VespaSearchResults, chunkIndex?: number): Citation => {
   const fields = result.fields
   if (result.fields.sddocname === userSchema) {
     return {
@@ -434,9 +436,10 @@ export const searchToCitation = (result: VespaSearchResults): Citation => {
       title: clFields.fileName || "Collection File",
       url: `/cl/${clFields.clId}`,
       app: Apps.KnowledgeBase,
-      entity: SystemEntity.SystemInfo,
+      entity: clFields.entity,
       itemId: clFields.itemId,
       clId: clFields.clId,
+      chunkIndex: chunkIndex,
     }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {
@@ -461,6 +464,7 @@ const searchToCitations = (
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
+export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
 export const processMessage = (
   text: string,

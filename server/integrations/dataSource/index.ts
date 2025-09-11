@@ -93,7 +93,7 @@ const checkFileSize = (file: File, maxFileSizeMB: number): void => {
   }
 }
 
-const createFileMetadata = (
+export const createFileMetadata = (
   fileName: string,
   userEmail: string,
   chunksCount: number,

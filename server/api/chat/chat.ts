@@ -1,32 +1,18 @@
+import { answerContextMap, cleanContext, userContext } from "@/ai/context"
 import {
-  answerContextMap,
-  cleanContext,
-  constructToolContext,
-  userContext,
-} from "@/ai/context"
-import {
-  // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
   generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
-  temporalPromptJsonStream,
   queryRewriter,
-  generateAnswerBasedOnToolOutput,
   meetingPromptJsonStream,
-  generateToolSelectionOutput,
-  generateSynthesisBasedOnToolOutput,
   extractEmailsFromContext,
   generateFollowUpQuestions,
   webSearchQuestion,
+  getDeepResearchResponse,
 } from "@/ai/provider"
 import { generateFollowUpQuestionsSystemPrompt } from "@/ai/prompts"
-import { getDateForAI } from "@/utils/index"
-import { getConnectorByExternalId, getConnectorByApp } from "@/db/connector"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import {
   Models,
   QueryType,
@@ -40,6 +26,7 @@ import {
   type WebSearchSource,
 } from "@/ai/types"
 import config from "@/config"
+import { getAvailableModels, getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   deleteChatByExternalIdWithAuth,
   deleteMessagesByChatId,
@@ -65,26 +52,21 @@ import {
 } from "@/db/message"
 import { eq, and } from "drizzle-orm"
 import { nanoid } from "nanoid"
-import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
 import {
   selectPublicChatSchema,
   selectPublicMessagesSchema,
-  messageFeedbackEnum,
-  type SelectChat,
-  type SelectMessage,
   selectMessageSchema,
   sharedChats,
+  type SelectChat,
+  type SelectMessage,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
-  AgentReasoningStepType,
-  AgentToolName,
   ChatSSEvents,
-  ContextSysthesisState,
   OpenAIError,
-  type AgentReasoningStep,
   type MessageReqType,
+  DEFAULT_TEST_AGENT_ID,
 } from "@/shared/types"
 import { MessageRole, Subsystem } from "@/types"
 import {
@@ -95,13 +77,12 @@ import {
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
 import {
-  ToolResultContentBlock,
   type ConversationRole,
   type Message,
 } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSEStreamingApi
+import { streamSSE, type SSEStreamingApi } from "hono/streaming"
 import { z } from "zod"
 import type { chatSchema, MessageRetryReqType } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
@@ -117,44 +98,34 @@ import {
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,
+  DeleteDocument,
 } from "@/search/vespa"
 import {
   Apps,
   CalendarEntity,
   chatContainerSchema,
-  chatMessageSchema,
   chatUserSchema,
   dataSourceFileSchema,
-  KbItemsSchema,
   DriveEntity,
-  entitySchema,
-  eventSchema,
-  fileSchema,
   GooglePeopleEntity,
   isValidApp,
   isValidEntity,
   MailAttachmentEntity,
-  mailAttachmentSchema,
   MailEntity,
   mailSchema,
   SlackEntity,
-  SystemEntity,
-  userSchema,
   WebSearchEntity,
   type Entity,
-  type VespaChatMessage,
-  type VespaEvent,
-  type VespaEventSearch,
-  type VespaFile,
   type VespaMail,
-  type VespaMailAttachment,
   type VespaMailSearch,
+  type VespaEventSearch,
   type VespaSchema,
   type VespaSearchResponse,
   type VespaSearchResult,
   type VespaSearchResults,
   type VespaSearchResultsSchema,
-  type VespaUser,
+  KnowledgeBaseEntity,
+  KbItemsSchema,
 } from "@/search/types"
 import { APIError } from "openai"
 import { SearchVespaThreads } from "@/search/vespa"
@@ -170,7 +141,6 @@ import {
 } from "@/db/personalization"
 import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
-// import type { S } from "ollama/dist/shared/ollama.6319775f.mjs"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
   getAgentByExternalId,
@@ -203,6 +173,8 @@ import {
   parseAppSelections,
   isAppSelectionMap,
   findOptimalCitationInsertionPoint,
+  textToCitationIndex,
+  textToImageCitationIndex,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -215,7 +187,7 @@ import {
 } from "@/db/attachment"
 import type { AttachmentMetadata } from "@/shared/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
-import { isImageFile } from "@/utils/image"
+import { isImageFile } from "shared/fileUtils"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import {
@@ -226,7 +198,13 @@ import {
   getPublicAgentsByUser,
   type SharedAgentUsageData,
 } from "@/db/sharedAgentUsage"
-import type {GroundingSupport } from "@google/genai"
+import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
+import type { GroundingSupport } from "@google/genai"
+import {
+  processDeepSearchIterator,
+  processOpenAICitations,
+  processWebSearchCitations,
+} from "./deepsearch"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -394,8 +372,6 @@ export const GetChatTraceApi = async (c: Context) => {
   }
 }
 
-export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 export const processMessage = (
   text: string,
   citationMap: Record<number, number>,
@@ -480,6 +456,7 @@ const checkAndYieldCitations = async function* (
   baseIndex: number = 0,
   email: string,
   yieldedImageCitations: Set<number>,
+  isMsgWithSources?: boolean,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
@@ -491,17 +468,25 @@ const checkAndYieldCitations = async function* (
     if (match) {
       const citationIndex = parseInt(match[1], 10)
       if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - baseIndex]
+        const item = isMsgWithSources
+          ? results[baseIndex]
+          : results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
-          if (item.fields.sddocname === dataSourceFileSchema) {
-            // Skip datasource and collection files from citations
+          const f = (item as any)?.fields
+          if (
+            f?.sddocname === dataSourceFileSchema ||
+            f?.entity === KnowledgeBaseEntity.Attachment
+          ) {
+            // Skip datasource and attachment files from citations
             continue
           }
           yield {
             citation: {
               index: citationIndex,
-              item: searchToCitation(item as VespaSearchResults),
+              item: isMsgWithSources
+                ? searchToCitation(item as VespaSearchResults, citationIndex)
+                : searchToCitation(item as VespaSearchResults),
             },
           }
           yieldedCitations.add(citationIndex)
@@ -602,6 +587,7 @@ async function* processIterator(
   previousResultsLength: number = 0,
   userRequestsReasoning?: boolean,
   email?: string,
+  isMsgWithSources?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -630,6 +616,7 @@ async function* processIterator(
             previousResultsLength,
             email!,
             yieldedImageCitations,
+            isMsgWithSources,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -655,6 +642,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
+              isMsgWithSources,
             )
             yield { text: token, reasoning }
           }
@@ -692,6 +680,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
+              isMsgWithSources,
             )
             currentAnswer = parsed.answer
           }
@@ -794,11 +783,7 @@ export const ChatDeleteApi = async (c: Context) => {
                 if (isImageAttachment) {
                   imageAttachmentFileIds.push(attachment.fileId)
                 } else {
-                  // TODO: Handle non-image attachments in future implementation
                   nonImageAttachmentFileIds.push(attachment.fileId)
-                  loggerWithChild({ email: email }).info(
-                    `Non-image attachment ${attachment.fileId} (${attachment.fileType}) found - TODO: implement deletion logic for non-image attachments`,
-                  )
                 }
               }
             }
@@ -850,20 +835,33 @@ export const ChatDeleteApi = async (c: Context) => {
         }
       }
 
-      // TODO: Implement deletion logic for non-image attachments
+      // Delete non-image attachments from Vespa kb_items schema
       if (nonImageAttachmentFileIds.length > 0) {
         loggerWithChild({ email: email }).info(
-          `Found ${nonImageAttachmentFileIds.length} non-image attachments that need deletion logic implementation`,
+          `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa kb_items schema for chat ${chatId}`,
         )
-        // TODO: Add specific deletion logic for different types of non-image attachments
-        // This could include:
-        // - PDFs: Delete from document storage directories
-        // - Documents (DOCX, DOC): Delete from document storage directories
-        // - Spreadsheets (XLSX, XLS): Delete from document storage directories
-        // - Presentations (PPTX, PPT): Delete from document storage directories
-        // - Text files: Delete from text storage directories
-        // - Other file types: Implement based on file type and storage location
-        // For now, we just log that we found them but don't delete them to avoid data loss
+
+        for (const fileId of nonImageAttachmentFileIds) {
+          try {
+            // Delete from Vespa kb_items schema using the proper Vespa function
+            await DeleteDocument(fileId, KbItemsSchema)
+            loggerWithChild({ email: email }).info(
+              `Successfully deleted non-image attachment ${fileId} from Vespa kb_items schema`,
+            )
+          } catch (error) {
+            const errorMessage = getErrorMessage(error)
+            if (errorMessage.includes("404 Not Found")) {
+              loggerWithChild({ email: email }).warn(
+                `Non-image attachment ${fileId} not found in Vespa kb_items schema (may have been already deleted)`,
+              )
+            } else {
+              loggerWithChild({ email: email }).error(
+                error,
+                `Failed to delete non-image attachment ${fileId} from Vespa kb_items schema: ${errorMessage}`,
+              )
+            }
+          }
+        }
       }
 
       // Delete shared chats associated with this chat
@@ -1939,6 +1937,8 @@ async function* generateAnswerFromGivenContext(
   passedSpan?: Span,
   threadIds?: string[],
   attachmentFileIds?: string[],
+  isMsgWithSources?: boolean,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2106,6 +2106,7 @@ async function* generateAnswerFromGivenContext(
       v as z.infer<typeof VespaSearchResultsSchema>,
       0,
       true,
+      isMsgWithSources,
     )
     if (
       v.fields &&
@@ -2128,7 +2129,7 @@ async function* generateAnswerFromGivenContext(
         )
       }
     }
-    return `Index ${i + startIndex} \n ${content}`
+    return isMsgWithSources ? content : `Index ${i + startIndex} \n ${content}`
   })
 
   const resolvedContexts = contextPromises
@@ -2177,12 +2178,13 @@ async function* generateAnswerFromGivenContext(
     initialContext,
     {
       stream: true,
-      modelId: defaultBestModel,
+      modelId: modelId ? (modelId as Models) : defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
       agentPrompt,
-      imageFileNames,
+      imageFileNames: finalImageFileNames,
     },
     true,
+    isMsgWithSources,
   )
 
   const answer = yield* processIterator(
@@ -2191,12 +2193,24 @@ async function* generateAnswerFromGivenContext(
     previousResultsLength,
     userRequestsReasoning,
     email,
+    isMsgWithSources,
   )
   if (answer) {
     generateAnswerSpan?.setAttribute("answer_found", true)
     generateAnswerSpan?.end()
     return
   } else if (!answer) {
+    if (
+      isMsgWithSources ||
+      (attachmentFileIds && attachmentFileIds.length > 0)
+    ) {
+      yield {
+        text: "From the selected context, I could not find any information to answer it, please change your query",
+      }
+      generateAnswerSpan?.setAttribute("answer_found", false)
+      generateAnswerSpan?.end()
+      return
+    }
     // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
     loggerWithChild({ email: email }).info(
       "No answer was found when all chunks were given, trying to answer after searching vespa now",
@@ -2930,6 +2944,7 @@ async function* processResultsForMetadata(
   span?: Span,
   email?: string,
   agentContext?: string,
+  modelId?: string,
 ) {
   if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -2949,7 +2964,7 @@ async function* processResultsForMetadata(
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
-    modelId: defaultBestModel,
+    modelId: modelId ? (modelId as Models) : defaultBestModel,
     reasoning: config.isReasoning && userRequestsReasoning,
     imageFileNames,
     agentPrompt: agentContext,
@@ -2985,6 +3000,7 @@ async function* generateMetadataQueryAnswer(
   span?: Span,
   agentPrompt?: string,
   maxIterations = 5,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3298,6 +3314,7 @@ async function* generateMetadataQueryAnswer(
         span,
         email,
         agentPrompt,
+        modelId,
       )
 
       if (answer == null) {
@@ -3469,6 +3486,7 @@ async function* generateMetadataQueryAnswer(
       span,
       email,
       agentPrompt,
+      modelId,
     )
     return
   } else if (
@@ -3604,6 +3622,7 @@ async function* generateMetadataQueryAnswer(
         span,
         email,
         agentPrompt,
+        modelId,
       )
 
       if (answer == null) {
@@ -3715,6 +3734,7 @@ export async function* UnderstandMessageAndAnswer(
   userRequestsReasoning: boolean,
   passedSpan?: Span,
   agentPrompt?: string,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3759,6 +3779,8 @@ export async function* UnderstandMessageAndAnswer(
       config.isReasoning && userRequestsReasoning,
       metadataRagSpan,
       agentPrompt,
+      5,
+      modelId,
     )
 
     let hasYieldedAnswer = false
@@ -3842,6 +3864,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
   agentPrompt?: string,
+  isMsgWithSources?: boolean,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3871,6 +3895,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     passedSpan,
     threadIds,
     attachmentFileIds,
+    isMsgWithSources,
+    modelId,
   )
 }
 
@@ -3963,94 +3989,28 @@ function buildTopicConversationThread(
 
   return conversationThread
 }
-
-function processWebSearchCitations(
-  answer: string,
-  allSources: WebSearchSource[],
-  finalGroundingSupports: GroundingSupport[],
-  citations: Citation[],
-  citationMap: Record<number, number>,
-  sourceIndex: number,
-): {
-  updatedAnswer: string
-  newCitations: Citation[]
-  newCitationMap: Record<number, number>
-  updatedSourceIndex: number
-} | null {
-  if (finalGroundingSupports.length > 0 && allSources.length > 0) {
-    let answerWithCitations = answer
-    let newCitations: Citation[] = []
-    let newCitationMap: Record<number, number> = {}
-    let urlToIndexMap: Map<string, number> = new Map()
-
-    for (const support of finalGroundingSupports) {
-      const segment = support.segment
-      const groundingChunkIndices = support.groundingChunkIndices || []
-
-      let citationIndices = new Set<number>()
-      for (const chunkIndex of groundingChunkIndices) {
-        if (allSources[chunkIndex]) {
-          const source = allSources[chunkIndex]
-
-          let citationIndex: number
-          if (urlToIndexMap.has(source.uri)) {
-            // Reuse existing citation index
-            citationIndex = urlToIndexMap.get(source.uri)!
-          } else {
-            citationIndex = sourceIndex
-            const webSearchCitation: Citation = {
-              docId: `websearch_${sourceIndex}`,
-              title: source.title,
-              url: source.uri,
-              app: Apps.WebSearch,
-              entity: WebSearchEntity.WebSearch,
-            }
-
-            newCitations.push(webSearchCitation)
-            newCitationMap[sourceIndex] =
-              citations.length + newCitations.length - 1
-            urlToIndexMap.set(source.uri, sourceIndex)
-            sourceIndex++
-          }
-
-          citationIndices.add(citationIndex)
-        }
-      }
-
-      const citationText = Array.from(citationIndices)
-        .sort((a, b) => a - b)
-        .map((index) => ` [${index}]`)
-        .join("")
-
-      if (
-        citationText &&
-        segment?.endIndex !== undefined &&
-        segment.endIndex <= answerWithCitations.length
-      ) {
-        // Find optimal insertion point that respects word boundaries
-        const optimalIndex = findOptimalCitationInsertionPoint(
-          answerWithCitations,
-          segment.endIndex,
-        )
-        answerWithCitations =
-          answerWithCitations.slice(0, optimalIndex) +
-          citationText +
-          answerWithCitations.slice(optimalIndex)
-      }
-    }
-
-    return {
-      updatedAnswer: answerWithCitations,
-      newCitations,
-      newCitationMap,
-      updatedSourceIndex: sourceIndex,
-    }
-  }
-
-  return null
-}
-
-export const MessageApi = async (c: Context) => {
+/**
+   * MessageApi - Main chat endpoint with intelligent routing
+   * 
+   * Routes chat requests to specialized handlers based on configuration:
+   * - MessageWithToolsApi: For agentic mode without web search
+   * - AgentMessageApi: For agent conversations
+   * - Default RAG flow: For standard chat with search capabilities
+   * 
+   * Features:
+   * - Model config parsing (reasoning, websearch, deepResearch)
+   * - Attachment handling (images and documents)
+   * - Real-time streaming with Server-Sent Events
+   * - Agent permission checks and context extraction
+   * - Cost tracking and comprehensive error handling
+   * 
+   * @param c - Hono context with request data and JWT payload
+   * @returns StreamSSE response with real-time chat data
+   * @throws HTTPException(400) - Invalid model or missing parameters
+   * @throws HTTPException(403) - Agent access denied
+   * @throws HTTPException(500) - Server errors or model failures
+   */
+  export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
 
@@ -4073,24 +4033,112 @@ export const MessageApi = async (c: Context) => {
     // @ts-ignore
     const body = c.req.valid("query")
     const isAgentic = c.req.query("agentic") === "true"
-    let {
-      message,
-      chatId,
-      modelId,
-      isReasoningEnabled,
-      agentId,
-      enableWebSearch,
-    }: MessageReqType = body
+    let { message, chatId, selectedModelConfig, agentId }: MessageReqType = body
+
+    // Parse selectedModelConfig JSON to extract individual values
+    let modelId: string | undefined = undefined
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+
+    if (selectedModelConfig) {
+      try {
+        const config = JSON.parse(selectedModelConfig)
+        modelId = config.model
+
+        // Handle new direct boolean format
+        isReasoningEnabled = config.reasoning === true
+        enableWebSearch = config.websearch === true
+        isDeepResearchEnabled = config.deepResearch === true
+
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `Deep research enabled - forcing model to Claude Sonnet 4`,
+          )
+        }
+
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (
+          config.capabilities &&
+          !isReasoningEnabled &&
+          !enableWebSearch &&
+          !isDeepResearchEnabled
+        ) {
+          if (Array.isArray(config.capabilities)) {
+            // Array format: ["reasoning", "websearch"]
+            isReasoningEnabled = config.capabilities.includes("reasoning")
+            enableWebSearch = config.capabilities.includes("websearch")
+            isDeepResearchEnabled = config.capabilities.includes("deepResearch")
+          } else if (typeof config.capabilities === "object") {
+            // Object format: { reasoning: true, websearch: false }
+            isReasoningEnabled = config.capabilities.reasoning === true
+            enableWebSearch = config.capabilities.websearch === true
+            isDeepResearchEnabled = config.capabilities.deepResearch === true
+          }
+
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
+          }
+        }
+
+        loggerWithChild({ email: email }).info(
+          `Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`,
+        )
+      } catch (e) {
+        loggerWithChild({ email: email }).warn(
+          `Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`,
+        )
+        modelId = config.defaultBestModel // fallback
+      }
+    } else {
+      // Fallback if no model config provided
+      modelId = config.defaultBestModel
+      loggerWithChild({ email: email }).info(
+        "No model config provided, using default",
+      )
+    }
+    // Convert modelId from friendly label to actual model value
+    let actualModelId: string = modelId || config.defaultBestModel // Ensure we always have a string
+    if (modelId) {
+      const convertedModelId = getModelValueFromLabel(modelId)
+      if (convertedModelId) {
+        actualModelId = convertedModelId as string // Can be Models enum or string
+        loggerWithChild({ email: email }).info(
+          `Converted model label "${modelId}" to value "${actualModelId}"`,
+        )
+      } else if (modelId in Models) {
+        actualModelId = modelId // Use the raw model ID if it exists in Models enum
+        loggerWithChild({ email: email }).info(
+          `Using model ID "${modelId}" directly as it exists in Models enum`,
+        )
+      } else {
+        loggerWithChild({ email: email }).error(
+          `Invalid model: ${modelId}. Model not found in label mappings or Models enum.`,
+        )
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    }
     const webSearchEnabled = enableWebSearch ?? false
-    const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined // Use undefined if not a valid CUID
-    if (isAgentic && !enableWebSearch) {
+    const deepResearchEnabled = isDeepResearchEnabled ?? false
+    const agentPromptValue =
+      agentId && (isCuid(agentId) || agentId === DEFAULT_TEST_AGENT_ID)
+        ? agentId
+        : undefined // Use undefined if not a valid CUID
+    if (isAgentic && !enableWebSearch && !deepResearchEnabled) {
       Logger.info(`Routing to MessageWithToolsApi`)
       return MessageWithToolsApi(c)
     }
+
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.fileId,
-    )
+    const imageAttachmentFileIds = attachmentMetadata
+      .filter((m) => m.isImage)
+      .map((m) => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata
+      .filter((m) => !m.isImage)
+      .map((m) => m.fileId)
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -4103,10 +4151,30 @@ export const MessageApi = async (c: Context) => {
         agentPromptValue,
         userAndWorkspaceCheck.workspace.id,
       )
-      if (!isAgentic && !enableWebSearch && agentDetails) {
+
+      if (
+        !isAgentic &&
+        !enableWebSearch &&
+        !deepResearchEnabled &&
+        (agentDetails || agentPromptValue === DEFAULT_TEST_AGENT_ID)
+      ) {
         Logger.info(`Routing to AgentMessageApi for agent ${agentPromptValue}.`)
         return AgentMessageApi(c)
       }
+    }
+
+    let agentDetails: SelectAgent | null = null
+    if (agentPromptValue) {
+      const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
+        db,
+        workspaceId,
+        email,
+      )
+      agentDetails = await getAgentByExternalId(
+        db,
+        agentPromptValue,
+        userAndWorkspaceCheck.workspace.id,
+      )
     }
 
     // If none of the above, proceed with default RAG flow
@@ -4119,6 +4187,21 @@ export const MessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
+    // Extract sources from search parameters
+    const sources = c.req.query("selectedSources")
+    const isMsgWithSources = !!sources
+    let fileIds: string[] = []
+    if (sources) {
+      try {
+        const resp = await getCollectionFilesVespaIds(JSON.parse(sources), db)
+        fileIds = resp
+          .map((file) => file.vespaDocId || "")
+          .filter((id) => id !== "")
+      } catch {
+        fileIds = []
+      }
+    }
+
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
@@ -4127,7 +4210,12 @@ export const MessageApi = async (c: Context) => {
           fileIds: [],
           threadIds: [],
         }
-    const fileIds = extractedInfo?.fileIds
+    if (extractedInfo?.fileIds.length > 0) {
+      fileIds = fileIds.concat(extractedInfo?.fileIds)
+    }
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = fileIds.concat(nonImageAttachmentFileIds)
+    }
     const threadIds = extractedInfo?.threadIds || []
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
@@ -4149,33 +4237,6 @@ export const MessageApi = async (c: Context) => {
     let title = ""
     let attachmentStorageError: Error | null = null
     if (!chatId) {
-      loggerWithChild({ email: email }).info(
-        `MessageApi before the span.. ${chatId}`,
-      )
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      loggerWithChild({ email: email }).info(
-        `MessageApi after the span.. ${titleSpan}`,
-      )
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      loggerWithChild({ email: email }).info(
-        `MessageApi after the titleResp.. ${titleResp}`,
-      )
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
-
-      loggerWithChild({ email: email }).info(
-        `MessageApi before the first message.. ${titleSpan}`,
-      )
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
@@ -4197,7 +4258,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: actualModelId || config.defaultBestModel,
             fileIds: fileIds,
           })
 
@@ -4250,7 +4311,7 @@ export const MessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: actualModelId || config.defaultBestModel,
             fileIds,
           })
 
@@ -4337,8 +4398,8 @@ export const MessageApi = async (c: Context) => {
             })
           }
           if (
-            (isMsgWithContext && fileIds && fileIds?.length > 0) ||
-            (attachmentFileIds && attachmentFileIds?.length > 0)
+            (fileIds && fileIds?.length > 0) ||
+            (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
           ) {
             let answer = ""
             let citations = []
@@ -4365,7 +4426,10 @@ export const MessageApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              attachmentFileIds,
+              imageAttachmentFileIds,
+              agentPromptValue,
+              isMsgWithSources,
+              actualModelId || config.defaultBestModel,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -4519,8 +4583,7 @@ export const MessageApi = async (c: Context) => {
                   ? processWebSearchMessage(answer, citationMap, email)
                   : processMessage(answer, citationMap, email),
                 thinking: thinking,
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                modelId: actualModelId,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
@@ -4659,16 +4722,31 @@ export const MessageApi = async (c: Context) => {
             )
 
             let searchOrAnswerIterator
-            if (webSearchEnabled) {
+            if (deepResearchEnabled) {
+              loggerWithChild({ email: email }).info(
+                "Using deep research for the question",
+              )
+              searchOrAnswerIterator = getDeepResearchResponse(message, ctx, {
+                modelId: Models.o3_Deep_Research,
+                stream: true,
+                json: false,
+                agentPrompt: JSON.stringify(agentDetails),
+                reasoning:
+                  userRequestsReasoning &&
+                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                messages: llmFormattedMessages,
+                webSearch: false,
+                deepResearchEnabled: true,
+              })
+            } else if (webSearchEnabled) {
               loggerWithChild({ email: email }).info(
                 "Using web search for the question",
               )
-
               searchOrAnswerIterator = webSearchQuestion(message, ctx, {
                 modelId: Models.Gemini_2_5_Flash,
                 stream: true,
                 json: false,
-                agentPrompt: agentPromptValue,
+                agentPrompt: JSON.stringify(agentDetails),
                 reasoning:
                   userRequestsReasoning &&
                   ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
@@ -4681,9 +4759,9 @@ export const MessageApi = async (c: Context) => {
                   message,
                   ctx,
                   {
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .modelId,
+                    modelId: actualModelId
+                      ? (actualModelId as Models)
+                      : config.defaultBestModel,
                     stream: true,
                     json: true,
                     agentPrompt: agentPromptValue,
@@ -4711,6 +4789,7 @@ export const MessageApi = async (c: Context) => {
             let citations: Citation[] = []
             let imageCitations: any[] = []
             let citationMap: Record<number, number> = {}
+            let deepResearchSteps: any[] = []
             let queryFilters = {
               apps: [],
               entities: [],
@@ -4738,8 +4817,64 @@ export const MessageApi = async (c: Context) => {
               ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
             let buffer = ""
             const conversationSpan = streamSpan.startSpan("conversation_search")
+            if (deepResearchEnabled) {
+              loggerWithChild({ email: email }).info(
+                "Processing deep research response",
+              )
 
-            if (webSearchEnabled) {
+              stream.writeSSE({
+                event: ChatSSEvents.Start,
+                data: "",
+              })
+
+              let sourceIndex = 0
+              let finalText = ""
+              let finalAnnotations: any[] = []
+
+              const deepSearchIterator = await processDeepSearchIterator({
+                iterator: searchOrAnswerIterator,
+                answer,
+                costArr,
+                deepResearchSteps,
+                email,
+                finalAnnotations,
+                finalText,
+                stream,
+                tokenArr,
+                wasStreamClosedPrematurely,
+              })
+
+              // Process citations if we have final text and annotations
+              if (deepSearchIterator.finalText) {
+                const citationResult = processOpenAICitations(
+                  deepSearchIterator.answer,
+                  deepSearchIterator.finalText,
+                  deepSearchIterator.finalAnnotations,
+                  citations,
+                  citationMap,
+                  sourceIndex,
+                )
+
+                if (citationResult) {
+                  answer = citationResult.updatedAnswer
+                  sourceIndex = citationResult.updatedSourceIndex
+                  if (citationResult.newCitations.length > 0) {
+                    citations.push(...citationResult.newCitations)
+                    Object.assign(citationMap, citationResult.newCitationMap)
+
+                    stream.writeSSE({
+                      event: ChatSSEvents.CitationsUpdate,
+                      data: JSON.stringify({
+                        contextChunks: citations,
+                        citationMap: citationMap,
+                        updatedResponse: answer,
+                      }),
+                    })
+                  }
+                }
+              }
+              parsed.answer = answer
+            } else if (webSearchEnabled) {
               loggerWithChild({ email: email }).info(
                 "Processing web search response",
               )
@@ -4771,15 +4906,13 @@ export const MessageApi = async (c: Context) => {
                 }
 
                 if (chunk.sources && chunk.sources.length > 0) {
-                  chunk.sources.forEach((source) => {
-                    if (
+                  const uniqueSources = chunk.sources.filter(
+                    (source) =>
                       !allSources.some(
                         (existing) => existing.uri === source.uri,
-                      )
-                    ) {
-                      allSources.push(source)
-                    }
-                  })
+                      ),
+                  )
+                  allSources.push(...uniqueSources)
                 }
 
                 if (
@@ -4936,7 +5069,7 @@ export const MessageApi = async (c: Context) => {
               startTime,
               intent,
               offset,
-            } = parsed?.filters
+            } = parsed?.filters || {}
             classification = {
               direction: parsed.temporalDirection,
               type: parsed.type,
@@ -5024,6 +5157,11 @@ export const MessageApi = async (c: Context) => {
                     parsedMessage.data.fileIds as string[],
                     userRequestsReasoning,
                     understandSpan,
+                    undefined,
+                    undefined,
+                    agentPromptValue,
+                    undefined,
+                    actualModelId || config.defaultBestModel,
                   )
                 } else {
                   loggerWithChild({ email: email }).info(
@@ -5046,6 +5184,7 @@ export const MessageApi = async (c: Context) => {
                   userRequestsReasoning,
                   understandSpan,
                   agentPromptValue,
+                  actualModelId || config.defaultBestModel,
                 )
               }
 
@@ -5230,8 +5369,8 @@ export const MessageApi = async (c: Context) => {
                   ? processWebSearchMessage(answer, citationMap, email)
                   : processMessage(answer, citationMap, email),
                 thinking: thinking,
-                modelId:
-                  ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
+                deepResearchSteps: deepResearchSteps,
+                modelId: actualModelId || config.defaultBestModel,
                 cost: totalCost.toString(),
                 tokensUsed: totalTokens.inputTokens + totalTokens.outputTokens,
               })
@@ -5507,7 +5646,30 @@ export const MessageRetryApi = async (c: Context) => {
   try {
     // @ts-ignore
     const body = c.req.valid("query")
-    const { messageId, isReasoningEnabled }: MessageRetryReqType = body
+    const { messageId, selectedModelConfig }: MessageRetryReqType = body
+    // Parse the model configuration JSON
+    let extractedModelId: string | null = null
+    let isReasoningEnabled = false
+
+    if (selectedModelConfig) {
+      try {
+        // Decode the URL-encoded string first
+        const modelConfig = JSON.parse(selectedModelConfig)
+        extractedModelId = modelConfig.model || null
+
+        // Check capabilities - handle both array and object formats
+        if (modelConfig.capabilities) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes("reasoning")
+          } else if (typeof modelConfig.capabilities === "object") {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+          }
+        }
+      } catch (error) {
+        console.error("Failed to parse selectedModelConfig in retry:", error)
+      }
+    }
+
     const userRequestsReasoning = isReasoningEnabled
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub ?? ""
@@ -5522,14 +5684,14 @@ export const MessageRetryApi = async (c: Context) => {
 
     // If it's an assistant message, we need to get attachments from the previous user message
     let attachmentMetadata: AttachmentMetadata[] = []
-    let attachmentFileIds: string[] = []
+    let ImageAttachmentFileIds: string[] = []
 
     if (isUserMessage) {
       // If retrying a user message, get attachments from that message
       attachmentMetadata = await getAttachmentsByMessageId(db, messageId, email)
-      attachmentFileIds = attachmentMetadata.map(
-        (m: AttachmentMetadata) => m.fileId,
-      )
+      ImageAttachmentFileIds = attachmentMetadata
+        .filter((m) => m.isImage)
+        .map((m) => m.fileId)
     }
 
     rootSpan.setAttribute("email", email)
@@ -5583,14 +5745,28 @@ export const MessageRetryApi = async (c: Context) => {
           prevUserMessage.externalId,
           email,
         )
-        attachmentFileIds = attachmentMetadata.map(
-          (m: AttachmentMetadata) => m.fileId,
-        )
+        ImageAttachmentFileIds = attachmentMetadata
+          .map((m: AttachmentMetadata) => (m.isImage ? m.fileId : null))
+          .filter((m: string | null) => m !== null)
       }
     }
 
-    // Use the same modelId
-    const modelId = originalMessage.modelId as Models
+    // Use the extracted modelId if provided, otherwise use the original message's modelId
+    let convertedModelId = extractedModelId
+      ? getModelValueFromLabel(extractedModelId)
+      : null
+    if (extractedModelId) {
+      if (!convertedModelId && extractedModelId in Models) {
+        convertedModelId = extractedModelId as Models
+      } else if (!convertedModelId) {
+        throw new HTTPException(400, {
+          message: `Invalid model: ${extractedModelId}`,
+        })
+      }
+    }
+    const modelId = convertedModelId
+      ? (convertedModelId as Models)
+      : (originalMessage.modelId as Models)
 
     // Get user and workspace
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
@@ -5600,6 +5776,10 @@ export const MessageRetryApi = async (c: Context) => {
     )
     const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
+
+    // Extract sources from search parameters
+    const sources = c.req.query("selectedSources")
+    const isMsgWithSources = !!sources
 
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
@@ -5663,7 +5843,7 @@ export const MessageRetryApi = async (c: Context) => {
           let message = prevUserMessage.message
           if (
             (fileIds && fileIds?.length > 0) ||
-            (attachmentFileIds && attachmentFileIds?.length > 0)
+            (ImageAttachmentFileIds && ImageAttachmentFileIds?.length > 0)
           ) {
             loggerWithChild({ email: email }).info(
               "[RETRY] User has selected some context with query, answering only based on that given context",
@@ -5694,7 +5874,10 @@ export const MessageRetryApi = async (c: Context) => {
               userRequestsReasoning,
               understandSpan,
               threadIds,
-              attachmentFileIds,
+              ImageAttachmentFileIds,
+              undefined,
+              isMsgWithSources,
+              modelId,
             )
             stream.writeSSE({
               event: ChatSSEvents.Start,
@@ -5833,9 +6016,7 @@ export const MessageRetryApi = async (c: Context) => {
                     imageCitations: imageCitations,
                     message: processMessage(answer, citationMap, email),
                     thinking,
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrRewrite]
-                        .modelId,
+                    modelId,
                     cost: totalCost.toString(),
                     tokensUsed:
                       totalTokens.inputTokens + totalTokens.outputTokens,
@@ -6023,8 +6204,9 @@ export const MessageRetryApi = async (c: Context) => {
                 message,
                 ctx,
                 {
-                  modelId:
-                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  modelId: modelId
+                    ? (modelId as Models)
+                    : config.defaultBestModel,
                   stream: true,
                   json: true,
                   reasoning:
@@ -6179,7 +6361,7 @@ export const MessageRetryApi = async (c: Context) => {
                 entities,
                 sortDirection,
                 startTime,
-              } = parsed?.filters
+              } = parsed?.filters || {}
               classification = {
                 direction: parsed.temporalDirection,
                 type: parsed.type,
@@ -6192,8 +6374,8 @@ export const MessageRetryApi = async (c: Context) => {
                   sortDirection,
                   startTime,
                   count,
-                  offset: parsed.filters.offset || 0,
-                  intent: parsed.filters.intent || {},
+                  offset: parsed?.filters?.offset || 0,
+                  intent: parsed?.filters?.intent || {},
                 },
               } as QueryRouterLLMResponse
 
@@ -6211,6 +6393,8 @@ export const MessageRetryApi = async (c: Context) => {
                 0.5,
                 userRequestsReasoning,
                 understandSpan,
+                undefined,
+                modelId,
               )
               // throw new Error("Hello, how are u doing?")
               stream.writeSSE({
@@ -6919,5 +7103,104 @@ The follow-up questions should be specific to this conversation and help the use
     throw new HTTPException(500, {
       message: "Could not generate follow-up questions",
     })
+  }
+}
+
+export const GetAvailableModelsApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub } = c.get(JwtPayloadKey) ?? {}
+    email = sub || ""
+
+    if (!email) {
+      throw new HTTPException(401, { message: "Unauthorized" })
+    }
+
+    const availableModels = getAvailableModels({
+      AwsAccessKey: config.AwsAccessKey,
+      AwsSecretKey: config.AwsSecretKey,
+      OpenAIKey: config.OpenAIKey,
+      OllamaModel: config.OllamaModel,
+      TogetherAIModel: config.TogetherAIModel,
+      TogetherApiKey: config.TogetherApiKey,
+      FireworksAIModel: config.FireworksAIModel,
+      FireworksApiKey: config.FireworksApiKey,
+      GeminiAIModel: config.GeminiAIModel,
+      GeminiApiKey: config.GeminiApiKey,
+      VertexAIModel: config.VertexAIModel,
+      VertexProjectId: config.VertexProjectId,
+      VertexRegion: config.VertexRegion,
+    })
+
+    // Filter out actualName and provider fields before sending to frontend
+    const filteredModels = availableModels.map((model) => ({
+      labelName: model.labelName,
+      reasoning: model.reasoning,
+      websearch: model.websearch,
+      deepResearch: model.deepResearch,
+      description: model.description,
+    }))
+
+    return c.json({ models: filteredModels })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email }).error(
+      error,
+      `Get Available Models Error: ${errMsg}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: "Could not fetch available models",
+    })
+  }
+}
+
+// Generate chat title API - called after first response to update dummy title
+export const GenerateChatTitleApi = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub, workspaceId } = c.get(JwtPayloadKey)
+    email = sub
+
+    // @ts-ignore
+    const { chatId, message } = c.req.valid("json")
+
+    const { user, workspace } = await getUserAndWorkspaceByEmail(
+      db,
+      workspaceId,
+      email,
+    )
+
+    // Generate proper title using LLM
+    loggerWithChild({ email: email }).info(
+      `Generating title for chat ${chatId} with message: ${String(message).substring(0, 100)}...`,
+    )
+
+    const titleResp = await generateTitleUsingQuery(message, {
+      modelId: defaultFastModel,
+      stream: false,
+    })
+
+    loggerWithChild({ email: email }).info(
+      `Generated title: ${titleResp.title}`,
+    )
+
+    // Update chat with proper title
+    await updateChatByExternalIdWithAuth(db, chatId, email, {
+      title: titleResp.title,
+    })
+
+    return c.json({
+      success: true,
+      title: titleResp.title,
+    })
+  } catch (error) {
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `Chat Title Generation Error: ${errMsg} ${(error as Error).stack}`,
+    )
+    // Return error but don't throw - this is background operation
+    return c.json({ success: false, error: errMsg }, 500)
   }
 }

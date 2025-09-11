@@ -13,7 +13,6 @@ import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
-  generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
   temporalPromptJsonStream,
@@ -23,6 +22,7 @@ import {
   generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
+  agentWithNoIntegrationsQuestion,
 } from "@/ai/provider"
 import {
   getConnectorByExternalId,
@@ -39,6 +39,7 @@ import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+
 import {
   Models,
   QueryType,
@@ -142,6 +143,7 @@ import {
   SystemEntity,
   VespaSearchResultsSchema,
   type VespaSearchResult,
+  KnowledgeBaseEntity,
 } from "@/search/types"
 import { APIError } from "openai"
 import {
@@ -179,19 +181,44 @@ import {
   processMessage,
   searchToCitation,
 } from "./utils"
-export const textToCitationIndex = /\[(\d+)\]/g
+import { textToCitationIndex, textToImageCitationIndex } from "./utils"
 import config from "@/config"
+import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   buildContext,
   buildUserQuery,
   cleanBuffer,
   getThreadContext,
   isContextSelected,
-  textToImageCitationIndex,
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
 import { agentTools } from "./tools"
+// JAF integration imports
+import {
+  runStream,
+  generateRunId,
+  generateTraceId,
+  getTextContent,
+  type Agent as JAFAgent,
+  type Tool as JAFTool,
+  type Message as JAFMessage,
+  type RunConfig as JAFRunConfig,
+  type RunState as JAFRunState,
+  type RunResult as JAFRunResult,
+  type TraceEvent as JAFTraceEvent,
+  type JAFError,
+} from "@xynehq/jaf"
+// Replace LiteLLM provider with Xyne-backed JAF provider
+import { makeXyneJAFProvider } from "./jaf-provider"
+import {
+  buildInternalJAFTools,
+  buildMCPJAFTools,
+  type FinalToolsList as JAFinalToolsList,
+  type JAFAdapterCtx,
+  buildToolsOverview,
+  buildContextSection,
+} from "@/api/chat/jaf-adapter"
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
 const {
@@ -216,8 +243,17 @@ const generateStepSummary = async (
   step: AgentReasoningStep,
   userQuery: string,
   contextInfo?: string,
+  modelId?: string,
 ): Promise<string> => {
+  const tracer = getTracer("chat")
+  const span = tracer.startSpan("generateStepSummary")
+  
   try {
+    span.setAttribute("step_type", step.type)
+    span.setAttribute("step_iteration", step.iteration || 0)
+    span.setAttribute("user_query_length", userQuery.length)
+    span.setAttribute("has_context_info", !!contextInfo)
+    
     const prompt = generateAgentStepSummaryPromptJson(
       step,
       userQuery,
@@ -225,24 +261,45 @@ const generateStepSummary = async (
     )
 
     // Use a fast model for summary generation
+    const summarySpan = span.startSpan("synthesis_call")
     const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
-      modelId: defaultFastModel,
+      modelId: (modelId as Models) || defaultFastModel,
       stream: false,
       json: true,
       reasoning: false,
       messages: [],
     })
+    summarySpan.setAttribute("model_id", defaultFastModel)
+    summarySpan.end()
 
     const summaryResponse = summary.text || ""
+    span.setAttribute("summary_response_length", summaryResponse.length)
 
     // Parse the JSON response
+    const parseSpan = span.startSpan("parse_json_response")
     const parsed = jsonParseLLMOutput(summaryResponse)
+    parseSpan.setAttribute("parse_success", !!parsed)
+    parseSpan.setAttribute("has_summary", !!(parsed && parsed.summary))
+    parseSpan.end()
+    
     Logger.debug("Parsed reasoning step:", { parsed })
     Logger.debug("Generated summary:", { summary: parsed.summary })
-    return parsed.summary || generateFallbackSummary(step)
+    const finalSummary = parsed.summary || generateFallbackSummary(step)
+    span.setAttribute("final_summary_length", finalSummary.length)
+    span.setAttribute("used_fallback", !parsed.summary)
+    span.end()
+    return finalSummary
   } catch (error) {
+    span.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
     Logger.error(`Error generating step summary: ${error}`)
-    return generateFallbackSummary(step)
+    const fallbackSummary = generateFallbackSummary(step)
+    span.setAttribute("fallback_summary", fallbackSummary)
+    span.setAttribute("used_fallback", true)
+    span.end()
+    return fallbackSummary
   }
 }
 
@@ -268,6 +325,65 @@ const generateFallbackSummary = (step: AgentReasoningStep): string => {
   }
 }
 
+// Create mock agent from form data for testing
+const createMockAgentFromFormData = (
+  agentPromptPayload: any,
+  user: any,
+  workspace: any,
+  email: string
+): { agentForDb: SelectAgent; agentPromptForLLM: string } => {
+  try {
+    const formData = agentPromptPayload;
+    
+    // Create mock SelectAgent from form data without DB call
+    const agentForDb = {
+      name: formData.name || "Test Agent",
+      description: formData.description || null,
+      prompt: formData.prompt || null,
+      model: formData.model || Models.Claude_Sonnet_4,
+      isPublic: formData.isPublic || false,
+      isRagOn: formData.isRagOn !== false,
+      appIntegrations: formData.appIntegrations || null,
+      docIds: formData.docIds || null,
+      // Dummy values for required DB fields
+      id: -1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      userId: user.id,
+      deletedAt: null,
+      externalId: `test-agent-${Date.now()}`,
+      workspaceId: workspace.id,
+      allowWebSearch: formData.allowWebSearch || null,
+    };
+    
+    const agentPromptForLLM = JSON.stringify(agentForDb);
+    loggerWithChild({ email }).info("Created mock agent from form data for testing");
+    
+    return { agentForDb, agentPromptForLLM };
+  } catch (error) {
+    loggerWithChild({ email }).error(error, "Failed to parse agentPromptPayload");
+    throw new HTTPException(400, {
+      message: "Invalid agent form data provided",
+    });
+  }
+};
+
+// Check if agent has no app integrations and should use the no-integrations flow
+export const checkAgentWithNoIntegrations = (agentForDb: SelectAgent | null): boolean => {
+  if (!agentForDb?.appIntegrations) return true
+
+  if (typeof agentForDb.appIntegrations === "object") {
+    if (Object.keys(agentForDb.appIntegrations).length === 0) return true
+
+    return Object.values(agentForDb.appIntegrations).every(
+      (config) =>
+        !config.selectedAll && (!config.itemIds || config.itemIds.length === 0),
+    )
+  }
+
+  return false
+}
+
 const checkAndYieldCitationsForAgent = async function* (
   textInput: string,
   yieldedCitations: Set<number>,
@@ -275,98 +391,156 @@ const checkAndYieldCitationsForAgent = async function* (
   yieldedImageCitations?: Map<number, Set<number>>,
   email: string = "",
 ) {
-  const text = splitGroupedCitationsWithSpaces(textInput)
-  let match
-  let imgMatch
-  while (
-    (match = textToCitationIndex.exec(text)) !== null ||
-    (imgMatch = textToImageCitationIndex.exec(text)) !== null
-  ) {
-    if (match) {
-      const citationIndex = parseInt(match[1], 10)
-      if (!yieldedCitations.has(citationIndex)) {
-        const item = results[citationIndex - 1]
+  const tracer = getTracer("chat")
+  const span = tracer.startSpan("checkAndYieldCitationsForAgent")
+  
+  try {
+    span.setAttribute("text_input_length", textInput.length)
+    span.setAttribute("results_count", results.length)
+    span.setAttribute("yielded_citations_size", yieldedCitations.size)
+    span.setAttribute("has_image_citations", !!(yieldedImageCitations))
+    span.setAttribute("user_email", email)
+    
+    const text = splitGroupedCitationsWithSpaces(textInput)
+    let match
+    let imgMatch
+    let citationsProcessed = 0
+    let imageCitationsProcessed = 0
+    let citationsYielded = 0
+    let imageCitationsYielded = 0
+    
+    while (
+      (match = textToCitationIndex.exec(text)) !== null ||
+      (imgMatch = textToImageCitationIndex.exec(text)) !== null
+    ) {
+      if (match) {
+        citationsProcessed++
+        const citationIndex = parseInt(match[1], 10)
+        if (!yieldedCitations.has(citationIndex)) {
+          const item = results[citationIndex - 1]
 
-        if (!item?.source?.docId || !item.source?.url) {
-          Logger.info(
-            "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
-          )
+          if (!item?.source?.docId || !item.source?.url) {
+            Logger.info(
+              "[checkAndYieldCitationsForAgent] No docId or url found for citation, skipping",
+            )
+            continue
+          }
+
+        // we dont want citations for attachments in the chat
+        if(item.source.entity === KnowledgeBaseEntity.Attachment) {
           continue
         }
 
-        yield {
-          citation: {
-            index: citationIndex,
-            item: item.source,
-          },
+
+          yield {
+            citation: {
+              index: citationIndex,
+              item: item.source,
+            },
+          }
+          yieldedCitations.add(citationIndex)
+          citationsYielded++
         }
-        yieldedCitations.add(citationIndex)
-      }
-    } else if (imgMatch && yieldedImageCitations) {
-      const parts = imgMatch[1].split("_")
-      if (parts.length >= 2) {
-        const docIndex = parseInt(parts[0], 10)
-        const imageIndex = parseInt(parts[1], 10)
-        if (
-          !yieldedImageCitations.has(docIndex) ||
-          !yieldedImageCitations.get(docIndex)?.has(imageIndex)
-        ) {
-          const item = results[docIndex]
-          if (item) {
-            try {
-              const imageData = await getCitationToImage(
-                imgMatch[1],
-                {
-                  id: item.id,
-                  relevance: item.confidence,
-                  fields: {
-                    docId: item.source.docId,
-                  } as any,
-                } as VespaSearchResult,
-                email,
-              )
-              if (imageData) {
-                if (!imageData.imagePath || !imageData.imageBuffer) {
-                  loggerWithChild({ email: email }).error(
-                    "Invalid imageData structure returned",
-                    { citationKey: imgMatch[1], imageData },
-                  )
-                  continue
+      } else if (imgMatch && yieldedImageCitations) {
+        imageCitationsProcessed++
+        const parts = imgMatch[1].split("_")
+        if (parts.length >= 2) {
+          const docIndex = parseInt(parts[0], 10)
+          const imageIndex = parseInt(parts[1], 10)
+          if (
+            !yieldedImageCitations.has(docIndex) ||
+            !yieldedImageCitations.get(docIndex)?.has(imageIndex)
+          ) {
+            const item = results[docIndex]
+            if (item) {
+              const imageProcessingSpan = span.startSpan("process_image_citation")
+              try {
+                imageProcessingSpan.setAttribute("citation_key", imgMatch[1])
+                imageProcessingSpan.setAttribute("doc_index", docIndex)
+                imageProcessingSpan.setAttribute("image_index", imageIndex)
+                
+                const imageData = await getCitationToImage(
+                  imgMatch[1],
+                  {
+                    id: item.id,
+                    relevance: item.confidence,
+                    fields: {
+                      docId: item.source.docId,
+                    } as any,
+                  } as VespaSearchResult,
+                  email,
+                )
+                if (imageData) {
+                  if (!imageData.imagePath || !imageData.imageBuffer) {
+                    loggerWithChild({ email: email }).error(
+                      "Invalid imageData structure returned",
+                      { citationKey: imgMatch[1], imageData },
+                    )
+                    imageProcessingSpan.setAttribute("processing_success", false)
+                    imageProcessingSpan.setAttribute("error_reason", "invalid_image_data")
+                    imageProcessingSpan.end()
+                    continue
+                  }
+                  yield {
+                    imageCitation: {
+                      citationKey: imgMatch[1],
+                      imagePath: imageData.imagePath,
+                      imageData: imageData.imageBuffer.toString("base64"),
+                      ...(imageData.extension
+                        ? { mimeType: mimeTypeMap[imageData.extension] }
+                        : {}),
+                      item: item.source,
+                    },
+                  }
+                  imageCitationsYielded++
+                  imageProcessingSpan.setAttribute("processing_success", true)
+                  imageProcessingSpan.setAttribute("image_size", imageData.imageBuffer.length)
+                  imageProcessingSpan.setAttribute("image_extension", imageData.extension || "unknown")
                 }
-                yield {
-                  imageCitation: {
-                    citationKey: imgMatch[1],
-                    imagePath: imageData.imagePath,
-                    imageData: imageData.imageBuffer.toString("base64"),
-                    ...(imageData.extension
-                      ? { mimeType: mimeTypeMap[imageData.extension] }
-                      : {}),
-                    item: item.source,
-                  },
-                }
+                imageProcessingSpan.end()
+              } catch (error) {
+                imageProcessingSpan.addEvent("image_processing_error", {
+                  message: getErrorMessage(error),
+                  stack: (error as Error).stack || "",
+                })
+                imageProcessingSpan.setAttribute("processing_success", false)
+                imageProcessingSpan.end()
+                
+                loggerWithChild({ email: email }).error(
+                  error,
+                  "Error processing image citation",
+                  { citationKey: imgMatch[1], error: getErrorMessage(error) },
+                )
               }
-            } catch (error) {
-              loggerWithChild({ email: email }).error(
-                error,
-                "Error processing image citation",
-                { citationKey: imgMatch[1], error: getErrorMessage(error) },
+              if (!yieldedImageCitations.has(docIndex)) {
+                yieldedImageCitations.set(docIndex, new Set<number>())
+              }
+              yieldedImageCitations.get(docIndex)?.add(imageIndex)
+            } else {
+              loggerWithChild({ email: email }).warn(
+                "Found a citation index but could not find it in the search result ",
+                imageIndex,
+                results.length,
               )
+              continue
             }
-            if (!yieldedImageCitations.has(docIndex)) {
-              yieldedImageCitations.set(docIndex, new Set<number>())
-            }
-            yieldedImageCitations.get(docIndex)?.add(imageIndex)
-          } else {
-            loggerWithChild({ email: email }).warn(
-              "Found a citation index but could not find it in the search result ",
-              imageIndex,
-              results.length,
-            )
-            continue
           }
         }
       }
     }
+    
+    span.setAttribute("citations_processed", citationsProcessed)
+    span.setAttribute("image_citations_processed", imageCitationsProcessed)
+    span.setAttribute("citations_yielded", citationsYielded)
+    span.setAttribute("image_citations_yielded", imageCitationsYielded)
+    span.end()
+  } catch (error) {
+    span.addEvent("error", {
+      message: getErrorMessage(error),
+      stack: (error as Error).stack || "",
+    })
+    span.end()
+    throw error
   }
 }
 
@@ -395,6 +569,7 @@ async function* getToolContinuationIterator(
   fallbackReasoning?: string,
   attachmentFileIds?: string[],
   email?: string,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -422,12 +597,12 @@ async function* getToolContinuationIterator(
       ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
     )
   }
-
+  
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
     {
-      modelId: defaultBestModel,
+      modelId: (modelId as Models) || defaultBestModel,
       stream: true,
       json: true,
       reasoning: false,
@@ -536,21 +711,34 @@ async function performSynthesis(
   logAndStreamReasoning: (step: AgentReasoningStep) => Promise<void>,
   sub: string,
   attachmentFileIds?: string[],
+  modelId?: string,
 ): Promise<SynthesisResponse | null> {
+  const tracer = getTracer("chat")
+  const span = tracer.startSpan("performSynthesis")
+  
   let parseSynthesisOutput: SynthesisResponse | null = null
 
   try {
+    span.setAttribute("message_length", message.length)
+    span.setAttribute("planning_context_length", planningContext.length)
+    span.setAttribute("gathered_fragments_count", gatheredFragments.length)
+    span.setAttribute("messages_count", messagesWithNoErrResponse.length)
+    span.setAttribute("user_email", sub)
+    span.setAttribute("has_attachment_file_ids", !!(attachmentFileIds && attachmentFileIds.length > 0))
+    span.setAttribute("attachment_file_ids_count", attachmentFileIds?.length || 0)
+    
     await logAndStreamReasoning({
       type: AgentReasoningStepType.Synthesis,
       details: `Synthesizing answer from ${gatheredFragments.length} fragments...`,
     })
 
+    const synthesisSpan = span.startSpan("synthesis_llm_call")
     const synthesisResponse = await generateSynthesisBasedOnToolOutput(
       ctx,
       message,
       planningContext,
       {
-        modelId: defaultBestModel,
+        modelId: (modelId as Models) || defaultBestModel,
         stream: false,
         json: true,
         reasoning: false,
@@ -560,10 +748,19 @@ async function performSynthesis(
         ),
       },
     )
+    synthesisSpan.setAttribute("model_id", defaultBestModel)
+    synthesisSpan.setAttribute("response_length", synthesisResponse.text?.length || 0)
+    synthesisSpan.end()
 
     if (synthesisResponse.text) {
+      const parseSpan = span.startSpan("parse_synthesis_response")
       try {
         parseSynthesisOutput = jsonParseLLMOutput(synthesisResponse.text)
+        parseSpan.setAttribute("parse_success", !!parseSynthesisOutput)
+        parseSpan.setAttribute("has_synthesis_state", !!(parseSynthesisOutput && parseSynthesisOutput.synthesisState))
+        parseSpan.setAttribute("synthesis_state", parseSynthesisOutput?.synthesisState || "unknown")
+        parseSpan.setAttribute("has_answer", !!(parseSynthesisOutput && parseSynthesisOutput.answer))
+        
         if (!parseSynthesisOutput || !parseSynthesisOutput.synthesisState) {
           loggerWithChild({ email: sub }).error(
             "Synthesis response was valid JSON but missing 'synthesisState' key.",
@@ -573,8 +770,18 @@ async function performSynthesis(
             synthesisState: ContextSysthesisState.Partial,
             answer: null,
           }
+          parseSpan.setAttribute("fallback_used", true)
+          parseSpan.setAttribute("fallback_reason", "missing_synthesis_state")
         }
+        parseSpan.end()
       } catch (jsonError) {
+        parseSpan.addEvent("json_parse_error", {
+          message: getErrorMessage(jsonError),
+          stack: (jsonError as Error).stack || "",
+        })
+        parseSpan.setAttribute("parse_success", false)
+        parseSpan.end()
+        
         loggerWithChild({ email: sub }).error(
           jsonError,
           "Failed to parse synthesis LLM output as JSON.",
@@ -593,8 +800,18 @@ async function performSynthesis(
         synthesisState: ContextSysthesisState.Partial,
         answer: "",
       }
+      span.setAttribute("no_text_response", true)
     }
+    
+    span.setAttribute("final_synthesis_state", parseSynthesisOutput?.synthesisState || "unknown")
+    span.setAttribute("final_answer_length", parseSynthesisOutput?.answer?.length || 0)
+    span.end()
   } catch (synthesisError) {
+    span.addEvent("synthesis_error", {
+      message: getErrorMessage(synthesisError),
+      stack: (synthesisError as Error).stack || "",
+    })
+    
     loggerWithChild({ email: sub }).error(
       synthesisError,
       "Error during synthesis LLM call.",
@@ -608,6 +825,8 @@ async function performSynthesis(
       synthesisState: ContextSysthesisState.Partial,
       answer: parseSynthesisOutput?.answer || "",
     }
+    span.setAttribute("error_fallback_used", true)
+    span.end()
   }
 
   return parseSynthesisOutput
@@ -623,6 +842,24 @@ const addErrMessageToMessage = async (
     })
   }
 }
+/**
+   * MessageWithToolsApi - Advanced JAF-powered chat with MCP tool integration
+   * 
+   * Used when: isAgentic && !enableWebSearch && !deepResearchEnabled
+   * 
+   * Features:
+   * - JAF (Juspay Agentic Framework) agent orchestration
+   * - MCP client integration for external tools
+   * - Iterative search with context synthesis
+   * - Advanced reasoning step tracking
+   * - Fallback search on max iterations
+   * - Real-time tool execution feedback
+   * 
+   * Flow: Auth → MCP setup → JAF agent config → Tool execution → Context building → Response
+   * 
+   * @param c - Hono Context with request data
+   * @returns StreamSSE with JAF execution events
+   */
 export const MessageWithToolsApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
@@ -634,11 +871,13 @@ export const MessageWithToolsApi = async (c: Context) => {
   let isDebugMode = config.isDebugMode
   let email = ""
   try {
+    const initSpan = rootSpan.startSpan("initialization")
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
     loggerWithChild({ email: email }).info("MessageApi..")
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
+    rootSpan.setAttribute("debug_mode", isDebugMode)
 
     // @ts-ignore
     const body = c.req.valid("query")
@@ -646,18 +885,84 @@ export const MessageWithToolsApi = async (c: Context) => {
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       toolsList,
       agentId,
     }: MessageReqType = body
+    
+    // Parse the model configuration JSON
+    let modelId: string | null = null
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const modelConfig = JSON.parse(selectedModelConfig)
+        modelId = modelConfig.model || null
+        
+        // Handle new direct boolean format
+        isReasoningEnabled = modelConfig.reasoning === true
+        enableWebSearch = modelConfig.websearch === true
+        isDeepResearchEnabled = modelConfig.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `[MessageWithToolsApi] Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (modelConfig.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+            enableWebSearch = modelConfig.capabilities.includes('websearch')
+            isDeepResearchEnabled = modelConfig.capabilities.includes('deepResearch')
+          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+            enableWebSearch = modelConfig.capabilities.websearch === true
+            isDeepResearchEnabled = modelConfig.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `[MessageWithToolsApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+        )
+      } catch (error) {
+        console.error('Failed to parse selectedModelConfig:', error)
+      }
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
+    if (modelId) {
+      if (!actualModelId && (modelId in Models)) {
+        actualModelId = modelId as Models
+      } else if (!actualModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    } else {
+      actualModelId = defaultBestModel
+    }
+    
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
     )
+    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
     const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
     // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
+    
+    const contextExtractionSpan = initSpan.startSpan("context_extraction")
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
@@ -665,10 +970,25 @@ export const MessageWithToolsApi = async (c: Context) => {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
         }
-    const fileIds = extractedInfo?.fileIds
+    let fileIds = extractedInfo?.fileIds
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = [...fileIds, ...nonImageAttachmentFileIds]
+    }
     const totalValidFileIdsFromLinkCount =
       extractedInfo?.totalValidFileIdsFromLinkCount
+    loggerWithChild({ email: email }).info(
+      `Extracted ${fileIds  } extractedInfo`,
+    )
+    loggerWithChild({ email: email }).info(
+      `Total attachment files received: ${attachmentFileIds.length}`,
+    )
     const hasReferencedContext = fileIds && fileIds.length > 0
+    contextExtractionSpan.setAttribute("file_ids_count", fileIds?.length || 0)
+    contextExtractionSpan.setAttribute("has_referenced_context", hasReferencedContext)
+    contextExtractionSpan.setAttribute("is_message_with_context", isMsgWithContext)
+    contextExtractionSpan.setAttribute("total_valid_file_ids_from_link_count", totalValidFileIdsFromLinkCount)
+    contextExtractionSpan.setAttribute("extracted_file_ids", JSON.stringify(fileIds || []))
+    contextExtractionSpan.end()
 
     if (!message) {
       throw new HTTPException(400, {
@@ -678,22 +998,30 @@ export const MessageWithToolsApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
 
+    const userLookupSpan = initSpan.startSpan("user_workspace_lookup")
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId,
       email,
     )
     const { user, workspace } = userAndWorkspace
+    userLookupSpan.setAttribute("user_id", user.id)
+    userLookupSpan.setAttribute("workspace_id", workspace.id)
+    userLookupSpan.end()
+    
     let messages: SelectMessage[] = []
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     let chat: SelectChat
+    initSpan.end()
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
+    
     if (agentId && isCuid(agentId)) {
+      const agentLookupSpan = chatCreationSpan.startSpan("agent_lookup")
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -702,6 +1030,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         user.id,
       )
       if (!agentForDb) {
+        agentLookupSpan.end()
         throw new HTTPException(403, {
           message: "Access denied: You don't have permission to use this agent",
         })
@@ -710,25 +1039,15 @@ export const MessageWithToolsApi = async (c: Context) => {
         isAgentic = false
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
+      agentLookupSpan.setAttribute("agent_external_id", agentForDb.externalId)
+      agentLookupSpan.setAttribute("is_rag_on", agentForDb.isRagOn)
+      agentLookupSpan.end()
     }
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
+      const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
           const chat = await insertChat(tx, {
@@ -750,7 +1069,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -773,6 +1092,10 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [chat, insertedMsg]
         },
       )
+      dbTransactionSpan.setAttribute("chat_external_id", insertedChat.externalId)
+      dbTransactionSpan.setAttribute("message_external_id", insertedMsg.externalId)
+      dbTransactionSpan.end()
+      
       loggerWithChild({ email: sub }).info(
         "First mesage of the conversation, successfully created the chat",
       )
@@ -780,6 +1103,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       messages.push(insertedMsg) // Add the inserted message to messages array
       chatCreationSpan.end()
     } else {
+      const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_existing_chat")
       let [existingChat, allMessages, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage[], SelectMessage]> => {
           // we are updating the chat and getting it's value in one call itself
@@ -801,7 +1125,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -824,6 +1148,11 @@ export const MessageWithToolsApi = async (c: Context) => {
           return [existingChat, allMessages, insertedMsg]
         },
       )
+      dbTransactionSpan.setAttribute("chat_external_id", existingChat.externalId)
+      dbTransactionSpan.setAttribute("message_external_id", insertedMsg.externalId)
+      dbTransactionSpan.setAttribute("previous_messages_count", allMessages.length)
+      dbTransactionSpan.end()
+      
       loggerWithChild({ email: sub }).info(
         "Existing conversation, fetched previous messages",
       )
@@ -895,6 +1224,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           const aiGeneratedSummary = await generateStepSummary(
             reasoningStep,
             userQuery,
+            undefined,
+            actualModelId || undefined,
           )
 
           const enhancedStep: AgentReasoningStep = {
@@ -951,13 +1282,13 @@ export const MessageWithToolsApi = async (c: Context) => {
               `Iteration ${iterationNumber} complete summary`,
             )
 
-            // Use a fast model for summary generation
+            // Use the selected model or fallback to fast model for summary generation
             const summaryResult = await generateSynthesisBasedOnToolOutput(
               prompt,
               "",
               "",
               {
-                modelId: defaultFastModel,
+                modelId: (actualModelId as Models) || defaultFastModel,
                 stream: false,
                 json: true,
                 reasoning: false,
@@ -1276,41 +1607,20 @@ export const MessageWithToolsApi = async (c: Context) => {
               // }
             }
           }
+          // ====== JAF-based agent loop starts here (replaces manual loop) ======
+          const jafProcessingSpan = streamSpan.startSpan("jaf_processing")
+          
+          // Prepare streaming state holders
           let answer = ""
-          let currentAnswer = ""
-          let citations = []
-          let imageCitations: any = []
-          let citationMap: Record<number, number> = {}
-          let citationValues: Record<number, string> = {}
-          let thinking = ""
-          let reasoning =
-            ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning
+          const citations: any[] = []
+          const imageCitations: any[] = []
+          const citationMap: Record<number, number> = {}
+          const citationValues: Record<number, string> = {}
           let gatheredFragments: MinimalAgentFragment[] = []
-          let excludedIds: string[] = [] // To track IDs of retrieved documents
-          let agentScratchpad = "" // To build the reasoning history for the prompt
-          let planningContext = "" // To build the context for planning
-          let toolsPrompt = "" // To build the context for available tools
-          let fallbackReasoning: string | undefined = undefined // To store fallback reasoning
-          const previousToolCalls: {
-            tool: string
-            args: Record<string, "any">
-            failureCount: number
-          }[] = []
-          const MAX_CONSECUTIVE_TOOL_FAILURES = 2
+          let planningContext = ""
+          let parseSynthesisResult = null
 
-          while (iterationCount <= maxIterations && !answered) {
-            if (stream.closed) {
-              loggerWithChild({ email: sub }).info(
-                "[MessageWithToolsApi] Stream closed during conversation search loop. Breaking.",
-              )
-              wasStreamClosedPrematurely = true
-              break
-            }
-            iterationCount++
-
-            // On the first iteration, check if this is a "@" reference case and synthesize the context.
-            // If the synthesized context is insufficient, continue gathering more context in subsequent iterations.
-            if (hasReferencedContext && iterationCount === 1) {
+          if (hasReferencedContext && iterationCount === 0) {
               const contextFetchSpan = rootSpan.startSpan(
                 "fetchDocumentContext",
               )
@@ -1429,7 +1739,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                     messagesWithNoErrResponse,
                     logAndStreamReasoning,
                     sub,
-                    attachmentFileIds,
+                    imageAttachmentFileIds,
+                    actualModelId || undefined,
                   )
                   await logAndStreamReasoning({
                     type: AgentReasoningStepType.LogMessage,
@@ -1445,17 +1756,19 @@ export const MessageWithToolsApi = async (c: Context) => {
                     parseSynthesisOutput?.synthesisState ===
                     ContextSysthesisState.Complete
 
+                    console.log("SYNTHESIS OUTPUT", parseSynthesisOutput?.answer)
+
                   if (isContextSufficient) {
+                    parseSynthesisResult = JSON.stringify(parseSynthesisOutput)
                     // Context is complete. We can break the loop and generate the final answer.
                     await logAndStreamReasoning({
                       type: AgentReasoningStepType.LogMessage,
                       message:
                         "Context is sufficient. Proceeding to generate final answer.",
                     })
-                    break
                   }
-                  continue
                 }
+
               } catch (error) {
                 loggerWithChild({ email: sub }).error(
                   error,
@@ -1465,1034 +1778,686 @@ export const MessageWithToolsApi = async (c: Context) => {
                 contextFetchSpan?.end()
               }
             }
+          
 
-            let loopWarningPrompt = ""
-            const reasoningHeader = `
-            --- AGENT REASONING SO FAR ---
-            Below is the step-by-step reasoning you've taken so far. Use this to inform your next action.
-            ${structuredReasoningSteps
-              .map(convertReasoningStepToText)
-              .join("\n")}
-            `
-            const evidenceSummary =
-              gatheredFragments.length > 0
-                ? `\n--- CURRENTLY GATHERED EVIDENCE (for final answer generation) ---\n` +
-                  gatheredFragments
-                    .map(
-                      (f, i) =>
-                        `[Fragment ${i + 1}] (Source Doc ID: ${
-                          f.source.docId
-                        })\n` +
-                        `  - Title: ${f.source.title || "Untitled"}\n` +
-                        // Truncate content in the scratchpad to keep the prompt concise.
-                        // The full content is available in `planningContext` for the final answer.
-                        `  - Content Snippet: "${f.content.substring(0, 100)}..."`,
-                    )
-                    .join("\n\n")
-                : "\n--- NO EVIDENCE GATHERED YET ---"
+          // Compose JAF tools: internal + MCP
+          const toolsCompositionSpan = jafProcessingSpan.startSpan("tools_composition")
+          const baseCtx: JAFAdapterCtx = {
+            email: sub,
+            userCtx: ctx,
+            agentPrompt: agentPromptForLLM,
+            userMessage: message,
+          }
+          const internalJAFTools: JAFTool<any, JAFAdapterCtx>[] = buildInternalJAFTools()
+          const mcpJAFTools: JAFTool<any, JAFAdapterCtx>[] =
+            buildMCPJAFTools(finalToolsList as unknown as JAFinalToolsList)
+          const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
+          toolsCompositionSpan.setAttribute("internal_tools_count", internalJAFTools.length)
+          toolsCompositionSpan.setAttribute("mcp_tools_count", mcpJAFTools.length)
+          toolsCompositionSpan.setAttribute("total_tools_count", allJAFTools.length)
+          toolsCompositionSpan.end()
 
-            // Check for consecutive failures and add warning
-            const lastToolCall = previousToolCalls[previousToolCalls.length - 1]
-            if (
-              lastToolCall &&
-              lastToolCall.failureCount >= MAX_CONSECUTIVE_TOOL_FAILURES
-            ) {
-              loopWarningPrompt = `
-                   ---
-                   **Critique Past Actions:** You have repeatedly called the tool '${
-                     lastToolCall.tool
-                   }' with arguments ${JSON.stringify(
-                     lastToolCall.args,
-                   )} and it has failed or yielded insufficient results ${
-                     lastToolCall.failureCount
-                   } times consecutively. You are stuck in a loop. You MUST choose a DIFFERENT TOOL or escalate to a "no answer found" state if no other tools are viable.
-                   ---
-                `
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.LogMessage,
-                message: `Detected ${lastToolCall.failureCount} consecutive failures for tool ${lastToolCall.tool}. Attempting to change strategy.`,
-              })
-            } else if (previousToolCalls.length) {
-              loopWarningPrompt = `
-                   ---
-                   **Critique Past Actions:** You have already called some tools ${previousToolCalls
-                     .map(
-                       (toolCall, idx) =>
-                         `[Iteration-${idx}] Tool: ${
-                           toolCall.tool
-                         }, Args: ${JSON.stringify(toolCall.args)}`,
-                     )
-                     .join(
-                       "\n",
-                     )}  and the result was insufficient. You are in a loop. You MUST choose a appropriate tool to resolve user query.
-                 You **MUST** change your strategy.
-                  For example:
-                    1.  Choose a **DIFFERENT TOOL**.
-                    2.  Use the **SAME TOOL** but with **DIFFERENT Parameters**.
-                    3.  Use just different **offset**  if you think if the tool selected is correct and you need to goto next page to find better context.
-
-                  Do NOT make these call again. Formulate a new, distinct plan.
-                   ---
-                `
-            }
-
-            agentScratchpad = evidenceSummary + "\n\n" + reasoningHeader
-            toolsPrompt = ""
-            // TODO: make more sense to move this inside prompt such that format of output can be written together.
-            if (Object.keys(finalToolsList).length > 0) {
-              toolsPrompt = `While answering check if any below given AVAILABLE_TOOLS can be invoked to get more context to answer the user query more accurately, this is very IMPORTANT so you should check this properly based on the given tools information.
-                AVAILABLE_TOOLS:\n\n`
-
-              // Format each client's tools
-              for (const [connectorId, { tools }] of Object.entries(
-                finalToolsList,
-              )) {
-                if (tools.length > 0) {
-                  for (const tool of tools) {
-                    const parsedTool = selectToolSchema.safeParse(tool)
-                    if (parsedTool.success && parsedTool.data.toolSchema) {
-                      toolsPrompt += `${constructToolContext(
-                        parsedTool.data.toolSchema,
-                        parsedTool.data.toolName,
-                        parsedTool.data.description ?? "",
-                      )}\n\n`
-                    }
-                  }
-                }
-              }
-            }
-
-            // filter out conversational tool if it is not the first iteration
-            const xyneToolNames =
-              iterationCount !== 1
-                ? Object.keys(internalTools).filter(
-                    (v) => v !== XyneTools.Conversational,
-                  )
-                : Object.keys(internalTools)
-            const xyneTools = Object.fromEntries(
-              xyneToolNames.map((toolName) => [
-                toolName,
-                internalTools[toolName],
-              ]),
+          // Build dynamic instructions that include tools + current context fragments
+          const agentInstructions = (_state: any) => {
+            const toolOverview = buildToolsOverview(allJAFTools)
+            const contextSection = buildContextSection(gatheredFragments)
+            const agentSection = agentPromptForLLM
+              ? `\n\nAgent Constraints:\n${agentPromptForLLM}`
+              : ""
+            const synthesisSection = parseSynthesisResult;
+            return (
+              `You are Xyne, an enterprise search assistant.\n` +
+              `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
+              `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
+              `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
+              `- If context is missing or insufficient, use search/metadata tools to fetch more, or ask a brief clarifying question, then search.\n` +
+              `- Be concise, accurate, and avoid hallucinations.\n` +
+              `- If there is a parseSynthesisOutput, use it to respond to the user without doing any further tool calls. Add missing citations and return the answer.\n` +
+              `\nAvailable Tools:\n${toolOverview}` +
+              contextSection +
+              agentSection +
+              `\n<parseSynthesisOutput>${synthesisSection}</parseSynthesisOutput>`
             )
-            const toolSelection = await generateToolSelectionOutput(
-              message,
-              ctx,
-              toolsPrompt,
-              agentScratchpad,
-              {
-                modelId: defaultFastModel,
-                stream: false,
-                json: true,
-                reasoning: false,
-                messages: messagesWithNoErrResponse,
-              },
-              agentPromptForLLM,
-              loopWarningPrompt,
-              { internal: xyneTools },
-              isDebugMode,
-            )
+          }
 
-            if (
-              toolSelection?.queryRewrite &&
-              toolSelection.queryRewrite.length
-            ) {
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.AnalyzingQuery,
-                details: `Query rewrite detected: ${toolSelection.queryRewrite}`,
-              })
-              streamSpan
-                .startSpan("query_rewrite")
-                .setAttribute("query_rewrite", toolSelection.queryRewrite)
-              message = toolSelection.queryRewrite
+          const jafSetupSpan = jafProcessingSpan.startSpan("jaf_setup")
+          const runId = generateRunId()
+          const traceId = generateTraceId()
+          const initialMessages: JAFMessage[] = messages
+            .filter((m) => !m?.errorMessage)
+            .map((m) => ({
+              role:
+                m.messageRole === MessageRole.User
+                  ? ("user" as const)
+                  : ("assistant" as const),
+              content: m.message,
+            }))
+            
+          const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
+            name: "xyne-agent",
+            instructions: () => agentInstructions(null),
+            tools: allJAFTools,
+            modelConfig: { name: (defaultBestModel) as unknown as string },
+          }
+
+          const modelProvider = makeXyneJAFProvider<JAFAdapterCtx>()
+
+          const agentRegistry = new Map<string, JAFAgent<JAFAdapterCtx, string>>([
+            [jafAgent.name, jafAgent],
+          ])
+
+          const runState: JAFRunState<JAFAdapterCtx> = {
+            runId,
+            traceId,
+            messages: initialMessages,
+            currentAgentName: jafAgent.name,
+            context: baseCtx,
+            turnCount: 0,
+          }
+
+          const runCfg: JAFRunConfig<JAFAdapterCtx> = {
+            agentRegistry,
+            modelProvider,
+            maxTurns: 10,
+            modelOverride: (defaultBestModel) as unknown as string,
+          }
+          jafSetupSpan.setAttribute("run_id", runId)
+          jafSetupSpan.setAttribute("trace_id", traceId)
+          jafSetupSpan.setAttribute("initial_messages_count", initialMessages.length)
+          jafSetupSpan.setAttribute("max_turns", 10)
+          jafSetupSpan.end()
+
+          // Note: ResponseMetadata was already sent above with chatId
+
+          // Stream JAF events → existing SSE protocol
+          const jafStreamingSpan = jafProcessingSpan.startSpan("jaf_streaming")
+          const yieldedCitations = new Set<number>()
+          const yieldedImageCitations = new Map<number, Set<number>>()
+          let currentTurn = 0
+          let totalToolCalls = 0
+          
+          for await (const evt of runStream<JAFAdapterCtx, string>(runState, runCfg)) {
+            if (stream.closed) {
+              wasStreamClosedPrematurely = true
+              break
             }
-
-            if (toolSelection && toolSelection.tool) {
-              const toolName = toolSelection.tool
-              const toolParams = (toolSelection.arguments ?? {}) as Record<
-                string,
-                any
-              >
-
-              // Extract app info for this iteration
-              let iterationApp: Apps | string | undefined
-              let iterationEntity: string | undefined
-
-              iterationApp = toolParams.app
-              iterationEntity = toolParams.entity
-
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.Iteration,
-                iteration: iterationCount,
-                app: iterationApp,
-                entity: iterationEntity,
-              })
-
-              if (toolSelection.reasoning) {
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `Reasoning: ${toolSelection.reasoning}`,
+            switch (evt.type) {
+              case "turn_start": {
+                currentTurn = evt.data.turn
+                const turnSpan = jafStreamingSpan.startSpan(`turn_${currentTurn}`)
+                turnSpan.setAttribute("turn_number", currentTurn)
+                turnSpan.setAttribute("agent_name", evt.data.agentName)
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: `Iteration ${evt.data.turn} started (agent: ${evt.data.agentName})`,
+                    step: {
+                      type: AgentReasoningStepType.Iteration,
+                      iteration: evt.data.turn,
+                      status: "in_progress",
+                      stepSummary: `Planning search iteration ${evt.data.turn}`,
+                    },
+                  }),
                 })
-              }
-
-              // Update previousToolCalls with failure tracking
-              const lastCallIndex = previousToolCalls.length - 1
-              if (
-                lastCallIndex >= 0 &&
-                previousToolCalls[lastCallIndex].tool === toolName &&
-                JSON.stringify(previousToolCalls[lastCallIndex].args) ===
-                  JSON.stringify(toolParams)
-              ) {
-                previousToolCalls[lastCallIndex].failureCount++
-              } else {
-                previousToolCalls.push({
-                  tool: toolName,
-                  args: toolParams,
-                  failureCount: 0, // Reset failure count for a new tool/args combination
-                })
-              }
-
-              if (toolName === XyneTools.Conversational) {
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `Tool ${toolName} selected.`,
-                })
+                turnSpan.end()
                 break
               }
-
-              await logAndStreamReasoning({
-                type: AgentReasoningStepType.Planning,
-                details: `Planning next step with ${gatheredFragments.length} context fragments.`,
-              })
-              loggerWithChild({ email: sub }).info(
-                `Tool selection #${toolName} with params: ${JSON.stringify(
-                  toolParams,
-                )}`,
-              )
-
-              let toolExecutionResponse: {
-                result: string
-                contexts?: MinimalAgentFragment[]
-                error?: string
-              } | null = null
-
-              const toolExecutionSpan = streamSpan.startSpan(
-                `execute_tool_${toolName}`,
-              )
-
-              if (agentTools[toolName]) {
-                if (excludedIds.length > 0) {
-                  toolParams.excludedIds = excludedIds
-                }
-                if ("limit" in toolParams) {
-                  if (
-                    toolParams.limit &&
-                    toolParams.limit > maxUserRequestCount
-                  ) {
-                    await logAndStreamReasoning({
-                      type: AgentReasoningStepType.LogMessage,
-                      message: `Detected perPage ${toolParams.perPage} in arguments for tool ${toolName}`,
-                    })
-                    toolParams.limit = maxUserRequestCount
-                    await logAndStreamReasoning({
-                      type: AgentReasoningStepType.LogMessage,
-                      message: `Limited perPage for tool ${toolName} to ${maxUserRequestCount}`,
-                    })
-                  }
-                }
-
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.ToolExecuting,
-                  toolName: toolName as AgentToolName,
-                })
-
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.ToolParameters,
-                  parameters: {
-                    ...toolParams,
-                    excludedIds: excludedIds.length
-                      ? `Excluded ${excludedIds.length} previous ${excludedIds.length === 1 ? "result" : "results"} to avoid duplication`
-                      : "None",
-                  },
-                })
-                try {
-                  toolExecutionResponse = await agentTools[toolName].execute(
-                    toolParams,
-                    toolExecutionSpan,
-                    email,
-                    ctx,
-                    agentPromptForLLM,
-                    message,
-                  )
-                } catch (error) {
-                  const errMessage = getErrorMessage(error)
-                  loggerWithChild({ email: sub }).error(
-                    error,
-                    `Critical error executing internal agent tool ${toolName}: ${errMessage}`,
-                  )
-                  toolExecutionResponse = {
-                    result: `Execution of tool ${toolName} failed critically.`,
-                    error: errMessage,
-                  }
-                }
-              } else if (Object.keys(finalToolsList).length > 0) {
-                let foundClient: Client | null = null
-                let connectorId: string | null = null
-
-                // Find the client for the requested tool (your logic is good)
-                for (const [connId, { tools, client }] of Object.entries(
-                  finalToolsList,
-                )) {
-                  if (
-                    tools.some(
-                      (tool) =>
-                        selectToolSchema.safeParse(tool).success &&
-                        selectToolSchema.safeParse(tool).data?.toolName ===
-                          toolName,
-                    )
-                  ) {
-                    foundClient = client
-                    connectorId = connId
-                    break
-                  }
-                }
-
-                if (!foundClient || !connectorId) {
-                  const errorMsg = `Tool "${toolName}" was selected by the agent but is not an available tool.`
-                  loggerWithChild({ email: sub }).error(errorMsg)
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.ValidationError,
-                    details: errorMsg,
+              case "tool_requests": {
+                const toolRequestsSpan = jafStreamingSpan.startSpan("tool_requests")
+                totalToolCalls += evt.data.toolCalls.length
+                toolRequestsSpan.setAttribute("tool_calls_count", evt.data.toolCalls.length)
+                toolRequestsSpan.setAttribute("total_tool_calls", totalToolCalls)
+                
+                for (const r of evt.data.toolCalls) {
+                  const toolSelectionSpan = toolRequestsSpan.startSpan("tool_selection")
+                  toolSelectionSpan.setAttribute("tool_name", r.name)
+                  toolSelectionSpan.setAttribute("args_count", Object.keys(r.args || {}).length)
+                  
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: JSON.stringify({
+                      text: `Tool selected: ${r.name}`,
+                      step: {
+                        type: AgentReasoningStepType.ToolSelected,
+                        toolName: r.name,
+                        status: "in_progress",
+                        stepSummary: `Executing ${r.name} tool`,
+                      },
+                    }),
                   })
-                  // Set an error response so the agent knows its plan failed and can re-plan
-                  toolExecutionResponse = {
-                    result: `Error: Could not find the specified tool '${toolName}'.`,
-                    error: "Tool not found",
-                  }
-                } else {
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.ToolExecuting,
-                    toolName: toolName as AgentToolName, // We can cast here as it's a string from the LLM
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: JSON.stringify({
+                      text: `Parameters: ${JSON.stringify(r.args)}`,
+                      step: {
+                        type: AgentReasoningStepType.ToolParameters,
+                        parameters: r.args,
+                        status: "in_progress",
+                        stepSummary: "Reviewing tool parameters",
+                      },
+                    }),
                   })
-                  try {
-                    // TODO: Implement your parameter validation logic here before calling the tool.
-                    if ("perPage" in toolParams) {
-                      if (toolParams.perPage && toolParams.perPage > 10) {
-                        await logAndStreamReasoning({
-                          type: AgentReasoningStepType.LogMessage,
-                          message: `Detected perPage ${toolParams.perPage} in arguments for tool ${toolName}`,
-                        })
-                        toolParams.perPage = 10 // Limit to 10 per page
-                        await logAndStreamReasoning({
-                          type: AgentReasoningStepType.LogMessage,
-                          message: `Limited perPage for tool ${toolName} to 10`,
-                        })
-                      }
-                    }
-                    const mcpToolResponse: any = await foundClient.callTool({
-                      name: toolName,
-                      arguments: toolParams,
-                    })
-
-                    let formattedContent = "Tool returned no parsable content."
-                    let newFragments: MinimalAgentFragment[] = []
-                    const isValidJSON = (str: string) => {
-                      try {
-                        JSON.parse(str)
-                        return true
-                      } catch (e) {
-                        return false
-                      }
-                    }
-                    try {
-                      if (
-                        mcpToolResponse.content &&
-                        mcpToolResponse.content[0] &&
-                        mcpToolResponse.content[0].text
-                      ) {
-                        const parsedJson = isValidJSON(
-                          mcpToolResponse.content[0].text,
-                        )
-                          ? JSON.parse(mcpToolResponse.content[0].text)
-                          : mcpToolResponse.content[0].text
-                        if (isCustomMCP) {
-                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
-                          // Convert the formatted response into a standard MinimalAgentFragment
-                          let mainContentParts = []
-                          if (parsedJson.title)
-                            mainContentParts.push(`Title: ${parsedJson.title}`)
-                          if (parsedJson.body)
-                            mainContentParts.push(`Body: ${parsedJson.body}`)
-                          if (parsedJson.name)
-                            mainContentParts.push(`Name: ${parsedJson.name}`)
-                          if (parsedJson.description)
-                            mainContentParts.push(
-                              `Description: ${parsedJson.description}`,
-                            )
-
-                          if (mainContentParts.length > 2) {
-                            formattedContent = mainContentParts.join("\n")
-                          } else {
-                            formattedContent = `Tool Response: ${
-                              typeof parsedJson !== "string"
-                                ? flattenObject(parsedJson)
-                                    .map(([key, value]) => `- ${key}: ${value}`)
-                                    .join("\n")
-                                : parsedJson
-                            }`
-                          }
-
-                          newFragments.push({
-                            id: `${baseFragmentId}-generic`,
-                            content: formattedContent,
-                            source: {
-                              app: Apps.MCP,
-                              docId: "",
-                              title: `Response from ${toolName}`,
-                              entity: SystemEntity.SystemInfo,
-                              url:
-                                parsedJson.html_url ||
-                                parsedJson.url ||
-                                undefined,
-                            },
-                            confidence: 0.8,
-                          })
-                        } else {
-                          const baseFragmentId = `mcp-${connectorId}-${toolName}`
-                          ;({ formattedContent, newFragments } =
-                            mapGithubToolResponse(
-                              toolName,
-                              parsedJson,
-                              baseFragmentId,
-                              sub,
-                            ))
-                        }
-                      }
-                    } catch (parsingError) {
-                      loggerWithChild({ email: sub }).error(
-                        parsingError,
-                        `Could not parse response from MCP tool ${toolName} as JSON.`,
-                      )
-                      formattedContent =
-                        "Tool response was not valid JSON and could not be processed."
-                    }
-
-                    // Populate the unified response object for the MCP tool
-                    toolExecutionResponse = {
-                      result: `Tool ${toolName} executed. \n Summary: ${formattedContent.substring(
-                        0,
-                        200,
-                      )}...`,
-                      contexts: newFragments,
-                    }
-                  } catch (error) {
-                    const errMessage = getErrorMessage(error)
-                    loggerWithChild({ email: sub }).error(
-                      error,
-                      `Error invoking external tool ${toolName}: ${errMessage}`,
-                    )
-                    // Populate the unified response with the error
-                    toolExecutionResponse = {
-                      result: `Execution of tool ${toolName} failed.`,
-                      error: errMessage,
-                    }
-                  }
+                  toolSelectionSpan.end()
                 }
-              } else {
-                // This case handles when a tool was specified by the LLM,
-                // but it's not an internal tool AND (finalToolsList is empty OR the tool is not in finalToolsList)
-                const errorMsg = `Tool "${toolName}" was selected by the agent but is not an available or configured tool.`
-                loggerWithChild({ email: sub }).error(errorMsg)
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.ValidationError,
-                  details: errorMsg,
-                })
-                toolExecutionResponse = {
-                  result: `Error: Could not find the specified tool '${toolName}'.`,
-                  error: "Tool not found or not configured",
-                }
+                toolRequestsSpan.end()
+                break
               }
-              toolExecutionSpan.end()
-
-              if (toolExecutionResponse) {
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.ToolResult,
-                  toolName: toolName as AgentToolName,
-                  resultSummary: toolExecutionResponse.result,
-                  itemsFound: toolExecutionResponse.contexts?.length || 0,
-                  error: toolExecutionResponse.error,
+              case "tool_call_start": {
+                const toolStartSpan = jafStreamingSpan.startSpan("tool_call_start")
+                toolStartSpan.setAttribute("tool_name", evt.data.toolName)
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: `Executing ${evt.data.toolName}...`,
+                    step: {
+                      type: AgentReasoningStepType.ToolExecuting,
+                      toolName: evt.data.toolName,
+                      status: "in_progress",
+                      stepSummary: `Executing ${evt.data.toolName} tool`,
+                    },
+                  }),
                 })
-
-                // If the tool execution resulted in an error or no new contexts, increment failure count
-                const currentToolCall =
-                  previousToolCalls[previousToolCalls.length - 1]
-                if (
-                  currentToolCall &&
-                  (toolExecutionResponse.error ||
-                    !toolExecutionResponse.contexts ||
-                    toolExecutionResponse.contexts.length === 0)
-                ) {
-                  currentToolCall.failureCount++
-                } else if (currentToolCall) {
-                  // If successful, reset failure count for this tool
-                  currentToolCall.failureCount = 0
-                }
-
-                if (toolExecutionResponse.error) {
-                  if (iterationCount < maxIterations) {
-                    continue // Continue to the next iteration to re-plan
-                  } else {
-                    // If we fail on the last iteration, we have to stop.
-                    await logAndStreamReasoning({
-                      type: AgentReasoningStepType.LogMessage,
-                      message:
-                        "Tool failed on the final iteration. Generating answer with available context.",
-                    })
-                  }
-                }
-
-                if (
-                  toolExecutionResponse.contexts &&
-                  toolExecutionResponse.contexts.length > 0
-                ) {
-                  const newFragments = toolExecutionResponse.contexts
-                  gatheredFragments.push(...newFragments)
-
-                  const newIds = newFragments.map((f) => f.id).filter(Boolean) // Use the fragment's own unique ID
-                  excludedIds = [...new Set([...excludedIds, ...newIds])]
-                }
-              } else {
-                // This case should ideally not be reached if the logic above correctly sets toolExecutionResponse.
-                // However, as a fallback, log an error and potentially continue or break.
-                const criticalErrorMsg = `Critical error: toolExecutionResponse is null after attempting tool execution for "${toolName}".`
-                loggerWithChild({ email: sub }).error(criticalErrorMsg)
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.ValidationError,
-                  details: criticalErrorMsg,
-                })
-                // Decide if we should continue to re-plan or break the loop.
-                // For now, let's assume we should try to re-plan if not max iterations.
-                if (iterationCount < maxIterations) {
-                  continue
-                }
+                toolStartSpan.end()
+                break
               }
-
-              // if the timestamp range was specified and no results were found
-              // then  that no results were found in this timastamp range
-              const hasTimestampFilter = toolParams?.from || toolParams?.to
-              if (hasTimestampFilter && !gatheredFragments.length) {
-                const fromDate = new Date(
-                  toolParams?.from || 0,
-                ).toLocaleDateString()
-                const toDate = new Date(
-                  toolParams?.to || Date.now(),
-                ).toLocaleDateString()
-
-                const appName = toolParams.app
-                  ? `${toolParams.app} data`
-                  : "content"
-
-                const context = {
-                  id: "",
-                  content: `No ${appName} found within the specified date range (${fromDate} to ${toDate}). No further action needed - this simply means there was no activity during this time period.`,
-                  source: {} as any,
-                  confidence: 0,
+              case "tool_call_end": {
+                const toolEndSpan = jafStreamingSpan.startSpan("tool_call_end")
+                type ToolCallEndEventData = Extract<
+                  JAFTraceEvent,
+                  { type: "tool_call_end" }
+                >["data"]
+                const contexts = (evt.data as ToolCallEndEventData)?.toolResult?.metadata?.contexts
+                const contextsCount = Array.isArray(contexts) ? contexts.length : 0
+                
+                if (Array.isArray(contexts) && contexts.length) {
+                  gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
                 }
-                gatheredFragments.push(context)
+                
+                toolEndSpan.setAttribute("tool_name", evt.data.toolName)
+                toolEndSpan.setAttribute("status", evt.data.status || "completed")
+                toolEndSpan.setAttribute("contexts_found", contextsCount)
+                toolEndSpan.setAttribute("total_fragments", gatheredFragments.length)
+                
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: `Tool result: ${evt.data.toolName}`,
+                    step: {
+                      type: AgentReasoningStepType.ToolResult,
+                      toolName: evt.data.toolName,
+                      status: evt.data.status || "completed",
+                      resultSummary: "Tool execution completed",
+                      itemsFound: contextsCount,
+                      stepSummary: `Found ${contextsCount} results`,
+                    },
+                  }),
+                })
+                toolEndSpan.end()
+                break
               }
+              case "assistant_message": {
+                const messageSpan = jafStreamingSpan.startSpan("assistant_message")
+                const content = getTextContent(evt.data.message.content) || ""
+                const hasToolCalls = Array.isArray(evt.data.message?.tool_calls) &&
+                  (evt.data.message.tool_calls?.length ?? 0) > 0
 
-              planningContext = gatheredFragments.length
-                ? gatheredFragments
-                    .map(
-                      (f, i) =>
-                        `[${i + 1}] ${
-                          f.source.title || `Source ${f.source.docId}`
-                        }: ${f.content}`,
-                    )
-                    .join("\n")
-                : ""
+                if (!content || content.length === 0) {
+                  break
+                }
 
-              if (planningContext.length) {
-                const parseSynthesisOutput = await performSynthesis(
-                  ctx,
-                  message,
-                  planningContext,
-                  gatheredFragments,
-                  messagesWithNoErrResponse,
-                  logAndStreamReasoning,
-                  sub,
-                  attachmentFileIds,
-                )
-
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
-                })
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: ` Synthesis: ${
-                    parseSynthesisOutput?.answer || "No Synthesis details"
-                  }`,
-                })
-                const isContextSufficient =
-                  parseSynthesisOutput?.synthesisState ===
-                  ContextSysthesisState.Complete
-
-                if (isContextSufficient) {
-                  // Context is complete. We can break the loop and generate the final answer.
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.LogMessage,
-                    message:
-                      "Context is sufficient. Proceeding to generate final answer.",
-                  })
-                  // The `continuationIterator` logic will now run after the loop breaks.
-                } else {
-                  // Context is Partial or NotFound. The loop will continue.
-                  if (iterationCount < maxIterations) {
-                    await logAndStreamReasoning({
-                      type: AgentReasoningStepType.BroadeningSearch,
-                      details: `Context is insufficient. Planning iteration ${
-                        iterationCount + 1
-                      }.`,
-                    })
-                    continue
-                  } else {
-                    // Follow-back tool activation: when iterations are exhausted and synthesis is not complete
-                    if (planningContext.length > 0) {
-                      try {
-                        await logAndStreamReasoning({
-                          type: AgentReasoningStepType.LogMessage,
-                          message:
-                            "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
-                        })
-
-                        // Show what tools were used and their results
-                        const toolExecutions = structuredReasoningSteps.filter(
-                          (step) =>
-                            step.type ===
-                              AgentReasoningStepType.ToolExecuting ||
-                            step.type === AgentReasoningStepType.ToolResult,
-                        )
-
-                        if (toolExecutions.length > 0) {
-                          await logAndStreamReasoning({
-                            type: AgentReasoningStepType.LogMessage,
-                            message: `Previous search attempts: Used ${toolExecutions.filter((s) => s.type === AgentReasoningStepType.ToolExecuting).length} tools, gathered ${gatheredFragments.length} context fragments.`,
-                          })
-                        }
-
-                        // Prepare fallback tool parameters with more detailed context
-                        const toolLog = structuredReasoningSteps
-                          .filter(
-                            (step) =>
-                              step.type ===
-                                AgentReasoningStepType.ToolExecuting ||
-                              step.type === AgentReasoningStepType.ToolResult,
-                          )
-                          .map(convertReasoningStepToText)
-                          .join("\n")
-
-                        const fallbackParams = {
-                          originalQuery: message,
-                          agentScratchpad: agentScratchpad,
-                          toolLog: toolLog,
-                          gatheredFragments: planningContext,
-                        }
-
-                        await logAndStreamReasoning({
-                          type: AgentReasoningStepType.ToolExecuting,
-                          toolName: AgentToolName.FallBack,
-                        })
-
-                        // Execute fallback tool
-                        const fallbackResponse = await agentTools[
-                          "fall_back"
-                        ].execute(
-                          fallbackParams,
-                          streamSpan.startSpan("fallback_search_execution"),
-                          email,
-                          ctx,
-                          agentPromptForLLM,
-                          message,
-                        )
-
-                        await logAndStreamReasoning({
-                          type: AgentReasoningStepType.ToolResult,
-                          toolName: AgentToolName.FallBack,
-                          resultSummary: fallbackResponse.result,
-                          itemsFound: fallbackResponse.contexts?.length || 0,
-                          error: fallbackResponse.error,
-                        })
-
-                        // Store fallback reasoning separately - don't add to gathered fragments
-                        if (fallbackResponse.fallbackReasoning) {
-                          fallbackReasoning = fallbackResponse.fallbackReasoning
-
-                          await logAndStreamReasoning({
-                            type: AgentReasoningStepType.LogMessage,
-                            message: `✓ Fallback analysis completed! Generated detailed reasoning about search limitations.`,
-                          })
-
-                          await logAndStreamReasoning({
-                            type: AgentReasoningStepType.LogMessage,
-                            message:
-                              "Will provide explanation about why we couldn't find sufficient information.",
-                          })
-                        } else {
-                          await logAndStreamReasoning({
-                            type: AgentReasoningStepType.LogMessage,
-                            message:
-                              "Fallback analysis completed but no reasoning generated.",
-                          })
-                        }
-                      } catch (followBackError) {
-                        Logger.error(
-                          followBackError,
-                          "Error during followBack tool execution",
-                        )
-                        await logAndStreamReasoning({
-                          type: AgentReasoningStepType.LogMessage,
-                          message: `Follow-back search failed: ${getErrorMessage(followBackError)}. Will generate best-effort answer.`,
-                        })
-                      }
-                    } else {
-                      await logAndStreamReasoning({
+                if (hasToolCalls) {
+                  // Treat assistant content that accompanies tool calls as planning/reasoning,
+                  // not as final answer text. Emit as a reasoning step and do not send 'u' updates.
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Reasoning,
+                    data: JSON.stringify({
+                      text: content,
+                      step: {
                         type: AgentReasoningStepType.LogMessage,
-                        message:
-                          "Max iterations reached with no context gathered. Will generate best-effort answer.",
+                        status: "in_progress",
+                        stepSummary: "Model planned tool usage",
+                      },
+                    }),
+                  })
+                  break
+                }
+
+                // No tool calls: stream as user-visible answer text, with on-the-fly citations
+                const chunkSize = 200
+                for (let i = 0; i < content.length; i += chunkSize) {
+                  const chunk = content.slice(i, i + chunkSize)
+                  answer += chunk
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseUpdate,
+                    data: chunk,
+                  })
+
+                  for await (const cit of checkAndYieldCitationsForAgent(
+                    answer,
+                    yieldedCitations,
+                    gatheredFragments,
+                    yieldedImageCitations,
+                    email ?? "",
+                  )) {
+                    if (cit.citation) {
+                      const { index, item } = cit.citation as any
+                      citations.push(item)
+                      citationMap[index] = citations.length - 1
+                      await stream.writeSSE({
+                        event: ChatSSEvents.CitationsUpdate,
+                        data: JSON.stringify({
+                          contextChunks: citations,
+                          citationMap,
+                        }),
+                      })
+                      citationValues[index] = item
+                    }
+                    if (cit.imageCitation) {
+                      imageCitations.push(cit.imageCitation)
+                      await stream.writeSSE({
+                        event: ChatSSEvents.ImageCitationUpdate,
+                        data: JSON.stringify(cit.imageCitation),
                       })
                     }
                   }
                 }
-              } else {
-                // This `else` block runs if `planningContext` is empty after a tool call.
-                // This means we have found nothing so far. We must continue.
-                if (iterationCount < maxIterations) {
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.BroadeningSearch,
-                    details: "No context found yet. Planning next iteration.",
-                  })
-                  continue
-                }
-              }
-
-              answered = true
-
-              if (answer.length) {
+                messageSpan.setAttribute("content_length", content.length)
+                messageSpan.setAttribute("answer_length", answer.length)
+                messageSpan.setAttribute("citations_count", citations.length)
+                messageSpan.setAttribute("image_citations_count", imageCitations.length)
+                messageSpan.end()
                 break
               }
-            } else {
-              // If no tool was selected, it's also a form of being stuck or unable to proceed.
-              // Increment failure count for the "no tool selected" state if it's consecutive.
-              const lastCall = previousToolCalls[previousToolCalls.length - 1]
-              if (lastCall && lastCall.tool === "NoToolSelected") {
-                lastCall.failureCount++
-              } else {
-                previousToolCalls.push({
-                  tool: "NoToolSelected",
-                  args: {},
-                  failureCount: 1,
+              case "token_usage": {
+                const tokenUsageSpan = jafStreamingSpan.startSpan("token_usage")
+                const inputTokens = (evt.data.prompt as number) || 0
+                const outputTokens = (evt.data.completion as number) || 0
+                tokenArr.push({
+                  inputTokens,
+                  outputTokens,
                 })
+                tokenUsageSpan.setAttribute("input_tokens", inputTokens)
+                tokenUsageSpan.setAttribute("output_tokens", outputTokens)
+                tokenUsageSpan.setAttribute("total_tokens", inputTokens + outputTokens)
+                tokenUsageSpan.end()
+                break
               }
-
-              if (iterationCount < maxIterations) {
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `No tool selected. Re-planning.`,
+              case "guardrail_violation": {
+                const guardrailSpan = jafStreamingSpan.startSpan("guardrail_violation")
+                guardrailSpan.setAttribute("reason", evt.data.reason)
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: JSON.stringify({
+                    error: "guardrail_violation",
+                    message: evt.data.reason,
+                  }),
                 })
-                const parseSynthesisOutput = await performSynthesis(
-                  ctx,
-                  message,
-                  planningContext,
-                  gatheredFragments,
-                  messagesWithNoErrResponse,
-                  logAndStreamReasoning,
-                  sub,
-                  attachmentFileIds,
-                )
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `Synthesis result: ${parseSynthesisOutput?.synthesisState || "unknown"}`,
+                guardrailSpan.end()
+                break
+              }
+              case "decode_error": {
+                const decodeErrorSpan = jafStreamingSpan.startSpan("decode_error")
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: JSON.stringify({
+                    error: "decode_error",
+                    message: "Failed to decode model output",
+                  }),
                 })
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: ` Synthesis: ${
-                    parseSynthesisOutput?.answer || "No Synthesis details"
-                  }`,
+                decodeErrorSpan.end()
+                break
+              }
+              case "handoff_denied": {
+                const handoffSpan = jafStreamingSpan.startSpan("handoff_denied")
+                handoffSpan.setAttribute("reason", evt.data.reason)
+                await stream.writeSSE({
+                  event: ChatSSEvents.Error,
+                  data: JSON.stringify({
+                    error: "handoff_denied",
+                    message: evt.data.reason,
+                  }),
                 })
-                const isContextSufficient =
-                  parseSynthesisOutput?.synthesisState ===
-                  ContextSysthesisState.Complete
-
-                if (isContextSufficient) {
-                  // Context is complete. We can break the loop and generate the final answer.
-                  await logAndStreamReasoning({
-                    type: AgentReasoningStepType.LogMessage,
-                    message:
-                      "Context is sufficient. Proceeding to generate final answer.",
-                  })
-                  break
+                handoffSpan.end()
+                break
+              }
+              case "turn_end": {
+                const turnEndSpan = jafStreamingSpan.startSpan("turn_end")
+                turnEndSpan.setAttribute("turn_number", evt.data.turn)
+                // Emit an iteration summary (fallback version)
+                await stream.writeSSE({
+                  event: ChatSSEvents.Reasoning,
+                  data: JSON.stringify({
+                    text: `Completed iteration ${evt.data.turn}.`,
+                    step: {
+                      type: AgentReasoningStepType.LogMessage,
+                      status: "completed",
+                      message: `Completed iteration ${evt.data.turn}.`,
+                      iteration: evt.data.turn,
+                      stepSummary: `Completed iteration ${evt.data.turn}.`,
+                      isIterationSummary: true,
+                    },
+                  }),
+                })
+                turnEndSpan.end()
+                break
+              }
+              case "final_output": {
+                const finalOutputSpan = jafStreamingSpan.startSpan("final_output")
+                const out = evt.data.output
+                if (typeof out === "string" && out.trim().length) {
+                  // Ensure any remainder is streamed
+                  const remaining = out.slice(answer.length)
+                  if (remaining.length) {
+                    await stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: remaining,
+                    })
+                    answer = out
+                  }
                 }
-                continue
-              } else {
-                await logAndStreamReasoning({
-                  type: AgentReasoningStepType.LogMessage,
-                  message: `No tool selected for ${iterationCount}. Generating answer with available context.`,
-                })
-                answered = true // Break the loop to generate the final answer
+                // Store the actual output instead of just length
+                finalOutputSpan.setAttribute("final_output", typeof out === "string" ? out : "")
+                finalOutputSpan.setAttribute("final_output_length", typeof out === "string" ? out.length : 0)
+                finalOutputSpan.setAttribute("citation_map", JSON.stringify(citationMap))
+                finalOutputSpan.setAttribute("citation_values", JSON.stringify(citationValues))
+                finalOutputSpan.setAttribute("citations_count", citations.length)
+                finalOutputSpan.setAttribute("image_citations_count", imageCitations.length)
+                finalOutputSpan.end()
+                break
+              }
+              case "run_end": {
+                const runEndSpan = jafStreamingSpan.startSpan("run_end")
+                const outcome = evt.data.outcome as JAFRunResult<string>["outcome"]
+                runEndSpan.setAttribute("outcome_status", outcome?.status || "unknown")
+                
+                if (outcome?.status === "completed") {
+                  const costCalculationSpan = runEndSpan.startSpan("cost_calculation")
+                  const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+                  const totalTokens = tokenArr.reduce(
+                    (sum, t) => sum + t.inputTokens + t.outputTokens,
+                    0,
+                  )
+                  costCalculationSpan.setAttribute("total_cost", totalCost)
+                  costCalculationSpan.setAttribute("total_tokens", totalTokens)
+                  costCalculationSpan.setAttribute("total_tool_calls", totalToolCalls)
+                  costCalculationSpan.setAttribute("final_answer_length", answer.length)
+                  costCalculationSpan.setAttribute("citations_count", citations.length)
+                  costCalculationSpan.end()
+                  
+                  const dbInsertSpan = runEndSpan.startSpan("insert_assistant_message")
+                  const msg = await insertMessage(db, {
+                    chatId: chat.id,
+                    userId: user.id,
+                    workspaceExternalId: workspace.externalId,
+                    chatExternalId: chat.externalId,
+                    messageRole: MessageRole.Assistant,
+                    email: user.email,
+                    sources: citations,
+                    imageCitations: imageCitations,
+                    message: processMessage(answer, citationMap),
+                    thinking: "",
+                    modelId: defaultBestModel,
+                    cost: totalCost.toString(),
+                    tokensUsed: totalTokens,
+                  })
+                  assistantMessageId = msg.externalId
+                  dbInsertSpan.setAttribute("message_external_id", assistantMessageId)
+                  dbInsertSpan.end()
+                  
+                  const traceInsertSpan = runEndSpan.startSpan("insert_chat_trace")
+                  const traceJson = tracer.serializeToJson()
+                  await insertChatTrace({
+                    workspaceId: workspace.id,
+                    userId: user.id,
+                    chatId: chat.id,
+                    messageId: msg.id,
+                    chatExternalId: chat.externalId,
+                    email: user.email,
+                    messageExternalId: msg.externalId,
+                    traceJson,
+                  })
+                  traceInsertSpan.end()
+                  
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseMetadata,
+                    data: JSON.stringify({
+                      chatId: chat.externalId,
+                      messageId: assistantMessageId,
+                    }),
+                  })
+                  await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
+                } else {
+                  // Error outcome: stream error and do not insert assistant message
+                  const errorHandlingSpan = runEndSpan.startSpan("error_handling")
+                  const allMessages = await getChatMessagesWithAuth(
+                    db,
+                    chat?.externalId,
+                    email,
+                  )
+                  const lastMessage = allMessages[allMessages.length - 1]
+                  await stream.writeSSE({
+                    event: ChatSSEvents.ResponseMetadata,
+                    data: JSON.stringify({
+                      chatId: chat.externalId,
+                      messageId: lastMessage.externalId,
+                    }),
+                  })
+                  // Check the status before accessing error property
+                  const err = outcome?.status === 'error' ? outcome.error : undefined
+                  const errTag = err?._tag || "run_error"
+                  let errMsg = "Model did not return a response."
+                  if (err) {
+                    switch (err._tag) {
+                      case "ModelBehaviorError":
+                      case "ToolCallError":
+                      case "HandoffError":
+                        errMsg = err.detail
+                        break
+                      case "InputGuardrailTripwire":
+                      case "OutputGuardrailTripwire":
+                        errMsg = err.reason
+                        break
+                      case "DecodeError":
+                        errMsg = "Failed to decode model output"
+                        break
+                      case "AgentNotFound":
+                        errMsg = `Agent not found: ${err.agentName}`
+                        break
+                      case "MaxTurnsExceeded":
+                        // Execute fallback tool directly using messages from runState
+                        try {
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                              step: {
+                                type: AgentReasoningStepType.LogMessage,
+                                message: "Max iterations reached with incomplete synthesis. Activating follow-back search strategy...",
+                                status: "in_progress",
+                                stepSummary: "Activating fallback search",
+                              },
+                            }),
+                          })
+
+                          // Extract all context from runState.messages array
+                          const allMessages = runState.messages || []
+                          const agentScratchpad = allMessages
+                            .map((msg, index) => `${msg.role}: ${getTextContent(msg.content)}`)
+                            .join('\n')
+                          console.log("Agent scratchpad:", agentScratchpad)
+                          console.log('all messages:', allMessages)
+
+                          // Build tool log from any tool executions in the conversation
+                          const toolLog = allMessages
+                            .filter(msg => msg.role === 'tool' || (msg as any).tool_calls || (msg as any).tool_call_id)
+                            .map((msg, index) => `Tool Execution ${index + 1}: ${getTextContent(msg.content)}`)
+                            .join('\n')
+                          console.log("Tool log:", toolLog)
+                          // Prepare fallback tool parameters with context from runState.messages
+                          const fallbackParams = {
+                            originalQuery: message,
+                            agentScratchpad: agentScratchpad,
+                            toolLog: toolLog,
+                            gatheredFragments: gatheredFragments,
+                          }
+
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: `Executing fallback tool with context from ${allMessages.length} messages...`,
+                              step: {
+                                type: AgentReasoningStepType.ToolExecuting,
+                                toolName: "fall_back",
+                                status: "in_progress",
+                                stepSummary: "Executing fallback tool",
+                              },
+                            }),
+                          })
+
+                          // Execute fallback tool directly
+                          const fallbackResponse = await agentTools["fall_back"].execute(
+                            fallbackParams,
+                            streamSpan.startSpan("fallback_search_execution"),
+                            email,
+                            ctx,
+                            agentPromptForLLM,
+                            message,
+                          )
+
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: `Fallback tool execution completed`,
+                              step: {
+                                type: AgentReasoningStepType.ToolResult,
+                                toolName: "fall_back",
+                                status: "completed",
+                                resultSummary: fallbackResponse.result || "Fallback response generated",
+                                itemsFound: fallbackResponse.contexts?.length || 0,
+                                stepSummary: `Generated fallback response`,
+                              },
+                            }),
+                          })
+
+                          // Stream the fallback response if available
+                          if (fallbackResponse.fallbackReasoning || fallbackResponse.result) {
+                            const fallbackAnswer = fallbackResponse.fallbackReasoning || fallbackResponse.result || ""
+                            
+                            await stream.writeSSE({
+                              event: ChatSSEvents.ResponseUpdate,
+                              data: fallbackAnswer,
+                            })
+
+                            // Handle any contexts returned by fallback tool
+                            if (fallbackResponse.contexts && Array.isArray(fallbackResponse.contexts)) {
+                              fallbackResponse.contexts.forEach((context: any, index: number) => {
+                                citations.push(context)
+                                citationMap[citations.length] = citations.length - 1
+                              })
+                              
+                              if (citations.length > 0) {
+                                await stream.writeSSE({
+                                  event: ChatSSEvents.CitationsUpdate,
+                                  data: JSON.stringify({
+                                    contextChunks: citations,
+                                    citationMap,
+                                  }),
+                                })
+                              }
+                            }
+
+                            if (fallbackAnswer.trim()) {
+                              // Insert successful fallback message
+                              const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
+                              const totalTokens = tokenArr.reduce(
+                                (sum, t) => sum + t.inputTokens + t.outputTokens,
+                                0,
+                              )
+                              const msg = await insertMessage(db, {
+                                chatId: chat.id,
+                                userId: user.id,
+                                workspaceExternalId: workspace.externalId,
+                                chatExternalId: chat.externalId,
+                                messageRole: MessageRole.Assistant,
+                                email: user.email,
+                                sources: citations,
+                                imageCitations: imageCitations,
+                                message: processMessage(fallbackAnswer, citationMap),
+                                thinking: "",
+                                modelId: modelId || defaultBestModel,
+                                cost: totalCost.toString(),
+                                tokensUsed: totalTokens,
+                              })
+                              assistantMessageId = msg.externalId
+                              await stream.writeSSE({
+                                event: ChatSSEvents.ResponseMetadata,
+                                data: JSON.stringify({
+                                  chatId: chat.externalId,
+                                  messageId: assistantMessageId,
+                                }),
+                              })
+                              await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
+                              return // Successfully handled with fallback response
+                            }
+                          }
+                        } catch (fallbackError) {
+                          Logger.error(fallbackError, "Error during MaxTurnsExceeded fallback tool execution")
+                          await stream.writeSSE({
+                            event: ChatSSEvents.Reasoning,
+                            data: JSON.stringify({
+                              text: `Fallback search failed: ${getErrorMessage(fallbackError)}. Will generate best-effort answer.`,
+                              step: {
+                                type: AgentReasoningStepType.LogMessage,
+                                message: `Fallback search failed: ${getErrorMessage(fallbackError)}`,
+                                status: "error",
+                                stepSummary: "Fallback search failed",
+                              },
+                            }),
+                          })
+                          // Fall through to default error handling if fallback fails
+                        }
+                        
+                        // Default error handling if fallback fails or produces no response
+                        errMsg = `Max turns exceeded: ${err.turns}`
+                        break
+                      default:
+                        errMsg = errTag
+                    }
+                  }
+                  const errPayload = {
+                    error: errTag,
+                    message: errMsg,
+                  }
+                  errorHandlingSpan.setAttribute("error_tag", errTag)
+                  errorHandlingSpan.setAttribute("error_message", errMsg)
+                  errorHandlingSpan.end()
+                  
+                  await stream.writeSSE({
+                    event: ChatSSEvents.Error,
+                    data: JSON.stringify(errPayload),
+                  })
+                  await addErrMessageToMessage(lastMessage, JSON.stringify(errPayload))
+                  await stream.writeSSE({ event: ChatSSEvents.End, data: "" })
+                }
+                runEndSpan.end()
+                break
               }
             }
           }
+          
+          jafStreamingSpan.setAttribute("total_turns", currentTurn)
+          jafStreamingSpan.setAttribute("total_tool_calls", totalToolCalls)
+          jafStreamingSpan.setAttribute("final_answer_length", answer.length)
+          jafStreamingSpan.setAttribute("citations_count", citations.length)
+          jafStreamingSpan.setAttribute("image_citations_count", imageCitations.length)
+          jafStreamingSpan.end()
+          
+          jafProcessingSpan.end()
 
-          const continuationIterator = getToolContinuationIterator(
-            message,
-            ctx,
-            toolsPrompt,
-            planningContext ?? "",
-            gatheredFragments,
-            agentPromptForLLM,
-            messagesWithNoErrResponse,
-            fallbackReasoning,
-            attachmentFileIds,
-            email,
-          )
-          for await (const chunk of continuationIterator) {
-            if (stream.closed) {
-              loggerWithChild({ email: sub }).info(
-                "[MessageApi] Stream closed during conversation search loop. Breaking.",
-              )
-              wasStreamClosedPrematurely = true
-              break
-            }
-            if (chunk.text) {
-              // if (reasoning && chunk.reasoning) {
-              //   thinking += chunk.text
-              //   stream.writeSSE({
-              //     event: ChatSSEvents.Reasoning,
-              //     data: chunk.text,
-              //   })
-              //   // reasoningSpan.end()
-              // }
-              // if (!chunk.reasoning) {
-              //   answer += chunk.text
-              //   stream.writeSSE({
-              //     event: ChatSSEvents.ResponseUpdate,
-              //     data: chunk.text,
-              //   })
-              // }
-              answer += chunk.text
-              stream.writeSSE({
-                event: ChatSSEvents.ResponseUpdate,
-                data: chunk.text,
-              })
-            }
-            if (chunk.citation) {
-              const { index, item } = chunk.citation
-              citations.push(item)
-              citationMap[index] = citations.length - 1
-              loggerWithChild({ email: sub }).info(
-                `Found citations and sending it, current count: ${citations.length}`,
-              )
-              stream.writeSSE({
-                event: ChatSSEvents.CitationsUpdate,
-                data: JSON.stringify({
-                  contextChunks: citations,
-                  citationMap,
-                }),
-              })
-              citationValues[index] = item
-            }
-            if (chunk.imageCitation) {
-              loggerWithChild({ email: email }).info(
-                `Found image citation, sending it`,
-                { citationKey: chunk.imageCitation.citationKey },
-              )
-              imageCitations.push(chunk.imageCitation)
-              stream.writeSSE({
-                event: ChatSSEvents.ImageCitationUpdate,
-                data: JSON.stringify(chunk.imageCitation),
-              })
-            }
-
-            if (chunk.cost) {
-              costArr.push(chunk.cost)
-            }
-            if (chunk.metadata?.usage) {
-              tokenArr.push({
-                inputTokens: chunk.metadata.usage.inputTokens,
-                outputTokens: chunk.metadata.usage.outputTokens,
-              })
-            }
-          }
-
-          if (answer || wasStreamClosedPrematurely) {
-            // Determine if a message (even partial) should be saved
-            // TODO: incase user loses permission
-            // to one of the citations what do we do?
-            // somehow hide that citation and change
-            // the answer to reflect that
-
-            // Save structured reasoning steps as NDJSON (newline-delimited JSON) format for frontend parsing
-            const reasoningLog = structuredReasoningSteps
-              .map((step) => {
-                try {
-                  return JSON.stringify({
-                    text: convertReasoningStepToText(step),
-                    step: step,
-                    quickSummary: step.stepSummary,
-                    aiSummary: step.aiGeneratedSummary,
-                    ...(step.isIterationSummary
-                      ? { isIterationSummary: true }
-                      : {}),
-                  })
-                } catch (error) {
-                  Logger.error("Failed to stringify reasoning step", {
-                    error,
-                    stepType: step.type,
-                  })
-                  return JSON.stringify({
-                    text: "Error serializing step",
-                    step: { type: step.type, error: "Serialization failed" },
-                  })
-                }
-              })
-              .join("\n")
-
-            // Calculate total cost and tokens
-            const totalCost = costArr.reduce((sum, cost) => sum + cost, 0)
-            const totalTokens = tokenArr.reduce(
-              (sum, tokens) => sum + tokens.inputTokens + tokens.outputTokens,
-              0,
-            )
-
-            const msg = await insertMessage(db, {
-              chatId: chat.id,
-              userId: user.id,
-              workspaceExternalId: workspace.externalId,
-              chatExternalId: chat.externalId,
-              messageRole: MessageRole.Assistant,
-              email: user.email,
-              sources: citations,
-              imageCitations: imageCitations,
-              message: processMessage(answer, citationMap),
-              thinking: reasoningLog,
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
-              cost: totalCost.toString(),
-              tokensUsed: totalTokens,
-            })
-            assistantMessageId = msg.externalId
-
-            const traceJson = tracer.serializeToJson()
-            await insertChatTrace({
-              workspaceId: workspace.id,
-              userId: user.id,
-              chatId: chat.id,
-              messageId: msg.id,
-              chatExternalId: chat.externalId,
-              email: user.email,
-              messageExternalId: msg.externalId,
-              traceJson,
-            })
-            loggerWithChild({ email: sub }).info(
-              `[MessageApi] Inserted trace for message ${msg.externalId} (premature: ${wasStreamClosedPrematurely}).`,
-            )
-
-            await stream.writeSSE({
-              event: ChatSSEvents.ResponseMetadata,
-              data: JSON.stringify({
-                chatId: chat.externalId,
-                messageId: assistantMessageId,
-              }),
-            })
-          } else {
-            const errorSpan = streamSpan.startSpan("handle_no_answer")
-            const allMessages = await getChatMessagesWithAuth(
-              db,
-              chat?.externalId,
-              email,
-            )
-            const lastMessage = allMessages[allMessages.length - 1]
-
-            await stream.writeSSE({
-              event: ChatSSEvents.ResponseMetadata,
-              data: JSON.stringify({
-                chatId: chat.externalId,
-                messageId: lastMessage.externalId,
-              }),
-            })
-            await stream.writeSSE({
-              event: ChatSSEvents.Error,
-              data: "Oops, something went wrong. Please try rephrasing your question or ask something else.",
-            })
-            await addErrMessageToMessage(
-              lastMessage,
-              "Oops, something went wrong. Please try rephrasing your question or ask something else.",
-            )
-
-            const traceJson = tracer.serializeToJson()
-            await insertChatTrace({
-              workspaceId: workspace.id,
-              userId: user.id,
-              chatId: chat.id,
-              messageId: lastMessage.id,
-              chatExternalId: chat.externalId,
-              email: user.email,
-              messageExternalId: lastMessage.externalId,
-              traceJson,
-            })
-            errorSpan.end()
-          }
-
-          const endSpan = streamSpan.startSpan("send_end_event")
-          await stream.writeSSE({
-            data: "",
-            event: ChatSSEvents.End,
-          })
-          endSpan.end()
+          // Early return to skip legacy manual loop
           streamSpan.end()
           rootSpan.end()
-        } catch (error) {
-          const streamErrorSpan = streamSpan.startSpan("handle_stream_error")
-          streamErrorSpan.addEvent("error", {
-            message: getErrorMessage(error),
-            stack: (error as Error).stack || "",
-          })
-          const errFomMap = handleError(error)
-          const allMessages = await getChatMessagesWithAuth(
-            db,
-            chat?.externalId,
-            email,
-          )
-          const lastMessage = allMessages[allMessages.length - 1]
-          await stream.writeSSE({
-            event: ChatSSEvents.ResponseMetadata,
-            data: JSON.stringify({
-              chatId: chat.externalId,
-              messageId: lastMessage.externalId,
-            }),
-          })
-          await stream.writeSSE({
-            event: ChatSSEvents.Error,
-            data: errFomMap,
-          })
-
-          // Add the error message to last user message
-          await addErrMessageToMessage(lastMessage, errFomMap)
-
-          await stream.writeSSE({
-            data: "",
-            event: ChatSSEvents.End,
-          })
-          loggerWithChild({ email: sub }).error(
-            error,
-            `Streaming Error: ${(error as Error).message} ${
-              (error as Error).stack
-            }`,
-          )
-          streamErrorSpan.end()
-          streamSpan.end()
-          rootSpan.end()
+          return
         } finally {
           // Cleanup MCP clients to prevent memory leaks
           for (const client of mcpClients) {
@@ -2506,148 +2471,32 @@ export const MessageWithToolsApi = async (c: Context) => {
             }
           }
 
-          // Ensure stream is removed from the map on completion or error
+          // Remove stream from active streams map
           if (streamKey && activeStreams.has(streamKey)) {
             activeStreams.delete(streamKey)
             loggerWithChild({ email: sub }).info(
               `Removed stream ${streamKey} from active streams map.`,
             )
           }
-        }
-      },
-      async (err, stream) => {
-        const streamErrorSpan = rootSpan.startSpan(
-          "handle_stream_callback_error",
-        )
-        streamErrorSpan.addEvent("error", {
-          message: getErrorMessage(err),
-          stack: (err as Error).stack || "",
-        })
-        const errFromMap = handleError(err)
-        // Use the stored assistant message ID if available when handling callback error
-        const allMessages = await getChatMessagesWithAuth(
-          db,
-          chat?.externalId,
-          email,
-        )
-        const lastMessage = allMessages[allMessages.length - 1]
-        const errorMsgId = assistantMessageId || lastMessage.externalId
-        const errorChatId = chat?.externalId || "unknown"
 
-        if (errorChatId !== "unknown" && errorMsgId !== "unknown") {
-          await stream.writeSSE({
-            event: ChatSSEvents.ResponseMetadata,
-            data: JSON.stringify({
-              chatId: errorChatId,
-              messageId: errorMsgId,
-            }),
-          })
-          // Try to get the last message again for error reporting
-          const allMessages = await getChatMessagesWithAuth(
-            db,
-            errorChatId,
-            email,
-          )
-          if (allMessages.length > 0) {
-            const lastMessage = allMessages[allMessages.length - 1]
-            await addErrMessageToMessage(lastMessage, errFromMap)
+          // Close SSE stream (defensive)
+          if (stream) {
+            await stream.close()
           }
         }
-        await stream.writeSSE({
-          event: ChatSSEvents.Error,
-          data: errFromMap,
-        })
-        await addErrMessageToMessage(lastMessage, errFromMap)
-
-        await stream.writeSSE({
-          data: "",
-          event: ChatSSEvents.End,
-        })
-        loggerWithChild({ email: sub }).error(
-          err,
-          `Streaming Error: ${err.message} ${(err as Error).stack}`,
-        )
-
-        // Ensure stream is removed from the map in the error callback too
-        if (streamKey && activeStreams.has(streamKey)) {
-          activeStreams.delete(streamKey)
-          loggerWithChild({ email: sub }).info(
-            `Removed stream ${streamKey} from active streams map in error callback.`,
-          )
-        }
-        streamErrorSpan.end()
-        rootSpan.end()
-      },
-    )
+    })
   } catch (error) {
     loggerWithChild({ email: email }).error(
       error,
-      `MessageApi Error occurred.. ${error}`,
+      "MessageWithToolsApi failed before stream start",
     )
-    const errorSpan = rootSpan.startSpan("handle_top_level_error")
-    errorSpan.addEvent("error", {
+    // If streaming hasn't started yet, surface a proper HTTP error to the client
+    throw new HTTPException(500, {
       message: getErrorMessage(error),
-      stack: (error as Error).stack || "",
     })
-    const errMsg = getErrorMessage(error)
-    // TODO: add more errors like bedrock, this is only openai
-    const errFromMap = handleError(error)
-    // @ts-ignore
-    if (chat?.externalId) {
-      const allMessages = await getChatMessagesWithAuth(
-        db,
-        chat?.externalId,
-        email,
-      )
-      // Add the error message to last user message
-      if (allMessages.length > 0) {
-        const lastMessage = allMessages[allMessages.length - 1]
-        // Use the stored assistant message ID if available for metadata
-        const errorMsgId = assistantMessageId || lastMessage.externalId
-        await stream.writeSSE({
-          event: ChatSSEvents.ResponseMetadata,
-          data: JSON.stringify({
-            chatId: chat.externalId,
-            messageId: errorMsgId,
-          }),
-        })
-        await addErrMessageToMessage(lastMessage, errFromMap)
-      }
-    }
-    if (error instanceof APIError) {
-      // quota error
-      if (error.status === 429) {
-        loggerWithChild({ email: email }).error(
-          error,
-          "You exceeded your current quota",
-        )
-        if (stream) {
-          await stream.writeSSE({
-            event: ChatSSEvents.Error,
-            data: errFromMap,
-          })
-        }
-      }
-    } else {
-      loggerWithChild({ email: email }).error(
-        error,
-        `Message Error: ${errMsg} ${(error as Error).stack}`,
-      )
-      throw new HTTPException(500, {
-        message: "Could not create message or Chat",
-      })
-    }
-    // Ensure stream is removed from the map in the top-level catch block
-    if (streamKey && activeStreams.has(streamKey)) {
-      activeStreams.delete(streamKey)
-      loggerWithChild({ email: email }).info(
-        `Removed stream ${streamKey} from active streams map in top-level catch.`,
-      )
-    }
-    errorSpan.end()
-    rootSpan.end()
   }
 }
+
 async function* nonRagIterator(
   message: string,
   userCtx: string,
@@ -2656,9 +2505,9 @@ async function* nonRagIterator(
   agentPrompt?: string,
   messages: Message[] = [],
   imageFileNames: string[] = [],
-  attachmentFileIds?: string[],
   email?: string,
   isReasoning = true,
+  modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2670,7 +2519,7 @@ async function* nonRagIterator(
     userCtx,
     context,
     {
-      modelId: defaultBestModel,
+      modelId: (modelId as Models) || defaultBestModel,
       stream: true,
       json: false,
       reasoning: isReasoning,
@@ -2758,6 +2607,7 @@ async function* nonRagIterator(
   }
 }
 
+
 export const AgentMessageApiRagOff = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
@@ -2792,18 +2642,49 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.fileId,
-    )
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       agentId,
       streamOff,
+      agentPromptPayload
     }: MessageReqType = body
+    
+    // Parse the model configuration JSON
+    let modelId: string | null = null
+    let isReasoningEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const modelConfig = JSON.parse(selectedModelConfig)
+        modelId = modelConfig.model || null
+        
+        // Check capabilities - handle both array and object formats
+        if (modelConfig.capabilities) {
+          if (Array.isArray(modelConfig.capabilities)) {
+            isReasoningEnabled = modelConfig.capabilities.includes('reasoning')
+          } else if (typeof modelConfig.capabilities === 'object') {
+            isReasoningEnabled = modelConfig.capabilities.reasoning === true
+          }
+        }
+      } catch (error) {
+        console.error('Failed to parse selectedModelConfig:', error)
+      }
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
+    if (modelId) {
+      if (!actualModelId && (modelId in Models)) {
+        actualModelId = modelId as Models
+      } else if (!actualModelId) {
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+      }
+    } else {
+      actualModelId = defaultBestModel
+    }
+    
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
       workspaceId, // This workspaceId is the externalId from JWT
@@ -2812,7 +2693,13 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const { user, workspace } = userAndWorkspace // workspace.id is the numeric ID
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
-    if (agentId && isCuid(agentId)) {
+    
+    // Handle test current form config case
+    if (agentPromptPayload !== undefined) {
+      const mockAgentResult = createMockAgentFromFormData(agentPromptPayload, user, workspace, email);
+      agentForDb = mockAgentResult.agentForDb;
+      agentPromptForLLM = mockAgentResult.agentPromptForLLM;
+    } else if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -2857,21 +2744,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      let attachmentStorageError: Error | null = null
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -2895,27 +2767,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
-
-          if (attachmentMetadata && attachmentMetadata.length > 0) {
-            try {
-              await storeAttachmentMetadata(
-                tx,
-                insertedMsg.externalId,
-                attachmentMetadata,
-                email,
-              )
-            } catch (error) {
-              attachmentStorageError = error as Error
-              loggerWithChild({ email: email }).error(
-                error,
-                `Failed to store attachment metadata for user message ${insertedMsg.externalId}`,
-              )
-            }
-          }
-
           return [chat, insertedMsg]
         },
       )
@@ -2947,7 +2801,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (actualModelId as Models) || defaultBestModel,
             fileIds,
           })
           return [existingChat, allMessages, insertedMsg]
@@ -3057,13 +2911,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               // context = initialContext;
             }
           }
-          if (attachmentFileIds?.length) {
-            finalImageFileNames.push(
-              ...attachmentFileIds.map(
-                (fileid, index) => `${index}_${fileid}_${0}`,
-              ),
-            )
-          }
 
           const ragOffIterator = nonRagIterator(
             message,
@@ -3073,9 +2920,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             agentPromptForLLM,
             messagesWithNoErrResponse,
             finalImageFileNames,
-            attachmentFileIds,
             email,
             isReasoningEnabled,
+            actualModelId || undefined,
           )
           let answer = ""
           let citations: any[] = []
@@ -3167,7 +3014,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3199,7 +3046,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(answer, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3226,7 +3073,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
               imageCitations: imageCitations,
               message: processMessage(errorMessage, citationMap),
               thinking: thinking,
-              modelId: defaultBestModel,
+              modelId: (actualModelId as Models) || defaultBestModel,
               cost: totalCost.toString(),
               tokensUsed: totalTokens,
             })
@@ -3333,13 +3180,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           )
           finalImageFileNames = imageFileNames || []
         }
-        if (attachmentFileIds?.length) {
-          finalImageFileNames.push(
-            ...attachmentFileIds.map(
-              (fileid, index) => `${index}_${fileid}_${0}`,
-            ),
-          )
-        }
 
         // Helper: persist & return JSON once ----------------------------------------
         const finalizeAndRespond = async (params: {
@@ -3369,7 +3209,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             imageCitations: params.imageCitations,
             message: processed,
             thinking: params.thinking, // ALWAYS include collected thinking
-            modelId: defaultBestModel,
+            modelId: (actualModelId as Models) || defaultBestModel,
             cost: totalCost.toString(),
             tokensUsed: totalTokens,
           })
@@ -3397,9 +3237,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           agentPromptForLLM,
           messagesWithNoErrResponse,
           finalImageFileNames,
-          attachmentFileIds,
           email,
           isReasoningEnabled,
+          actualModelId || undefined,
         )
 
         const {
@@ -3455,7 +3295,24 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   }
 }
 
-export const AgentMessageApi = async (c: Context) => {
+/**
+   * AgentMessageApi - Legacy agent chat endpoint for simple agent conversations
+   * 
+   * Used when: !isAgentic && !enableWebSearch && !deepResearchEnabled && agentDetails
+   * 
+   * Features:
+   * - Basic agent conversations with custom prompts
+   * - RAG with document retrieval and citation tracking
+   * - Query classification (conversation vs search)
+   * - Streaming/non-streaming modes
+   * - Context from file references and attachments
+   * 
+   * Flow: Auth → Agent validation → Context extraction → Query classification → RAG processing → Response
+   * 
+   * @param c - Hono Context with JWT payload
+   * @returns StreamSSE with chat events or JSON response
+   */
+  export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
   const tracer: Tracer = getTracer("chat")
@@ -3493,19 +3350,95 @@ export const AgentMessageApi = async (c: Context) => {
     rootSpan.setAttribute("workspaceId", workspaceId)
 
     const attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.fileId,
-    )
+    const imageAttachmentFileIds = attachmentMetadata.filter(m => m.isImage).map(m => m.fileId)
+    const nonImageAttachmentFileIds = attachmentMetadata.filter(m => !m.isImage).map(m => m.fileId)
     let attachmentStorageError: Error | null = null
     let {
       message,
       chatId,
-      modelId,
-      isReasoningEnabled,
+      selectedModelConfig,
       agentId,
+      agentPromptPayload,
       streamOff,
       path,
     }: MessageReqType = body
+    
+    // Parse selectedModelConfig JSON to extract individual values
+    let modelId: string | undefined = undefined
+    let isReasoningEnabled = false
+    let enableWebSearch = false
+    let isDeepResearchEnabled = false
+    
+    if (selectedModelConfig) {
+      try {
+        const config = JSON.parse(selectedModelConfig)
+        modelId = config.model
+        
+        // Handle new direct boolean format
+        isReasoningEnabled = config.reasoning === true
+        enableWebSearch = config.websearch === true
+        isDeepResearchEnabled = config.deepResearch === true
+        
+        // For deep research, always use Claude Sonnet 4 regardless of UI selection
+        if (isDeepResearchEnabled) {
+          modelId = "Claude Sonnet 4"
+          loggerWithChild({ email: email }).info(
+            `[AgentMessageApi] Deep research enabled - forcing model to Claude Sonnet 4`
+          )
+        }
+        
+        // Check capabilities - handle both array and object formats for backward compatibility
+        if (config.capabilities && !isReasoningEnabled && !enableWebSearch && !isDeepResearchEnabled) {
+          if (Array.isArray(config.capabilities)) {
+            // Array format: ["reasoning", "websearch"]
+            isReasoningEnabled = config.capabilities.includes('reasoning')
+            enableWebSearch = config.capabilities.includes('websearch')
+            isDeepResearchEnabled = config.capabilities.includes('deepResearch')
+          } else if (typeof config.capabilities === 'object') {
+            // Object format: { reasoning: true, websearch: false }
+            isReasoningEnabled = config.capabilities.reasoning === true
+            enableWebSearch = config.capabilities.websearch === true
+            isDeepResearchEnabled = config.capabilities.deepResearch === true
+          }
+          
+          // For deep research from old format, also force Claude Sonnet 4
+          if (isDeepResearchEnabled) {
+            modelId = "Claude Sonnet 4"
+          }
+        }
+        
+        loggerWithChild({ email: email }).info(
+          `[AgentMessageApi] Parsed model config: model="${modelId}", reasoning=${isReasoningEnabled}, websearch=${enableWebSearch}, deepResearch=${isDeepResearchEnabled}`
+        )
+      } catch (e) {
+        loggerWithChild({ email }).warn(
+          `[AgentMessageApi] Failed to parse selectedModelConfig JSON: ${e}. Using defaults.`
+        )
+        modelId = defaultBestModel as string // fallback
+      }
+    } else {
+      // Fallback if no model config provided
+      modelId = defaultBestModel as string
+      loggerWithChild({ email: email }).info("[AgentMessageApi] No model config provided, using default")
+    }
+    
+    // Convert friendly model label to actual model value
+    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    if (modelId) {
+      const convertedModelId = getModelValueFromLabel(modelId)
+      if (convertedModelId) {
+        actualModelId = convertedModelId as string // Can be Models enum or string
+        loggerWithChild({ email: email }).info(
+          `[AgentMessageApi] Converted model label "${modelId}" to value "${actualModelId}"`
+        )
+      } else {
+        loggerWithChild({ email: email }).warn(
+          `[AgentMessageApi] Could not convert model label "${modelId}" to value, will use as-is`
+        )
+        actualModelId = modelId // fallback to using the label as-is
+      }
+    }
+    
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -3516,7 +3449,13 @@ export const AgentMessageApi = async (c: Context) => {
 
     let agentPromptForLLM: string | undefined = undefined
     let agentForDb: SelectAgent | null = null
-    if (agentId && isCuid(agentId)) {
+    
+    // Handle test current form config case
+    if (agentPromptPayload !== undefined) {
+      const mockAgentResult = createMockAgentFromFormData(agentPromptPayload, user, workspace, email);
+      agentForDb = mockAgentResult.agentForDb;
+      agentPromptForLLM = mockAgentResult.agentPromptForLLM;
+    } else if (agentId && isCuid(agentId)) {
       // Use the numeric workspace.id for the database query with permission check
       agentForDb = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -3530,7 +3469,7 @@ export const AgentMessageApi = async (c: Context) => {
         })
       }
       agentPromptForLLM = JSON.stringify(agentForDb)
-      if (config.ragOffFeature && agentForDb.isRagOn === false) {
+      if (config.ragOffFeature && agentForDb.isRagOn === false && !(attachmentMetadata && attachmentMetadata.length > 0)) {
         return AgentMessageApiRagOff(c)
       }
     }
@@ -3548,15 +3487,19 @@ export const AgentMessageApi = async (c: Context) => {
     if (path) {
       ids = await getRecordBypath(path, db)
     }
-    const isMsgWithContext = isMessageWithContext(message) || (path && ids)
+    const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
       isMsgWithContext || (path && ids)
-        ? await extractFileIdsFromMessage(message, email, ids)
-        : {
-            totalValidFileIdsFromLinkCount: 0,
-            fileIds: [],
-          }
-    const fileIds = extractedInfo?.fileIds
+      ? await extractFileIdsFromMessage(message, email, ids)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+        }
+    let fileIds = extractedInfo?.fileIds
+    if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
+      fileIds = [...fileIds, ...nonImageAttachmentFileIds]
+    }
+
     const agentDocs = agentForDb?.docIds || []
 
     //add docIds of agents here itself
@@ -3573,20 +3516,6 @@ export const AgentMessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3610,7 +3539,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (modelId as Models) || defaultBestModel,
             fileIds: fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -3661,7 +3590,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             sources: [],
             message,
-            modelId,
+            modelId: (modelId as Models) || defaultBestModel,
             fileIds,
           })
           // Store attachment metadata for user message if attachments exist
@@ -3746,8 +3675,8 @@ export const AgentMessageApi = async (c: Context) => {
             }
 
             if (
-              (isMsgWithContext && fileIds && fileIds?.length > 0) ||
-              (attachmentFileIds && attachmentFileIds?.length > 0)
+              (fileIds && fileIds?.length > 0) ||
+              (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
             ) {
               Logger.info(
                 "User has selected some context with query, answering only based on that given context",
@@ -3779,7 +3708,7 @@ export const AgentMessageApi = async (c: Context) => {
                 userRequestsReasoning,
                 understandSpan,
                 [],
-                attachmentFileIds,
+                imageAttachmentFileIds,
                 agentPromptForLLM,
               )
               stream.writeSSE({
@@ -4054,27 +3983,48 @@ export const AgentMessageApi = async (c: Context) => {
                   }
                 }
               }
-
-              const searchOrAnswerIterator =
-                generateSearchQueryOrAnswerFromConversation(
-                  message,
-                  ctx,
-                  {
-                    modelId:
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .modelId,
-                    stream: true,
-                    json: true,
-                    reasoning:
-                      userRequestsReasoning &&
-                      ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
-                        .reasoning,
-                    messages: limitedMessages,
-                    agentPrompt: agentPromptForLLM,
-                  },
-                  undefined,
-                  previousClassification,
+              const agentWithNoIntegrations = checkAgentWithNoIntegrations(agentForDb)
+              let searchOrAnswerIterator
+              
+              if (agentWithNoIntegrations) {
+                loggerWithChild({ email: email }).info(
+                  "Using agent with no integrations for the question",
                 )
+
+                searchOrAnswerIterator = agentWithNoIntegrationsQuestion(message, ctx, {
+                  modelId:
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
+                  stream: true,
+                  json: false,
+                  agentPrompt: agentPromptForLLM,
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
+                  messages: limitedMessages,
+                  agentWithNoIntegrations: true,
+                })
+              } else {
+                searchOrAnswerIterator =
+                  generateSearchQueryOrAnswerFromConversation(
+                    message,
+                    ctx,
+                    {
+                      modelId:
+                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                          .modelId,
+                      stream: true,
+                      json: true,
+                      reasoning:
+                        userRequestsReasoning &&
+                        ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                          .reasoning,
+                      messages: limitedMessages,
+                      agentPrompt: agentPromptForLLM,
+                    },
+                    undefined,
+                    previousClassification,
+                  )
+              }
 
               // TODO: for now if the answer is from the conversation itself we don't
               // add any citations for it, we can refer to the original message for citations
@@ -4113,91 +4063,133 @@ export const AgentMessageApi = async (c: Context) => {
               const conversationSpan = streamSpan.startSpan(
                 "conversation_search",
               )
-              for await (const chunk of searchOrAnswerIterator) {
-                if (stream.closed) {
-                  Logger.info(
-                    "[AgentMessageApi] Stream closed during conversation search loop. Breaking.",
-                  )
-                  wasStreamClosedPrematurely = true
-                  break
+
+              if (agentWithNoIntegrations) {
+                loggerWithChild({ email: email }).info(
+                  "Processing agent with no integrations response",
+                )
+
+                stream.writeSSE({
+                  event: ChatSSEvents.Start,
+                  data: "",
+                })
+
+                for await (const chunk of searchOrAnswerIterator) {
+                  if (stream.closed) {
+                    Logger.info(
+                      "[AgentMessageApi] Stream closed during agent no integrations loop. Breaking.",
+                    )
+                    wasStreamClosedPrematurely = true
+                    break
+                  }
+                  
+                  if (chunk.text) {
+                    answer += chunk.text
+                    stream.writeSSE({
+                      event: ChatSSEvents.ResponseUpdate,
+                      data: chunk.text,
+                    })
+                  }
+
+                  if (chunk.cost) {
+                    costArr.push(chunk.cost)
+                  }
+                  if (chunk.metadata?.usage) {
+                    tokenArr.push({
+                      inputTokens: chunk.metadata.usage.inputTokens || 0,
+                      outputTokens: chunk.metadata.usage.outputTokens || 0,
+                    })
+                  }
                 }
-                if (chunk.text) {
-                  if (reasoning) {
-                    if (thinking && !chunk.text.includes(EndThinkingToken)) {
-                      thinking += chunk.text
-                      stream.writeSSE({
-                        event: ChatSSEvents.Reasoning,
-                        data: chunk.text,
-                      })
-                    } else {
-                      // first time
-                      if (!chunk.text.includes(StartThinkingToken)) {
-                        let token = chunk.text
-                        if (chunk.text.includes(EndThinkingToken)) {
-                          token = chunk.text.split(EndThinkingToken)[0]
-                          thinking += token
-                        } else {
-                          thinking += token
-                        }
+
+                parsed.answer = answer
+              } else {
+                for await (const chunk of searchOrAnswerIterator) {
+                  if (stream.closed) {
+                    Logger.info(
+                      "[AgentMessageApi] Stream closed during conversation search loop. Breaking.",
+                    )
+                    wasStreamClosedPrematurely = true
+                    break
+                  }
+                  if (chunk.text) {
+                    if (reasoning) {
+                      if (thinking && !chunk.text.includes(EndThinkingToken)) {
+                        thinking += chunk.text
                         stream.writeSSE({
                           event: ChatSSEvents.Reasoning,
-                          data: token,
+                          data: chunk.text,
                         })
-                      }
-                    }
-                  }
-                  if (reasoning && chunk.text.includes(EndThinkingToken)) {
-                    reasoning = false
-                    chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-                  }
-                  if (!reasoning) {
-                    buffer += chunk.text
-                    try {
-                      parsed = jsonParseLLMOutput(buffer) || {}
-                      if (parsed.answer && currentAnswer !== parsed.answer) {
-                        if (currentAnswer === "") {
-                          Logger.info(
-                            "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
-                          )
+                      } else {
+                        // first time
+                        if (!chunk.text.includes(StartThinkingToken)) {
+                          let token = chunk.text
+                          if (chunk.text.includes(EndThinkingToken)) {
+                            token = chunk.text.split(EndThinkingToken)[0]
+                            thinking += token
+                          } else {
+                            thinking += token
+                          }
                           stream.writeSSE({
-                            event: ChatSSEvents.Start,
-                            data: "",
-                          })
-                          // First valid answer - send the whole thing
-                          stream.writeSSE({
-                            event: ChatSSEvents.ResponseUpdate,
-                            data: parsed.answer,
-                          })
-                        } else {
-                          // Subsequent chunks - send only the new part
-                          const newText = parsed.answer.slice(
-                            currentAnswer.length,
-                          )
-                          stream.writeSSE({
-                            event: ChatSSEvents.ResponseUpdate,
-                            data: newText,
+                            event: ChatSSEvents.Reasoning,
+                            data: token,
                           })
                         }
-                        currentAnswer = parsed.answer
                       }
-                    } catch (err) {
-                      const errMessage = (err as Error).message
-                      Logger.error(
-                        err,
-                        `Error while parsing LLM output ${errMessage}`,
-                      )
-                      continue
+                    }
+                    if (reasoning && chunk.text.includes(EndThinkingToken)) {
+                      reasoning = false
+                      chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
+                    }
+                    if (!reasoning) {
+                      buffer += chunk.text
+                      try {
+                        parsed = jsonParseLLMOutput(buffer) || {}
+                        if (parsed.answer && currentAnswer !== parsed.answer) {
+                          if (currentAnswer === "") {
+                            Logger.info(
+                              "We were able to find the answer/respond to users query in the conversation itself so not applying RAG",
+                            )
+                            stream.writeSSE({
+                              event: ChatSSEvents.Start,
+                              data: "",
+                            })
+                            // First valid answer - send the whole thing
+                            stream.writeSSE({
+                              event: ChatSSEvents.ResponseUpdate,
+                              data: parsed.answer,
+                            })
+                          } else {
+                            // Subsequent chunks - send only the new part
+                            const newText = parsed.answer.slice(
+                              currentAnswer.length,
+                            )
+                            stream.writeSSE({
+                              event: ChatSSEvents.ResponseUpdate,
+                              data: newText,
+                            })
+                          }
+                          currentAnswer = parsed.answer
+                        }
+                      } catch (err) {
+                        const errMessage = (err as Error).message
+                        Logger.error(
+                          err,
+                          `Error while parsing LLM output ${errMessage}`,
+                        )
+                        continue
+                      }
                     }
                   }
-                }
-                if (chunk.cost) {
-                  costArr.push(chunk.cost)
-                }
-                if (chunk.metadata?.usage) {
-                  tokenArr.push({
-                    inputTokens: chunk.metadata.usage.inputTokens,
-                    outputTokens: chunk.metadata.usage.outputTokens,
-                  })
+                  if (chunk.cost) {
+                    costArr.push(chunk.cost)
+                  }
+                  if (chunk.metadata?.usage) {
+                    tokenArr.push({
+                      inputTokens: chunk.metadata.usage.inputTokens,
+                      outputTokens: chunk.metadata.usage.outputTokens,
+                    })
+                  }
                 }
               }
 
@@ -4652,7 +4644,7 @@ export const AgentMessageApi = async (c: Context) => {
             imageCitations: params.imageCitations,
             message: processed,
             thinking: params.thinking,
-            modelId:
+            modelId: (actualModelId as Models) || 
               ragPipelineConfig[RagPipelineStages.AnswerOrRewrite].modelId,
             cost: totalCost.toString(),
             tokensUsed: totalTokens,
@@ -4686,8 +4678,8 @@ export const AgentMessageApi = async (c: Context) => {
 
         // Path A: user provided explicit context (fileIds / attachments)
         if (
-          (isMsgWithContext && fileIds && fileIds.length > 0) ||
-          (attachmentFileIds && attachmentFileIds.length > 0)
+          (fileIds && fileIds.length > 0) ||
+          (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
         ) {
           const ragSpan = streamSpan.startSpan("rag_processing")
           const understandSpan = ragSpan.startSpan("understand_message")
@@ -4701,7 +4693,7 @@ export const AgentMessageApi = async (c: Context) => {
             userRequestsReasoning,
             understandSpan,
             [],
-            attachmentFileIds,
+            imageAttachmentFileIds,
             agentPromptForLLM,
           )
 
@@ -4751,156 +4743,6 @@ export const AgentMessageApi = async (c: Context) => {
           }
         }
 
-        // Path B: try "answer from conversation OR rewrite then RAG"
-        const searchOrAnswerIterator =
-          generateSearchQueryOrAnswerFromConversation(
-            message,
-            ctx,
-            {
-              modelId:
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].modelId,
-              stream: true,
-              json: true,
-              reasoning:
-                userRequestsReasoning &&
-                ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-              messages: limitedMessages,
-              agentPrompt: agentPromptForLLM,
-            },
-            undefined,
-            previousClassification,
-          )
-
-        // Buffer the JSON-ish control stream
-        let buffer = ""
-        let queryFilters = {
-          apps: [],
-          entities: [],
-          startTime: "",
-          endTime: "",
-          count: 0,
-          sortDirection: "",
-          intent: {},
-          offset: 0,
-        }
-        let parsed = {
-          answer: "",
-          queryRewrite: "",
-          temporalDirection: null,
-          filter_query: "",
-          type: "",
-          intent: {},
-          filters: queryFilters,
-        }
-        let costArrA: number[] = []
-        let tokenArrA: { inputTokens: number; outputTokens: number }[] = []
-
-        for await (const chunk of searchOrAnswerIterator) {
-          if (chunk.text) {
-            buffer += chunk.text
-            try {
-              parsed = jsonParseLLMOutput(buffer) || parsed
-            } catch {
-              // keep buffering until valid
-            }
-          }
-          if (chunk.cost) costArrA.push(chunk.cost)
-          if (chunk.metadata?.usage) {
-            tokenArrA.push({
-              inputTokens: chunk.metadata.usage.inputTokens,
-              outputTokens: chunk.metadata.usage.outputTokens,
-            })
-          }
-        }
-
-        if (parsed.answer) {
-          // Found direct answer from conversation; persist/return
-          return await finalizeAndRespond({
-            answer: parsed.answer,
-            thinking: "",
-            citations: [],
-            imageCitations: [],
-            citationMap: {},
-            costArr: costArrA,
-            tokenArr: tokenArrA,
-          })
-        }
-
-        // No direct answer -> do full RAG
-        const classification: TemporalClassifier & QueryRouterResponse = {
-          direction: parsed.temporalDirection,
-          type: parsed.type as QueryType,
-          filterQuery: parsed.filter_query,
-          filters: {
-            ...(parsed?.filters ?? {}),
-            apps: parsed.filters?.apps || [],
-            entities: (parsed.filters?.entities as any) || [],
-            intent: parsed.intent || {},
-          },
-        }
-
-        if (parsed.queryRewrite) {
-          message = parsed.queryRewrite
-        }
-
-        const ragSpan = streamSpan.startSpan("rag_processing")
-        const understandSpan = ragSpan.startSpan("understand_message")
-        const iterator = UnderstandMessageAndAnswer(
-          email,
-          ctx,
-          message,
-          classification,
-          limitedMessages,
-          0.5,
-          userRequestsReasoning,
-          understandSpan,
-          agentPromptForLLM,
-        )
-
-        const {
-          answer,
-          thinking,
-          citations,
-          imageCitations,
-          citationMap,
-          costArr,
-          tokenArr,
-        } = await collectIterator(iterator)
-
-        understandSpan.end()
-        ragSpan.end()
-
-        if (answer || wasStreamClosedPrematurely) {
-          return await finalizeAndRespond({
-            answer,
-            thinking,
-            citations,
-            imageCitations,
-            citationMap,
-            costArr: costArrA.concat(costArr),
-            tokenArr: tokenArrA.concat(tokenArr),
-          })
-        } else {
-          const allMessages = await getChatMessagesWithAuth(
-            db,
-            chat?.externalId,
-            email,
-          )
-          const lastMessage = allMessages[allMessages.length - 1]
-          const msg =
-            "Oops, something went wrong. Please try rephrasing your question or ask something else."
-          await addErrMessageToMessage(lastMessage, msg)
-          streamSpan.end()
-          rootSpan.end()
-          return c.json(
-            {
-              chatId: chat.externalId,
-              messageId: lastMessage.externalId,
-              error: msg,
-            },
-            400,
-          )
-        }
       } catch (error) {
         const streamErrorSpan = streamSpan.startSpan("handle_nonstream_error")
         streamErrorSpan.addEvent("error", {

@@ -250,6 +250,14 @@ export const IsGoogleApp = (app: Apps) => {
   )
 }
 
+export const IsMicrosoftApp = (app: Apps) => {
+  return (
+    app === Apps.MicrosoftDrive ||
+    app === Apps.MicrosoftOutlook ||
+    app === Apps.MicrosoftCalendar
+  )
+}
+
 export function scale(val: number): number | null {
   if (!val) return null
   return (2 * Math.atan(val / 4)) / Math.PI

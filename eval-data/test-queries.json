@@ -1,6 +1,832 @@
 [
   {
-    "input": "what is my email",
-    "expected": "user@gmail.com"
+    "input": "Find details on Juspay's new UPI SDK integration",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "UPI SDK integration Juspay",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Search for architecture documents explaining payment orchestration",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "payment orchestration architecture",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Look up troubleshooting steps for API rate limiting",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "API rate limiting troubleshooting Juspay",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Show me content related to RBI's new guidelines for tokenization",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "RBI guidelines tokenization 2025",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Find best practices for KYC verification flows in fintech apps",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "KYC verification best practices fintech",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Search for documents describing the settlement and reconciliation process",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "settlement reconciliation process",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Retrieve details on PCI DSS compliance for payment gateways",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "PCI DSS compliance payment gateway Juspay",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Show me content about fraud detection using machine learning in fintech",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "fraud detection machine learning fintech",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Look up integration guides for Bharat Bill Payment System (BBPS)",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "BBPS integration guide Juspay",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Find research notes on real-time payment success rate optimization",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "real-time payment success rate optimization",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Search for guides related to Aadhaar eKYC API",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "Aadhaar eKYC API guide",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Retrieve case studies on scaling fintech infrastructure with Kubernetes",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "scaling fintech infrastructure Kubernetes case study",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Find docs on Juspay's authentication flows with OAuth2",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "Juspay authentication OAuth2 flows",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Show references about dispute management in fintech payments",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "fintech dispute management Juspay",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Look up performance benchmarks for UPI AutoPay mandates",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "search",
+      "arguments": {
+        "filter_query": "UPI AutoPay mandate performance benchmarks",
+        "limit": 10,
+        "order_direction": "desc",
+        "offset": 0,
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Retrieve messages from the #dev channel.",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "dev",
+        "filter_query": "general updates from #dev channel",
+        "user_email": "",
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "",
+        "to": ""
+      }
+    }
+  },
+  {
+    "input": "Show me recent messages of slack from saheb@juspay.in in the xyne-core-dev channel.",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "xyne-core-dev",
+        "filter_query": "recent activity",
+        "user_email": "saheb@juspay.in",
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "",
+        "to": ""
+      }
+    }
+  },
+  {
+    "input": "Find messages about development from prasad@juspay.in in the xyne-dev channel of slack from last two days.",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "xyne-dev",
+        "filter_query": "development updates",
+        "user_email": "prasad@juspay.in",
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "2025-08-16T08:30:00.000Z",
+        "to": "2025-08-18T08:30:00.000Z"
+      }
+    }
+  },
+  {
+    "input": "Find all messages mentioning \"bug fix\" sent by Prasad in the xyne-dev channel.",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "xyne-dev",
+        "filter_query": "bug fix",
+        "user_email": "",
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "",
+        "to": ""
+      }
+    }
+  },
+  {
+    "input": "Retrieve messages sent by Prasad in the xyne-core-dev channel that mention \"meeting.\"",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "xyne-core-dev",
+        "filter_query": "meeting",
+        "user_email": "",
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "",
+        "to": ""
+      }
+    }
+  },
+  {
+    "input": "What was discussed about the \"LLM integration\" in the xyne-dev channel last week?",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "xyne-dev",
+        "filter_query": "LLM integration",
+        "user_email": "",
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "2025-08-11T08:30:00.000Z",
+        "to": "2025-08-18T08:30:00.000Z"
+      }
+    }
+  },
+  {
+    "input": "Get the latest message from about \"health insurance\" in the #general channel.",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "general",
+        "filter_query": "health insurance",
+        "user_email": "",
+        "limit": 1,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "",
+        "to": ""
+      }
+    }
+  },
+  {
+    "input": "Show me related messages to the fraud alert escalation raised in Slack.",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "",
+        "filter_query": "fraud alert escalation",
+        "user_email": "",
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "",
+        "to": ""
+      }
+    }
+  },
+  {
+    "input": "Find messages from suraj in the #general channel about \"Namma Yatri\" or \"metro.\"",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "general",
+        "filter_query": "Namma Yatri OR metro",
+        "user_email": "",
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "from": "",
+        "to": ""
+      }
+    }
+  },
+  {
+    "input": "I need to find Aditya Singh's Slack profile whose email is aditya.singh@juspay.in, can you look him up?",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_user_slack_profile",
+      "arguments": {
+        "user_email": "aditya.singh@juspay.in"
+      }
+    }
+  },
+  {
+    "input": "What's the Slack profile for Shubhangi Jethwa which have this address as shubhangi.jethwa@juspay.in?",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_user_slack_profile",
+      "arguments": {
+        "user_email": "shubhangi.jethwa@juspay.in"
+      }
+    }
+  },
+  {
+    "input": "Can you show me the main conversations about the knowledge base in the xyne-core-dev channel?",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "channel_name": "xyne-core-dev",
+        "filter_query": "knowledge base threads in xyne-core-dev",
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc"
+      }
+    }
+  },
+  {
+    "input": "Find Slack conversations about the RBI compliance audit last week",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_threads",
+      "arguments": {
+        "filter_query": "RBI compliance audit last week",
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc"
+      }
+    }
+  },
+  {
+    "input": "What's the latest discussion in the regarding the knowledge base in the threads?",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_threads",
+      "arguments": {
+        "filter_query": "latest knowledge base threads",
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc"
+      }
+    }
+  },
+  {
+    "input": "Get threads where people discussed integrating BBPS into the new platform",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_threads",
+      "arguments": {
+        "filter_query": "BBPS integration in new platform",
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc"
+      }
+    }
+  },
+  {
+    "input": "Show me threads where engineers discussed QR code payment failures",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_threads",
+      "arguments": {
+        "filter_query": "QR code payment failures",
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc"
+      }
+    }
+  },
+  {
+    "input": "What was that main discussion about getting access to GitHub Copilot in slack?",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_threads",
+      "arguments": {
+        "filter_query": "github copilot access discussion",
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc"
+      }
+    }
+  },
+  {
+    "input": "I'm trying to find the discussions about \"API integration\" that happened in the #github-copilot-access channel.",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "filter_query": "API integration",
+        "channel_name": "github-copilot-access",
+        "user_email": "",
+        "date_from": "",
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc"
+      }
+    }
+  },
+  {
+    "input": "Main discussion threads concerning the xyne core project.",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_threads",
+      "arguments": {
+        "filter_query": "xyne core project discussion threads",
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc"
+      }
+    }
+  },
+  {
+    "input": "Find all emails from Raj about the UPI integration issues last week",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "from": "2025-08-11T00:00:00Z",
+        "to": "2025-08-17T23:59:59Z",
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "UPI integration issues",
+        "intent": {
+          "from": ["Raj"]
+        },
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Show me Drive documents about PCI DSS compliance created this month",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "from": "2025-08-01T00:00:00Z",
+        "to": "2025-08-18T23:59:59Z",
+        "app": "google-drive",
+        "entity": "document",
+        "filter_query": "PCI DSS compliance",
+        "intent": {},
+        "limit": 15,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Retrieve all emails from compliance@finorg.com about KYC regulations",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "from": null,
+        "to": null,
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "KYC regulations",
+        "intent": {
+          "from": ["compliance@finorg.com"]
+        },
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "List calendar events about RBI audit scheduled in September",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "from": "2025-09-01T00:00:00Z",
+        "to": "2025-09-30T23:59:59Z",
+        "app": "google-calendar",
+        "entity": "event",
+        "filter_query": "RBI audit",
+        "intent": {},
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "asc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Find Drive spreadsheets from Neha about quarterly financial forecasting",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "from": null,
+        "to": null,
+        "app": "google-drive",
+        "entity": "spreadsheet",
+        "filter_query": "quarterly financial forecasting",
+        "intent": {
+          "from": ["Neha"]
+        },
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Show emails from devops@xynepay.com about API rate limits",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "from": null,
+        "to": null,
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "API rate limits",
+        "intent": {
+          "from": ["devops@xynepay.com"]
+        },
+        "limit": 25,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Find emails from Prakash about blockchain settlement pilot project this week",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "from": "2025-08-11T00:00:00Z",
+        "to": "2025-08-17T23:59:59Z",
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "blockchain settlement pilot project",
+        "intent": {
+          "from": ["Prakash"]
+        },
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Show Drive PDFs about AML transaction monitoring from August",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "from": "2025-08-01T00:00:00Z",
+        "to": "2025-08-31T23:59:59Z",
+        "app": "google-drive",
+        "entity": "pdf",
+        "filter_query": "AML transaction monitoring",
+        "intent": {},
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Pull up emails from ankit@finledger.com that talk about delayed settlement reports",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "delayed settlement reports",
+        "intent": {
+          "from": ["ankit@finledger.com"]
+        },
+        "limit": 12,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "I need Google Drive sheets containing customer churn analysis for fintech lending",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "app": "google-drive",
+        "entity": "spreadsheet",
+        "filter_query": "customer churn analysis fintech lending",
+        "intent": {},
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Show me upcoming calendar events related to treasury risk management workshops",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "app": "google-calendar",
+        "entity": "event",
+        "filter_query": "treasury risk management workshop",
+        "intent": {},
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "asc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Check my inbox for any emails from sanjay@finsecure.com about RBI compliance updates",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "RBI compliance updates",
+        "intent": {
+          "from": ["sanjay@finsecure.com"]
+        },
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Look up Slack threads mentioning failed reconciliation jobs in the finance team",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_threads",
+      "arguments": {
+        "app": "slack",
+        "entity": "message",
+        "filter_query": "failed reconciliation jobs",
+        "intent": {},
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Are there any Drive presentations that cover open banking adoption strategy?",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "app": "google-drive",
+        "entity": "presentation",
+        "filter_query": "open banking adoption strategy",
+        "intent": {},
+        "limit": 10,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Give me the email trail from rashmi@fintrack.com about credit risk model tuning",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "app": "gmail",
+        "entity": "mail",
+        "filter_query": "credit risk model tuning",
+        "intent": {
+          "from": ["rashmi@fintrack.com"]
+        },
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "What meetings are scheduled on Google Calendar for liquidity planning this month?",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "app": "google-calendar",
+        "entity": "event",
+        "filter_query": "liquidity planning",
+        "intent": {},
+        "limit": 20,
+        "offset": 0,
+        "order_direction": "asc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Scan Slack messages for conversations around tokenization API integration issues",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "get_slack_related_messages",
+      "arguments": {
+        "app": "slack",
+        "entity": "message",
+        "channel_name": "",
+        "filter_query": "tokenization API integration issues",
+        "intent": {},
+        "limit": 25,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
+  },
+  {
+    "input": "Fetch Google Drive documents that explain real-time payments settlement workflows",
+    "expected": {
+      "queryRewrite": "",
+      "tool": "metadata_retrieval",
+      "arguments": {
+        "app": "google-drive",
+        "entity": "document",
+        "filter_query": "real-time payments settlement workflows",
+        "intent": {},
+        "limit": 16,
+        "offset": 0,
+        "order_direction": "desc",
+        "excludedIds": []
+      }
+    }
   }
 ]

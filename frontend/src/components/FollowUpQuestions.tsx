@@ -42,7 +42,7 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
 
       // Create a unique key for this fetch request
       const fetchKey = `${chatId}-${messageId}`
-      
+
       // Only fetch if we haven't already fetched for this message
       if (lastFetchRef.current !== fetchKey) {
         // Add a small delay to debounce rapid state changes
@@ -55,7 +55,7 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
       setQuestions([])
       setError(null)
       setLoading(false)
-      
+
       // Clear any pending fetch
       if (fetchTimeoutRef.current) {
         clearTimeout(fetchTimeoutRef.current)
@@ -72,39 +72,42 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
     }
   }, [chatId, messageId, isStreaming])
 
-  const fetchFollowUpQuestions = useCallback(async (fetchKey: string) => {
-    if (!chatId || !messageId || isStreaming) return
+  const fetchFollowUpQuestions = useCallback(
+    async (fetchKey: string) => {
+      if (!chatId || !messageId || isStreaming) return
 
-    // Double-check that this request is still valid
-    if (lastFetchRef.current === fetchKey) {
-      return // Already fetched for this message
-    }
-
-    setLoading(true)
-    setError(null)
-    lastFetchRef.current = fetchKey
-
-    try {
-      const response = await api.chat["followup-questions"].$post({
-        json: {
-          chatId,
-          messageId,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setQuestions(data.followUpQuestions || [])
-      } else {
-        setError("Failed to generate follow-up questions")
+      // Double-check that this request is still valid
+      if (lastFetchRef.current === fetchKey) {
+        return // Already fetched for this message
       }
-    } catch (err) {
-      console.error("Error fetching follow-up questions:", err)
-      setError("Failed to generate follow-up questions")
-    } finally {
-      setLoading(false)
-    }
-  }, [chatId, messageId, isStreaming])
+
+      setLoading(true)
+      setError(null)
+      lastFetchRef.current = fetchKey
+
+      try {
+        const response = await api.chat["followup-questions"].$post({
+          json: {
+            chatId,
+            messageId,
+          },
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setQuestions(data.followUpQuestions || [])
+        } else {
+          setError("Failed to generate follow-up questions")
+        }
+      } catch (err) {
+        console.error("Error fetching follow-up questions:", err)
+        setError("Failed to generate follow-up questions")
+      } finally {
+        setLoading(false)
+      }
+    },
+    [chatId, messageId, isStreaming],
+  )
 
   if (isStreaming || (!loading && questions.length === 0 && !error)) {
     return null
