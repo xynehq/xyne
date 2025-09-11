@@ -367,15 +367,18 @@ export const cleanUpAgentDb = async (
 
     const agentsToUpdate = allActiveAgents.filter((agent) => {
       const currentIntegrations = agent.appIntegrations as any
-      
+
       if (Array.isArray(currentIntegrations)) {
-        return currentIntegrations.some((integration: string) => 
-          deletedItemIds.includes(integration)
+        return currentIntegrations.some((integration: string) =>
+          deletedItemIds.includes(integration),
         )
-      } else if (currentIntegrations && typeof currentIntegrations === 'object') {
+      } else if (
+        currentIntegrations &&
+        typeof currentIntegrations === "object"
+      ) {
         if (currentIntegrations.knowledge_base?.itemIds) {
-          return currentIntegrations.knowledge_base.itemIds.some((id: string) => 
-            deletedItemIds.includes(id)
+          return currentIntegrations.knowledge_base.itemIds.some((id: string) =>
+            deletedItemIds.includes(id),
           )
         }
       }
@@ -402,15 +405,20 @@ export const cleanUpAgentDb = async (
         updatedIntegrations = currentIntegrations.filter(
           (integration: string) => !deletedItemIds.includes(integration),
         )
-      } else if (currentIntegrations && typeof currentIntegrations === 'object') {
-        
+      } else if (
+        currentIntegrations &&
+        typeof currentIntegrations === "object"
+      ) {
         updatedIntegrations = JSON.parse(JSON.stringify(currentIntegrations))
-        
+
         if (updatedIntegrations.knowledge_base?.itemIds) {
-          const originalItemIds = [...updatedIntegrations.knowledge_base.itemIds]
-          updatedIntegrations.knowledge_base.itemIds = updatedIntegrations.knowledge_base.itemIds.filter(
-            (id: string) => !deletedItemIds.includes(id),
-          )
+          const originalItemIds = [
+            ...updatedIntegrations.knowledge_base.itemIds,
+          ]
+          updatedIntegrations.knowledge_base.itemIds =
+            updatedIntegrations.knowledge_base.itemIds.filter(
+              (id: string) => !deletedItemIds.includes(id),
+            )
           loggerWithChild().info(
             `Agent ${agent.name}: original itemIds: ${JSON.stringify(originalItemIds)}, after filtering: ${JSON.stringify(updatedIntegrations.knowledge_base.itemIds)}`,
           )
@@ -431,38 +439,46 @@ export const cleanUpAgentDb = async (
       loggerWithChild().info(
         `Agent ${agent.name}: final updatedIntegrations: ${JSON.stringify(updatedIntegrations)}`,
       )
-      
-      console.log("DEBUG: About to check update condition for agent:", agent.name)
 
-      const originalCount = Array.isArray(currentIntegrations) 
-        ? currentIntegrations.length 
+      console.log(
+        "DEBUG: About to check update condition for agent:",
+        agent.name,
+      )
+
+      const originalCount = Array.isArray(currentIntegrations)
+        ? currentIntegrations.length
         : currentIntegrations?.knowledge_base?.itemIds?.length || 0
       const newCount = Array.isArray(updatedIntegrations)
         ? updatedIntegrations.length
         : updatedIntegrations?.knowledge_base?.itemIds?.length || 0
 
-      const originalHasKnowledgeBase = currentIntegrations?.knowledge_base !== undefined
-      const updatedHasKnowledgeBase = updatedIntegrations?.knowledge_base !== undefined
-      const knowledgeBaseStructureChanged = originalHasKnowledgeBase !== updatedHasKnowledgeBase
+      const originalHasKnowledgeBase =
+        currentIntegrations?.knowledge_base !== undefined
+      const updatedHasKnowledgeBase =
+        updatedIntegrations?.knowledge_base !== undefined
+      const knowledgeBaseStructureChanged =
+        originalHasKnowledgeBase !== updatedHasKnowledgeBase
 
       loggerWithChild().info(
         `Agent ${agent.name}: originalCount=${originalCount}, newCount=${newCount}, countChanged=${originalCount !== newCount}, knowledgeBaseStructureChanged=${knowledgeBaseStructureChanged}`,
       )
 
-      const hasChanges = originalCount !== newCount || 
-                        knowledgeBaseStructureChanged || 
-                        JSON.stringify(currentIntegrations) !== JSON.stringify(updatedIntegrations)
+      const hasChanges =
+        originalCount !== newCount ||
+        knowledgeBaseStructureChanged ||
+        JSON.stringify(currentIntegrations) !==
+          JSON.stringify(updatedIntegrations)
 
       if (hasChanges) {
         loggerWithChild().info(
           `Agent ${agent.name}: updating database with new integrations`,
         )
-        
+
         await trx
           .update(agents)
-          .set({ 
-            appIntegrations: updatedIntegrations, 
-            updatedAt: new Date() 
+          .set({
+            appIntegrations: updatedIntegrations,
+            updatedAt: new Date(),
           })
           .where(eq(agents.id, agent.id))
 
