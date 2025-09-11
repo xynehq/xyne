@@ -9,10 +9,12 @@ import { workflowToolsAPI } from "./api/ApiHandlers"
 interface AIAgentConfigUIProps {
   isVisible: boolean
   onBack: () => void
+  onClose?: () => void // New prop for closing all sidebars
   onSave?: (agentConfig: AIAgentConfig) => void
   toolData?: any
   toolId?: string // Tool ID for API updates
   stepData?: any // Step data for loading existing configuration
+  showBackButton?: boolean // Whether to show the back button
 }
 
 export interface AIAgentConfig {
@@ -27,15 +29,17 @@ export interface AIAgentConfig {
 const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   isVisible,
   onBack,
+  onClose,
   onSave,
   toolData,
   toolId,
   stepData,
+  showBackButton = false,
 }) => {
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
     name: "AI Agent",
     description: "",
-    model: "gemini-1.5-pro",
+    model: "gemini-1.5-flash",
     inputPrompt: "$json.input",
     systemPrompt: "",
     knowledgeBase: "",
@@ -57,7 +61,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
         setAgentConfig({
           name: existingConfig.name || "AI Agent",
           description: existingConfig.description || "",
-          model: existingConfig.model || "gemini-1.5-pro",
+          model: existingConfig.model || "gemini-1.5-flash",
           inputPrompt: existingConfig.inputPrompt || "$json.input",
           systemPrompt: existingConfig.systemPrompt || "",
           knowledgeBase: existingConfig.knowledgeBase || "",
@@ -67,7 +71,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
         setAgentConfig({
           name: "AI Agent",
           description: "",
-          model: "gemini-1.5-pro",
+          model: "gemini-1.5-flash",
           inputPrompt: "$json.input",
           systemPrompt: "",
           knowledgeBase: "",
@@ -233,8 +237,8 @@ Always strive for accuracy and helpfulness in your responses.`
 
   return (
     <div
-      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
-        isVisible ? "translate-x-0 w-[400px]" : "translate-x-full w-0"
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-50 ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
       }`}
     >
       {/* Header */}
@@ -249,20 +253,22 @@ Always strive for accuracy and helpfulness in your responses.`
           borderBottom: "1px solid var(--gray-300, #E4E6E7)",
         }}
       >
-        <button
-          onClick={onBack}
-          className="flex items-center justify-center"
-          style={{
-            width: "24px",
-            height: "24px",
-            padding: "0",
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-          }}
-        >
-          <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-        </button>
+        {showBackButton && (
+          <button
+            onClick={onBack}
+            className="flex items-center justify-center"
+            style={{
+              width: "24px",
+              height: "24px",
+              padding: "0",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+            }}
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          </button>
+        )}
 
         <h2
           className="flex-1 text-gray-900 dark:text-gray-100"
@@ -281,7 +287,7 @@ Always strive for accuracy and helpfulness in your responses.`
         </h2>
 
         <button
-          onClick={onBack}
+          onClick={onClose || onBack}
           className="flex items-center justify-center"
           style={{
             width: "24px",
@@ -297,8 +303,8 @@ Always strive for accuracy and helpfulness in your responses.`
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="space-y-6">
+      <div className="flex-1 overflow-y-auto px-6 py-6 flex flex-col">
+        <div className="space-y-6 flex-1">
           {/* Agent Name */}
           <div className="space-y-2">
             <Label
@@ -487,16 +493,16 @@ Always strive for accuracy and helpfulness in your responses.`
             </p>
           </div>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="px-6 py-4 border-t border-slate-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <Button
-          onClick={handleSave}
-          className="w-full bg-black hover:bg-gray-800 text-white"
-        >
-          Save Configuration
-        </Button>
+        
+        {/* Save Button - Sticky to bottom */}
+        <div className="pt-6 px-0">
+          <Button
+            onClick={handleSave}
+            className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-full"
+          >
+            Save Configuration
+          </Button>
+        </div>
       </div>
     </div>
   )

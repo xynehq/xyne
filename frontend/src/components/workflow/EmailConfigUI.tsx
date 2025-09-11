@@ -8,10 +8,12 @@ import { workflowToolsAPI } from "./api/ApiHandlers"
 interface EmailConfigUIProps {
   isVisible: boolean
   onBack: () => void
+  onClose?: () => void // New prop for closing all sidebars
   onSave?: (emailConfig: EmailConfig) => void
   toolData?: any
   toolId?: string // Tool ID for API updates
   stepData?: any // Step data for loading existing configuration
+  showBackButton?: boolean // Whether to show the back button
 }
 
 export interface EmailConfig {
@@ -22,10 +24,12 @@ export interface EmailConfig {
 const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
   isVisible,
   onBack,
+  onClose,
   onSave,
   toolData,
   toolId,
   stepData,
+  showBackButton = false,
 }) => {
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     sendingFrom: "aman.asrani@juspay.in",
@@ -119,8 +123,8 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
 
   return (
     <div
-      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
-        isVisible ? "translate-x-0 w-[400px]" : "translate-x-full w-0"
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-50 ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
       }`}
     >
       {/* Header */}
@@ -135,20 +139,22 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
           borderBottom: "1px solid var(--gray-300, #E4E6E7)",
         }}
       >
-        <button
-          onClick={onBack}
-          className="flex items-center justify-center"
-          style={{
-            width: "24px",
-            height: "24px",
-            padding: "0",
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-          }}
-        >
-          <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-        </button>
+        {showBackButton && (
+          <button
+            onClick={onBack}
+            className="flex items-center justify-center"
+            style={{
+              width: "24px",
+              height: "24px",
+              padding: "0",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+            }}
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          </button>
+        )}
 
         <h2
           className="flex-1 text-gray-900 dark:text-gray-100"
@@ -167,7 +173,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
         </h2>
 
         <button
-          onClick={onBack}
+          onClick={onClose || onBack}
           className="flex items-center justify-center"
           style={{
             width: "24px",
@@ -183,8 +189,8 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="space-y-6">
+      <div className="flex-1 overflow-y-auto px-6 py-6 flex flex-col">
+        <div className="space-y-6 flex-1">
           {/* Sending From */}
           <div className="space-y-2">
             <Label
@@ -282,16 +288,26 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             )}
           </div>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="px-6 py-4 border-t border-slate-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <Button
-          onClick={handleSave}
-          className="w-full bg-black hover:bg-gray-800 text-white"
-        >
-          Save Configuration
-        </Button>
+        
+        {/* Save Button - Sticky to bottom */}
+        <div className="pt-6 px-0">
+          {emailConfig.emailAddresses.length === 0 && (
+            <p className="text-xs text-slate-500 dark:text-gray-400 mb-2 text-center">
+              Add at least one email address to enable save
+            </p>
+          )}
+          <Button
+            onClick={handleSave}
+            disabled={emailConfig.emailAddresses.length === 0}
+            className={`w-full rounded-full ${
+              emailConfig.emailAddresses.length === 0
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed hover:bg-gray-100"
+                : "bg-gray-200 hover:bg-gray-300 text-gray-800"
+            }`}
+          >
+            Save Configuration
+          </Button>
+        </div>
       </div>
     </div>
   )
