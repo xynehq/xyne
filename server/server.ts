@@ -802,9 +802,18 @@ export const AppRoutes = app
   .use("/workflow/*", honoMiddlewareLogger)
   .use("/workflow/*", async (c, next) => {
     // Add CORS headers for workflow API
-    c.header("Access-Control-Allow-Origin", "http://localhost:3003")
+    const origin = c.req.header("Origin")
+    const allowedOrigins = ["http://localhost:3003", "http://localhost:5173", "http://localhost:3000"]
+    
+    if (origin && allowedOrigins.includes(origin)) {
+      c.header("Access-Control-Allow-Origin", origin)
+    } else {
+      c.header("Access-Control-Allow-Origin", "*")
+    }
+    
     c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
     c.header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    c.header("Access-Control-Allow-Credentials", "true")
 
     if (c.req.method === "OPTIONS") {
       return new Response(null, { status: 200 })
