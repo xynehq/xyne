@@ -8,7 +8,7 @@ import {
 import { modelDetailsMap } from "@/ai/mappers"
 import type { ConverseResponse, ModelParams } from "@/ai/types"
 import { AIProviders, Models } from "@/ai/types"
-import BaseProvider from "@/ai/provider/base"
+import BaseProvider, { regex } from "@/ai/provider/base"
 import { calculateCost } from "@/utils/index"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
@@ -18,6 +18,8 @@ import os from "os"
 const Logger = getLogger(Subsystem.AI)
 import config from "@/config"
 const { StartThinkingToken, EndThinkingToken } = config
+import { findImageByName } from "@/ai/provider/base"
+import { createLabeledImageContent } from "../utils"
 
 // Helper function to convert images to Bedrock format
 const buildBedrockImageParts = async (
@@ -28,23 +30,43 @@ const buildBedrockImageParts = async (
   )
 
   const imagePromises = imagePaths.map(async (imgPath) => {
-    // Check if the file already has an extension, if not add .png
-    const match = imgPath.match(/^(.+)_([0-9]+)$/)
+    const match = imgPath.match(regex)
     if (!match) {
-      Logger.error(`Invalid image path: ${imgPath}`)
+      Logger.error(
+        `Invalid image path format: ${imgPath}. Expected format: docIndex_docId_imageNumber`,
+      )
       throw new Error(`Invalid image path: ${imgPath}`)
     }
 
-    // Validate that the docId doesn't contain path traversal characters
-    const docId = match[1]
+    const docIndex = match[1]
+    const docId = match[2]
+    const imageNumber = match[3]
+
     if (docId.includes("..") || docId.includes("/") || docId.includes("\\")) {
       Logger.error(`Invalid docId containing path traversal: ${docId}`)
       throw new Error(`Invalid docId: ${docId}`)
     }
 
     const imageDir = path.join(baseDir, docId)
-    const fileName = path.extname(match[2]) ? match[2] : `${match[2]}.png`
-    const absolutePath = path.join(imageDir, fileName)
+    const absolutePath = findImageByName(imageDir, imageNumber)
+    const extension = path.extname(absolutePath).toLowerCase()
+
+    // Map file extensions to Bedrock format values
+    const formatMap: Record<string, string> = {
+      ".png": "png",
+      ".jpg": "jpeg",
+      ".jpeg": "jpeg",
+      ".gif": "gif",
+      ".webp": "webp",
+    }
+
+    const format = formatMap[extension]
+    if (!format) {
+      Logger.warn(
+        `Unsupported image format: ${extension}. Skipping image: ${absolutePath}`,
+      )
+      return null
+    }
 
     // Ensure the resolved path is within baseDir
     const resolvedPath = path.resolve(imageDir)
@@ -57,10 +79,16 @@ const buildBedrockImageParts = async (
       // Check if file exists before trying to read it
       await fs.promises.access(absolutePath, fs.constants.F_OK)
       const imageBytes = await fs.promises.readFile(absolutePath)
+      if (imageBytes.length > 4 * 1024 * 1024) {
+        Logger.warn(
+          `Image buffer too large after read (${imageBytes.length} bytes, ${(imageBytes.length / (1024 * 1024)).toFixed(2)}MB): ${absolutePath}. Skipping this image.`,
+        )
+        return null
+      }
 
       return {
         image: {
-          format: "png" as const,
+          format: format,
           source: {
             bytes: imageBytes,
           },
@@ -75,7 +103,7 @@ const buildBedrockImageParts = async (
   })
 
   const results = await Promise.all(imagePromises)
-  return results.filter(Boolean) // Remove any null/undefined entries
+  return results.filter((result): result is ContentBlock => result !== null) // Remove any null entries
 }
 
 export class BedrockProvider extends BaseProvider {
@@ -88,19 +116,77 @@ export class BedrockProvider extends BaseProvider {
     params: ModelParams,
   ): Promise<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    // Build image parts if they exist
+    const imageParts =
+      params.imageFileNames && params.imageFileNames.length > 0
+        ? await buildBedrockImageParts(params.imageFileNames)
+        : []
+    // Find the last user message index to add images only to that message
+    const lastUserMessageIndex =
+      messages
+        .map((m, idx) => ({ message: m, index: idx }))
+        .reverse()
+        .find(({ message }) => message.role === "user")?.index ?? -1
+
+    // Transform messages to include images only in the last user message
+    const transformedMessages = messages.map((message, index) => {
+      if (index === lastUserMessageIndex && imageParts.length > 0) {
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+
+        const newContent = createLabeledImageContent(
+          userText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames!,
+        )
+        return {
+          ...message,
+          content: newContent,
+        }
+      }
+      return message
+    })
+    // Build Bedrock tool configuration if tools provided
+    // Bedrock Converse expects tools as { toolSpec: { name, description, inputSchema: { json } } }
+    const toolConfig = params.tools && params.tools.length
+      ? {
+          tools: params.tools.map((t) => ({
+            toolSpec: {
+              name: t.name,
+              description: t.description,
+              inputSchema: {
+                json: t.parameters || { type: "object", properties: {} },
+              },
+            },
+          })),
+        }
+      : undefined
+
     const command = new ConverseCommand({
       modelId: modelParams.modelId,
       system: [
         {
-          text: modelParams.systemPrompt!,
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "Important: In case you don't have the context, you can use the images in the context to answer questions. When referring to specific images in your response, please use the image labels provided to help users understand which image you're referencing.",
         },
       ],
-      messages,
+      messages: transformedMessages,
       inferenceConfig: {
         maxTokens: modelParams.maxTokens || 512,
         topP: modelParams.topP || 0.9,
         temperature: modelParams.temperature || 0,
       },
+      ...(toolConfig ? { toolConfig } : {}),
     })
     const response = await (this.client as BedrockRuntimeClient).send(command)
     if (!response) {
@@ -114,6 +200,20 @@ export class BedrockProvider extends BaseProvider {
       },
       "",
     )
+    // Extract tool use calls if present
+    const toolCalls = (response.output?.message?.content || [])
+      .filter((c: any) => (c as any).toolUse)
+      .map((c: any) => {
+        const tu = (c as any).toolUse
+        return {
+          id: tu?.toolUseId || "",
+          type: "function" as const,
+          function: {
+            name: tu?.name || "",
+            arguments: tu?.input ? JSON.stringify(tu.input) : "{}",
+          },
+        }
+      })
     if (!response.usage) {
       throw new Error("Could not get usage")
     }
@@ -124,6 +224,7 @@ export class BedrockProvider extends BaseProvider {
         { inputTokens: inputTokens!, outputTokens: outputTokens! },
         modelDetailsMap[modelParams.modelId].cost.onDemand,
       ),
+      ...(toolCalls && toolCalls.length ? { tool_calls: toolCalls } : {}),
     }
   }
 
@@ -176,21 +277,60 @@ export class BedrockProvider extends BaseProvider {
     // Transform messages to include images only in the last user message
     const transformedMessages = messages.map((message, index) => {
       if (index === lastUserMessageIndex && imageParts.length > 0) {
-        // Add images to the last user message
+        // Combine image context instruction with user's message text
+        // Find the first text content block
+        const textBlocks = (message.content || []).filter(
+          (c) => typeof c === "object" && "text" in c,
+        )
+        const otherBlocks = (message.content || []).filter(
+          (c) => !(typeof c === "object" && "text" in c),
+        )
+        const userText = textBlocks.map((tb) => tb.text).join("\n")
+
+        const newContent = createLabeledImageContent(
+          userText,
+          otherBlocks,
+          imageParts,
+          params.imageFileNames!,
+        )
         return {
           ...message,
-          content: [...message.content!, ...imageParts],
+          content: newContent,
         }
       }
       return message
     })
 
+    // Build Bedrock tool configuration if tools provided
+    // Bedrock Converse expects tools as { toolSpec: { name, description, inputSchema: { json } } }
+    const toolConfig = params.tools && params.tools.length
+      ? {
+          tools: params.tools.map((t) => ({
+            toolSpec: {
+              name: t.name,
+              description: t.description,
+              inputSchema: {
+                json: t.parameters || { type: "object", properties: {} },
+              },
+            },
+          })),
+        }
+      : undefined
+
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
       additionalModelRequestFields: reasoningConfig,
-      system: [{ text: modelParams.systemPrompt! }],
+      system: [
+        {
+          text:
+            modelParams.systemPrompt! +
+            "\n\n" +
+            "Important: In case you don't have the context, you can use the images in the context to answer questions. When referring to specific images in your response, please use the image labels provided to help users understand which image you're referencing.",
+        },
+      ],
       messages: transformedMessages,
       inferenceConfig,
+      ...(toolConfig ? { toolConfig } : {}),
     })
 
     let modelId = modelParams.modelId!
@@ -203,6 +343,8 @@ export class BedrockProvider extends BaseProvider {
       // we are handling the reasoning and normal text in the same iteration
       // using two different iteration for reasoning and normal text we are lossing some data of normal text
       if (response.stream) {
+        // Accumulate tool use inputs by toolUseId
+        const toolUseBuffers: Record<string, { name: string; args: string }> = {}
         for await (const chunk of response.stream) {
           // Handle reasoning content
           const reasoning =
@@ -230,6 +372,44 @@ export class BedrockProvider extends BaseProvider {
           // Handle regular content
           const text = chunk.contentBlockDelta?.delta?.text || ""
           const metadata = chunk.metadata
+
+          // Detect tool use start
+          const toolUseStart: any = (chunk as any)?.contentBlockStart?.start?.toolUse
+          if (toolUseStart?.name) {
+            const id = toolUseStart.toolUseId || `${Date.now()}-${Math.random()}`
+            toolUseBuffers[id] = { name: toolUseStart.name, args: "" }
+          }
+          // Accumulate tool use input JSON deltas (best-effort mapping of Bedrock stream)
+          const toolUseDelta: any = (chunk as any)?.contentBlockDelta?.delta?.toolUse
+          if (toolUseDelta?.inputText && Object.keys(toolUseBuffers).length) {
+            // If SDK emits inputText chunks
+            const lastId = Object.keys(toolUseBuffers).slice(-1)[0]
+            toolUseBuffers[lastId].args += toolUseDelta.inputText
+          }
+          if (toolUseDelta?.input && Object.keys(toolUseBuffers).length) {
+            const lastId = Object.keys(toolUseBuffers).slice(-1)[0]
+            toolUseBuffers[lastId].args += JSON.stringify(toolUseDelta.input)
+          }
+          // On content block stop, flush tool call if present
+          const toolUseStop: any = (chunk as any)?.contentBlockStop?.stop?.toolUse
+          if (toolUseStop) {
+            const id = toolUseStop.toolUseId
+            const rec = id ? toolUseBuffers[id] : undefined
+            if (rec) {
+              const toolCalls = [
+                {
+                  id,
+                  type: "function" as const,
+                  function: {
+                    name: rec.name,
+                    arguments: rec.args || "{}",
+                  },
+                },
+              ]
+              yield { tool_calls: toolCalls }
+              delete toolUseBuffers[id]
+            }
+          }
 
           if (text) {
             yield {

@@ -31,6 +31,7 @@ import {
   datasourceSchema,
   dataSourceFileSchema,
   type VespaDataSourceFile,
+  SlackEntity,
 } from "@/search/types"
 import {
   VespaAutocompleteResponseToResult,
@@ -49,7 +50,7 @@ import {
   userContext,
 } from "@/ai/context"
 import { VespaSearchResultsSchema } from "@/search/types"
-import { AnswerSSEvents } from "@/shared/types"
+import { agentPromptPayloadSchema, AnswerSSEvents } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -85,6 +86,11 @@ export const chatSchema = z.object({
   chatId: z.string().min(1),
 })
 
+export const followUpQuestionsSchema = z.object({
+  chatId: z.string().min(1),
+  messageId: z.string().min(1),
+})
+
 export const chatBookmarkSchema = z.object({
   chatId: z.string(),
   bookmark: z.boolean(),
@@ -116,11 +122,42 @@ export const chatHistorySchema = z.object({
     .refine((value) => !isNaN(value), {
       message: "Page must be a valid number",
     }),
+  from: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
 })
 
-export const messageSchema = z.object({
-  message: z.string().min(1),
+export const dashboardDataSchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+})
+
+export const sharedAgentUsageSchema = z.object({
+  from: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+  to: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+})
+
+export const agentChatMessageSchema = z.object({
+  message: z.string(),
   chatId: z.string().optional(),
+  path: z.string().optional(),
   modelId: z.string().min(1),
   isReasoningEnabled: z
     .string()
@@ -129,6 +166,21 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
+  agentId: z.string(),
+  streamOff: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
+})
+
+export const messageSchema = z.object({
+  message: z.string().min(1),
+  path: z.string().optional(),
+  chatId: z.string().optional(),
+  selectedModelConfig: z.string().optional(), // JSON string containing model config
   agentId: z.string().optional(),
   toolsList: z.preprocess(
     (val) => {
@@ -150,6 +202,14 @@ export const messageSchema = z.object({
       )
       .optional(),
   ),
+  agentPromptPayload: agentPromptPayloadSchema.optional(),
+  streamOff: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 
@@ -157,13 +217,7 @@ export const messageRetrySchema = z.object({
   messageId: z.string().min(1),
   agentId: z.string().optional(),
   agentic: z.string().optional().default("false"),
-  isReasoningEnabled: z
-    .string()
-    .optional()
-    .transform((val) => {
-      if (!val) return false
-      return val.toLowerCase() === "true"
-    }),
+  selectedModelConfig: z.string().optional(),
 })
 
 export type MessageRetryReqType = z.infer<typeof messageRetrySchema>
@@ -297,6 +351,15 @@ export const SearchApi = async (c: Context) => {
         ) {
           dynamicAllowedApps.push(Apps.DataSource)
         }
+        const channelIds =
+          agent.docIds
+            ?.filter(
+              (doc) =>
+                doc.app === Apps.Slack &&
+                doc.entity === SlackEntity.Channel &&
+                doc.docId,
+            )
+            .map((doc) => doc.docId) ?? []
 
         loggerWithChild({ email: email }).info(
           `Agent ${agentId} search: AllowedApps=[${dynamicAllowedApps.join(", ")}], DataSourceIDs=[${dynamicDataSourceIds.join(", ")}], Entity=${entity}. Query: "${decodedQuery}".`,
@@ -315,6 +378,7 @@ export const SearchApi = async (c: Context) => {
             requestDebug: debug,
             dataSourceIds: dynamicDataSourceIds,
             timestampRange: timestampRange,
+            channelIds: channelIds,
           },
         )
         try {
@@ -351,7 +415,6 @@ export const SearchApi = async (c: Context) => {
         timestampRange,
       }),
     ]
-
     // ensure only update when query is typed
     if (isQueryTyped) {
       tasks.push(updateUserQueryHistory(decodedQuery, email))
@@ -364,6 +427,7 @@ export const SearchApi = async (c: Context) => {
       requestDebug: debug,
       offset,
       timestampRange,
+      rankProfile: SearchModes.BoostTitle,
     })
   }
 
@@ -371,6 +435,23 @@ export const SearchApi = async (c: Context) => {
 
   const newResults = VespaSearchResponseToSearchResult(results, email)
   newResults.groupCount = groupCount
+  return c.json(newResults)
+}
+
+export const SearchSlackChannels = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  // @ts-ignore
+  const { query } = c.req.valid("query")
+  const decodedQuery = decodeURIComponent(query)
+  const results = await searchVespa(
+    `*${decodedQuery}*`,
+    email,
+    Apps.Slack,
+    SlackEntity.Channel,
+    {},
+  )
+  const newResults = VespaSearchResponseToSearchResult(results)
   return c.json(newResults)
 }
 

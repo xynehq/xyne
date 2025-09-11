@@ -2,12 +2,33 @@ import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { getIcon } from "@/lib/common"
 import { Reference } from "@/types"
+import { parseHighlight, trimToHighlightHotspot } from "./Highlight"
 
-const getPillDisplayTitle = (title: string): string => {
-  if (title.length > 15) {
-    return title.substring(0, 15) + "..."
+function truncateWithHiTags(str: string, maxLen: number): string {
+  let visibleLen = 0
+  let result = ""
+  let inTag = false
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === "<" && str.slice(i, i + 4) === "<hi>") {
+      inTag = true
+      result += "<hi>"
+      i += 3
+      continue
+    }
+    if (str[i] === "<" && str.slice(i, i + 5) === "</hi>") {
+      inTag = false
+      result += "</hi>"
+      i += 4
+      continue
+    }
+    if (!inTag && visibleLen >= maxLen) break
+    result += str[i]
+    if (!inTag) visibleLen++
   }
-  return title
+  if (visibleLen >= maxLen) result += "..."
+  // Close any unclosed <hi> tag
+  if (inTag) result += "</hi>"
+  return result
 }
 
 interface PillProps {
@@ -86,15 +107,23 @@ export const Pill: React.FC<PillProps> = ({ newRef }) => {
       data-reference-id={newRef.id}
       {...(newRef.docId ? { "data-doc-id": newRef.docId } : {})}
       {...(newRef.mailId ? { "data-mail-id": newRef.mailId } : {})}
+      {...(newRef.threadId ? { "data-thread-id": newRef.threadId } : {})}
       {...(newRef.app ? { "data-app": newRef.app } : {})}
       {...(newRef.entity ? { "data-entity": newRef.entity } : {})}
       {...(newRef.userMap
         ? { "user-map": JSON.stringify(newRef.userMap) }
         : {})} // Ensure userMap is serialized
+      {...(newRef.wholeSheet !== undefined
+        ? { "data-whole-sheet": String(newRef.wholeSheet) }
+        : {})}
       title={newRef.title}
     >
       {displayIcon}
-      {getPillDisplayTitle(newRef.title)}
+      <span className="truncate line-clamp-1">
+        {parseHighlight(
+          truncateWithHiTags(trimToHighlightHotspot(newRef.title), 15),
+        )}
+      </span>
     </a>
   )
 }

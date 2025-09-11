@@ -1,6 +1,6 @@
 import type { Context } from "hono"
-import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { mkdir, rm } from "node:fs/promises"
+import path, { join } from "node:path"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import {
@@ -12,15 +12,20 @@ import { db } from "@/db/client"
 import {
   checkIfDataSourceFileExistsByNameAndId,
   getDataSourceByNameAndCreator,
+  insert,
+  NAMESPACE,
 } from "../search/vespa"
 import { NoUserFound } from "@/errors"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
-import { unlink } from "node:fs/promises"
-import { isValidFile } from "../../shared/filesutils"
+import { isValidFile, isImageFile } from "shared/fileUtils"
+import { generateThumbnail, getThumbnailPath } from "@/utils/image"
+import type { AttachmentMetadata } from "@/shared/types"
+import { FileProcessorService } from "@/services/fileProcessor"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
+import { getBaseMimeType } from "@/integrations/dataSource/config"
 
 const { JwtPayloadKey } = config
-const Logger = getLogger(Subsystem.Api).child({ module: "newApps" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
 
 const DOWNLOADS_DIR = join(process.cwd(), "downloads")
@@ -83,7 +88,7 @@ export const handleFileUpload = async (c: Context) => {
     const invalidFiles = files.filter((file) => !isValidFile(file))
     if (invalidFiles.length > 0) {
       throw new HTTPException(400, {
-        message: `${invalidFiles.length} file(s) rejected. Files must be under 15MB and of supported types.`,
+        message: `${invalidFiles.length} file(s) rejected. Files must be under 40MB, images under 5MB and of supported types.`,
       })
     }
 
@@ -176,6 +181,287 @@ export const handleFileUpload = async (c: Context) => {
     loggerWithChild({ email: email }).error(
       error,
       "Error in file upload handler",
+    )
+    throw error
+  }
+}
+
+export const handleAttachmentUpload = async (c: Context) => {
+  let email = ""
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    email = sub
+    const userRes = await getUserByEmail(db, sub)
+    if (!userRes || !userRes.length) {
+      loggerWithChild({ email }).error(
+        { sub },
+        "No user found in attachment upload",
+      )
+      throw new NoUserFound({})
+    }
+
+    const formData = await c.req.formData()
+    const files = formData.getAll("attachment") as File[]
+
+    if (!files.length) {
+      throw new HTTPException(400, {
+        message: "No attachments uploaded. Please upload at least one file",
+      })
+    }
+
+    const invalidFiles = files.filter((file) => !isValidFile(file))
+    if (invalidFiles.length > 0) {
+      throw new HTTPException(400, {
+        message: `${invalidFiles.length} attachment(s) rejected. Files must be under 40MB, images under 5MB and of supported types.`,
+      })
+    }
+
+    const attachmentMetadata: AttachmentMetadata[] = []
+
+    for (const file of files) {
+      const fileBuffer = await file.arrayBuffer()
+      const fileId = `att_${crypto.randomUUID()}`
+      const ext = file.name.split(".").pop()?.toLowerCase() || ""
+      const fullFileName = `${0}.${ext}`
+      const isImage = isImageFile(file.type)
+      let thumbnailPath: string | undefined
+      let outputDir: string | undefined
+
+      try {
+        if (isImage) {
+          // For images: save to disk and generate thumbnail
+          const baseDir = path.resolve(process.env.IMAGE_DIR || "downloads/xyne_images_db")
+          outputDir = path.join(baseDir, fileId)
+          
+          await mkdir(outputDir, { recursive: true })
+          const filePath = path.join(outputDir, fullFileName)
+          await Bun.write(filePath, new Uint8Array(fileBuffer))
+
+          // Generate thumbnail for images
+          thumbnailPath = getThumbnailPath(outputDir, fileId)
+          await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath)
+        } else {
+          // For non-images: process through FileProcessorService and ingest into Vespa
+          
+          // Process the file content using FileProcessorService
+          const processingResult = await FileProcessorService.processFile(
+            Buffer.from(fileBuffer),
+            file.type,
+            file.name,
+            fileId,
+            undefined,
+            true,
+            false,
+          )
+          
+          // TODO: Ingest the processed content into Vespa
+          // This would typically involve calling your Vespa ingestion service
+          // For now, we'll log the processing result
+          loggerWithChild({ email }).info(
+            `Processed non-image file "${file.name}" with ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`
+          )
+
+          const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
+          
+          const vespaDoc = {
+            docId: fileId,
+            clId: "attachment",
+            itemId: fileId,
+            fileName: file.name,
+            app: Apps.KnowledgeBase as const,
+            entity: KnowledgeBaseEntity.Attachment,
+            description: "",
+            storagePath: "",
+            chunks: chunks,
+            chunks_pos: chunks_pos,
+            image_chunks: image_chunks,
+            image_chunks_pos: image_chunks_pos,
+            metadata: JSON.stringify({
+              originalFileName: file.name,
+              uploadedBy: email,
+              chunksCount: chunks.length,
+              imageChunksCount: image_chunks.length,
+              processingMethod: getBaseMimeType(file.type || "text/plain"),
+              lastModified: Date.now(),
+            }),
+            createdBy: email,
+            duration: 0,
+            mimeType: getBaseMimeType(file.type || "text/plain"),
+            fileSize: file.size,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+
+          await insert(vespaDoc, KbItemsSchema)
+        }
+
+        // Create attachment metadata
+        const metadata: AttachmentMetadata = {
+          fileId,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          isImage,
+          thumbnailPath: (thumbnailPath && outputDir)
+            ? path.relative(outputDir, thumbnailPath)
+            : "",
+          createdAt: new Date(),
+          url: `/api/v1/attachments/${fileId}`,
+        }
+
+        attachmentMetadata.push(metadata)
+
+        loggerWithChild({ email }).info(
+          `Attachment "${file.name}" processed with ID ${fileId}${isImage ? " (saved to disk with thumbnail)" : " (processed and ingested into Vespa)"}`,
+        )
+      } catch (error) {
+        // Cleanup: remove the directory if file write fails (only for images)
+        if (isImage && outputDir) {
+          try {
+            await rm(outputDir, { recursive: true, force: true })
+            loggerWithChild({ email }).warn(
+              `Cleaned up directory ${outputDir} after failed file write`,
+            )
+          } catch (cleanupError) {
+            loggerWithChild({ email }).error(
+              cleanupError,
+              `Failed to cleanup directory ${outputDir} after file write error`,
+            )
+          }
+        }
+        throw error
+      }
+    }
+
+    return c.json({
+      success: true,
+      attachments: attachmentMetadata,
+      message: `Stored ${attachmentMetadata.length} attachment(s) successfully.`,
+    })
+  } catch (error) {
+    loggerWithChild({ email }).error(
+      error,
+      "Error in attachment upload handler",
+    )
+    throw error
+  }
+}
+
+/**
+ * Serve attachment file by fileId
+ */
+export const handleAttachmentServe = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+
+  try {
+    const fileId = c.req.param("fileId")
+    if (!fileId) {
+      throw new HTTPException(400, { message: "File ID is required" })
+    }
+
+    // First, try the legacy path structure (for images)
+    const legacyBaseDir = path.resolve(
+      process.env.IMAGE_DIR || "downloads/xyne_images_db",
+    )
+    const legacyDir = path.join(legacyBaseDir, fileId)
+
+    // Check for files in legacy structure
+    let filePath: string | null = null
+    let fileName: string | null = null
+    let fileType: string | null = null
+
+    // Look for any file in the legacy directory
+    const possibleExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
+    for (const ext of possibleExtensions) {
+      const testPath = path.join(legacyDir, `0.${ext}`)
+      const testFile = Bun.file(testPath)
+      if (await testFile.exists()) {
+        filePath = testPath
+        fileName = `${fileId}.${ext}`
+        fileType = testFile.type || `image/${ext}`
+        break
+      }
+    }
+
+    // Check if file exists
+    const file = Bun.file(filePath || "")
+    if (!(await file.exists())) {
+      // File not found on disk - it might be a non-image file processed through Vespa
+      throw new HTTPException(404, { 
+        message: "File not found. Non-image files are processed through Vespa and not stored on disk." 
+      })
+    }
+
+    loggerWithChild({ email }).info(
+      `Serving attachment ${fileId} (${fileName}) for user ${email}`,
+    )
+
+    // Set appropriate headers
+    c.header("Content-Type", fileType || "application/octet-stream")
+    c.header("Content-Disposition", `inline; filename="${fileName}"`)
+    c.header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+
+    // Stream the file
+    return new Response(file.stream(), {
+      headers: c.res.headers,
+    })
+  } catch (error) {
+    loggerWithChild({ email }).error(
+      error,
+      `Error serving attachment ${c.req.param("fileId")}`,
+    )
+    throw error
+  }
+}
+
+/**
+ * Serve thumbnail for attachment
+ */
+export const handleThumbnailServe = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+
+  try {
+    const fileId = c.req.param("fileId")
+    if (!fileId) {
+      throw new HTTPException(400, { message: "File ID is required" })
+    }
+
+    // First, try the legacy path structure
+    const legacyBaseDir = path.resolve(
+      process.env.IMAGE_DIR || "downloads/xyne_images_db",
+    )
+    const legacyThumbnailPath = path.join(
+      legacyBaseDir,
+      fileId,
+      `${fileId}_thumbnail.jpeg`,
+    )
+
+    let thumbnailPath = legacyThumbnailPath
+    let thumbnailFile = Bun.file(thumbnailPath)
+
+    // Check if thumbnail exists
+    if (!(await thumbnailFile.exists())) {
+      throw new HTTPException(404, { message: "Thumbnail not found on disk" })
+    }
+
+    loggerWithChild({ email }).info(
+      `Serving thumbnail for ${fileId} for user ${email}`,
+    )
+
+    // Set appropriate headers for thumbnail
+    c.header("Content-Type", "image/jpeg")
+    c.header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+
+    // Stream the thumbnail
+    return new Response(thumbnailFile.stream(), {
+      headers: c.res.headers,
+    })
+  } catch (error) {
+    loggerWithChild({ email }).error(
+      error,
+      `Error serving thumbnail ${c.req.param("fileId")}`,
     )
     throw error
   }

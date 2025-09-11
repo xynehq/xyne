@@ -1,10 +1,19 @@
 import type React from "react"
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { Upload, Folder, File, X, Trash2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Input } from "@/components/ui/input"
-import { isValidFile } from "../../../shared/filesutils"
+import {
+  generateFileId,
+  createFileSelectionHandlers,
+  validateAndDeduplicateFiles,
+  createToastNotifier,
+  createImagePreview,
+  cleanupPreviewUrls,
+} from "@/utils/fileUtils"
+import { isValidFile } from "shared/fileUtils"
+import { authFetch } from "@/utils/authFetch"
 
 interface SelectedFile {
   file: File
@@ -19,6 +28,12 @@ interface FileUploadProps {
   existingDataSourceNames?: string[] // New prop for existing names
 }
 
+interface BatchProgress {
+  currentFile: number
+  totalFiles: number
+  isProcessing: boolean
+}
+
 export default function FileUpload({
   onDatasourceCreated,
   initialDatasourceName = "",
@@ -28,6 +43,11 @@ export default function FileUpload({
   const { toast } = useToast()
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<BatchProgress>({
+    currentFile: 0,
+    totalFiles: 0,
+    isProcessing: false,
+  })
   const [datasourceName, setDatasourceName] = useState(initialDatasourceName)
   const [datasourceNameError, setDatasourceNameError] = useState<string | null>(
     null,
@@ -35,80 +55,247 @@ export default function FileUpload({
   const folderInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Check if we're editing an existing datasource
+  // Configuration for batch processing
+  const BATCH_CONFIG = {
+    MAX_PAYLOAD_SIZE: 45 * 1024 * 1024,
+    MIN_FILES_PER_BATCH: 1,
+    MAX_FILES_PER_BATCH: 50,
+  }
+
   const isEditingExisting = !!initialDatasourceName
 
-  const showToast = useCallback(
-    (title: string, description: string, isError = false) => {
-      const { dismiss } = toast({
-        title,
-        description,
-        variant: isError ? "destructive" : "default",
-        duration: 2000, // Auto dismiss after 2 seconds
-        action: (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              dismiss()
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        ),
+  const showToast = createToastNotifier(toast)
+
+  // Calculate FormData size estimation
+  const estimateFormDataSize = (
+    files: File[],
+    datasourceName: string,
+  ): number => {
+    let size = 0
+
+    // Add datasource name and flag overhead
+    size += new TextEncoder().encode(datasourceName).length + 100
+    size += 20
+
+    // Add file sizes with FormData overhead
+    files.forEach((file) => {
+      size += file.size
+      size += file.name.length * 2
+      size += 200
+    })
+
+    return size
+  }
+
+  // Create batches based on payload size limit
+  const createBatches = (files: SelectedFile[]): SelectedFile[][] => {
+    const batches: SelectedFile[][] = []
+    let currentBatch: SelectedFile[] = []
+    let currentBatchSize = 0
+
+    const baseOverhead = estimateFormDataSize([], datasourceName)
+
+    for (const selectedFile of files) {
+      const fileOverhead =
+        selectedFile.file.size + selectedFile.file.name.length * 2 + 200
+      const newBatchSize = currentBatchSize + fileOverhead
+
+      // Check if adding this file would exceed the limit
+      if (
+        currentBatch.length > 0 &&
+        (baseOverhead + newBatchSize > BATCH_CONFIG.MAX_PAYLOAD_SIZE ||
+          currentBatch.length >= BATCH_CONFIG.MAX_FILES_PER_BATCH)
+      ) {
+        // Start a new batch
+        batches.push([...currentBatch])
+        currentBatch = [selectedFile]
+        currentBatchSize = fileOverhead
+      } else {
+        // Add to current batch
+        currentBatch.push(selectedFile)
+        currentBatchSize = newBatchSize
+      }
+    }
+
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch)
+    }
+
+    return batches
+  }
+
+  const uploadBatch = async (
+    batch: SelectedFile[],
+    batchIndex: number,
+    totalBatches: number,
+  ): Promise<any> => {
+    const formData = new FormData()
+    formData.append("datasourceName", datasourceName.trim())
+    formData.append("flag", isEditingExisting ? "addition" : "creation")
+    formData.append("batchIndex", batchIndex.toString())
+    formData.append("totalBatches", totalBatches.toString())
+
+    batch.forEach((selectedFile) => {
+      const fileName =
+        selectedFile.file.name.split("/").pop()?.split("\\").pop() ||
+        selectedFile.file.name
+      formData.append("file", selectedFile.file, fileName)
+    })
+
+    const response = await authFetch("/api/v1/files/upload", {
+      method: "POST",
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(
+        error.message || `Batch upload failed with status: ${response.status}`,
+      )
+    }
+
+    return response.json()
+  }
+
+  const handleSubmit = useCallback(async () => {
+    if (selectedFiles.length === 0 || !datasourceName.trim()) return
+
+    setIsUploading(true)
+
+    try {
+      const batches = createBatches(selectedFiles)
+
+      setBatchProgress({
+        currentFile: 0,
+        totalFiles: selectedFiles.length,
+        isProcessing: true,
       })
-    },
-    [toast],
-  )
 
-  const generateId = () => Math.random().toString(36).substring(2, 9)
+      let allResults: any[] = []
+      let totalProcessedFiles = 0
+      let totalFailedFiles: any[] = []
 
-  // Original processFiles function without path handling
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i]
+
+        setBatchProgress((prev) => ({
+          ...prev,
+          currentFile: totalProcessedFiles + 1,
+        }))
+
+        try {
+          const result = await uploadBatch(batch, i, batches.length)
+          allResults.push(result)
+
+          if (result.processedFiles) {
+            totalProcessedFiles += result.processedFiles.length
+          }
+          if (result.failedFiles) {
+            totalFailedFiles.push(...result.failedFiles)
+          }
+
+          setBatchProgress((prev) => ({
+            ...prev,
+            currentFile: totalProcessedFiles,
+          }))
+
+          if (i < batches.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 200))
+          }
+        } catch (error) {
+          console.error(`Batch ${i + 1} failed:`, error)
+          showToast(
+            `Batch ${i + 1} Failed`,
+            `Error uploading batch ${i + 1} of ${batches.length}: ${
+              typeof error === "object" && error && "message" in error
+                ? (error as { message: string }).message
+                : String(error)
+            }`,
+            true,
+          )
+        }
+      }
+
+      const hasSuccessfulUploads = totalProcessedFiles > 0
+
+      if (hasSuccessfulUploads || totalFailedFiles.length > 0) {
+        if (totalFailedFiles.length > 0) {
+          totalFailedFiles.forEach(
+            (failedFile: { name: string; error: string }) => {
+              if (
+                failedFile.error ===
+                "Document already exists in this datasource."
+              ) {
+                showToast(
+                  "File Skipped",
+                  `File "${failedFile.name}" already exists and was not re-uploaded.`,
+                  false,
+                )
+              } else {
+                showToast(
+                  "Upload Error",
+                  `Could not upload "${failedFile.name}": ${failedFile.error}`,
+                  true,
+                )
+              }
+            },
+          )
+        }
+
+        if (hasSuccessfulUploads) {
+          const message =
+            batches.length > 1
+              ? `Successfully uploaded ${totalProcessedFiles} files in ${batches.length} batches to datasource: ${datasourceName}`
+              : `Successfully uploaded ${totalProcessedFiles} files to datasource: ${datasourceName}`
+
+          showToast("Upload Completed", message)
+        }
+
+        setSelectedFiles([])
+
+        if (onDatasourceCreated && !isEditingExisting && hasSuccessfulUploads) {
+          onDatasourceCreated(datasourceName)
+        }
+        if (onUploadCompleted) {
+          onUploadCompleted()
+        }
+      } else {
+        showToast("Upload Failed", "No files were successfully uploaded.", true)
+      }
+    } catch (error) {
+      console.error("Upload error:", error)
+      showToast(
+        "Upload Failed",
+        "An unexpected error occurred during upload. Please try again.",
+        true,
+      )
+    } finally {
+      setIsUploading(false)
+      setBatchProgress({
+        currentFile: 0,
+        totalFiles: 0,
+        isProcessing: false,
+      })
+    }
+  }, [
+    selectedFiles,
+    showToast,
+    datasourceName,
+    onDatasourceCreated,
+    onUploadCompleted,
+    isEditingExisting,
+  ])
+
   const processFiles = useCallback(
     (files: FileList | File[]) => {
-      const fileArray = Array.from(files)
-      const validFiles = fileArray.filter(isValidFile)
-      const invalidFiles = fileArray.length - validFiles.length
-
-      if (invalidFiles > 0) {
-        showToast(
-          "Invalid file(s)",
-          `${invalidFiles} file(s) ignored. Files must be under 15MB and of supported types.`,
-          true,
-        )
-      }
-
+      const validFiles = validateAndDeduplicateFiles(files, showToast)
       if (validFiles.length === 0) return
 
-      // Create a map to track files by name for deduplication
-      const fileMap = new Map<string, File>()
-      let duplicateCount = 0
-
-      // Keep only the first occurrence of each filename
-      validFiles.forEach((file) => {
-        if (!fileMap.has(file.name)) {
-          fileMap.set(file.name, file)
-        } else {
-          duplicateCount++
-        }
-      })
-
-      // Notify about duplicates if any were found
-      if (duplicateCount > 0) {
-        showToast(
-          "Duplicate files",
-          `${duplicateCount} duplicate file(s) were ignored.`,
-          false,
-        )
-      }
-
       // Create selected file objects from unique files
-      const uniqueFiles = Array.from(fileMap.values())
-      const newFiles: SelectedFile[] = uniqueFiles.map((file) => ({
+      const newFiles: SelectedFile[] = validFiles.map((file) => ({
         file,
-        id: generateId(),
-        preview: undefined,
+        id: generateFileId(),
+        preview: createImagePreview(file),
       }))
 
       // Check if any files with the same name already exist in selectedFiles
@@ -154,6 +341,10 @@ export default function FileUpload({
       const processEntry = async (entry: FileSystemEntry) => {
         totalItems++
 
+        if (entry.name.startsWith(".")) {
+          return
+        }
+
         if (entry.isFile) {
           const fileEntry = entry as FileSystemFileEntry
           return new Promise<void>((resolve) => {
@@ -190,7 +381,7 @@ export default function FileUpload({
         if (files.length === 0 && totalItems > 0) {
           showToast(
             "No valid files found",
-            "Files must be under 15MB. All oversized files were ignored.",
+            "Files must be under 40MB. All oversized files were ignored.",
             true,
           )
         }
@@ -203,20 +394,9 @@ export default function FileUpload({
     folderInputRef.current?.click()
   }, [])
 
-  const handleFileSelect = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files
-      if (files && files.length > 0) {
-        processFiles(files)
-      }
-      // Reset the input value so the same file can be selected again
-      e.target.value = ""
-    },
-    [processFiles],
+  const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
+    fileInputRef,
+    processFiles,
   )
 
   const handleFolderChange = useCallback(
@@ -233,128 +413,34 @@ export default function FileUpload({
 
   const removeFile = useCallback((id: string) => {
     setSelectedFiles((prev) => {
-      const updated = prev.filter((f) => f.id !== id)
-      return updated
+      const fileToRemove = prev.find((f) => f.id === id)
+      if (fileToRemove?.preview) {
+        URL.revokeObjectURL(fileToRemove.preview)
+      }
+      return prev.filter((f) => f.id !== id)
     })
   }, [])
 
   const removeAllFiles = useCallback(() => {
-    setSelectedFiles([])
+    setSelectedFiles((prev) => {
+      const previewUrls = prev.map((f) => f.preview).filter(Boolean) as string[]
+      cleanupPreviewUrls(previewUrls)
+      return []
+    })
   }, [])
 
-  const handleSubmit = useCallback(async () => {
-    if (selectedFiles.length === 0 || !datasourceName.trim()) return
+  // Cleanup preview URLs when component unmounts
+  const selectedFilesRef = useRef(selectedFiles)
+  selectedFilesRef.current = selectedFiles
 
-    setIsUploading(true)
-
-    try {
-      const formData = new FormData()
-      formData.append("datasourceName", datasourceName.trim())
-      formData.append("flag", isEditingExisting ? "addition" : "creation")
-
-      selectedFiles.forEach((selectedFile) => {
-        const fileName =
-          selectedFile.file.name.split("/").pop()?.split("\\").pop() ||
-          selectedFile.file.name
-        formData.append("file", selectedFile.file, fileName)
-      })
-
-      const response = await fetch("/api/v1/files/upload", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-
-        let overallSuccessMessage =
-          result.message ||
-          `${selectedFiles.length} file(s) processed for datasource: ${datasourceName}`
-        let allFilesSkippedOrFailed = true
-
-        if (result.processedFiles && result.processedFiles.length > 0) {
-          allFilesSkippedOrFailed = false
-        }
-
-        if (result.failedFiles && result.failedFiles.length > 0) {
-          let duplicateExists = false
-          result.failedFiles.forEach(
-            (failedFile: { name: string; error: string }) => {
-              if (
-                failedFile.error ===
-                "Document already exists in this datasource."
-              ) {
-                showToast(
-                  "File Skipped",
-                  `File "${failedFile.name}" already exists and was not re-uploaded.`,
-                  false,
-                )
-                duplicateExists = true
-              } else {
-                // Show error for other failed files
-                showToast(
-                  "Upload Error",
-                  `Could not upload "${failedFile.name}": ${failedFile.error}`,
-                  true,
-                )
-              }
-            },
-          )
-          if (
-            result.processedFiles &&
-            result.processedFiles.length === 0 &&
-            duplicateExists &&
-            result.failedFiles.length === 1
-          ) {
-            // Special case: only one file was attempted, and it was a duplicate
-            overallSuccessMessage = `File "${result.failedFiles[0].name}" already exists. No new files were uploaded.`
-          } else if (
-            result.processedFiles &&
-            result.processedFiles.length === 0 &&
-            result.failedFiles.length > 0
-          ) {
-            overallSuccessMessage =
-              "No files were uploaded. See individual errors."
-          }
-        } else {
-          // No failed files means all selected files were processed successfully
-          allFilesSkippedOrFailed = false
-        }
-
-        if (!allFilesSkippedOrFailed) {
-          showToast("Upload Processed", overallSuccessMessage)
-        }
-
-        setSelectedFiles([])
-
-        if (onDatasourceCreated && !isEditingExisting && result.success) {
-          onDatasourceCreated(datasourceName)
-        }
-        if (onUploadCompleted) {
-          onUploadCompleted()
-        }
-      } else {
-        const error = await response.json()
-        showToast("Upload failed", error.message || "Please try again", true)
-      }
-    } catch (error) {
-      console.error("Upload error:", error)
-      showToast(
-        "Upload failed",
-        "An unexpected error occurred. Please try again.",
-        true,
-      )
-    } finally {
-      setIsUploading(false)
+  useEffect(() => {
+    return () => {
+      const previewUrls = selectedFilesRef.current
+        .map((f) => f.preview)
+        .filter(Boolean) as string[]
+      cleanupPreviewUrls(previewUrls)
     }
-  }, [
-    selectedFiles,
-    showToast,
-    datasourceName,
-    onDatasourceCreated,
-    onUploadCompleted,
-    isEditingExisting,
-  ])
+  }, [])
 
   return (
     <div className="w-full">
@@ -366,7 +452,7 @@ export default function FileUpload({
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Supported formats include text, image, CSV, PDF, Word, Excel, and
-            PowerPoint files (max 15MB per file).
+            PowerPoint files (max 40MB per file).
           </p>
         </div>
       )}
@@ -410,6 +496,28 @@ export default function FileUpload({
         </div>
       )}
 
+      {/* Progress Indicator */}
+      {batchProgress.isProcessing && (
+        <div className="mb-4 p-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+              Processing...
+            </span>
+            <span className="text-sm text-slate-600 dark:text-slate-300">
+              {batchProgress.currentFile} / {batchProgress.totalFiles} files
+            </span>
+          </div>
+          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+            <div
+              className="bg-slate-600 dark:bg-slate-400 h-2 rounded-full transition-all duration-300"
+              style={{
+                width: `${(batchProgress.currentFile / batchProgress.totalFiles) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       <div
         className="relative transition-colors flex flex-col items-center justify-center"
         onDragOver={handleDragOver}
@@ -417,8 +525,12 @@ export default function FileUpload({
         onDrop={handleDrop}
       >
         <div
-          className="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg p-8 w-full mx-auto h-72 min-h-72 cursor-pointer flex flex-col items-center justify-center transition-colors hover:border-gray-400 dark:hover:border-gray-500 relative bg-gray-50 dark:bg-slate-800"
-          onClick={handleFileSelect}
+          className={`border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg p-8 w-full mx-auto h-72 min-h-72 flex flex-col items-center justify-center transition-colors relative bg-gray-50 dark:bg-slate-800 ${
+            isUploading
+              ? "cursor-not-allowed"
+              : "cursor-pointer hover:border-gray-400 dark:hover:border-gray-500"
+          }`}
+          onClick={isUploading ? undefined : handleFileSelect}
         >
           {selectedFiles.length > 0 && (
             <Button
@@ -426,6 +538,7 @@ export default function FileUpload({
                 e.stopPropagation()
                 removeAllFiles()
               }}
+              disabled={isUploading}
               className="absolute top-2 right-5 flex items-center space-x-1 bg-gray-800 dark:bg-slate-600 hover:bg-gray-900 dark:hover:bg-slate-500 text-white dark:text-gray-200 h-9 px-3"
             >
               <Trash2 className="w-4 h-4" />
@@ -447,7 +560,7 @@ export default function FileUpload({
                     </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Supported formats include text, CSV, PDF, Word, Excel, and
-                      PowerPoint files (max 15MB per file).
+                      PowerPoint files (max 40MB per file).
                     </p>
                   </div>
                 )}
@@ -461,19 +574,29 @@ export default function FileUpload({
                   {selectedFiles.map((selectedFile) => (
                     <div key={selectedFile.id} className="relative group">
                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-1.5 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors hover:shadow-sm flex flex-col items-center justify-between min-h-[70px]">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            removeFile(selectedFile.id)
-                          }}
-                          className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 dark:bg-slate-600 text-white dark:text-gray-200 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black dark:hover:bg-slate-500"
-                          title="Remove file"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                        {!isUploading && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeFile(selectedFile.id)
+                            }}
+                            className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 dark:bg-slate-600 text-white dark:text-gray-200 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black dark:hover:bg-slate-500"
+                            title="Remove file"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
 
                         <div className="flex flex-col items-center justify-center w-full">
-                          <File className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+                          {selectedFile.preview ? (
+                            <img
+                              src={selectedFile.preview}
+                              alt={selectedFile.file.name}
+                              className="w-12 h-12 object-cover rounded border border-gray-200 dark:border-gray-600"
+                            />
+                          ) : (
+                            <File className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+                          )}
                           <div className="w-full text-center mt-1">
                             <p
                               className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-full px-1"
@@ -504,6 +627,7 @@ export default function FileUpload({
                   handleFolderSelect()
                 }}
                 variant="outline"
+                disabled={isUploading}
                 className="flex items-center space-x-2 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600"
               >
                 <Folder className="w-4 h-4" />{" "}
@@ -561,7 +685,7 @@ export default function FileUpload({
           directory=""
           className="hidden"
           onChange={handleFolderChange}
-          accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
+          accept=".txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
         />
         <input
           ref={fileInputRef}
@@ -569,7 +693,7 @@ export default function FileUpload({
           multiple
           className="hidden"
           onChange={handleFileChange}
-          accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
+          accept=".txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv"
         />
       </div>
     </div>

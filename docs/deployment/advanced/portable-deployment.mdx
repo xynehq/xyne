@@ -1,0 +1,630 @@
+---
+title: "Portable One-Click Deployment"
+description: "Deploy Xyne anywhere with minimal setup using the portable deployment system"
+icon: "rocket"
+---
+
+## Overview
+
+The Xyne Portable Deployment system provides a one-click deployment solution that can be easily transferred and deployed on any system. This advanced deployment method separates infrastructure and application components for efficient updates and maintenance.
+
+<Info>
+This deployment method is ideal for production environments, development teams, and situations where you need to frequently update the application without affecting the database or search infrastructure.
+</Info>
+
+## Software Requirements
+
+### Minimum System Requirements
+- **OS**: Linux (Ubuntu 20.04+ recommended), macOS, or Windows with WSL2
+- **RAM**: 8GB minimum, 16GB+ recommended
+- **Storage**: 50GB+ available disk space
+- **CPU**: 4+ cores recommended
+
+### Required Software
+
+<CardGroup cols={2}>
+  <Card title="Docker Engine" icon="docker">
+    **Version**: 20.10+ 
+    
+    **Installation**: [Docker Official Guide](https://docs.docker.com/engine/install/)
+    
+    Ensure Docker daemon is running and accessible without sudo (add user to docker group)
+  </Card>
+  
+  <Card title="Docker Compose" icon="layer-group">
+    **Version**: 2.0+
+    
+    **Installation**: Usually included with Docker Desktop or install separately via [Compose docs](https://docs.docker.com/compose/install/)
+    
+    Verify with: `docker-compose --version`
+  </Card>
+</CardGroup>
+
+### GPU Support (Optional)
+For optimal search performance with GPU-accelerated embeddings:
+
+<Card title="NVIDIA Container Toolkit" icon="microchip">
+  **Required for**: GPU-accelerated Vespa search engine
+  
+  **Installation**: 
+  ```bash
+  # Ubuntu/Debian
+  curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+  sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+  sudo systemctl restart docker
+  ```
+  
+  **Verify**: `docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi`
+</Card>
+
+## Quick Start
+
+### Method 1: Import Pre-built Package
+
+If you received a pre-built Xyne package:
+
+<Steps>
+  <Step title="Extract Package">
+    ```bash
+    # Extract the portable package
+    tar -xzf xyne-portable-YYYYMMDD_HHMMSS.tar.gz
+    cd xyne-portable-YYYYMMDD_HHMMSS/
+    ```
+  </Step>
+  
+  <Step title="Import Docker Images">
+    ```bash
+    # Import pre-built images and pull dependencies
+    ./import.sh
+    ```
+    
+    This will:
+    - Load the main Xyne application image
+    - Load the GPU-enabled Vespa image  
+    - Pull supporting images (PostgreSQL, Prometheus, Grafana, etc.)
+  </Step>
+  
+  <Step title="Configure Environment">
+    ```bash
+    # Copy and customize environment settings
+    cp .env.example .env
+    nano .env  # Optional: customize settings
+    ```
+  </Step>
+  
+  <Step title="Deploy">
+    ```bash
+    # Start all services
+    ./deploy.sh start
+    ```
+  </Step>
+  
+  <Step title="Access Application">
+    Navigate to `http://localhost:3000` to access Xyne
+    
+    **Additional Services:**
+    - Grafana Dashboard: `http://localhost:3002`
+    - Prometheus Metrics: `http://localhost:9090`
+    - Loki Logs: `http://localhost:3100`
+  </Step>
+</Steps>
+
+### Method 2: Build from Source
+
+If deploying directly from the Xyne repository:
+
+<Steps>
+  <Step title="Clone Repository">
+    ```bash
+    git clone https://github.com/xynehq/xyne.git
+    cd xyne/deployment/portable/
+    ```
+  </Step>
+  
+  <Step title="Build and Export">
+    ```bash
+    # Build images and create portable package
+    ./quick-export.sh
+    
+    # Or build without export for same-machine deployment
+    ./quick-export.sh --no-export
+    ```
+  </Step>
+  
+  <Step title="Deploy">
+    ```bash
+    # Start all services
+    ./deploy.sh start
+    ```
+  </Step>
+</Steps>
+
+## Deployment Architecture
+
+The portable deployment uses a **modular architecture** with separated concerns:
+
+<Card title="Split Compose Structure" icon="sitemap">
+  ```
+  deployment/portable/
+  ├── docker-compose.yml               # Base configuration
+  ├── docker-compose.infrastructure.yml # Database, Vespa, Monitoring  
+  ├── docker-compose.app.yml          # Xyne application only
+  └── deploy.sh                       # Deployment orchestration
+  ```
+  
+  **Benefits:**
+  - **Fast app updates**: Update application without touching database/search
+  - **Selective control**: Manage infrastructure and application independently
+  - **Zero-downtime**: Infrastructure remains running during app updates
+</Card>
+
+### Service Components
+
+<CardGroup cols={2}>
+  <Card title="Infrastructure Services" icon="server">
+    **Always-On Components:**
+    - PostgreSQL Database
+    - Vespa Search Engine (GPU-enabled)
+    - Prometheus (Metrics)
+    - Grafana (Dashboards)
+    - Loki + Promtail (Logging)
+    
+    **Update Frequency**: Rare (stable foundation)
+  </Card>
+  
+  <Card title="Application Service" icon="code">
+    **Frequently Updated:**
+    - Xyne Node.js Application
+    - Frontend React Build
+    - API Endpoints
+    - Business Logic
+    
+    **Update Frequency**: Regular (feature releases)
+  </Card>
+</CardGroup>
+
+## Deployment Commands
+
+The `deploy.sh` script provides comprehensive deployment management:
+
+### Basic Operations
+
+<CodeGroup>
+```bash Start All Services
+./deploy.sh start
+# Starts infrastructure first, then application
+# Includes health checks and dependency waiting
+```
+
+```bash Stop All Services  
+./deploy.sh stop
+# Gracefully stops all services
+# Preserves data volumes
+```
+
+```bash Restart Everything
+./deploy.sh restart
+# Complete restart with health checks
+# Use when configuration changes require full restart
+```
+
+```bash Show Status
+./deploy.sh status
+# Display service status and access URLs
+# Shows health check results
+```
+</CodeGroup>
+
+### Efficient Updates
+
+<CodeGroup>
+```bash App-Only Update
+./deploy.sh update-app
+# ⚡ Fast: ~30 seconds
+# Updates only the Xyne application
+# Database and Vespa remain running
+# Zero downtime for search and data
+```
+
+```bash Infrastructure Update
+./deploy.sh update-infra  
+# Updates database, search, monitoring
+# Use when updating Vespa or PostgreSQL versions
+# Requires brief downtime
+```
+</CodeGroup>
+
+### Database Management
+
+<CodeGroup>
+```bash Generate Migrations
+./deploy.sh db-generate
+# Create migration files after schema changes
+# Migrations saved to ./data/app-migrations/
+# Persists across container updates
+```
+
+```bash Apply Migrations
+./deploy.sh db-migrate
+# Apply pending database migrations
+# Safe to run multiple times
+# Required after schema updates
+```
+
+```bash Database Studio
+./deploy.sh db-studio
+# Open Drizzle Studio at localhost:4983
+# Visual database management interface
+# Real-time schema exploration
+```
+</CodeGroup>
+
+### Monitoring & Debugging
+
+<CodeGroup>
+```bash View All Logs
+./deploy.sh logs
+# Real-time logs from all services
+# Press Ctrl+C to exit
+```
+
+```bash View App Logs Only
+./deploy.sh logs app
+# Focus on application logs
+# Useful for debugging app issues
+```
+
+```bash System Cleanup
+./deploy.sh cleanup
+# Remove old containers and images
+# Frees up disk space
+# Safe operation - preserves data
+```
+</CodeGroup>
+
+## Environment Configuration
+
+### Essential Environment Variables
+
+Create or modify the `.env` file in your deployment directory:
+
+<CodeGroup>
+```bash Core Settings
+# Database Configuration
+DATABASE_HOST=xyne-db
+DATABASE_PORT=5432
+DATABASE_USER=xyne
+DATABASE_PASSWORD=xyne
+DATABASE_NAME=xyne
+
+# Application Settings
+NODE_ENV=production
+HOST=http://localhost
+PORT=3000
+
+# Search Engine
+VESPA_HOST=vespa
+VESPA_PORT=8080
+EMBEDDING_MODEL=bge-small-en-v1.5
+```
+
+```bash AI Provider APIs
+# OpenAI
+OPENAI_API_KEY=your_openai_api_key
+
+# Anthropic
+ANTHROPIC_API_KEY=your_anthropic_api_key
+
+# Google (Gemini)
+GOOGLE_API_KEY=your_google_api_key
+
+# Together AI
+TOGETHER_API_KEY=your_together_api_key
+```
+
+```bash Docker Settings
+# Fixed UIDs for consistent permissions
+DOCKER_UID=1000
+DOCKER_GID=1000
+DOCKER_GROUP_ID=999
+
+# GPU Support
+NVIDIA_VISIBLE_DEVICES=all
+NVIDIA_DRIVER_CAPABILITIES=compute,utility
+```
+</CodeGroup>
+
+### Advanced Configuration
+
+<Accordion title="Vespa Search Configuration">
+```bash
+# Embedding Model Options
+EMBEDDING_MODEL=bge-small-en-v1.5    # Default: 384 dimensions, fast
+EMBEDDING_MODEL=bge-base-en-v1.5     # 768 dimensions, balanced  
+EMBEDDING_MODEL=bge-large-en-v1.5    # 1024 dimensions, best quality
+
+# Vespa JVM Settings (adjust based on available RAM)
+VESPA_CONFIGSERVER_JVMARGS="-Xms1g -Xmx16g -XX:+UseG1GC"
+VESPA_CONFIGPROXY_JVMARGS="-Xms512m -Xmx8g -XX:+UseG1GC"
+```
+</Accordion>
+
+<Accordion title="Monitoring & Logging">
+```bash
+# Prometheus Retention
+PROMETHEUS_RETENTION_TIME=15d
+PROMETHEUS_RETENTION_SIZE=10GB
+
+# Grafana Settings
+GF_SECURITY_ADMIN_PASSWORD=your_grafana_password
+GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+
+# Log Levels
+VESPA_LOG_LEVEL=info
+NODE_LOG_LEVEL=info
+```
+</Accordion>
+
+## Data Persistence
+
+All application data is stored in the `./data/` directory:
+
+<Card title="Data Directory Structure" icon="folder">
+```
+data/
+├── postgres-data/      # Database files
+├── vespa-data/        # Search indices and models  
+├── app-uploads/       # User uploaded files
+├── app-logs/         # Application logs
+├── app-assets/       # Static assets
+├── app-migrations/    # Drizzle ORM migration files (persisted)
+├── grafana-storage/  # Grafana dashboards
+├── loki-data/       # Log storage
+├── promtail-data/   # Log collector data
+└── prometheus-data/ # Metrics storage
+```
+
+**Backup Strategy:**
+- Regular backup of `postgres-data/` for database
+- Backup `app-migrations/` for schema history
+- Backup `vespa-data/` for search indices (can be rebuilt)
+- Include `app-uploads/` for user content
+
+**Migration Persistence:**
+- Drizzle migrations are stored in `app-migrations/` and persist across updates
+- Generated migrations remain available after container rebuilds
+- Schema changes are tracked and versioned automatically
+</Card>
+
+## Performance Tuning
+
+### Resource Allocation
+
+<CardGroup cols={2}>
+  <Card title="Memory Optimization" icon="memory">
+    **Small Deployment (8GB RAM):**
+    ```bash
+    # Reduce Vespa memory allocation
+    VESPA_CONFIGSERVER_JVMARGS="-Xms512m -Xmx4g"
+    VESPA_CONFIGPROXY_JVMARGS="-Xms256m -Xmx2g"
+    ```
+    
+    **Large Deployment (32GB+ RAM):**
+    ```bash
+    # Increase for better performance
+    VESPA_CONFIGSERVER_JVMARGS="-Xms2g -Xmx24g"
+    VESPA_CONFIGPROXY_JVMARGS="-Xms1g -Xmx12g"
+    ```
+  </Card>
+  
+  <Card title="Storage Optimization" icon="hard-drive">
+    **SSD Recommended** for:
+    - PostgreSQL data (`postgres-data/`)
+    - Vespa indices (`vespa-data/`)
+    
+    **HDD Acceptable** for:
+    - Logs (`*-logs/`, `loki-data/`)
+    - Backups and archives
+    
+    **Cleanup Automation:**
+    ```bash
+    # Automated via built-in log rotation
+    # Vespa cleanup runs daily automatically
+    ```
+  </Card>
+</CardGroup>
+
+### Network Configuration
+
+<Accordion title="Custom Port Configuration">
+```bash
+# Modify docker-compose.app.yml to change application port
+ports:
+  - "8080:80"  # Change first number for external access
+
+# Modify infrastructure compose for monitoring ports
+# Grafana: "3002:3000"
+# Prometheus: "9090:9090" 
+# Loki: "3100:3100"
+```
+</Accordion>
+
+## Troubleshooting
+
+### Common Issues
+
+<AccordionGroup>
+  <Accordion title="Permission Denied Errors">
+    **Symptoms**: Container startup failures, file permission errors
+    
+    **Solution**:
+    ```bash
+    # Fix data directory permissions
+    sudo chown -R 1000:1000 ./data/
+    
+    # Or use the automated permission setup
+    ./deploy.sh start  # Handles permissions automatically
+    ```
+  </Accordion>
+  
+  <Accordion title="GPU Not Detected">
+    **Symptoms**: Vespa falls back to CPU-only mode
+    
+    **Diagnosis**:
+    ```bash
+    # Check GPU availability
+    docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
+    
+    # Check Docker GPU runtime
+    docker info | grep nvidia
+    ```
+    
+    **Solution**: Install NVIDIA Container Toolkit (see requirements section)
+  </Accordion>
+  
+  <Accordion title="Application Won't Start">
+    **Symptoms**: App container keeps restarting
+    
+    **Diagnosis**:
+    ```bash
+    # Check app logs
+    ./deploy.sh logs app
+    
+    # Check service dependencies
+    ./deploy.sh status
+    ```
+    
+    **Common Fixes**:
+    - Ensure database is healthy before app starts
+    - Verify environment variables in `.env`
+    - Check available disk space and memory
+  </Accordion>
+  
+  <Accordion title="Out of Disk Space">
+    **Symptoms**: Services stop, write errors in logs
+    
+    **Solution**:
+    ```bash
+    # Quick cleanup
+    ./deploy.sh cleanup
+    
+    # Manual cleanup
+    docker system prune -a -f
+    docker volume prune -f
+    
+    # Check large files
+    du -sh ./data/*
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Health Checks
+
+Monitor system health using built-in endpoints:
+
+<CodeGroup>
+```bash Application Health
+curl http://localhost:3000/api/v1/me
+# Should return user/auth information
+```
+
+```bash Vespa Search Health  
+curl http://localhost:8080/state/v1/health
+# Should return {"status": "up"}
+```
+
+```bash Database Health
+./deploy.sh logs xyne-db | grep "ready to accept connections"
+# Should show successful startup messages
+```
+</CodeGroup>
+
+## Migration Guide
+
+### From Simple Docker Compose
+
+If migrating from the basic quickstart deployment:
+
+<Steps>
+  <Step title="Backup Current Data">
+    ```bash
+    # Stop current deployment
+    docker-compose down
+    
+    # Backup data (adjust paths as needed)
+    cp -r ./server/xyne-data ./xyne-data-backup
+    cp -r ./server/vespa-data ./vespa-data-backup
+    ```
+  </Step>
+  
+  <Step title="Deploy Portable System">
+    ```bash
+    cd deployment/portable/
+    ./deploy.sh start
+    ```
+  </Step>
+  
+  <Step title="Migrate Data">
+    ```bash
+    # Stop new deployment
+    ./deploy.sh stop
+    
+    # Copy old data to new structure
+    cp -r ../../xyne-data-backup/* ./data/postgres-data/
+    cp -r ../../vespa-data-backup/* ./data/vespa-data/
+    
+    # Restart with migrated data
+    ./deploy.sh start
+    ```
+  </Step>
+</Steps>
+
+### To Production Environment
+
+<Warning>
+Always test the portable deployment in a staging environment before production use.
+</Warning>
+
+<Steps>
+  <Step title="Production Environment Setup">
+    - Ensure adequate resources (see requirements)
+    - Configure firewall for required ports
+    - Set up SSL/TLS termination (reverse proxy)
+    - Configure backup procedures
+  </Step>
+  
+  <Step title="Security Hardening">
+    - Change default passwords in `.env`
+    - Restrict network access to management ports
+    - Configure log rotation and monitoring
+    - Set up automated security updates
+  </Step>
+  
+  <Step title="Monitoring Setup">
+    - Configure Grafana alerts
+    - Set up log aggregation
+    - Monitor disk space and performance
+    - Test backup and recovery procedures
+  </Step>
+</Steps>
+
+## Support
+
+<CardGroup cols={2}>
+  <Card title="Documentation" icon="book" href="/quickstart">
+    Complete setup guides and API documentation
+  </Card>
+  
+  <Card title="Community Support" icon="slack" href="https://xynerds.slack.com/">
+    Join our Slack community for help and discussions
+  </Card>
+  
+  <Card title="GitHub Issues" icon="github" href="https://github.com/xynehq/xyne/issues">
+    Report bugs and request features
+  </Card>
+  
+  <Card title="Direct Support" icon="envelope" href="mailto:founders@xynehq.com">
+    Contact the team for enterprise support
+  </Card>
+</CardGroup>

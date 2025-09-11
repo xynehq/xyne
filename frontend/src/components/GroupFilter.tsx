@@ -1,12 +1,15 @@
 import {
   Apps,
   CalendarEntity,
+  DataSourceEntity,
   DriveEntity,
   Entity,
   GooglePeopleEntity,
   isMailAttachment,
+  KnowledgeBaseEntity,
   SlackEntity,
   SystemEntity,
+  WebSearchEntity,
 } from "shared/types"
 import { Filter, Groups } from "@/types"
 import { getIcon } from "@/lib/common"
@@ -100,8 +103,29 @@ export const getName = (app: Apps, entity: Entity): string => {
     return "Slack Message"
   } else if (app === Apps.Slack && entity === SlackEntity.User) {
     return "Slack User"
+  } else if (app === Apps.Slack && entity === SlackEntity.Channel) {
+    return "Slack Channel"
   } else if (app === Apps.Github && entity === SystemEntity.SystemInfo) {
     return "Github"
+  } else if (
+    app === Apps.DataSource &&
+    entity === DataSourceEntity.DataSourceFile
+  ) {
+    return "Data-Source"
+  } else if (app === Apps.KnowledgeBase) {
+    // Handle all KnowledgeBase entities with fallback for string values
+    if (entity === SystemEntity.SystemInfo) {
+      return "Knowledge-Base"
+    } else if (entity === KnowledgeBaseEntity.File || entity === "file") {
+      return "KB Files"
+    } else if (entity === KnowledgeBaseEntity.Folder || entity === "folder") {
+      return "KB Folders"
+    } else {
+      // Fallback for any unhandled KnowledgeBase entity
+      return "Knowledge-Base"
+    }
+  } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
+    return "Web Search"
   } else {
     throw new Error(`Invalid app ${app} and entity ${entity}`)
   }

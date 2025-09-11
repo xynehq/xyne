@@ -43,6 +43,9 @@ import {
 
 const logger = console
 
+// File size limits to match server configuration
+const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - must match server limit
+
 const submitServiceAccountForm = async (
   value: ServiceAccountFormData,
   navigate: UseNavigateResult<string>,
@@ -69,18 +72,57 @@ const submitServiceAccountForm = async (
   return response.json()
 }
 
+const submitUpdateServiceAccountForm = async (
+  value: UpdateServiceAccountFormData,
+  navigate: UseNavigateResult<string>,
+) => {
+  const response = await api.admin.service_account.$put({
+    form: {
+      "service-key": value.file,
+      connectorId: value.connectorId,
+    },
+  })
+  if (!response.ok) {
+    // If unauthorized or status code is 401, navigate to '/auth'
+    if (response.status === 401) {
+      navigate({ to: "/auth" })
+      throw new Error("Unauthorized")
+    }
+    const errorText = await response.text()
+    throw new Error(
+      `Failed to update service account: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+  return response.json()
+}
+
 const submitOAuthForm = async (
   value: OAuthFormData,
   navigate: UseNavigateResult<string>,
+  userRole: UserRole,
 ) => {
-  const response = await api.admin.oauth.create.$post({
-    form: {
-      clientId: value.clientId,
-      clientSecret: value.clientSecret,
-      scopes: value.scopes,
-      app: Apps.GoogleDrive,
-    },
-  })
+  // Role-based API routing
+  const isAdmin =
+    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+  const response = isAdmin
+    ? await api.admin.oauth.create.$post({
+        form: {
+          clientId: value.clientId,
+          clientSecret: value.clientSecret,
+          scopes: value.scopes,
+          app: Apps.GoogleDrive,
+        },
+      })
+    : await api.oauth.create.$post({
+        form: {
+          clientId: value.clientId,
+          clientSecret: value.clientSecret,
+          scopes: value.scopes,
+          app: Apps.GoogleDrive,
+        },
+      })
+
   if (!response.ok) {
     // If unauthorized or status code is 401, navigate to '/auth'
     if (response.status === 401) {
@@ -101,13 +143,21 @@ type ServiceAccountFormData = {
   whitelistedEmails?: string
 }
 
+type UpdateServiceAccountFormData = {
+  connectorId: string
+  file: any
+}
+
 type OAuthFormData = {
   clientId: string
   clientSecret: string
   scopes: string[]
 }
 
-export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
+export const OAuthForm = ({
+  onSuccess,
+  userRole,
+}: { onSuccess: any; userRole: UserRole }) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<OAuthFormData>({
@@ -118,7 +168,7 @@ export const OAuthForm = ({ onSuccess }: { onSuccess: any }) => {
     },
     onSubmit: async ({ value }) => {
       try {
-        await submitOAuthForm(value, navigate)
+        await submitOAuthForm(value, navigate, userRole)
         toast({
           title: "OAuth integration added",
           description: "Perform OAuth to add the data",
@@ -316,13 +366,40 @@ export const ServiceAccountForm = ({
       <form.Field
         name="file"
         validators={{
-          onChange: ({ value }) => (!value ? "File is required" : undefined),
+          onChange: ({ value }) => {
+            if (!value) return "File is required"
+            
+            // Check file type
+            if (value.type !== "application/json" && !value.name?.endsWith(".json")) {
+              return "File must be a JSON file"
+            }
+            
+            // Check file size
+            if (value.size > MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES) {
+              return `File size must be less than ${MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`
+            }
+            
+            return undefined
+          },
+          onChangeAsync: async ({ value }) => {
+            if (!value) return undefined
+            
+            // Validate JSON content asynchronously
+            try {
+              const content = await value.text()
+              JSON.parse(content)
+              return undefined
+            } catch {
+              return "File must contain valid JSON"
+            }
+          },
         }}
         children={(field) => (
           <>
             <Input
               id="service-key"
               type="file"
+              accept=".json,application/json"
               onChange={(e) => field.handleChange(e.target.files?.[0])}
               className="file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800"
             />
@@ -337,6 +414,134 @@ export const ServiceAccountForm = ({
 
       <Button type="submit">Upload</Button>
     </form>
+  )
+}
+
+export const UpdateServiceAccountForm = ({
+  connectorId,
+  onSuccess,
+  onCancel,
+  refetch,
+}: {
+  connectorId: string
+  onSuccess: any
+  onCancel: any
+  refetch: any
+}) => {
+  const { toast } = useToast()
+  const navigate = useNavigate()
+
+  const form = useForm<UpdateServiceAccountFormData>({
+    defaultValues: {
+      connectorId: connectorId,
+      file: null,
+    },
+    onSubmit: async ({ value }) => {
+      if (!value.file) {
+        toast({
+          title: "No file selected",
+          description: "Please upload a file before submitting.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      try {
+        await submitUpdateServiceAccountForm(value, navigate)
+        await refetch()
+        toast({
+          title: "Service account key updated successfully",
+          description: "Integration will restart with new credentials",
+        })
+        onSuccess()
+      } catch (error) {
+        toast({
+          title: "Could not update the service account key",
+          description: `Error: ${getErrorMessage(error)}`,
+          variant: "destructive",
+        })
+      }
+    },
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-medium">Update Service Account Key</h3>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          form.handleSubmit()
+        }}
+        className="grid w-full max-w-sm items-center gap-1.5"
+      >
+        <Label htmlFor="update-service-key">
+          New Google Service Account Key
+        </Label>
+        <form.Field
+          name="file"
+          validators={{
+            onChange: ({ value }) => {
+              if (!value) return "File is required"
+              
+              // Check file type
+              if (value.type !== "application/json" && !value.name?.endsWith(".json")) {
+                return "File must be a JSON file"
+              }
+              
+              // Check file size
+              if (value.size > MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES) {
+                return `File size must be less than ${MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES / 1024}KB`
+              }
+              
+              return undefined
+            },
+            onChangeAsync: async ({ value }) => {
+              if (!value) return undefined
+              
+              // Validate JSON content asynchronously
+              try {
+                const content = await value.text()
+                JSON.parse(content)
+                return undefined
+              } catch {
+                return "File must contain valid JSON"
+              }
+            },
+          }}
+          children={(field) => (
+            <>
+              <Input
+                id="update-service-key"
+                type="file"
+                accept=".json,application/json"
+                onChange={(e) => field.handleChange(e.target.files?.[0])}
+                className="file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800"
+              />
+              {field.state.meta.isTouched && field.state.meta.errors.length ? (
+                <p className="text-red-600 dark:text-red-400 text-sm">
+                  {field.state.meta.errors.join(", ")}
+                </p>
+              ) : null}
+            </>
+          )}
+        />
+
+        <div className="flex gap-2 mt-4">
+          <Button type="submit" disabled={form.state.isSubmitting}>
+            {form.state.isSubmitting ? (
+              <LoadingSpinner className="mr-2 h-4 w-4" />
+            ) : null}
+            Update
+          </Button>
+        </div>
+      </form>
+    </div>
   )
 }
 
@@ -386,8 +591,15 @@ export const LoadingSpinner = ({ className }: { className: string }) => {
 }
 export const minHeight = 320
 
-export const getConnectors = async (): Promise<any> => {
-  const res = await api.admin.connectors.all.$get()
+export const getConnectors = async (userRole: UserRole): Promise<any> => {
+  // Role-based API routing
+  const isAdmin =
+    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+  const res = isAdmin
+    ? await api.admin.connectors.all.$get()
+    : await api.connectors.all.$get()
+
   if (!res.ok) {
     if (res.status === 401) {
       throw new Error("Unauthorized")
@@ -397,10 +609,22 @@ export const getConnectors = async (): Promise<any> => {
   return res.json()
 }
 
-export const deleteOauthConnector = async (connectorId: string) => {
-  const res = await api.admin.oauth.connector.delete.$delete({
-    form: { connectorId },
-  })
+export const deleteOauthConnector = async (
+  connectorId: string,
+  userRole: UserRole,
+) => {
+  // Role-based API routing
+  const isAdmin =
+    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+  const res = isAdmin
+    ? await api.admin.oauth.connector.delete.$delete({
+        form: { connectorId },
+      })
+    : await api.oauth.connector.delete.$delete({
+        form: { connectorId },
+      })
+
   if (!res.ok) {
     let errorText = res.statusText
     try {
@@ -710,6 +934,8 @@ const ServiceAccountTab = ({
   userStats: any
   refetch: any
 }) => {
+  const [showUpdateForm, setShowUpdateForm] = useState(false)
+
   const googleSAConnector = connectors.find(
     (v) => v.app === Apps.GoogleDrive && v.authType === AuthType.ServiceAccount,
   ) as
@@ -764,6 +990,27 @@ const ServiceAccountTab = ({
             </CardDescription>
           )}
         </CardHeader>
+        {googleSAConnector && (
+          <CardContent>
+            {!showUpdateForm ? (
+              <Button onClick={() => setShowUpdateForm(true)} variant="outline">
+                Update Service Account Key
+              </Button>
+            ) : (
+              <div className="space-y-4">
+                <UpdateServiceAccountForm
+                  connectorId={googleSAConnector.id || ""}
+                  onSuccess={() => {
+                    setShowUpdateForm(false)
+                    onSuccess()
+                  }}
+                  onCancel={() => setShowUpdateForm(false)}
+                  refetch={refetch}
+                />
+              </div>
+            )}
+          </CardContent>
+        )}
       </Card>
     )
   }
@@ -800,7 +1047,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     queryKey: ["all-connectors"],
     queryFn: async (): Promise<any> => {
       try {
-        return await getConnectors()
+        return await getConnectors(user.role)
       } catch (error) {
         const message = getErrorMessage(error)
         if (message === "Unauthorized") {
@@ -973,7 +1220,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
       return
     }
     try {
-      await deleteOauthConnector(googleOAuthConnector.id)
+      await deleteOauthConnector(googleOAuthConnector.id, user.role)
       toast({
         title: "Connector Deleted",
         description: "Google OAuth connector has been removed",
@@ -1059,6 +1306,7 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                     setOAuthIntegrationStatus={setOAuthIntegrationStatus}
                     updateStatus={updateStatus}
                     handleDelete={handleDelete}
+                    userRole={user.role}
                   />
                 </TabsContent>
               </div>

@@ -24,6 +24,10 @@ export const searchSchema = z.object({
   entity: z.string().min(1).optional(),
 })
 
+export const indexSearchParamsSchema = z.object({
+  agentId: z.string().optional(),
+})
+
 export const toolsListItemSchema = z.object({
   connectorId: z.string(),
   tools: z.array(z.string()),
@@ -67,4 +71,6 @@ export interface Reference {
   photoLink?: string
   mailId?: string
   userMap?: Record<string, string>
+  wholeSheet?: boolean
+  threadId?: string // Optional threadId for chat references
 }

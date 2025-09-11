@@ -167,8 +167,38 @@ export const createUser = async (
       // googleRefreshToken: refreshToken,
       lastLogin: new Date(),
       role,
+      refreshToken: "",
     })
     .returning()
+}
+
+export const saveRefreshTokenToDB = async (
+  trx: TxnOrClient,
+  email: string,
+  refreshToken: string,
+) => {
+  const updatedUser = await trx
+    .update(users)
+    .set({
+      refreshToken,
+    })
+    .where(eq(users.email, email))
+    .returning()
+  return selectUserSchema.parse(updatedUser[0])
+}
+
+export const deleteRefreshTokenFromDB = async (
+  trx: TxnOrClient,
+  email: string,
+) => {
+  const updatedUser = await trx
+    .update(users)
+    .set({
+      refreshToken: "",
+    })
+    .where(eq(users.email, email))
+    .returning()
+  return selectUserSchema.parse(updatedUser[0])
 }
 
 export const getUserById = async (

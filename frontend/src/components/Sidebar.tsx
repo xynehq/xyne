@@ -11,12 +11,16 @@ import {
   LogOut,
   ExternalLink,
   Key,
+  BarChart3,
+  BookOpen,
+  Workflow,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
 import { useTheme } from "@/components/ThemeContext"
 import { UserRole } from "shared/types"
+import { cn } from "@/lib/utils"
 import {
   Tooltip,
   TooltipProvider,
@@ -86,7 +90,7 @@ export const Sidebar = ({
       const isSearchArea = target.closest(`.${CLASS_NAMES.SEARCH_CONTAINER}`)
       const isReferenceBox = target.closest(`.${CLASS_NAMES.REFERENCE_BOX}`)
       const isAtMentionArea = target.closest(SELECTORS.AT_MENTION_AREA)
-
+      const isBookmarkButton = target.closest(`.${CLASS_NAMES.BOOKMARK_BUTTON}`)
       if (
         !isSidebarClick &&
         !isHistoryModalClick &&
@@ -94,6 +98,7 @@ export const Sidebar = ({
         !isSearchArea &&
         !isReferenceBox &&
         !isAtMentionArea &&
+        !isBookmarkButton &&
         showHistory
       ) {
         setShowHistory(false)
@@ -109,7 +114,11 @@ export const Sidebar = ({
   return (
     <TooltipProvider>
       <div
-        className={`bg-white dark:bg-[#1E1E1E] h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] dark:border-gray-700 flex flex-col fixed ${className} z-20 select-none ${CLASS_NAMES.SIDEBAR_CONTAINER}`}
+        className={cn(
+          "bg-white dark:bg-[#1E1E1E] h-full w-[52px] border-r-[0.5px] border-[#D7E0E9] dark:border-gray-700 flex flex-col fixed z-20 select-none",
+          className,
+          CLASS_NAMES.SIDEBAR_CONTAINER,
+        )}
       >
         {showHistory && (
           <HistoryModal
@@ -146,7 +155,10 @@ export const Sidebar = ({
 
           <div
             onClick={() => setShowHistory((history) => !history)}
-            className={`flex w-8 h-8 ${showHistory ? "bg-[#D8DFE680] dark:bg-gray-700" : ""} rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]`}
+            className={cn(
+              "flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]",
+              showHistory && "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
           >
             <Tooltip>
               <TooltipTrigger asChild>
@@ -160,15 +172,35 @@ export const Sidebar = ({
             </Tooltip>
           </div>
 
+           <Link
+            to="/workflow"
+            className={cn(
+              "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+              location.pathname.includes("/workflow") &&
+                "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Workflow
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Workflow Builder" />
+            </Tooltip>
+          </Link>
+
           {/* TODO: Add appropriate Link destination and Tooltip info for the Bot icon */}
           {isAgentMode && (
             <Link
               to="/agent"
-              className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
-                location.pathname.includes("/agent")
-                  ? "bg-[#D8DFE680] dark:bg-gray-700"
-                  : ""
-              }`}
+              className={cn(
+                "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+                location.pathname.includes("/agent") &&
+                  "bg-[#D8DFE680] dark:bg-gray-700",
+              )}
             >
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -186,12 +218,12 @@ export const Sidebar = ({
 
           <Link
             to={`${role === UserRole.SuperAdmin || role === UserRole.Admin ? "/admin/integrations" : "/integrations"}`}
-            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
-              location.pathname.includes("/admin/integrations") ||
-              location.pathname.includes("/integrations")
-                ? "bg-[#D8DFE680] dark:bg-gray-700"
-                : ""
-            }`}
+            className={cn(
+              "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+              (location.pathname.includes("/admin/integrations") ||
+                location.pathname.includes("/integrations")) &&
+                "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
           >
             <Tooltip>
               <TooltipTrigger asChild>
@@ -205,9 +237,50 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
 
+          <Link
+            to="/knowledgeManagement"            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
+              location.pathname.includes("/knowledgeManagement")
+                ? "bg-[#D8DFE680] dark:bg-gray-700"
+                : ""
+            }`}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <BookOpen
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Collections" />
+            </Tooltip>
+          </Link>
+
+
+          <Link
+            to="/dashboard"
+            className={cn(
+              "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+              location.pathname.includes("/dashboard") &&
+                "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <BarChart3
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Dashboard" />
+            </Tooltip>
+          </Link>
+        </div>
+        <div className="mt-auto mb-4 flex flex-col items-center">
           <div
             onClick={toggleTheme}
-            className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]"
+            className="flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mb-4"
           >
             <Tooltip>
               <TooltipTrigger asChild>

@@ -6,6 +6,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime"
 import config from "@/config"
 import { z } from "zod"
+
 const {
   AwsAccessKey,
   AwsSecretKey,
@@ -22,6 +23,9 @@ const {
   GeminiAIModel,
   GeminiApiKey,
   aiProviderBaseUrl,
+  VertexProjectId,
+  VertexRegion,
+  VertexAIModel,
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
@@ -32,10 +36,13 @@ import { parse } from "partial-json"
 import { ModelToProviderMap } from "@/ai/mappers"
 import type {
   AnswerResponse,
+  ChainBreakClassifications,
   ConverseResponse,
   Cost,
+  Intent,
   LLMProvider,
   ModelParams,
+  QueryRouterLLMResponse,
   QueryRouterResponse,
   TemporalClassifier,
 } from "@/ai/types"
@@ -57,6 +64,7 @@ import {
   baselineReasoningPromptJson,
   chatWithCitationsSystemPrompt,
   emailPromptJson,
+  fallbackReasoningGenerationPrompt,
   generateMarkdownTableSystemPrompt,
   generateTitleSystemPrompt,
   promptGenerationSystemPrompt,
@@ -73,6 +81,11 @@ import {
   temporalDirectionJsonPrompt,
   userChatSystem,
   withToolQueryPrompt,
+  ragOffPromptJson,
+  nameToEmailResolutionPrompt,
+  deepResearchPrompt,
+  webSearchSystemPrompt,
+  agentWithNoIntegrationsSystemPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -83,11 +96,14 @@ import Together from "together-ai"
 import { TogetherProvider } from "@/ai/provider/together"
 import { Fireworks } from "@/ai/provider/fireworksClient"
 import { FireworksProvider } from "@/ai/provider/fireworks"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
+import { VertexAiProvider, VertexProvider } from "@/ai/provider/vertex_ai"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
+  agentBaselineFileContextPromptJson,
+  agentBaselineFilesContextPromptJson,
   agentBaselinePrompt,
   agentBaselinePromptJson,
   agentBaselineReasoningPromptJson,
@@ -99,6 +115,7 @@ import {
   agentTemporalDirectionJsonPrompt,
 } from "../agentPrompts"
 import { is } from "drizzle-orm"
+import type { ToolDefinition } from "@/api/chat/mapper"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -137,8 +154,7 @@ function parseAgentPrompt(
     if (
       typeof parsed.name === "string" &&
       typeof parsed.description === "string" &&
-      typeof parsed.prompt === "string" &&
-      Array.isArray(parsed.appIntegrations)
+      typeof parsed.prompt === "string"
     ) {
       return {
         name: parsed.name,
@@ -193,6 +209,7 @@ let ollamaProvider: LLMProvider | null = null
 let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
+let vertexProvider: LLMProvider | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -230,7 +247,12 @@ const initializeProviders = (): void => {
   }
 
   if (OllamaModel) {
-    const ollama = new Ollama()
+    const ollama = new Ollama({
+      ...(aiProviderBaseUrl ? { host: aiProviderBaseUrl } : {}),
+    })
+    if (aiProviderBaseUrl) {
+      Logger.info(`Found base_url and Ollama model, using base_url for LLM`)
+    }
     ollamaProvider = new OllamaProvider(ollama)
   }
 
@@ -257,8 +279,26 @@ const initializeProviders = (): void => {
   }
 
   if (GeminiAIModel && GeminiApiKey) {
-    const gemini = new GoogleGenerativeAI(GeminiApiKey)
+    const gemini = new GoogleGenAI({ apiKey: GeminiApiKey })
     geminiProvider = new GeminiAIProvider(gemini)
+  }
+
+  if (VertexProjectId && VertexRegion) {
+    const vertexProviderType = process.env[
+      "VERTEX_PROVIDER"
+    ] as keyof typeof VertexProvider
+    const provider =
+      vertexProviderType && VertexProvider[vertexProviderType]
+        ? VertexProvider[vertexProviderType]
+        : VertexProvider.ANTHROPIC
+
+    vertexProvider = new VertexAiProvider({
+      projectId: VertexProjectId,
+      region: VertexRegion,
+      provider: provider,
+    })
+
+    Logger.info(`Initialized VertexAI provider with ${provider} backend`)
   }
 
   if (!OpenAIKey && !TogetherApiKey && aiProviderBaseUrl) {
@@ -276,6 +316,7 @@ const getProviders = (): {
   [AIProviders.Together]: LLMProvider | null
   [AIProviders.Fireworks]: LLMProvider | null
   [AIProviders.GoogleAI]: LLMProvider | null
+  [AIProviders.VertexAI]: LLMProvider | null
 } => {
   initializeProviders()
   if (
@@ -284,7 +325,8 @@ const getProviders = (): {
     !ollamaProvider &&
     !togetherProvider &&
     !fireworksProvider &&
-    !geminiProvider
+    !geminiProvider &&
+    !vertexProvider
   ) {
     throw new Error("No valid API keys or model provided")
   }
@@ -296,6 +338,7 @@ const getProviders = (): {
     [AIProviders.Together]: togetherProvider,
     [AIProviders.Fireworks]: fireworksProvider,
     [AIProviders.GoogleAI]: geminiProvider,
+    [AIProviders.VertexAI]: vertexProvider,
   }
 }
 
@@ -329,14 +372,33 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
           ? AIProviders.Fireworks
           : GeminiAIModel
             ? AIProviders.GoogleAI
-            : null
+            : VertexProjectId && VertexRegion
+              ? AIProviders.VertexAI
+              : null
 
   if (!providerType) {
     throw new Error("Invalid provider type")
   }
+
+  // Special handling for Vertex AI models - create appropriate provider based on model type
+  if (providerType === AIProviders.VertexAI && VertexProjectId && VertexRegion) {
+    const isGeminiModel = modelId.toString().toLowerCase().includes('gemini')
+    const requiredProvider = isGeminiModel ? VertexProvider.GOOGLE : VertexProvider.ANTHROPIC
+    
+    // Create a new provider instance with the correct backend for this model
+    const vertexProvider = new VertexAiProvider({
+      projectId: VertexProjectId,
+      region: VertexRegion,
+      provider: requiredProvider,
+    })
+    
+    Logger.info(`Created VertexAI provider for model ${modelId} with ${requiredProvider} backend`)
+    return vertexProvider
+  }
+
   const provider = ProviderMap[providerType]
   if (!provider) {
-    throw new Error("Invalid provider type")
+    throw new Error("Invalid provider")
   }
   return provider
 }
@@ -687,9 +749,27 @@ export const generateTitleUsingQuery = async (
       text = text?.split(EndThinkingToken)[1]
     }
     if (text) {
-      const jsonVal = jsonParseLLMOutput(text)
+      let jsonVal
+      try {
+        jsonVal = jsonParseLLMOutput(text)
+      } catch (err) {
+        Logger.error(err, `Failed to parse LLM output for title: ${text}`)
+        jsonVal = undefined
+      }
+      let title = "Untitled"
+      if (
+        jsonVal &&
+        typeof jsonVal.title === "string" &&
+        jsonVal.title.trim()
+      ) {
+        title = jsonVal.title.trim()
+      } else {
+        Logger.error(
+          `LLM output did not contain a valid title. Raw output: ${text}`,
+        )
+      }
       return {
-        title: jsonVal.title,
+        title,
         cost: cost!,
       }
     } else {
@@ -1030,6 +1110,7 @@ export const baselineRAGJsonStream = (
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
+  isMsgWithSources?: boolean,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
@@ -1043,10 +1124,24 @@ export const baselineRAGJsonStream = (
 
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
-    params.systemPrompt = baselineFilesContextPromptJson(
-      userCtx,
-      indexToCitation(retrievedCtx),
-    )
+    if(isMsgWithSources) {
+      params.systemPrompt = agentBaselineFileContextPromptJson(
+        userCtx,
+        retrievedCtx,
+      )
+    }
+    else if(!isAgentPromptEmpty(params.agentPrompt)) {
+      params.systemPrompt = agentBaselineFilesContextPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+        parseAgentPrompt(params.agentPrompt),
+      )
+    } else {
+      params.systemPrompt = baselineFilesContextPromptJson(
+        userCtx,
+        indexToCitation(retrievedCtx),
+      )
+    }
   } else if (defaultReasoning) {
     Logger.info("Using baselineReasoningPromptJson")
     if (!isAgentPromptEmpty(params.agentPrompt)) {
@@ -1093,6 +1188,45 @@ export const baselineRAGJsonStream = (
     ? [...params.messages, baseMessage]
     : [baseMessage]
   return getProviderByModel(params.modelId).converseStream(messages, params)
+}
+
+export const baselineRAGOffJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+  agentPrompt: string,
+  messages: Message[],
+  attachmentFileIds?: string[],
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  params.systemPrompt = ragOffPromptJson(
+    userCtx,
+    retrievedCtx,
+    parseAgentPrompt(agentPrompt),
+  )
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+
+  if (isAgentPromptEmpty(params.agentPrompt)) params.messages = []
+  const updatedMessages: Message[] = messages
+    ? [...messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(
+    updatedMessages,
+    params,
+  )
 }
 
 export const temporalPromptJsonStream = (
@@ -1304,10 +1438,16 @@ export async function generateToolSelectionOutput(
   params: ModelParams,
   agentContext?: string,
   pastActions?: string,
+  tools?: {
+    internal?: Record<string, ToolDefinition> | undefined
+    slack?: Record<string, ToolDefinition> | undefined
+  },
+  isDebugMode?: boolean,
 ): Promise<{
   queryRewrite: string
   tool: string
   arguments: Record<string, any>
+  reasoning?: string | null
 } | null> {
   params.json = true
 
@@ -1318,6 +1458,8 @@ export async function generateToolSelectionOutput(
     initialPlanning,
     parseAgentPrompt(agentContext),
     pastActions,
+    tools,
+    isDebugMode,
   )
 
   const baseMessage = {
@@ -1343,6 +1485,7 @@ export async function generateToolSelectionOutput(
       queryRewrite: jsonVal.queryRewrite || "",
       tool: jsonVal.tool,
       arguments: jsonVal.arguments || {},
+      reasoning: jsonVal.reasoning || null,
     }
   } else {
     throw new Error("Failed to rewrite query")
@@ -1354,6 +1497,8 @@ export function generateSearchQueryOrAnswerFromConversation(
   userContext: string,
   params: ModelParams,
   toolContext?: string,
+  previousClassification?: QueryRouterLLMResponse | null,
+  chainBreakClassifications?: ChainBreakClassifications | null,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   let defaultReasoning = isReasoning
@@ -1370,7 +1515,11 @@ export function generateSearchQueryOrAnswerFromConversation(
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
-    params.systemPrompt = searchQueryPrompt(userContext)
+    params.systemPrompt = searchQueryPrompt(
+      userContext,
+      previousClassification,
+      chainBreakClassifications,
+    )
   }
 
   const baseMessage = {
@@ -1396,6 +1545,7 @@ export function generateAnswerBasedOnToolOutput(
   toolContext: string,
   toolOutput: string,
   agentContext?: string,
+  fallbackReasoning?: string,
 ): AsyncIterableIterator<ConverseResponse> {
   params.json = true
   if (!isAgentPromptEmpty(agentContext)) {
@@ -1405,6 +1555,7 @@ export function generateAnswerBasedOnToolOutput(
       toolContext,
       toolOutput,
       parsedAgentPrompt,
+      fallbackReasoning,
     )
     params.systemPrompt = defaultSystemPrompt
   } else {
@@ -1412,6 +1563,8 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      undefined,
+      fallbackReasoning,
     )
   }
 
@@ -1450,7 +1603,7 @@ export function generateSynthesisBasedOnToolOutput(
     role: ConversationRole.USER,
     content: [
       {
-        text: `user query: "${currentMessage}"`,
+        text: `user-query: "${currentMessage}"`,
       },
     ],
   }
@@ -1499,6 +1652,314 @@ export const generatePromptFromRequirements = async function* (
     Logger.info("Prompt generation completed successfully")
   } catch (error) {
     Logger.error(error, "Error in generatePromptFromRequirements")
+    throw error
+  }
+}
+
+export const generateFallback = async (
+  userContext: string,
+  originalQuery: string,
+  agentScratchpad: string,
+  toolLog: string,
+  gatheredFragments: string,
+  params: ModelParams,
+): Promise<{
+  reasoning: string
+  cost: number
+}> => {
+  Logger.info("Starting fallback reasoning generation")
+
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = fallbackReasoningGenerationPrompt(
+      userContext,
+      originalQuery,
+      agentScratchpad,
+      toolLog,
+      gatheredFragments,
+    )
+    params.json = true
+
+    const messages: Message[] = [
+      {
+        role: ConversationRole.USER,
+        content: [
+          {
+            text: `Analyze why the search failed for the original query: "${originalQuery}"`,
+          },
+        ],
+      },
+    ]
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      messages,
+      params,
+    )
+
+    if (text) {
+      const parsedResponse = jsonParseLLMOutput(text)
+      Logger.info("Fallback reasoning generation completed successfully")
+      return {
+        reasoning: parsedResponse.reasoning || "No reasoning provided",
+        cost: cost!,
+      }
+    } else {
+      throw new Error("No response from LLM for fallback reasoning generation")
+    }
+  } catch (error) {
+    Logger.error(error, "Error in generateFallback")
+    throw error
+  }
+}
+
+export const extractEmailsFromContext = async (
+  names: Intent,
+  userCtx: string,
+  retrievedCtx: string,
+  params: ModelParams,
+): Promise<{ emails: Intent }> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  const intentNames =
+    [
+      ...(names.from?.length ? [`From: ${names.from.join(", ")}`] : []),
+      ...(names.to?.length ? [`To: ${names.to.join(", ")}`] : []),
+      ...(names.cc?.length ? [`CC: ${names.cc.join(", ")}`] : []),
+      ...(names.bcc?.length ? [`BCC: ${names.bcc.join(", ")}`] : []),
+    ].join(" | ") || "No names provided"
+
+  params.systemPrompt = nameToEmailResolutionPrompt(
+    userCtx,
+    retrievedCtx,
+    intentNames,
+    names,
+  )
+  params.json = false
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `Help me find emails for these names: ${intentNames}`,
+      },
+    ],
+  }
+
+  const updatedMessages: Message[] = [baseMessage]
+  const res = await getProviderByModel(params.modelId).converse(
+    updatedMessages,
+    params,
+  )
+
+  let parsedResponse = []
+  if (!res || !res.text) {
+    Logger.error("No response from LLM for email extraction")
+  }
+  if (res.text) {
+    parsedResponse = jsonParseLLMOutput(res.text)
+  }
+  const emails = parsedResponse.emails || {}
+  return {
+    emails: {
+      bcc: emails.bcc || [],
+      cc: emails.cc || [],
+      from: emails.from || [],
+      to: emails.to || [],
+    },
+  }
+}
+
+export const generateFollowUpQuestions = async (
+  userQuery: string,
+  systemPrompt: string,
+  params: ModelParams,
+): Promise<{ followUpQuestions: string[] }> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultFastModel
+    }
+
+    params.systemPrompt = systemPrompt
+    params.json = true
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      [
+        {
+          role: "user",
+          content: [
+            {
+              text: userQuery,
+            },
+          ],
+        },
+      ],
+      params,
+    )
+
+    if (text) {
+      let jsonVal
+      try {
+        jsonVal = jsonParseLLMOutput(text)
+      } catch (err) {
+        Logger.error(
+          err,
+          `Failed to parse LLM output for follow-up questions: ${text}`,
+        )
+        return { followUpQuestions: [] }
+      }
+
+      if (jsonVal && Array.isArray(jsonVal.followUpQuestions)) {
+        return {
+          followUpQuestions: jsonVal.followUpQuestions.filter(
+            (q: any) => typeof q === "string" && q.trim().length > 0,
+          ),
+        }
+      } else {
+        Logger.error(
+          `LLM output did not contain valid follow-up questions. Raw output: ${text}`,
+        )
+        return { followUpQuestions: [] }
+      }
+    } else {
+      throw new Error("Could not get response from LLM")
+    }
+  } catch (error) {
+    Logger.error(error, "Error generating follow-up questions")
+    return { followUpQuestions: [] }
+  }
+}
+
+export const webSearchQuestion = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+    params.webSearch = true
+
+    if (!params.systemPrompt) {
+      if (!isAgentPromptEmpty(params.agentPrompt)) {
+        const parsed = parseAgentPrompt(params.agentPrompt)
+        params.systemPrompt = webSearchSystemPrompt(userCtx, parsed)
+      } else {
+        params.systemPrompt = webSearchSystemPrompt(userCtx)
+      }
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    if (!config.VertexProjectId || !config.VertexRegion) {
+      Logger.warn(
+        "VertexProjectId/VertexRegion not configured, moving with default provider.",
+      )
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
+    const vertexGoogleProvider = new VertexAiProvider({
+      projectId: config.VertexProjectId!,
+      region: config.VertexRegion!,
+      provider: VertexProvider.GOOGLE,
+    })
+
+    return vertexGoogleProvider.converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const getDeepResearchResponse = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = Models.o3_Deep_Research
+    }
+
+    params.webSearch = true
+
+    if (!params.systemPrompt) {
+      params.systemPrompt = !isAgentPromptEmpty(params.agentPrompt)
+        ? deepResearchPrompt(userCtx) +
+          "\n\n" +
+          parseAgentPrompt(params.agentPrompt)
+        : deepResearchPrompt(userCtx)
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+    const openAIKey = process.env["DS_OPENAI_API_KEY"]
+    const baseUrl = process.env["DS_BASE_URL"]
+    if (!openAIKey) {
+      Logger.warn("OpenAIKey not configured, moving with default provider.")
+      return getProviderByModel(params.modelId).converseStream(messages, params)
+    }
+
+    const openAIClient = new OpenAI({
+      apiKey: openAIKey,
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
+    })
+    const openaiProvider = new OpenAIProvider(openAIClient)
+
+    return openaiProvider.converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in webSearchQuestion")
+    throw error
+  }
+}
+
+export const agentWithNoIntegrationsQuestion = (
+  query: string,
+  userCtx: string,
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  try {
+
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+    if (!params.systemPrompt) {
+      if (!isAgentPromptEmpty(params.agentPrompt)) {
+        const agentPromptData = parseAgentPrompt(params.agentPrompt)
+        params.systemPrompt = askQuestionSystemPrompt + "\n\n" + agentPromptData.prompt
+      } else {
+        params.systemPrompt = agentWithNoIntegrationsSystemPrompt
+      }
+    }
+
+    const baseMessage: Message = {
+      role: MessageRole.User,
+      content: [{ text: query }],
+    }
+    const messages: Message[] = params.messages
+      ? [...params.messages, baseMessage]
+      : [baseMessage]
+
+
+    return getProviderByModel(params.modelId).converseStream(messages, params)
+  } catch (error) {
+    Logger.error(error, "Error in agentWithNoIntegrationsQuestion")
     throw error
   }
 }

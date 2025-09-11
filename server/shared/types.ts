@@ -16,6 +16,10 @@ import {
   chatUserSchema,
   ChatMessageResponseSchema,
   dataSourceFileSchema,
+  chatContainerSchema,
+  VespaChatContainerSchema,
+  KbItemsSchema,
+  VespaKbFileSchemaBase,
 } from "search/types"
 export {
   GooglePeopleEntity,
@@ -27,8 +31,12 @@ export {
   Apps,
   isMailAttachment,
   SystemEntity,
+  dataSourceFileSchema,
+  DataSourceEntity,
+  WebSearchEntity,
+  KnowledgeBaseEntity,
 } from "search/types"
-export type { Entity } from "search/types"
+export type { Entity, VespaDataSourceFile, VespaGetResult } from "search/types"
 
 // Define an enum for connection types - MOVED HERE FROM server/types.ts
 export enum ConnectorType {
@@ -53,7 +61,7 @@ import { z } from "zod"
 // @ts-ignore
 export type { MessageReqType } from "@/api/search"
 // @ts-ignore
-export type { Citation } from "@/api/chat"
+export type { Citation, ImageCitation } from "@/api/chat"
 export type {
   SelectPublicMessage,
   PublicUser,
@@ -101,6 +109,58 @@ export enum OpenAIError {
   RateLimitError = "rate_limit_exceeded",
   InvalidAPIKey = "invalid_api_key",
 }
+
+// File type categories enum for better type safety and consistency
+export enum FileType {
+  IMAGE = "Image",
+  DOCUMENT = "Document", 
+  SPREADSHEET = "Spreadsheet",
+  PRESENTATION = "Presentation",
+  PDF = "PDF",
+  TEXT = "Text",
+  FILE = "File" // Default fallback
+}
+
+// MIME type mappings for better organization
+export const MIME_TYPE_MAPPINGS = {
+  [FileType.IMAGE]: [
+    "image/jpeg",
+    "image/jpg", 
+    "image/png",
+    "image/gif",
+    "image/webp"
+  ],
+  [FileType.DOCUMENT]: [
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ],
+  [FileType.SPREADSHEET]: [
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv"
+  ],
+  [FileType.PRESENTATION]: [
+    "application/vnd.ms-powerpoint", 
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ],
+  [FileType.PDF]: [
+    "application/pdf"
+  ],
+  [FileType.TEXT]: [
+    "text/plain",
+    "text/markdown"
+  ]
+} as const;
+
+// File extension mappings for fallback detection
+export const EXTENSION_MAPPINGS = {
+  [FileType.IMAGE]: [".jpg", ".jpeg", ".png", ".gif", ".webp"],
+  [FileType.DOCUMENT]: [".doc", ".docx"],
+  [FileType.SPREADSHEET]: [".xls", ".xlsx", ".csv"],
+  [FileType.PRESENTATION]: [".ppt", ".pptx"],
+  [FileType.PDF]: [".pdf"],
+  [FileType.TEXT]: [".txt", ".md"]
+} as const;
 
 export const AutocompleteFileSchema = z
   .object({
@@ -182,6 +242,17 @@ export const AutocompleteChatUserSchema = z
   })
   .strip()
 
+export const AutocompleteChatContainerSchema = z
+  .object({
+    type: z.literal(chatContainerSchema),
+    relevance: z.number(),
+    name: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    docId: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
@@ -190,6 +261,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteUserQueryHSchema,
   AutocompleteMailAttachmentSchema,
   AutocompleteChatUserSchema,
+  AutocompleteChatContainerSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -205,6 +277,9 @@ export type FileAutocomplete = z.infer<typeof AutocompleteFileSchema>
 export type UserAutocomplete = z.infer<typeof AutocompleteUserSchema>
 export type MailAutocomplete = z.infer<typeof AutocompleteMailSchema>
 export type ChatUserAutocomplete = z.infer<typeof AutocompleteChatUserSchema>
+export type AutocompleteChatContainer = z.infer<
+  typeof AutocompleteChatContainerSchema
+>
 export type MailAttachmentAutocomplete = z.infer<
   typeof AutocompleteMailAttachmentSchema
 >
@@ -239,6 +314,28 @@ export const FileResponseSchema = VespaFileSchema.pick({
   })
   .strip()
 
+export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
+  docId: true,
+  fileName: true,
+  app: true,
+  entity: true,
+  createdBy: true,
+  updatedAt: true,
+  itemId: true,
+  clId: true,
+  mimeType: true,
+})
+  .extend({
+    app: z.literal(Apps.KnowledgeBase),
+    type: z.literal(KbItemsSchema),
+    chunk: z.string().optional(),
+    chunkIndex: z.number().optional(),
+    chunks_summary: z.array(scoredChunk).optional(),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
 export const EventResponseSchema = VespaEventSchema.pick({
   docId: true,
   name: true,
@@ -298,6 +395,29 @@ export const DataSourceFileResponseSchema = z
   })
   .strip()
 
+export const ChatContainerResponseSchema = VespaChatContainerSchema.pick({
+  docId: true,
+  name: true,
+  app: true,
+  entity: true,
+  updatedAt: true,
+  isPrivate: true,
+  isArchived: true,
+  isGeneral: true,
+  isIm: true,
+  isMpim: true,
+  topic: true,
+  description: true,
+  count: true,
+})
+  .extend({
+    type: z.literal(chatContainerSchema),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
@@ -307,6 +427,8 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   EventResponseSchema,
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
+  ChatContainerResponseSchema,
+  KbFileResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
@@ -339,8 +461,11 @@ export enum ChatSSEvents {
   End = "e",
   ChatTitleUpdate = "ct",
   CitationsUpdate = "cu",
+  ImageCitationUpdate = "icu",
   Reasoning = "rz",
+  DeepResearchReasoning = "drr",
   Error = "er",
+  AttachmentUpdate = "au",
 }
 
 const messageMetadataSchema = z.object({
@@ -380,6 +505,7 @@ export enum AgentToolName {
   FilteredSearch = "filtered_search",
   TimeSearch = "time_search",
   SynthesizeAnswer = "SYNTHESIZE_ANSWER", // For the explicit synthesis step
+  FallBack = "fall_back",
 }
 
 export enum AgentReasoningStepType {
@@ -402,32 +528,47 @@ export enum ContextSysthesisState {
   NotFound = "information_not_found",
 }
 
-export interface AgentReasoningIteration {
-  type: AgentReasoningStepType.Iteration
-  iteration: number
+// Enhanced reasoning step interfaces with summary support
+export interface AgentReasoningStepEnhanced {
+  stepId?: string
+  stepSummary?: string
+  aiGeneratedSummary?: string
+  status?: "in_progress" | "completed" | "failed"
+  timestamp?: number
+  iteration?: number
+  isIterationSummary?: boolean
 }
 
-export interface AgentReasoningPlanning {
+export interface AgentReasoningIteration extends AgentReasoningStepEnhanced {
+  type: AgentReasoningStepType.Iteration
+  iteration: number
+  app?: string
+  entity?: string
+}
+
+export interface AgentReasoningPlanning extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.Planning
   details: string // e.g., "Planning next step..."
 }
 
-export interface AgentReasoningToolSelected {
+export interface AgentReasoningToolSelected extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolSelected
   toolName: AgentToolName | string // string for flexibility if new tools are added without enum update
 }
 
-export interface AgentReasoningToolParameters {
+export interface AgentReasoningToolParameters
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolParameters
   parameters: Record<string, any> // Parameters as an object
 }
 
-export interface AgentReasoningToolExecuting {
+export interface AgentReasoningToolExecuting
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolExecuting
   toolName: AgentToolName | string
 }
 
-export interface AgentReasoningToolResult {
+export interface AgentReasoningToolResult extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolResult
   toolName: AgentToolName | string
   resultSummary: string
@@ -435,27 +576,30 @@ export interface AgentReasoningToolResult {
   error?: string // If the tool execution resulted in an error
 }
 
-export interface AgentReasoningSynthesis {
+export interface AgentReasoningSynthesis extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.Synthesis
   details: string // e.g., "Synthesizing answer from X fragments..."
 }
 
-export interface AgentReasoningValidationError {
+export interface AgentReasoningValidationError
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ValidationError
   details: string // e.g., "Single result validation failed (POOR_MATCH #X). Will continue searching."
 }
 
-export interface AgentReasoningBroadeningSearch {
+export interface AgentReasoningBroadeningSearch
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.BroadeningSearch
   details: string // e.g., "Specific search failed validation X times. Attempting to broaden search."
 }
 
-export interface AgentReasoningAnalyzingQuery {
+export interface AgentReasoningAnalyzingQuery
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.AnalyzingQuery
   details: string // e.g., "Analyzing your question..."
 }
 
-export interface AgentReasoningLogMessage {
+export interface AgentReasoningLogMessage extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.LogMessage
   message: string // Generic message from the agent's log
 }
@@ -493,3 +637,62 @@ export enum IngestionType {
   fullIngestion = "full_ingestion",
   partialIngestion = "partial_ingestion",
 }
+
+// Attachment metadata types for enhanced attachment handling
+export const attachmentMetadataSchema = z.object({
+  fileId: z.string(),
+  fileName: z.string(),
+  fileType: z.string(),
+  fileSize: z.number(),
+  isImage: z.boolean(),
+  thumbnailPath: z.string().optional(),
+  createdAt: z.union([z.string(), z.date()]).transform((val) => {
+    if (typeof val === "string") {
+      return new Date(val)
+    }
+    return val
+  }),
+  url: z.string().optional(),
+})
+
+export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>
+
+export const DEFAULT_TEST_AGENT_ID = "default-test-agent"
+
+export const agentPromptPayloadSchema = z.preprocess(
+  (val) => {
+    if (typeof val === "string") {
+      try {
+        return JSON.parse(val)
+      } catch {
+        throw new Error("Invalid agentPromptPayload JSON")
+      }
+    }
+    return val
+  },
+  z
+    .object({
+      name: z.string().optional(),
+      description: z.string().optional(),
+      prompt: z.string().optional(),
+      model: z.string().optional(),
+      isPublic: z.boolean().optional(),
+      isRagOn: z.boolean().optional(),
+      appIntegrations: z.record(z.object({
+        itemIds: z.array(z.string()),
+        selectedAll: z.boolean()
+      })).optional(),
+      docIds: z.array(z.object({
+        docId: z.string(),
+        name: z.string(),
+        app: z.string(),
+        entity: z.string()
+      })).optional(),
+      userEmails: z.array(z.string()).optional(),
+      allowWebSearch: z.boolean().optional(),
+      
+    })
+    .optional(),
+)
+
+export type AgentPromptPayload = z.infer<typeof agentPromptPayloadSchema>

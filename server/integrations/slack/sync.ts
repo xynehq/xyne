@@ -590,6 +590,7 @@ export const handleSlackChanges = async (
                 docId: channel.id!,
                 name: channel.name || "",
                 app: Apps.Slack,
+                entity: SlackEntity.Channel,
                 creator: channel.creator || "",
                 isPrivate: channel.is_private || false,
                 isGeneral: channel.is_general || false,

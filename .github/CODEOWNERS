@@ -1,0 +1,5 @@
+# CODEOWNERS file for Xyne - AI-first workspace
+# This file defines code ownership for the Xyne
+# 
+# Global ownership - all files require review from repository maintainers
+* @zereraz @shivamashtikar @junaid-shirur @kalpadhwaryu @devesh-juspay

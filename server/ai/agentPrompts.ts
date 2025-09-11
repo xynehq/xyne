@@ -9,6 +9,7 @@ import {
   MailEntity,
   SlackEntity,
 } from "@/search/types"
+import config from "@/config"
 // Interface for structured agent prompt data
 interface AgentPromptData {
   name: string
@@ -852,6 +853,79 @@ You must respond in valid JSON format with the following structure:
 # Error Handling
 If information is missing or unclear: Set "answer" to null`
 
+export const agentBaselineFileContextPromptJson = (
+  userContext: string,
+  retrievedContext: string,
+) => `You are an AI assistant with access to a SINGLE file provided as context. You must ONLY answer from this file's content and cite specific CHUNKS from the file.
+
+# File Context (Single Source Only)
+This task provides exactly one file (e.g., PDF, DOCX, MD). You MUST treat the file as the sole source of truth.
+
+## File Metadata
+- Title
+- Mime type
+- Owner (optional)
+- Creation/Update timestamps (optional)
+
+## Chunk Format (IMPORTANT)
+- The entire file is provided below as a single text block.
+- The file is split into chunks inline; each chunk begins with a bracketed numeric index like [0], [1], [2], etc.
+- These indices are the ONLY valid citation targets.
+
+# Context of the user talking to you
+${userContext}
+This includes:
+- User's name and email
+- Company name and domain
+- Current time and date
+- Timezone
+
+# Retrieved File Chunks
+${retrievedContext}
+
+# Guidelines for Response
+1. Data Interpretation:
+   - Use ONLY the provided chunks as your knowledge base.
+   - Treat each [number] as the authoritative chunk index.
+   - If dates exist, interpret them relative to the user's timezone when paraphrasing.
+
+2. Response Structure:
+   - Start with the most relevant facts from the chunks.
+   - Keep order chronological when it helps comprehension.
+   - Every factual statement MUST cite the chunk it came from using [index] where index = the chunk's \`index\` value.
+   - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
+
+3. Citation Rules (CHUNK-LEVEL ONLY):
+   - Format: [0], [12], [37] — the number is the chunk \`index\`.
+   - Place the citation immediately after the relevant statement.
+   - Do NOT cite the file itself, only chunks.
+   - Do NOT group indices inside one bracket. WRONG: "[0, 1]".
+   - If a sentence draws from two distinct chunks, cite them as separate brackets inline, e.g., "... was agreed [3] and finalized [7]".
+   - Only cite information that appears verbatim or is directly inferable from the cited chunk.
+
+4. Quality Assurance:
+   - Cross-check across multiple chunks when available and note inconsistencies.
+   - Briefly note inconsistencies if chunks conflict.
+   - Keep tone professional and concise.
+   - Acknowledge gaps if the chunks don't contain enough detail.
+
+# Response Format
+You must respond in valid JSON with:
+{
+  "answer": "Your detailed answer with chunk-level citations in [index] format, or null if not found. Markdown is allowed inside the string."
+}
+
+# Important Notes:
+- Stick STRICTLY to the single file's chunks.
+- If no answer is clearly supported by any chunk, set "answer" to null.
+- Do NOT explain why information was not found — only return null in that case.
+- Keep citations natural and minimal (but present for each factual statement).
+- Normalize or lightly clean raw text if needed (fix casing, stray line breaks), but do not invent content.
+- Format dates relative to the user's timezone when dates appear in the file.
+
+# Error Handling
+If information is missing or unclear: Set "answer" to null`;
+
 export const agentQueryRewritePromptJson = (
   userContext: string,
   agentPromptData: AgentPromptData,
@@ -899,6 +973,126 @@ export const agentQueryRewritePromptJson = (
     ]
   }
 `
+
+// Consolidated Step Summary Generation Prompt
+// This prompt is used to generate a single summary for multiple skipped steps in an iteration
+export const generateConsolidatedStepSummaryPromptJson = (
+  steps: any[],
+  userQuery: string,
+  iterationNumber: number,
+  contextInfo?: string,
+) => `You are an AI assistant that creates consolidated summaries for multiple agent reasoning steps.
+
+Your task is to generate a brief summary (3-4 lines maximum) that explains what the agent accomplished in the skipped steps of an iteration.
+
+# Input Information:
+- Steps: ${JSON.stringify(steps, null, 2)}
+- User Query: "${userQuery}"
+- Iteration Number: ${iterationNumber}
+- Context: ${contextInfo || "No additional context"}
+
+# Summary Guidelines:
+1. **Be Concise**: Maximum 3-4 lines
+2. **Be Comprehensive**: Cover the main activities from all steps
+3. **Be User-Friendly**: Use simple, non-technical language
+4. **Focus on Progress**: Highlight what was accomplished
+
+# Example Outputs:
+
+For steps involving tool execution and results:
+"Continued searching through additional data sources and gathered more context. Found relevant information from 3 different tools and processed the results for analysis."
+
+For steps involving planning and synthesis:
+"Analyzed the gathered information and planned the next search strategy. Evaluated multiple approaches to ensure comprehensive coverage of your request."
+
+For mixed activities:
+"Executed additional search tools and processed their results. Gathered supplementary context and refined the search approach for better accuracy."
+
+# Response Format:
+Return ONLY a JSON object with the summary:
+{
+  "summary": "Your consolidated summary here"
+}
+
+# Important Rules:
+- Keep it to 3-4 lines maximum
+- Use active, past tense ("Searched", "Found", "Analyzed")
+- Include general counts when relevant ("3 tools", "multiple sources")
+- Avoid technical jargon
+- Make it reassuring and show progress
+- Don't mention specific step types or internal processes
+- Focus on user value and what was accomplished
+
+Generate a summary that shows the user that meaningful work was done in the background.`
+
+// Agent Step Summary Generation Prompt
+// This prompt is used to generate concise, user-friendly summaries for agent reasoning steps
+export const generateAgentStepSummaryPromptJson = (
+  stepDetails: any,
+  userQuery: string,
+  contextInfo?: string,
+) => `You are an AI assistant that creates concise, user-friendly summaries for agent reasoning steps.
+
+Your task is to generate a brief, actionable summary (maximum 50-60 characters) that explains what the agent is doing in simple terms.
+
+# Input Information:
+- Step Type: ${stepDetails.type}
+- Step Details: ${JSON.stringify(stepDetails, null, 2)}
+- User Query: "${userQuery}"
+- Context: ${contextInfo || "No additional context"}
+
+# Summary Guidelines:
+1. **Be Concise**: Maximum 50-60 characters
+2. **Be User-Friendly**: Use simple, non-technical language
+3. **Be Actionable**: Describe what's happening, not technical details
+4. **Be Specific**: Include relevant details like tool names, counts, etc.
+
+# Step Type Examples and Expected Outputs:
+
+**iteration**: 
+- Input: iteration 2, user query about emails
+- Output: "Planning search strategy (attempt 2)"
+
+**tool_executing**:
+- Input: metadata_retrieval tool, gmail parameters
+- Output: "Searching Gmail for your emails"
+
+**tool_result**:
+- Input: found 5 items, search tool
+- Output: "Found 5 relevant results"
+
+**synthesis**:
+- Input: analyzing 8 fragments
+- Output: "Combining information from 8 sources"
+
+**broadening_search**:
+- Input: previous search too narrow
+- Output: "Expanding search criteria"
+
+**planning**:
+- Input: planning next step
+- Output: "Planning next search approach"
+
+**analyzing_query**:
+- Input: analyzing user question
+- Output: "Understanding your request"
+
+# Response Format:
+Return ONLY a JSON object with the summary:
+{
+  "summary": "Your concise summary here"
+}
+
+# Important Rules:
+- Never exceed 60 characters
+- Use active, present tense ("Searching", "Found", "Planning")
+- Include specific numbers when available ("Found 5 results")
+- Avoid technical jargon ("metadata_retrieval" → "Searching Gmail")
+- Make it human-readable and reassuring
+- Don't mention internal process details
+- Focus on user value, not system operations
+
+Generate a summary that would make sense to a non-technical user watching the agent work.`
 
 // Search Query Prompt
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
@@ -971,7 +1165,7 @@ export const agentSearchQueryPrompt = (
         - Set 'startTime' and 'endTime' to null unless explicitly specified in the query.
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+      - Always format "startTime" as "${config.llmTimeFormat}" and "endTime" as "${config.llmTimeFormat}" when specified.
 
     3. If the query explicitly refers to something current or happening now (e.g., "current meetings", "meetings happening now"), set "temporalDirection" based on context:
       - For meeting-related queries (e.g., "current meetings", "meetings happening now"), set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -995,13 +1189,49 @@ export const agentSearchQueryPrompt = (
         - "Documents from last month" → sortDirection: null (no clear direction specified)
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
-    6. Extract the main intent or search keywords from the query to create a "filterQuery" field:
+    6. Extract email addresses and main intent from the query:
       
-      **SIMPLIFIED FILTERQUERY EXTRACTION RULES:**
+      **CRITICAL RULES for Email Intent Extraction:**
+        - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
+        - EXTRACT intent for queries with person names OR email addresses OR organization names:
+          - Person names: "emails from John", "messages from Sarah", "emails from prateek"
+          - Email addresses: "emails from john@company.com", "messages from user@domain.com"
+          - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
+          - Specific subjects: "emails with subject 'meeting'"
+        - If the query is asking for ALL items without specific criteria, return empty intent object: {}
+        
+        **Email Address, Name, and Organization Detection Rules:**
+        - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
+          - Email patterns: text@domain.extension (e.g., user@company.com, name@example.org)
+          - Person names: single words or full names without @ symbols (e.g., "John", "Sarah Wilson", "prateek")
+          - Organization names: company/organization names (e.g., "OpenAI", "Linear", "Google", "Microsoft", "Slack", "Notion")
+        - **MIXED QUERY SUPPORT**: Handle queries with BOTH emails AND names/organizations:
+          - "emails from OpenAI and john@company.com" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "emails to Sarah and team@company.com" → add both ["Sarah", "team@company.com"] to "to" array
+          - "messages from Linear, Google, and support@company.com" → add all three to "from" array
+        - Extract from phrases like:
+          - "emails from [email@domain.com]" → add [email@domain.com] to "from" array
+          - "emails from [John]" → add [John] to "from" array
+          - "emails from [OpenAI]" → add [OpenAI] to "from" array
+          - "emails from [OpenAI and john@company.com]" → add both ["OpenAI", "john@company.com"] to "from" array
+          - "messages from [user@company.com]" → add [user@company.com] to "from" array  
+          - "emails to [recipient@domain.com]" → add [recipient@domain.com] to "to" array
+          - "emails to [Sarah]" → add [Sarah] to "to" array
+          - "emails to [Linear]" → add [Linear] to "to" array
+          - "emails to [Sarah and team@company.com]" → add both ["Sarah", "team@company.com"] to "to" array
+          - "sent to [team@company.com]" → add [team@company.com] to "to" array
+        - If query contains email addresses, names, or organizations but no clear direction indicator, default to "from" array
+        - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
+        
+        For other apps/entities:
+        - Currently no specific intent fields defined
+        - Return empty intent object: {}
+
+      **FILTERQUERY EXTRACTION RULES:**
       
       Step 1: Identify if the query contains SPECIFIC CONTENT KEYWORDS:
       - Business/project names (e.g., "uber", "zomato", "marketing project", "budget report")
-      - Person names (e.g., "John", "Sarah", "marketing team")
+      - Person names (e.g., "John", "Sarah", "marketing team") - but NOT email addresses
       - Specific topics or subjects (e.g., "contract", "invoice", "receipt", "proposal")
       - Company/organization names (e.g., "OpenAI", "Google", "Microsoft")
       - Product names or specific identifiers
@@ -1013,6 +1243,8 @@ export const agentSearchQueryPrompt = (
       - Quantity terms: "5", "10", "most", "all", "some", "few"
       - Generic item types: "emails", "files", "documents", "meetings", "orders" (when used generically)
       - Structural words: "summary", "details", "info", "information"
+      - Email addresses that have been extracted for metadata filtering
+      - Prepositions related to email metadata: "from", "to", "cc", "bcc"
       
       Step 3: Apply the rule:
       - IF specific content keywords remain after exclusion → set filterQuery to those keywords
@@ -1028,79 +1260,85 @@ export const agentSearchQueryPrompt = (
     
     **STEP 1: STRICT APP/ENTITY DETECTION**
     
-    Valid app keywords that map to apps:
+    Valid app keywords that map to apps (can be multiple):
     - 'email', 'mail', 'emails', 'gmail' → '${Apps.Gmail}'
     - 'calendar', 'meetings', 'events', 'schedule' → '${Apps.GoogleCalendar}'  
     - 'drive', 'files', 'documents', 'folders' → '${Apps.GoogleDrive}'
     - 'contacts', 'people', 'address book' → '${Apps.GoogleWorkspace}'
     - 'Slack message', 'text message', 'message' → '${Apps.Slack}'
     
-    Valid entity keywords that map to entities:
+    Valid entity keywords that map to entities (can be multiple):
     - For Gmail: 'email', 'emails', 'mail', 'message' → '${MailEntity.Email}'; 'pdf', 'attachment' → '${MailAttachmentEntity.PDF}';
     - For Drive: 'document', 'doc' → '${DriveEntity.Docs}'; 'spreadsheet', 'sheet' → '${DriveEntity.Sheets}'; 'presentation', 'slide' → '${DriveEntity.Slides}'; 'pdf' → '${DriveEntity.PDF}'; 'folder' → '${DriveEntity.Folder}'
     - For Calendar: 'event', 'meeting', 'appointment' → '${CalendarEntity.Event}'
     - For Workspace: 'contact', 'person' → '${GooglePeopleEntity.Contacts}'
     - For Slack: 'text message', 'slack' → '${SlackEntity.Message}'
     
+    **IMPORTANT**: Extract ALL relevant apps and entities mentioned in the query. If multiple apps or entities are detected, include them all in arrays.
+    
     **STEP 2: APPLY FIXED CLASSIFICATION LOGIC**
     ### Query Types:
     1. **${QueryType.SearchWithoutFilters}**:
-      - The user is referring multiple <app> or <entity>
+      - The user is referring to no specific apps/entities or references to apps/entities are not clear.
       - The user wants to search or look up contextual information.
       - These are open-ended queries where only time filters might apply.
       - user is asking for a sort of summary or discussion, it could be to summarize emails or files
       - Example Queries:
         - "What is the company's leave policy?"
         - "Explain the project plan from last quarter."
-        - "What was my disucssion with Jesse"
+        - "What was my discussion with Jesse"
         - **JSON Structure**:
         {
           "type": "${QueryType.SearchWithoutFilters}",
           "filters": {
             "count": "<number of items to list>" or null,
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>" or null,
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>" or null,
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>" or null,
             "sortDirection": <boolean> or null
           }
         }
 
     2. **${QueryType.GetItems}**:
-      - The user is referring single <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
+      - The user is referring to one or more <app> or <entity> and doesn't added any specific keywords and also please don't consider <app> or <entity> as keywords
       - The user wants to list specific items (e.g., files, emails, etc) based on metadata like app and entity without adding any keywords.
-      - This can be only classified when <app> and <entity> present
+      - This can be only classified when <app> and <entity> are present
       - Example Queries:
         - "Show me all emails from last week."
         - "List all Google Docs modified in October."
+        - "Get my emails and calendar events from today."
         - **JSON Structure**:
         {
           "type": "${QueryType.GetItems}",
           "filters": {
-            "app": "<app>",
-            "entity": "<entity>",
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
             "sortDirection": <boolean if applicable otherwise null>
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable otherwise null>",
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable otherwise null>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable otherwise null>",
           }
         }
 
     3. **${QueryType.SearchWithFilters}**:
-      - The is referring single <app> or <entity> and also have specify some keywords
-      - Exactly ONE valid app/entity is detected, AND filterQuery is NOT null
+      - The user is referring to one or more <app> or <entity> and also have specify some keywords
+      - App/entity is detected, AND filterQuery is NOT null
       - Examples Queries: 
         - "emails about marketing project" (has 'emails' = gmail + filterQuery)
         - "budget spreadsheets in drive" (has 'drive' + filterQuery)
+        - "emails from john@company.com" (has 'emails' = gmail, extract email for metadata)
+        - "messages to support@company.com" (has 'emails' = gmail, extract email for metadata)
+        - "emails and calendar events about project X" (multiple apps with filterQuery)
 
        - **JSON Structure**:
         {
           "type": "${QueryType.SearchWithFilters}",
           "filters": {
-            "app": "<app>",
-            "entity": "<entity>",
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
             "count": "<number of items to list>",
-            "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>",
-            "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable>"
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>",
             "sortDirection": <boolean or null>,
-            "filterQuery": "<extracted keywords>"
+            "filterQuery": "<extracted keywords>",
           }
         }
 
@@ -1113,13 +1351,13 @@ export const agentSearchQueryPrompt = (
     - ${QueryType.GetItems}    
     - ${QueryType.SearchWithFilters}  
 
-    app (Valid Apps):  
+    app (Valid Apps - can be arrays):  
     - ${Apps.GoogleDrive} 
     - ${Apps.Gmail}  
     - ${Apps.GoogleCalendar} 
     - ${Apps.GoogleWorkspace}
 
-    entity (Valid Entities):  
+    entity (Valid Entities - can be arrays):  
     For ${Apps.Gmail}:  
     - ${MailEntity.Email}  
     - ${MailAttachmentEntity.PDF} (for attachments)  
@@ -1155,12 +1393,13 @@ export const agentSearchQueryPrompt = (
          "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
          "filterQuery": "<string or null>",
          "filters": {
-           "app": "<app or null>",
-           "entity": "<entity or null>",
+           "apps": ["<app1>", "<app2>"] or ["<single_app>"] or null,
+           "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"] or null,
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "sortDirection": "<'asc' | 'desc' | null>"
+           "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
+           "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
+           "sortDirection": "<'asc' | 'desc' | null>",
+           "intent": {}
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -1168,8 +1407,9 @@ export const agentSearchQueryPrompt = (
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
+       - "intent" is an object that contains specific intent fields based on the app/entity detected. 
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
-       - If user haven't explicitly added <app> or <entity> please don't assume any just set it null
+       - "apps" and "entities" should always be arrays when values are present. For single app/entity, use single-element arrays like ["Gmail"]. Set to null if no apps/entities are detected.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
 
@@ -1222,7 +1462,7 @@ export const agentSearchAgentPrompt = (
       - For specific past meeting queries like "when was my meeting with [name]", set "temporalDirection" to "prev", but do not apply a time range unless explicitly specified in the query; set 'startTime' and 'endTime' to null.
       - For email queries, terms like "latest", "last", or "current" should be interpreted as the most recent email interaction, so set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless a different range is specified.
       - For calendar/event queries, terms like "latest" or "scheduled" should be interpreted as referring to upcoming events, so set "temporalDirection" to "next" and set 'startTime' and 'endTime' to null unless a different range is specified.
-      - Always format "startTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" and "endTime" as "YYYY-MM-DDTHH:mm:ss.SSSZ" when specified.
+      - Always format "startTime" as "${config.llmTimeFormat}" and "endTime" as "${config.llmTimeFormat}" when specified.
 
     5. If the query explicitly refers to something current or happening now (e.g., "current emails", "meetings happening now", "current meetings"), set "temporalDirection" based on context:
       - For email-related queries (e.g., "current emails"), set "temporalDirection" to "prev" and set 'startTime' and 'endTime' to null unless explicitly specified in the query.
@@ -1386,11 +1626,11 @@ export const agentSearchAgentPrompt = (
          "temporalDirection": "next" | "prev" | null,
          "type": "<RetrieveInformation | RetrieveMetadata | RetrievedUnspecificMetadata>",
          "filters": {
-           "app": "<app or null>",
-           "entity": "<entity or null>",
+           "apps": "<app or null>",
+           "entities": "<entity or null>",
            "count": "<number of items to retrieve or null>",
-           "startTime": "<start time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
-           "endTime": "<end time in YYYY-MM-DDTHH:mm:ss.SSSZ, if applicable, or null>",
+           "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
+           "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>"
          }
        }

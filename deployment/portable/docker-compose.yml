@@ -1,0 +1,6 @@
+# Base configuration with shared networks and volumes
+networks:
+  xyne:
+    driver: bridge
+
+# Using simple bind mounts like dev setup - no named volumes needed

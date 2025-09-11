@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+const defaultTheme = require("tailwindcss/defaultTheme")
+
 module.exports = {
   darkMode: ["class"],
   content: [
@@ -17,6 +19,11 @@ module.exports = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["Inter", ...defaultTheme.fontFamily.sans],
+        mono: ["JetBrains Mono", ...defaultTheme.fontFamily.mono],
+        display: ["LED Dot-Matrix", ...defaultTheme.fontFamily.sans],
+      },
       lineClamp: {
         2.5: "2.5",
       },
@@ -77,10 +84,32 @@ module.exports = {
             height: "0",
           },
         },
+        "fade-in-up": {
+          from: {
+            opacity: "0",
+            transform: "translateY(20px)",
+          },
+          to: {
+            opacity: "1",
+            transform: "translateY(0)",
+          },
+        },
+        "slide-in-up": {
+          from: {
+            opacity: "0",
+            transform: "translateY(15px) scale(0.95)",
+          },
+          to: {
+            opacity: "1",
+            transform: "translateY(0) scale(1)",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.3s ease-out",
         "accordion-up": "accordion-up 0.3s ease-out",
+        "fade-in-up": "fade-in-up 0.6s ease-out forwards",
+        "slide-in-up": "slide-in-up 0.5s ease-out forwards",
       },
     },
   },

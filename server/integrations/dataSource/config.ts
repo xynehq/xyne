@@ -2,16 +2,43 @@ import path from "path"
 
 export const DATASOURCE_CONFIG = {
   // File size limits
-  MAX_FILE_SIZE_MB: parseInt(
-    process.env.DATASOURCE_MAX_FILE_SIZE_MB || "15",
+  MAX_PDF_FILE_SIZE_MB: parseInt(
+    process.env.DATASOURCE_MAX_PDF_FILE_SIZE_MB || "40",
+    10,
+  ),
+  MAX_DOCX_FILE_SIZE_MB: parseInt(
+    process.env.DATASOURCE_MAX_DOCX_FILE_SIZE_MB || "40",
+    10,
+  ),
+  MAX_PPTX_FILE_SIZE_MB: parseInt(
+    process.env.DATASOURCE_MAX_PPTX_FILE_SIZE_MB || "40",
+    10,
+  ),
+  MAX_PPTX_TEXT_LEN: parseInt(
+    process.env.DATASOURCE_MAX_PPTX_TEXT_LEN || "300000",
+    10,
+  ),
+  MAX_TEXT_FILE_SIZE_MB: parseInt(
+    process.env.DATASOURCE_MAX_TEXT_FILE_SIZE_MB || "40",
     10,
   ),
   MAX_CHUNK_SIZE: parseInt(process.env.DATASOURCE_MAX_CHUNK_SIZE || "512", 10),
+  MAX_ATTACHMENT_SHEET_ROWS: parseInt(
+    process.env.DATASOURCE_MAX_ATTACHMENT_SHEET_ROWS || "3000",
+    10,
+  ),
+  MAX_ATTACHMENT_SHEET_TEXT_LEN: parseInt(
+    process.env.DATASOURCE_MAX_ATTACHMENT_SHEET_TEXT_LEN || "300000",
+    10,
+  ),
+  MAX_IMAGE_FILE_SIZE_MB: parseInt(
+    process.env.DATASOURCE_MAX_IMAGE_FILE_SIZE_MB || "40",
+    10,
+  ),
 
   // Supported file types
   SUPPORTED_TEXT_TYPES: new Set([
     "text/plain",
-    "text/csv",
     "text/markdown",
     "text/html",
     "text/xml",
@@ -24,10 +51,13 @@ export const DATASOURCE_CONFIG = {
     "text/csv",
   ]),
 
-  SUPPORTED_OFFICE_TYPES: new Set([
+  SUPPORTED_DOCX_TYPES: new Set([
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
     "application/msword", // .doc
+  ]),
+
+  SUPPORTED_PPTX_TYPES: new Set([
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
     "application/vnd.ms-powerpoint", // .ppt
   ]),
 
@@ -36,46 +66,9 @@ export const DATASOURCE_CONFIG = {
     "image/jpg",
     "image/png",
     "image/gif",
-    "image/bmp",
-    "image/tiff",
     "image/webp",
   ]),
-
-  // Directories
-  TEMP_DIR:
-    process.env.DATASOURCE_TEMP_DIR || path.resolve(__dirname, "../../tmp"),
-
-  // External tool paths
-  LIBREOFFICE_PATHS: {
-    darwin: "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    linux: "/usr/bin/soffice",
-    win32: "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
-  } as const,
-
-  // Processing options
-  CONVERSION_TIMEOUT_MS: parseInt(
-    process.env.DATASOURCE_CONVERSION_TIMEOUT_MS || "30000",
-    10,
-  ),
-  CLEANUP_RETRY_ATTEMPTS: parseInt(
-    process.env.DATASOURCE_CLEANUP_RETRY_ATTEMPTS || "3",
-    10,
-  ),
-
-  // Validation
-  MIN_CONTENT_LENGTH: parseInt(
-    process.env.DATASOURCE_MIN_CONTENT_LENGTH || "10",
-    10,
-  ),
-  MAX_FILENAME_LENGTH: parseInt(
-    process.env.DATASOURCE_MAX_FILENAME_LENGTH || "255",
-    10,
-  ),
 } as const
-
-// Computed values
-export const MAX_DATASOURCE_FILE_SIZE =
-  DATASOURCE_CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024
 
 // Utility function to extract base MIME type (remove parameters like charset)
 export const getBaseMimeType = (rawMimeType: string): string => {
@@ -93,23 +86,26 @@ export const isSheetFile = (mimeType: string): boolean => {
   return DATASOURCE_CONFIG.SUPPORTED_SHEET_TYPES.has(baseMimeType)
 }
 
-export const isOfficeFile = (mimeType: string): boolean => {
-  const baseMimeType = getBaseMimeType(mimeType)
-  return DATASOURCE_CONFIG.SUPPORTED_OFFICE_TYPES.has(baseMimeType)
-}
-
 export const isImageFile = (mimeType: string): boolean => {
   const baseMimeType = getBaseMimeType(mimeType)
   return DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(baseMimeType)
 }
 
-export const requiresConversion = (mimeType: string): boolean =>
-  isOfficeFile(mimeType)
+export const isDocxFile = (mimeType: string): boolean => {
+  const baseMimeType = getBaseMimeType(mimeType)
+  return DATASOURCE_CONFIG.SUPPORTED_DOCX_TYPES.has(baseMimeType)
+}
+
+export const isPptxFile = (mimeType: string): boolean => {
+  const baseMimeType = getBaseMimeType(mimeType)
+  return DATASOURCE_CONFIG.SUPPORTED_PPTX_TYPES.has(baseMimeType)
+}
 
 export const getSupportedFileTypes = (): string[] => [
   ...DATASOURCE_CONFIG.SUPPORTED_TEXT_TYPES,
   ...DATASOURCE_CONFIG.SUPPORTED_SHEET_TYPES,
-  ...DATASOURCE_CONFIG.SUPPORTED_OFFICE_TYPES,
+  ...DATASOURCE_CONFIG.SUPPORTED_DOCX_TYPES,
+  ...DATASOURCE_CONFIG.SUPPORTED_PPTX_TYPES,
   ...DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES,
   "application/pdf",
 ]

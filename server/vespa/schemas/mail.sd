@@ -172,17 +172,31 @@ schema mail {
       function matchedFieldCount() {
         expression {
           # The `matches` returns 1 if the field contains a match, otherwise 0
-          matches(subject) + matches(chunks)
+          matches(subject) + matches(chunks) + matches(from) + matches(to) + matches(cc) + matches(bcc)
         }
       }
 
+      function peopleRank() {
+        expression: (0.8 * (nativeRank(from))+ 0.4 * (nativeRank(to)) +  0.2 * (nativeRank(cc) + nativeRank(bcc)))
+      }
+
+      function simplePeopleRank() {
+        expression: nativeRank(from) + nativeRank(to) +  nativeRank(cc) + nativeRank(bcc)
+      }
+
       function combined_nativeRank() {
-        expression: (nativeRank(subject) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+        expression {
+          if(query(is_intent_search) == 1.0,
+            simplePeopleRank,
+            ((nativeRank(subject) + nativeRank(chunks) + peopleRank) / if(matchedFieldCount == 0, 1, matchedFieldCount))
+          )
+        }
       }
 
       function chunk_scores() {
         expression: elementwise(bm25(chunks), x, double)
       }
+
 
     }
 
@@ -329,6 +343,28 @@ schema mail {
       chunk_scores
     }
   }
+
+  rank-profile title_boosted_hybrid inherits initial {
+    #nativeRank(chunk) just to balance the vector score
+  first-phase {
+    expression: (query(alpha) * vector_score) + ((1 - query(alpha)) * (5 * nativeRank(subject)+0.2*nativeRank(chunks)))
+  }
+  
+  global-phase {
+    expression {
+      (
+        (query(alpha) * vector_score) + 
+        ((1 - query(alpha)) * (5 * nativeRank(subject) + 0.2*nativeRank(chunks)))
+      ) * doc_recency
+    }
+    rerank-count: 1000
+  }
+
+  match-features {
+  nativeRank(subject) 
+  nativeRank(chunks)
+  }
+}
 
   rank-profile default_random inherits initial {
     first-phase {

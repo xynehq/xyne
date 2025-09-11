@@ -68,20 +68,42 @@ export const MinimalCitationSchema = z.object({
   url: z.string().optional(),
   app: z.nativeEnum(Apps),
   entity: entitySchema,
+  threadId: z.string().optional(),
+  itemId: z.string().optional(),
+  clId: z.string().optional(),
+  chunkIndex: z.number().int().min(0).optional(),
 })
 
 export type Citation = z.infer<typeof MinimalCitationSchema>
+
+export interface ImageCitation {
+  citationKey: string
+  imagePath: string
+  imageData: string
+  item: Citation
+  mimeType?: string
+}
 
 export interface MinimalAgentFragment {
   id: string // Unique ID for the fragment
   content: string
   source: Citation
   confidence: number
+  imageFileNames?: string[]
 }
 
 export const messageFeedbackSchema = z.object({
   messageId: z.string(),
   feedback: z.enum(messageFeedbackEnum.enumValues).nullable(), // Allows 'like', 'dislike', or null
+})
+
+// Enhanced feedback schema for new feedback system
+export const enhancedMessageFeedbackSchema = z.object({
+  messageId: z.string(),
+  type: z.enum(["like", "dislike"]),
+  customFeedback: z.string().optional(),
+  selectedOptions: z.array(z.string()).optional(),
+  shareChat: z.boolean().optional(), // New field for share chat option
 })
 
 export interface AgentTool {
@@ -106,97 +128,57 @@ export interface AgentTool {
     result: string // Human-readable summary of action/result
     contexts?: MinimalAgentFragment[] // Data fragments found
     error?: string // Error message if failed
+    fallbackReasoning?: string // Detailed reasoning about why search failed
   }>
 }
-
-export interface PaginationParameters {
+export interface MetadataRetrievalParams {
+  from?: string
+  to?: string
+  app: string
+  entity?: string
+  filter_query?: string
   limit?: number
   offset?: number
   order_direction?: "asc" | "desc"
+  excludedIds?: string[]
+  intent?: {
+    from?: string[]
+    to?: string[]
+    cc?: string[]
+    bcc?: string[]
+  }
 }
 
-export interface FilterParameters {
+export interface SearchParams {
   filter_query: string
+  limit?: number
+  order_direction?: "asc" | "desc"
+  offset?: number
   excludedIds?: string[]
 }
 
-export interface DateRangeParameters {
+export interface ConversationalParams {
+  // No parameters
+}
+
+export interface SlackThreadsParams {
+  filter_query?: string
+  limit?: number
+  offset?: number
+  order_direction?: string
+}
+
+export interface SlackRelatedMessagesParams {
+  channel_name: string
+  filter_query?: string
+  user_email?: string
+  limit?: number
+  offset?: number
+  order_direction?: string
   from?: string
   to?: string
 }
 
-export interface SlackChannelUserParameters {
-  channel_name?: string
-  user_email?: string
-}
-
-export interface AppEntityParameters {
-  app?: Apps
-  entity?: Entity
-}
-export interface SearchParameters
-  extends PaginationParameters,
-    FilterParameters,
-    AppEntityParameters {
-  filter_query: string
-  from: string
-  to: string
-}
-
-export type MinimalSearchParameters = Pick<
-  SearchParameters,
-  "filter_query" | "limit"
->
-
-export interface FilteredSearchParameters
-  extends PaginationParameters,
-    FilterParameters,
-    AppEntityParameters {}
-
-export interface MetadataRetrievalParameters
-  extends PaginationParameters,
-    FilterParameters,
-    AppEntityParameters {
-  item_type: string
-}
-
-export interface UserInfoParameters {}
-
-export interface GetSlackThreadsParameters
-  extends PaginationParameters,
-    FilterParameters {}
-
-export interface GetSlackMessagesFromUserParameters
-  extends PaginationParameters,
-    FilterParameters,
-    DateRangeParameters,
-    Pick<SlackChannelUserParameters, "channel_name"> {
+export interface SlackUserProfileParams {
   user_email: string
-}
-
-export interface GetSlackRelatedMessagesParameters
-  extends PaginationParameters,
-    FilterParameters,
-    DateRangeParameters,
-    SlackChannelUserParameters {}
-
-export interface GetUserSlackProfileParameters {
-  user_email: string
-}
-
-export interface GetSlackMessagesFromChannelParameters
-  extends PaginationParameters,
-    FilterParameters,
-    DateRangeParameters,
-    Pick<SlackChannelUserParameters, "user_email"> {
-  channel_name: string
-}
-
-export interface GetSlackMessagesFromTimeRangeParameters
-  extends PaginationParameters,
-    FilterParameters,
-    DateRangeParameters,
-    SlackChannelUserParameters {
-  date_from: string
-  date_to: string
 }

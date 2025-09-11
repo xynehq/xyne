@@ -1,4 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
+import DOMPurify from "dompurify"
 import { getCodeString } from "rehype-rewrite"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
@@ -27,7 +28,14 @@ import {
   Minimize2,
   Share2,
 } from "lucide-react"
-import { useEffect, useRef, useState, Fragment, useCallback } from "react"
+import {
+  useEffect,
+  useRef,
+  useState,
+  Fragment,
+  useCallback,
+  useMemo,
+} from "react"
 import {
   TransformWrapper,
   TransformComponent,
@@ -35,7 +43,7 @@ import {
 } from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
 import mermaid from "mermaid"
-
+import { Pill } from "@/components/Pill"
 // Initialize mermaid with secure configuration to prevent syntax errors
 mermaid.initialize({
   startOnLoad: false,
@@ -75,7 +83,10 @@ mermaid.initialize({
 import {
   SelectPublicMessage,
   Citation,
+  ImageCitation,
   MessageFeedback,
+  AttachmentMetadata,
+  attachmentMetadataSchema,
   // Apps,
   // DriveEntity,
 } from "shared/types"
@@ -85,6 +96,7 @@ import Retry from "@/assets/retry.svg"
 import { PublicUser, PublicWorkspace } from "shared/types"
 import { z } from "zod"
 import { getIcon } from "@/lib/common"
+import { FeedbackModal } from "@/components/feedback/FeedbackModal"
 import { getName } from "@/components/GroupFilter"
 import {
   useQueryClient,
@@ -93,27 +105,40 @@ import {
   InfiniteData,
 } from "@tanstack/react-query"
 import { SelectPublicChat } from "shared/types"
-import { fetchChats, pageSize, renameChat } from "@/components/HistoryModal"
+import {
+  fetchChats,
+  pageSize,
+  renameChat,
+  bookmarkChat,
+} from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
-import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
   Tooltip,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { EnhancedReasoning } from "@/components/EnhancedReasoning"
+import { DeepResearchReasoning } from "@/components/DeepResearchReasoning"
 import { Tip } from "@/components/Tooltip"
+import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
-import { ChatBox } from "@/components/ChatBox"
+import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
 import React from "react"
-import { renderToStaticMarkup } from "react-dom/server"
-import { Pill } from "@/components/Pill"
+// import { jsonToHtmlMessage } from "@/lib/messageUtils"
+import { CLASS_NAMES } from "@/lib/constants"
 import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
 import { useChatStream } from "@/hooks/useChatStream"
 import { useChatHistory } from "@/hooks/useChatHistory"
 import { parseHighlight } from "@/components/Highlight"
 import { ShareModal } from "@/components/ShareModal"
+import { AttachmentGallery } from "@/components/AttachmentGallery"
+import { useVirtualizer } from "@tanstack/react-virtual"
+import { renderToStaticMarkup } from "react-dom/server"
+import { CitationPreview } from "@/components/CitationPreview"
+import { createCitationLink } from "@/components/CitationLink"
+import { createPortal } from "react-dom"
+import { processMessage } from "@/utils/chatUtils"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -216,7 +241,7 @@ interface ChatPageProps {
 }
 
 // Define the structure for parsed message parts, including app, entity, and pillType for pills
-type ParsedMessagePart =
+export type ParsedMessagePart =
   | { type: "text"; value: string }
   | {
       type: "pill"
@@ -233,7 +258,7 @@ type ParsedMessagePart =
   | { type: "link"; value: string }
 
 // Helper function to convert JSON message parts back to HTML using Pill component
-const jsonToHtmlMessage = (jsonString: string): string => {
+export const jsonToHtmlMessage = (jsonString: string): string => {
   try {
     const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
     if (!Array.isArray(parts)) {
@@ -292,7 +317,6 @@ const jsonToHtmlMessage = (jsonString: string): string => {
   }
 }
 
-const REASONING_STATE_KEY = "isReasoningGlobalState"
 const AGENTIC_STATE = "agenticState"
 export const ChatPage = ({
   user,
@@ -347,7 +371,9 @@ export const ChatPage = ({
   const {
     partial,
     thinking,
+    deepResearchSteps,
     sources,
+    imageCitations,
     citationMap,
     isStreaming,
     messageId: streamInfoMessageId,
@@ -376,7 +402,9 @@ export const ChatPage = ({
     ? {
         resp: partial,
         thinking,
+        deepResearchSteps,
         sources,
+        imageCitations,
         citationMap,
         messageId: streamInfoMessageId,
         chatId,
@@ -392,6 +420,7 @@ export const ChatPage = ({
   )
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const chatBoxRef = useRef<ChatBoxRef>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const [dots, setDots] = useState("")
   const [showSources, setShowSources] = useState(false)
@@ -408,11 +437,18 @@ export const ChatPage = ({
   const [feedbackMap, setFeedbackMap] = useState<
     Record<string, MessageFeedback | null>
   >({})
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
+  const [pendingFeedback, setPendingFeedback] = useState<{
+    messageId: string
+    type: MessageFeedback
+  } | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
-  const [isReasoningActive, setIsReasoningActive] = useState(() => {
-    const storedValue = localStorage.getItem(REASONING_STATE_KEY)
-    return storedValue ? JSON.parse(storedValue) : true
-  })
+
+  // Add state for citation preview
+  const [isCitationPreviewOpen, setIsCitationPreviewOpen] = useState(false)
+  const [selectedCitation, setSelectedCitation] = useState<Citation | null>(
+    null,
+  )
 
   // Compute disableRetry flag for retry buttons
   const disableRetry = isStreaming || retryIsStreaming || isSharedChat
@@ -447,9 +483,6 @@ export const ChatPage = ({
     }
   }, [chatParams.shareToken])
 
-  useEffect(() => {
-    localStorage.setItem(REASONING_STATE_KEY, JSON.stringify(isReasoningActive))
-  }, [isReasoningActive])
   useEffect(() => {
     localStorage.setItem(AGENTIC_STATE, JSON.stringify(isAgenticMode))
   }, [isAgenticMode])
@@ -564,6 +597,16 @@ export const ChatPage = ({
   }, [currentChat?.title, isEditing, chatTitle])
 
   useEffect(() => {
+    if (
+      currentChat &&
+      typeof currentChat.isBookmarked === "boolean" &&
+      currentChat.isBookmarked !== bookmark
+    ) {
+      setBookmark(currentChat.isBookmarked)
+    }
+  }, [currentChat, bookmark])
+
+  useEffect(() => {
     if (isStreaming || retryIsStreaming) {
       const interval = setInterval(() => {
         setDots((prev) => {
@@ -581,6 +624,32 @@ export const ChatPage = ({
     }
   }, [isStreaming, retryIsStreaming])
 
+  // Cleanup effect to clear failed messages from cache when chatId changes
+  useEffect(() => {
+    // Clear any cached data for null chatId when we have a real chatId
+    // This prevents old failed messages from appearing in new chats
+    if (chatId && chatId !== null) {
+      queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+    }
+  }, [chatId, queryClient])
+
+  // Helper function to extract feedback type from either JSON or legacy format
+  const extractFeedbackType = (feedback: any): MessageFeedback | null => {
+    if (!feedback) return null
+
+    // Handle new JSON format
+    if (typeof feedback === "object" && feedback.type) {
+      return feedback.type as MessageFeedback
+    }
+
+    // Handle legacy string format
+    if (typeof feedback === "string") {
+      return feedback as MessageFeedback
+    }
+
+    return null
+  }
+
   // Handle initial data loading and feedbackMap initialization
   useEffect(() => {
     if (!hasHandledQueryParam.current || isWithChatId) {
@@ -595,9 +664,7 @@ export const ChatPage = ({
       const initialFeedbackMap: Record<string, MessageFeedback | null> = {}
       data.messages.forEach((msg: SelectPublicMessage) => {
         if (msg.externalId && msg.feedback !== undefined) {
-          // msg.feedback can be null
-          initialFeedbackMap[msg.externalId] =
-            msg.feedback as MessageFeedback | null
+          initialFeedbackMap[msg.externalId] = extractFeedbackType(msg.feedback)
         }
       })
       setFeedbackMap(initialFeedbackMap)
@@ -631,16 +698,14 @@ export const ChatPage = ({
           .filter((s) => s.length > 0)
       }
 
-      if (typeof chatParams.reasoning === "boolean") {
-        setIsReasoningActive(chatParams.reasoning)
-      }
-
       // Call handleSend, passing agentId from chatParams if available
       handleSend(
         messageToSend,
+        chatParams.metadata,
         sourcesArray,
         chatParams.agentId,
         chatParams.toolsList,
+        chatParams.selectedModel, // Use selectedModel from URL params
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -648,28 +713,30 @@ export const ChatPage = ({
         search: (prev) => ({
           ...prev,
           q: undefined,
-          reasoning: undefined,
           sources: undefined,
           agentId: undefined, // Clear agentId from URL after processing
           toolsList: undefined, // Clear toolsList from URL after processing
+          metadata: undefined, // Clear metadata from URL after processing
         }),
         replace: true,
       })
     }
   }, [
     chatParams.q,
-    chatParams.reasoning,
     chatParams.sources,
     chatParams.agentId,
     chatParams.toolsList,
+    chatParams.metadata,
     router,
   ])
 
   const handleSend = async (
     messageToSend: string,
-    selectedSources: string[] = [],
+    metadata?: AttachmentMetadata[],
+    selectedSources?: string[],
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
+    selectedModel?: string,
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -694,14 +761,41 @@ export const ChatPage = ({
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
-    await startStream(
-      messageToSend,
-      selectedSources,
-      isReasoningActive,
-      isAgenticMode,
-      agentIdToUse,
-      toolsList,
-    )
+
+    try {
+      await startStream(
+        messageToSend,
+        selectedSources || [],
+        isAgenticMode,
+        agentIdToUse,
+        toolsList,
+        metadata,
+        selectedModel,
+      )
+    } catch (error) {
+      // If there's an error, clear the optimistically added message from cache
+      // This prevents failed messages from persisting when creating new chats
+      queryClient.setQueryData<any>(
+        ["chatHistory", queryKey],
+        (oldData: any) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            messages:
+              oldData.messages?.filter(
+                (msg: any) => msg.message !== messageToSend,
+              ) || [],
+          }
+        },
+      )
+
+      // Also clear any cached data for null chatId to prevent old failed messages from appearing
+      if (!chatId) {
+        queryClient.removeQueries({ queryKey: ["chatHistory", null] })
+      }
+
+      throw error // Re-throw the error so it can be handled by the calling code
+    }
   }
 
   const handleFeedback = async (
@@ -710,89 +804,174 @@ export const ChatPage = ({
   ) => {
     if (!messageId) return
 
-    setFeedbackMap((prev) => {
-      const currentFeedback = prev[messageId]
-      return {
-        ...prev,
-        [messageId]: currentFeedback === feedback ? null : feedback, // Toggle if same, else set new
-      }
-    })
+    // Open the enhanced feedback modal
+    setPendingFeedback({ messageId, type: feedback })
+    setFeedbackModalOpen(true)
+  }
+
+  const handleEnhancedFeedbackSubmit = async (data: {
+    type: MessageFeedback
+    customFeedback?: string
+    selectedOptions?: string[]
+    shareChat?: boolean
+  }) => {
+    if (!pendingFeedback) return
+
+    const { messageId } = pendingFeedback
+
+    // Optimistically update the UI
+    setFeedbackMap((prev) => ({
+      ...prev,
+      [messageId]: data.type,
+    }))
 
     try {
-      const currentFeedbackInState = feedbackMap[messageId]
-      const newFeedbackStatus =
-        currentFeedbackInState === feedback ? null : feedback
-
-      await api.message.feedback.$post({
-        json: { messageId, feedback: newFeedbackStatus },
+      const response = await api.message.feedback.enhanced.$post({
+        json: {
+          messageId,
+          type: data.type,
+          customFeedback: data.customFeedback,
+          selectedOptions: data.selectedOptions,
+          shareChat: data.shareChat,
+        },
       })
-      toast({ title: "Success", description: "Feedback submitted." })
+
+      const result = await response.json()
+
+      let successMessage = "Feedback submitted."
+      if (data.shareChat && result.shareToken) {
+        successMessage += " Chat has been shared for improvement purposes."
+      } else if (data.shareChat && !result.shareToken) {
+        successMessage +=
+          " Feedback submitted, but share token generation failed."
+      }
+
+      toast({ title: "Success", description: successMessage })
     } catch (error) {
-      console.error("Failed to submit feedback", error)
+      console.error("Failed to submit enhanced feedback", error)
+      // Revert optimistic update on error
       setFeedbackMap((prev) => {
-        // Get the current state after optimistic update
-        const currentState = prev[messageId]
-        const originalFeedback =
-          currentState === null
-            ? feedback
-            : currentState === feedback
-              ? feedbackMap[messageId]
-              : null
-        return { ...prev, [messageId]: originalFeedback }
+        const newMap = { ...prev }
+        delete newMap[messageId]
+        return newMap
       })
       toast({
         title: "Error",
-        description: "Could not submit feedback.",
+        description: "Failed to submit feedback. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      setPendingFeedback(null)
+      setFeedbackModalOpen(false)
     }
   }
 
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
-    await retryMessage(messageId, isReasoningActive, isAgenticMode)
+    setRetryIsStreaming(true)
+    
+    // Get current model configuration from ChatBox
+    const currentModelConfig = chatBoxRef.current?.getCurrentModelConfig() || null
+    
+    await retryMessage(messageId, isAgenticMode, undefined, currentModelConfig)
   }
+
+  const bookmarkChatMutation = useMutation<
+    { chatId: string; isBookmarked: boolean },
+    Error,
+    { chatId: string; isBookmarked: boolean }
+  >({
+    mutationFn: async ({ chatId, isBookmarked }) => {
+      return await bookmarkChat(chatId, isBookmarked)
+    },
+    onMutate: async ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+
+      queryClient.setQueryData<InfiniteData<SelectPublicChat[]>>(
+        ["all-chats"],
+        (oldData) => {
+          if (!oldData) return oldData
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) =>
+              page.map((chat) =>
+                chat.externalId === chatId
+                  ? { ...chat, isBookmarked: isBookmarked }
+                  : chat,
+              ),
+            ),
+          }
+        },
+      )
+    },
+    onSuccess: ({ isBookmarked }) => {
+      setBookmark(isBookmarked)
+      queryClient.invalidateQueries({ queryKey: ["all-chats"] })
+      queryClient.invalidateQueries({ queryKey: ["favorite-chats"] })
+    },
+    onError: (error: Error, variables, context) => {
+      setBookmark(!variables.isBookmarked)
+      console.error("Failed to bookmark chat:", error)
+    },
+  })
 
   const handleBookmark = async () => {
     if (chatId) {
-      await api.chat.bookmark.$post({
-        json: {
-          chatId: chatId,
-          bookmark: !bookmark,
-        },
+      bookmarkChatMutation.mutate({
+        chatId: chatId,
+        isBookmarked: !bookmark,
       })
-      setBookmark(!bookmark)
     }
   }
 
-  const isScrolledToBottom = () => {
+  // Handler for citation clicks - moved before conditional returns
+  const handleCitationClick = useCallback((citation: Citation) => {
+    if (!citation || !citation.clId || !citation.itemId) {
+      // For citations without clId or itemId, open as regular link
+      if (citation.url) {
+        window.open(citation.url, "_blank", "noopener,noreferrer")
+      }
+      return
+    }
+    setSelectedCitation(citation)
+    setIsCitationPreviewOpen(true)
+    // Close sources panel when opening citation preview
+    setShowSources(false)
+    setCurrentCitations([])
+    setCurrentMessageId(null)
+  }, [])
+
+  // Memoized callback for closing citation preview - moved before conditional returns
+  const handleCloseCitationPreview = useCallback(() => {
+    setIsCitationPreviewOpen(false)
+    setSelectedCitation(null)
+  }, [])
+
+  const scrollToBottom = () => {
     const container = messagesContainerRef.current
-    if (!container) return true
+    if (!container || userHasScrolled) return
 
-    const threshold = 100
-    return (
-      container.scrollHeight - container.scrollTop - container.clientHeight <
-      threshold
-    )
-  }
+    // For virtualized messages, we need to scroll to the bottom differently
+    // Use the container's scrollTop instead of virtualizer when possible
+    container.scrollTop = container.scrollHeight
 
-  const handleScroll = () => {
-    const isAtBottom = isScrolledToBottom()
-    setUserHasScrolled(!isAtBottom)
+    // Also reset userHasScrolled since we're programmatically scrolling
+    setUserHasScrolled(false)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container || userHasScrolled) return
 
+    // For virtualized content, ensure we scroll to actual bottom
     container.scrollTop = container.scrollHeight
-  }, [messages, partial])
+  }, [messages, partial, userHasScrolled]) // Added userHasScrolled to dependencies
 
   if ((data?.error || historyLoading) && !isSharedChat) {
     return (
       <div className="h-full w-full flex flex-col bg-white">
         <Sidebar isAgentMode={agentWhiteList} />
-        <div className="ml-[120px]">Error: Could not get data</div>
+        {/* <div className="ml-[120px]">Error: Could not get data</div> */}
       </div>
     )
   }
@@ -906,7 +1085,7 @@ export const ChatPage = ({
       />
       <div className="h-full w-full flex flex-col relative">
         <div
-          className={`flex w-full fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center  transition-all duration-250 z-10 ${showSources ? "pr-[18%]" : ""}`}
+          className={`flex ${isCitationPreviewOpen ? "w-1/2 ml-[52px]" : "w-full"} fixed bg-white dark:bg-[#1E1E1E] h-[48px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700 justify-center transition-all duration-250 z-10 ${showSources ? "pr-[18%]" : ""}`}
         >
           <div className={`flex h-[48px] items-center max-w-3xl w-full px-4`}>
             {isEditing && !isSharedChat ? (
@@ -937,20 +1116,6 @@ export const ChatPage = ({
                     onClick={handleChatRename}
                   />
                 )}
-                <Bookmark
-                  {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
-                  className="ml-[20px] cursor-pointer dark:stroke-gray-400"
-                  fill={
-                    bookmark
-                      ? theme === "dark"
-                        ? "#A0AEC0"
-                        : "#4A4F59"
-                      : "none"
-                  }
-                  stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
-                  onClick={handleBookmark}
-                  size={18}
-                />
                 {chatId && (
                   <Share2
                     stroke="#4A4F59"
@@ -959,188 +1124,101 @@ export const ChatPage = ({
                     onClick={() => handleShare()}
                   />
                 )}
-                <Ellipsis
-                  stroke="#4A4F59"
-                  className="dark:stroke-gray-400 ml-[20px]"
-                  size={18}
-                />
               </>
             )}
+            <Bookmark
+              {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
+              className={`ml-[20px] cursor-pointer dark:stroke-gray-400 ${CLASS_NAMES.BOOKMARK_BUTTON}`}
+              fill={
+                bookmark ? (theme === "dark" ? "#A0AEC0" : "#4A4F59") : "none"
+              }
+              stroke={theme === "dark" ? "#A0AEC0" : "#4A4F59"}
+              onClick={handleBookmark}
+              size={18}
+            />
+            <Ellipsis
+              stroke="#4A4F59"
+              className="dark:stroke-gray-400 ml-[20px]"
+              size={18}
+            />
           </div>
         </div>
 
-        <div
-          className={`h-full w-full flex items-end overflow-y-auto justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
-          ref={messagesContainerRef}
-          onScroll={handleScroll}
-        >
-          <div className={`w-full h-full flex flex-col items-center`}>
-            <div className="flex flex-col w-full  max-w-3xl flex-grow mb-[60px] mt-[56px]">
-              {messages.map((message: SelectPublicMessage, index: number) => {
-                const isSourcesVisible =
-                  showSources && currentMessageId === message.externalId
-                const userMessageWithErr =
-                  message.messageRole === "user" && message?.errorMessage
-
-                return (
-                  <Fragment key={message.externalId ?? index}>
-                    <ChatMessage
-                      key={
-                        message.externalId
-                          ? `${message.externalId}-msg`
-                          : `msg-${index}`
-                      }
-                      message={message.message}
-                      isUser={message.messageRole === "user"}
-                      responseDone={true}
-                      thinking={message.thinking}
-                      citations={message.sources}
-                      messageId={message.externalId}
-                      handleRetry={handleRetry}
-                      citationMap={message.citationMap}
-                      isRetrying={message.isRetrying}
-                      dots={message.isRetrying ? dots : ""}
-                      onToggleSources={() => {
-                        if (
-                          showSources &&
-                          currentMessageId === message.externalId
-                        ) {
-                          setShowSources(false)
-                          setCurrentCitations([])
-                          setCurrentMessageId(null)
-                        } else {
-                          setCurrentCitations(message?.sources || [])
-                          setShowSources(true)
-                          setCurrentMessageId(message.externalId)
-                        }
-                      }}
-                      sourcesVisible={isSourcesVisible}
+        <div className="flex flex-row h-full w-full">
+          <div
+            className={`h-full flex-1 flex items-end justify-center transition-all duration-250 ${showSources ? "pr-[18%]" : ""}`}
+          >
+            <div
+              className={`w-full h-full flex flex-col ${isCitationPreviewOpen ? "px-20" : "items-center"}`}
+            >
+              <VirtualizedMessages
+                ref={messagesContainerRef}
+                messages={messages}
+                currentResp={currentResp}
+                showSources={showSources}
+                currentMessageId={currentMessageId}
+                feedbackMap={feedbackMap}
+                isStreaming={isStreaming}
+                retryIsStreaming={retryIsStreaming}
+                isSharedChat={isSharedChat}
+                isDebugMode={isDebugMode}
+                disableRetry={disableRetry}
+                dots={dots}
+                setShowSources={setShowSources}
+                setCurrentCitations={setCurrentCitations}
+                setCurrentMessageId={setCurrentMessageId}
+                handleRetry={handleRetry}
+                handleShowRagTrace={handleShowRagTrace}
+                handleFeedback={handleFeedback}
+                handleShare={handleShare}
+                handleSend={handleSend}
+                scrollToBottom={scrollToBottom}
+                chatId={chatId}
+                userHasScrolled={userHasScrolled}
+                setUserHasScrolled={setUserHasScrolled}
+                onCitationClick={handleCitationClick}
+                isCitationPreviewOpen={isCitationPreviewOpen}
+                setIsCitationPreviewOpen={setIsCitationPreviewOpen}
+                setSelectedCitation={setSelectedCitation}
+                chatBoxRef={chatBoxRef}
+              />
+              {showRagTrace && chatId && selectedMessageId && (
+                <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
+                  <RagTraceVirtualization
+                    chatId={chatId}
+                    messageId={selectedMessageId}
+                    onClose={() => {
+                      setShowRagTrace(false)
+                      setSelectedMessageId(null)
+                    }}
+                  />
+                </div>
+              )}
+              {!isSharedChat && (
+                <div
+                  className={`sticky bottom-0 w-full flex ${isCitationPreviewOpen ? "px-3" : "justify-center"} bg-white dark:bg-[#1E1E1E] pt-2`}
+                >
+                  <div className="w-full max-w-3xl">
+                    <ChatBox
+                      ref={chatBoxRef}
+                      role={user?.role}
+                      query={query}
+                      setQuery={setQuery}
+                      handleSend={handleSend}
+                      handleStop={stopStream}
                       isStreaming={isStreaming}
-                      isDebugMode={isDebugMode}
-                      onShowRagTrace={handleShowRagTrace}
-                      feedbackStatus={feedbackMap[message.externalId!] || null}
-                      onFeedback={!isSharedChat ? handleFeedback : undefined}
-                      onShare={!isSharedChat ? handleShare : undefined}
-                      disableRetry={disableRetry}
+                      retryIsStreaming={retryIsStreaming}
+                      allCitations={allCitations}
+                      setIsAgenticMode={setIsAgenticMode}
+                      isAgenticMode={isAgenticMode}
+                      chatId={chatId}
+                      agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
+                      user={user} // Pass user prop
                     />
-                    {userMessageWithErr && (
-                      <ChatMessage
-                        key={
-                          message.externalId
-                            ? `${message.externalId}-err`
-                            : `err-${index}`
-                        }
-                        message={message.errorMessage}
-                        thinking={message.thinking}
-                        isUser={false}
-                        responseDone={true}
-                        citations={message.sources}
-                        messageId={message.externalId}
-                        handleRetry={handleRetry}
-                        citationMap={message.citationMap}
-                        isRetrying={message.isRetrying}
-                        dots={message.isRetrying ? dots : ""}
-                        onToggleSources={() => {
-                          if (
-                            showSources &&
-                            currentMessageId === message.externalId
-                          ) {
-                            setShowSources(false)
-                            setCurrentCitations([])
-                            setCurrentMessageId(null)
-                          } else {
-                            setCurrentCitations(message?.sources || [])
-                            setShowSources(true)
-                            setCurrentMessageId(message.externalId)
-                          }
-                        }}
-                        sourcesVisible={isSourcesVisible}
-                        isStreaming={isStreaming}
-                        isDebugMode={isDebugMode}
-                        onShowRagTrace={handleShowRagTrace}
-                        feedbackStatus={
-                          feedbackMap[message.externalId!] || null
-                        }
-                        onFeedback={!isSharedChat ? handleFeedback : undefined}
-                        onShare={!isSharedChat ? handleShare : undefined}
-                        disableRetry={disableRetry}
-                      />
-                    )}
-                  </Fragment>
-                )
-              })}
-              {currentResp && (
-                <ChatMessage
-                  message={currentResp.resp}
-                  citations={currentResp.sources}
-                  thinking={currentResp.thinking || ""}
-                  isUser={false}
-                  responseDone={false}
-                  handleRetry={handleRetry}
-                  dots={dots}
-                  messageId={currentResp.messageId}
-                  citationMap={currentResp.citationMap}
-                  onToggleSources={() => {
-                    if (
-                      showSources &&
-                      currentMessageId === currentResp.messageId
-                    ) {
-                      setShowSources(false)
-                      setCurrentCitations([])
-                      setCurrentMessageId(null)
-                    } else {
-                      setCurrentCitations(currentResp.sources || [])
-                      setShowSources(true)
-                      setCurrentMessageId(currentResp.messageId || null)
-                    }
-                  }}
-                  sourcesVisible={
-                    showSources && currentMessageId === currentResp.messageId
-                  }
-                  isStreaming={isStreaming}
-                  isDebugMode={isDebugMode}
-                  onShowRagTrace={handleShowRagTrace}
-                  // Feedback not applicable for streaming response, but props are needed
-                  feedbackStatus={null}
-                  onFeedback={!isSharedChat ? handleFeedback : undefined}
-                  onShare={!isSharedChat ? handleShare : undefined}
-                  disableRetry={disableRetry}
-                />
+                  </div>
+                </div>
               )}
             </div>
-            {showRagTrace && chatId && selectedMessageId && (
-              <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
-                <RagTraceVirtualization
-                  chatId={chatId}
-                  messageId={selectedMessageId}
-                  onClose={() => {
-                    setShowRagTrace(false)
-                    setSelectedMessageId(null)
-                  }}
-                />
-              </div>
-            )}
-            {!isSharedChat && (
-              <div className="sticky bottom-0 w-full flex justify-center bg-white dark:bg-[#1E1E1E] pt-2">
-                <ChatBox
-                  role={user?.role}
-                  query={query}
-                  setQuery={setQuery}
-                  handleSend={handleSend}
-                  handleStop={stopStream}
-                  isStreaming={isStreaming}
-                  retryIsStreaming={retryIsStreaming}
-                  allCitations={allCitations}
-                  setIsAgenticMode={setIsAgenticMode}
-                  isAgenticMode={isAgenticMode}
-                  chatId={chatId}
-                  agentIdFromChatData={data?.chat?.agentId ?? null} // Pass agentId from loaded chat data
-                  isReasoningActive={isReasoningActive}
-                  setIsReasoningActive={setIsReasoningActive}
-                  user={user} // Pass user prop
-                />
-              </div>
-            )}
           </div>
           <Sources
             showSources={showSources}
@@ -1150,6 +1228,7 @@ export const ChatPage = ({
               setCurrentCitations([])
               setCurrentMessageId(null)
             }}
+            onCitationClick={handleCitationClick}
           />
         </div>
       </div>
@@ -1161,6 +1240,28 @@ export const ChatPage = ({
         chatId={chatId}
         messages={messages}
       />
+
+      {/* Enhanced Feedback Modal */}
+      {pendingFeedback && (
+        <FeedbackModal
+          isOpen={feedbackModalOpen}
+          onClose={() => {
+            setFeedbackModalOpen(false)
+            setPendingFeedback(null)
+          }}
+          onSubmit={handleEnhancedFeedbackSubmit}
+          feedbackType={pendingFeedback.type}
+          messageId={pendingFeedback.messageId}
+          chatId={chatId || ""}
+        />
+      )}
+
+      {/* Citation Preview Sidebar */}
+      <CitationPreview
+        citation={selectedCitation}
+        isOpen={isCitationPreviewOpen}
+        onClose={handleCloseCitationPreview}
+      />
     </div>
   )
 }
@@ -1168,9 +1269,11 @@ export const ChatPage = ({
 const MessageCitationList = ({
   citations,
   onToggleSources,
+  onCitationClick,
 }: {
   citations: Citation[]
   onToggleSources: () => void
+  onCitationClick?: (citation: Citation) => void
 }) => {
   return (
     <TooltipProvider>
@@ -1178,39 +1281,35 @@ const MessageCitationList = ({
         {citations.map((citation: Citation, index: number) => (
           <li
             key={index}
-            className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px]"
+            className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] w-[196px] mr-[6px] cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+            onClick={(e) => {
+              e.preventDefault()
+              onCitationClick?.(citation)
+            }}
           >
-            <a
-              href={citation.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={citation.title}
-            >
-              <div className="flex pl-[12px] pt-[10px] pr-[12px]">
-                <div className="flex flex-col w-full">
-                  <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all dark:text-gray-100">
-                    {citation.title ? parseHighlight(citation.title) : ""}
-                  </p>
-                  <div className="flex flex-col mt-[9px]">
-                    <div className="flex items-center pb-[12px]">
-                      {getIcon(citation.app, citation.entity)}
-                      <span
-                        style={{ fontWeight: 450 }}
-                        className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px]"
-                      >
-                        {getName(citation.app, citation.entity)}
-                      </span>
-                      <span
-                        className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
-                        {index + 1}
-                      </span>
-                    </div>
+            <div className="flex pl-[12px] pt-[10px] pr-[12px]">
+              <div className="flex flex-col w-full">
+                <p className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all dark:text-gray-100">
+                  {citation.title
+                    ? parseHighlight(citation.title.split("/").pop())
+                    : ""}
+                </p>
+                <div className="flex flex-col mt-[9px]">
+                  <div className="flex items-center pb-[12px]">
+                    {getIcon(citation.app, citation.entity)}
+                    <span
+                      style={{ fontWeight: 450 }}
+                      className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px]"
+                    >
+                      {getName(citation.app, citation.entity)}
+                    </span>
+                    <span className="flex ml-auto items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 mt-[3px] rounded-full text-[9px] font-mono">
+                      {index + 1}
+                    </span>
                   </div>
                 </div>
               </div>
-            </a>
+            </div>
           </li>
         ))}
         {!!citations.length && (
@@ -1230,44 +1329,42 @@ const MessageCitationList = ({
   )
 }
 
-const CitationList = ({ citations }: { citations: Citation[] }) => {
+const CitationList = ({
+  citations,
+  onCitationClick,
+}: {
+  citations: Citation[]
+  onCitationClick?: (citation: Citation) => void
+}) => {
   return (
     <ul className={`mt-2`}>
       {citations.map((citation: Citation, index: number) => (
         <li
           key={index}
-          className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] mt-[12px] w-[85%]"
+          className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] mt-[12px] w-[85%] cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+          onClick={(e) => {
+            e.preventDefault()
+            onCitationClick?.(citation)
+          }}
         >
-          <a
-            href={citation.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={citation.title}
-          >
-            <div className="flex pl-[12px] pt-[12px]">
-              <a
-                target="_blank"
-                rel="noopener noreferrer"
-                title={citation.title}
-                href={citation.url}
-                className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px]"
-                style={{ fontFamily: "JetBrains Mono" }}
-              >
-                {index + 1}
-              </a>
-              <div className="flex flex-col mr-[12px]">
-                <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all dark:text-gray-100">
-                  {citation.title ? parseHighlight(citation.title) : ""}
+          <div className="flex pl-[12px] pt-[12px]">
+            <div className="flex items-center p-[5px] h-[16px] bg-[#EBEEF5] dark:bg-slate-700 dark:text-gray-300 rounded-full text-[9px] mr-[8px] font-mono">
+              {index + 1}
+            </div>
+            <div className="flex flex-col mr-[12px]">
+              <span className="line-clamp-2 text-[13px] tracking-[0.01em] leading-[17px] text-ellipsis font-medium break-all dark:text-gray-100">
+                {citation.title
+                  ? parseHighlight(citation.title.split("/").pop())
+                  : ""}
+              </span>
+              <div className="flex items-center pb-[12px] mt-[8px]">
+                {getIcon(citation.app, citation.entity)}
+                <span className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px]">
+                  {getName(citation.app, citation.entity)}
                 </span>
-                <div className="flex items-center pb-[12px] mt-[8px]">
-                  {getIcon(citation.app, citation.entity)}
-                  <span className="text-[#848DA1] dark:text-gray-400 text-[13px] tracking-[0.01em] leading-[16px]">
-                    {getName(citation.app, citation.entity)}
-                  </span>
-                </div>
               </div>
             </div>
-          </a>
+          </div>
         </li>
       ))}
     </ul>
@@ -1278,18 +1375,19 @@ const Sources = ({
   showSources,
   citations,
   closeSources,
+  onCitationClick,
 }: {
   showSources: boolean
   citations: Citation[]
   closeSources: () => void
+  onCitationClick?: (citation: Citation) => void
 }) => {
   return showSources ? (
-    <div className="fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col">
+    <div
+      className={`fixed top-[48px] right-0 bottom-0 w-1/4 border-l-[1px] border-[#E6EBF5] dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col z-40`}
+    >
       <div className="flex items-center px-[40px] py-[24px] border-b-[1px] border-[#E6EBF5] dark:border-gray-700">
-        <span
-          className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em]"
-          style={{ fontFamily: "JetBrains Mono" }}
-        >
+        <span className="text-[#929FBA] dark:text-gray-400 font-normal text-[12px] tracking-[0.08em] font-mono">
           SOURCES
         </span>
         <X
@@ -1300,25 +1398,205 @@ const Sources = ({
         />
       </div>
       <div className="flex-1 overflow-y-auto px-[40px] pb-[24px]">
-        <CitationList citations={citations} />
+        <CitationList citations={citations} onCitationClick={onCitationClick} />
       </div>
     </div>
   ) : null
 }
 
-export const textToCitationIndex = /\[(\d+)\]/g
+interface ImageCitationComponentProps {
+  citationKey: string
+  imageCitations: ImageCitation[] | ImageCitation
+  className?: string
+}
 
-const renderMarkdownLink = ({
-  node,
-  ...linkProps
-}: { node?: any; [key: string]: any }) => (
-  <a
-    {...linkProps}
-    target="_blank"
-    rel="noopener noreferrer"
-    className="text-blue-600 dark:text-blue-400 hover:underline"
-  />
-)
+export const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
+  citationKey,
+  imageCitations,
+  className = "",
+}) => {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  let imageCitation: ImageCitation | undefined
+  let imageSrc = ""
+
+  try {
+    if (Array.isArray(imageCitations)) {
+      imageCitation = imageCitations.find(
+        (ic) => ic.citationKey === citationKey,
+      )
+    } else if (
+      imageCitations &&
+      typeof imageCitations === "object" &&
+      "citationKey" in imageCitations
+    ) {
+      if ((imageCitations as ImageCitation).citationKey === citationKey) {
+        imageCitation = imageCitations as ImageCitation
+      }
+    }
+    if (!imageCitation) {
+      return null
+    }
+
+    // TODO: Fetch image data from API instead of using base64
+    imageSrc = `data:${imageCitation.mimeType};base64,${imageCitation.imageData}`
+  } catch (error) {
+    console.error("Error fetching image data:", error)
+    return null
+  }
+
+  const ImageModal = () => {
+    const handleCloseModal = () => {
+      setIsModalOpen(false)
+    }
+
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          handleCloseModal()
+        }
+      }
+
+      if (isModalOpen) {
+        document.addEventListener("keydown", handleKeyDown)
+        // Don't change body overflow - let the page stay where it is
+      }
+
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown)
+        // Don't reset body overflow
+      }
+    }, [isModalOpen])
+
+    if (!isModalOpen) return null
+
+    const Controls = () => {
+      const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
+
+      const buttonBaseClass =
+        "bg-white/90 dark:bg-gray-800/90 hover:bg-white dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200"
+
+      const handleResetAndCenter = () => {
+        resetTransform()
+        setTimeout(() => {
+          centerView()
+        }, 10)
+      }
+
+      return (
+        <div className="absolute top-4 left-4 flex space-x-2 z-20">
+          <button
+            onClick={() => zoomIn()}
+            className={buttonBaseClass}
+            title="Zoom In"
+          >
+            <ZoomIn size={20} />
+          </button>
+          <button
+            onClick={() => zoomOut()}
+            className={buttonBaseClass}
+            title="Zoom Out"
+          >
+            <ZoomOut size={20} />
+          </button>
+          <button
+            onClick={handleResetAndCenter}
+            className={buttonBaseClass}
+            title="Reset View"
+          >
+            <RefreshCw size={20} />
+          </button>
+        </div>
+      )
+    }
+
+    // Use createPortal to render the modal outside the normal component tree
+    return createPortal(
+      <div
+        className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center"
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 9999,
+        }}
+        onClick={handleCloseModal}
+      >
+        <div
+          className="relative w-full h-full flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Close button */}
+          <button
+            onClick={handleCloseModal}
+            className="absolute top-4 right-4 bg-white/90 dark:bg-gray-800/90 hover:bg-white dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 p-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200 z-20"
+            title="Close (ESC)"
+          >
+            <X size={20} />
+          </button>
+          <TransformWrapper
+            initialScale={1}
+            minScale={0.1}
+            maxScale={10}
+            limitToBounds={false}
+            centerOnInit={true}
+            centerZoomedOut={false}
+            doubleClick={{ disabled: false, step: 2 }}
+            wheel={{ step: 0.1 }}
+            panning={{ velocityDisabled: true }}
+          >
+            <Controls />
+            <TransformComponent
+              wrapperStyle={{
+                width: "100%",
+                height: "100%",
+                cursor: "grab",
+              }}
+              contentStyle={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <img
+                src={imageSrc}
+                alt={`Image from document - ${citationKey}`}
+                className="max-w-none max-h-none object-contain"
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  width: "auto",
+                  height: "auto",
+                }}
+                draggable={false}
+              />
+            </TransformComponent>
+          </TransformWrapper>
+        </div>
+      </div>,
+      document.body,
+    )
+  }
+
+  return (
+    <>
+      <div className={`block ${className}`}>
+        <img
+          src={imageSrc}
+          alt={`Image from document - ${citationKey}`}
+          className="max-w-full h-auto rounded-lg border border-gray-200 dark:border-gray-600 shadow-md cursor-zoom-in transition-transform duration-200 hover:scale-[1.02]"
+          style={{ maxHeight: "400px" }}
+          onClick={() => setIsModalOpen(true)}
+        />
+      </div>
+
+      {isModalOpen && <ImageModal />}
+    </>
+  )
+}
 
 const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
 const Code = ({
@@ -1721,9 +1999,8 @@ const Code = ({
   if (!isActuallyInline) {
     return (
       <pre
-        className="text-sm block w-full my-2"
+        className="text-sm block w-full my-2 font-mono"
         style={{
-          fontFamily: "JetBrains Mono, Monaco, Consolas, monospace",
           whiteSpace: "pre-wrap",
           overflowWrap: "break-word",
           wordBreak: "break-word",
@@ -1758,13 +2035,384 @@ const Code = ({
   )
 }
 
+// Virtualized Messages Component
+interface VirtualizedMessagesProps {
+  messages: SelectPublicMessage[]
+  currentResp?: {
+    resp: string
+    sources?: Citation[]
+    imageCitations?: any[]
+    thinking?: string
+    deepResearchSteps?: any[]
+    messageId?: string | null
+    citationMap?: any
+  } | null
+  showSources: boolean
+  currentMessageId: string | null
+  feedbackMap: Record<string, MessageFeedback | null>
+  isStreaming: boolean
+  retryIsStreaming: boolean
+  isSharedChat: boolean
+  isDebugMode: boolean
+  disableRetry: boolean
+  dots: string
+  setShowSources: (show: boolean) => void
+  setCurrentCitations: (citations: Citation[]) => void
+  setCurrentMessageId: (id: string | null) => void
+  handleRetry: (messageId: string) => void
+  handleShowRagTrace: (messageId: string) => void
+  handleFeedback?: (messageId: string, feedback: MessageFeedback) => void
+  handleShare?: () => void
+  handleSend: (message: string) => void
+  scrollToBottom: () => void
+  chatId: string | null
+  userHasScrolled: boolean
+  setUserHasScrolled: (hasScrolled: boolean) => void
+  onCitationClick: (citation: Citation) => void
+  isCitationPreviewOpen: boolean
+  setIsCitationPreviewOpen: (open: boolean) => void
+  setSelectedCitation: (citation: Citation | null) => void
+  chatBoxRef: React.RefObject<ChatBoxRef>
+}
+
+const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
+const OVERSCAN = 3 // Reduced overscan for better performance
+
+const VirtualizedMessages = React.forwardRef<
+  HTMLDivElement,
+  VirtualizedMessagesProps
+>(
+  (
+    {
+      messages,
+      currentResp,
+      showSources,
+      currentMessageId,
+      feedbackMap,
+      isStreaming,
+      retryIsStreaming,
+      isSharedChat,
+      isDebugMode,
+      disableRetry,
+      dots,
+      setShowSources,
+      setCurrentCitations,
+      setCurrentMessageId,
+      handleRetry,
+      handleShowRagTrace,
+      handleFeedback,
+      handleShare,
+      handleSend,
+      scrollToBottom,
+      chatId,
+      userHasScrolled,
+      setUserHasScrolled,
+      onCitationClick,
+      isCitationPreviewOpen,
+      setIsCitationPreviewOpen,
+      setSelectedCitation,
+      chatBoxRef,
+    },
+    ref,
+  ) => {
+    const parentRef = useRef<HTMLDivElement>(null)
+    const lastScrollTop = useRef(0)
+
+    // Create items array including messages and current response
+    const allItems = useMemo(() => {
+      const items = [...messages]
+      if (currentResp) {
+        items.push({
+          externalId: currentResp.messageId || "current-resp",
+          message: currentResp.resp,
+          messageRole: "assistant" as const,
+          sources: currentResp.sources || [],
+          imageCitations: currentResp.imageCitations || [],
+          thinking: currentResp.thinking || "",
+          deepResearchSteps: currentResp.deepResearchSteps || [],
+          citationMap: currentResp.citationMap,
+          isStreaming: true,
+          attachments: [],
+        })
+      }
+      return items
+    }, [messages, currentResp])
+
+    const rowVirtualizer = useVirtualizer({
+      count: allItems.length,
+      getScrollElement: () =>
+        (typeof ref === "object" && ref?.current) || parentRef.current,
+      estimateSize: () => ESTIMATED_MESSAGE_HEIGHT,
+      overscan: OVERSCAN,
+      measureElement: (element) => {
+        // Get accurate height measurements for better virtualization
+        return (
+          element?.getBoundingClientRect().height ?? ESTIMATED_MESSAGE_HEIGHT
+        )
+      },
+    })
+
+    // Auto-scroll to bottom when new messages arrive (only if user hasn't manually scrolled)
+    useEffect(() => {
+      if (!userHasScrolled && allItems.length > 0) {
+        // Let the main scroll effect handle this, just ensure we're at the end
+        const container =
+          (typeof ref === "object" && ref?.current) || parentRef.current
+        if (container) {
+          const timeoutId = setTimeout(() => {
+            container.scrollTop = container.scrollHeight
+          }, 50)
+          return () => clearTimeout(timeoutId)
+        }
+      }
+    }, [allItems.length, userHasScrolled, ref])
+
+    // Initialize scroll to bottom for new chats
+    useEffect(() => {
+      if (allItems.length > 0) {
+        const container =
+          (typeof ref === "object" && ref?.current) || parentRef.current
+        if (container) {
+          // Initial scroll to bottom
+          container.scrollTop = container.scrollHeight
+        }
+      }
+    }, []) // Only run once on mount
+
+    // Detect user scrolling - improved logic to prevent conflicts
+    const handleScroll = useCallback(
+      (e: React.UIEvent<HTMLDivElement>) => {
+        const element = e.currentTarget
+        const scrollTop = element.scrollTop
+        const scrollHeight = element.scrollHeight
+        const clientHeight = element.clientHeight
+
+        // Calculate if we're at the bottom with a reasonable threshold
+        const isAtBottom = scrollTop >= scrollHeight - clientHeight - 50
+
+        // Update user scroll state based on position
+        if (isAtBottom) {
+          // User is at bottom, allow auto-scroll
+          setUserHasScrolled(false)
+        } else if (scrollTop < lastScrollTop.current) {
+          // User scrolled up, disable auto-scroll
+          setUserHasScrolled(true)
+        }
+
+        lastScrollTop.current = scrollTop
+      },
+      [setUserHasScrolled],
+    )
+
+    return (
+      <div
+        ref={(node) => {
+          // Update parentRef for internal use
+          ;(parentRef as any).current = node
+          // Forward the ref to the parent component
+          if (typeof ref === "function") {
+            ref(node)
+          } else if (ref) {
+            ;(ref as any).current = node
+          }
+        }}
+        className={`h-full w-full overflow-auto flex flex-col ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
+        onScroll={handleScroll}
+        style={{
+          height: "100%",
+          width: "100%",
+        }}
+      >
+        <div className="w-full max-w-3xl flex-grow relative mt-[56px] mb-[60px]">
+          <div
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+              const message = allItems[virtualItem.index]
+              const index = virtualItem.index
+              const isSourcesVisible =
+                showSources && currentMessageId === message.externalId
+              const userMessageWithErr =
+                message.messageRole === "user" && message?.errorMessage
+              const isLastAssistantMessage =
+                message.messageRole === "assistant" &&
+                !isStreaming &&
+                !retryIsStreaming &&
+                !isSharedChat &&
+                message.externalId &&
+                index === messages.length - 1
+
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <Fragment key={message.externalId ?? index}>
+                    <ChatMessage
+                      key={
+                        message.externalId
+                          ? `${message.externalId}-msg`
+                          : `msg-${index}`
+                      }
+                      message={message.message}
+                      isUser={message.messageRole === "user"}
+                      responseDone={message.externalId !== "current-resp"}
+                      thinking={message.thinking}
+                      deepResearchSteps={message.deepResearchSteps}
+                      citations={message.sources}
+                      imageCitations={message.imageCitations || []}
+                      messageId={message.externalId}
+                      handleRetry={handleRetry}
+                      citationMap={message.citationMap}
+                      isRetrying={message.isRetrying}
+                      dots={
+                        message.isRetrying ||
+                        message.externalId === "current-resp"
+                          ? dots
+                          : ""
+                      }
+                      onToggleSources={() => {
+                        if (
+                          showSources &&
+                          currentMessageId === message.externalId
+                        ) {
+                          setShowSources(false)
+                          setCurrentCitations([])
+                          setCurrentMessageId(null)
+                        } else {
+                          setCurrentCitations(message?.sources || [])
+                          setShowSources(true)
+                          setCurrentMessageId(message.externalId)
+                          // Close citation preview when opening sources
+                          setIsCitationPreviewOpen(false)
+                          setSelectedCitation(null)
+                        }
+                      }}
+                      sourcesVisible={isSourcesVisible}
+                      isStreaming={
+                        message.externalId === "current-resp"
+                          ? isStreaming
+                          : false
+                      }
+                      isDebugMode={isDebugMode}
+                      onShowRagTrace={handleShowRagTrace}
+                      feedbackStatus={feedbackMap[message.externalId!] || null}
+                      onFeedback={!isSharedChat ? handleFeedback : undefined}
+                      onShare={
+                        !isSharedChat && handleShare
+                          ? () => handleShare()
+                          : undefined
+                      }
+                      disableRetry={disableRetry}
+                      attachments={message.attachments || []}
+                      onCitationClick={onCitationClick}
+                      isCitationPreviewOpen={isCitationPreviewOpen}
+                    />
+
+                    {userMessageWithErr && (
+                      <ChatMessage
+                        key={
+                          message.externalId
+                            ? `${message.externalId}-err`
+                            : `err-${index}`
+                        }
+                        message={message.errorMessage}
+                        thinking={message.thinking}
+                        deepResearchSteps={message.deepResearchSteps}
+                        isUser={false}
+                        responseDone={true}
+                        citations={message.sources}
+                        imageCitations={message.imageCitations || []}
+                        messageId={message.externalId}
+                        handleRetry={handleRetry}
+                        citationMap={message.citationMap}
+                        isRetrying={message.isRetrying}
+                        dots={message.isRetrying ? dots : ""}
+                        onToggleSources={() => {
+                          if (
+                            showSources &&
+                            currentMessageId === message.externalId
+                          ) {
+                            setShowSources(false)
+                            setCurrentCitations([])
+                            setCurrentMessageId(null)
+                          } else {
+                            setCurrentCitations(message?.sources || [])
+                            setShowSources(true)
+                            setCurrentMessageId(message.externalId)
+                            // Close citation preview when opening sources
+                            setIsCitationPreviewOpen(false)
+                            setSelectedCitation(null)
+                          }
+                        }}
+                        sourcesVisible={isSourcesVisible}
+                        isStreaming={isStreaming}
+                        isDebugMode={isDebugMode}
+                        onShowRagTrace={handleShowRagTrace}
+                        feedbackStatus={
+                          feedbackMap[message.externalId!] || null
+                        }
+                        onFeedback={!isSharedChat ? handleFeedback : undefined}
+                        onShare={
+                          !isSharedChat && handleShare
+                            ? () => handleShare()
+                            : undefined
+                        }
+                        disableRetry={disableRetry}
+                        attachments={message.attachments || []}
+                        onCitationClick={onCitationClick}
+                        isCitationPreviewOpen={isCitationPreviewOpen}
+                      />
+                    )}
+
+                    {/* Show follow-up questions only for the latest assistant message */}
+                    {isLastAssistantMessage && chatId && (
+                      <FollowUpQuestions
+                        chatId={chatId}
+                        messageId={message.externalId}
+                        onQuestionClick={(question: string) => {
+                          // Use ChatBox's sendMessage method which includes all internal state
+                          // (tools, connectors, agent ID, etc.)
+                          chatBoxRef.current?.sendMessage(question)
+                        }}
+                        isStreaming={isStreaming || retryIsStreaming}
+                        onQuestionsLoaded={scrollToBottom}
+                      />
+                    )}
+                  </Fragment>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  },
+)
+
+VirtualizedMessages.displayName = "VirtualizedMessages"
+
 export const ChatMessage = ({
   message,
   thinking,
+  deepResearchSteps = [],
   isUser,
   responseDone,
   isRetrying,
   citations = [],
+  imageCitations = [],
   messageId,
   handleRetry,
   dots = "",
@@ -1778,13 +2426,18 @@ export const ChatMessage = ({
   onFeedback,
   onShare,
   disableRetry = false,
+  attachments = [],
+  onCitationClick,
+  isCitationPreviewOpen = false,
 }: {
   message: string
   thinking: string
+  deepResearchSteps?: any[]
   isUser: boolean
   responseDone: boolean
   isRetrying?: boolean
   citations?: Citation[]
+  imageCitations?: ImageCitation[]
   messageId?: string
   dots: string
   handleRetry: (messageId: string) => void
@@ -1798,247 +2451,249 @@ export const ChatMessage = ({
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void
   onShare?: (messageId: string) => void
   disableRetry?: boolean
+  attachments?: AttachmentMetadata[]
+  onCitationClick?: (citation: Citation) => void
+  isCitationPreviewOpen?: boolean
 }) => {
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
-  const processMessage = (text: string) => {
-    text = splitGroupedCitationsWithSpaces(text)
 
-    if (citationMap) {
-      return text.replace(textToCitationIndex, (match, num) => {
-        const index = citationMap[num]
-        const url = citationUrls[index]
-        return typeof index === "number" && url
-          ? `[[${index + 1}]](${url})`
-          : ""
-      })
-    } else {
-      return text.replace(textToCitationIndex, (match, num) => {
-        const url = citationUrls[num - 1]
-        return url ? `[[${num}]](${url})` : ""
-      })
-    }
-  }
   return (
-    <div
-      className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
-    >
-      {isUser ? (
-        <div
-          className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
-          dangerouslySetInnerHTML={{ __html: jsonToHtmlMessage(message) }}
-        />
-      ) : (
-        <div
-          className={`flex flex-col mt-[40px] w-full max-w-full min-w-0 ${citationUrls.length ? "mb-[35px]" : ""}`}
-        >
-          <div className="flex flex-row w-full max-w-full min-w-0">
-            <img
-              className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
-              src={logo}
-            />
-            <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
-              {thinking && (
-                <>
-                  <EnhancedReasoning
-                    content={thinking}
-                    isStreaming={!responseDone}
-                    className="mb-4"
-                    citations={citations}
-                    citationMap={citationMap}
-                  />
-                  <div className="border-l-2 border-[#E6EBF5] dark:border-gray-700 pl-2 mb-4 text-gray-600 dark:text-gray-400 w-full max-w-full min-w-0">
-                    <MarkdownPreview
-                      wrapperElement={{
-                        "data-color-mode": theme,
-                      }}
-                      style={{
-                        padding: 0,
-                        backgroundColor: "transparent",
-                        color: theme === "dark" ? "#A0AEC0" : "#627384",
-                        maxWidth: "100%",
-                        overflowWrap: "break-word",
-                        wordBreak: "break-word",
-                        minWidth: 0,
-                      }}
-                      components={{
-                        a: renderMarkdownLink,
-                        code: Code,
-                        ...createTableComponents(), // Use extracted table components
-                      }}
-                    />
-                  </div>
-                </>
-              )}
-              {message === "" && (!responseDone || isRetrying) ? (
-                <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
-                  {`${THINKING_PLACEHOLDER}${dots}`}
-                </div>
-              ) : message !== "" ? (
-                <MarkdownPreview
-                  source={processMessage(message)}
-                  wrapperElement={{
-                    "data-color-mode": theme,
-                  }}
-                  style={{
-                    padding: 0,
-                    backgroundColor: "transparent",
-                    color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
-                    maxWidth: "100%",
-                    overflowWrap: "break-word",
-                    wordBreak: "break-word",
-                    minWidth: 0,
-                  }}
-                  components={{
-                    a: renderMarkdownLink,
-                    code: Code,
-                    ...createTableComponents(), // Use extracted table components
-                    h1: ({ node, ...props }) => (
-                      <h1
-                        style={{ fontSize: "1.6em" }}
-                        className="dark:text-gray-100"
-                        {...props}
-                      />
-                    ),
-                    h2: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1.2em" }} {...props} />
-                    ),
-                    h3: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "1em" }} {...props} />
-                    ),
-                    h4: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.8em" }} {...props} />
-                    ),
-                    h5: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.7em" }} {...props} />
-                    ),
-                    h6: ({ node, ...props }) => (
-                      <h1 style={{ fontSize: "0.68em" }} {...props} />
-                    ),
-                    ul: ({ node, ...props }) => (
-                      <ul
-                        style={{
-                          listStyleType: "disc",
-                          paddingLeft: "1.5rem",
-                          marginBottom: "1rem",
-                        }}
-                        {...props}
-                      />
-                    ),
-                    ol: ({ node, ...props }) => (
-                      <ol
-                        style={{
-                          listStyleType: "decimal",
-                          paddingLeft: "1.5rem",
-                          marginBottom: "1rem",
-                        }}
-                        {...props}
-                      />
-                    ),
-                    li: ({ node, ...props }) => (
-                      <li
-                        style={{
-                          marginBottom: "0.25rem",
-                        }}
-                        {...props}
-                      />
-                    ),
-                  }}
-                />
-              ) : null}
-            </div>
-          </div>
-          {responseDone && !isRetrying && (
-            <div className="flex flex-col">
-              {isDebugMode && messageId && (
-                <button
-                  className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
-                  onClick={() => onShowRagTrace(messageId)}
-                >
-                  View RAG Trace #{messageId.slice(-6)}
-                </button>
-              )}
-              <div className="flex ml-[52px] mt-[12px] items-center">
-                <Copy
-                  size={16}
-                  stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
-                  className={`cursor-pointer`}
-                  onMouseDown={() => setIsCopied(true)}
-                  onMouseUp={() => setIsCopied(false)}
-                  onClick={() =>
-                    navigator.clipboard.writeText(processMessage(message))
-                  }
-                />
-                <img
-                  className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
-                  src={Retry}
-                  onClick={() =>
-                    messageId && !disableRetry && handleRetry(messageId)
-                  }
-                  title="Retry"
-                />
-                {messageId && (
+    <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
+      {/* Render attachments above the message box for user messages */}
+      {isUser && attachments && attachments.length > 0 && (
+        <div className="w-full max-w-full">
+          <AttachmentGallery attachments={attachments} />
+        </div>
+      )}
+
+      <div
+        className={`rounded-[16px] max-w-full min-w-0 ${isUser ? "bg-[#F0F2F4] dark:bg-slate-700 text-[#1C1D1F] dark:text-slate-100 text-[15px] leading-[25px] self-end pt-[14px] pb-[14px] pl-[20px] pr-[20px] break-words overflow-wrap-anywhere" : "text-[#1C1D1F] dark:text-[#F1F3F4] text-[15px] leading-[25px] self-start w-full max-w-full min-w-0"}`}
+      >
+        {isUser ? (
+          <div
+            className="break-words overflow-wrap-anywhere word-break-break-all max-w-full min-w-0"
+            dangerouslySetInnerHTML={{
+              __html: jsonToHtmlMessage(DOMPurify.sanitize(message)),
+            }}
+          />
+        ) : (
+          <div
+            className={`flex flex-col mt-[40px] w-full max-w-full min-w-0 ${citationUrls.length ? "mb-[35px]" : ""}`}
+          >
+            <div className="flex flex-row w-full max-w-full min-w-0">
+              <img
+                className={"mr-[20px] w-[32px] self-start flex-shrink-0"}
+                src={logo}
+              />
+              <div className="mt-[4px] markdown-content w-full min-w-0 flex-1">
+                {deepResearchSteps && deepResearchSteps.length > 0 && (
                   <>
-                    <ThumbsUp
-                      size={16}
-                      stroke={
-                        feedbackStatus === MessageFeedback.Like
-                          ? "#10B981"
-                          : "#B2C3D4"
-                      }
-                      fill="none"
-                      className={`ml-[18px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
-                      onClick={() =>
-                        onFeedback &&
-                        onFeedback(messageId, MessageFeedback.Like)
-                      }
-                    />
-                    <ThumbsDown
-                      size={16}
-                      stroke={
-                        feedbackStatus === MessageFeedback.Dislike
-                          ? "#EF4444"
-                          : "#B2C3D4"
-                      }
-                      fill="none"
-                      className={`ml-[10px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
-                      onClick={() =>
-                        onFeedback &&
-                        onFeedback(messageId, MessageFeedback.Dislike)
-                      }
+                    <DeepResearchReasoning
+                      steps={deepResearchSteps}
+                      isStreaming={!responseDone}
+                      className="mb-4"
                     />
                   </>
                 )}
-                {!!citationUrls.length && (
-                  <div className="ml-auto flex">
-                    <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
-                      <span
-                        className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE]"
-                        style={{ fontFamily: "JetBrains Mono" }}
-                      >
-                        SOURCES
-                      </span>
-                      <ChevronDown
-                        size={14}
-                        className="ml-[4px]"
-                        color="#B2C3D4"
-                      />
-                    </div>
-                  </div>
+                {thinking && (
+                  <>
+                    <EnhancedReasoning
+                      content={thinking}
+                      isStreaming={!responseDone}
+                      className="mb-4"
+                      citations={citations}
+                      citationMap={citationMap}
+                    />
+                  </>
                 )}
-              </div>
-
-              <div className="flex flex-row ml-[52px]">
-                <MessageCitationList
-                  citations={citations.slice(0, 3)}
-                  onToggleSources={onToggleSources}
-                />
+                {message === "" &&
+                (!responseDone || isRetrying) &&
+                !deepResearchSteps.length ? (
+                  <div className="flex-grow text-[#1C1D1F] dark:text-[#F1F3F4]">
+                    {`${THINKING_PLACEHOLDER}${dots}`}
+                  </div>
+                ) : message !== "" ? (
+                  <MarkdownPreview
+                    source={processMessage(message, citationMap, citationUrls)}
+                    wrapperElement={{
+                      "data-color-mode": theme,
+                    }}
+                    style={{
+                      padding: 0,
+                      backgroundColor: "transparent",
+                      color: theme === "dark" ? "#F1F3F4" : "#1C1D1F",
+                      maxWidth: "100%",
+                      overflowWrap: "break-word",
+                      wordBreak: "break-word",
+                      minWidth: 0,
+                    }}
+                    components={{
+                      a: createCitationLink(citations, onCitationClick),
+                      code: Code,
+                      img: ({ src, alt, ...props }: any) => {
+                        if (src?.startsWith("image-citation:")) {
+                          const citationKey = src.replace("image-citation:", "")
+                          return (
+                            <ImageCitationComponent
+                              citationKey={citationKey}
+                              imageCitations={imageCitations}
+                              className="flex justify-center"
+                            />
+                          )
+                        }
+                        // Regular image handling
+                        return <img src={src} alt={alt} {...props} />
+                      },
+                      ...createTableComponents(), // Use extracted table components
+                      h1: ({ node, ...props }) => (
+                        <h1
+                          style={{ fontSize: "1.6em" }}
+                          className="dark:text-gray-100"
+                          {...props}
+                        />
+                      ),
+                      h2: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "1.2em" }} {...props} />
+                      ),
+                      h3: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "1em" }} {...props} />
+                      ),
+                      h4: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "0.8em" }} {...props} />
+                      ),
+                      h5: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "0.7em" }} {...props} />
+                      ),
+                      h6: ({ node, ...props }) => (
+                        <h1 style={{ fontSize: "0.68em" }} {...props} />
+                      ),
+                      ul: ({ node, ...props }) => (
+                        <ul
+                          style={{
+                            listStyleType: "disc",
+                            paddingLeft: "1.5rem",
+                            marginBottom: "1rem",
+                          }}
+                          {...props}
+                        />
+                      ),
+                      ol: ({ node, ...props }) => (
+                        <ol
+                          style={{
+                            listStyleType: "decimal",
+                            paddingLeft: "1.5rem",
+                            marginBottom: "1rem",
+                          }}
+                          {...props}
+                        />
+                      ),
+                      li: ({ node, ...props }) => (
+                        <li
+                          style={{
+                            marginBottom: "0.25rem",
+                          }}
+                          {...props}
+                        />
+                      ),
+                    }}
+                  />
+                ) : null}
               </div>
             </div>
-          )}
-        </div>
-      )}
+            {responseDone && !isRetrying && (
+              <div className="flex flex-col">
+                {isDebugMode && messageId && (
+                  <button
+                    className="ml-[52px] text-[13px] text-[#4A63E9] hover:text-[#2D46CC] underline font-mono mt-2 text-left"
+                    onClick={() => onShowRagTrace(messageId)}
+                  >
+                    View RAG Trace #{messageId.slice(-6)}
+                  </button>
+                )}
+                <div className="flex ml-[52px] mt-[12px] items-center">
+                  <Copy
+                    size={16}
+                    stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
+                    className={`cursor-pointer`}
+                    onMouseDown={() => setIsCopied(true)}
+                    onMouseUp={() => setIsCopied(false)}
+                    onClick={() =>
+                      navigator.clipboard.writeText(processMessage(message, citationMap, citationUrls))
+                    }
+                  />
+                  {/* Retry button temporarily hidden */}
+                  {false && (
+                    <img
+                      className={`ml-[18px] ${disableRetry || !messageId ? "opacity-50" : "cursor-pointer"}`}
+                      src={Retry}
+                      onClick={() =>
+                        messageId && !disableRetry && handleRetry(messageId)
+                      }
+                      title="Retry"
+                    />
+                  )}
+                  {messageId && (
+                    <>
+                      <ThumbsUp
+                        size={16}
+                        stroke={
+                          feedbackStatus === MessageFeedback.Like
+                            ? "#10B981"
+                            : "#B2C3D4"
+                        }
+                        fill="none"
+                        className={`ml-[18px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
+                        onClick={() =>
+                          onFeedback &&
+                          onFeedback(messageId, MessageFeedback.Like)
+                        }
+                      />
+                      <ThumbsDown
+                        size={16}
+                        stroke={
+                          feedbackStatus === MessageFeedback.Dislike
+                            ? "#EF4444"
+                            : "#B2C3D4"
+                        }
+                        fill="none"
+                        className={`ml-[10px] ${onFeedback ? "cursor-pointer" : "opacity-50"}`}
+                        onClick={() =>
+                          onFeedback &&
+                          onFeedback(messageId, MessageFeedback.Dislike)
+                        }
+                      />
+                    </>
+                  )}
+                  {!!citationUrls.length && (
+                    <div className="ml-auto flex">
+                      <div className="flex items-center pr-[8px] pl-[8px] pt-[6px] pb-[6px]">
+                        <span className="font-light ml-[4px] select-none leading-[14px] tracking-[0.02em] text-[12px] text-[#9EAEBE] font-mono">
+                          SOURCES
+                        </span>
+                        <ChevronDown
+                          size={14}
+                          className="ml-[4px]"
+                          color="#B2C3D4"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-row ml-[52px]">
+                  <MessageCitationList
+                    citations={citations.slice(0, 3)}
+                    onToggleSources={onToggleSources}
+                    onCitationClick={onCitationClick}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -2050,7 +2705,6 @@ const chatParams = z.object({
     .transform((val) => val === "true")
     .optional()
     .default("false"),
-  reasoning: z.boolean().optional(),
   agentic: z
     .string()
     .transform((val) => val === "true")
@@ -2076,6 +2730,7 @@ const chatParams = z.object({
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   agentId: z.string().optional(), // Added agentId to Zod schema
+  selectedModel: z.string().optional(), // Added selectedModel to Zod schema
   toolsList: z
     .any()
     .optional()
@@ -2104,6 +2759,8 @@ const chatParams = z.object({
       return undefined
     }),
   shareToken: z.string().optional(), // Added shareToken for shared chats
+  // @ts-ignore
+  metadata: z.array(attachmentMetadataSchema).optional(),
 })
 
 type XyneChat = z.infer<typeof chatParams>
