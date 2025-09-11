@@ -70,6 +70,7 @@ import {
   buildValidationSchema,
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
+import { getActualNameFromEnum } from "@/ai/modelConfig"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -1931,12 +1932,15 @@ const executeWorkflowTool = async (
         const aiValue = tool.value || {}
         
         const inputType = aiConfig.inputType || "text" // Default to text
-        const aiModel = aiConfig.aiModel || aiConfig.model || "gemini-1.5-flash"
+        const aiModelEnum = aiConfig.aiModel || aiConfig.model || "googleai-gemini-2-5-flash"
         const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
         const geminiApiKey =
           aiConfig.gemini_api_key || process.env.GEMINI_API_KEY
 
-        Logger.info(`Using Gemini API key: ${geminiApiKey}`)
+        // Convert enum value to actual API model name
+        const aiModel = getActualNameFromEnum(aiModelEnum) || "gemini-2.5-flash"
+        
+        Logger.info(`Using model enum: ${aiModelEnum}, actual model: ${aiModel}`)
         try {
           let analysisInput = ""
           let inputMetadata = {}
@@ -2131,6 +2135,7 @@ const executeWorkflowTool = async (
             result: {
               aiOutput,
               model: aiModel,
+              modelEnum: aiModelEnum,
               inputType,
               inputMetadata,
               usage: geminiData.usageMetadata || {},
@@ -2144,6 +2149,8 @@ const executeWorkflowTool = async (
               error: "AI agent execution failed",
               message: error instanceof Error ? error.message : String(error),
               inputType: aiConfig.inputType,
+              modelEnum: aiModelEnum,
+              model: aiModel,
             },
           }
         }
@@ -3207,6 +3214,38 @@ export const GetFormDefinitionApi = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Failed to get form definition")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Get Gemini model enum names for workflow tools
+export const GetGeminiModelEnumsApi = async (c: Context) => {
+  try {
+    const { MODEL_CONFIGURATIONS } = await import("@/ai/modelConfig")
+    const { AIProviders } = await import("@/ai/types")
+    
+    // Get all Google AI model enum values
+    const geminiModelEnums = Object.entries(MODEL_CONFIGURATIONS)
+      .filter(([_, config]) => config.provider === AIProviders.GoogleAI)
+      .map(([enumValue, config]) => ({
+        enumValue, // e.g., "googleai-gemini-2-5-flash"
+        labelName: config.labelName, // e.g., "Gemini 2.5 Flash" 
+        actualName: config.actualName, // e.g., "gemini-2.5-flash"
+        description: config.description,
+        reasoning: config.reasoning,
+        websearch: config.websearch,
+        deepResearch: config.deepResearch,
+      }))
+
+    return c.json({
+      success: true,
+      data: geminiModelEnums,
+      count: geminiModelEnums.length,
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to get Gemini model enums")
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
