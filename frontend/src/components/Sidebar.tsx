@@ -238,7 +238,8 @@ export const Sidebar = ({
           </Link>
 
           <Link
-            to="/knowledgeManagement"            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
+            to="/knowledgeManagement"
+            className={`flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px] ${
               location.pathname.includes("/knowledgeManagement")
                 ? "bg-[#D8DFE680] dark:bg-gray-700"
                 : ""
@@ -255,7 +256,28 @@ export const Sidebar = ({
               <Tip side="right" info="Collections" />
             </Tooltip>
           </Link>
-
+          {/* User Management - Admin only */}
+          {(role === UserRole.SuperAdmin || role === UserRole.Admin) && (
+            <Link
+              to="/admin/userManagement"
+              className={cn(
+                "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+                location.pathname.includes("/admin/userManagement") &&
+                  "bg-[#D8DFE680] dark:bg-gray-700",
+              )}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <User
+                    stroke="#384049"
+                    size={18}
+                    className="dark:stroke-[#F1F3F4]"
+                  />
+                </TooltipTrigger>
+                <Tip side="right" info="User Management" />
+              </Tooltip>
+            </Link>
+          )}
 
           <Link
             to="/dashboard"
@@ -296,31 +318,6 @@ export const Sidebar = ({
               />
             </Tooltip>
           </div>
-
-          {/* Users List Icon - Admin only */}
-          {role === UserRole.SuperAdmin || role === UserRole.Admin ? (
-            <Link
-              to={"/admin/userManagement" as any}
-              className={`flex w-8 h-8 rounded-md items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px] ${
-                location.pathname === "/admin/userManagement"
-                  ? "bg-[#D8DFE680] dark:bg-gray-700"
-                  : ""
-              }`}
-            >
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <User
-                    size={18}
-                    stroke="#384049"
-                    className="dark:stroke-[#F1F3F4]"
-                  />
-                </TooltipTrigger>
-                <Tip side="right" info="Show Users" />
-              </Tooltip>
-            </Link>
-          ) : null}
-        </div>
-        <div className="mt-auto mb-4 flex justify-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <img src={Logo} alt="Logo" />
