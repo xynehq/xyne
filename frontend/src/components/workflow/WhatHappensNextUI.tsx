@@ -190,7 +190,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
 
   return (
     <div
-      className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-40 ${
         isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
       }`}
     >
@@ -214,8 +214,8 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       {/* Conditional Content Based on Tool Type */}
       {showPythonConfig ? (
         /* Python Code Configuration */
-        <div className="flex-1 overflow-y-auto px-6 py-4 dark:bg-gray-900">
-          <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto px-6 py-4 dark:bg-gray-900 flex flex-col">
+          <div className="space-y-6 flex-1">
             {/* Python Code */}
             <div className="space-y-2">
               <Label
@@ -239,16 +239,17 @@ print('Hello, World!')"
               />
             </div>
 
-            {/* Save Button */}
-            <div className="flex gap-2 pt-4">
-              <Button
-                onClick={handleSaveConfiguration}
-                disabled={isSaving}
-                className="flex-1"
-              >
-                {isSaving ? "Saving..." : "Save Configuration"}
-              </Button>
-            </div>
+          </div>
+          
+          {/* Save Button - Sticky to bottom */}
+          <div className="pt-6 px-0">
+            <Button
+              onClick={handleSaveConfiguration}
+              disabled={isSaving}
+              className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-full"
+            >
+              {isSaving ? "Saving..." : "Save Configuration"}
+            </Button>
           </div>
         </div>
       ) : (
