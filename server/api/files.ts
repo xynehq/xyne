@@ -190,20 +190,13 @@ export const handleAttachmentUpload = async (c: Context) => {
   try {
     const { sub } = c.get(JwtPayloadKey)
     email = sub
-    // Skip user validation for workflow contexts (demo users)
-    let userRes = null
-    if (sub !== "demo@example.com") {
-      userRes = await getUserByEmail(db, sub)
-      if (!userRes || !userRes.length) {
-        loggerWithChild({ email }).error(
-          { sub },
-          "No user found in attachment upload",
-        )
-        throw new NoUserFound({})
-      }
-    } else {
-      // For workflow demo user, create a mock user result
-      userRes = [{ id: "demo-workflow-user", email: "demo@example.com" }]
+    const userRes = await getUserByEmail(db, sub)
+    if (!userRes || !userRes.length) {
+      loggerWithChild({ email }).error(
+        { sub },
+        "No user found in attachment upload",
+      )
+      throw new NoUserFound({})
     }
 
     const formData = await c.req.formData()
