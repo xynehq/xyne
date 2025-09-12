@@ -48,6 +48,7 @@ import { authFetch } from "@/utils/authFetch"
 import { generateUUID } from "@/utils/chatUtils"
 import { useScopedFind } from "@/hooks/useScopedFind"
 import { PersistentMap } from "@/utils/chatUtils"
+import { DocumentOperationsProvider, useDocumentOperations } from "@/contexts/DocumentOperationsContext"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -129,6 +130,87 @@ const DocumentViewerContainer = memo(
     loadingDocument: boolean
   }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const { documentOperationsRef } = useDocumentOperations();
+
+    const viewerElement = useMemo(() => {
+      if (!selectedDocument?.content) return null
+    
+      const name = selectedDocument.file.name.toLowerCase()
+    
+      if (name.endsWith(".pdf")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <PdfViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  { type: selectedDocument.content.type || "application/pdf" },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+              scale={1.2}
+              showNavigation
+              displayMode="continuous"
+              documentOperationsRef={documentOperationsRef}
+            />
+          </div>
+        )
+      }
+    
+      if (name.endsWith(".md")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <ReadmeViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  { type: selectedDocument.content.type || "text/markdown" },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+            />
+          </div>
+        )
+      }
+    
+      return (
+        <div ref={containerRef} data-container-ref="true" className="h-full p-6 overflow-auto">
+          <DocxViewer
+            source={
+              new File(
+                [selectedDocument.content],
+                selectedDocument.file.name,
+                {
+                  type:
+                    selectedDocument.content.type ||
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                },
+              )
+            }
+            className="h-full max-w-4xl mx-auto"
+            style={{ height: "100%" }}
+            options={{
+              renderHeaders: true,
+              renderFooters: true,
+              renderFootnotes: true,
+              renderEndnotes: true,
+              renderComments: false,
+              renderChanges: false,
+              breakPages: true,
+              ignoreLastRenderedPageBreak: true,
+              inWrapper: true,
+              ignoreWidth: false,
+              ignoreHeight: false,
+              ignoreFonts: false,
+            }}
+          />
+        </div>
+      )
+    }, [selectedDocument?.file.id, selectedDocument?.file.name, selectedDocument?.content])
     
     const {
       highlightText,
@@ -136,15 +218,10 @@ const DocumentViewerContainer = memo(
       scrollToMatch,
     } = useScopedFind(containerRef);
 
-    // Expose the highlight functions globally for use by DocumentChat
+    // Expose the highlight functions via the document operations ref
     useEffect(() => {
-      // Clean up any existing operations
-      if (window.__documentOperations) {
-        window.__documentOperations = undefined;
-      }
-      
-      window.__documentOperations = {
-        highlightText: async (text: string) => {
+      if (documentOperationsRef?.current) {
+        documentOperationsRef.current.highlightText = async (text: string) => {
           if (!containerRef.current) {
             const container = document.querySelector('[data-container-ref="true"]');
             if (container) {
@@ -156,25 +233,17 @@ const DocumentViewerContainer = memo(
 
           try {
             const success = await highlightText(text);
-            if (success) {
-              scrollToMatch(0);
-            }
-            
             return success;
           } catch (error) {
             console.error('Error calling highlightText:', error);
             return false;
           }
-        },
+        };
         
-        clearHighlights,
-        scrollToMatch
-      };
-      
-      return () => {
-        window.__documentOperations = undefined;
-      };
-    }, []);
+        documentOperationsRef.current.clearHighlights = clearHighlights;
+        documentOperationsRef.current.scrollToMatch = scrollToMatch;
+      }
+    }, [documentOperationsRef, highlightText, clearHighlights, scrollToMatch]);
 
     useEffect(() => {
       clearHighlights();
@@ -200,84 +269,7 @@ const DocumentViewerContainer = memo(
         )}
         {selectedDocument.content ? (
           <div className="h-full">
-            {useMemo(() => {
-              if (!selectedDocument.content) return null;
-              
-              if (selectedDocument.file.name.toLowerCase().endsWith(".pdf")) {
-                return (
-                  <div ref={containerRef} data-container-ref="true" className="h-full">
-                    <PdfViewer
-                      source={
-                        new File(
-                          [selectedDocument.content],
-                          selectedDocument.file.name,
-                          {
-                            type: selectedDocument.content.type || "application/pdf",
-                          },
-                        )
-                      }
-                      className="h-full"
-                      style={{ height: "100%", overflow: "auto" }}
-                      scale={1.2}
-                      showNavigation={true}
-                      displayMode="continuous"
-                    />
-                  </div>
-                );
-              } else if (selectedDocument.file.name.toLowerCase().endsWith(".md")) {
-                return (
-                  <div ref={containerRef} data-container-ref="true" className="h-full">
-                    <ReadmeViewer
-                      source={
-                        new File(
-                          [selectedDocument.content],
-                          selectedDocument.file.name,
-                          {
-                            type: selectedDocument.content.type || "text/markdown",
-                          },
-                        )
-                      }
-                      className="h-full"
-                      style={{ height: "100%", overflow: "auto" }}
-                    />
-                  </div>
-                );
-              } else {
-                return (
-                  <div ref={containerRef} data-container-ref="true" className="h-full p-6 overflow-auto">
-                    <DocxViewer
-                      source={
-                        new File(
-                          [selectedDocument.content],
-                          selectedDocument.file.name,
-                          {
-                            type:
-                              selectedDocument.content.type ||
-                              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                          },
-                        )
-                      }
-                      className="h-full max-w-4xl mx-auto"
-                      style={{ height: "100%" }}
-                      options={{
-                        renderHeaders: true,
-                        renderFooters: true,
-                        renderFootnotes: true,
-                        renderEndnotes: true,
-                        renderComments: false,
-                        renderChanges: false,
-                        breakPages: true,
-                        ignoreLastRenderedPageBreak: true,
-                        inWrapper: true,
-                        ignoreWidth: false,
-                        ignoreHeight: false,
-                        ignoreFonts: false,
-                      }}
-                    />
-                  </div>
-                );
-              }
-            }, [selectedDocument.file.id, selectedDocument.content])}
+            {viewerElement}
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
@@ -304,9 +296,18 @@ const DocumentViewerContainer = memo(
 DocumentViewerContainer.displayName = "DocumentViewerContainer"
 
 function RouteComponent() {
+  return (
+    <DocumentOperationsProvider>
+      <KnowledgeManagementContent />
+    </DocumentOperationsProvider>
+  )
+}
+
+function KnowledgeManagementContent() {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const { toast } = useToast()
+  const { documentOperationsRef } = useDocumentOperations()
   const [showNewCollection, setShowNewCollection] = useState(false)
   const [collectionName, setCollectionName] = useState("")
   const [collections, setCollections] = useState<Collection[]>([])
@@ -1200,7 +1201,7 @@ function RouteComponent() {
       return;
     }
     
-    if (newChunkIndex && selectedDocument?.file.id === documentId) {
+    if (newChunkIndex !== null && selectedDocument?.file.id === documentId) {
       try {
         const chunkContentResponse = await api.c[":cId"].files[":itemId"].content.$get({
           param: { cId: newChunkIndex.toString(), itemId: documentId },
@@ -1220,18 +1221,13 @@ function RouteComponent() {
         }
         
         if (chunkContent && chunkContent.chunkContent) {
-          if (window.__documentOperations?.clearHighlights) {
-            window.__documentOperations.clearHighlights()
+          if (documentOperationsRef?.current?.clearHighlights) {
+            documentOperationsRef.current.clearHighlights()
           }
           
-          if (window.__documentOperations?.highlightText) {
+          if (documentOperationsRef?.current?.highlightText) {
             try {
-              const success = await window.__documentOperations.highlightText(chunkContent.chunkContent);
-              if (success) {
-                if (window.__documentOperations?.scrollToMatch) {
-                  window.__documentOperations.scrollToMatch(0);
-                }
-              }
+              await documentOperationsRef.current.highlightText(chunkContent.chunkContent);
             } catch (error) {
               console.error('Error highlighting chunk text:', chunkContent.chunkContent, error);
             }

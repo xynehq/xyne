@@ -1527,7 +1527,7 @@ export const GetFilePreviewApi = async (c: Context) => {
     // For now, just return the storage path that can be used for preview
     // In a real implementation, this might return a signed URL or preview service URL
     return c.json({
-      previewUrl: `/api/v1/kb/${collectionId}/files/${itemId}/content`,
+      previewUrl: `/api/v1/cl/${collectionId}/files/${itemId}/content`,
       mimeType: collectionFile.mimeType,
       fileName: collectionFile.originalName,
     })

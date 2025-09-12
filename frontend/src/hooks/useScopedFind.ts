@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api";
+import { useDocumentOperations } from "@/contexts/DocumentOperationsContext";
 
 type Options = {
   caseSensitive?: boolean;
@@ -32,6 +33,7 @@ export function useScopedFind(
   containerRef: React.RefObject<HTMLElement>,
   opts: Options = {}
 ) {
+  const { documentOperationsRef } = useDocumentOperations();
   const { 
     caseSensitive = false,
     highlightClass = "scoped-find", 
@@ -160,25 +162,6 @@ export function useScopedFind(
                 textNode.nodeValue = originalText;
                 console.error('Fallback highlighting approach failed:', fallbackError);
               }
-              
-              // Replace the text node content with before text
-              textNode.nodeValue = beforeText;
-              
-              // Create and insert the mark
-              const mark = document.createElement("mark");
-              mark.className = `${highlightClass}`;
-              mark.setAttribute('data-match-index', '0');
-              mark.textContent = matchText;
-              
-              // Insert mark after the text node
-              textNode.parentNode!.insertBefore(mark, textNode.nextSibling);
-              marks.push(mark);
-              
-              // Insert remaining text after the mark
-              if (afterText) {
-                const afterNode = document.createTextNode(afterText);
-                mark.parentNode!.insertBefore(afterNode, mark.nextSibling);
-              }
             }
           } catch (error) {
             console.warn('Error processing text node for highlighting:', error);
@@ -233,12 +216,11 @@ export function useScopedFind(
       
       try {
         // For PDFs, ensure all pages are rendered before extracting text
-        if (typeof window !== 'undefined' &&
-            typeof (window as any).__renderAllPdfPages === 'function') {
+        if (documentOperationsRef?.current?.renderAllPagesForHighlighting) {
           if (debug) {
             console.log('PDF detected, rendering all pages for highlighting...');
           }
-          await (window as any).__renderAllPdfPages();
+          await documentOperationsRef.current.renderAllPagesForHighlighting();
         }
 
         const containerText = extractContainerText(root);

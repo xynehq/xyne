@@ -102,8 +102,8 @@ export const chatRenameSchema = z.object({
 })
 
 export const highlightSchema = z.object({
-  chunkText: z.string().min(1),
-  documentContent: z.string().min(1),
+  chunkText: z.string().min(1).max(10_000),
+  documentContent: z.string().min(1).max(1_000_000),
   options: z.object({
     matchThreshold: z.number().min(0).max(1).default(0.15),
     maxChunkLength: z.number().min(10).max(1000).default(200),
@@ -654,6 +654,13 @@ export const HighlightApi = async (c: Context) => {
       });
     }
 
+    const MAX_DOC_LEN = 1_000_000; // 1MB
+    if (documentContent.length > MAX_DOC_LEN) {
+      throw new HTTPException(413, {
+        message: "documentContent too large"
+      });
+    }
+
     const {
       matchThreshold,
       maxChunkLength,
@@ -695,7 +702,7 @@ export const HighlightApi = async (c: Context) => {
     };
 
     const findAllMatches = (haystack: string, needle: string) => {
-      const hay = caseSensitive ? haystack : haystack.toLowerCase();
+      let hay = caseSensitive ? haystack : haystack.toLowerCase();
       const ned = caseSensitive ? needle : needle.toLowerCase();
       
       if (ned.length > hay.length || ned.length < 3) return [];
@@ -703,6 +710,12 @@ export const HighlightApi = async (c: Context) => {
       let matches: Array<{ index: number, similarity: number, length: number }> = [];
       let bestMatch = { index: -1, similarity: 0, length: 0 };
 
+      const MAX_HAYSTACK_LENGTH = 500000;
+      
+      if (hay.length > MAX_HAYSTACK_LENGTH) {
+        console.warn(`Haystack too long (${hay.length}), truncating to ${MAX_HAYSTACK_LENGTH}`);
+        hay = hay.substring(0, MAX_HAYSTACK_LENGTH);
+      }
       
       const windowSizes = [ned.length, ned.length + 20, ned.length + 40, ned.length + 60];
       
@@ -779,12 +792,10 @@ export const HighlightApi = async (c: Context) => {
         while (have === need) {
           const { pos: posL, sentenceId: sidL } = merged[l];
 
-          // Prefer strictly smaller span; if equal span, prefer the one whose center is closest
-          // to the previous best center (stabilizes choices without extra scans).
+          // Prefer strictly smaller span; keep the first minimal span for equal spans
           if (
             bestL === null ||
-            (posR - posL) < (bestR! - bestL) ||
-            ((posR - posL) === (bestR! - bestL) && Math.abs((posR + posL) / 2 - (bestR! + bestL) / 2) <= 0)
+            (posR - posL) < (bestR! - bestL)
           ) {
             bestL = posL;
             bestR = posR;
@@ -808,8 +819,16 @@ export const HighlightApi = async (c: Context) => {
       processedLine: string;
     }> = [];
     
+    // Performance guard: limit number of lines processed
+    const MAX_LINES_PROCESSED = 1000;
+    const linesToProcess = lines.slice(0, MAX_LINES_PROCESSED);
+    
+    if (lines.length > MAX_LINES_PROCESSED) {
+      console.warn(`Too many lines (${lines.length}), processing only first ${MAX_LINES_PROCESSED}`);
+    }
+    
     // Collect all matches for each line
-    for (const line of lines) {
+    for (const line of linesToProcess) {
       const processedLine = processLine(line);
       if (processedLine) {
         processedLines.push(processedLine);
