@@ -308,18 +308,18 @@ export async function extractTextAndImagesWithChunksFromPDF(
   docid: string = crypto.randomUUID(),
   extractImages: boolean = false,
   describeImages: boolean = true,
+  includeImageMarkersInText: boolean = true,
 ): Promise<{
   text_chunks: string[]
   image_chunks: string[]
   text_chunk_pos: number[]
   image_chunk_pos: number[]
 }> {
-  // Sanitize docid for safe filesystem use
-  const safeDocId = docid.replace(/[^a-zA-Z0-9._-]/g, "_")
   Logger.debug("Starting processing with parameters", {
     docid,
     extractImages,
     describeImages,
+    includeImageMarkersInText,
     dataSize: data.length,
   })
 
@@ -358,10 +358,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
     // Use object to pass by reference for sequence counter
     let globalSeq = { value: 0 }
-    let crossImageOverlap = "" // Track overlap across images
+    // Track overlap across pages to maintain continuity
+    let pageOverlap = ""
 
-    // Logger.info("OVERLAP DEBUG: Initialized crossImageOverlap as empty string")
-    // console.log('OVERLAP DEBUG: Starting PDF processing with initial crossImageOverlap:', crossImageOverlap)
+    // Overlap is now tracked page-to-page only
 
     Logger.info(`PDF has ${pdfDocument.numPages} pages`)
 
@@ -499,8 +499,16 @@ export async function extractTextAndImagesWithChunksFromPDF(
           fallbackLines,
         )
 
-        let currentParagraph = "" // kept for image-flow flush, but not used for text
         let textOperatorCount = (await page.getTextContent()).items.length
+
+        // Prepend previous page overlap to the first paragraph for continuity
+        if (pageOverlap && paragraphs.length > 0) {
+          paragraphs[0] = `${pageOverlap} ${paragraphs[0]}`
+          pageOverlap = ""
+        } else if (pageOverlap) {
+          paragraphs = [pageOverlap]
+          pageOverlap = ""
+        }
 
         Logger.debug("Text extraction summary for page", {
           pageNum,
@@ -508,6 +516,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
           fallbackLines: fallbackLines.length,
           finalParagraphs: paragraphs.length,
           textOperatorCount,
+          initialPageOverlap: pageOverlap,
         })
 
         // Helper: try to resolve image object by name directly from page.objs
@@ -537,16 +546,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         ]
         const ctmStack: [number, number, number, number, number, number][] = []
 
-        // Do not inject crossImageOverlap into text paragraphs here
-        // console.log('OVERLAP DEBUG: Page', pageNum, 'crossImageOverlap at start:', crossImageOverlap)
 
-        // Helper to flush currentParagraph into paragraphs array
-        const flushParagraph = () => {
-          if (currentParagraph.trim().length > 0) {
-            paragraphs.push(currentParagraph.trim())
-            currentParagraph = ""
-          }
-        }
 
         let imagesOnPage = 0
         let vectorOpsDetected = false
@@ -622,10 +622,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
                 operatorType: fnId,
                 imageName: args[0],
               })
-
-              // Do not process text per-image anymore; text is processed once per page.
-              // Maintain crossImageOverlap continuity by keeping placeholders only.
-              flushParagraph()
 
               // Extract image buffer
               const imageName =
@@ -753,7 +749,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
                               description === "No description returned." ||
                               description === "Image is not worth describing."
                             ) {
-                              description = "Image extracted from PDF page."
+                              Logger.warn(
+                                `Skipping image with poor description: ${imageName} on page ${pageNum}`,
+                              )
+                              break
                             }
                             seenHashDescriptions.set(imageHash, description)
                           }
@@ -762,7 +761,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                               process.env.IMAGE_DIR ||
                                 "downloads/xyne_images_db",
                             )
-                            const outputDir = path.join(baseDir, safeDocId)
+                            const outputDir = path.join(baseDir, docid)
                             await fsPromises.mkdir(outputDir, {
                               recursive: true,
                             })
@@ -787,7 +786,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           }
                           image_chunks.push(description)
                           image_chunk_pos.push(globalSeq.value)
-                          crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
+                          if (includeImageMarkersInText) {
+                            text_chunks.push(`[[IMG#${globalSeq.value}]]`)
+                            text_chunk_pos.push(globalSeq.value)
+                          }
                           globalSeq.value++
                           imagesOnPage += 1
                           Logger.debug(
@@ -847,7 +849,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
                               description === "No description returned." ||
                               description === "Image is not worth describing."
                             ) {
-                              description = "Image extracted from PDF page."
+                              Logger.warn(
+                                `Skipping image with poor description: ${imageName} on page ${pageNum}`,
+                              )
+                              break
                             }
                             seenHashDescriptions.set(imageHash, description)
                           }
@@ -856,7 +861,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                               process.env.IMAGE_DIR ||
                                 "downloads/xyne_images_db",
                             )
-                            const outputDir = path.join(baseDir, safeDocId)
+                            const outputDir = path.join(baseDir, docid)
                             await fsPromises.mkdir(outputDir, {
                               recursive: true,
                             })
@@ -880,7 +885,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           }
                           image_chunks.push(description)
                           image_chunk_pos.push(globalSeq.value)
-                          crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
+                          if (includeImageMarkersInText) {
+                            text_chunks.push(`[[IMG#${globalSeq.value}]]`)
+                            text_chunk_pos.push(globalSeq.value)
+                          }
                           globalSeq.value++
                           imagesOnPage += 1
                           Logger.debug(
@@ -1260,17 +1268,18 @@ export async function extractTextAndImagesWithChunksFromPDF(
                         )
                       }
                       if (
+                        !description ||
                         description === "No description returned." ||
                         description === "Image is not worth describing."
                       ) {
-                        Logger.debug("Replacing insufficient description", {
+                        Logger.debug("Skipping image with insufficient description", {
                           imageName,
                           previousDescription: description,
                         })
                         Logger.warn(
-                          `${description} ${imageName} on page ${pageNum}`,
+                          `Skipping image with poor description: ${imageName} on page ${pageNum}`,
                         )
-                        description = "Image extracted from PDF page."
+                        continue
                       }
                       seenHashDescriptions.set(imageHash, description)
                       Logger.debug("Cached new description for image", {
@@ -1284,7 +1293,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       const baseDir = path.resolve(
                         process.env.IMAGE_DIR || "downloads/xyne_images_db",
                       )
-                      const outputDir = path.join(baseDir, safeDocId)
+                      const outputDir = path.join(baseDir, docid)
                       await fsPromises.mkdir(outputDir, { recursive: true })
 
                       const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
@@ -1305,16 +1314,15 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
                     image_chunks.push(description)
                     image_chunk_pos.push(globalSeq.value)
-                    // Logger.info(`OVERLAP DEBUG: Adding image placeholder to crossImageOverlap. Before: "${crossImageOverlap}"`)
-                    // console.log('OVERLAP DEBUG: crossImageOverlap before adding image placeholder:', crossImageOverlap)
-                    crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
-                    // Logger.info(`OVERLAP DEBUG: Added image placeholder to crossImageOverlap. After: "${crossImageOverlap}"`)
-                    // console.log('OVERLAP DEBUG: crossImageOverlap after adding image placeholder:', crossImageOverlap)
+                    if (includeImageMarkersInText) {
+                      text_chunks.push(`[[IMG#${globalSeq.value}]]`)
+                      text_chunk_pos.push(globalSeq.value)
+                    }
+                    // Removed cross-image overlap placeholder handling
                     Logger.debug("Added image chunk at position", {
                       position: globalSeq.value,
                       imageName,
                       description,
-                      crossImageOverlap,
                     })
                     globalSeq.value++
                     imagesOnPage += 1
@@ -1338,8 +1346,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
         // Vector snapshot functionality removed (no longer creating fallback canvas)
 
-        // End of page: flush remaining paragraph and process paragraphs
-        flushParagraph()
+        // End of page: process paragraphs
         const overlapText = processTextParagraphs(
           paragraphs,
           text_chunks,
@@ -1347,22 +1354,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
           globalSeq,
         )
 
-        // Update cross-image overlap - APPEND instead of REPLACE to preserve image placeholders
-        // Logger.info(`OVERLAP DEBUG: End of page ${pageNum} - processing final overlap update`)
-        // console.log('OVERLAP DEBUG: Page', pageNum, 'end - overlapText from processTextParagraphs:', overlapText)
-        // console.log('OVERLAP DEBUG: Page', pageNum, 'end - crossImageOverlap before final update:', crossImageOverlap)
-        if (overlapText.trim()) {
-          // Logger.info(`OVERLAP DEBUG: Page ${pageNum} - overlapText has content, updating crossImageOverlap`)
-          const previousCrossImageOverlap = crossImageOverlap
-          crossImageOverlap = crossImageOverlap
-            ? `${crossImageOverlap} ${overlapText}`
-            : overlapText
-          // Logger.info(`OVERLAP DEBUG: Page ${pageNum} - crossImageOverlap updated from "${previousCrossImageOverlap}" to "${crossImageOverlap}"`)
-          // console.log('OVERLAP DEBUG: Page', pageNum, 'end - crossImageOverlap after final update:', crossImageOverlap)
-        } else {
-          // Logger.info(`OVERLAP DEBUG: Page ${pageNum} - overlapText is empty, no update to crossImageOverlap`)
-          // console.log('OVERLAP DEBUG: Page', pageNum, 'end - no update to crossImageOverlap (overlapText empty)')
-        }
+        // Store overlap for continuity to the next page
+        pageOverlap = overlapText.trim()
 
         Logger.debug(
           `Page ${pageNum} completed. Text operators found: ${textOperatorCount}, Current text chunks: ${text_chunks.length}, Current image chunks: ${image_chunks.length}`,
