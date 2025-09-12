@@ -216,11 +216,12 @@ const insertCalendarEvents = async (
       }
 
       // Check for next page
-      deltaToken = (response["@odata.deltaLink"])? response["@odata.deltaLink"] : deltaToken
+      deltaToken = response["@odata.deltaLink"]
+        ? response["@odata.deltaLink"]
+        : deltaToken
       if (response["@odata.nextLink"]) {
         // More pages available, continue with next page
         nextLink = response["@odata.nextLink"]
-       
       } else {
         // No more data
         nextLink = undefined

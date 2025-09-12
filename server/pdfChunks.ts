@@ -419,8 +419,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
       }
       pushPara()
 
-      // Clean and filter
-      return paragraphs.map(cleanText).filter((p) => p.length > 0)
+      // Filter raw paragraphs - check trimmed length but don't apply full cleaning yet
+      return paragraphs.filter((p) => p.trim().length > 0)
     }
 
     // Extract text from operators as fallback for edge cases
