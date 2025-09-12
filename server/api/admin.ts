@@ -1876,21 +1876,17 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
     const form = await c.req.parseBody()
     const validatedData = syncByMailSchema.parse(form)
 
-    // Create a mock job payload similar to how it's done in the queue
+    
     const jobData = {
       email: validatedData.email,
       syncOnlyCurrentUser: true,
-      // Add other necessary properties if needed
     }
 
-    // Create a mock job object that matches the expected interface
     const mockJob = {
       data: jobData,
       id: `manual-sync-${Date.now()}`,
-      // Add other properties as needed by the handleGoogleOAuthChanges function
     }
 
-    // Call the function with boss and job parameters
     await handleGoogleOAuthChanges(boss, mockJob as Job)
 
     return c.json({
@@ -1915,19 +1911,16 @@ export const HandlePerUserSlackSync = async (c: Context) => {
     const form = await c.req.parseBody()
     const validatedData = syncByMailSchema.parse(form)
 
-    // Create a mock job payload similar to how it's done in the queue
     const jobData = {
       email: validatedData.email,
       syncOnlyCurrentUser: true,
     }
 
-    // Create a mock job object that matches the expected interface
     const mockJob = {
       data: jobData,
       id: `manual-slack-sync-${Date.now()}`,
     }
 
-    // Call the function with boss and job parameters
     await handleSlackChanges(boss, mockJob as Job)
 
     return c.json({

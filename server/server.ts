@@ -72,6 +72,8 @@ import {
   GetWorkspaceApiKeys,
   ListAllUsers,
   UpdateUser,
+  HandlePerUserSlackSync,
+  HandlePerUserGoogleWorkSpaceSync,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -902,17 +904,9 @@ export const AppRoutes = app
   // for some reason the validation schema
   // is not making the keys mandatory
   .get("/list_users", ListAllUsers)
-  .post(
-    "/service_account",
-    zValidator("form", addServiceConnectionSchema),
-    AddServiceConnection,
-  )
-  .post(
-    "/google/service_account/ingest_more",
-    zValidator("json", serviceAccountIngestMoreSchema),
-    ServiceAccountIngestMoreUsersApi,
-  )
   .post("/change_role", zValidator("form", UserRoleChangeSchema), UpdateUser)
+  .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+  .post("syncSlackByMail", HandlePerUserSlackSync)
   // create the provider + connector
   .post(
     "/oauth/create",
