@@ -168,11 +168,11 @@ export enum MCPConnectorMode {
 }
 
 export const addApiKeyMCPConnectorSchema = z.object({
-  url: z.string().url({ message: 'must be a valid HTTP(S) URL' }),
+  url: z.string().url({ message: "must be a valid HTTP(S) URL" }),
   name: z.string(),
   mode: z.nativeEnum(MCPConnectorMode),
   headers: z.record(z.string()),
-});
+})
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
 
@@ -353,11 +353,35 @@ const CalendarEventsChangeTokenSchema = z.object({
   lastSyncedAt: z.coerce.date(),
 })
 
+// Microsoft delta token schemas 
+const MicrosoftDriveDeltaTokenSchema = z.object({
+  type: z.literal("microsoftDriveDeltaToken"),
+  driveToken: z.string(),
+  contactsToken: z.string(),
+  lastSyncedAt: z.coerce.date(),
+})
+
+const MicrosoftOutlookDeltaTokenSchema = z.object({
+  type: z.literal("microsoftOutlookDeltaToken"),
+  deltaToken: z.string().optional(), // Backward compatibility
+  deltaTokens: z.record(z.string()).optional(), // New multi-folder approach
+  lastSyncedAt: z.coerce.date(),
+})
+
+const MicrosoftCalendarDeltaTokenSchema = z.object({
+  type: z.literal("microsoftCalendarDeltaToken"),
+  calendarDeltaToken: z.string(),
+  lastSyncedAt: z.coerce.date(),
+})
+
 const ChangeTokenSchema = z.discriminatedUnion("type", [
   DefaultTokenSchema,
   GoogleDriveChangeTokenSchema,
   GmailChangeTokenSchema,
   CalendarEventsChangeTokenSchema,
+  MicrosoftDriveDeltaTokenSchema,
+  MicrosoftOutlookDeltaTokenSchema,
+  MicrosoftCalendarDeltaTokenSchema,
 ])
 
 // Define UpdatedAtVal schema
@@ -433,6 +457,7 @@ export enum WorkerResponseTypes {
 
 export enum Subsystem {
   Server = "Server",
+  SyncServer = "SyncServer",
   Auth = "Auth",
   Cronjob = "Cronjob",
   Ingest = "Ingest",
@@ -475,8 +500,6 @@ export enum Platform {
   Mobile = "mobile",
   Slack = "slack",
 }
-
-
 
 export const AnswerWithCitationsSchema = z.object({
   answer: z.string(),

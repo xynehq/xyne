@@ -278,7 +278,6 @@ export const Sidebar = ({
               </Tooltip>
             </Link>
           )}
-
           <Link
             to="/dashboard"
             className={cn(

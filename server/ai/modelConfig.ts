@@ -1,14 +1,6 @@
 import { Models, AIProviders, ModelDisplayNames } from "@/ai/types"
 import config from "@/config"
-
-export interface ModelConfiguration {
-  actualName: string // The actual model identifier used in API calls
-  labelName: string // Display name for frontend
-  provider: AIProviders // Which provider this model belongs to
-  reasoning: boolean // Whether the model supports reasoning capabilities
-  websearch: boolean // Whether the model supports web search capabilities
-  deepResearch: boolean // Whether the model supports deep research capabilities
-}
+import type { ModelConfiguration } from "@/shared/types"
 
 export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   // AWS Bedrock - Claude Models
@@ -19,6 +11,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: false,
+    description: "Designed for quick responses while ensuring solid reasoning.",
   },
   [Models.Claude_3_5_Sonnet]: {
     actualName: "anthropic.claude-3-5-sonnet-20240620-v1:0",
@@ -27,6 +20,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Designed for quick responses while ensuring solid reasoning.",
   },
   [Models.Claude_3_5_SonnetV2]: {
     actualName: "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -35,6 +29,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Designed for quick responses while ensuring solid reasoning.",
   },
   [Models.Claude_3_7_Sonnet]: {
     actualName: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
@@ -43,6 +38,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description:
+      "Advanced reasoning with enhanced performance and longer context.",
   },
   [Models.Claude_Opus_4]: {
     actualName: "us.anthropic.claude-opus-4-20250514-v1:0",
@@ -51,6 +48,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Ideal for in-depth research and thorough analysis.",
   },
   [Models.Claude_Sonnet_4]: {
     actualName: "us.anthropic.claude-sonnet-4-20250514-v1:0",
@@ -59,6 +57,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Balanced for reasoning, long context windows.",
   },
 
   // AWS Bedrock - Meta Llama Models
@@ -69,6 +68,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description:
+      "Great for programming, content generation, and logical structuring.",
   },
   [Models.Llama_3_1_70B]: {
     actualName: "meta.llama3-1-70b-instruct-v1:0",
@@ -77,6 +78,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description:
+      "Great for programming, content generation, and logical structuring.",
   },
   [Models.Llama_3_1_8B]: {
     actualName: "meta.llama3-1-8b-instruct-v1:0",
@@ -85,6 +88,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: false,
+    description: "Tailored for cost-effectiveness and rapid response times.",
   },
   [Models.Llama_3_2_1B]: {
     actualName: "us.meta.llama3-2-1b-instruct-v1:0",
@@ -93,6 +97,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: false,
+    description: "Tailored for cost-effectiveness and rapid response times.",
   },
   [Models.Llama_3_2_3B]: {
     actualName: "us.meta.llama3-2-3b-instruct-v1:0",
@@ -101,6 +106,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: false,
+    description: "Tailored for cost-effectiveness and rapid response times.",
   },
 
   // AWS Bedrock - Amazon Nova Models
@@ -111,6 +117,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: false,
+    description: "Tailored for cost-effectiveness and rapid response times.",
   },
   [Models.Amazon_Nova_Lite]: {
     actualName: "amazon.nova-lite-v1:0",
@@ -119,6 +126,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: false,
+    description: "Tailored for cost-effectiveness and rapid response times.",
   },
   [Models.Amazon_Nova_Pro]: {
     actualName: "amazon.nova-pro-v1:0",
@@ -127,6 +135,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description:
+      "Proficient in reasoning across text, visuals, and programming.",
   },
 
   // AWS Bedrock - Cohere Models
@@ -137,6 +147,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description:
+      "Great for programming, content generation, and logical structuring.",
   },
   [Models.CohereCmdRPlus]: {
     actualName: "cohere.command-r-plus-v1:0",
@@ -145,6 +157,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description:
+      "Great for programming, content generation, and logical structuring.",
   },
 
   // AWS Bedrock - Other Models
@@ -155,6 +169,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Advanced reasoning model with deep analysis capabilities.",
   },
   [Models.Mistral_Large]: {
     actualName: "mistral.mistral-large-2402-v1:0",
@@ -163,6 +178,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description:
+      "Great for programming, content generation, and logical structuring.",
   },
 
   // OpenAI Models
@@ -173,6 +190,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description:
+      "Great for programming, content generation, and logical structuring.",
   },
   [Models.Gpt_4o_mini]: {
     actualName: "gpt-4o-mini",
@@ -181,6 +200,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: false,
+    description:
+      "Great for programming, content generation, and logical structuring.",
   },
   [Models.Gpt_4]: {
     actualName: "gpt-4",
@@ -189,6 +210,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description:
+      "Great for programming, content generation, and logical structuring.",
   },
   [Models.o3_Deep_Research]: {
     actualName: "o3-deep-research",
@@ -197,6 +220,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Advanced research model with deep analysis capabilities.",
   },
   [Models.o4_Mini_Deep_Research]: {
     actualName: "o4-mini-deep-research",
@@ -205,6 +229,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Advanced research model with deep analysis capabilities.",
   },
 
   // Google AI Models
@@ -215,6 +240,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description: "Tailored for cost-effectiveness and rapid response times.",
   },
   [Models.Gemini_2_0_Flash_Thinking]: {
     actualName: "gemini-2.0-flash-thinking-exp",
@@ -223,6 +249,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description:
+      "Proficient in reasoning across text, visuals, and programming.",
   },
 
   // Vertex AI Claude Models
@@ -234,6 +262,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Balanced for reasoning, long context windows.",
   },
   // [Models.Vertex_Claude_Opus_4_1]: {
   //   actualName: "claude-opus-4-1@20250805",
@@ -258,6 +287,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description:
+      "Advanced reasoning with enhanced performance and longer context.",
   },
   // [Models.Vertex_Claude_3_5_Sonnet_V2]: {
   //   actualName: "claude-3-5-sonnet-v2@20241022",
@@ -274,6 +305,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: false,
     websearch: true,
     deepResearch: true,
+    description: "Designed for quick responses while ensuring solid reasoning.",
   },
   // [Models.Vertex_Claude_3_5_Haiku]: {
   //   actualName: "claude-3-5-haiku@20241022",
@@ -392,6 +424,8 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description:
+      "Proficient in reasoning across text, visuals, and programming.",
   },
   [Models.Vertex_Gemini_2_5_Flash]: {
     actualName: "gemini-2.5-flash",
@@ -400,6 +434,7 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
     reasoning: true,
     websearch: true,
     deepResearch: true,
+    description: "Tailored for cost-effectiveness and rapid response times.",
   },
   // [Models.Vertex_Gemini_2_5_Flash_Lite_Preview]: {
   //   actualName: "gemini-2.5-flash-lite-preview-06-17",
@@ -506,6 +541,7 @@ export const getAvailableModels = (config: {
     reasoning: boolean
     websearch: boolean
     deepResearch: boolean
+    description: string
   }> = []
 
   // Priority (AWS > OpenAI > Ollama > Together > Fireworks > Gemini > Vertex)
@@ -516,12 +552,13 @@ export const getAvailableModels = (config: {
       .filter((model) => model.provider === AIProviders.AwsBedrock)
       .forEach((model) => {
         availableModels.push({
-          actualName: model.actualName,
+          actualName: model.actualName ?? "",
           labelName: model.labelName,
           provider: "AWS Bedrock",
           reasoning: model.reasoning,
           websearch: model.websearch,
           deepResearch: model.deepResearch,
+          description: model.description,
         })
       })
   } else if (config.OpenAIKey) {
@@ -530,12 +567,13 @@ export const getAvailableModels = (config: {
       .filter((model) => model.provider === AIProviders.OpenAI)
       .forEach((model) => {
         availableModels.push({
-          actualName: model.actualName,
+          actualName: model.actualName ?? "",
           labelName: model.labelName,
           provider: "OpenAI",
           reasoning: model.reasoning,
           websearch: model.websearch,
           deepResearch: model.deepResearch,
+          description: model.description,
         })
       })
   } else if (config.OllamaModel) {
@@ -547,6 +585,7 @@ export const getAvailableModels = (config: {
       reasoning: false,
       websearch: true,
       deepResearch: false,
+      description: "",
     })
   } else if (config.TogetherAIModel && config.TogetherApiKey) {
     // Add only Together AI model
@@ -557,6 +596,7 @@ export const getAvailableModels = (config: {
       reasoning: false,
       websearch: true,
       deepResearch: false,
+      description: "",
     })
   } else if (config.FireworksAIModel && config.FireworksApiKey) {
     // Add only Fireworks AI model
@@ -567,6 +607,7 @@ export const getAvailableModels = (config: {
       reasoning: false,
       websearch: true,
       deepResearch: false,
+      description: "",
     })
   } else if (config.GeminiAIModel && config.GeminiApiKey) {
     // Add all Google AI models
@@ -574,12 +615,13 @@ export const getAvailableModels = (config: {
       .filter((model) => model.provider === AIProviders.GoogleAI)
       .forEach((model) => {
         availableModels.push({
-          actualName: model.actualName,
+          actualName: model.actualName ?? "",
           labelName: model.labelName,
           provider: "Google AI",
           reasoning: model.reasoning,
           websearch: model.websearch,
           deepResearch: model.deepResearch,
+          description: model.description,
         })
       })
   } else if (config.VertexProjectId && config.VertexRegion) {
@@ -588,12 +630,13 @@ export const getAvailableModels = (config: {
       .filter((model) => model.provider === AIProviders.VertexAI)
       .forEach((model) => {
         availableModels.push({
-          actualName: model.actualName,
+          actualName: model.actualName ?? "",
           labelName: model.labelName,
           provider: "Vertex AI",
           reasoning: model.reasoning,
           websearch: model.websearch,
           deepResearch: model.deepResearch,
+          description: model.description,
         })
       })
   }
