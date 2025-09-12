@@ -109,7 +109,11 @@ export const highlightSchema = z.object({
     matchThreshold: z.number().min(0).max(1).default(0.15),
     maxChunkLength: z.number().min(10).max(1000).default(200),
     caseSensitive: z.boolean().default(false),
-  }).default({}),
+  }).default({
+    matchThreshold: 0.15,
+    maxChunkLength: 200,
+    caseSensitive: false,
+  }),
 })
 
 export const chatStopSchema = z.object({
