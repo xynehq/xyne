@@ -112,7 +112,6 @@ import {
   bookmarkChat,
 } from "@/components/HistoryModal"
 import { errorComponent } from "@/components/error"
-import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 import {
   Tooltip,
   TooltipProvider,
@@ -124,6 +123,7 @@ import { Tip } from "@/components/Tooltip"
 import { FollowUpQuestions } from "@/components/FollowUpQuestions"
 import { RagTraceVirtualization } from "@/components/RagTraceVirtualization"
 import { toast } from "@/hooks/use-toast"
+import { ToastAction } from "@/components/ui/toast"
 import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
 import React from "react"
 // import { jsonToHtmlMessage } from "@/lib/messageUtils"
@@ -139,6 +139,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CitationPreview } from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
+import { processMessage } from "@/utils/chatUtils"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -241,7 +242,7 @@ interface ChatPageProps {
 }
 
 // Define the structure for parsed message parts, including app, entity, and pillType for pills
-type ParsedMessagePart =
+export type ParsedMessagePart =
   | { type: "text"; value: string }
   | {
       type: "pill"
@@ -258,7 +259,7 @@ type ParsedMessagePart =
   | { type: "link"; value: string }
 
 // Helper function to convert JSON message parts back to HTML using Pill component
-const jsonToHtmlMessage = (jsonString: string): string => {
+export const jsonToHtmlMessage = (jsonString: string): string => {
   try {
     const parts = JSON.parse(jsonString) as Array<ParsedMessagePart>
     if (!Array.isArray(parts)) {
@@ -395,6 +396,29 @@ export const ChatPage = ({
   const [chatTitle, setChatTitle] = useState<string | null>(
     isWithChatId && data ? data?.chat?.title || null : null,
   )
+  const [isTitleUpdating, setIsTitleUpdating] = useState(false)
+  const [streamingTitle, setStreamingTitle] = useState<string>("")
+
+  // Smooth title streaming function - animates from left to right
+  const updateTitleWithAnimation = (newTitle: string) => {
+    setIsTitleUpdating(true)
+    setStreamingTitle("")
+
+    const chars = newTitle.split("")
+    let currentIndex = 0
+
+    const streamInterval = setInterval(() => {
+      if (currentIndex < chars.length) {
+        setStreamingTitle((prev) => prev + chars[currentIndex])
+        currentIndex++
+      } else {
+        clearInterval(streamInterval)
+        setChatTitle(newTitle)
+        setIsTitleUpdating(false)
+        setStreamingTitle("")
+      }
+    }, 50) // 50ms per character for smooth streaming effect
+  }
 
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
@@ -730,6 +754,58 @@ export const ChatPage = ({
     router,
   ])
 
+  // Background title update for new chats
+  useEffect(() => {
+    const shouldUpdateTitle =
+      chatId &&
+      !chatTitle &&
+      !isStreaming &&
+      messages.length === 2 && // At least user + assistant message
+      messages[0]?.messageRole === "user"
+
+    if (shouldUpdateTitle && !isSharedChat) {
+      // Update title in background using the first user message
+      api.chat.generateTitle
+        .$post({
+          json: {
+            chatId: chatId,
+            message: messages[0].message,
+          },
+        })
+        .then(async (response: Response) => {
+          if (response.ok) {
+            const result = (await response.json()) as {
+              success: boolean
+              title: string
+            }
+            if (result.success) {
+              updateTitleWithAnimation(result.title)
+              // Update cached chat data
+              queryClient.setQueryData<any>(
+                ["chatHistory", chatId],
+                (old: any) => {
+                  if (old?.chat) {
+                    return {
+                      ...old,
+                      chat: {
+                        ...old.chat,
+                        title: result.title,
+                      },
+                    }
+                  }
+                  return old
+                },
+              )
+            }
+          }
+        })
+        .catch((error: Error) => {
+          console.error("Background title update failed:", error)
+          // Fail silently - this is a background operation
+        })
+    }
+  }, [chatId, chatTitle, isStreaming, messages, isSharedChat, queryClient])
+
   const handleSend = async (
     messageToSend: string,
     metadata?: AttachmentMetadata[],
@@ -804,9 +880,66 @@ export const ChatPage = ({
   ) => {
     if (!messageId) return
 
-    // Open the enhanced feedback modal
-    setPendingFeedback({ messageId, type: feedback })
-    setFeedbackModalOpen(true)
+    // Optimistically update the UI
+    setFeedbackMap((prev) => ({
+      ...prev,
+      [messageId]: feedback,
+    }))
+
+    try {
+      // Submit basic feedback immediately
+      const response = await api.message.feedback.$post({
+        json: {
+          messageId,
+          feedback,
+        },
+      })
+
+      if (response.ok) {
+        if (feedback === MessageFeedback.Like) {
+          // For thumbs up, just show success toast
+          toast({
+            title: "Thank you!",
+            description: "Your feedback has been recorded.",
+            duration: 3000,
+          })
+        } else if (feedback === MessageFeedback.Dislike) {
+          // For thumbs down, directly show detailed feedback toast
+          toast({
+            title: "Help us improve",
+            description: "Would you like to provide more detailed feedback?",
+            duration: 3000,
+            action: (
+              <ToastAction
+                altText="Provide detailed feedback"
+                onClick={() => {
+                  setPendingFeedback({ messageId, type: feedback })
+                  setFeedbackModalOpen(true)
+                }}
+              >
+                Yes
+              </ToastAction>
+            ),
+          })
+        }
+      } else {
+        throw new Error("Failed to submit feedback")
+      }
+    } catch (error) {
+      console.error("Failed to submit feedback:", error)
+      // Revert optimistic update on error
+      setFeedbackMap((prev) => {
+        const newMap = { ...prev }
+        delete newMap[messageId]
+        return newMap
+      })
+      toast({
+        title: "Error",
+        description: "Failed to submit feedback. Please try again.",
+        variant: "destructive",
+        duration: 3000,
+      })
+    }
   }
 
   const handleEnhancedFeedbackSubmit = async (data: {
@@ -846,7 +979,7 @@ export const ChatPage = ({
           " Feedback submitted, but share token generation failed."
       }
 
-      toast({ title: "Success", description: successMessage })
+      toast({ title: "Success", description: successMessage, duration: 2000 })
     } catch (error) {
       console.error("Failed to submit enhanced feedback", error)
       // Revert optimistic update on error
@@ -869,10 +1002,11 @@ export const ChatPage = ({
   const handleRetry = async (messageId: string) => {
     if (!messageId || isStreaming) return
     setRetryIsStreaming(true)
-    
+
     // Get current model configuration from ChatBox
-    const currentModelConfig = chatBoxRef.current?.getCurrentModelConfig() || null
-    
+    const currentModelConfig =
+      chatBoxRef.current?.getCurrentModelConfig() || null
+
     await retryMessage(messageId, isAgenticMode, undefined, currentModelConfig)
   }
 
@@ -1098,9 +1232,14 @@ export const ChatPage = ({
                 value={editedTitle!}
               />
             ) : (
-              <span className="flex-grow text-[#1C1D1F] dark:text-gray-100 text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
-                {chatTitle}
-              </span>
+              <div className="flex items-center flex-grow">
+                <span className="text-[#1C1D1F] dark:text-gray-100 text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
+                  {isTitleUpdating ? streamingTitle : chatTitle}
+                  {isTitleUpdating && (
+                    <span className="inline-block w-0.5 h-4 bg-gray-400 dark:bg-gray-500 ml-1 animate-pulse" />
+                  )}
+                </span>
+              </div>
             )}
             {isSharedChat ? (
               <span className="text-[12px] text-gray-500 dark:text-gray-400 ml-2">
@@ -1410,7 +1549,7 @@ interface ImageCitationComponentProps {
   className?: string
 }
 
-const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
+export const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   citationKey,
   imageCitations,
   className = "",
@@ -1597,9 +1736,6 @@ const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
     </>
   )
 }
-
-export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
 const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
 const Code = ({
@@ -2219,7 +2355,7 @@ const VirtualizedMessages = React.forwardRef<
             ;(ref as any).current = node
           }
         }}
-        className="h-full w-full overflow-auto flex flex-col items-center"
+        className={`h-full w-full overflow-auto flex flex-col ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
         onScroll={handleScroll}
         style={{
           height: "100%",
@@ -2461,46 +2597,7 @@ export const ChatMessage = ({
   const { theme } = useTheme()
   const [isCopied, setIsCopied] = useState(false)
   const citationUrls = citations?.map((c: Citation) => c.url)
-  const processMessage = (text: string) => {
-    text = splitGroupedCitationsWithSpaces(text)
-    text = text.replace(
-      /(\[\d+_\d+\])/g,
-      (fullMatch, capturedCitation, offset, string) => {
-        // Check if this image citation appears earlier in the string
-        const firstIndex = string.indexOf(fullMatch)
-        if (firstIndex < offset) {
-          // remove duplicate image citations
-          return ""
-        }
-        return capturedCitation
-      },
-    )
-    text = text.replace(
-      textToImageCitationIndex,
-      (match, citationKey, offset, string) => {
-        // Check if this image citation appears earlier in the string
-        const firstIndex = string.indexOf(match)
-        if (firstIndex < offset) {
-          // remove duplicate image citations
-          return ""
-        }
-        return `![image-citation:${citationKey}](image-citation:${citationKey})`
-      },
-    )
 
-    if (citationMap) {
-      return text.replace(textToCitationIndex, (match, num) => {
-        const index = citationMap[num]
-        const url = citationUrls[index]
-        return typeof index === "number" && url ? `[${index + 1}](${url})` : ""
-      })
-    } else {
-      return text.replace(textToCitationIndex, (match, num) => {
-        const url = citationUrls[num - 1]
-        return url ? `[${num}](${url})` : ""
-      })
-    }
-  }
   return (
     <div className="max-w-full min-w-0 flex flex-col items-end space-y-3">
       {/* Render attachments above the message box for user messages */}
@@ -2558,7 +2655,7 @@ export const ChatMessage = ({
                   </div>
                 ) : message !== "" ? (
                   <MarkdownPreview
-                    source={processMessage(message)}
+                    source={processMessage(message, citationMap, citationUrls)}
                     wrapperElement={{
                       "data-color-mode": theme,
                     }}
@@ -2662,7 +2759,9 @@ export const ChatMessage = ({
                     onMouseDown={() => setIsCopied(true)}
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
-                      navigator.clipboard.writeText(processMessage(message))
+                      navigator.clipboard.writeText(
+                        processMessage(message, citationMap, citationUrls),
+                      )
                     }
                   />
                   {/* Retry button temporarily hidden */}

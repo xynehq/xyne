@@ -15,7 +15,7 @@ import type { OAuthCredentials, TxnOrClient } from "@/types" // ConnectorType re
 import { Subsystem } from "@/types"
 import { and, eq } from "drizzle-orm"
 import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types" // ConnectorType added
-import { Google } from "arctic"
+import { Google, MicrosoftEntraId } from "arctic"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import {
@@ -26,10 +26,11 @@ import {
   FetchProviderFailed,
   UpdateConnectorFailed,
 } from "@/errors"
-import { IsGoogleApp } from "@/utils"
+import { IsGoogleApp, IsMicrosoftApp } from "@/utils"
 import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import { getErrorMessage } from "@/utils"
 import { syncJobs, syncHistory } from "@/db/schema"
+import { scopes } from "@/integrations/microsoft/config"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -161,7 +162,7 @@ const IsTokenExpired = (
   oauthCredentials: OAuthCredentials,
   bufferInSeconds: number,
 ): boolean => {
-  if (IsGoogleApp(app)) {
+  if (IsGoogleApp(app) || IsMicrosoftApp(app)) {
     const tokens = oauthCredentials.data
     const now: Date = new Date()
     // make the type as Date, currently the date is stringified
@@ -240,6 +241,44 @@ export const getOAuthConnectorWithCredentials = async (
         oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
       })
       Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
+    } else if (IsMicrosoftApp(oauthRes.app)) {
+      // we will need the provider now to refresh the token
+      const providers: SelectOAuthProvider[] =
+        await getOAuthProviderByConnectorId(trx, connectorId)
+
+      if (!providers.length) {
+        Logger.error("Could not fetch provider while refreshing Microsoft Token")
+        throw new FetchProviderFailed({
+          message: "Could not fetch provider while refreshing Microsoft Token",
+        })
+      }
+      const [microsoftProvider] = providers
+      const microsoft = new MicrosoftEntraId(
+        "common",
+        microsoftProvider.clientId!,
+        microsoftProvider.clientSecret,
+        `${config.host}/oauth/callback`,
+      )
+      const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
+      const refreshedTokens = await microsoft.refreshAccessToken(
+        tokens.refresh_token,
+        scopes
+      )
+      // update the token values
+      tokens.access_token = refreshedTokens.accessToken()
+      tokens.accessTokenExpiresAt = new Date(
+        refreshedTokens.accessTokenExpiresAt(),
+      )
+      // Update refresh token if a new one is provided
+      if (refreshedTokens.refreshToken()) {
+        tokens.refresh_token = refreshedTokens.refreshToken()
+      }
+
+      oauthRes.oauthCredentials.data = tokens
+      const updatedConnector = await updateConnector(trx, oauthRes.id, {
+        oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
+      })
+      Logger.info(`Microsoft connector successfully updated: ${updatedConnector.id}`)
     } else {
       Logger.error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,

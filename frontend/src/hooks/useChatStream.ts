@@ -254,6 +254,8 @@ export const startStream = async (
   agentIdFromChatParams?: string | null,
   toolsList?: ToolsListItem[],
   metadata?: AttachmentMetadata[],
+  preventNavigation?: boolean,
+  setChatId?: (chatId: string) => void,
   selectedModel?: string,
 ): Promise<void> => {
   if (!messageToSend) return
@@ -306,6 +308,12 @@ export const startStream = async (
       modelConfig = { model: String(selectedModel), capabilities: [] }
     }
   }
+
+  // Add selectedSources parameter if provided
+  if (selectedSources && selectedSources.length > 0) {
+    url.searchParams.append("selectedSources", JSON.stringify(selectedSources))
+  }
+
   if (modelConfig) {
     url.searchParams.append("selectedModelConfig", JSON.stringify(modelConfig))
   }
@@ -466,7 +474,12 @@ export const startStream = async (
       activeStreams.delete(streamKey)
       activeStreams.set(realId, streamState)
 
-      if (router && router.state.location.pathname === "/chat") {
+      // Only navigate if preventNavigation is not true
+      if (
+        !preventNavigation &&
+        router &&
+        router.state.location.pathname === "/chat"
+      ) {
         const isGlobalDebugMode =
           import.meta.env.VITE_SHOW_DEBUG_INFO === "true"
         router.navigate({
@@ -485,6 +498,9 @@ export const startStream = async (
         }
       }
       streamKey = realId
+      if (setChatId) {
+        setChatId(realId)
+      }
     }
     notifySubscribers(streamKey)
   })
@@ -651,6 +667,8 @@ export const useChatStream = (
   chatId: string | null,
   onTitleUpdate?: (title: string) => void,
   setRetryIsStreaming?: (isRetrying: boolean) => void,
+  preventNavigation?: boolean,
+  setChatId?: (chatId: string) => void,
 ) => {
   const queryClient = useQueryClient()
   const router = useRouter()
@@ -746,6 +764,8 @@ export const useChatStream = (
         agentIdFromChatParams,
         toolsList,
         metadata,
+        preventNavigation,
+        setChatId,
         selectedModel,
       )
 
@@ -759,7 +779,7 @@ export const useChatStream = (
 
       streamKeyRef.current = streamKey
     },
-    [currentStreamKey, queryClient, router, onTitleUpdate],
+    [currentStreamKey, queryClient, router, onTitleUpdate, preventNavigation],
   )
 
   const wrappedStopStream = useCallback(async () => {
@@ -772,6 +792,7 @@ export const useChatStream = (
       isAgenticMode: boolean = false,
       attachmentFileIds?: string[],
       selectedModelConfig?: string | null,
+      selectedSources: string[] = [],
     ) => {
       if (!messageId) return
 
@@ -878,6 +899,10 @@ export const useChatStream = (
           "attachmentFileIds",
           attachmentFileIds.join(","),
         )
+      }
+      // Add selectedSources parameter if provided
+      if (selectedSources && selectedSources.length > 0) {
+        url.searchParams.append("selectedSources", JSON.stringify(selectedSources))
       }
 
       let eventSource: EventSource

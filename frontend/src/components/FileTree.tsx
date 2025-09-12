@@ -109,7 +109,10 @@ const FileNodeComponent = ({
       onMouseLeave={() => setIsHovered(false)}
     >
       <div className="grid grid-cols-12 items-center gap-4 text-sm text-gray-700 dark:text-gray-300 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md">
-        <div className="col-span-5 flex items-center hover:cursor-pointer" style={indentStyle}>
+        <div
+          className="col-span-5 flex items-center hover:cursor-pointer"
+          style={indentStyle}
+        >
           {node.type === "folder" ? (
             <div
               className="flex items-center gap-2 cursor-pointer w-full"

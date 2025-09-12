@@ -73,6 +73,7 @@ import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { createAuthEventSource } from "@/hooks/useChatStream"
+import { textToCitationIndex } from "@/utils/chatUtils"
 
 type CurrentResp = {
   resp: string
@@ -4490,7 +4491,7 @@ function TabButton({
   )
 }
 
-const textToCitationIndexPattern = /\[(\d+)\]/g
+const textToCitationIndexPattern = textToCitationIndex
 
 const renderMarkdownLink = ({
   node,

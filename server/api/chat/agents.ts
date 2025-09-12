@@ -13,7 +13,6 @@ import {
   // baselineRAGIterationJsonStream,
   baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
-  generateTitleUsingQuery,
   jsonParseLLMOutput,
   mailPromptJsonStream,
   temporalPromptJsonStream,
@@ -182,7 +181,7 @@ import {
   processMessage,
   searchToCitation,
 } from "./utils"
-export const textToCitationIndex = /\[(\d+)\]/g
+import { textToCitationIndex, textToImageCitationIndex } from "./utils"
 import config from "@/config"
 import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
@@ -191,7 +190,6 @@ import {
   cleanBuffer,
   getThreadContext,
   isContextSelected,
-  textToImageCitationIndex,
   UnderstandMessageAndAnswer,
   UnderstandMessageAndAnswerForGivenContext,
 } from "./chat"
@@ -201,6 +199,7 @@ import {
   runStream,
   generateRunId,
   generateTraceId,
+  getTextContent,
   type Agent as JAFAgent,
   type Tool as JAFTool,
   type Message as JAFMessage,
@@ -598,7 +597,7 @@ async function* getToolContinuationIterator(
       ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
     )
   }
-
+  
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
@@ -843,6 +842,24 @@ const addErrMessageToMessage = async (
     })
   }
 }
+/**
+   * MessageWithToolsApi - Advanced JAF-powered chat with MCP tool integration
+   * 
+   * Used when: isAgentic && !enableWebSearch && !deepResearchEnabled
+   * 
+   * Features:
+   * - JAF (Juspay Agentic Framework) agent orchestration
+   * - MCP client integration for external tools
+   * - Iterative search with context synthesis
+   * - Advanced reasoning step tracking
+   * - Fallback search on max iterations
+   * - Real-time tool execution feedback
+   * 
+   * Flow: Auth → MCP setup → JAF agent config → Tool execution → Context building → Response
+   * 
+   * @param c - Hono Context with request data
+   * @returns StreamSSE with JAF execution events
+   */
 export const MessageWithToolsApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
@@ -1029,20 +1046,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     const agentIdToStore = agentForDb ? agentForDb.externalId : null
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       const dbTransactionSpan = chatCreationSpan.startSpan("db_transaction_new_chat")
       let [insertedChat, insertedMsg] = await db.transaction(
@@ -1994,7 +1997,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               case "assistant_message": {
                 const messageSpan = jafStreamingSpan.startSpan("assistant_message")
-                const content = evt.data.message.content || ""
+                const content = getTextContent(evt.data.message.content) || ""
                 const hasToolCalls = Array.isArray(evt.data.message?.tool_calls) &&
                   (evt.data.message.tool_calls?.length ?? 0) > 0
 
@@ -2239,7 +2242,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                       messageId: lastMessage.externalId,
                     }),
                   })
-                  const err = outcome?.error as JAFError | undefined
+                  // Check the status before accessing error property
+                  const err = outcome?.status === 'error' ? outcome.error : undefined
                   const errTag = err?._tag || "run_error"
                   let errMsg = "Model did not return a response."
                   if (err) {
@@ -2278,7 +2282,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                           // Extract all context from runState.messages array
                           const allMessages = runState.messages || []
                           const agentScratchpad = allMessages
-                            .map((msg, index) => `${msg.role}: ${msg.content}`)
+                            .map((msg, index) => `${msg.role}: ${getTextContent(msg.content)}`)
                             .join('\n')
                           console.log("Agent scratchpad:", agentScratchpad)
                           console.log('all messages:', allMessages)
@@ -2286,7 +2290,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                           // Build tool log from any tool executions in the conversation
                           const toolLog = allMessages
                             .filter(msg => msg.role === 'tool' || (msg as any).tool_calls || (msg as any).tool_call_id)
-                            .map((msg, index) => `Tool Execution ${index + 1}: ${msg.content}`)
+                            .map((msg, index) => `Tool Execution ${index + 1}: ${getTextContent(msg.content)}`)
                             .join('\n')
                           console.log("Tool log:", toolLog)
                           // Prepare fallback tool parameters with context from runState.messages
@@ -2740,20 +2744,6 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3305,7 +3295,24 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   }
 }
 
-export const AgentMessageApi = async (c: Context) => {
+/**
+   * AgentMessageApi - Legacy agent chat endpoint for simple agent conversations
+   * 
+   * Used when: !isAgentic && !enableWebSearch && !deepResearchEnabled && agentDetails
+   * 
+   * Features:
+   * - Basic agent conversations with custom prompts
+   * - RAG with document retrieval and citation tracking
+   * - Query classification (conversation vs search)
+   * - Streaming/non-streaming modes
+   * - Context from file references and attachments
+   * 
+   * Flow: Auth → Agent validation → Context extraction → Query classification → RAG processing → Response
+   * 
+   * @param c - Hono Context with JWT payload
+   * @returns StreamSSE with chat events or JSON response
+   */
+  export const AgentMessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
   const tracer: Tracer = getTracer("chat")
@@ -3480,7 +3487,7 @@ export const AgentMessageApi = async (c: Context) => {
     if (path) {
       ids = await getRecordBypath(path, db)
     }
-    let isMsgWithContext = isMessageWithContext(message)
+    const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
       isMsgWithContext || (path && ids)
       ? await extractFileIdsFromMessage(message, email, ids)
@@ -3488,7 +3495,6 @@ export const AgentMessageApi = async (c: Context) => {
           totalValidFileIdsFromLinkCount: 0,
           fileIds: [],
         }
-    isMsgWithContext = isMsgWithContext || (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0)
     let fileIds = extractedInfo?.fileIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
@@ -3510,20 +3516,6 @@ export const AgentMessageApi = async (c: Context) => {
 
     let title = ""
     if (!chatId) {
-      const titleSpan = chatCreationSpan.startSpan("generate_title")
-      // let llm decide a title
-      const titleResp = await generateTitleUsingQuery(message, {
-        modelId: ragPipelineConfig[RagPipelineStages.NewChatTitle].modelId,
-        stream: false,
-      })
-      title = titleResp.title
-      const cost = titleResp.cost
-      if (cost) {
-        costArr.push(cost)
-        titleSpan.setAttribute("cost", cost)
-      }
-      titleSpan.setAttribute("title", title)
-      titleSpan.end()
 
       let [insertedChat, insertedMsg] = await db.transaction(
         async (tx): Promise<[SelectChat, SelectMessage]> => {
@@ -3683,7 +3675,7 @@ export const AgentMessageApi = async (c: Context) => {
             }
 
             if (
-              (isMsgWithContext && fileIds && fileIds?.length > 0) ||
+              (fileIds && fileIds?.length > 0) ||
               (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
             ) {
               Logger.info(
@@ -4686,7 +4678,7 @@ export const AgentMessageApi = async (c: Context) => {
 
         // Path A: user provided explicit context (fileIds / attachments)
         if (
-          (isMsgWithContext && fileIds && fileIds.length > 0) ||
+          (fileIds && fileIds.length > 0) ||
           (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
         ) {
           const ragSpan = streamSpan.startSpan("rag_processing")
