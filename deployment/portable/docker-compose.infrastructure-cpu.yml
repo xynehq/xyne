@@ -2,7 +2,7 @@ services:
   prometheus-init:
     image: busybox
     volumes:
-      - ./data/prometheus-data:/prometheus
+      - ${XYNE_DATA_DIR:-./data}/prometheus-data:/prometheus
     command: |
       sh -c '
         mkdir -p /prometheus
@@ -22,7 +22,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
-      - ./data/prometheus-data:/prometheus
+      - ${XYNE_DATA_DIR:-./data}/prometheus-data:/prometheus
     ports:
     - "9090:9090"
     command:
@@ -40,7 +40,7 @@ services:
     user: "${DOCKER_UID}:${DOCKER_GID}"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./data/grafana-storage:/var/lib/grafana 
+      - ${XYNE_DATA_DIR:-./data}/grafana-storage:/var/lib/grafana 
     ports:
       - "3002:3000"
     restart: always
@@ -59,7 +59,7 @@ services:
       - "${VESPA_PORT:-8080}:8080"
       - "19071:19071"
     volumes:
-      - ./data/vespa-data:/opt/vespa/var
+      - ${XYNE_DATA_DIR:-./data}/vespa-data:/opt/vespa/var
     networks:
       - xyne
     ulimits:
@@ -95,7 +95,7 @@ services:
     ports:
       - "${XYNE_DB_PORT:-5432}:5432"
     volumes:
-      - ./data/postgres-data:/var/lib/postgresql/data
+      - ${XYNE_DATA_DIR:-./data}/postgres-data:/var/lib/postgresql/data
     networks:
       - xyne
     restart: unless-stopped
@@ -114,7 +114,7 @@ services:
   loki-init:
     image: busybox
     volumes:
-      - ./data/loki-data:/loki-data
+      - ${XYNE_DATA_DIR:-./data}/loki-data:/loki-data
     command: |
       sh -c '
         mkdir -p /loki-data
@@ -135,7 +135,7 @@ services:
       - "3100:3100"
     volumes:
       - ./loki-config.yaml:/mnt/config/loki-config.yaml
-      - ./data/loki-data:/loki
+      - ${XYNE_DATA_DIR:-./data}/loki-data:/loki
     command: --config.file=/mnt/config/loki-config.yaml
     restart: unless-stopped
     networks:
@@ -144,7 +144,7 @@ services:
   promtail-init:
     image: busybox
     volumes:
-      - ./data/promtail-data:/promtail-data
+      - ${XYNE_DATA_DIR:-./data}/promtail-data:/promtail-data
     command: |
       sh -c '
         mkdir -p /promtail-data
@@ -164,8 +164,8 @@ services:
       - loki
     volumes:
       - ./promtail-config.yaml:/mnt/config/promtail-config.yaml
-      - ./data/promtail-data:/promtail
-      - ./data/app-logs:/var/log/app:ro
+      - ${XYNE_DATA_DIR:-./data}/promtail-data:/promtail
+      - ${XYNE_DATA_DIR:-./data}/app-logs:/var/log/app:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     command: --config.file=/mnt/config/promtail-config.yaml
