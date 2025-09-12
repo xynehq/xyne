@@ -32,7 +32,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
   showBackButton = false,
 }) => {
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
-    sendingFrom: "no-reply@xyne.io",
+    sendingFrom: "aman.asrani@juspay.in",
     emailAddresses: [],
   })
 
@@ -52,13 +52,13 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
       
       if (existingConfig) {
         setEmailConfig({
-          sendingFrom: existingConfig.sendingFrom || "no-reply@xyne.io",
+          sendingFrom: existingConfig.sendingFrom || "aman.asrani@juspay.in",
           emailAddresses: existingConfig.emailAddresses || existingConfig.to_email || [],
         })
       } else {
         // Reset to defaults for new Email
         setEmailConfig({
-          sendingFrom: "no-reply@xyne.io",
+          sendingFrom: "aman.asrani@juspay.in",
           emailAddresses: [],
         })
       }

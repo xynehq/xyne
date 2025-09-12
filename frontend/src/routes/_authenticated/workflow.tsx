@@ -8,7 +8,6 @@ import { WorkflowCard } from "@/components/workflow/WorkflowCard"
 import { TemplateSelectionModal } from "@/components/workflow/TemplateSelectionModal"
 import { WorkflowExecutionsTable } from "@/components/workflow/WorkflowExecutionsTable"
 import { userWorkflowsAPI, workflowExecutionsAPI } from "@/components/workflow/api/ApiHandlers"
-import { api } from "@/api"
 import vectorIcon from "@/assets/vector.svg"
 import playIcon from "@/assets/play.svg"
 import { ChevronDown, Plus, Layout, Upload, ChevronRight, Search } from "lucide-react"
@@ -425,15 +424,26 @@ function WorkflowComponent() {
       setIsLoadingTemplate(true)
       console.log('🔄 Fetching execution by ID:', executionId)
       
-      // Use Hono client for the execution endpoint
-      const response = await api.workflow.executions[executionId].$get()
+      // Hit the specific execution endpoint
+      const BACKEND_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      const token = localStorage.getItem('authToken');
+      
+      const response = await fetch(`${BACKEND_BASE_URL}/api/v1/workflow/executions/${executionId}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+        mode: 'cors',
+      })
+      
+      const executionData = await response.json()
+      console.log('🔍 Raw execution response:', executionData)
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
-      
-      const executionData = await response.json()
-      console.log('🔍 Raw execution response:', executionData)
       
       // Extract the execution workflow data for the builder
       // The response should contain the workflow structure

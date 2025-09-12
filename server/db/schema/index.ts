@@ -16,6 +16,7 @@ export * from "@/db/schema/sharedChats"
 export * from "@/db/schema/knowledgeBase"
 export * from "@/db/schema/apiKey"
 export * from "@/db/schema/workflows"
+// export * from "@/db/schema/tools" // Commented out - conflicts with new workflow schema
 
 // Export combined types
 import type { PublicUser, SelectUser } from "@/db/schema/users"

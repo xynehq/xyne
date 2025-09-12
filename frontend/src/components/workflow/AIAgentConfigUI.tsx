@@ -5,9 +5,6 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, X, ChevronDown } from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
-import { api } from "../../api"
-import { createAuthEventSource } from "@/hooks/useChatStream"
-import { ChatSSEvents } from "shared/types"
 
 interface AIAgentConfigUIProps {
   isVisible: boolean
@@ -98,7 +95,8 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
       const fetchGeminiModels = async () => {
         setIsLoadingModels(true)
         try {
-          const response = await api.workflow.models.gemini.$get()
+          const BACKEND_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
+          const response = await fetch(`${BACKEND_BASE_URL}/api/v1/workflow/models/gemini`)
           
           if (response.ok) {
             const data = await response.json()
@@ -170,93 +168,64 @@ Please provide an enhanced version that:
 
 Return only the enhanced system prompt without any additional explanation.`
 
-      // Use EventSource for generate-prompt API call following the agent.tsx pattern
-      try {
-        // Create the URL with query parameters for EventSource
-        const url = new URL(
-          "/api/v1/agent/generate-prompt",
-          window.location.origin,
-        )
-        url.searchParams.set("requirements", requirements)
-        url.searchParams.set("modelId", agentConfig.model)
+      // Create EventSource for streaming response from Xyne's Bedrock implementation
+      const BACKEND_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
+      const url = `${BACKEND_BASE_URL}/api/v1/agent/generate-prompt?requirements=${encodeURIComponent(requirements)}&modelId=${encodeURIComponent(agentConfig.model)}`
+      
+      let enhancedPrompt = ""
+      let timeoutId: ReturnType<typeof setTimeout>
+      
+      // Create EventSource but don't connect yet
+      const eventSource = new EventSource(url, { withCredentials: true })
 
-        let eventSource: EventSource | null = null
-        let generatedPrompt = ""
+      // Set a timeout to prevent hanging
+      timeoutId = setTimeout(() => {
+        eventSource.close()
+        setIsEnhancingPrompt(false)
+      }, 30000) // 30s
 
-        // Create EventSource connection following the existing pattern
+      // Handle ResponseUpdate events (text chunks)
+      eventSource.addEventListener("u", (event) => {
+        enhancedPrompt += event.data
+      })
+
+      // Handle End events (completion)
+      eventSource.addEventListener("e", (event) => {
+        clearTimeout(timeoutId)
+        eventSource.close()
+
         try {
-          eventSource = await createAuthEventSource(url.toString())
-        } catch (err) {
-          console.error("Failed to create EventSource:", err)
-          throw new Error("Failed to create EventSource")
+          const data = JSON.parse(event.data)
+          const finalPrompt = data.fullPrompt || enhancedPrompt.trim()
+          if (finalPrompt) {
+            setAgentConfig((prev) => ({
+              ...prev,
+              systemPrompt: getFullSystemPrompt(finalPrompt),
+            }))
+          }
+        } catch (error) {
+          if (enhancedPrompt.trim()) {
+            setAgentConfig((prev) => ({
+              ...prev,
+              systemPrompt: getFullSystemPrompt(enhancedPrompt.trim()),
+            }))
+          }
         }
+        setIsEnhancingPrompt(false)
+      })
 
-        // Return a promise that resolves when the stream ends
-        await new Promise((resolve, reject) => {
-          if (!eventSource) {
-            reject(new Error("EventSource not created"))
-            return
-          }
+      // Handle Error events
+      eventSource.addEventListener("er", (event) => {
+        clearTimeout(timeoutId)
+        eventSource.close()
+        setIsEnhancingPrompt(false)
+      })
 
-          eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
-            generatedPrompt += event.data
-          })
-
-          eventSource.addEventListener(ChatSSEvents.End, (event) => {
-            try {
-              const data = JSON.parse(event.data)
-              const finalPrompt = data.fullPrompt || generatedPrompt
-              
-              if (finalPrompt.trim()) {
-                setAgentConfig((prev) => ({
-                  ...prev,
-                  systemPrompt: getFullSystemPrompt(finalPrompt.trim()),
-                }))
-                setIsEnhancingPrompt(false)
-                eventSource?.close()
-                resolve(finalPrompt)
-              } else {
-                eventSource?.close()
-                reject(new Error("No enhanced prompt received from API"))
-              }
-            } catch (parseError) {
-              console.warn("Could not parse end event data:", parseError)
-              if (generatedPrompt.trim()) {
-                setAgentConfig((prev) => ({
-                  ...prev,
-                  systemPrompt: getFullSystemPrompt(generatedPrompt.trim()),
-                }))
-                setIsEnhancingPrompt(false)
-                eventSource?.close()
-                resolve(generatedPrompt)
-              } else {
-                eventSource?.close()
-                reject(new Error("No enhanced prompt received from API"))
-              }
-            }
-          })
-
-          eventSource.addEventListener(ChatSSEvents.Error, (event) => {
-            try {
-              const data = JSON.parse(event.data)
-              eventSource?.close()
-              reject(new Error(data.error || "Error in prompt generation"))
-            } catch (parseError) {
-              eventSource?.close()
-              reject(new Error("Error in prompt generation"))
-            }
-          })
-
-          eventSource.onerror = () => {
-            eventSource?.close()
-            reject(new Error("Connection error during prompt generation"))
-          }
-        })
-        
-        // If we reach here, the prompt was successfully generated
-        return
-      } catch (error) {
-        console.error("Generate prompt API error:", error)
+      eventSource.onerror = (error) => {
+        console.error("EventSource error:", error)
+        clearTimeout(timeoutId)
+        eventSource.close()
+        setIsEnhancingPrompt(false)
 
         // Fallback enhancement
         const fallbackEnhancement = `You are a professional ${agentConfig.name.toLowerCase()} AI agent specialized in ${agentConfig.description || "data processing"}.
@@ -283,11 +252,29 @@ Always strive for excellence and helpfulness in your responses while adhering to
           ...prev,
           systemPrompt: getFullSystemPrompt(fallbackEnhancement),
         }))
-        setIsEnhancingPrompt(false)
       }
     } catch (error) {
-      console.error("Error in enhancePrompt:", error)
+      console.error("Error enhancing prompt:", error)
       setIsEnhancingPrompt(false)
+
+      // Fallback enhancement for any other errors
+      const fallbackEnhancement = `You are a professional ${agentConfig.name.toLowerCase()} AI agent. ${getDisplaySystemPrompt(agentConfig.systemPrompt)}
+
+Key responsibilities:
+- Analyze and process the provided input thoroughly
+- Maintain a professional and helpful tone
+- Provide accurate and relevant responses
+- Follow structured output formatting
+- Ensure all responses are clear and actionable
+
+Always strive for accuracy and helpfulness in your responses.`
+
+      setAgentConfig((prev) => ({
+        ...prev,
+        systemPrompt: getFullSystemPrompt(fallbackEnhancement),
+      }))
+
+      alert("Enhancement failed. A basic improvement has been applied.")
     }
   }
 

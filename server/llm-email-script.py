@@ -8,7 +8,7 @@ if analysis_data.get("status") != "success":
     error_msg = analysis_data.get("error", "Unknown error occurred")
     
     result = {
-        "to": "avirupsinha10@gmail.com",
+        "to": "yash.daga@juspay.in",
         "subject": "❌ LLM Analysis Failed",
         "body": f'''
 <!DOCTYPE html>
@@ -117,7 +117,7 @@ else:
     '''
 
     result = {
-        "to": "avirup.sinha@juspay.in",
+        "to": "yash.daga@juspay.in",
         "subject": subject,
         "body": html_body,
         "content_type": "text/html"
