@@ -285,53 +285,12 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>()
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Global CORS middleware for all routes
-app.use(
-  "*",
-  cors({
-    origin: (origin) => origin || "*",
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-api-key",
-      "Accept",
-      "Origin",
-      "X-Requested-With",
-      "Referer",
-      "User-Agent",
-      "sec-ch-ua",
-      "sec-ch-ua-mobile",
-      "sec-ch-ua-platform",
-      "Access-Control-Allow-Origin",
-    ],
-    credentials: true,
-    maxAge: 86400,
-  }),
-)
-
 const internalMetricRouter = new Hono<{ Variables: Variables }>()
 
-// Modified to allow all requests - no authentication required
-const AuthMiddleware = async (c: Context, next: Next) => {
-  const authToken =
-    getCookie(c, AccessTokenCookieName) ||
-    c.req.header("Authorization")?.replace("Bearer ", "")
-
-  if (!authToken) {
-    throw new HTTPException(401, { message: "No auth token provided" })
-  }
-
-  try {
-    const payload = await verify(authToken, accessTokenSecret)
-    Logger.info(`JWT payload: ${JSON.stringify(payload)}`)
-    c.set(JwtPayloadKey, payload)
-    await next()
-  } catch (err) {
-    Logger.error(`JWT verification failed: ${err}`)
-    throw new HTTPException(401, { message: "Invalid or expired token" })
-  }
-}
+const AuthMiddleware = jwt({
+  secret: accessTokenSecret,
+  cookie: AccessTokenCookieName,
+})
 
 // Middleware to check if user has admin or superAdmin role
 const AdminRoleMiddleware = async (c: Context, next: Next) => {

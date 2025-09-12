@@ -1,4 +1,5 @@
 import { Flow, TemplateFlow } from "../Types"
+import { api } from "../../../api"
 
 // API request/response types for workflow templates
 
@@ -110,116 +111,27 @@ interface WorkflowExecutionsResponse {
   }
 }
 
-// Centralized backend URL configuration from environment
-const BACKEND_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
-
-// Base URL for workflow service
-const WORKFLOW_BASE_URL = `${BACKEND_BASE_URL}/v1`
-
-// Base URL for workflow templates
-const WORKFLOW_TEMPLATES_BASE_URL = `${BACKEND_BASE_URL}/api/v1`
-
-// Base URL for user service
-const USER_SERVICE_BASE_URL = BACKEND_BASE_URL
-
-// Base URL for workflow execution
-const WORKFLOW_EXECUTION_BASE_URL = `${BACKEND_BASE_URL}/api/v1`
-
-async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
-  try {
-    const token = localStorage.getItem("authToken")
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "Access-Control-Allow-Origin": "*",
-        ...(token && { Authorization: `Bearer ${token}` }),
-        ...options?.headers,
-      },
-      mode: "cors",
-    })
-
-    const responseData = await response.json()
-
-    if (!response.ok) {
-      throw new Error(
-        responseData.message ||
-          `HTTP ${response.status}: ${response.statusText}`,
-      )
-    }
-
-    // Preserve full response structure while extracting from success wrapper
-    // If API returns: { success: true, data: {...}, pagination: {...}, filters: {...} }
-    // Extract everything except the success flag
-    let extractedData
-    if (responseData.success) {
-      // Remove the success flag and return the rest of the response
-      const { success, ...rest } = responseData
-      extractedData = rest
-    } else {
-      extractedData = responseData
-    }
-
-    return extractedData
-  } catch (error) {
-    throw new Error(error instanceof Error ? error.message : "Network error")
+// Helper function to extract data from Hono client response
+async function extractResponseData<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: "Network error" }))
+    throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
   }
-}
 
-// FormData API request handler for file uploads
-async function apiFormRequest<T>(url: string, formData: FormData): Promise<T> {
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        // Don't set Content-Type for FormData - browser will set it with boundary
-      },
-      mode: "cors",
-      body: formData,
-    })
-
-    // Check if response is JSON before parsing
-    const contentType = response.headers.get("content-type")
-    let responseData: any
-
-    if (contentType && contentType.includes("application/json")) {
-      try {
-        responseData = await response.json()
-      } catch (jsonError) {
-        // If JSON parsing fails, get text content for better error message
-        const textContent = await response.text()
-        throw new Error(`Invalid JSON response: ${textContent.substring(0, 200)}...`)
-      }
-    } else {
-      // If not JSON, get text content (likely HTML error page)
-      const textContent = await response.text()
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status} ${response.statusText}. Response: ${textContent.substring(0, 200)}...`)
-      }
-      // Try to parse as JSON anyway in case content-type header is missing
-      try {
-        responseData = JSON.parse(textContent)
-      } catch {
-        throw new Error(`Non-JSON response: ${textContent.substring(0, 200)}...`)
-      }
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        responseData?.message ||
-          `HTTP ${response.status}: ${response.statusText}`,
-      )
-    }
-
-    // Return the complete response data
-    return responseData
-  } catch (error) {
-    throw new Error(error instanceof Error ? error.message : "Network error")
+  const responseData = await response.json()
+  
+  // Extract data from success wrapper if present
+  if (responseData.success && responseData.data !== undefined) {
+    return responseData.data as T
   }
+  
+  // If no success wrapper, return the response with success flag removed
+  if (responseData.success !== undefined) {
+    const { success, ...rest } = responseData
+    return rest as T
+  }
+  
+  return responseData as T
 }
 
 // Workflow Templates API
@@ -228,9 +140,8 @@ export const workflowTemplatesAPI = {
    * Fetch a specific workflow template by ID
    */
   async fetchById(id: string): Promise<TemplateFlow> {
-    return apiRequest<TemplateFlow>(
-      `${WORKFLOW_BASE_URL}/workflow-template/${id}`,
-    )
+    const response = await api.workflow.templates[id].$get()
+    return extractResponseData<TemplateFlow>(response)
   },
 
   /**
@@ -240,13 +151,10 @@ export const workflowTemplatesAPI = {
     id: string,
     options: { name: string; metadata?: any },
   ): Promise<{ workflowId: string; rootStepId: string }> {
-    return apiRequest<{ workflowId: string; rootStepId: string }>(
-      `${WORKFLOW_BASE_URL}/workflow-template/${id}/instantiate`,
-      {
-        method: "POST",
-        body: JSON.stringify(options),
-      },
-    )
+    const response = await api.workflow.templates[id].execute.$post({
+      json: options,
+    })
+    return extractResponseData<{ workflowId: string; rootStepId: string }>(response)
   },
 }
 
@@ -256,28 +164,24 @@ export const workflowsAPI = {
    * Fetch a specific workflow by ID
    */
   async fetchById(id: string): Promise<Flow> {
-    return apiRequest<Flow>(`${WORKFLOW_BASE_URL}/workflow/${id}`)
+    const response = await api.workflow.executions[id].$get()
+    return extractResponseData<Flow>(response)
   },
 
   /**
    * Run a workflow
    */
   async run(id: string): Promise<any> {
-    return apiRequest<any>(`${WORKFLOW_BASE_URL}/workflow/${id}/run`, {
-      method: "POST",
-    })
+    const response = await api.workflow.executions[id].$post({ json: {} })
+    return extractResponseData<any>(response)
   },
 
   /**
    * Complete a workflow step
    */
   async completeStep(stepId: string): Promise<any> {
-    return apiRequest<any>(
-      `${WORKFLOW_BASE_URL}/workflow/step/${stepId}/complete`,
-      {
-        method: "POST",
-      },
-    )
+    const response = await api.workflow.steps[stepId].complete.$post()
+    return extractResponseData<any>(response)
   },
 }
 
@@ -287,18 +191,35 @@ export const userWorkflowsAPI = {
    * Fetch workflow templates
    */
   async fetchWorkflows(): Promise<WorkflowTemplateResponse> {
-    return apiRequest<WorkflowTemplateResponse>(
-      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/templates`,
-    )
+    const response = await api.workflow.templates.$get()
+    const data = await extractResponseData<WorkflowTemplate[]>(response)
+    return { data }
   },
 
   /**
    * Fetch a specific workflow template by ID
    */
   async fetchTemplateById(templateId: string): Promise<WorkflowTemplate> {
-    return apiRequest<WorkflowTemplate>(
-      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/templates/${templateId}`,
-    )
+    const response = await api.workflow.templates[templateId].$get()
+    return extractResponseData<WorkflowTemplate>(response)
+  },
+
+  /**
+   * Create a complex workflow template from workflow builder
+   */
+  async createComplexTemplate(workflowData: {
+    name: string
+    description: string
+    version?: string
+    config?: any
+    nodes: any[]
+    edges: any[]
+    metadata?: any
+  }): Promise<WorkflowTemplate> {
+    const response = await api.workflow.templates.complex.$post({
+      json: workflowData,
+    })
+    return extractResponseData<WorkflowTemplate>(response)
   },
 }
 
@@ -308,9 +229,9 @@ export const templatesAPI = {
    * Fetch all templates
    */
   async fetchAll(): Promise<ApiTemplate[]> {
-    return apiRequest<ApiTemplate[]>(
-      `${USER_SERVICE_BASE_URL}/template/fetch/all`,
-    )
+    // Use the workflow templates endpoint via Hono client
+    const response = await api.workflow.templates.$get()
+    return extractResponseData<ApiTemplate[]>(response)
   },
 }
 
@@ -328,26 +249,32 @@ export const workflowExecutionsAPI = {
     name?: string
     id?: string
   }): Promise<WorkflowExecutionsResponse> {
-    // Build query string from parameters
-    const queryParams = new URLSearchParams()
-    queryParams.append("limit", params.limit.toString())
-    queryParams.append("page", params.page.toString())
-
-    if (params.from_date) {
-      queryParams.append("from_date", params.from_date)
-    }
-    if (params.to_date) {
-      queryParams.append("to_date", params.to_date)
-    }
-    if (params.name) {
-      queryParams.append("name", params.name)
-    }
-    if (params.id) {
-      queryParams.append("id", params.id)
+    const query: Record<string, string> = {
+      limit: params.limit.toString(),
+      page: params.page.toString(),
     }
 
-    const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions?${queryParams.toString()}`
-    return apiRequest<WorkflowExecutionsResponse>(url)
+    if (params.from_date) query.from_date = params.from_date
+    if (params.to_date) query.to_date = params.to_date
+    if (params.name) query.name = params.name
+    if (params.id) query.id = params.id
+
+    const response = await api.workflow.executions.$get({ query })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: "Network error" }))
+      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const responseData = await response.json()
+    
+    // For workflow executions, we need to return the complete response structure 
+    // (success, data, pagination, filters) as the frontend expects these properties
+    if (responseData.success !== undefined) {
+      return responseData as WorkflowExecutionsResponse
+    }
+    
+    return responseData as WorkflowExecutionsResponse
   },
 
   /**
@@ -357,19 +284,19 @@ export const workflowExecutionsAPI = {
     success: boolean
     status: "draft" | "active" | "paused" | "completed" | "failed"
   }> {
-    const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions/${executionId}/status`
-    return apiRequest<{
+    const response = await api.workflow.executions[executionId].status.$get()
+    return extractResponseData<{
       success: boolean
       status: "draft" | "active" | "paused" | "completed" | "failed"
-    }>(url)
+    }>(response)
   },
 
   /**
    * Fetch full workflow execution details by execution ID
    */
   async fetchById(executionId: string): Promise<any> {
-    const url = `${WORKFLOW_EXECUTION_BASE_URL}/workflow/executions/${executionId}`
-    return apiRequest<any>(url)
+    const response = await api.workflow.executions[executionId].$get()
+    return extractResponseData<any>(response)
   },
 
   /**
@@ -393,19 +320,71 @@ export const workflowExecutionsAPI = {
     // Add the uploaded file if provided
     if (executionData.file) {
       formData.append("document_file", executionData.file)
+      console.log("✅ File appended to FormData as 'document_file'")
+    } else {
+      console.warn("⚠️ No file provided in executionData")
     }
 
     // Add additional form data fields (excluding name and description to avoid duplicates)
     Object.entries(executionData.formData).forEach(([key, value]) => {
       if (key !== "name" && key !== "description") {
-        formData.append(key, String(value))
+        if (value instanceof File) {
+          // If it's a file in formData, also append it as document_file
+          formData.append("document_file", value)
+          console.log(`✅ File from formData[${key}] appended as 'document_file'`)
+        } else {
+          formData.append(key, String(value))
+        }
       }
     })
 
-    return apiFormRequest<any>(
-      `${WORKFLOW_EXECUTION_BASE_URL}/workflow/templates/${templateId}/execute-with-input`,
-      formData,
+    // Additional fallback: If no file has been added yet, check if we need to add the main file as document_file
+    let hasDocumentFile = false
+    for (const [key] of formData.entries()) {
+      if (key === "document_file") {
+        hasDocumentFile = true
+        break
+      }
+    }
+
+    if (!hasDocumentFile && executionData.file) {
+      formData.append("document_file", executionData.file)
+      console.log("✅ Added main file as document_file (fallback)")
+    }
+
+    if (!hasDocumentFile && !executionData.file) {
+      console.error("❌ No file found to append as document_file!")
+    }
+
+    // Use direct fetch for file uploads as Hono client may not handle FormData correctly
+    const response = await fetch(
+      `/api/v1/workflow/templates/${templateId}/execute-with-input`,
+      {
+        method: "POST",
+        body: formData,
+        credentials: "include", // This ensures cookies are sent for authentication
+      }
     )
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: "Network error" }))
+      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const responseData = await response.json()
+    
+    // Extract data from success wrapper if present
+    if (responseData.success && responseData.data !== undefined) {
+      return responseData.data
+    }
+    
+    // If no success wrapper, return the response with success flag removed
+    if (responseData.success !== undefined) {
+      const { success, ...rest } = responseData
+      return rest
+    }
+    
+    return responseData
   },
 }
 
@@ -422,13 +401,10 @@ export const workflowToolsAPI = {
       config: any
     },
   ): Promise<any> {
-    return apiRequest<any>(
-      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/tools/${toolId}`,
-      {
-        method: "PUT",
-        body: JSON.stringify(toolData),
-      },
-    )
+    const response = await api.workflow.tools[toolId].$put({
+      json: toolData,
+    })
+    return extractResponseData<any>(response)
   },
 
   /**
@@ -439,10 +415,10 @@ export const workflowToolsAPI = {
     value: any
     config: any
   }): Promise<any> {
-    return apiRequest<any>(`${WORKFLOW_TEMPLATES_BASE_URL}/workflow/tools`, {
-      method: "POST",
-      body: JSON.stringify(toolData),
+    const response = await api.workflow.tools.$post({
+      json: toolData,
     })
+    return extractResponseData<any>(response)
   },
 }
 
@@ -469,13 +445,10 @@ export const workflowStepsAPI = {
       metadata?: any
     },
   ): Promise<any> {
-    return apiRequest<any>(
-      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/templates/${templateId}/steps`,
-      {
-        method: "POST",
-        body: JSON.stringify(stepData),
-      },
-    )
+    const response = await api.workflow.templates[templateId].steps.$post({
+      json: stepData,
+    })
+    return extractResponseData<any>(response)
   },
 
   /**
@@ -495,25 +468,18 @@ export const workflowStepsAPI = {
       metadata?: any
     },
   ): Promise<any> {
-    return apiRequest<any>(
-      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/steps/${stepId}`,
-      {
-        method: "PUT",
-        body: JSON.stringify(stepData),
-      },
-    )
+    const response = await api.workflow.steps[stepId].$put({
+      json: stepData,
+    })
+    return extractResponseData<any>(response)
   },
 
   /**
    * Link a step to another step (add to nextStepIds)
    */
-  async linkSteps(sourceStepId: string, targetStepId: string): Promise<any> {
-    return apiRequest<any>(
-      `${WORKFLOW_TEMPLATES_BASE_URL}/workflow/steps/${sourceStepId}/link`,
-      {
-        method: "POST",
-        body: JSON.stringify({ targetStepId }),
-      },
-    )
+  async linkSteps(_sourceStepId: string, _targetStepId: string): Promise<any> {
+    // Note: This specific endpoint doesn't exist in current routes
+    // You may need to use updateStep to modify nextStepIds instead
+    throw new Error("linkSteps endpoint not available in current API. Use updateStep to modify nextStepIds.")
   },
 }
