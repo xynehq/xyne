@@ -12,6 +12,7 @@ export interface ClientInfo {
   clientId: string
   clientSecret?: string
   isPublic: boolean
+  priority?: number
 }
 
 export class KeycloakClientResolver {
@@ -43,7 +44,8 @@ export class KeycloakClientResolver {
       return {
         clientId: selectedClient.clientId,
         clientSecret: selectedClient.clientSecret,
-        isPublic: selectedClient.type === 'public'
+        isPublic: selectedClient.type === 'public',
+        priority: selectedClient.priority || 50
       }
     } catch (error) {
       Logger.error(`Error selecting client for ${flowType}:`, error)
@@ -63,7 +65,8 @@ export class KeycloakClientResolver {
       return {
         clientId: this.config.clientId,
         clientSecret: this.config.clientSecret,
-        isPublic: !this.config.clientSecret
+        isPublic: !this.config.clientSecret,
+        priority: 20
       }
     }
 
@@ -132,7 +135,8 @@ export class KeycloakClientResolver {
         return {
           clientId: this.config.builtInClientPreferences.confidential,
           clientSecret: undefined, // Built-in clients don't need secrets
-          isPublic: false
+          isPublic: false,
+          priority: 10
         }
       
       case 'authorization-code':
@@ -140,7 +144,8 @@ export class KeycloakClientResolver {
         return {
           clientId: this.config.builtInClientPreferences.public,
           clientSecret: undefined,
-          isPublic: true
+          isPublic: true,
+          priority: 10
         }
       
       case 'token-refresh':
@@ -148,7 +153,8 @@ export class KeycloakClientResolver {
         return {
           clientId: this.config.builtInClientPreferences.confidential,
           clientSecret: undefined,
-          isPublic: false
+          isPublic: false,
+          priority: 10
         }
       
       default:
@@ -156,7 +162,8 @@ export class KeycloakClientResolver {
         return {
           clientId: 'admin-cli',
           clientSecret: undefined,
-          isPublic: false
+          isPublic: false,
+          priority: 5
         }
     }
   }

@@ -14,6 +14,7 @@ export type AuthFlow =
   | 'password-grant' 
   | 'client-credentials'
   | 'refresh-token'
+  | 'token-refresh'
   | 'token-exchange'
   | 'admin-api'
 

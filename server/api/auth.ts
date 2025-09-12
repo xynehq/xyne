@@ -10,6 +10,7 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
 const { JwtPayloadKey, agentWhiteList } = config
+const Logger = getLogger(Subsystem.Server)
 
 export const GetUserWorkspaceInfo = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)

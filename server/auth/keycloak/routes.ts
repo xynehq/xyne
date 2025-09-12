@@ -66,7 +66,7 @@ app.get("/config", async (c) => {
       loginUrl: `${config.baseUrl}/realms/${config.defaultRealm}/protocol/openid-connect/auth`,
       // Don't expose sensitive config like clientSecret
       // Add info about whether we're using a fallback client
-      usingFallback: client.priority <= 10, // Built-in clients have priority 10 or less
+      usingFallback: (client.priority || 50) <= 10, // Built-in clients have priority 10 or less
       clientType: client.isPublic ? 'public' : 'confidential',
       // Industry-level information
       strategy: config.clientSelectionStrategy,
