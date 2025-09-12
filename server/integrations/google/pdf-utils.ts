@@ -1,6 +1,6 @@
 import { DeleteDocumentError } from "@/errors"
 import { getLogger } from "@/logger"
-import { Apps, DriveEntity } from "@/search/types"
+import { Apps, DriveEntity } from "@xyne/vespa-ts/types"
 import { Subsystem } from "@/types"
 import type { drive_v3 } from "googleapis"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })

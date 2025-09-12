@@ -4,7 +4,7 @@ import { useState } from "react"
 import { ConfirmModal } from "@/components/ui/confirmModal"
 import { api } from "@/api"
 import { useToast } from "@/hooks/use-toast"
-import { datasourceSchema } from "../../../server/search/types"
+import { datasourceSchema } from "shared/types"
 
 interface AssociatedAgent {
   name: string

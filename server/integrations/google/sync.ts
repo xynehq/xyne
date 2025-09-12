@@ -58,7 +58,7 @@ import {
   type VespaEvent,
   type VespaFile,
   type VespaMail,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   eventFields,
   getAttachments,
@@ -73,7 +73,7 @@ import {
   loggerWithChild,
 } from "@/integrations/google"
 import { parseMail } from "./gmail"
-import { type VespaFileWithDrivePermission } from "@/search/types"
+import { type VespaFileWithDrivePermission } from "@xyne/vespa-ts/types"
 import { GaxiosError } from "gaxios"
 import { skipMailExistCheck } from "./config"
 

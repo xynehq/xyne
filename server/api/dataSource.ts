@@ -6,7 +6,6 @@ import path, { join } from "node:path"
 import {
   insertDataSource,
   getDataSourceByNameAndCreator,
-  NAMESPACE,
   fetchAllDataSourceFilesByName,
   getDataSourcesByCreator,
   GetDocument,
@@ -19,7 +18,7 @@ import {
   type VespaDataSourceFile,
   datasourceSchema,
   dataSourceFileSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { type SelectUser } from "@/db/schema"
@@ -28,7 +27,7 @@ import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { UserRole } from "@/shared/types"
 import { DeleteDocument } from "@/search/vespa"
-import type { VespaSchema } from "@/search/types"
+import type { VespaSchema } from "@xyne/vespa-ts/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
 import {
@@ -389,9 +388,7 @@ export const DeleteDocumentApi = async (c: Context) => {
     return c.json({ success: true })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errorMessage = error.errors
-        .map((err) => `${err.path.join(".")}: ${err.message}`)
-        .join(", ")
+      const errorMessage = JSON.stringify(error)
       loggerWithChild().warn(
         `Validation error in DeleteDocumentApi: ${errorMessage}`,
       )

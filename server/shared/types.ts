@@ -1,26 +1,33 @@
 import {
-  entitySchema,
   VespaFileSchema,
   VespaUserSchema,
   Apps,
   mailSchema,
   userSchema,
   fileSchema,
-  MailResponseSchema,
   eventSchema,
   VespaEventSchema,
   userQuerySchema,
-  MailAttachmentResponseSchema,
   mailAttachmentSchema,
-  scoredChunk,
   chatUserSchema,
-  ChatMessageResponseSchema,
   dataSourceFileSchema,
   chatContainerSchema,
   VespaChatContainerSchema,
   KbItemsSchema,
   VespaKbFileSchemaBase,
-} from "search/types"
+  DriveEntity,
+  MailEntity,
+  MailAttachmentEntity,
+  CalendarEntity,
+  SystemEntity,
+  DataSourceEntity,
+  WebSearchEntity,
+  KnowledgeBaseEntity,
+  NotionEntity,
+  GooglePeopleEntity,
+  SlackEntity,
+  MicrosoftPeopleEntity,
+} from "@xyne/vespa-ts/types"
 export {
   GooglePeopleEntity,
   DriveEntity,
@@ -35,8 +42,44 @@ export {
   DataSourceEntity,
   WebSearchEntity,
   KnowledgeBaseEntity,
-} from "search/types"
-export type { Entity, VespaDataSourceFile, VespaGetResult } from "search/types"
+  datasourceSchema,
+} from "@xyne/vespa-ts/types"
+export type {
+  Entity,
+  VespaDataSourceFile,
+  VespaGetResult,
+  FileResponse,
+  SearchResultsSchema,
+  SearchResponse,
+  SearchResultDiscriminatedUnion,
+} from "@xyne/vespa-ts/types"
+
+export const FileEntitySchema = z.nativeEnum(DriveEntity)
+export const MailEntitySchema = z.nativeEnum(MailEntity)
+export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
+export const EventEntitySchema = z.nativeEnum(CalendarEntity)
+export const SystemEntitySchema = z.nativeEnum(SystemEntity)
+export const DataSourceEntitySchema = z.nativeEnum(DataSourceEntity)
+export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
+export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
+const NotionEntitySchema = z.nativeEnum(NotionEntity)
+export const PeopleEntitySchema = z.nativeEnum(GooglePeopleEntity)
+export const ChatEntitySchema = z.nativeEnum(SlackEntity)
+export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
+export const entitySchema = z.union([
+  SystemEntitySchema,
+  PeopleEntitySchema,
+  MicrosoftPeopleEntitySchema,
+  FileEntitySchema,
+  NotionEntitySchema,
+  MailEntitySchema,
+  EventEntitySchema,
+  MailAttachmentEntitySchema,
+  ChatEntitySchema,
+  DataSourceEntitySchema,
+  WebSearchEntitySchema,
+  KnowledgeBaseEntitySchema,
+])
 
 // Define an enum for connection types - MOVED HERE FROM server/types.ts
 export enum ConnectorType {
@@ -285,6 +328,11 @@ export type UserQueryHAutocomplete = z.infer<
 export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
 // search result
+export const scoredChunk = z.object({
+  chunk: z.string(),
+  score: z.number(),
+  index: z.number(),
+})
 
 export const FileResponseSchema = VespaFileSchema.pick({
   docId: true,
@@ -412,32 +460,6 @@ export const ChatContainerResponseSchema = VespaChatContainerSchema.pick({
     rankfeatures: z.any().optional(),
   })
   .strip()
-
-// Search Response Schema
-export const SearchResultsSchema = z.discriminatedUnion("type", [
-  UserResponseSchema,
-  FileResponseSchema,
-  DataSourceFileResponseSchema,
-  MailResponseSchema,
-  EventResponseSchema,
-  MailAttachmentResponseSchema,
-  ChatMessageResponseSchema,
-  ChatContainerResponseSchema,
-  KbFileResponseSchema,
-])
-
-export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
-
-export const SearchResponseSchema = z.object({
-  count: z.number(),
-  results: z.array(SearchResultsSchema),
-  groupCount: z.any(),
-  trace: z.any().optional(),
-})
-
-export type FileResponse = z.infer<typeof FileResponseSchema>
-
-export type SearchResponse = z.infer<typeof SearchResponseSchema>
 
 export const AnswerResponseSchema = z.object({})
 
@@ -675,6 +697,7 @@ export const agentPromptPayloadSchema = z.preprocess(
       isRagOn: z.boolean().optional(),
       appIntegrations: z
         .record(
+          z.string(),
           z.object({
             itemIds: z.array(z.string()),
             selectedAll: z.boolean(),
