@@ -399,7 +399,7 @@ const HistoryModal = ({
 
   const renderChatList = (list: SelectPublicChat[]) => {
     return (
-      <ul>
+      <ul className="space-y-[4px]">
         {list.map((item, index) => (
           <li
             key={index}
@@ -407,7 +407,7 @@ const HistoryModal = ({
               item.externalId === existingChatId
                 ? "bg-[#EBEFF2] dark:bg-slate-700"
                 : ""
-            } hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+            } ${item.externalId === existingChatId ? "" : "hover:bg-[#EBEFF2] dark:hover:bg-slate-500"} rounded-md py-2 mx-2 mb-1`}
           >
             {isEditing && editedChatId === item.externalId ? (
               <input
