@@ -14,29 +14,23 @@ import {
   UpdateDocument,
   DeleteDocument,
   updateUserQueryHistory,
-  SearchModes,
   searchVespaAgent,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import {
-  userQuerySchema,
   userSchema,
   APP_INTEGRATION_MAPPING,
   type VespaSearchResponse,
   type VespaUser,
-  type VespaSchema,
-  type VespaDataSource,
-  datasourceSchema,
-  dataSourceFileSchema,
-  type VespaDataSourceFile,
   SlackEntity,
-} from "@/search/types"
+  SearchModes,
+} from "@xyne/vespa-ts/types"
 import {
   VespaAutocompleteResponseToResult,
   VespaSearchResponseToSearchResult,
-} from "@/search/mappers"
+} from "@xyne/vespa-ts/mappers"
 import {
   analyzeQueryForNamesAndEmails,
   analyzeQueryMetadata,
@@ -49,8 +43,8 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
-import { VespaSearchResultsSchema } from "@/search/types"
-import { agentPromptPayloadSchema, AnswerSSEvents } from "@/shared/types"
+import { AnswerSSEvents, AuthType, ConnectorStatus } from "@/shared/types"
+import { agentPromptPayloadSchema } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
@@ -67,6 +61,13 @@ import {
 import { getAgentByExternalId } from "@/db/agent"
 import { getWorkspaceByExternalId } from "@/db/workspace"
 import { Apps } from "@/shared/types"
+import type {
+  VespaSearchResult,
+  VespaSearchResults,
+  VespaSearchResultsSchema,
+} from "@xyne/vespa-ts/types"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
+import { chunkDocument } from "@/chunks"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -397,7 +398,13 @@ export const SearchApi = async (c: Context) => {
           },
         )
         try {
-          const newResults = VespaSearchResponseToSearchResult(results)
+          const newResults = VespaSearchResponseToSearchResult(
+            results,
+            {
+              chunkDocument: chunkDocument,
+            },
+            email,
+          )
           newResults.groupCount = {} // Agent search currently doesn't provide group counts
           return c.json(newResults)
         } catch (e) {
@@ -420,8 +427,30 @@ export const SearchApi = async (c: Context) => {
     `Performing global search for query: "${decodedQuery}", user: ${email}, app: ${app}, entity: ${entity}`,
   )
   if (gc) {
+    let isSlackConnected = false
+    try {
+      const connector = await getConnectorByAppAndEmailId(
+        db,
+        Apps.Slack,
+        AuthType.OAuth,
+        email,
+      )
+      isSlackConnected =
+        connector && connector.status === ConnectorStatus.Connected
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        error,
+        "Error fetching Slack connector",
+      )
+    }
     const tasks: Array<any> = [
-      groupVespaSearch(decodedQuery, email, config.page, timestampRange),
+      groupVespaSearch(
+        decodedQuery,
+        email,
+        config.page,
+        isSlackConnected,
+        timestampRange,
+      ),
       searchVespa(decodedQuery, email, app, entity, {
         alpha: userAlpha,
         limit: page,
@@ -448,7 +477,11 @@ export const SearchApi = async (c: Context) => {
 
   // TODO: deduplicate for google admin and contacts
 
-  const newResults = VespaSearchResponseToSearchResult(results, email)
+  const newResults = VespaSearchResponseToSearchResult(
+    results,
+    { chunkDocument: chunkDocument },
+    email,
+  )
   newResults.groupCount = groupCount
   return c.json(newResults)
 }
@@ -466,7 +499,9 @@ export const SearchSlackChannels = async (c: Context) => {
     SlackEntity.Channel,
     {},
   )
-  const newResults = VespaSearchResponseToSearchResult(results)
+  const newResults = VespaSearchResponseToSearchResult(results, {
+    chunkDocument: chunkDocument,
+  })
   return c.json(newResults)
 }
 
@@ -505,9 +540,7 @@ export const AnswerApi = async (c: Context) => {
   }
   const initialContext = cleanContext(
     results.root.children
-      .map((v) =>
-        answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>),
-      )
+      .map((v) => answerContextMap(v as VespaSearchResults))
       .join("\n"),
   )
 
@@ -522,7 +555,7 @@ export const AnswerApi = async (c: Context) => {
     useMetadata = true
   }
 
-  let users: z.infer<typeof VespaSearchResultsSchema>[] = []
+  let users: VespaSearchResult[] = []
   if (result.category === QueryCategory.Self) {
     // here too I can talk about myself and others
     // eg: when did I send xyz person their offer letter
@@ -533,7 +566,7 @@ export const AnswerApi = async (c: Context) => {
         mentionedEmails,
         mentionedNames.length + 1 || mentionedEmails.length + 1 || 2,
       )
-    ).root.children as z.infer<typeof VespaSearchResultsSchema>[]
+    ).root.children
   } else if (
     result.category === QueryCategory.InternalPerson ||
     result.category === QueryCategory.ExternalPerson
@@ -545,24 +578,20 @@ export const AnswerApi = async (c: Context) => {
         mentionedEmails,
         mentionedNames.length + 1 || mentionedEmails.length + 1 || 2,
       )
-    ).root.children as z.infer<typeof VespaSearchResultsSchema>[]
+    ).root.children
   }
 
   let existingUserIds = new Set<string>()
   if (users.length) {
     existingUserIds = new Set(
       results.root.children
-        .filter(
-          (v): v is z.infer<typeof VespaSearchResultsSchema> =>
-            (v.fields as VespaUser).sddocname === userSchema,
-        )
-        .map((v) => v.fields.docId),
+        .filter((v) => (v.fields as VespaUser).sddocname === userSchema)
+        .map((v: any) => v.fields.docId),
     )
   }
 
   const newUsers = users.filter(
-    (user: z.infer<typeof VespaSearchResultsSchema>) =>
-      !existingUserIds.has(user.fields.docId),
+    (user: any) => !existingUserIds.has(user.fields.docId),
   )
   if (newUsers.length) {
     newUsers.forEach((user) => {
@@ -572,9 +601,7 @@ export const AnswerApi = async (c: Context) => {
   const metadataContext = results.root.children
     .map((v, i) =>
       cleanContext(
-        `Index ${i} \n ${answerMetadataContextMap(
-          v as z.infer<typeof VespaSearchResultsSchema>,
-        )}`,
+        `Index ${i} \n ${answerMetadataContextMap(v as VespaSearchResults)}`,
       ),
     )
     .join("\n\n")
@@ -593,9 +620,7 @@ export const AnswerApi = async (c: Context) => {
   const finalContext = cleanContext(
     results.root.children
       .filter((v, i) => output?.contextualChunks.includes(i))
-      .map((v) =>
-        answerContextMap(v as z.infer<typeof VespaSearchResultsSchema>),
-      )
+      .map((v) => answerContextMap(v as VespaSearchResults))
       .join("\n"),
   )
 

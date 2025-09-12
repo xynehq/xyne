@@ -30,11 +30,16 @@ show_help() {
     echo "  db-generate        Generate new database migrations (run after schema changes)"
     echo "  db-migrate         Apply pending database migrations"
     echo "  db-studio          Open Drizzle Studio for database management"
+    echo "  revert <tag>       Revert app to a specific Docker image tag without rebuilding"
     echo "  help               Show this help message"
     echo ""
     echo "Options:"
     echo "  --force-gpu        Force GPU mode even if GPU not detected"
     echo "  --force-cpu        Force CPU-only mode even if GPU detected"
+    echo ""
+    echo "Environment Variables:"
+    echo "  XYNE_DATA_DIR      Data directory path (default: ./data)"
+    echo "                     Example: XYNE_DATA_DIR=../xyne-data ./deploy.sh start"
     echo ""
     echo "Examples:"
     echo "  $0 start           # Start all services (auto-detect GPU/CPU)"
@@ -43,6 +48,8 @@ show_help() {
     echo "  $0 logs app        # Show app logs"
     echo "  $0 db-generate     # Generate migrations after schema changes"
     echo "  $0 db-migrate      # Apply pending migrations"
+    echo "  $0 revert v1.2.3   # Revert app to Docker image tag v1.2.3"
+    echo "  XYNE_DATA_DIR=../xyne-data $0 start  # Use existing data directory"
 }
 
 detect_gpu_support() {
@@ -117,21 +124,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Initialize data directory from environment or use default
+DATA_DIR="${XYNE_DATA_DIR:-./data}"
+
 setup_environment() {
     echo -e "${YELLOW} Setting up environment...${NC}"
     
     # Create necessary directories with proper permissions
     echo " Creating data directories..."
-    mkdir -p ./data/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data}
+    mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,app-downloads,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data}
     
     # Create Vespa tmp directory
-    mkdir -p ./data/vespa-data/tmp
+    mkdir -p "$DATA_DIR"/vespa-data/tmp
     
     # Set proper permissions for services
     echo " Setting up permissions..."
-    chmod -f 755 ./data 2>/dev/null || true
-    chmod -f 755 ./data/* 2>/dev/null || true
-    chmod -f 755 ./data/vespa-data/tmp 2>/dev/null || true
+    chmod -f 755 "$DATA_DIR" 2>/dev/null || true
+    chmod -f 755 "$DATA_DIR"/* 2>/dev/null || true
+    chmod -f 755 "$DATA_DIR"/vespa-data/tmp 2>/dev/null || true
     
     # Copy .env.example to .env if .env doesn't exist
     if [ ! -f .env ] && [ -f .env.example ]; then
@@ -175,19 +185,20 @@ setup_permissions() {
     USER_GID="1000"
     
     # Use busybox containers to set permissions without requiring sudo
-    docker run --rm -v "$(pwd)/data/postgres-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/vespa-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-uploads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-logs:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-assets:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/app-migrations:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/grafana-storage:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/ollama-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/postgres-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/vespa-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-uploads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-logs:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-assets:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-migrations:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/app-downloads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/grafana-storage:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/ollama-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     
     # Initialize prometheus and loki directories with correct permissions
-    docker run --rm -v "$(pwd)/data/prometheus-data:/data" busybox sh -c 'mkdir -p /data && chown -R 65534:65534 /data' 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/loki-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
-    docker run --rm -v "$(pwd)/data/promtail-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/prometheus-data:/data" busybox sh -c 'mkdir -p /data && chown -R 65534:65534 /data' 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/loki-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/promtail-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
     
     echo -e "${GREEN} Permissions configured${NC}"
 }
@@ -208,10 +219,14 @@ start_infrastructure() {
 }
 
 start_app() {
-    echo -e "${YELLOW} Starting application service...${NC}"
+    echo -e "${YELLOW} Starting application services...${NC}"
     INFRA_COMPOSE=$(get_infrastructure_compose)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d app
-    echo -e "${GREEN} Application service started${NC}"
+    echo -e "${GREEN} Main application service started${NC}"
+    
+    echo -e "${YELLOW} Starting sync server...${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d app-sync
+    echo -e "${GREEN} Sync server started${NC}"
 }
 
 get_infrastructure_compose() {
@@ -230,18 +245,21 @@ stop_all() {
 }
 
 update_app() {
-    echo -e "${YELLOW} Updating application service only...${NC}"
+    echo -e "${YELLOW} Updating application services only...${NC}"
     
     # Build new image
     echo "  Building new app image..."
     INFRA_COMPOSE=$(get_infrastructure_compose)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml build app
     
-    # Stop and recreate only the app service
-    echo " Recreating app service..."
+    # Stop and recreate both app services
+    echo " Recreating main app service..."
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app
     
-    echo -e "${GREEN} Application updated successfully${NC}"
+    echo " Recreating sync server..."
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app-sync
+    
+    echo -e "${GREEN} Application services updated successfully${NC}"
     echo -e "${BLUE}  Database and Vespa services were not affected${NC}"
 }
 
@@ -272,6 +290,7 @@ show_status() {
     echo ""
     echo -e "${YELLOW} Access URLs:${NC}"
     echo "  • Xyne Application: http://localhost:3000"
+    echo "  • Xyne Sync Server: http://localhost:3010"
     echo "  • Grafana: http://localhost:3002"
     echo "  • Prometheus: http://localhost:9090"
     echo "  • Loki: http://localhost:3100"
@@ -294,10 +313,10 @@ cleanup() {
 db_generate() {
     echo -e "${YELLOW}  Generating database migrations...${NC}"
     
-    # Check if app is running
+    # Check if main app is running
     INFRA_COMPOSE=$(get_infrastructure_compose)
     if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
-        echo -e "${RED} App service is not running. Start with: ./deploy.sh start${NC}"
+        echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
     
@@ -311,10 +330,10 @@ db_generate() {
 db_migrate() {
     echo -e "${YELLOW}  Applying database migrations...${NC}"
     
-    # Check if app is running
+    # Check if main app is running
     INFRA_COMPOSE=$(get_infrastructure_compose)
     if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
-        echo -e "${RED} App service is not running. Start with: ./deploy.sh start${NC}"
+        echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
     
@@ -329,15 +348,60 @@ db_studio() {
     echo -e "${BLUE}  Drizzle Studio will be available at: http://localhost:4983${NC}"
     echo -e "${BLUE}  Press Ctrl+C to stop Drizzle Studio${NC}"
     
-    # Check if app is running
+    # Check if main app is running
     INFRA_COMPOSE=$(get_infrastructure_compose)
     if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
-        echo -e "${RED} App service is not running. Start with: ./deploy.sh start${NC}"
+        echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
     
     # Run drizzle studio in a new container with port forwarding
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml run -p 4983:4983 app bun drizzle-kit studio
+}
+
+revert_app() {
+    local target_tag=$1
+    
+    if [ -z "$target_tag" ]; then
+        echo -e "${RED}ERROR: No image tag specified${NC}"
+        echo "Usage: $0 revert <tag>"
+        echo "Example: $0 revert v1.2.3"
+        exit 1
+    fi
+    
+    echo -e "${YELLOW}Reverting application to image tag: $target_tag${NC}"
+    
+    # Check if the image exists locally or can be pulled
+    if ! docker image inspect "xyne:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image xyne:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "xyne:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image xyne:$target_tag${NC}"
+            echo "Available local images:"
+            docker images xyne --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            exit 1
+        fi
+    fi
+    
+    # Tag the target image as 'latest' for docker-compose
+    echo -e "${YELLOW}Tagging xyne:$target_tag as xyne:latest${NC}"
+    docker tag "xyne:$target_tag" "xyne:latest"
+    
+    # Stop and recreate both app services with the reverted image
+    INFRA_COMPOSE=$(get_infrastructure_compose)
+    echo -e "${YELLOW}Stopping current app services${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml stop app app-sync
+    
+    echo -e "${YELLOW}Starting main app service with reverted image${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app
+    
+    echo -e "${YELLOW}Starting sync server with reverted image${NC}"
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app-sync
+    
+    echo -e "${GREEN}Application successfully reverted to tag: $target_tag${NC}"
+    echo -e "${BLUE}INFO: Database and Vespa services were not affected${NC}"
+    
+    # Show status
+    show_status
 }
 
 # Main script logic
@@ -390,6 +454,9 @@ case $COMMAND in
         ;;
     db-studio)
         db_studio
+        ;;
+    revert)
+        revert_app $1
         ;;
     help|--help|-h)
         show_help

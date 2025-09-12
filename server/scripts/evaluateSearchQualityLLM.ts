@@ -1,4 +1,4 @@
-import { searchVespa, SearchModes, GetRandomDocument } from "@/search/vespa"
+import { searchVespa, GetRandomDocument } from "@/search/vespa"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import {
@@ -7,7 +7,7 @@ import {
   userSchema,
   eventSchema,
   mailAttachmentSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import fs from "fs"
 import path from "path"
 import crypto from "crypto"
@@ -19,9 +19,9 @@ import type {
   AIProviders as AIProvidersType,
   Models,
 } from "@/ai/types" // Corrected imports
-import { getSortedScoredChunks } from "@/search/mappers" // Import the sorter
+import { getSortedScoredChunks } from "@xyne/vespa-ts/mappers" // Import the sorter
 import pLimit from "p-limit" // Added: Import p-limit
-
+import { SearchModes } from "@xyne/vespa-ts/types"
 // Configuration
 const Logger = getLogger(Subsystem.Eval)
 const USER_EMAIL_FOR_SEARCH = process.env.EVALUATION_USER_EMAIL

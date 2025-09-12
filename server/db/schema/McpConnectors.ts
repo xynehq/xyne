@@ -74,7 +74,7 @@ export const toolSchemaStructure = z.object({
   description: z.string().optional(),
   inputSchema: z.object({
     type: z.literal("object"),
-    properties: z.record(z.any()),
+    properties: z.record(z.any(), z.any()),
   }),
   annotations: z
     .object({

@@ -4,7 +4,6 @@ import type { MicrosoftGraphClient } from "./client"
 import { makeGraphApiCall } from "./client"
 import { Apps, DriveEntity } from "@/shared/types"
 import { chunkDocument } from "@/chunks"
-import type { VespaFileWithDrivePermission } from "@/search/types"
 import { MAX_ONEDRIVE_FILE_SIZE } from "./config"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
