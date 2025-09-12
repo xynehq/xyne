@@ -240,7 +240,7 @@ const getAuthorizationUrl = async (
   if (IsGoogleApp(app)) {
     const google = new Google(
       clientId as string,
-      clientSecret,
+      clientSecret as string,
       `${config.host}/oauth/callback`,
     )
     loggerWithChild({ email: sub }).info(`code verifier  ${codeVerifier}`)
@@ -263,7 +263,7 @@ const getAuthorizationUrl = async (
     const microsoft = new MicrosoftEntraId(
       "common",
       clientId as string,
-      clientSecret,
+      clientSecret as string,
       `${config.host}/oauth/callback`,
     )
 
@@ -402,9 +402,9 @@ export const CreateOAuthProvider = async (c: Context) => {
       throw new ConnectorNotCreated({})
     }
     const provider = await createOAuthProvider(trx, {
-      clientId,
-      clientSecret,
-      oauthScopes: scopes,
+      clientId: clientId!,
+      clientSecret: clientSecret!,
+      oauthScopes: scopes || [],
       workspaceId: user.workspaceId,
       userId: user.id,
       isGlobal: isGlobalProvider,

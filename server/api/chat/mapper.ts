@@ -37,7 +37,7 @@ import {
   DriveEntity,
   CalendarEntity,
   GooglePeopleEntity,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import type {
   ConversationalParams,
   MetadataRetrievalParams,

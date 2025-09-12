@@ -280,7 +280,7 @@ export const SearchKnowledgeBaseApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     if (error instanceof z.ZodError) {
       throw new HTTPException(400, {
-        message: `Invalid request data: ${error.errors.map((e) => e.message).join(", ")}`,
+        message: `Invalid request data: ${JSON.stringify(error.issues)}`,
       })
     }
 

@@ -9,6 +9,11 @@ let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
+
+// Vespa configuration constants
+export const NAMESPACE = "namespace"
+export const CLUSTER = "my_content"
+
 if (process.env.NODE_ENV === "production") {
   postgresBaseHost = process.env.DATABASE_HOST!
   vespaBaseHost = process.env.VESPA_HOST!
@@ -183,6 +188,7 @@ export default {
   chatHistoryPageSize: 21,
   maxDefaultSummary: 6,
   chatPageSize: 20, // default page size for ai search
+  VespaPageSize: 20, // default page size for vespa search
   maxGoogleDriveSummary: 50,
   maxUserRequestCount: 50,
   isReasoning,
@@ -203,4 +209,5 @@ export default {
   RefreshTokenTTL: 60 * 60 * 24 * 30, // Refresh token expires in 30 days
   MAX_IMAGE_SIZE_BYTES,
   MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
+  vespaEndpoint: `http://${vespaBaseHost}:8080`,
 }

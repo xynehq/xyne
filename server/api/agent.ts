@@ -45,6 +45,7 @@ export const createAgentSchema = z.object({
     .union([
       z.array(z.string()), // Legacy format
       z.record(
+        z.string(),
         z.object({
           // New AppSelectionMap format
           itemIds: z.array(z.string()),

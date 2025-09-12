@@ -1,5 +1,5 @@
 import crypto from "crypto"
-import { mailSchema } from "@/search/types"
+import { mailSchema } from "@xyne/vespa-ts/types"
 import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
