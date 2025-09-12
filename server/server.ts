@@ -184,6 +184,15 @@ import {
   GetFileContentApi,
 } from "@/api/knowledgeBase"
 import {
+  GetKnowledgeGraphDataApi,
+  GetNodeDetailsApi,
+  CreateNodeApi,
+  CreateEdgeApi,
+  DeleteNodeApi,
+  DeleteEdgeApi,
+  ClearGraphApi,
+} from "@/api/knowledgeGraphApi"
+import {
   searchKnowledgeBaseSchema,
   SearchKnowledgeBaseApi,
 } from "./api/knowledgeBase/search"
@@ -603,9 +612,15 @@ const getNewAccessRefreshToken = async (c: Context) => {
     return c.redirect(`/auth`)
   }
 
+  const clearAndReturnError = (message: string, status: number = 401) => {
+    clearCookies(c)
+    Logger.warn(`Refresh token error: ${message}`)
+    return c.json({ error: message }, status as any)
+  }
+
   if (!refreshToken) {
     Logger.warn("No refresh token found")
-    return clearAndRedirect()
+    return clearAndReturnError("No refresh token found")
   }
 
   let payload
@@ -613,7 +628,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
     payload = await verify(refreshToken, refreshTokenSecret)
   } catch (err) {
     Logger.warn("Failed to verify refresh token", err)
-    return clearAndRedirect()
+    return clearAndReturnError("Invalid or expired refresh token")
   }
 
   const { sub, workspaceId } = payload as { sub: string; workspaceId: string }
@@ -626,13 +641,13 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
   if (!existingUser || !existingWorkspace) {
     Logger.warn("User or workspace not found for refresh token")
-    return clearAndRedirect()
+    return clearAndReturnError("User or workspace not found", 404)
   }
 
   // Check if the refresh token matches the one in DB
   if (existingUser.refreshToken !== refreshToken) {
     Logger.warn("Refresh token does not match DB")
-    return clearAndRedirect()
+    return clearAndReturnError("Invalid refresh token")
   }
 
   try {
@@ -662,7 +677,7 @@ const getNewAccessRefreshToken = async (c: Context) => {
     })
   } catch (err) {
     Logger.error("Error generating new tokens", err)
-    return clearAndRedirect()
+    return clearAndReturnError("Failed to generate new tokens", 500)
   }
 }
 
@@ -823,6 +838,15 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+
+  // Knowledge Graph Routes
+  .get("/graph/data", GetKnowledgeGraphDataApi)
+  .get("/graph/nodes/:nodeId", GetNodeDetailsApi)
+  .post("/graph/nodes", CreateNodeApi)
+  .post("/graph/edges", CreateEdgeApi)
+  .delete("/graph/nodes/:nodeId", DeleteNodeApi)
+  .delete("/graph/edges/:edgeId", DeleteEdgeApi)
+  .delete("/graph/clear", ClearGraphApi)
 
   .post(
     "/oauth/create",
@@ -1298,6 +1322,11 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get(
   "/knowledgeManagement",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/knowledge-graph",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
 )

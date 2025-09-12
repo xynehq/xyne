@@ -1,6 +1,6 @@
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { createCanvas, Image as CanvasImage, ImageData } from "canvas"
+import { createCanvas, Image as CanvasImage, ImageData } from "@napi-rs/canvas"
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs"
 import path from "path"
 import imageType from "image-type"

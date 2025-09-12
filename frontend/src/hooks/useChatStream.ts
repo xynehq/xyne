@@ -199,29 +199,40 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
 
       es.onopen = () => resolve(es)
 
-      es.onerror = async () => {
-        // es.close()
+      es.onerror = async (event) => {
+        es.close()
 
         if (!triedRefresh) {
           triedRefresh = true
-          // Attempt token refresh
-          const refresh = await fetch("/api/v1/refresh-token", {
-            method: "POST",
-            credentials: "include",
-          })
-          if (!refresh.ok) return reject(new Error("Token refresh failed"))
+          try {
+            // Attempt token refresh
+            const refresh = await fetch("/api/v1/refresh-token", {
+              method: "POST",
+              credentials: "include",
+            })
+            
+            if (!refresh.ok) {
+              const errorText = await refresh.text().catch(() => "Unknown error")
+              console.error("Token refresh failed:", refresh.status, refresh.statusText, errorText)
+              return reject(new Error(`Token refresh failed: ${refresh.status} ${refresh.statusText}`))
+            }
 
-          // Retry opening the stream
-          make()
+            console.log("Token refreshed successfully, retrying connection...")
+            // Small delay before retry to allow token to propagate
+            setTimeout(() => make(), 100)
+          } catch (error) {
+            console.error("Error during token refresh:", error)
+            return reject(new Error(`Token refresh error: ${error instanceof Error ? error.message : 'Unknown error'}`))
+          }
         } else {
-          reject(new Error("SSE connection failed after refresh"))
+          console.error("SSE connection failed after refresh attempt")
+          reject(new Error("Connection failed after token refresh. Please try again or refresh the page."))
         }
       }
     }
 
     make()
   })
-
 }
 
 // Start a new stream or continue existing one

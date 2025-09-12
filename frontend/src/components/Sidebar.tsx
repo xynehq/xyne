@@ -12,6 +12,7 @@ import {
   Key,
   BarChart3,
   BookOpen,
+  Network,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -231,6 +232,26 @@ export const Sidebar = ({
                 />
               </TooltipTrigger>
               <Tip side="right" info="Collections" />
+            </Tooltip>
+          </Link>
+
+          <Link
+            to="/knowledge-graph"
+            className={cn(
+              "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+              location.pathname.includes("/knowledge-graph") &&
+                "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Network
+                  stroke="#384049"
+                  size={18}
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Knowledge Graph" />
             </Tooltip>
           </Link>
 
