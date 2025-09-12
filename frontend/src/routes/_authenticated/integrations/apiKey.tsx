@@ -387,9 +387,6 @@ const ApiKeyComponent = ({ user, agentWhiteList }: ApiKeyProps) => {
     return `${visiblePart}${"*".repeat(28)}`
   }
 
-  // todo when no agents are created, there is an empty box for agent selection in create modal - fix that
-  // todo check the UI after deleting everything
-
   return (
     <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
@@ -491,34 +488,55 @@ const ApiKeyComponent = ({ user, agentWhiteList }: ApiKeyProps) => {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border rounded-lg p-3">
-                      {availableAgents.map((agent) => (
-                        <div
-                          key={agent.externalId}
-                          className="flex items-start space-x-3"
-                        >
-                          <input
-                            type="checkbox"
-                            id={agent.externalId}
-                            checked={selectedAgents.includes(agent.externalId)}
-                            onChange={() => handleAgentToggle(agent.externalId)}
-                            className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <div className="flex-1">
-                            <Label
-                              htmlFor={agent.externalId}
-                              className="cursor-pointer font-medium"
-                            >
-                              {agent.name}
-                            </Label>
-                            {agent.description && (
-                              <p className="text-sm text-muted-foreground">
-                                {agent.description}
-                              </p>
-                            )}
+                    <div className="border rounded-lg p-3">
+                      {availableAgents.length === 0 ? (
+                        <div className="text-center py-8">
+                          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <Key className="w-6 h-6 text-gray-400" />
                           </div>
+                          <p className="text-sm font-medium text-gray-600 mb-1">
+                            No agents to select
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Create agents first to restrict API key access to
+                            specific agents
+                          </p>
                         </div>
-                      ))}
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">
+                          {availableAgents.map((agent) => (
+                            <div
+                              key={agent.externalId}
+                              className="flex items-start space-x-3"
+                            >
+                              <input
+                                type="checkbox"
+                                id={agent.externalId}
+                                checked={selectedAgents.includes(
+                                  agent.externalId,
+                                )}
+                                onChange={() =>
+                                  handleAgentToggle(agent.externalId)
+                                }
+                                className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              />
+                              <div className="flex-1">
+                                <Label
+                                  htmlFor={agent.externalId}
+                                  className="cursor-pointer font-medium"
+                                >
+                                  {agent.name}
+                                </Label>
+                                {agent.description && (
+                                  <p className="text-sm text-muted-foreground">
+                                    {agent.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
