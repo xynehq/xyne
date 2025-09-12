@@ -4,6 +4,7 @@ import { X } from "lucide-react"
 import fileUpIcon from "@/assets/file-up.svg"
 import checkCircleIcon from "@/assets/check-circle.svg"
 import { workflowExecutionsAPI } from "./api/ApiHandlers"
+import { api } from "../../api"
 
 interface WorkflowTemplate {
   id: string
@@ -298,22 +299,7 @@ export function WorkflowExecutionModal({
 
     const checkStatus = async () => {
       try {
-        const BACKEND_BASE_URL =
-          import.meta.env.VITE_API_BASE_URL || "http://localhost:3000"
-        const token = localStorage.getItem("authToken")
-
-        const response = await fetch(
-          `${BACKEND_BASE_URL}/api/v1/workflow/executions/${executionId}/status`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-              "Access-Control-Allow-Origin": "*",
-              ...(token && { Authorization: `Bearer ${token}` }),
-            },
-            mode: "cors",
-          },
-        )
+        const response = await api.workflow.executions[executionId].status.$get()
 
         const statusData = await response.json()
         console.log("📊 Status polling response:", statusData)
