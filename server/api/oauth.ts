@@ -81,7 +81,7 @@ export const OAuthCallback = async (c: Context) => {
         },
         body: new URLSearchParams({
           client_id: clientId!,
-          client_secret: clientSecret,
+          client_secret: clientSecret as string,
           code, // Use the code from the callback
           redirect_uri: `${slackHost}/oauth/callback`,
         }).toString(),
@@ -104,7 +104,7 @@ export const OAuthCallback = async (c: Context) => {
     } else if (IsGoogleApp(app)) {
       const google = new Google(
         clientId as string,
-        clientSecret,
+        clientSecret as string,
         `${config.host}/oauth/callback`,
       )
       const oauthTokens = await google.validateAuthorizationCode(
@@ -117,7 +117,7 @@ export const OAuthCallback = async (c: Context) => {
       const microsoft = new MicrosoftEntraId(
         "common",
         clientId as string,
-        clientSecret,
+        clientSecret as string,
         `${config.host}/oauth/callback`,
       )
       const oauthTokens = await microsoft.validateAuthorizationCode(

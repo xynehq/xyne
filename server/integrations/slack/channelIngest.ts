@@ -13,13 +13,12 @@ import {
   SlackEntity,
   type VespaChatContainer,
   type VespaChatMessage,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   ifDocumentsExist,
   ifDocumentsExistInSchema,
   insert,
   insertWithRetry,
-  NAMESPACE,
   UpdateDocument,
   UpdateDocumentPermissions,
 } from "@/search/vespa"
@@ -78,6 +77,7 @@ import {
   totalConversationsToBeInserted,
 } from "@/metrics/slack/slack-metrics"
 import { start } from "repl"
+import { NAMESPACE } from "@/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
@@ -830,7 +830,9 @@ export const handleSlackChannelIngestion = async (
       connectorId,
     )
 
-    const { accessToken } = connector.oauthCredentials
+    const { accessToken } = connector.oauthCredentials as {
+      accessToken: string
+    }
     const client = new WebClient(accessToken, {
       retryConfig: retryPolicies.rapidRetryPolicy,
     })

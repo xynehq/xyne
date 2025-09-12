@@ -5,7 +5,7 @@ import {
   mailAttachmentSchema,
   type Mail,
   type Attachment,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { ifMailDocumentsExist, insert } from "@/search/vespa"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"

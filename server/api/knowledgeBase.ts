@@ -32,17 +32,13 @@ import {
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
   // Legacy aliases for backward compatibility
-  } from "@/db/knowledgeBase"
+} from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"
-import type { 
-  Collection, 
-  CollectionItem, 
-  File as DbFile, 
-} from "@/db/schema"
+import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import crypto from "crypto"
 import { FileProcessorService } from "@/services/fileProcessor"
 import {
@@ -81,20 +77,20 @@ const createCollectionSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   isPrivate: z.boolean().optional().default(true),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.any(), z.any()).optional(),
 })
 
 const updateCollectionSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
   isPrivate: z.boolean().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.any(), z.any()).optional(),
 })
 
 const createFolderSchema = z.object({
   name: z.string().min(1).max(255),
   parentId: z.string().uuid().nullable().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.any(), z.any()).optional(),
 })
 
 // Helper functions
@@ -210,10 +206,10 @@ export const CreateCollectionApi = async (c: Context) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       loggerWithChild({ email: userEmail }).error(
-        `Validation error: ${JSON.stringify(error.errors)}`,
+        `Validation error: ${JSON.stringify(error)}`,
       )
       throw new HTTPException(400, {
-        message: `Invalid request data: ${error.errors.map((e) => e.message).join(", ")}`,
+        message: `Invalid request data: ${JSON.stringify(error)}`,
       })
     }
     const errMsg = getErrorMessage(error)
@@ -375,7 +371,7 @@ export const UpdateCollectionApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     if (error instanceof z.ZodError) {
       throw new HTTPException(400, {
-        message: `Invalid request data: ${error.errors.map((e) => e.message).join(", ")}`,
+        message: `Invalid request data: ${JSON.stringify(error)}`,
       })
     }
 
@@ -696,7 +692,7 @@ export const CreateFolderApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     if (error instanceof z.ZodError) {
       throw new HTTPException(400, {
-        message: `Invalid request data: ${error.errors.map((e) => e.message).join(", ")}`,
+        message: `Invalid request data: ${JSON.stringify(error)}`,
       })
     }
 

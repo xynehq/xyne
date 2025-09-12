@@ -33,7 +33,7 @@ export const GeneratePromptApi = async (c: Context) => {
     })
     if (!parseResult.success) {
       throw new HTTPException(400, {
-        message: parseResult.error.errors[0]?.message || "Invalid parameters",
+        message: parseResult.error.issues[0]?.message || "Invalid parameters",
       })
     }
 

@@ -22,7 +22,7 @@ import {
   type VespaKbFileSearch,
   chatContainerSchema,
   type VespaChatContainerSearch,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import type { MinimalAgentFragment } from "@/api/chat/types"
 import { getRelativeTime } from "@/utils"
 import type { z } from "zod"
@@ -30,7 +30,7 @@ import pc from "picocolors"
 import {
   getSortedScoredChunks,
   getSortedScoredImageChunks,
-} from "@/search/mappers"
+} from "@xyne/vespa-ts/mappers"
 import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string
@@ -623,7 +623,7 @@ ${content ? `Content: ${content}` : ""}
 
 type AiMetadataContext = string
 export const answerMetadataContextMap = (
-  searchResult: z.infer<typeof VespaSearchResultsSchema>,
+  searchResult: VespaSearchResults,
 ): AiMetadataContext => {
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileMetadataContext(
@@ -655,7 +655,7 @@ export const answerMetadataContextMap = (
 }
 
 export const answerColoredContextMap = (
-  searchResult: z.infer<typeof VespaSearchResultsSchema>,
+  searchResult: VespaSearchResults,
 ): string => {
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileColoredContext(

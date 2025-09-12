@@ -1,6 +1,7 @@
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import { z } from "zod"
-import { Apps, entitySchema } from "@/search/types"
+import { Apps } from "@xyne/vespa-ts/types"
+import { entitySchema } from "@/shared/types"
 
 export enum AIProviders {
   OpenAI = "openai",

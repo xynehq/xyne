@@ -69,6 +69,7 @@ export const insertAgentSchema = createInsertSchema(agents, {
     .union([
       z.array(z.string()), // Legacy format
       z.record(
+        z.string(),
         z.object({
           // New AppSelectionMap format
           itemIds: z.array(z.string()),
@@ -93,6 +94,7 @@ export const selectAgentSchema = createSelectSchema(agents, {
     .union([
       z.array(z.string()), // Legacy format
       z.record(
+        z.string(),
         z.object({
           // New AppSelectionMap format
           itemIds: z.array(z.string()),
