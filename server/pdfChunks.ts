@@ -25,8 +25,6 @@ const Logger = getLogger(Subsystem.Integrations).child({
 
 const PDFJS = pdfjsLib
 
-
-
 export function normalizeText(input: string): string {
   if (!input) return ""
 
@@ -43,9 +41,9 @@ export function normalizeText(input: string): string {
   return normalized.trim()
 }
 
-// =========================================
+
 // 2. Smart letter-spacing collapse (per line)
-// =========================================
+
 function smartDespaceLine(line: string): string {
   if (!line) return line
 
@@ -101,9 +99,9 @@ function smartDespaceLine(line: string): string {
   return out.join("")
 }
 
-// =============================
+
 // 3. High-level text cleaner
-// =============================
+
 export function cleanText(input: string): string {
   let s = normalizeText(input)
 
@@ -120,7 +118,13 @@ export function cleanText(input: string): string {
   // 2) Collapse remaining newlines (soft wraps) into spaces
   s = s.replace(/\n+/g, " ")
   // 3) Restore paragraph breaks
-  s = s.replace(new RegExp(uniqueParaPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), "\n\n")
+  s = s.replace(
+    new RegExp(
+      uniqueParaPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      "g",
+    ),
+    "\n\n",
+  )
 
   // Apply line-wise despacing
   s = s
@@ -144,9 +148,9 @@ export function cleanText(input: string): string {
   return s.trim()
 }
 
-// =============================
+
 // 4. Matrix transformation utilities
-// =============================
+
 
 /**
  * Multiply two 2D transformation matrices
@@ -234,7 +238,6 @@ function extractTextFromArgs(args: any[]): string {
 
   // Additional validation: ensure we return clean, valid text
   const result = typeof text === "string" ? text : ""
-  console.log("EXTRACT TEXT DEBUG: Final extracted text:", result)
   return result
 }
 
@@ -249,10 +252,10 @@ function processTextParagraphs(
   globalSeq: { value: number },
   overlapBytes: number = 32,
 ): string {
-  console.log("TEXT DEBUG: Processing paragraphs count:", paragraphs.length)
+  Logger.debug("Processing paragraphs", { count: paragraphs.length })
 
   if (paragraphs.length === 0) {
-    console.log("TEXT DEBUG: No paragraphs to process")
+    Logger.debug("No paragraphs to process")
     return ""
   }
 
@@ -260,7 +263,7 @@ function processTextParagraphs(
     .map(cleanText)
     .filter((p) => p.length > 0)
   if (cleanedParagraphs.length === 0) {
-    console.log("TEXT DEBUG: No cleaned paragraphs after filtering")
+    Logger.debug("No cleaned paragraphs after filtering")
     return ""
   }
 
@@ -317,8 +320,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
 }> {
   // Sanitize docid for safe filesystem use
   const safeDocId = docid.replace(/[^a-zA-Z0-9._-]/g, "_")
-  Logger.info(`Starting PDF processing for: ${docid}`)
-  console.log("PDF DEBUG: Starting processing with parameters:", {
+  Logger.debug("Starting processing with parameters", {
     docid,
     extractImages,
     describeImages,
@@ -426,11 +428,9 @@ export async function extractTextAndImagesWithChunksFromPDF(
     }
 
     // Extract text from operators as fallback for edge cases
-    const extractFallbackTextFromOperators = (
-      opList: any,
-    ): string[] => {
+    const extractFallbackTextFromOperators = (opList: any): string[] => {
       const fallbackLines: string[] = []
-      
+
       for (let i = 0; i < opList.fnArray.length; i++) {
         const fnId = opList.fnArray[i]
         const args = opList.argsArray[i]
@@ -493,17 +493,21 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
         // Use textContent-based paragraphs for this page as primary source
         let primaryParagraphs: string[] = await buildParagraphsFromPage(page)
-        
+
         // Extract fallback text from operators for edge cases
         const fallbackLines = extractFallbackTextFromOperators(opList)
-        
+
         // Combine both sources, prioritizing primary extraction
-        let paragraphs: string[] = combineTextSources(primaryParagraphs, fallbackLines)
-        
+        let paragraphs: string[] = combineTextSources(
+          primaryParagraphs,
+          fallbackLines,
+        )
+
         let currentParagraph = "" // kept for image-flow flush, but not used for text
         let textOperatorCount = (await page.getTextContent()).items.length
 
-        console.log("TEXT DEBUG: Text extraction summary for page", pageNum, {
+        Logger.debug("Text extraction summary for page", {
+          pageNum,
           primaryParagraphs: primaryParagraphs.length,
           fallbackLines: fallbackLines.length,
           finalParagraphs: paragraphs.length,
@@ -537,7 +541,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
         ]
         const ctmStack: [number, number, number, number, number, number][] = []
 
-
         // Do not inject crossImageOverlap into text paragraphs here
         // console.log('OVERLAP DEBUG: Page', pageNum, 'crossImageOverlap at start:', crossImageOverlap)
 
@@ -554,7 +557,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
         for (let i = 0; i < opList.fnArray.length; i++) {
           const fnId = opList.fnArray[i]
           const args = opList.argsArray[i]
-
 
           // Track vector drawing operators (paths, fills, form XObjects)
           const isVectorOp =
@@ -618,21 +620,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
             case extractImages ? PDFJS.OPS.paintImageXObjectRepeat : null:
             case extractImages ? PDFJS.OPS.paintInlineImageXObject : null:
             case extractImages ? PDFJS.OPS.paintImageMaskXObject : null: {
-              console.log(
-                "IMAGE DEBUG: Image operator detected on page",
+              Logger.debug("Image operator detected", {
                 pageNum,
-                {
-                  extractImages,
-                  operatorType: fnId,
-                  imageName: args[0],
-                  knownOperators: {
-                    paintImageXObject: PDFJS.OPS.paintImageXObject,
-                    paintImageXObjectRepeat: PDFJS.OPS.paintImageXObjectRepeat,
-                    paintInlineImageXObject: PDFJS.OPS.paintInlineImageXObject,
-                    paintImageMaskXObject: PDFJS.OPS.paintImageMaskXObject,
-                  },
-                },
-              )
+                extractImages,
+                operatorType: fnId,
+                imageName: args[0],
+              })
 
               // Do not process text per-image anymore; text is processed once per page.
               // Maintain crossImageOverlap continuity by keeping placeholders only.
@@ -647,18 +640,17 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       typeof args[0].name === "string"
                     ? args[0].name
                     : args?.[0]
-              console.log("IMAGE DEBUG: Processing image:", imageName)
+              Logger.debug("Processing image", { imageName })
               let imageDict: any | null = null
               let isInline = false
               // Inline image may directly carry data in args
-              console.log("IMAGE DEBUG: Initial args for image operator:", args)
-              console.log("IMAGE DEBUG: fnId for image operator:", fnId)
-              console.log(
-                PDFJS.OPS.paintInlineImageXObject,
-                "PDFJS.OPS.paintInlineImageXObject",
-              )
+              Logger.debug("Image operator details", { 
+                args: args.length,
+                fnId,
+                paintInlineImageXObject: PDFJS.OPS.paintInlineImageXObject,
+              })
               if (fnId === PDFJS.OPS.paintInlineImageXObject) {
-                console.log("IMAGE DEBUG: Detected inline image data in args")
+                Logger.debug("Detected inline image data in args")
                 const candidate = Array.isArray(args)
                   ? args.find(
                       (a: any) =>
@@ -674,10 +666,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
                   isInline = true
                 }
               }
-              console.log(
-                "IMAGE DEBUG: Initial imageDict resolved from args:",
-                imageDict,
-              )
+              Logger.debug("Initial imageDict resolved", {
+                hasImageDict: !!imageDict,
+                isInline,
+              })
               if (
                 !imageDict &&
                 (typeof imageName === "string" ||
@@ -697,16 +689,14 @@ export async function extractTextAndImagesWithChunksFromPDF(
                 )
                 continue
               }
-              console.log("IMAGE DEBUG: Resolved imageDict:", {
-                imageDict,
+              Logger.debug("Resolved imageDict", {
+                hasImageDict: !!imageDict,
                 isInline,
               })
 
               // Ensure imageDict is valid before processing
               if (!imageDict || typeof imageDict !== "object") {
-                console.log(
-                  "IMAGE DEBUG: imageDict is null or invalid, skipping to crop fallback",
-                )
+                Logger.debug("imageDict is null or invalid, skipping to crop fallback")
                 // This will fall through to the crop fallback logic below
               } else {
                 try {
@@ -727,11 +717,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     const width: number = c.width
                     const height: number = c.height
                     if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
-                      console.log(
-                        "IMAGE DEBUG: SKIPPED - Small dimensions from canvas for",
+                      Logger.debug("Skipped small canvas image", {
                         imageName,
-                        { width, height },
-                      )
+                        width,
+                        height,
+                        minRequired: MIN_IMAGE_DIM_PX,
+                      })
                     } else {
                       const buffer = c.toBuffer("image/png")
                       if (
@@ -819,11 +810,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     const width: number = imgLike.width
                     const height: number = imgLike.height
                     if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
-                      console.log(
-                        "IMAGE DEBUG: SKIPPED - Small dimensions from image-like for",
+                      Logger.debug("Skipped small image-like object", {
                         imageName,
-                        { width, height },
-                      )
+                        width,
+                        height,
+                        minRequired: MIN_IMAGE_DIM_PX,
+                      })
                     } else {
                       const cnv = createCanvas(width, height)
                       const cctx = cnv.getContext("2d")
@@ -918,43 +910,33 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     imageDict.bytes ??
                     (imageDict.imgData ? imageDict.imgData.data : undefined)
 
-                  console.log(
-                    "IMAGE DEBUG: Full image details for",
+                  Logger.debug("Full image details", {
                     imageName,
-                    {
-                      width,
-                      height,
-                      kind,
-                      dataLength: rawData ? rawData.length : null,
-                      dataSizeMB: rawData
-                        ? (rawData.length / (1024 * 1024)).toFixed(2)
-                        : null,
-                      maxAllowedSizeMB:
-                        DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB,
-                      minDimension: MIN_IMAGE_DIM_PX,
-                      isValidDimensions: width > 0 && height > 0,
-                      meetsMinSize:
-                        width >= MIN_IMAGE_DIM_PX && height >= MIN_IMAGE_DIM_PX,
-                      withinSizeLimit: rawData
-                        ? rawData.length <=
-                          DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
-                        : false,
-                      isInline,
-                    },
-                  )
+                    width,
+                    height,
+                    kind,
+                    dataLength: rawData ? rawData.length : null,
+                    dataSizeMB: rawData
+                      ? (rawData.length / (1024 * 1024)).toFixed(2)
+                      : null,
+                    maxAllowedSizeMB: DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB,
+                    minDimension: MIN_IMAGE_DIM_PX,
+                    isValidDimensions: width > 0 && height > 0,
+                    meetsMinSize:
+                      width >= MIN_IMAGE_DIM_PX && height >= MIN_IMAGE_DIM_PX,
+                    withinSizeLimit: rawData
+                      ? rawData.length <=
+                        DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
+                      : false,
+                    isInline,
+                  })
 
                   if (!width || !height || width <= 0 || height <= 0) {
-                    console.log(
-                      "IMAGE DEBUG: SKIPPED - Invalid dimensions for",
+                    Logger.debug("Skipped image with invalid dimensions", {
                       imageName,
-                      "width:",
                       width,
-                      "height:",
                       height,
-                    )
-                    Logger.debug(
-                      `Invalid image dimensions for ${imageName}: ${width}x${height}`,
-                    )
+                    })
                     continue
                   }
 
@@ -963,46 +945,27 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     rawData.length >
                       DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
                   ) {
-                    console.log(
-                      "IMAGE DEBUG: SKIPPED - Large file size for",
+                    Logger.warn("Skipped large image", {
                       imageName,
-                      {
-                        actualSizeMB: (rawData.length / (1024 * 1024)).toFixed(
-                          2,
-                        ),
-                        maxAllowedMB: DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB,
-                        actualBytes: rawData.length,
-                        maxAllowedBytes:
-                          DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB *
-                          1024 *
-                          1024,
-                      },
-                    )
-                    Logger.warn(
-                      `Skipping large image (${(rawData.length / (1024 * 1024)).toFixed(2)} MB): ${imageName}`,
-                    )
+                      actualSizeMB: (rawData.length / (1024 * 1024)).toFixed(2),
+                      maxAllowedMB: DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB,
+                    })
                     continue
                   }
 
                   if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
-                    console.log(
-                      "IMAGE DEBUG: SKIPPED - Small dimensions for",
+                    Logger.debug("Skipped small image", {
                       imageName,
-                      {
-                        width,
-                        height,
-                        minRequired: MIN_IMAGE_DIM_PX,
-                        widthTooSmall: width < MIN_IMAGE_DIM_PX,
-                        heightTooSmall: height < MIN_IMAGE_DIM_PX,
-                      },
-                    )
+                      width,
+                      height,
+                      minRequired: MIN_IMAGE_DIM_PX,
+                    })
                     continue // Skip small images
                   }
 
-                  console.log(
-                    "IMAGE DEBUG: Image passed all filters, proceeding with processing for",
+                  Logger.debug("Image passed all filters, proceeding with processing", {
                     imageName,
-                  )
+                  })
 
                   let uint8Data: Uint8Array
                   if (rawData instanceof Uint8Array) {
@@ -1032,9 +995,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                         expectedLength = Math.ceil((width * height) / 8)
                       } else {
                         const bytesPerPixel =
-                          kind === pdfjsLib.ImageKind.RGBA_32BPP
-                            ? 4
-                            : 3 // RGB_24BPP
+                          kind === pdfjsLib.ImageKind.RGBA_32BPP ? 4 : 3 // RGB_24BPP
                         expectedLength = width * height * bytesPerPixel
                       }
 
@@ -1042,7 +1003,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                         const rgbaData = new Uint8ClampedArray(
                           width * height * 4,
                         )
-                        
+
                         if (kind === pdfjsLib.ImageKind.GRAYSCALE_1BPP) {
                           // Handle 1 bit per pixel grayscale (bit-packed data)
                           let pixelIndex = 0
@@ -1050,28 +1011,32 @@ export async function extractTextAndImagesWithChunksFromPDF(
                             for (let x = 0; x < width; x++) {
                               const byteIndex = Math.floor(pixelIndex / 8)
                               const bitIndex = 7 - (pixelIndex % 8) // MSB first
-                              const bit = byteIndex < uint8Data.length 
-                                ? (uint8Data[byteIndex] >> bitIndex) & 1 
-                                : 0
+                              const bit =
+                                byteIndex < uint8Data.length
+                                  ? (uint8Data[byteIndex] >> bitIndex) & 1
+                                  : 0
                               const gray = bit ? 255 : 0 // Convert bit to full pixel value
-                              
+
                               const dstIdx = pixelIndex * 4
-                              rgbaData[dstIdx] = gray     // R
+                              rgbaData[dstIdx] = gray // R
                               rgbaData[dstIdx + 1] = gray // G
                               rgbaData[dstIdx + 2] = gray // B
-                              rgbaData[dstIdx + 3] = 255  // A
+                              rgbaData[dstIdx + 3] = 255 // A
                               pixelIndex++
                             }
                           }
                         } else {
                           // Handle RGB_24BPP and RGBA_32BPP (byte-per-channel data)
-                          const bytesPerPixel = kind === pdfjsLib.ImageKind.RGBA_32BPP ? 4 : 3
+                          const bytesPerPixel =
+                            kind === pdfjsLib.ImageKind.RGBA_32BPP ? 4 : 3
                           for (let i = 0; i < width * height; i++) {
                             const srcIdx = i * bytesPerPixel
                             const dstIdx = i * 4
                             if (kind === pdfjsLib.ImageKind.RGB_24BPP) {
                               rgbaData[dstIdx] =
-                                srcIdx < uint8Data.length ? uint8Data[srcIdx] : 0 // R
+                                srcIdx < uint8Data.length
+                                  ? uint8Data[srcIdx]
+                                  : 0 // R
                               rgbaData[dstIdx + 1] =
                                 srcIdx + 1 < uint8Data.length
                                   ? uint8Data[srcIdx + 1]
@@ -1084,7 +1049,9 @@ export async function extractTextAndImagesWithChunksFromPDF(
                             } else {
                               // RGBA_32BPP
                               rgbaData[dstIdx] =
-                                srcIdx < uint8Data.length ? uint8Data[srcIdx] : 0 // R
+                                srcIdx < uint8Data.length
+                                  ? uint8Data[srcIdx]
+                                  : 0 // R
                               rgbaData[dstIdx + 1] =
                                 srcIdx + 1 < uint8Data.length
                                   ? uint8Data[srcIdx + 1]
@@ -1144,7 +1111,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
                                   : 0 // B
                               rgbaData[dstIdx + 3] = 255 // A
                             }
-                            const imageData = new ImageData(rgbaData, width, height)
+                            const imageData = new ImageData(
+                              rgbaData,
+                              width,
+                              height,
+                            )
                             ctx.putImageData(imageData, 0, 0)
                             imageProcessed = true
                           }
@@ -1157,21 +1128,15 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     }
                   }
 
-                  console.log(
-                    "IMAGE DEBUG: Image processing result for",
+                  Logger.debug("Image processing result", {
                     imageName,
-                    {
-                      imageProcessed,
-                      canvasWidth: canvas.width,
-                      canvasHeight: canvas.height,
-                    },
-                  )
+                    imageProcessed,
+                    canvasWidth: canvas.width,
+                    canvasHeight: canvas.height,
+                  })
 
                   if (imageProcessed) {
-                    console.log(
-                      "IMAGE DEBUG: Converting to PNG buffer for",
-                      imageName,
-                    )
+                    Logger.debug("Converting to PNG buffer", { imageName })
                     const buffer = canvas.toBuffer("image/png")
                     if (
                       buffer.length >
@@ -1182,74 +1147,61 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       )
                       continue
                     }
-                    console.log(
-                      "IMAGE DEBUG: PNG buffer created for",
+                    Logger.debug("PNG buffer created", {
                       imageName,
-                      "size:",
-                      buffer.length,
-                      "bytes",
-                    )
+                      size: buffer.length,
+                    })
 
                     // @ts-ignore
                     let type = await imageType(buffer)
-                    console.log(
-                      "IMAGE DEBUG: Image type detection result for",
+                    Logger.debug("Image type detection result", {
                       imageName,
                       type,
-                    )
+                    })
 
                     if (!type) {
-                      console.log(
-                        "IMAGE DEBUG: Could not determine MIME type for",
+                      Logger.debug("Could not determine MIME type, using default", {
                         imageName,
-                        "using default image/png",
-                      )
+                        default: "image/png",
+                      })
                       Logger.warn(
                         `Could not determine MIME type for ${imageName}. Defaulting to image/png`,
                       )
                       type = { mime: "image/png", ext: "png" }
                     }
 
-                    console.log(
-                      "IMAGE DEBUG: Checking MIME type support for",
+                    Logger.debug("Checking MIME type support", {
                       imageName,
-                      {
-                        detectedMime: type.mime,
-                        supportedMimes: Array.from(
-                          DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES,
+                      detectedMime: type.mime,
+                      supportedMimes: Array.from(
+                        DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES,
+                      ),
+                      isSupported:
+                        DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(
+                          type.mime,
                         ),
-                        isSupported:
-                          DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(
-                            type.mime,
-                          ),
-                      },
-                    )
+                    })
 
                     if (
                       !type ||
                       !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
                     ) {
-                      console.log(
-                        "IMAGE DEBUG: SKIPPED - Unsupported MIME type for",
+                      Logger.debug("Skipped image with unsupported MIME type", {
                         imageName,
-                        {
-                          detectedMime: type?.mime,
-                          supportedMimes: Array.from(
-                            DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES,
-                          ),
-                        },
-                      )
+                        detectedMime: type?.mime,
+                        supportedMimes: Array.from(
+                          DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES,
+                        ),
+                      })
                       Logger.warn(
                         `Unsupported or unknown image MIME type: ${type?.mime}. Skipping image: ${imageName}`,
                       )
                       continue
                     }
 
-                    console.log(
-                      "IMAGE DEBUG: MIME type check passed for",
+                    Logger.debug("MIME type check passed, proceeding with processing", {
                       imageName,
-                      "proceeding with hash and description",
-                    )
+                    })
 
                     // buffer already created above
                     const imageHash = crypto
@@ -1261,72 +1213,57 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
                     if (seenHashDescriptions.has(imageHash)) {
                       description = seenHashDescriptions.get(imageHash)!
-                      console.log(
-                        "IMAGE DEBUG: Reusing cached description for",
+                      Logger.debug("Reusing cached description for image", {
                         imageName,
-                        "description:",
                         description,
-                      )
+                      })
                       Logger.warn(
                         `Reusing description for repeated image ${imageName} on page ${pageNum}`,
                       )
                     } else {
-                      console.log(
-                        "IMAGE DEBUG: Generating new description for",
+                      Logger.debug("Generating new description for image", {
                         imageName,
-                        "describeImages:",
                         describeImages,
-                      )
+                      })
                       if (describeImages) {
                         try {
-                          console.log(
-                            "AI DEBUG: Calling describeImageWithllm for image",
+                          Logger.debug("Calling describeImageWithllm for image", {
                             imageName,
-                          )
+                          })
                           description = await describeImageWithllm(buffer)
-                          console.log(
-                            "AI DEBUG: Got description from AI for",
+                          Logger.debug("Got description from AI for image", {
                             imageName,
-                            "description:",
                             description,
-                          )
+                          })
                         } catch (e) {
                           Logger.warn(
                             `describeImageWithllm failed for ${imageName}: ${e instanceof Error ? e.message : e}`,
                           )
                           description = "This is an image from the PDF."
-                          console.log(
-                            "IMAGE DEBUG: Fallback description used due to AI error",
-                          )
+                          Logger.debug("Using fallback description due to AI error")
                         }
                       } else {
                         description = "This is an image."
-                        console.log(
-                          "IMAGE DEBUG: Using default description (describeImages=false)",
-                        )
+                        Logger.debug("Using default description (describeImages=false)")
                       }
                       if (
                         description === "No description returned." ||
                         description === "Image is not worth describing."
                       ) {
-                        console.log(
-                          "IMAGE DEBUG: Replacing insufficient description for",
+                        Logger.debug("Replacing insufficient description", {
                           imageName,
-                          "previous:",
-                          description,
-                        )
+                          previousDescription: description,
+                        })
                         Logger.warn(
                           `${description} ${imageName} on page ${pageNum}`,
                         )
                         description = "Image extracted from PDF page."
                       }
                       seenHashDescriptions.set(imageHash, description)
-                      console.log(
-                        "IMAGE DEBUG: Cached new description for",
+                      Logger.debug("Cached new description for image", {
                         imageName,
-                        "description:",
                         description,
-                      )
+                      })
                     }
 
                     try {
@@ -1360,15 +1297,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
                     // Logger.info(`OVERLAP DEBUG: Added image placeholder to crossImageOverlap. After: "${crossImageOverlap}"`)
                     // console.log('OVERLAP DEBUG: crossImageOverlap after adding image placeholder:', crossImageOverlap)
-                    console.log(
-                      "IMAGE DEBUG: Added image chunk at position",
-                      globalSeq.value,
-                      {
-                        imageName,
-                        description,
-                        crossImageOverlap,
-                      },
-                    )
+                    Logger.debug("Added image chunk at position", {
+                      position: globalSeq.value,
+                      imageName,
+                      description,
+                      crossImageOverlap,
+                    })
                     globalSeq.value++
                     imagesOnPage += 1
                     Logger.debug(
@@ -1430,8 +1364,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
       `PDF processing completed. Total text chunks: ${text_chunks.length}, Total image chunks: ${image_chunks.length}`,
     )
 
-    console.log("FINAL DEBUG: PDF processing completed for", docid)
-    console.log("FINAL DEBUG: Processing summary:", {
+    Logger.debug("PDF processing completed for document", { docid })
+    Logger.debug("Processing summary", {
       totalTextChunks: text_chunks.length,
       totalImageChunks: image_chunks.length,
       textChunkPositions: text_chunk_pos.length,
@@ -1440,10 +1374,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
       describeImages,
     })
 
-    console.log("FINAL DEBUG: All text chunks:", text_chunks)
-    console.log("FINAL DEBUG: All text chunk positions:", text_chunk_pos)
-    console.log("FINAL DEBUG: All image chunks:", image_chunks)
-    console.log("FINAL DEBUG: All image chunk positions:", image_chunk_pos)
+    Logger.debug("All text chunks", { text_chunks })
+    Logger.debug("All text chunk positions", { text_chunk_pos })
+    Logger.debug("All image chunks", { image_chunks })
+    Logger.debug("All image chunk positions", { image_chunk_pos })
     return {
       text_chunks,
       image_chunks,
@@ -1451,7 +1385,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunk_pos,
     }
   } finally {
-    console.log("Calling destroy")
+    Logger.debug("Calling PDF document destroy")
     await pdfDocument.destroy()
   }
 }
