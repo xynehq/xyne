@@ -508,7 +508,9 @@ function RouteComponent() {
                       item.lastUpdatedByEmail || user?.email || "Unknown",
                   })),
                 ),
-                isOpen: (collection.items || []).length > 0, // Open if has items
+                isOpen: collection.name.toLowerCase() === uploadingCollectionName.toLowerCase() 
+                  ? true // Open the newly uploaded collection
+                  : (collection.items || []).length > 0,
                 lastUpdated: new Date(collection.updatedAt).toLocaleString(
                   "en-GB",
                   {
@@ -671,6 +673,12 @@ function RouteComponent() {
       const clResponse = await api.cl[":id"].$get({ param: { id: cl.id } })
       const updatedCl = await clResponse.json()
 
+      // Also fetch the collection items to build the file tree
+      const itemsResponse = await api.cl[":id"].items.$get({
+        param: { id: cl.id },
+      })
+      const items = await itemsResponse.json()
+
       const newCollection: Collection = {
         id: updatedCl.id,
         name: updatedCl.name,
@@ -684,8 +692,18 @@ function RouteComponent() {
           minute: "2-digit",
         }),
         updatedBy: updatedCl.lastUpdatedByEmail || user?.email || "Unknown",
-        items: [],
-        isOpen: false,
+        items: buildFileTree(
+          items.map((item: CollectionItem) => ({
+            name: item.name,
+            type: item.type as "file" | "folder",
+            totalFileCount: item.totalFileCount,
+            updatedAt: item.updatedAt,
+            id: item.id,
+            updatedBy:
+              item.lastUpdatedByEmail || user?.email || "Unknown",
+          })),
+        ),
+        isOpen: true,
         totalCount: updatedCl.totalCount,
         isPrivate: updatedCl.isPrivate,
       }
