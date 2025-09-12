@@ -241,16 +241,16 @@ function processTextParagraphs(
   }
 
   const cleanedText = cleanedParagraphs.join("\n")
-  console.log('TEXT DEBUG: Cleaned text length:', cleanedText.length)
-  console.log('TEXT DEBUG: Full cleaned text:', cleanedText)
+  // console.log('TEXT DEBUG: Cleaned text length:', cleanedText.length)
+  // console.log('TEXT DEBUG: Full cleaned text:', cleanedText)
   
   const chunks = chunkTextByParagraph(cleanedText, 512, 128)
-  console.log('TEXT DEBUG: Generated chunks count:', chunks.length)
+  // console.log('TEXT DEBUG: Generated chunks count:', chunks.length)
 
   for (const chunk of chunks) {
     text_chunks.push(chunk)
     text_chunk_pos.push(globalSeq.value)
-    console.log('TEXT DEBUG: Added chunk at position', globalSeq.value, 'content:', chunk)
+    // console.log('TEXT DEBUG: Added chunk at position', globalSeq.value, 'content:', chunk)
     globalSeq.value++
   }
 
@@ -259,13 +259,13 @@ function processTextParagraphs(
   let overlapText = ""
   let overlapLen = 0
   
-  Logger.info(`OVERLAP DEBUG: Calculating overlap text from cleanedText of length ${cleanedText.length}, target bytes: ${overlapBytes}`)
-  console.log('OVERLAP DEBUG: Full cleanedText for overlap calculation:', cleanedText)
+  // Logger.info(`OVERLAP DEBUG: Calculating overlap text from cleanedText of length ${cleanedText.length}, target bytes: ${overlapBytes}`)
+  // console.log('OVERLAP DEBUG: Full cleanedText for overlap calculation:', cleanedText)
   
   for (let i = cleanedText.length - 1; i >= 0; i--) {
     const charBytes = Buffer.byteLength(cleanedText[i], "utf8")
     if (overlapLen + charBytes > overlapBytes) {
-      console.log('OVERLAP DEBUG: Stopping overlap calculation at char', i, 'would exceed', overlapBytes, 'bytes (current:', overlapLen, 'char bytes:', charBytes, ')')
+      // console.log('OVERLAP DEBUG: Stopping overlap calculation at char', i, 'would exceed', overlapBytes, 'bytes (current:', overlapLen, 'char bytes:', charBytes, ')')
       break
     }
     overlapText = cleanedText[i] + overlapText
@@ -273,9 +273,9 @@ function processTextParagraphs(
     // console.log('OVERLAP DEBUG: Added char', cleanedText[i], 'to overlap. Current overlap length:', overlapLen, 'bytes, text:', overlapText)
   }
 
-  console.log('OVERLAP DEBUG: Final calculated overlap text:', overlapText)
-  console.log('OVERLAP DEBUG: Final overlap length:', overlapLen, 'bytes')
-  Logger.info(`OVERLAP DEBUG: processTextParagraphs returning overlap text: "${overlapText}" (${overlapLen} bytes)`)
+  // console.log('OVERLAP DEBUG: Final calculated overlap text:', overlapText)
+  // console.log('OVERLAP DEBUG: Final overlap length:', overlapLen, 'bytes')
+  // Logger.info(`OVERLAP DEBUG: processTextParagraphs returning overlap text: "${overlapText}" (${overlapLen} bytes)`)
   
   return overlapText
 }
@@ -336,8 +336,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
     let globalSeq = { value: 0 }
     let crossImageOverlap = "" // Track overlap across images
 
-    Logger.info("OVERLAP DEBUG: Initialized crossImageOverlap as empty string")
-    console.log('OVERLAP DEBUG: Starting PDF processing with initial crossImageOverlap:', crossImageOverlap)
+    // Logger.info("OVERLAP DEBUG: Initialized crossImageOverlap as empty string")
+    // console.log('OVERLAP DEBUG: Starting PDF processing with initial crossImageOverlap:', crossImageOverlap)
 
     Logger.info(`PDF has ${pdfDocument.numPages} pages`)
 
@@ -404,6 +404,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
       const page = await pdfDocument.getPage(pageNum)
       try {
+
         const opList = await page.getOperatorList()
 
         // Use textContent-based paragraphs for this page
@@ -411,8 +412,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
         let currentParagraph = "" // kept for image-flow flush, but not used for text
         let textOperatorCount = (await page.getTextContent()).items.length
 
-        // Helper: try to resolve image object by name; render page once if needed
-        let pageRenderedForImages = false
+        // Helper: try to resolve image object by name directly from page.objs
         const resolveImageByName = async (name: string): Promise<any | null> => {
           try {
             // Some builds expose has method
@@ -422,27 +422,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
               return (page.objs as any).get(name)
             }
             const obj = (page.objs as any).get(name)
-            if (obj) return obj
-          } catch {}
-
-          // Force a low-scale render to populate image cache once
-          if (!pageRenderedForImages) {
-            try {
-              const viewport = page.getViewport({ scale: 0.5 })
-              const canvas = createCanvas(Math.max(1, Math.floor(viewport.width)), Math.max(1, Math.floor(viewport.height)))
-              const ctx = canvas.getContext('2d')
-              // Render without annotations to reduce work
-              await page.render({ canvasContext: ctx as any, viewport }).promise
-              pageRenderedForImages = true
-            } catch (e) {
-              Logger.debug(`Image cache render failed on page ${pageNum}: ${e instanceof Error ? e.message : e}`)
-            }
-          }
-
-          try {
-            // Try again after render
-            // @ts-ignore
-            return (page.objs as any).get(name) || null
+            return obj || null
           } catch (e) {
             return null
           }
@@ -470,22 +450,10 @@ export async function extractTextAndImagesWithChunksFromPDF(
           return { x: a * x + c * y + e, y: b * x + d * y + f }
         }
 
-        let fullPageCanvas: ReturnType<typeof createCanvas> | null = null
-        let fullPageViewport: pdfjsLib.PageViewport | null = null
-        const ensureFullPageRender = async () => {
-          if (fullPageCanvas) return
-          const scaleForCrop = 2
-          fullPageViewport = page.getViewport({ scale: scaleForCrop })
-          fullPageCanvas = createCanvas(
-            Math.max(1, Math.floor(fullPageViewport.width)),
-            Math.max(1, Math.floor(fullPageViewport.height)),
-          )
-          const ctx = fullPageCanvas.getContext('2d')
-          await page.render({ canvasContext: ctx as any, viewport: fullPageViewport }).promise
-        }
+        
 
         // Do not inject crossImageOverlap into text paragraphs here
-        console.log('OVERLAP DEBUG: Page', pageNum, 'crossImageOverlap at start:', crossImageOverlap)
+        // console.log('OVERLAP DEBUG: Page', pageNum, 'crossImageOverlap at start:', crossImageOverlap)
 
         // Helper to flush currentParagraph into paragraphs array
         const flushParagraph = () => {
@@ -496,9 +464,36 @@ export async function extractTextAndImagesWithChunksFromPDF(
         }
 
         let imagesOnPage = 0
+        let vectorOpsDetected = false
         for (let i = 0; i < opList.fnArray.length; i++) {
           const fnId = opList.fnArray[i]
           const args = opList.argsArray[i]
+
+          // console.log(PDFJS.OPS.paintImageXObject , "PDFJS.OPS.paintImageXObject")
+          //   console.log(PDFJS.OPS.paintImageXObjectRepeat , "PDFJS.OPS.paintImageXObjectRepeat")
+          //   console.log(PDFJS.OPS.paintInlineImageXObject , "PDFJS.OPS.paintInlineImageXObject")
+          //   console.log(PDFJS.OPS.paintImageMaskXObject , "PDFJS.OPS.paintImageMaskXObject")
+
+          // Track vector drawing operators (paths, fills, form XObjects)
+          const isVectorOp = (
+            fnId === PDFJS.OPS.constructPath ||
+            fnId === PDFJS.OPS.stroke ||
+            fnId === PDFJS.OPS.closeStroke ||
+            fnId === PDFJS.OPS.fill ||
+            fnId === PDFJS.OPS.eoFill ||
+            fnId === PDFJS.OPS.fillStroke ||
+            fnId === PDFJS.OPS.eoFillStroke ||
+            fnId === PDFJS.OPS.closeFillStroke ||
+            fnId === PDFJS.OPS.closeEOFillStroke ||
+            fnId === PDFJS.OPS.clip ||
+            fnId === PDFJS.OPS.eoClip ||
+            fnId === PDFJS.OPS.rectangle ||
+            fnId === PDFJS.OPS.shadingFill ||
+            fnId === PDFJS.OPS.rawFillPath ||
+            fnId === PDFJS.OPS.paintFormXObjectBegin ||
+            fnId === PDFJS.OPS.paintFormXObjectEnd
+          )
+          if (isVectorOp) vectorOpsDetected = true
 
           switch (fnId) {
             case PDFJS.OPS.showText:
@@ -532,15 +527,25 @@ export async function extractTextAndImagesWithChunksFromPDF(
               if (ctmStack.length) currentCTM = ctmStack.pop()!
               break
             }
-            // Handle image operators
+            // Handle image operators - be more comprehensive
             case extractImages ? PDFJS.OPS.paintImageXObject : null:
             case extractImages ? PDFJS.OPS.paintImageXObjectRepeat : null:
             case extractImages ? PDFJS.OPS.paintInlineImageXObject : null:
-            case extractImages ? PDFJS.OPS.paintImageMaskXObject : null: {
+            case extractImages ? PDFJS.OPS.paintImageMaskXObject : null:
+            case extractImages ? 83 : null:
+            case extractImages ? 85 : null:
+            case extractImages ? 86 : null:
+            case extractImages ? 88 : null: {
               console.log('IMAGE DEBUG: Image operator detected on page', pageNum, {
                 extractImages,
                 operatorType: fnId,
-                imageName: args[0]
+                imageName: args[0],
+                knownOperators: {
+                  paintImageXObject: PDFJS.OPS.paintImageXObject,
+                  paintImageXObjectRepeat: PDFJS.OPS.paintImageXObjectRepeat,
+                  paintInlineImageXObject: PDFJS.OPS.paintInlineImageXObject,
+                  paintImageMaskXObject: PDFJS.OPS.paintImageMaskXObject
+                }
               })
               
               // Do not process text per-image anymore; text is processed once per page.
@@ -548,14 +553,15 @@ export async function extractTextAndImagesWithChunksFromPDF(
               flushParagraph()
 
               // Extract image buffer
-              const imageName = args[0]
+              const imageName = (typeof args?.[0] === 'string') ? args[0] : (args?.[0] && typeof args[0] === 'object' && typeof args[0].name === 'string' ? args[0].name : args?.[0])
               console.log('IMAGE DEBUG: Processing image:', imageName)
               let imageDict: any | null = null
               let isInline = false
               // Inline image may directly carry data in args
               console.log('IMAGE DEBUG: Initial args for image operator:', args)
               console.log('IMAGE DEBUG: fnId for image operator:', fnId)
-              if (fnId === PDFJS.OPS.paintInlineImageXObject) {
+              console.log(PDFJS.OPS.paintInlineImageXObject , "PDFJS.OPS.paintInlineImageXObject")
+              if (fnId === PDFJS.OPS.paintInlineImageXObject || fnId === 86) {
                 console.log('IMAGE DEBUG: Detected inline image data in args')
                 const candidate = Array.isArray(args) ? args.find((a: any) => a && typeof a === 'object' && ('data' in a || 'imgData' in a) && 'width' in a && 'height' in a) : null
                 if (candidate) {
@@ -564,106 +570,146 @@ export async function extractTextAndImagesWithChunksFromPDF(
                 }
               }
               console.log('IMAGE DEBUG: Initial imageDict resolved from args:', imageDict)
-              if (!imageDict && typeof imageName === 'string') {
-                imageDict = await resolveImageByName(imageName)
+              if (!imageDict && (typeof imageName === 'string' || (imageName && typeof imageName === 'object' && typeof imageName.name === 'string'))) {
+                const name = typeof imageName === 'string' ? imageName : imageName.name
+                imageDict = await resolveImageByName(name)
               }
 
-              // Fallback: if we cannot get the raw image object, crop the region from a high-res full-page render
+              // If we cannot get the raw image object, skip this image
               if (!imageDict) {
-                Logger.debug(`No image object available for ${imageName} on page ${pageNum} — attempting crop fallback via CTM`)
-                try {
-                  await ensureFullPageRender()
-                  if (!fullPageCanvas || !fullPageViewport) {
-                    Logger.debug(`Crop fallback unavailable: full page render not ready on page ${pageNum}`)
-                    continue
-                  }
-
-                  // Compute device space matrix = viewport.transform * currentCTM
-                  const deviceM = mul((fullPageViewport as any).transform, currentCTM)
-                  const p0 = applyToPoint(deviceM, 0, 0)
-                  const p1 = applyToPoint(deviceM, 1, 0)
-                  const p2 = applyToPoint(deviceM, 0, 1)
-                  const p3 = applyToPoint(deviceM, 1, 1)
-                  const minX = Math.max(0, Math.floor(Math.min(p0.x, p1.x, p2.x, p3.x)))
-                  const minY = Math.max(0, Math.floor(Math.min(p0.y, p1.y, p2.y, p3.y)))
-                  const maxX = Math.min(fullPageCanvas.width, Math.ceil(Math.max(p0.x, p1.x, p2.x, p3.x)))
-                  const maxY = Math.min(fullPageCanvas.height, Math.ceil(Math.max(p0.y, p1.y, p2.y, p3.y)))
-                  const cropW = Math.max(0, maxX - minX)
-                  const cropH = Math.max(0, maxY - minY)
-
-                  console.log('IMAGE DEBUG: Crop fallback box for', imageName, { minX, minY, maxX, maxY, cropW, cropH })
-
-                  if (cropW < MIN_IMAGE_DIM_PX || cropH < MIN_IMAGE_DIM_PX) {
-                    Logger.debug(`Crop fallback too small for ${imageName} on page ${pageNum}: ${cropW}x${cropH}`)
-                    continue
-                  }
-
-                  const cropCanvas = createCanvas(cropW, cropH)
-                  const cropCtx = cropCanvas.getContext('2d')
-                  cropCtx.drawImage(fullPageCanvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH)
-
-                  // Proceed with standard pipeline using the cropped buffer
-                  const buffer = cropCanvas.toBuffer('image/png')
-                  // @ts-ignore
-                  let type = await imageType(buffer)
-                  if (!type) type = { mime: 'image/png', ext: 'png' }
-                  if (!DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)) {
-                    Logger.warn(`Unsupported or unknown image MIME type (crop): ${type?.mime}. Skipping image: ${imageName}`)
-                    continue
-                  }
-
-                  const imageHash = crypto.createHash('md5').update(new Uint8Array(buffer)).digest('hex')
-                  let description: string
-                  if (seenHashDescriptions.has(imageHash)) {
-                    description = seenHashDescriptions.get(imageHash)!
-                  } else {
-                    try {
-                      description = describeImages ? await describeImageWithllm(buffer) : 'This is an image.'
-                    } catch {
-                      description = 'Image extracted from PDF page.'
-                    }
-                    if (
-                      !description ||
-                      description === 'No description returned.' ||
-                      description === 'Image is not worth describing.'
-                    ) {
-                      description = 'Image extracted from PDF page.'
-                    }
-                    seenHashDescriptions.set(imageHash, description)
-                  }
-
-                  try {
-                    const baseDir = path.resolve(process.env.IMAGE_DIR || 'downloads/xyne_images_db')
-                    const outputDir = path.join(baseDir, docid)
-                    await fsPromises.mkdir(outputDir, { recursive: true })
-                    const imageFilename = `${globalSeq.value}.${type.ext || 'png'}`
-                    const imagePath = path.join(outputDir, imageFilename)
-                    await fsPromises.writeFile(imagePath, buffer as NodeJS.ArrayBufferView)
-                    Logger.info(`Saved image (crop) to: ${imagePath}`)
-                  } catch (e) {
-                    Logger.error(`Failed to save cropped image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`)
-                    continue
-                  }
-
-                  image_chunks.push(description)
-                  image_chunk_pos.push(globalSeq.value)
-                  crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
-                  globalSeq.value++
-                  imagesOnPage += 1
-                  Logger.debug(`Successfully processed image ${imageName} on page ${pageNum} via crop fallback`)
-                } catch (e) {
-                  Logger.warn(`Crop fallback failed for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`)
-                }
-                // Move on to next operator
-                break
+                Logger.debug(`No image object available for ${imageName} on page ${pageNum} — skipping`)
+                continue
               }
               console.log('IMAGE DEBUG: Resolved imageDict:', {imageDict, isInline})
-              try {
-                const width: number = (imageDict.width ?? imageDict.w) as number
-                const height: number = (imageDict.height ?? imageDict.h) as number
-                const kind = imageDict.kind ?? imageDict.imageKind ?? imageDict.ImageKind
-                // data may live in imageDict.data, imageDict.imgData.data, or imageDict.bytes
-                let rawData: any = imageDict.data ?? imageDict.bytes ?? (imageDict.imgData ? imageDict.imgData.data : undefined)
+              
+              // Ensure imageDict is valid before processing
+              if (!imageDict || typeof imageDict !== 'object') {
+                console.log('IMAGE DEBUG: imageDict is null or invalid, skipping to crop fallback')
+                // This will fall through to the crop fallback logic below
+              } else {
+                try {
+                  // Fast paths for Canvas or Image-like objects returned by page.objs
+                  const isCanvasLike = (obj: any) => obj && typeof obj.getContext === 'function' && typeof obj.width === 'number' && typeof obj.height === 'number'
+                  const isImageLike = (obj: any) => obj && typeof obj.width === 'number' && typeof obj.height === 'number' && typeof obj.getContext !== 'function'
+
+                  if (isCanvasLike(imageDict)) {
+                    const c: any = imageDict
+                    const width: number = c.width
+                    const height: number = c.height
+                    if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
+                      console.log('IMAGE DEBUG: SKIPPED - Small dimensions from canvas for', imageName, { width, height })
+                    } else {
+                      const buffer = c.toBuffer('image/png')
+                      if (buffer.length <= DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024) {
+                        // @ts-ignore
+                        let type = await imageType(buffer)
+                        if (!type) type = { mime: 'image/png', ext: 'png' }
+                        if (DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)) {
+                          const imageHash = crypto.createHash('md5').update(new Uint8Array(buffer)).digest('hex')
+                          let description = 'This is an image.'
+                          if (seenHashDescriptions.has(imageHash)) {
+                            description = seenHashDescriptions.get(imageHash)!
+                          } else {
+                            try {
+                              description = describeImages ? await describeImageWithllm(buffer) : description
+                            } catch {
+                              // ignore
+                            }
+                            if (!description || description === 'No description returned.' || description === 'Image is not worth describing.') {
+                              description = 'Image extracted from PDF page.'
+                            }
+                            seenHashDescriptions.set(imageHash, description)
+                          }
+                          try {
+                            const baseDir = path.resolve(process.env.IMAGE_DIR || 'downloads/xyne_images_db')
+                            const outputDir = path.join(baseDir, docid)
+                            await fsPromises.mkdir(outputDir, { recursive: true })
+                            const imageFilename = `${globalSeq.value}.${type.ext || 'png'}`
+                            const imagePath = path.join(outputDir, imageFilename)
+                            await fsPromises.writeFile(imagePath, buffer as NodeJS.ArrayBufferView)
+                            Logger.info(`Saved image (objs/canvas) to: ${imagePath}`)
+                          } catch (e) {
+                            Logger.error(`Failed to save objs/canvas image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`)
+                            // Skip on failure
+                            break
+                          }
+                          image_chunks.push(description)
+                          image_chunk_pos.push(globalSeq.value)
+                          crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
+                          globalSeq.value++
+                          imagesOnPage += 1
+                          Logger.debug(`Successfully processed objs/canvas image ${imageName} on page ${pageNum}`)
+                          break
+                        }
+                      } else {
+                        Logger.warn(`Skipping objs/canvas image due to size ${(buffer.length / (1024 * 1024)).toFixed(2)} MB: ${imageName}`)
+                      }
+                    }
+                  }
+
+                  if (isImageLike(imageDict)) {
+                    const imgLike: any = imageDict
+                    const width: number = imgLike.width
+                    const height: number = imgLike.height
+                    if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
+                      console.log('IMAGE DEBUG: SKIPPED - Small dimensions from image-like for', imageName, { width, height })
+                    } else {
+                      const cnv = createCanvas(width, height)
+                      const cctx = cnv.getContext('2d')
+                      try {
+                        // @ts-ignore draw directly
+                        cctx.drawImage(imgLike, 0, 0)
+                        const buffer = cnv.toBuffer('image/png')
+                        // @ts-ignore
+                        let type = await imageType(buffer)
+                        if (!type) type = { mime: 'image/png', ext: 'png' }
+                        if (DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)) {
+                          const imageHash = crypto.createHash('md5').update(new Uint8Array(buffer)).digest('hex')
+                          let description = 'This is an image.'
+                          if (seenHashDescriptions.has(imageHash)) {
+                            description = seenHashDescriptions.get(imageHash)!
+                          } else {
+                            try {
+                              description = describeImages ? await describeImageWithllm(buffer) : description
+                            } catch {
+                              // ignore
+                            }
+                            if (!description || description === 'No description returned.' || description === 'Image is not worth describing.') {
+                              description = 'Image extracted from PDF page.'
+                            }
+                            seenHashDescriptions.set(imageHash, description)
+                          }
+                          try {
+                            const baseDir = path.resolve(process.env.IMAGE_DIR || 'downloads/xyne_images_db')
+                            const outputDir = path.join(baseDir, docid)
+                            await fsPromises.mkdir(outputDir, { recursive: true })
+                            const imageFilename = `${globalSeq.value}.${type.ext || 'png'}`
+                            const imagePath = path.join(outputDir, imageFilename)
+                            await fsPromises.writeFile(imagePath, buffer as NodeJS.ArrayBufferView)
+                            Logger.info(`Saved image (objs/image) to: ${imagePath}`)
+                          } catch (e) {
+                            Logger.error(`Failed to save objs/image image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`)
+                            break
+                          }
+                          image_chunks.push(description)
+                          image_chunk_pos.push(globalSeq.value)
+                          crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
+                          globalSeq.value++
+                          imagesOnPage += 1
+                          Logger.debug(`Successfully processed objs/image image ${imageName} on page ${pageNum}`)
+                          break
+                        }
+                      } catch (e) {
+                        Logger.debug(`Drawing objs image failed for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`)
+                      }
+                    }
+                  }
+
+                  const width: number = (imageDict.width ?? imageDict.w) as number
+                  const height: number = (imageDict.height ?? imageDict.h) as number
+                  const kind = imageDict.kind ?? imageDict.imageKind ?? imageDict.ImageKind
+                  // data may live in imageDict.data, imageDict.imgData.data, or imageDict.bytes
+                  let rawData: any = imageDict.data ?? imageDict.bytes ?? (imageDict.imgData ? imageDict.imgData.data : undefined)
 
                 console.log('IMAGE DEBUG: Full image details for', imageName, {
                   width,
@@ -955,11 +1001,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
                   image_chunks.push(description)
                   image_chunk_pos.push(globalSeq.value)
-                  Logger.info(`OVERLAP DEBUG: Adding image placeholder to crossImageOverlap. Before: "${crossImageOverlap}"`)
-                  console.log('OVERLAP DEBUG: crossImageOverlap before adding image placeholder:', crossImageOverlap)
+                  // Logger.info(`OVERLAP DEBUG: Adding image placeholder to crossImageOverlap. Before: "${crossImageOverlap}"`)
+                  // console.log('OVERLAP DEBUG: crossImageOverlap before adding image placeholder:', crossImageOverlap)
                   crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
-                  Logger.info(`OVERLAP DEBUG: Added image placeholder to crossImageOverlap. After: "${crossImageOverlap}"`)
-                  console.log('OVERLAP DEBUG: crossImageOverlap after adding image placeholder:', crossImageOverlap)
+                  // Logger.info(`OVERLAP DEBUG: Added image placeholder to crossImageOverlap. After: "${crossImageOverlap}"`)
+                  // console.log('OVERLAP DEBUG: crossImageOverlap after adding image placeholder:', crossImageOverlap)
                   console.log('IMAGE DEBUG: Added image chunk at position', globalSeq.value, {
                     imageName,
                     description,
@@ -976,6 +1022,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                   `Failed to process image ${imageName} on page ${pageNum}: ${(error as Error).message}`,
                 )
               }
+              }
               break
             }
             default:
@@ -984,52 +1031,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
           }
         }
 
-        // Fallback: if extractImages enabled but no images found in operators, capture full-page snapshot
-        if (extractImages && imagesOnPage === 0) {
-          try {
-            console.log('IMAGE DEBUG: No XObject images found on page', pageNum, '- capturing full-page snapshot as fallback')
-            const viewport = page.getViewport({ scale: 2 })
-            const canvasSnap = createCanvas(Math.max(1, Math.floor(viewport.width)), Math.max(1, Math.floor(viewport.height)))
-            const ctxSnap = canvasSnap.getContext('2d')
-            await page.render({ canvasContext: ctxSnap as any, viewport }).promise
-            const snapBuffer = canvasSnap.toBuffer('image/png')
-
-            if (snapBuffer.length <= DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024) {
-              console.log("snapBuffer")
-              let description = 'This is a page snapshot.'
-              if (describeImages) {
-                try {
-                  description = await describeImageWithllm(snapBuffer)
-                } catch {}
-              }
-              if (!description || description === 'Image is not worth describing.' || description === 'No description returned.') {
-                description = 'PDF page snapshot.'
-              }
-                const baseDir = path.resolve(process.env.IMAGE_DIR || 'downloads/xyne_images_db')
-                const outputDir = path.join(baseDir, docid)
-                await fsPromises.mkdir(outputDir, { recursive: true })
-                const imageFilename = `${globalSeq.value}.png`
-                const imagePath = path.join(outputDir, imageFilename)
-                await fsPromises.writeFile(imagePath, snapBuffer as NodeJS.ArrayBufferView)
-                Logger.info(`Saved page snapshot to: ${imagePath}`)
-                console.log('IMAGE DEBUG: Page snapshot saved to', imagePath)
-
-                image_chunks.push(description)
-                image_chunk_pos.push(globalSeq.value)
-                crossImageOverlap += ` [[IMG#${globalSeq.value}]] `
-                globalSeq.value++
-                imagesOnPage += 1
-            }else{
-              console.log('IMAGE DEBUG: SKIPPED - Page snapshot too large on page', pageNum, {
-                sizeMB: (snapBuffer.length / (1024 * 1024)).toFixed(2),
-                maxAllowedMB: DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB
-              })
-              Logger.warn(`Skipping page snapshot on page ${pageNum} due to size: ${(snapBuffer.length / (1024 * 1024)).toFixed(2)} MB`)  
-            }
-          } catch (e) {
-            Logger.debug(`Page snapshot failed for page ${pageNum}: ${e instanceof Error ? e.message : e}`)
-          }
-        }
+        // Vector snapshot functionality removed (no longer creating fallback canvas)
 
         // End of page: flush remaining paragraph and process paragraphs
         flushParagraph()
@@ -1041,20 +1043,20 @@ export async function extractTextAndImagesWithChunksFromPDF(
         )
 
         // Update cross-image overlap - APPEND instead of REPLACE to preserve image placeholders
-        Logger.info(`OVERLAP DEBUG: End of page ${pageNum} - processing final overlap update`)
-        console.log('OVERLAP DEBUG: Page', pageNum, 'end - overlapText from processTextParagraphs:', overlapText)
-        console.log('OVERLAP DEBUG: Page', pageNum, 'end - crossImageOverlap before final update:', crossImageOverlap)
+        // Logger.info(`OVERLAP DEBUG: End of page ${pageNum} - processing final overlap update`)
+        // console.log('OVERLAP DEBUG: Page', pageNum, 'end - overlapText from processTextParagraphs:', overlapText)
+        // console.log('OVERLAP DEBUG: Page', pageNum, 'end - crossImageOverlap before final update:', crossImageOverlap)
         if (overlapText.trim()) {
-          Logger.info(`OVERLAP DEBUG: Page ${pageNum} - overlapText has content, updating crossImageOverlap`)
+          // Logger.info(`OVERLAP DEBUG: Page ${pageNum} - overlapText has content, updating crossImageOverlap`)
           const previousCrossImageOverlap = crossImageOverlap
           crossImageOverlap = crossImageOverlap
             ? `${crossImageOverlap} ${overlapText}`
             : overlapText
-          Logger.info(`OVERLAP DEBUG: Page ${pageNum} - crossImageOverlap updated from "${previousCrossImageOverlap}" to "${crossImageOverlap}"`)
-          console.log('OVERLAP DEBUG: Page', pageNum, 'end - crossImageOverlap after final update:', crossImageOverlap)
+          // Logger.info(`OVERLAP DEBUG: Page ${pageNum} - crossImageOverlap updated from "${previousCrossImageOverlap}" to "${crossImageOverlap}"`)
+          // console.log('OVERLAP DEBUG: Page', pageNum, 'end - crossImageOverlap after final update:', crossImageOverlap)
         } else {
-          Logger.info(`OVERLAP DEBUG: Page ${pageNum} - overlapText is empty, no update to crossImageOverlap`)
-          console.log('OVERLAP DEBUG: Page', pageNum, 'end - no update to crossImageOverlap (overlapText empty)')
+          // Logger.info(`OVERLAP DEBUG: Page ${pageNum} - overlapText is empty, no update to crossImageOverlap`)
+          // console.log('OVERLAP DEBUG: Page', pageNum, 'end - no update to crossImageOverlap (overlapText empty)')
         }
 
         Logger.debug(
