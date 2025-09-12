@@ -1020,7 +1020,7 @@ class VespaClient {
     // Construct the YQL query using userMap with sameElement
     const yqlQuery = `select docId from mail where userMap contains sameElement(key contains "${email}", value contains "${docId}")`
 
-    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=1`
+    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=1&timeout=5s`
 
     try {
       const response = await this.fetchWithRetry(url, {
