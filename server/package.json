@@ -25,7 +25,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../",
-    "prepare": "cd .. && husky .husky"
+    "prepare": "cd .. && husky .husky",
+    "postinstall": "mkdir -p node_modules/@xynehq/jaf/dependencies && ln -sf $(pwd)/node_modules/pdf-parse node_modules/@xynehq/jaf/dependencies/pdf-parse && sed -i '' 's/let isDebugMode = !module.parent;/let isDebugMode = false;/' node_modules/pdf-parse/index.js"
   },
   "dependencies": {
     "@anthropic-ai/vertex-sdk": "^0.13.1",
