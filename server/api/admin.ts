@@ -1875,7 +1875,10 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
     Logger.info("HandlePerUserSync called")
     const form = await c.req.parseBody()
     const validatedData = syncByMailSchema.parse(form)
-
+    const targetUser = await getUserByEmail(db, validatedData.email)
+    if (!targetUser || !targetUser.length) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
     
     const jobData = {
       email: validatedData.email,
@@ -1910,7 +1913,10 @@ export const HandlePerUserSlackSync = async (c: Context) => {
     Logger.info("HandlePerUserSlackSync called")
     const form = await c.req.parseBody()
     const validatedData = syncByMailSchema.parse(form)
-
+    const targetUser = await getUserByEmail(db, validatedData.email)
+    if (!targetUser || !targetUser.length) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
     const jobData = {
       email: validatedData.email,
       syncOnlyCurrentUser: true,
