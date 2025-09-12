@@ -16,6 +16,8 @@ const qcmsWasmPath =
   path.join(__dirname, "../node_modules/pdfjs-dist/wasm/") + "/"
 const seenHashDescriptions = new Map<string, string>()
 const MIN_IMAGE_DIM_PX = parseInt(process.env.MIN_IMAGE_DIM_PX || "150", 10)
+// Minimum line height used for calculating line break detection tolerance (in PDF units)
+const MIN_LINE_HEIGHT_FOR_TOLERANCE = 10
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "pdfChunks",
@@ -23,26 +25,7 @@ const Logger = getLogger(Subsystem.Integrations).child({
 
 const PDFJS = pdfjsLib
 
-// Utility function to clean text consistent with chunkTextByParagraph
-// const cleanText = (str: string): string => {
-//   console.log('CLEAN TEXT DEBUG: Input string length:', str.length)
-//   console.log('CLEAN TEXT DEBUG: Input string:', str)
 
-//   const normalized = str.replace(/\r\n|\r/g, "\n")
-//   console.log('CLEAN TEXT DEBUG: After normalization length:', normalized.length)
-//   console.log('CLEAN TEXT DEBUG: After normalization:', normalized)
-
-//   const cleaned = normalized.replace(
-//     /[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
-//     "",
-//   )
-//   console.log('CLEAN TEXT DEBUG: After cleaning length:', cleaned.length)
-//   console.log('CLEAN TEXT DEBUG: Cleaned string:', cleaned)
-
-//   return cleaned
-// }
-
-//===
 
 export function normalizeText(input: string): string {
   if (!input) return ""
@@ -131,12 +114,13 @@ export function cleanText(input: string): string {
   s = s.replace(/[ \t]*\n[ \t]*/g, "\n")
 
   // Turn intra-paragraph newlines into spaces, preserve paragraph breaks
-  // 1) Mark paragraph breaks
-  s = s.replace(/\n{2,}/g, "[[PARA]]")
+  // 1) Mark paragraph breaks with a unique placeholder
+  const uniqueParaPlaceholder = `\uE000XYNE_PARA_BREAK_${Math.random().toString(36).substring(2)}\uE001`
+  s = s.replace(/\n{2,}/g, uniqueParaPlaceholder)
   // 2) Collapse remaining newlines (soft wraps) into spaces
   s = s.replace(/\n+/g, " ")
   // 3) Restore paragraph breaks
-  s = s.replace(/\[\[PARA\]\]/g, "\n\n")
+  s = s.replace(new RegExp(uniqueParaPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), "\n\n")
 
   // Apply line-wise despacing
   s = s
@@ -158,6 +142,47 @@ export function cleanText(input: string): string {
     .join("\n")
 
   return s.trim()
+}
+
+// =============================
+// 4. Matrix transformation utilities
+// =============================
+
+/**
+ * Multiply two 2D transformation matrices
+ * Each matrix is represented as [a, b, c, d, e, f] corresponding to:
+ * [a  c  e]
+ * [b  d  f]
+ * [0  0  1]
+ */
+function multiplyMatrices(
+  m1: number[],
+  m2: number[],
+): [number, number, number, number, number, number] {
+  const [a1, b1, c1, d1, e1, f1] = m1 as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ]
+  const [a2, b2, c2, d2, e2, f2] = m2 as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ]
+  return [
+    a1 * a2 + c1 * b2,
+    b1 * a2 + d1 * b2,
+    a1 * c2 + c1 * d2,
+    b1 * c2 + d1 * d2,
+    a1 * e2 + c1 * f2 + e1,
+    b1 * e2 + d1 * f2 + f1,
+  ]
 }
 
 //===
@@ -290,6 +315,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
   text_chunk_pos: number[]
   image_chunk_pos: number[]
 }> {
+  // Sanitize docid for safe filesystem use
+  const safeDocId = docid.replace(/[^a-zA-Z0-9._-]/g, "_")
   Logger.info(`Starting PDF processing for: ${docid}`)
   console.log("PDF DEBUG: Starting processing with parameters:", {
     docid,
@@ -398,6 +425,65 @@ export async function extractTextAndImagesWithChunksFromPDF(
       return paragraphs.map(cleanText).filter((p) => p.length > 0)
     }
 
+    // Extract text from operators as fallback for edge cases
+    const extractFallbackTextFromOperators = (
+      opList: any,
+    ): string[] => {
+      const fallbackLines: string[] = []
+      
+      for (let i = 0; i < opList.fnArray.length; i++) {
+        const fnId = opList.fnArray[i]
+        const args = opList.argsArray[i]
+
+        // Handle text operators
+        if (
+          fnId === PDFJS.OPS.showText ||
+          fnId === PDFJS.OPS.showSpacedText ||
+          fnId === PDFJS.OPS.nextLineShowText ||
+          fnId === PDFJS.OPS.nextLineSetSpacingShowText
+        ) {
+          const extractedText = extractTextFromArgs(args)
+          if (extractedText.trim()) {
+            fallbackLines.push(extractedText.trim())
+          }
+        }
+      }
+
+      return fallbackLines
+    }
+
+    // Combine and deduplicate text from multiple sources
+    const combineTextSources = (
+      primaryParagraphs: string[],
+      fallbackLines: string[],
+    ): string[] => {
+      if (fallbackLines.length === 0) {
+        return primaryParagraphs
+      }
+
+      const primaryText = primaryParagraphs.join(" ").toLowerCase()
+      const additionalLines: string[] = []
+
+      // Add fallback lines that aren't already covered by primary extraction
+      for (const line of fallbackLines) {
+        const cleanLine = line.trim()
+        if (
+          cleanLine.length > 2 && // Skip very short strings
+          !primaryText.includes(cleanLine.toLowerCase())
+        ) {
+          additionalLines.push(cleanLine)
+        }
+      }
+
+      // If we found additional text, append it as a new paragraph
+      if (additionalLines.length > 0) {
+        const additionalParagraph = additionalLines.join(" ")
+        return [...primaryParagraphs, additionalParagraph]
+      }
+
+      return primaryParagraphs
+    }
+
     for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
       Logger.debug(`Processing page ${pageNum}`)
 
@@ -405,10 +491,24 @@ export async function extractTextAndImagesWithChunksFromPDF(
       try {
         const opList = await page.getOperatorList()
 
-        // Use textContent-based paragraphs for this page
-        let paragraphs: string[] = await buildParagraphsFromPage(page)
+        // Use textContent-based paragraphs for this page as primary source
+        let primaryParagraphs: string[] = await buildParagraphsFromPage(page)
+        
+        // Extract fallback text from operators for edge cases
+        const fallbackLines = extractFallbackTextFromOperators(opList)
+        
+        // Combine both sources, prioritizing primary extraction
+        let paragraphs: string[] = combineTextSources(primaryParagraphs, fallbackLines)
+        
         let currentParagraph = "" // kept for image-flow flush, but not used for text
         let textOperatorCount = (await page.getTextContent()).items.length
+
+        console.log("TEXT DEBUG: Text extraction summary for page", pageNum, {
+          primaryParagraphs: primaryParagraphs.length,
+          fallbackLines: fallbackLines.length,
+          finalParagraphs: paragraphs.length,
+          textOperatorCount,
+        })
 
         // Helper: try to resolve image object by name directly from page.objs
         const resolveImageByName = async (
@@ -437,51 +537,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
         ]
         const ctmStack: [number, number, number, number, number, number][] = []
 
-        const mul = (
-          m1: number[],
-          m2: number[],
-        ): [number, number, number, number, number, number] => {
-          const [a1, b1, c1, d1, e1, f1] = m1 as [
-            number,
-            number,
-            number,
-            number,
-            number,
-            number,
-          ]
-          const [a2, b2, c2, d2, e2, f2] = m2 as [
-            number,
-            number,
-            number,
-            number,
-            number,
-            number,
-          ]
-          return [
-            a1 * a2 + c1 * b2,
-            b1 * a2 + d1 * b2,
-            a1 * c2 + c1 * d2,
-            b1 * c2 + d1 * d2,
-            a1 * e2 + c1 * f2 + e1,
-            b1 * e2 + d1 * f2 + f1,
-          ]
-        }
-
-        const applyToPoint = (
-          m: number[],
-          x: number,
-          y: number,
-        ): { x: number; y: number } => {
-          const [a, b, c, d, e, f] = m as [
-            number,
-            number,
-            number,
-            number,
-            number,
-            number,
-          ]
-          return { x: a * x + c * y + e, y: b * x + d * y + f }
-        }
 
         // Do not inject crossImageOverlap into text paragraphs here
         // console.log('OVERLAP DEBUG: Page', pageNum, 'crossImageOverlap at start:', crossImageOverlap)
@@ -500,10 +555,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
           const fnId = opList.fnArray[i]
           const args = opList.argsArray[i]
 
-          // console.log(PDFJS.OPS.paintImageXObject , "PDFJS.OPS.paintImageXObject")
-          //   console.log(PDFJS.OPS.paintImageXObjectRepeat , "PDFJS.OPS.paintImageXObjectRepeat")
-          //   console.log(PDFJS.OPS.paintInlineImageXObject , "PDFJS.OPS.paintInlineImageXObject")
-          //   console.log(PDFJS.OPS.paintImageMaskXObject , "PDFJS.OPS.paintImageMaskXObject")
 
           // Track vector drawing operators (paths, fills, form XObjects)
           const isVectorOp =
@@ -531,7 +582,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
             case PDFJS.OPS.nextLine:
             case PDFJS.OPS.nextLineShowText:
             case PDFJS.OPS.nextLineSetSpacingShowText: {
-              // Text handled via getTextContent; ignore operator-driven text
+              // Text is now handled by combined extraction approach
+              // Operator-level extraction happens in extractFallbackTextFromOperators
               break
             }
             // Handle matrix and positioning operators that might indicate paragraph breaks
@@ -547,7 +599,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     args.length >= 6 &&
                     args.every((n: any) => typeof n === "number")
                   ) {
-                    currentCTM = mul(currentCTM, args as number[])
+                    currentCTM = multiplyMatrices(currentCTM, args as number[])
                   }
                 } catch {}
               }
@@ -561,15 +613,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
               if (ctmStack.length) currentCTM = ctmStack.pop()!
               break
             }
-            // Handle image operators - be more comprehensive
+            // Handle image operators
             case extractImages ? PDFJS.OPS.paintImageXObject : null:
             case extractImages ? PDFJS.OPS.paintImageXObjectRepeat : null:
             case extractImages ? PDFJS.OPS.paintInlineImageXObject : null:
-            case extractImages ? PDFJS.OPS.paintImageMaskXObject : null:
-            case extractImages ? 83 : null:
-            case extractImages ? 85 : null:
-            case extractImages ? 86 : null:
-            case extractImages ? 88 : null: {
+            case extractImages ? PDFJS.OPS.paintImageMaskXObject : null: {
               console.log(
                 "IMAGE DEBUG: Image operator detected on page",
                 pageNum,
@@ -609,7 +657,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                 PDFJS.OPS.paintInlineImageXObject,
                 "PDFJS.OPS.paintInlineImageXObject",
               )
-              if (fnId === PDFJS.OPS.paintInlineImageXObject || fnId === 86) {
+              if (fnId === PDFJS.OPS.paintInlineImageXObject) {
                 console.log("IMAGE DEBUG: Detected inline image data in args")
                 const candidate = Array.isArray(args)
                   ? args.find(
@@ -725,7 +773,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                               process.env.IMAGE_DIR ||
                                 "downloads/xyne_images_db",
                             )
-                            const outputDir = path.join(baseDir, docid)
+                            const outputDir = path.join(baseDir, safeDocId)
                             await fsPromises.mkdir(outputDir, {
                               recursive: true,
                             })
@@ -818,7 +866,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                               process.env.IMAGE_DIR ||
                                 "downloads/xyne_images_db",
                             )
-                            const outputDir = path.join(baseDir, docid)
+                            const outputDir = path.join(baseDir, safeDocId)
                             await fsPromises.mkdir(outputDir, {
                               recursive: true,
                             })
@@ -978,59 +1026,81 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     case pdfjsLib.ImageKind.GRAYSCALE_1BPP:
                     case pdfjsLib.ImageKind.RGB_24BPP:
                     case pdfjsLib.ImageKind.RGBA_32BPP: {
-                      const bytesPerPixel =
-                        kind === pdfjsLib.ImageKind.RGBA_32BPP
-                          ? 4
-                          : kind === pdfjsLib.ImageKind.RGB_24BPP
-                            ? 3
-                            : 1
-                      const expectedLength = width * height * bytesPerPixel
+                      let expectedLength: number
+                      if (kind === pdfjsLib.ImageKind.GRAYSCALE_1BPP) {
+                        // 1 bit per pixel, packed into bytes
+                        expectedLength = Math.ceil((width * height) / 8)
+                      } else {
+                        const bytesPerPixel =
+                          kind === pdfjsLib.ImageKind.RGBA_32BPP
+                            ? 4
+                            : 3 // RGB_24BPP
+                        expectedLength = width * height * bytesPerPixel
+                      }
 
                       if (uint8Data.length >= expectedLength) {
                         const rgbaData = new Uint8ClampedArray(
                           width * height * 4,
                         )
-                        for (let i = 0; i < width * height; i++) {
-                          const srcIdx = i * bytesPerPixel
-                          const dstIdx = i * 4
-                          if (kind === pdfjsLib.ImageKind.GRAYSCALE_1BPP) {
-                            const gray =
-                              srcIdx < uint8Data.length ? uint8Data[srcIdx] : 0
-                            rgbaData[dstIdx] = gray // R
-                            rgbaData[dstIdx + 1] = gray // G
-                            rgbaData[dstIdx + 2] = gray // B
-                            rgbaData[dstIdx + 3] = 255 // A
-                          } else if (kind === pdfjsLib.ImageKind.RGB_24BPP) {
-                            rgbaData[dstIdx] =
-                              srcIdx < uint8Data.length ? uint8Data[srcIdx] : 0 // R
-                            rgbaData[dstIdx + 1] =
-                              srcIdx + 1 < uint8Data.length
-                                ? uint8Data[srcIdx + 1]
-                                : 0 // G
-                            rgbaData[dstIdx + 2] =
-                              srcIdx + 2 < uint8Data.length
-                                ? uint8Data[srcIdx + 2]
-                                : 0 // B
-                            rgbaData[dstIdx + 3] = 255 // A
-                          } else {
-                            // RGBA_32BPP
-                            rgbaData[dstIdx] =
-                              srcIdx < uint8Data.length ? uint8Data[srcIdx] : 0 // R
-                            rgbaData[dstIdx + 1] =
-                              srcIdx + 1 < uint8Data.length
-                                ? uint8Data[srcIdx + 1]
-                                : 0 // G
-                            rgbaData[dstIdx + 2] =
-                              srcIdx + 2 < uint8Data.length
-                                ? uint8Data[srcIdx + 2]
-                                : 0 // B
-                            rgbaData[dstIdx + 3] =
-                              srcIdx + 3 < uint8Data.length
-                                ? uint8Data[srcIdx + 3]
-                                : 255 // A
+                        
+                        if (kind === pdfjsLib.ImageKind.GRAYSCALE_1BPP) {
+                          // Handle 1 bit per pixel grayscale (bit-packed data)
+                          let pixelIndex = 0
+                          for (let y = 0; y < height; y++) {
+                            for (let x = 0; x < width; x++) {
+                              const byteIndex = Math.floor(pixelIndex / 8)
+                              const bitIndex = 7 - (pixelIndex % 8) // MSB first
+                              const bit = byteIndex < uint8Data.length 
+                                ? (uint8Data[byteIndex] >> bitIndex) & 1 
+                                : 0
+                              const gray = bit ? 255 : 0 // Convert bit to full pixel value
+                              
+                              const dstIdx = pixelIndex * 4
+                              rgbaData[dstIdx] = gray     // R
+                              rgbaData[dstIdx + 1] = gray // G
+                              rgbaData[dstIdx + 2] = gray // B
+                              rgbaData[dstIdx + 3] = 255  // A
+                              pixelIndex++
+                            }
+                          }
+                        } else {
+                          // Handle RGB_24BPP and RGBA_32BPP (byte-per-channel data)
+                          const bytesPerPixel = kind === pdfjsLib.ImageKind.RGBA_32BPP ? 4 : 3
+                          for (let i = 0; i < width * height; i++) {
+                            const srcIdx = i * bytesPerPixel
+                            const dstIdx = i * 4
+                            if (kind === pdfjsLib.ImageKind.RGB_24BPP) {
+                              rgbaData[dstIdx] =
+                                srcIdx < uint8Data.length ? uint8Data[srcIdx] : 0 // R
+                              rgbaData[dstIdx + 1] =
+                                srcIdx + 1 < uint8Data.length
+                                  ? uint8Data[srcIdx + 1]
+                                  : 0 // G
+                              rgbaData[dstIdx + 2] =
+                                srcIdx + 2 < uint8Data.length
+                                  ? uint8Data[srcIdx + 2]
+                                  : 0 // B
+                              rgbaData[dstIdx + 3] = 255 // A
+                            } else {
+                              // RGBA_32BPP
+                              rgbaData[dstIdx] =
+                                srcIdx < uint8Data.length ? uint8Data[srcIdx] : 0 // R
+                              rgbaData[dstIdx + 1] =
+                                srcIdx + 1 < uint8Data.length
+                                  ? uint8Data[srcIdx + 1]
+                                  : 0 // G
+                              rgbaData[dstIdx + 2] =
+                                srcIdx + 2 < uint8Data.length
+                                  ? uint8Data[srcIdx + 2]
+                                  : 0 // B
+                              rgbaData[dstIdx + 3] =
+                                srcIdx + 3 < uint8Data.length
+                                  ? uint8Data[srcIdx + 3]
+                                  : 255 // A
+                            }
                           }
                         }
-                        const imageData = new ImageData(rgbaData, width)
+                        const imageData = new ImageData(rgbaData, width, height)
                         ctx.putImageData(imageData, 0, 0)
                         imageProcessed = true
                       }
@@ -1074,7 +1144,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                                   : 0 // B
                               rgbaData[dstIdx + 3] = 255 // A
                             }
-                            const imageData = new ImageData(rgbaData, width)
+                            const imageData = new ImageData(rgbaData, width, height)
                             ctx.putImageData(imageData, 0, 0)
                             imageProcessed = true
                           }
@@ -1103,6 +1173,15 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       imageName,
                     )
                     const buffer = canvas.toBuffer("image/png")
+                    if (
+                      buffer.length >
+                      DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
+                    ) {
+                      Logger.warn(
+                        `Skipping encoded image > ${DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB} MB (size ${(buffer.length / (1024 * 1024)).toFixed(2)} MB)`,
+                      )
+                      continue
+                    }
                     console.log(
                       "IMAGE DEBUG: PNG buffer created for",
                       imageName,
@@ -1255,7 +1334,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       const baseDir = path.resolve(
                         process.env.IMAGE_DIR || "downloads/xyne_images_db",
                       )
-                      const outputDir = path.join(baseDir, docid)
+                      const outputDir = path.join(baseDir, safeDocId)
                       await fsPromises.mkdir(outputDir, { recursive: true })
 
                       const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
