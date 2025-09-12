@@ -19,6 +19,8 @@ import {
   SearchSlackChannels,
   agentChatMessageSchema,
   chatTitleSchema,
+  HighlightApi,
+  highlightSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -187,6 +189,7 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
+  GetChunkContentApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -876,6 +879,8 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+  .get("/c/:cId/files/:itemId/content", GetChunkContentApi)
+  .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(
     "/oauth/create",
