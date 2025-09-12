@@ -59,7 +59,8 @@ const OUTPUT_DIR = path.join(
   "eval-results",
   "search-quality-llm", // Separate output directory
 )
-const OLLAMA_MODEL = config.OllamaModel // Use the model from the central config
+const OLLAMA_MODEL =
+  process.env.OLLAMA_MODEL || config.OllamaModel || config.defaultBestModel // Use the model from the central config or default best model
 const ADVANCED_MODEL_NAME = process.env.ADVANCED_MODEL_NAME || "qwen3:30b-a3b" // Model name to trigger advanced prompt
 const ADVANCED_PROMPT_CHUNKS = parseInt(
   process.env.ADVANCED_PROMPT_CHUNKS || "4",
@@ -330,7 +331,10 @@ async function getRandomDocument(): Promise<Document | null> {
 }
 
 // Generate search queries using Ollama Provider - MODIFIED
-async function generateSearchQueries(doc: Document): Promise<{
+async function generateSearchQueries(
+  doc: Document,
+  modelToUse: string,
+): Promise<{
   queries: string[]
   sourceDocContext?: EvaluationDatasetItem["sourceDocContext"] | null
 }> {
@@ -446,26 +450,26 @@ ${JSON.stringify(sourceDocContextForPrompt, null, 2)}
   ]
 
   Logger.debug(
-    { docId: doc.id, model: OLLAMA_MODEL },
+    { docId: doc.id, model: modelToUse },
     "Sending request via OllamaProvider",
   )
 
   try {
     // --- Use central Provider getter ---
-    const ollamaProvider = getProviderByModel(OLLAMA_MODEL as Models) as
+    const ollamaProvider = getProviderByModel(modelToUse as Models) as
       | LLMProvider
       | undefined
 
     if (!ollamaProvider) {
       Logger.error(
-        { configuredModel: OLLAMA_MODEL },
+        { configuredModel: modelToUse },
         "Configuration Error: Ollama provider could not be initialized or found.",
       )
       return { queries: [], sourceDocContext: null }
     }
 
     const response = await ollamaProvider.converse(messages, {
-      modelId: OLLAMA_MODEL as Models,
+      modelId: modelToUse as Models,
       systemPrompt: systemPrompt,
       temperature: 0.8, // Increased temperature for more diverse queries
       stream: false,
@@ -578,7 +582,7 @@ ${JSON.stringify(sourceDocContextForPrompt, null, 2)}
     Logger.error(
       {
         docId: doc.id,
-        model: OLLAMA_MODEL,
+        model: modelToUse,
         error: error.message || String(error),
       },
       "Failed to generate queries using OllamaProvider",
@@ -593,6 +597,7 @@ async function findDocumentRank(
   vespaIdToFind: string, // Full Vespa ID
   query: string,
   alpha: number, // Added: Alpha value for hybrid search
+  modelToUse: string, // Added: Model being used
 ): Promise<{ rank: number | null; debugPayload: DebugFailureInfo | null }> {
   Logger.debug(
     { docIdToFind, vespaIdToFind, query, alpha },
@@ -637,7 +642,7 @@ async function findDocumentRank(
             docId: docIdToFind,
             vespaId: vespaIdToFind,
             query: query,
-            llmModel: OLLAMA_MODEL,
+            llmModel: modelToUse,
             foundAtRank: null, // Placeholder, updated if found
             debugInfo: {
               query: query,
@@ -769,7 +774,7 @@ async function findDocumentRank(
         docId: docIdToFind,
         vespaId: vespaIdToFind,
         query: query,
-        llmModel: OLLAMA_MODEL,
+        llmModel: modelToUse,
         foundAtRank: null, // Indicate error/unknown rank
         debugInfo: {
           // Basic info available
@@ -919,9 +924,10 @@ function calculateMetrics(results: EvaluationResult[]): Metrics {
 async function analyzePoorRankingCase(
   entry: DebugAnalysisEntry,
   llmProvider: LLMProvider,
+  modelToUse: string,
 ): Promise<LLMAnalysisResult> {
-  // Use OLLAMA_MODEL from config for analysis model
-  const analysisModel = OLLAMA_MODEL as Models
+  // Use modelToUse from parameter for analysis model
+  const analysisModel = modelToUse as Models
   const { sourceDocContext, evaluationFailure } = entry
   const { query, foundAtRank, debugInfo } = evaluationFailure // Already checked for null before calling this
   const { topResults } = debugInfo || {} // debugInfo might still be minimal if search errored
@@ -1052,6 +1058,7 @@ function generateSummaryReport(
   totalDocsInDataset: number,
   analysisResults: DetailedAnalysisResult[],
   datasetPath?: string,
+  modelUsed?: string,
 ): string {
   const {
     mrr,
@@ -1073,7 +1080,7 @@ Generated: ${new Date().toISOString()}
 `
   if (datasetPath)
     report += `Evaluation Dataset: ${path.basename(datasetPath)}\n`
-  report += `LLM Model Used: ${config.OllamaModel}
+  report += `LLM Model Used: ${modelUsed || "Unknown"}
 `
   report += `Target Documents in Dataset: ${totalDocsInDataset}
 `
@@ -1164,6 +1171,7 @@ async function verifyGeneratedQueries(
   sourceDocContext: EvaluationDatasetItem["sourceDocContext"],
   generatedQueries: string[],
   llmProvider: LLMProvider,
+  modelToUse: string,
 ): Promise<LLMVerificationResult> {
   const { title, schema, metadataSnippet, topNChunks } = sourceDocContext
   const queriesString = generatedQueries.map((q) => `\"${q}\"`).join(", ")
@@ -1188,7 +1196,7 @@ async function verifyGeneratedQueries(
       const response = await llmProvider.converse(
         [{ role: "user", content: [{ text: userPrompt }] }],
         {
-          modelId: OLLAMA_MODEL as Models,
+          modelId: modelToUse as Models,
           systemPrompt: systemPrompt,
           temperature: 0.3,
           stream: false,
@@ -1255,6 +1263,7 @@ async function processSingleSample(
   sampleIndex: number,
   totalSamples: number,
   queryGenProvider: LLMProvider,
+  modelToUse: string,
 ): Promise<EvaluationDatasetItem | null> {
   Logger.debug(
     `--- Starting attempt for Verified Sample ${sampleIndex + 1}/${totalSamples} ---`,
@@ -1298,7 +1307,7 @@ async function processSingleSample(
     genAttempt <= MAX_LLM_RETRIES_PER_DOC;
     genAttempt++
   ) {
-    generatedResult = await generateSearchQueries(doc)
+    generatedResult = await generateSearchQueries(doc, modelToUse)
     if (
       generatedResult.queries.length >= QUERIES_PER_DOC &&
       generatedResult.sourceDocContext
@@ -1336,6 +1345,7 @@ async function processSingleSample(
     generatedResult.sourceDocContext,
     generatedResult.queries,
     queryGenProvider,
+    modelToUse,
   )
   if (verificationResult.assessment !== "GOOD_QUERIES") {
     Logger.warn(
@@ -1359,7 +1369,7 @@ async function processSingleSample(
     vespaId: doc.vespaId,
     schema: generatedResult.sourceDocContext.schema,
     title: generatedResult.sourceDocContext.title,
-    llmModel: config.OllamaModel,
+    llmModel: modelToUse,
     queries: generatedResult.queries,
     sourceDocContext: generatedResult.sourceDocContext,
   }
@@ -1371,20 +1381,25 @@ async function processSingleSample(
 // --- Generate Dataset Function (MODIFIED for Concurrency) ---
 async function generateEvaluationDataset(): Promise<void> {
   Logger.info(`Starting dataset generation for ${NUM_SAMPLES} documents...`)
-  Logger.info(`Using Ollama Model from config: ${config.OllamaModel}`)
+  Logger.info(
+    `Using Ollama Model from config: ${OLLAMA_MODEL || config.defaultBestModel}`,
+  )
   Logger.info(`Concurrency Level: ${GENERATE_CONCURRENCY}`)
   Logger.info(`Output directory: ${OUTPUT_DIR}`)
 
-  if (!config.OllamaModel) {
-    Logger.error("Error: OLLAMA_MODEL is not configured.")
+  const modelToUse = OLLAMA_MODEL || config.defaultBestModel
+  if (!modelToUse) {
+    Logger.error(
+      "Error: No LLM model is configured. Please set up an AI provider (Vertex AI, AWS, OpenAI, etc.).",
+    )
     process.exit(1)
   }
-  const queryGenProvider = getProviderByModel(OLLAMA_MODEL as Models) as
+  const queryGenProvider = getProviderByModel(modelToUse as Models) as
     | LLMProvider
     | undefined
   if (!queryGenProvider) {
     Logger.error(
-      { model: OLLAMA_MODEL },
+      { model: modelToUse },
       "Failed to initialize LLM provider for query generation/verification.",
     )
     process.exit(1)
@@ -1399,7 +1414,9 @@ async function generateEvaluationDataset(): Promise<void> {
   for (let i = 0; i < NUM_SAMPLES; i++) {
     // Wrap processSingleSample call in the limiter
     tasks.push(
-      limit(() => processSingleSample(i, NUM_SAMPLES, queryGenProvider)),
+      limit(() =>
+        processSingleSample(i, NUM_SAMPLES, queryGenProvider, modelToUse),
+      ),
     )
   }
 
@@ -1436,7 +1453,7 @@ async function generateEvaluationDataset(): Promise<void> {
   // Save the dataset file if any entries were successful
   if (dataset.length > 0) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-    const modelNameForFilename = config.OllamaModel.replace(/:/g, ".")
+    const modelNameForFilename = modelToUse.replace(/:/g, ".")
     const datasetFilename = path.join(
       OUTPUT_DIR,
       `evaluation_dataset_${modelNameForFilename}_${timestamp}.json`,
@@ -1488,7 +1505,7 @@ async function evaluateFromDataset(
 
   const firstItemModel = dataset[0]?.llmModel || "Unknown"
   Logger.info(`Dataset generated with LLM Model: ${firstItemModel}`)
-  Logger.info(`Evaluation using LLM Model: ${OLLAMA_MODEL}`)
+  Logger.info(`Evaluation using LLM Model: ${firstItemModel}`) // Use the model from dataset
   Logger.info(`Output directory: ${OUTPUT_DIR}`)
   if (DEBUG_POOR_RANKINGS) {
     Logger.warn(
@@ -1499,12 +1516,12 @@ async function evaluateFromDataset(
   ensureDirectoryExists(OUTPUT_DIR)
   let analysisLLMProvider: LLMProvider | undefined
   if (DEBUG_POOR_RANKINGS) {
-    analysisLLMProvider = getProviderByModel(OLLAMA_MODEL as Models) as
+    analysisLLMProvider = getProviderByModel(firstItemModel as Models) as
       | LLMProvider
       | undefined
     if (!analysisLLMProvider) {
       Logger.error(
-        { model: OLLAMA_MODEL },
+        { model: firstItemModel },
         "Failed to initialize LLM provider for analysis. Analysis will be skipped.",
       )
     }
@@ -1569,6 +1586,7 @@ async function evaluateFromDataset(
       item.vespaId,
       query,
       alpha,
+      item.llmModel, // Use the model from the dataset item
     )
 
     const evalResult: EvaluationResult = {
@@ -1596,6 +1614,7 @@ async function evaluateFromDataset(
         const analysis = await analyzePoorRankingCase(
           analysisEntry,
           analysisLLMProvider,
+          item.llmModel, // Use the model from the dataset item
         )
         analysisResult = { entry: analysisEntry, analysis }
         Logger.info(
@@ -1701,7 +1720,7 @@ async function evaluateFromDataset(
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
   const datasetName = path.basename(datasetPath, ".json")
-  const modelNameForFilename = config.OllamaModel.replace(/:/g, ".")
+  const modelNameForFilename = firstItemModel.replace(/:/g, ".")
 
   // ---- REMOVED FILE WRITING FOR OPTIMIZATION RUN ----
   // try {
@@ -1823,9 +1842,19 @@ async function mainEvaluationRouter() {
     const metrics = await evaluateFromDataset(EVAL_DATASET_PATH, defaultAlpha)
     // We need to manually generate the report here if needed, as evaluateFromDataset no longer does.
     if (metrics) {
+      // Load dataset to get the model info
+      let firstItemModel = "Unknown"
+      try {
+        const fileContent = fs.readFileSync(EVAL_DATASET_PATH, "utf-8")
+        const dataset = JSON.parse(fileContent)
+        firstItemModel = dataset[0]?.llmModel || "Unknown"
+      } catch (error) {
+        Logger.warn("Could not load dataset to get model info for summary")
+      }
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
       const datasetName = path.basename(EVAL_DATASET_PATH, ".json")
-      const modelNameForFilename = config.OllamaModel.replace(/:/g, ".")
+      const modelNameForFilename = firstItemModel.replace(/:/g, ".")
       const summaryFilename = path.join(
         OUTPUT_DIR,
         `summary_${datasetName}_${modelNameForFilename}_alpha${defaultAlpha}_${timestamp}.txt`,
@@ -1839,6 +1868,7 @@ async function mainEvaluationRouter() {
         0,
         [],
         EVAL_DATASET_PATH,
+        firstItemModel, // Pass the model from dataset
       )
       try {
         fs.writeFileSync(summaryFilename, summaryContent)
