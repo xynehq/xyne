@@ -1,6 +1,6 @@
 import { sign } from "hono/jwt"
 
-const accessTokenSecret = "djfghksdjhfskj" // From .env ACCESS_TOKEN_SECRET
+const accessTokenSecret = "" // From .env ACCESS_TOKEN_SECRET
 
 const payload = {
   sub: "test@test.com",

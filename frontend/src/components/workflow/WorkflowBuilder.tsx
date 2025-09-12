@@ -29,6 +29,7 @@ import {
   UserDetail,
   Tool,
 } from "./Types"
+import { api } from "../../api"
 
 // Import WorkflowTemplate type
 interface WorkflowTemplate {
@@ -2126,7 +2127,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     setTemplatesError(null)
     
     try {
-      const response = await fetch('http://localhost:3000/api/v1/workflow/templates')
+      const response = await api.workflow.templates.$get()
       if (!response.ok) {
         throw new Error(`Failed to fetch templates: ${response.status} ${response.statusText}`)
       }
@@ -2564,12 +2565,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       try {
         // Create the workflow template in the backend
-        const response = await fetch('http://localhost:3000/api/v1/workflow/templates/complex', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(workflowState),
+        const response = await api.workflow.templates.complex.$post({
+          json: workflowState,
         })
 
         if (!response.ok) {
@@ -3137,7 +3134,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     if (fullTemplate) {
       try {
         // Fetch detailed template data including steps and tools
-        const response = await fetch(`http://localhost:3000/api/v1/workflow/templates/${fullTemplate.id}`)
+        const response = await api.workflow.templates[fullTemplate.id].$get()
         if (response.ok) {
           const result = await response.json()
           if (result.success && result.data) {
