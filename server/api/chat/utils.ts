@@ -515,11 +515,13 @@ export const extractFileIdsFromMessage = async (
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
   threadIds: string[]
+  webSearchResults?: { title: string; url: string }[]
 }> => {
   const fileIds: string[] = []
   const threadIds: string[] = []
   const driveItem: string[] = []
   const collectionFolderIds: string[] = []
+  const webSearchResults: { title: string; url: string }[] = []
   if (pathRefId) {
     collectionFolderIds.push(pathRefId)
   }
@@ -535,14 +537,21 @@ export const extractFileIdsFromMessage = async (
           obj?.value?.entity == DriveEntity.Folder
         ) {
           driveItem.push(obj?.value?.docId)
-        } else fileIds.push(obj?.value?.docId)
+        } else if (obj?.value?.app === Apps.WebSearch) {
+          webSearchResults.push({
+            title: obj?.value?.title,
+            url: obj?.value?.url || "",
+          })
+        } else {
+          fileIds.push(obj?.value?.docId)
+        }
         // Check if this pill has a threadId (for email threads)
         if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
           threadIds.push(obj?.value?.threadId)
         }
 
         const pillValue = obj.value
-        const docId = pillValue.docId
+        const docId = obj.value.app !== Apps.WebSearch ? pillValue.docId : ""
 
         // Check if this is a Google Sheets reference with wholeSheet: true
         if (pillValue.wholeSheet === true) {
@@ -656,7 +665,12 @@ export const extractFileIdsFromMessage = async (
     fileIds.push(...vespaIds)
   }
 
-  return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
+  return {
+    totalValidFileIdsFromLinkCount,
+    fileIds: fileIds.filter(Boolean),
+    threadIds: threadIds.filter(Boolean),
+    webSearchResults,
+  }
 }
 
 export const handleError = (error: any) => {
