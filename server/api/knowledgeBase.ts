@@ -39,7 +39,7 @@ import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument, GetDocument } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import crypto from "crypto"
 import { FileProcessorService } from "@/services/fileProcessor"
 import {
