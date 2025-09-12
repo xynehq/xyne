@@ -32,7 +32,11 @@ import {
   DriveEntity,
   GooglePeopleEntity,
 } from "@/shared/types"
-import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
+import {
+  getAppSyncJobs,
+  getAppSyncJobsByEmail,
+  updateSyncJob,
+} from "@/db/syncJob"
 import { getUserById } from "@/db/user"
 import { insertSyncHistory } from "@/db/syncHistory"
 import { getErrorMessage, retryWithBackoff } from "@/utils"
@@ -453,8 +457,21 @@ export const handleGoogleOAuthChanges = async (
   job: PgBoss.Job<any>,
 ) => {
   const data = job.data
+  const syncOnlyCurrentUser = job.data.syncOnlyCurrentUser || false
   loggerWithChild({ email: data.email ?? "" }).info("handleGoogleOAuthChanges")
-  const syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
+  let syncJobs = await getAppSyncJobs(db, Apps.GoogleDrive, AuthType.OAuth)
+  if (syncOnlyCurrentUser) {
+    loggerWithChild({ email: data.email }).info("Syncing for Current User Only")
+    syncJobs = await getAppSyncJobsByEmail(
+      db,
+      Apps.GoogleDrive,
+      AuthType.OAuth,
+      data.email,
+    )
+  }
+  loggerWithChild({ email: data.email ?? "" }).info(
+    `Value of syncOnlyCurrentUser :${syncOnlyCurrentUser} `,
+  )
   for (const syncJob of syncJobs) {
     let stats = newStats()
     try {

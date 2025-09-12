@@ -9,7 +9,11 @@ import {
   type SlackOAuthIngestionState,
 } from "@/db/schema"
 import { Subsystem, type SlackConfig, SyncCron } from "@/types"
-import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
+import {
+  getAppSyncJobs,
+  getAppSyncJobsByEmail,
+  updateSyncJob,
+} from "@/db/syncJob"
 import { WebClient } from "@slack/web-api"
 import {
   getAllConversations,
@@ -324,9 +328,24 @@ export const handleSlackChanges = async (
   loggerWithChild({ email: jobData.email ?? "" }).info(
     "handleSlackChanges started",
   )
+  const syncOnlyCurrentUser = job.data.syncOnlyCurrentUser || false
 
   try {
-    const syncJobs = await getAppSyncJobs(db, Apps.Slack, AuthType.OAuth)
+    let syncJobs = await getAppSyncJobs(db, Apps.Slack, AuthType.OAuth)
+    if (syncOnlyCurrentUser) {
+      loggerWithChild({ email: jobData.email }).info(
+        "Syncing for Current User Only",
+      )
+      syncJobs = await getAppSyncJobsByEmail(
+        db,
+        Apps.Slack,
+        AuthType.OAuth,
+        jobData.email,
+      )
+    }
+    loggerWithChild({ email: jobData.email ?? "" }).info(
+      `Value of syncOnlyCurrentUser :${syncOnlyCurrentUser} `,
+    )
     if (!syncJobs || syncJobs.length === 0) {
       loggerWithChild({ email: jobData.email ?? "" }).info(
         "No Slack sync jobs found",
