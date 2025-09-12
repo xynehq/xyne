@@ -731,7 +731,11 @@ export const AppRoutes = app
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
-  .post("/chat/generateTitle", zValidator("json", chatTitleSchema), GenerateChatTitleApi)
+  .post(
+    "/chat/generateTitle",
+    zValidator("json", chatTitleSchema),
+    GenerateChatTitleApi,
+  )
   .post(
     "/chat/bookmark",
     zValidator("json", chatBookmarkSchema),
@@ -1006,7 +1010,6 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
   )
-  // .get("/workspace/api-key", GetWorkspaceApiKeys)
 
   .get(
     "/agents/:agentId/analysis",
@@ -1068,7 +1071,7 @@ app
     SearchKnowledgeBaseApi,
   )
   .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
-  .post("/cl/:clId/items/upload", UploadFilesApi)
+  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB
   .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB
 
 const generateTokens = async (

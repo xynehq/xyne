@@ -156,6 +156,7 @@ export const EXTENSION_MAPPINGS = {
   [FileType.PDF]: [".pdf"],
   [FileType.TEXT]: [".txt", ".md"],
 } as const
+
 export enum ApiKeyScopes {
   CREATE_AGENT = "CREATE_AGENT",
   AGENT_CHAT = "AGENT_CHAT",

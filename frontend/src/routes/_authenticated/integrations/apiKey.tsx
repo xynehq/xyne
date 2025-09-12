@@ -41,11 +41,7 @@ import { errorComponent } from "@/components/error"
 import { authFetch } from "@/utils/authFetch"
 import { api } from "@/api"
 import { ApiKeyScopes } from "shared/types"
-import type {
-  PublicUser,
-  PublicWorkspace,
-  SelectPublicAgent,
-} from "shared/types"
+import type { PublicUser, SelectPublicAgent } from "shared/types"
 
 // Types
 interface ApiKeyScope {
@@ -136,14 +132,10 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
 
 interface ApiKeyProps {
   user: PublicUser
-  workspace: PublicWorkspace
   agentWhiteList: boolean
 }
 
-const ApiKeyComponent = ({
-  user,
-  agentWhiteList,
-}: Omit<ApiKeyProps, "workspace">) => {
+const ApiKeyComponent = ({ user, agentWhiteList }: ApiKeyProps) => {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [availableAgents, setAvailableAgents] = useState<ApiKeyAgent[]>([])
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -161,7 +153,8 @@ const ApiKeyComponent = ({
   const [selectedScopes, setSelectedScopes] = useState<string[]>([])
   const [selectedAgents, setSelectedAgents] = useState<string[]>([])
 
-  const { toast } = useToast() // Load initial data
+  const { toast } = useToast()
+
   useEffect(() => {
     loadApiKeys()
     loadAvailableAgents()
@@ -394,6 +387,9 @@ const ApiKeyComponent = ({
     return `${visiblePart}${"*".repeat(28)}`
   }
 
+  // todo when no agents are created, there is an empty box for agent selection in create modal - fix that
+  // todo check the UI after deleting everything
+
   return (
     <div className="flex w-full h-full dark:bg-[#1E1E1E]">
       <Sidebar
@@ -402,7 +398,7 @@ const ApiKeyComponent = ({
         isAgentMode={agentWhiteList}
       />
       <IntegrationsSidebar role={user.role} isAgentMode={agentWhiteList} />
-      <div className="w-full h-full flex items-center justify-center">
+      <div className="w-full h-full flex justify-center">
         <div className="p-8 space-y-6 bg-background min-h-screen w-full max-w-full overflow-x-auto">
           <div className="flex items-center justify-between">
             <div>
@@ -581,7 +577,6 @@ const ApiKeyComponent = ({
                       <TableHead>Scopes</TableHead>
                       <TableHead>Agent Access</TableHead>
                       <TableHead>Created</TableHead>
-                      <TableHead className="w-[70px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -651,7 +646,11 @@ const ApiKeyComponent = ({
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="focus-visible:ring-0"
+                              >
                                 <MoreHorizontal className="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -834,7 +833,6 @@ const ApiKeyWrapper = () => {
 
 export const Route = createFileRoute("/_authenticated/integrations/apiKey")({
   beforeLoad: async ({ params }) => {
-    // Future: Add role-based access control here if needed
     return params
   },
   loader: async (params) => {
