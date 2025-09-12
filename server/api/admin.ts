@@ -403,8 +403,8 @@ export const CreateOAuthProvider = async (c: Context) => {
       throw new ConnectorNotCreated({})
     }
     const provider = await createOAuthProvider(trx, {
-      clientId,
-      clientSecret,
+      clientId: clientId!,
+      clientSecret: clientSecret!,
       oauthScopes: scopes || [],
       workspaceId: user.workspaceId,
       userId: user.id,

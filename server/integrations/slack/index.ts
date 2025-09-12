@@ -813,7 +813,9 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
       initialState,
     )
 
-    const { accessToken } = connector.oauthCredentials
+    const { accessToken } = connector.oauthCredentials as {
+      accessToken: string
+    }
     const client = new WebClient(accessToken, {
       retryConfig: retryPolicies.rapidRetryPolicy,
     })

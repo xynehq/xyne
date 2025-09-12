@@ -913,7 +913,7 @@ export const handleMicrosoftOAuthIngestion = async (data: SaaSOAuthJob) => {
       oauthTokens.access_token,
       oauthTokens.refresh_token,
       microsoftProvider.clientId!,
-      microsoftProvider.clientSecret!,
+      microsoftProvider.clientSecret! as string,
     )
 
     const [totalFiles, { messagesTotal, messagesExcludingPromotions }] =

@@ -830,7 +830,9 @@ export const handleSlackChannelIngestion = async (
       connectorId,
     )
 
-    const { accessToken } = connector.oauthCredentials
+    const { accessToken } = connector.oauthCredentials as {
+      accessToken: string
+    }
     const client = new WebClient(accessToken, {
       retryConfig: retryPolicies.rapidRetryPolicy,
     })

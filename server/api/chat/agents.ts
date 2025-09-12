@@ -1117,7 +1117,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
-            ...(agentId ? { agentId: agentIdToStore } : {}),
+            ...(agentId ? { agentId: agentIdToStore as string } : {}),
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -2942,7 +2942,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
-            agentId: agentIdToStore,
+            agentId: agentIdToStore as string,
             via_apiKey,
           })
 
@@ -3733,7 +3733,7 @@ export const AgentMessageApi = async (c: Context) => {
             email: user.email,
             title,
             attachments: [],
-            agentId: agentIdToStore,
+            agentId: agentIdToStore as string,
             via_apiKey,
           })
 
