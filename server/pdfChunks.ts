@@ -41,7 +41,6 @@ export function normalizeText(input: string): string {
   return normalized.trim()
 }
 
-
 // 2. Smart letter-spacing collapse (per line)
 
 function smartDespaceLine(line: string): string {
@@ -99,7 +98,6 @@ function smartDespaceLine(line: string): string {
   return out.join("")
 }
 
-
 // 3. High-level text cleaner
 
 export function cleanText(input: string): string {
@@ -148,9 +146,7 @@ export function cleanText(input: string): string {
   return s.trim()
 }
 
-
 // 4. Matrix transformation utilities
-
 
 /**
  * Multiply two 2D transformation matrices
@@ -644,7 +640,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
               let imageDict: any | null = null
               let isInline = false
               // Inline image may directly carry data in args
-              Logger.debug("Image operator details", { 
+              Logger.debug("Image operator details", {
                 args: args.length,
                 fnId,
                 paintInlineImageXObject: PDFJS.OPS.paintInlineImageXObject,
@@ -696,7 +692,9 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
               // Ensure imageDict is valid before processing
               if (!imageDict || typeof imageDict !== "object") {
-                Logger.debug("imageDict is null or invalid, skipping to crop fallback")
+                Logger.debug(
+                  "imageDict is null or invalid, skipping to crop fallback",
+                )
                 // This will fall through to the crop fallback logic below
               } else {
                 try {
@@ -963,9 +961,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     continue // Skip small images
                   }
 
-                  Logger.debug("Image passed all filters, proceeding with processing", {
-                    imageName,
-                  })
+                  Logger.debug(
+                    "Image passed all filters, proceeding with processing",
+                    {
+                      imageName,
+                    },
+                  )
 
                   let uint8Data: Uint8Array
                   if (rawData instanceof Uint8Array) {
@@ -1160,10 +1161,13 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     })
 
                     if (!type) {
-                      Logger.debug("Could not determine MIME type, using default", {
-                        imageName,
-                        default: "image/png",
-                      })
+                      Logger.debug(
+                        "Could not determine MIME type, using default",
+                        {
+                          imageName,
+                          default: "image/png",
+                        },
+                      )
                       Logger.warn(
                         `Could not determine MIME type for ${imageName}. Defaulting to image/png`,
                       )
@@ -1176,10 +1180,9 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       supportedMimes: Array.from(
                         DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES,
                       ),
-                      isSupported:
-                        DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(
-                          type.mime,
-                        ),
+                      isSupported: DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(
+                        type.mime,
+                      ),
                     })
 
                     if (
@@ -1199,9 +1202,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       continue
                     }
 
-                    Logger.debug("MIME type check passed, proceeding with processing", {
-                      imageName,
-                    })
+                    Logger.debug(
+                      "MIME type check passed, proceeding with processing",
+                      {
+                        imageName,
+                      },
+                    )
 
                     // buffer already created above
                     const imageHash = crypto
@@ -1227,9 +1233,12 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       })
                       if (describeImages) {
                         try {
-                          Logger.debug("Calling describeImageWithllm for image", {
-                            imageName,
-                          })
+                          Logger.debug(
+                            "Calling describeImageWithllm for image",
+                            {
+                              imageName,
+                            },
+                          )
                           description = await describeImageWithllm(buffer)
                           Logger.debug("Got description from AI for image", {
                             imageName,
@@ -1240,11 +1249,15 @@ export async function extractTextAndImagesWithChunksFromPDF(
                             `describeImageWithllm failed for ${imageName}: ${e instanceof Error ? e.message : e}`,
                           )
                           description = "This is an image from the PDF."
-                          Logger.debug("Using fallback description due to AI error")
+                          Logger.debug(
+                            "Using fallback description due to AI error",
+                          )
                         }
                       } else {
                         description = "This is an image."
-                        Logger.debug("Using default description (describeImages=false)")
+                        Logger.debug(
+                          "Using default description (describeImages=false)",
+                        )
                       }
                       if (
                         description === "No description returned." ||
