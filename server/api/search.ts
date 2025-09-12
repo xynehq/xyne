@@ -655,9 +655,9 @@ export const HighlightApi = async (c: Context) => {
     }
 
     const {
-      matchThreshold = 0.15,
-      maxChunkLength = 200,
-      caseSensitive = false
+      matchThreshold,
+      maxChunkLength,
+      caseSensitive
     } = options;
 
     // Normalize text for matching
@@ -694,13 +694,15 @@ export const HighlightApi = async (c: Context) => {
       return normalizeText(limitedLine);
     };
 
-    const findBestMatch = (haystack: string, needle: string) => {
+    const findAllMatches = (haystack: string, needle: string) => {
       const hay = caseSensitive ? haystack : haystack.toLowerCase();
       const ned = caseSensitive ? needle : needle.toLowerCase();
       
-      if (ned.length > hay.length || ned.length < 3) return null;
+      if (ned.length > hay.length || ned.length < 3) return [];
       
+      let matches: Array<{ index: number, similarity: number, length: number }> = [];
       let bestMatch = { index: -1, similarity: 0, length: 0 };
+
       
       const windowSizes = [ned.length, ned.length + 20, ned.length + 40, ned.length + 60];
       
@@ -709,7 +711,7 @@ export const HighlightApi = async (c: Context) => {
           const window = hay.substring(i, i + windowSize);
           
           // Calculate similarity using character overlap with whitespace tolerance
-          let matches = 0;
+          let charMatches = 0;
           let hayPos = 0;
           let nedPos = 0;
           
@@ -718,7 +720,7 @@ export const HighlightApi = async (c: Context) => {
             const nedChar = ned[nedPos];
             
             if (hayChar === nedChar) {
-              matches++;
+              charMatches++;
               hayPos++;
               nedPos++;
             } else if (/\s/.test(hayChar)) {
@@ -733,19 +735,98 @@ export const HighlightApi = async (c: Context) => {
           
           // Calculate similarity based on matched characters vs total characters
           const totalChars = Math.max(ned.length, window.length);
-          const similarity = matches / totalChars;
+          const similarity = charMatches / totalChars;
           
-          if (similarity > bestMatch.similarity && similarity >= matchThreshold) {
-            bestMatch = { index: i, similarity, length: windowSize };
+          if (similarity >= matchThreshold) {
+            if(similarity > bestMatch.similarity) {
+              bestMatch = { index: i, similarity, length: windowSize };
+              matches = [bestMatch];
+            }
+            else if(similarity === bestMatch.similarity) {
+              matches.push({ index: i, similarity, length: windowSize });
+            }
           }
         }
       }
       
-      return bestMatch.similarity > 0 ? bestMatch : null;
+      // Sort by similarity (descending) and return all matches above threshold
+      return matches.sort((a, b) => b.similarity - a.similarity);
+    };
+
+    // Best span algorithm implementation
+    const findBestSpan = (indexLists: number[][]) => {
+      if (indexLists.length === 0 || indexLists.some(a => a.length === 0)) return null;
+
+      const merged: Array<{ pos: number, sentenceId: number }> = [];
+      for (let sentenceId = 0; sentenceId < indexLists.length; sentenceId++) {
+        for (const pos of indexLists[sentenceId]) merged.push({ pos, sentenceId });
+      }
+      merged.sort((a, b) => a.pos - b.pos);
+
+      const need = indexLists.length;
+      let have = 0;
+      const cnt = new Map<number, number>();
+
+      let bestL: number | null = null;
+      let bestR: number | null = null;
+      let l = 0;
+
+      for (let r = 0; r < merged.length; r++) {
+        const { pos: posR, sentenceId: sidR } = merged[r];
+        cnt.set(sidR, (cnt.get(sidR) || 0) + 1);
+        if (cnt.get(sidR) === 1) have++;
+
+        while (have === need) {
+          const { pos: posL, sentenceId: sidL } = merged[l];
+
+          // Prefer strictly smaller span; if equal span, prefer the one whose center is closest
+          // to the previous best center (stabilizes choices without extra scans).
+          if (
+            bestL === null ||
+            (posR - posL) < (bestR! - bestL) ||
+            ((posR - posL) === (bestR! - bestL) && Math.abs((posR + posL) / 2 - (bestR! + bestL) / 2) <= 0)
+          ) {
+            bestL = posL;
+            bestR = posR;
+          }
+
+          cnt.set(sidL, (cnt.get(sidL) || 0) - 1);
+          if (cnt.get(sidL) === 0) have--;
+          l++;
+        }
+      }
+
+      if (bestL === null || bestR === null) return null;
+      return { bestL, bestR };
     };
     
     const lines = chunkText.split('\n');
-    const matches: Array<{
+    const processedLines: string[] = [];
+    const allMatchesPerLine: Array<{
+      matches: Array<{ index: number, similarity: number, length: number }>;
+      originalLine: string;
+      processedLine: string;
+    }> = [];
+    
+    // Collect all matches for each line
+    for (const line of lines) {
+      const processedLine = processLine(line);
+      if (processedLine) {
+        processedLines.push(processedLine);
+        const matches = findAllMatches(documentContent, processedLine);
+        
+        if (matches.length > 0) {
+          allMatchesPerLine.push({
+            matches,
+            originalLine: line.trim(),
+            processedLine: processedLine
+          });
+        }
+      }
+    }
+
+    // Apply best span algorithm to find optimal clusters
+    const finalMatches: Array<{
       startIndex: number;
       endIndex: number;
       length: number;
@@ -755,30 +836,71 @@ export const HighlightApi = async (c: Context) => {
       processedLine: string;
     }> = [];
 
-    const processedLines: string[] = [];
-    
-    for (const line of lines) {
-      const processedLine = processLine(line);
-      if (processedLine) {
-        processedLines.push(processedLine);
-        const match = findBestMatch(documentContent, processedLine);
-        
-        if (match) {
-          matches.push({
-            startIndex: match.index,
-            endIndex: match.index + match.length,
-            length: match.length,
-            similarity: match.similarity,
-            highlightedText: documentContent.substring(match.index, match.index + match.length),
-            originalLine: line.trim(),
-            processedLine: processedLine
+    if (allMatchesPerLine.length > 0) {
+      // Extract all match indices for each line
+      const indexLists: number[][] = allMatchesPerLine.map(lineData => 
+        lineData.matches.map(match => match.index)
+      );
+
+      // Find the best span
+      const bestSpan = findBestSpan(indexLists);
+      
+      if (bestSpan) {
+        // Create matches for the best span by choosing, for each line, the match
+        // inside [bestL, bestR] with the highest similarity.
+        const windowMid = (bestSpan.bestL + bestSpan.bestR) / 2;
+
+        for (let i = 0; i < allMatchesPerLine.length; i++) {
+          const lineData = allMatchesPerLine[i];
+
+          // Consider only matches that fall within the best span
+          const candidates = lineData.matches.filter(m => m.index >= bestSpan.bestL && (m.index + m.length) <= bestSpan.bestR);
+
+          if (candidates.length === 0) {
+            // Fallback: choose the candidate whose start is inside the span (end may overflow)
+            const loose = lineData.matches.filter(m => m.index >= bestSpan.bestL && m.index <= bestSpan.bestR);
+            if (loose.length === 0) continue;
+            loose.sort((a, b) => {
+              if (b.similarity !== a.similarity) return b.similarity - a.similarity;
+              return Math.abs(a.index - windowMid) - Math.abs(b.index - windowMid);
+            });
+            const selectedMatch = loose[0];
+            finalMatches.push({
+              startIndex: selectedMatch.index,
+              endIndex: selectedMatch.index + selectedMatch.length,
+              length: selectedMatch.length,
+              similarity: selectedMatch.similarity,
+              highlightedText: documentContent.substring(selectedMatch.index, selectedMatch.index + selectedMatch.length),
+              originalLine: lineData.originalLine,
+              processedLine: lineData.processedLine
+            });
+            continue;
+          }
+
+          // Prefer higher similarity; tie-break by closeness to the window center
+          candidates.sort((a, b) => {
+            if (b.similarity !== a.similarity) return b.similarity - a.similarity;
+            return Math.abs(a.index - windowMid) - Math.abs(b.index - windowMid);
+          });
+
+          const selectedMatch = candidates[0];
+          finalMatches.push({
+            startIndex: selectedMatch.index,
+            endIndex: selectedMatch.index + selectedMatch.length,
+            length: selectedMatch.length,
+            similarity: selectedMatch.similarity,
+            highlightedText: documentContent.substring(selectedMatch.index, selectedMatch.index + selectedMatch.length),
+            originalLine: lineData.originalLine,
+            processedLine: lineData.processedLine
           });
         }
       }
     }
 
-    matches.sort((a, b) => a.startIndex - b.startIndex);
+    // Sort matches by start index
+    finalMatches.sort((a, b) => a.startIndex - b.startIndex);
 
+    // Merge overlapping matches
     const filteredMatches: Array<{
       startIndex: number;
       endIndex: number;
@@ -789,8 +911,8 @@ export const HighlightApi = async (c: Context) => {
       processedLine: string;
     }> = [];
     
-    for (let i = 0; i < matches.length; i++) {
-      const current = matches[i];
+    for (let i = 0; i < finalMatches.length; i++) {
+      const current = finalMatches[i];
       let merged = false;
       
       for (let j = 0; j < filteredMatches.length; j++) {

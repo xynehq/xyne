@@ -5,8 +5,8 @@ type Options = {
   caseSensitive?: boolean;
   highlightClass?: string;
   activeClass?: string;
-  matchThreshold?: number;    // 0.0 = exact match, 1.0 = very loose (default: 0.15)
-  maxChunkLength?: number;    // Maximum chunk length to process (default: 200)
+  matchThreshold?: number;    // 0.0 = exact match, 1.0 = very loose (default: 0.3)
+  maxChunkLength?: number;    // Maximum chunk length to process (default: 500)
   debug?: boolean;            // Enable debug logging
 };
 
@@ -131,9 +131,35 @@ export function useScopedFind(
               console.warn('Failed to wrap range with mark, trying alternative approach:', rangeError);
               
               // Alternative: split text node and insert mark
+              const originalText = textNode.nodeValue!;
               const beforeText = textNode.nodeValue!.substring(0, startOffset);
               const matchText = textNode.nodeValue!.substring(startOffset, endOffset);
               const afterText = textNode.nodeValue!.substring(endOffset);
+              
+              try {
+                // Replace the text node content with before text
+                textNode.nodeValue = beforeText;
+                
+                // Create and insert the mark
+                const mark = document.createElement("mark");
+                mark.className = `${highlightClass}`;
+                mark.setAttribute('data-match-index', '0');
+                mark.textContent = matchText;
+                
+                // Insert mark after the text node
+                textNode.parentNode!.insertBefore(mark, textNode.nextSibling);
+                marks.push(mark);
+                
+                // Insert remaining text after the mark
+                if (afterText) {
+                  const afterNode = document.createTextNode(afterText);
+                  mark.parentNode!.insertBefore(afterNode, mark.nextSibling);
+                }
+              } catch (fallbackError) {
+                // Restore original text on error
+                textNode.nodeValue = originalText;
+                console.error('Fallback highlighting approach failed:', fallbackError);
+              }
               
               // Replace the text node content with before text
               textNode.nodeValue = beforeText;
@@ -207,7 +233,8 @@ export function useScopedFind(
       
       try {
         // For PDFs, ensure all pages are rendered before extracting text
-        if (typeof window !== 'undefined' && (window as any).__renderAllPdfPages) {
+        if (typeof window !== 'undefined' &&
+            typeof (window as any).__renderAllPdfPages === 'function') {
           if (debug) {
             console.log('PDF detected, rendering all pages for highlighting...');
           }
@@ -324,7 +351,7 @@ export function useScopedFind(
     if (matches.length) {
       scrollToMatch(index);
     }
-  }, [matches, index, scrollToMatch]);
+  }, [matches, index]);
 
   // Clean up when container unmounts
   useEffect(() => () => clearHighlights(), [clearHighlights]);

@@ -1566,8 +1566,16 @@ export const GetChunkContentApi = async (c: Context) => {
 
     const resp = await GetDocument(KbItemsSchema, vespaIds[0].vespaDocId)
     
-    if ((resp.fields.sddocname && resp.fields.sddocname !== "kb_items") || !resp.fields.chunks_pos || !resp.fields.chunks) {
-      throw new HTTPException(404, { message: "Document not found in vespa" })
+    if (!resp || !resp.fields) {
+      throw new HTTPException(404, { message: "Invalid Vespa document response" })
+    }
+    
+    if (resp.fields.sddocname && resp.fields.sddocname !== "kb_items") {
+      throw new HTTPException(404, { message: "Invalid document type" })
+    }
+    
+    if (!resp.fields.chunks_pos || !resp.fields.chunks) {
+      throw new HTTPException(404, { message: "Document missing chunk data" })
     }
     
     const index = resp.fields.chunks_pos.findIndex((pos: number) => pos === chunkIndex)

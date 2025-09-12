@@ -138,41 +138,41 @@ const DocumentViewerContainer = memo(
 
     // Expose the highlight functions globally for use by DocumentChat
     useEffect(() => {
-      // Only expose once when the component mounts
-      if ((window as any).__highlightTextInDocument) {
-        return;
+      // Clean up any existing operations
+      if (window.__documentOperations) {
+        window.__documentOperations = undefined;
       }
       
-      (window as any).__highlightTextInDocument = async (text: string) => {
-        if (!containerRef.current) {
-          const container = document.querySelector('[data-container-ref="true"]');
-          if (container) {
-            (containerRef as any).current = container;
-          } else {
+      window.__documentOperations = {
+        highlightText: async (text: string) => {
+          if (!containerRef.current) {
+            const container = document.querySelector('[data-container-ref="true"]');
+            if (container) {
+              (containerRef as any).current = container;
+            } else {
+              return false;
+            }
+          }
+
+          try {
+            const success = await highlightText(text);
+            if (success) {
+              scrollToMatch(0);
+            }
+            
+            return success;
+          } catch (error) {
+            console.error('Error calling highlightText:', error);
             return false;
           }
-        }
-
-        try {
-          const success = await highlightText(text);
-          if (success) {
-            scrollToMatch(0);
-          }
-          
-          return success;
-        } catch (error) {
-          console.error('Error calling highlightText:', error);
-          return false;
-        }
+        },
+        
+        clearHighlights,
+        scrollToMatch
       };
       
-      (window as any).__clearDocumentHighlights = clearHighlights;
-      (window as any).__scrollToDocumentMatch = scrollToMatch;
-      
       return () => {
-        delete (window as any).__highlightTextInDocument;
-        delete (window as any).__clearDocumentHighlights;
-        delete (window as any).__scrollToDocumentMatch;
+        window.__documentOperations = undefined;
       };
     }, []);
 
@@ -1195,29 +1195,46 @@ function RouteComponent() {
 
   // Handle chunk index changes from DocumentChat
   const handleChunkIndexChange = async (newChunkIndex: number | null, documentId: string) => {
+    if (!documentId) {
+      console.error('handleChunkIndexChange called without documentId');
+      return;
+    }
+    
     if (newChunkIndex && selectedDocument?.file.id === documentId) {
-      const chunkContentResponse = await api.c[":cId"].files[":itemId"].content.$get({
-        param: { cId: newChunkIndex.toString(), itemId: documentId || "" },
-      })
-      const chunkContent = await chunkContentResponse.json()
-      
-      if (chunkContent && chunkContent.chunkContent) {
-        if ((window as any).__clearDocumentHighlights) {
-          (window as any).__clearDocumentHighlights()
+      try {
+        const chunkContentResponse = await api.c[":cId"].files[":itemId"].content.$get({
+          param: { cId: newChunkIndex.toString(), itemId: documentId },
+        })
+        
+        if (!chunkContentResponse.ok) {
+          console.error('Failed to fetch chunk content:', chunkContentResponse.status);
+          showToast('Error', 'Failed to load chunk content', true);
+          return;
         }
         
-        if ((window as any).__highlightTextInDocument) {
-          try {
-            const success = await (window as any).__highlightTextInDocument(chunkContent.chunkContent);
-            if (success) {
-              if ((window as any).__scrollToDocumentMatch) {
-                (window as any).__scrollToDocumentMatch(0);
+        const chunkContent = await chunkContentResponse.json()
+        
+        if (chunkContent && chunkContent.chunkContent) {
+          if (window.__documentOperations?.clearHighlights) {
+            window.__documentOperations.clearHighlights()
+          }
+          
+          if (window.__documentOperations?.highlightText) {
+            try {
+              const success = await window.__documentOperations.highlightText(chunkContent.chunkContent);
+              if (success) {
+                if (window.__documentOperations?.scrollToMatch) {
+                  window.__documentOperations.scrollToMatch(0);
+                }
               }
+            } catch (error) {
+              console.error('Error highlighting chunk text:', chunkContent.chunkContent, error);
             }
-          } catch (error) {
-            console.error('Error highlighting chunk text:', chunkContent.chunkContent, error);
           }
         }
+      } catch (error) {
+        console.error('Error in handleChunkIndexChange:', error);
+        showToast('Error', 'Failed to process chunk navigation', true);
       }
     }
   }

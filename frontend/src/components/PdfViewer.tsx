@@ -308,7 +308,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   }
 
   // Render all pages for highlighting purposes
-  const renderAllPagesForHighlighting = async () => {
+  const renderAllPagesForHighlighting = useCallback(async () => {
     if (!pdf || allPagesRendered || displayMode !== "continuous") return
     
     try {
@@ -322,7 +322,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     } catch (e) {
       console.error('Failed to render all pages for highlighting:', e)
     }
-  }
+  }, [pdf, allPagesRendered, displayMode, totalPages, renderedPages])
 
   // Setup IntersectionObserver for lazy loading in continuous mode
   useEffect(() => {

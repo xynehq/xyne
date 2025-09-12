@@ -697,7 +697,7 @@ import React, {
     }
 
     const handleCitationClick = (citation: Citation, chunkIndex?: number) => {
-      onChunkIndexChange?.(chunkIndex || null, citation.itemId || "")
+      onChunkIndexChange?.(chunkIndex ?? null, citation.itemId ?? documentId)
     }
   
     // Populate feedbackMap from loaded messages
