@@ -38,8 +38,8 @@ export function clearDocumentHighlights(): void {
  */
 export function scrollToDocumentMatch(matchIndex: number = 0): boolean {
   if (typeof window !== 'undefined' && window.__documentOperations?.scrollToMatch) {
-    const result = window.__documentOperations.scrollToMatch(matchIndex);
-    return result ?? false;
+    window.__documentOperations.scrollToMatch(matchIndex);
+    return true;
   }
   return false;
 } 

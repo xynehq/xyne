@@ -1213,6 +1213,11 @@ function RouteComponent() {
         }
         
         const chunkContent = await chunkContentResponse.json()
+
+        // Ensure we are still on the same document before mutating UI
+        if (selectedDocument?.file.id !== documentId) {
+          return;
+        }
         
         if (chunkContent && chunkContent.chunkContent) {
           if (window.__documentOperations?.clearHighlights) {
