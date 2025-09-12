@@ -172,7 +172,7 @@ export const Sidebar = ({
             </Tooltip>
           </div>
 
-           <Link
+          <Link
             to="/workflow"
             className={cn(
               "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
@@ -257,7 +257,7 @@ export const Sidebar = ({
             </Tooltip>
           </Link>
           {/* User Management - Admin only */}
-          {(role === UserRole.SuperAdmin || role === UserRole.Admin) && (
+          {role === UserRole.SuperAdmin && (
             <Link
               to="/admin/userManagement"
               className={cn(

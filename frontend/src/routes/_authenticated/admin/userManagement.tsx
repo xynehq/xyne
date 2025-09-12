@@ -311,6 +311,9 @@ function UsersListPage({
     "gmailSync" | "driveSync" | "calendarSync" | "slackSync"
   >("gmailSync")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+  const [sortDateType, setSortDateType] = useState<
+    "lastSyncDate" | "createdAt"
+  >("lastSyncDate")
 
   const totalUsers = users.length
   const superAdmins = users.filter(
@@ -323,26 +326,46 @@ function UsersListPage({
 
   const syncSortOptions = [
     {
-      label: "Gmail Sync",
+      label: "Gmail",
       value: "gmailSync",
       icon: <Mail className="inline mr-2 h-4 w-4" />,
     },
     {
-      label: "Google Drive Sync",
+      label: "Google Drive",
       value: "driveSync",
       icon: <HardDrive className="inline mr-2 h-4 w-4" />,
     },
     {
-      label: "Google Calendar Sync",
+      label: "Google Calendar",
       value: "calendarSync",
       icon: <Calendar className="inline mr-2 h-4 w-4" />,
     },
     {
-      label: "Slack Sync",
+      label: "Slack",
       value: "slackSync",
       icon: <MessageSquare className="inline mr-2 h-4 w-4" />,
     },
   ]
+
+  const dateTypeOptions = [
+    {
+      label: "Last Sync Date",
+      value: "lastSyncDate",
+    },
+    {
+      label: "Created At",
+      value: "createdAt",
+    },
+  ]
+
+  // Get current selection labels for display
+  const getCurrentSortLabel = () => {
+    const appOption = syncSortOptions.find((opt) => opt.value === sortField)
+    const dateTypeOption = dateTypeOptions.find(
+      (opt) => opt.value === sortDateType,
+    )
+    return `${dateTypeOption?.label} - ${appOption?.label}`
+  }
 
   // Map sortField to Apps enum
   const sortFieldToApp = {
@@ -436,15 +459,15 @@ function UsersListPage({
     )
   })
 
-  // Only sort by selected sync app's createdAt
+  // Sort by selected sync app and date type
   if (sortField) {
     const app = sortFieldToApp[sortField]
     filteredUsers = [...filteredUsers].sort((a, b) => {
-      const aDate = a.syncJobs?.[app]?.createdAt
-        ? new Date(a.syncJobs?.[app]?.createdAt!).getTime()
+      const aDate = a.syncJobs?.[app]?.[sortDateType]
+        ? new Date(a.syncJobs?.[app]?.[sortDateType]!).getTime()
         : 0
-      const bDate = b.syncJobs?.[app]?.createdAt
-        ? new Date(b.syncJobs?.[app]?.createdAt!).getTime()
+      const bDate = b.syncJobs?.[app]?.[sortDateType]
+        ? new Date(b.syncJobs?.[app]?.[sortDateType]!).getTime()
         : 0
       return sortDirection === "asc" ? aDate - bDate : bDate - aDate
     })
@@ -784,18 +807,36 @@ function UsersListPage({
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="outline"
-                      className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
+                      className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 min-w-[200px]"
                     >
-                      Gmail Sync
+                      {getCurrentSortLabel()}
                       <ChevronDown className="ml-2 h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="end"
-                    className="w-56 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                    className="w-64 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
                   >
                     <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400 font-semibold">
-                      Sort by Sync App
+                      Sort by Date Type
+                    </div>
+                    {dateTypeOptions.map((dateOpt) => (
+                      <DropdownMenuItem
+                        key={dateOpt.value}
+                        onClick={() =>
+                          setSortDateType(dateOpt.value as typeof sortDateType)
+                        }
+                        className="flex items-center gap-2"
+                      >
+                        {dateOpt.label}
+                        {sortDateType === dateOpt.value && (
+                          <div className="ml-auto w-2 h-2 bg-blue-500 rounded-full" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400 font-semibold">
+                      Sort by App
                     </div>
                     {syncSortOptions.map((opt) => (
                       <DropdownMenuItem
