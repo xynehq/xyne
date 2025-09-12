@@ -407,7 +407,7 @@ const HistoryModal = ({
               item.externalId === existingChatId
                 ? "bg-[#EBEFF2] dark:bg-slate-700"
                 : ""
-            } hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px]`}
+            } hover:bg-[#EBEFF2] dark:hover:bg-slate-500 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] mb-[4px]`}
           >
             {isEditing && editedChatId === item.externalId ? (
               <input
