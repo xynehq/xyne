@@ -325,5 +325,3 @@ export const updateUser = async (
 
   return { success: true, message: "User role updated successfully" }
 }
-
-await getAllUsers(db)
