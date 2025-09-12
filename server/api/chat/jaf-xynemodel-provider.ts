@@ -5,7 +5,6 @@ import type {
   RunConfig as JAFRunConfig,
   RunState as JAFRunState,
 } from "@xynehq/jaf"
-import { getTextContent } from "@xynehq/jaf"
 
 import { type ModelParams, Models } from "@/ai/types"
 
@@ -27,7 +26,8 @@ function resolveXyneModelOrDefault(modelId: string, fallback: Models): Models {
 function mapJAFToXyneMessages(history: readonly JAFMessage[]): XyneMessage[] {
   const mapped: XyneMessage[] = []
   for (const m of history) {
-    const content = getTextContent(m.content)
+    // Ignore tool_calls metadata; preserve content only
+    const content = typeof m.content === "string" ? m.content : ""
     if (m.role === "user" || m.role === "assistant") {
       mapped.push({ role: m.role as any, content: [{ text: content }] })
     } else if (m.role === "tool") {
@@ -73,7 +73,7 @@ export function makeXyneJAFProvider<Ctx extends { userCtx?: string; agentPrompt?
       // 1) Tool planning path: prompt-driven selection using Xyne’s tool selector
       if (shouldPlanTool) {
         try {
-          const userQuery = getTextContent(lastMsg?.content || "") || state.context?.userMessage || ""
+          const userQuery = lastMsg?.content || state.context?.userMessage || ""
           const toolListStr = buildToolsOverview(agent.tools ? [...agent.tools] : [])
 
           const params: ModelParams = {

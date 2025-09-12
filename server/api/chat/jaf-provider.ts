@@ -9,7 +9,6 @@ import type {
   RunConfig as JAFRunConfig,
   Message as JAFMessage,
 } from "@xynehq/jaf"
-import { getTextContent } from "@xynehq/jaf"
 
 export type MakeXyneJAFProviderOptions = {
   baseURL?: string
@@ -80,13 +79,14 @@ function jafToProviderMessages(
         role: m.role,
         content: [
           {
-            text: getTextContent(m.content),
+            text: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
           },
         ],
       } as ProviderMessage)
     } else if (m.role === "tool") {
       // Providers outside OpenAI don’t support tool messages; embed as assistant text for context
-      const text = getTextContent(m.content)
+      const text =
+        typeof m.content === "string" ? m.content : JSON.stringify(m.content)
       out.push({
         role: "assistant",
         content: [
