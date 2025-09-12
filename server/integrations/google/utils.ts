@@ -97,7 +97,7 @@ export const getFile = async (
   const fields =
     "id, webViewLink, createdTime, modifiedTime, name, size, parents, owners, fileExtension, mimeType, permissions(id, type, emailAddress)"
   try {
-    const file: any = await retryWithBackoff(
+    const file: GaxiosResponse<drive_v3.Schema$File> = await retryWithBackoff(
       () =>
         drive.files.get({
           fileId,
@@ -135,7 +135,7 @@ export const getFileContent = async (
 ): Promise<VespaFileWithDrivePermission | null> => {
   const docs = google.docs({ version: "v1", auth: client })
   try {
-    const docResponse: any =
+    const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
       await retryWithBackoff(
         () =>
           docs.documents.get({

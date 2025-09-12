@@ -356,7 +356,7 @@ export const listUsers = async (
   let nextPageToken = null
   try {
     do {
-      const res: any =
+      const res: GaxiosResponse<admin_directory_v1.Schema$Users> =
         await retryWithBackoff(
           () =>
             admin.users.list({
@@ -2152,7 +2152,7 @@ export const getSpreadsheet = async (
   id: string,
   client: GoogleClient,
   email: string,
-): Promise<any | null> => {
+): Promise<GaxiosResponse<sheets_v4.Schema$Spreadsheet> | null> => {
   try {
     return retryWithBackoff(
       () => sheets.spreadsheets.get({ spreadsheetId: id }),
@@ -2990,7 +2990,7 @@ export async function* listFiles(
   }
 
   do {
-    const res: any =
+    const res: GaxiosResponse<drive_v3.Schema$FileList> =
       await retryWithBackoff(
         () =>
           drive.files.list({
@@ -3041,7 +3041,7 @@ export const googleDocsVespa = async (
         email: userEmail,
       })
       try {
-        const docResponse: any =
+        const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
           await retryWithBackoff(
             () =>
               docs.documents.get({
@@ -3383,7 +3383,7 @@ export async function countDriveFiles(
   }
 
   do {
-    const res: any =
+    const res: GaxiosResponse<drive_v3.Schema$FileList> =
       await retryWithBackoff(
         () =>
           drive.files.list({

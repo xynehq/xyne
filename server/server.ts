@@ -187,7 +187,6 @@ import {
   SubmitFormStepApi,
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
-  GetGeminiModelEnumsApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -887,7 +886,6 @@ export const AppRoutes = app
   .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
-  .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
   // Auth middleware for all other routes
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
