@@ -539,7 +539,7 @@ export const extractFileIdsFromMessage = async (
           driveItem.push(obj?.value?.docId)
         } else if (obj?.value?.app === Apps.WebSearch) {
           webSearchResults.push({
-            title: obj?.value?.title,
+            title: obj?.value?.title ?? "",
             url: obj?.value?.url || "",
           })
         } else {
