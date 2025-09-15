@@ -17,6 +17,7 @@ interface OnFormSubmissionUIProps {
   toolData?: any 
   toolId?: string 
   showBackButton?: boolean 
+  builder?: boolean
 }
 
 interface FormField {
@@ -68,6 +69,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   toolData,
   toolId,
   showBackButton = false,
+  builder = true,
 }) => {
   const initialFieldId = crypto.randomUUID()
 
@@ -164,7 +166,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     try {
       
       console.log("tool id here",toolId)
-      if (toolId) {
+      if (toolId && !builder) {
         const updatedToolData = {
           type: "form",
           value: {

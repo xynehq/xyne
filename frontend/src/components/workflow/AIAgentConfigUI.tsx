@@ -18,6 +18,7 @@ interface AIAgentConfigUIProps {
   toolId?: string 
   stepData?: any 
   showBackButton?: boolean 
+  builder?: boolean
 }
 
 export interface AIAgentConfig {
@@ -38,6 +39,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
   toolId,
   stepData,
   showBackButton = false,
+  builder = true,
 }) => {
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
     name: "AI Agent",
@@ -300,7 +302,7 @@ Always strive for excellence and helpfulness in your responses while adhering to
       }
 
       
-      if (toolId) {
+      if (toolId && !builder) {
         const updatedToolData = {
           type: "ai_agent",
           value: configToSave,

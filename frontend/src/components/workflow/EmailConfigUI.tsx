@@ -14,6 +14,7 @@ interface EmailConfigUIProps {
   toolId?: string // Tool ID for API updates
   stepData?: any // Step data for loading existing configuration
   showBackButton?: boolean // Whether to show the back button
+  builder?: boolean
 }
 
 export interface EmailConfig {
@@ -30,6 +31,7 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
   toolId,
   stepData,
   showBackButton = false,
+  builder = true,
 }) => {
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     sendingFrom: "no-reply@xyne.io",
@@ -96,8 +98,8 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
 
   const handleSave = async () => {
     try {
-      // If we have a toolId, update the tool via API
-      if (toolId) {
+      // If we have a toolId and not in builder mode, update the tool via API
+      if (toolId && !builder) {
         const updatedToolData = {
           type: "email",
           value: emailConfig,

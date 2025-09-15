@@ -681,11 +681,10 @@ const StepNode: React.FC<NodeProps> = ({
                   return (tools[0] as any).value.description
                 }
                 
-                // Fallback to existing logic
-                return step.description ||
-                  (emailAddresses && emailAddresses.length > 0
-                    ? `Send emails to ${emailAddresses.join(", ")} via automated workflow.`
-                    : "Send automated email notifications to specified recipients.")
+                // Always generate description from email addresses
+                return (emailAddresses && emailAddresses.length > 0
+                  ? `Send emails to ${emailAddresses.join(", ")}`
+                  : "Send automated email notifications to specified recipients.")
               })()}
             </p>
           </div>
@@ -2986,9 +2985,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               step: {
                 id: newNodeId,
                 name: "Email",
-                description: emailConfig.emailAddresses && emailConfig.emailAddresses.length > 0
-                  ? `Send emails to ${emailConfig.emailAddresses.join(", ")} via automated workflow.`
-                  : "Send automated email notifications to specified recipients.",
                 type: "email",
                 status: "pending",
                 contents: [],
@@ -3546,6 +3542,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }}
             onSave={handleAIAgentConfigSave}
             showBackButton={selectedAgentNodeId === "pending"}
+            builder={builder}
             toolData={
               selectedAgentNodeId
                 ? (() => {
@@ -3583,6 +3580,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }}
             onSave={handleEmailConfigSave}
             showBackButton={selectedEmailNodeId === "pending"}
+            builder={builder}
             toolData={
               selectedEmailNodeId
                 ? (() => {
@@ -3622,6 +3620,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }}
             onSave={handleOnFormSubmissionSave}
             showBackButton={selectedFormNodeId === "pending"}
+            builder={builder}
             initialConfig={
               selectedFormNodeId
                 ? (

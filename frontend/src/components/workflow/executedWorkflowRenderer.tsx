@@ -1102,49 +1102,12 @@ const ExecutionResultModal = ({
               const resultString =
                 typeof result === "object"
                   ? JSON.stringify(result, null, 2)
-                  : String(result)
-
-              // Check if the content is HTML (starts with <!DOCTYPE html> or <html>)
-              const isHTML =
-                resultString.includes("<!DOCTYPE html>") ||
-                resultString.includes("<html>") ||
-                (resultString.includes("<body>") &&
-                  resultString.includes("</body>"))
-
-              if (isHTML) {
-                return (
-                  <div className="w-full">
-                    <div className="mb-3 text-sm text-gray-600 font-medium">
-                      Email HTML Preview:
-                    </div>
-                    <div
-                      className="border border-gray-300 rounded bg-white"
-                      style={{ minHeight: "400px" }}
-                    >
-                      <iframe
-                        srcDoc={resultString}
-                        className="w-full h-[500px] border-0 rounded"
-                        title="Email HTML Preview"
-                        sandbox="allow-same-origin"
-                      />
-                    </div>
-                    <details className="mt-4">
-                      <summary className="text-sm text-gray-600 cursor-pointer hover:text-gray-800">
-                        View HTML Source
-                      </summary>
-                      <pre className="whitespace-pre-wrap text-xs text-gray-700 font-mono leading-relaxed mt-2 p-3 bg-gray-100 rounded border max-h-60 overflow-y-auto">
-                        {resultString}
-                      </pre>
-                    </details>
-                  </div>
-                )
-              } else {
+                  : String(result)              
                 return (
                   <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
                     {resultString}
                   </pre>
                 )
-              }
             })()}
           </div>
         </div>
