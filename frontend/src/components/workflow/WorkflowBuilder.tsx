@@ -2776,10 +2776,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         if (sourceNode) {
           const newNodeId = `ai-agent-${nodeCounter}`
           
-          // Format description with model information
+          // Use description as-is without model information
           const formattedDescription = agentConfig.description
-            ? `${agentConfig.description} using ${agentConfig.model}`
-            : `AI agent to analyze and summarize documents using ${agentConfig.model}`
+            ? agentConfig.description
+            : "AI agent to analyze and summarize documents"
 
           // Create the tool object for AI Agent
           const aiAgentTool = {
@@ -2876,8 +2876,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       } else if (selectedAgentNodeId && selectedAgentNodeId !== "pending") {
         // Update existing AI Agent node with the configuration
         const formattedDescription = agentConfig.description
-          ? `${agentConfig.description} using ${agentConfig.model}`
-          : `AI agent to analyze and summarize documents using ${agentConfig.model}`
+          ? agentConfig.description
+          : "AI agent to analyze and summarize documents"
 
         const aiAgentTool = {
           id: getToolIdFromStepId(selectedAgentNodeId),
