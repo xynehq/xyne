@@ -1,7 +1,11 @@
 import { Subsystem } from "@/types"
 import { getLogger } from "@/logger"
 import { chunkDocument } from "@/chunks"
-import { Apps, MailAttachmentEntity, type Attachment } from "@/search/types"
+import {
+  Apps,
+  MailAttachmentEntity,
+  type Attachment,
+} from "@xyne/vespa-ts/types"
 import {
   MAX_ATTACHMENT_PDF_SIZE,
   MAX_ATTACHMENT_TEXT_SIZE,

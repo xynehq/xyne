@@ -8,7 +8,7 @@ import {
   MailAttachmentEntity,
   MailEntity,
   SlackEntity,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import config from "@/config"
 // Interface for structured agent prompt data
 interface AgentPromptData {
@@ -924,7 +924,7 @@ You must respond in valid JSON with:
 - Format dates relative to the user's timezone when dates appear in the file.
 
 # Error Handling
-If information is missing or unclear: Set "answer" to null`;
+If information is missing or unclear: Set "answer" to null`
 
 export const agentQueryRewritePromptJson = (
   userContext: string,

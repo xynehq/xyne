@@ -20,7 +20,7 @@ import { Apps, AuthType, SyncJobStatus, DriveEntity } from "@/shared/types"
 import {
   MicrosoftPeopleEntity,
   type VespaFileWithDrivePermission,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { getAppSyncJobs, updateSyncJob } from "@/db/syncJob"
 import { getUserById } from "@/db/user"
 import { insertSyncHistory } from "@/db/syncHistory"
@@ -35,7 +35,7 @@ import {
   type VespaEvent,
   type VespaFile,
   type VespaMail,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   createMicrosoftGraphClient,
   downloadFileFromGraph,

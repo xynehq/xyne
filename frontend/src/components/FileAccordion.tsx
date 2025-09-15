@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "@/hooks/use-toast"
 import { api } from "@/api"
 import { ConfirmModal } from "@/components/ui/confirmModal"
-import { dataSourceFileSchema } from "../../../server/search/types"
+import { dataSourceFileSchema } from "shared/types"
 
 interface FileItem {
   docId?: string

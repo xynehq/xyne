@@ -20,7 +20,7 @@ import {
   SyncJobStatus,
   DriveEntity,
 } from "@/shared/types"
-import { MicrosoftPeopleEntity } from "@/search/types"
+import { MicrosoftPeopleEntity } from "@xyne/vespa-ts/types"
 import { insertSyncJob } from "@/db/syncJob"
 import { getErrorMessage, hashPdfFilename } from "@/utils"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -31,7 +31,7 @@ import {
   fileSchema,
   MailEntity,
   mailSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   CouldNotFinishJobSuccessfully,
   ContactListingError,
@@ -64,7 +64,6 @@ import {
 } from "./client"
 import type { Client } from "@microsoft/microsoft-graph-client"
 import type { DriveItem } from "@microsoft/microsoft-graph-types"
-import { Schema } from "zod"
 import { handleOutlookIngestion } from "./outlook"
 import { getUniqueEmails } from "../google"
 import { htmlToText } from "html-to-text"
@@ -914,7 +913,7 @@ export const handleMicrosoftOAuthIngestion = async (data: SaaSOAuthJob) => {
       oauthTokens.access_token,
       oauthTokens.refresh_token,
       microsoftProvider.clientId!,
-      microsoftProvider.clientSecret!,
+      microsoftProvider.clientSecret! as string,
     )
 
     const [totalFiles, { messagesTotal, messagesExcludingPromotions }] =

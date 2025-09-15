@@ -202,11 +202,17 @@ export const getOAuthConnectorWithCredentials = async (
     throw new MissingOauthConnectorCredentialsError({})
   }
   // parse the string
-  oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials)
+  oauthRes.oauthCredentials = JSON.parse(oauthRes.oauthCredentials as string)
 
   // google tokens have expiry of 1 hour
   // 5 minutes before expiry we refresh them
-  if (IsTokenExpired(oauthRes.app, oauthRes.oauthCredentials, 5 * 60)) {
+  if (
+    IsTokenExpired(
+      oauthRes.app,
+      oauthRes.oauthCredentials as OAuthCredentials,
+      5 * 60,
+    )
+  ) {
     // token is expired. We should get new tokens
     // update it in place
     if (IsGoogleApp(oauthRes.app)) {
@@ -223,7 +229,7 @@ export const getOAuthConnectorWithCredentials = async (
       const [googleProvider] = providers
       const google = new Google(
         googleProvider.clientId!,
-        googleProvider.clientSecret,
+        googleProvider.clientSecret as string,
         `${config.host}/oauth/callback`,
       )
       const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
@@ -235,8 +241,7 @@ export const getOAuthConnectorWithCredentials = async (
       tokens.accessTokenExpiresAt = new Date(
         refreshedTokens.accessTokenExpiresAt(),
       )
-
-      oauthRes.oauthCredentials.data = tokens
+      ;(oauthRes.oauthCredentials as OAuthCredentials).data = tokens
       const updatedConnector = await updateConnector(trx, oauthRes.id, {
         oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
       })
@@ -247,7 +252,9 @@ export const getOAuthConnectorWithCredentials = async (
         await getOAuthProviderByConnectorId(trx, connectorId)
 
       if (!providers.length) {
-        Logger.error("Could not fetch provider while refreshing Microsoft Token")
+        Logger.error(
+          "Could not fetch provider while refreshing Microsoft Token",
+        )
         throw new FetchProviderFailed({
           message: "Could not fetch provider while refreshing Microsoft Token",
         })
@@ -256,13 +263,13 @@ export const getOAuthConnectorWithCredentials = async (
       const microsoft = new MicrosoftEntraId(
         "common",
         microsoftProvider.clientId!,
-        microsoftProvider.clientSecret,
+        microsoftProvider.clientSecret as string,
         `${config.host}/oauth/callback`,
       )
       const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
       const refreshedTokens = await microsoft.refreshAccessToken(
         tokens.refresh_token,
-        scopes
+        scopes,
       )
       // update the token values
       tokens.access_token = refreshedTokens.accessToken()
@@ -273,12 +280,13 @@ export const getOAuthConnectorWithCredentials = async (
       if (refreshedTokens.refreshToken()) {
         tokens.refresh_token = refreshedTokens.refreshToken()
       }
-
-      oauthRes.oauthCredentials.data = tokens
+      ;(oauthRes.oauthCredentials as OAuthCredentials).data = tokens
       const updatedConnector = await updateConnector(trx, oauthRes.id, {
         oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
       })
-      Logger.info(`Microsoft connector successfully updated: ${updatedConnector.id}`)
+      Logger.info(
+        `Microsoft connector successfully updated: ${updatedConnector.id}`,
+      )
     } else {
       Logger.error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,
@@ -391,8 +399,7 @@ export const getConnectorByAppAndEmailId = async (
 export const updateConnector = async (
   trx: TxnOrClient,
   connectorId: number,
-
-  updateData: Partial<SelectConnector>,
+  updateData: Partial<typeof connectors.$inferInsert>, // TODO: restrict updatable fields
 ): Promise<SelectConnector> => {
   const updatedConnectors = await trx
     .update(connectors)

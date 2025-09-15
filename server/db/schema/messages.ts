@@ -44,7 +44,9 @@ export const messages = pgTable(
     message: text("message").notNull(),
     messageRole: messageRoleEnum(messageRoleField).notNull(),
     thinking: text("thinking").notNull().default(""),
-    deepResearchSteps: jsonb("deep_research_steps").notNull().default(sql`'[]'::jsonb`),
+    deepResearchSteps: jsonb("deep_research_steps")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     // model id is present in the app itself
     // <provider><modelId>
     modelId: text("modelId").notNull(),

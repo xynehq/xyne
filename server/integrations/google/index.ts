@@ -82,7 +82,7 @@ import {
   type VespaEvent,
   type VespaFileWithDrivePermission,
   fileSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   UserListingError,
   CouldNotFinishJobSuccessfully,
@@ -879,7 +879,7 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
 
     const oauth2Client = new google.auth.OAuth2({
       clientId: googleProvider.clientId!,
-      clientSecret: googleProvider.clientSecret,
+      clientSecret: googleProvider.clientSecret as string,
       redirectUri: `${config.host}/oauth/callback`,
     })
 
