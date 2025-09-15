@@ -16,8 +16,7 @@ const qcmsWasmPath =
   path.join(__dirname, "../node_modules/pdfjs-dist/wasm/") + "/"
 const seenHashDescriptions = new Map<string, string>()
 const MIN_IMAGE_DIM_PX = parseInt(process.env.MIN_IMAGE_DIM_PX || "150", 10)
-// Minimum line height used for calculating line break detection tolerance (in PDF units)
-const MIN_LINE_HEIGHT_FOR_TOLERANCE = 10
+
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "pdfChunks",
@@ -200,42 +199,7 @@ function validateTextItem(item: any): boolean {
   )
 }
 
-/**
- * Extract text from various PDF.js text operators with enhanced validation
- */
-function extractTextFromArgs(args: any[]): string {
-  let text = ""
 
-  if (!args || args.length === 0) {
-    return text
-  }
-
-  const firstArg = args[0]
-
-  if (typeof firstArg === "string") {
-    text = firstArg
-  } else if (Array.isArray(firstArg)) {
-    for (const item of firstArg) {
-      if (typeof item === "string") {
-        text += item
-      } else if (typeof item === "number") {
-        // Skip spacing numbers in text arrays
-        continue
-      } else if (item && typeof item === "object") {
-        // Enhanced validation using validateTextItem function
-        if (validateTextItem(item)) {
-          text += item.str
-        } else if ("unicode" in item && typeof item.unicode === "string") {
-          text += item.unicode
-        }
-      }
-    }
-  }
-
-  // Additional validation: ensure we return clean, valid text
-  const result = typeof text === "string" ? text : ""
-  return result
-}
 
 /**
  * Process collected paragraphs into chunks and add to results
@@ -423,62 +387,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       return paragraphs.filter((p) => p.trim().length > 0)
     }
 
-    // Extract text from operators as fallback for edge cases
-    const extractFallbackTextFromOperators = (opList: any): string[] => {
-      const fallbackLines: string[] = []
 
-      for (let i = 0; i < opList.fnArray.length; i++) {
-        const fnId = opList.fnArray[i]
-        const args = opList.argsArray[i]
-
-        // Handle text operators
-        if (
-          fnId === PDFJS.OPS.showText ||
-          fnId === PDFJS.OPS.showSpacedText ||
-          fnId === PDFJS.OPS.nextLineShowText ||
-          fnId === PDFJS.OPS.nextLineSetSpacingShowText
-        ) {
-          const extractedText = extractTextFromArgs(args)
-          if (extractedText.trim()) {
-            fallbackLines.push(extractedText.trim())
-          }
-        }
-      }
-
-      return fallbackLines
-    }
-
-    // Combine and deduplicate text from multiple sources
-    const combineTextSources = (
-      primaryParagraphs: string[],
-      fallbackLines: string[],
-    ): string[] => {
-      if (fallbackLines.length === 0) {
-        return primaryParagraphs
-      }
-
-      const primaryText = primaryParagraphs.join(" ").toLowerCase()
-      const additionalLines: string[] = []
-
-      // Add fallback lines that aren't already covered by primary extraction
-      for (const line of fallbackLines) {
-        const cleanLine = line.trim()
-        if (
-          cleanLine.length > 2 && // Skip very short strings
-          !primaryText.includes(cleanLine.toLowerCase())
-        ) {
-          additionalLines.push(cleanLine)
-        }
-      }
-
-      // If we found additional text, append it as a new paragraph
-      if (additionalLines.length > 0) {
-        const additionalParagraph = additionalLines.join(" ")
-        return [...primaryParagraphs, additionalParagraph]
-      }
-
-      return primaryParagraphs
-    }
 
     for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
       Logger.debug(`Processing page ${pageNum}`)
@@ -488,16 +397,9 @@ export async function extractTextAndImagesWithChunksFromPDF(
         const opList = await page.getOperatorList()
 
         // Use textContent-based paragraphs for this page as primary source
-        let primaryParagraphs: string[] = await buildParagraphsFromPage(page)
+        let paragraphs: string[] = await buildParagraphsFromPage(page)
 
-        // Extract fallback text from operators for edge cases
-        const fallbackLines = extractFallbackTextFromOperators(opList)
-
-        // Combine both sources, prioritizing primary extraction
-        let paragraphs: string[] = combineTextSources(
-          primaryParagraphs,
-          fallbackLines,
-        )
+        
 
         let textOperatorCount = (await page.getTextContent()).items.length
 
@@ -512,8 +414,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
         Logger.debug("Text extraction summary for page", {
           pageNum,
-          primaryParagraphs: primaryParagraphs.length,
-          fallbackLines: fallbackLines.length,
+          primaryParagraphs: paragraphs.length,
+         
           finalParagraphs: paragraphs.length,
           textOperatorCount,
           initialPageOverlap: pageOverlap,
@@ -1394,6 +1296,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       describeImages,
     })
 
+    Logger.debug("All text chunks", { text_chunks })
     Logger.debug("All text chunks", { text_chunks })
     Logger.debug("All text chunk positions", { text_chunk_pos })
     Logger.debug("All image chunks", { image_chunks })
