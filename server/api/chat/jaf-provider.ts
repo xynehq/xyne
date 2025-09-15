@@ -34,11 +34,16 @@ export const makeXyneJAFProvider = <Ctx>(
       )
 
       // Map JAF tools (if any) into provider tool specs via JSON Schema
-      const tools = (agent.tools || []).map((t) => ({
-        name: t.schema.name,
-        description: t.schema.description,
-        parameters: zodSchemaToJsonSchema(t.schema.parameters),
-      }))
+      const tools = (agent.tools || []).map((t) => {
+        const params: any = t.schema.parameters as any
+        const raw = params && params.__xyne_raw_json_schema
+        return {
+          name: t.schema.name,
+          description: t.schema.description,
+          // Prefer exact JSON Schema if present (e.g., MCP tools), else convert from Zod
+          parameters: raw && typeof raw === 'object' ? raw : zodSchemaToJsonSchema(t.schema.parameters),
+        }
+      })
 
       // Allow per-agent/per-run toggles from context.advancedConfig.run
       const advRun = (state.context as any)?.advancedConfig?.run || {}
@@ -139,59 +144,143 @@ function isZodSchemaRequired(zodSchema: any): boolean {
   return true
 }
 
-// Minimal Zod -> JSON Schema converter sufficient for tool parameters
+// Minimal yet robust Zod -> JSON Schema converter for tool parameters
 function zodSchemaToJsonSchema(zodSchema: any): any {
   const def = zodSchema?._def
   const typeName = def?.typeName
 
-  // Helper to attach description from any Zod node (including wrappers)
-  const withDesc = (schema: any) => {
-    if (def?.description) {
-      schema.description = def.description
-    }
+  // Attach description from the provided Zod node (not just current scope)
+  const attachDesc = (schema: any, node: any) => {
+    const d = node?._def?.description
+    if (d) schema.description = d
     return schema
   }
 
-  if (typeName === "ZodOptional") {
-    // Preserve description on the optional wrapper
-    const inner = zodSchemaToJsonSchema(def.innerType)
-    return withDesc(inner)
+  // Common unwrappers for wrapper types where we just want the inner shape
+  const unwrap = (inner: any) => attachDesc(zodSchemaToJsonSchema(inner), zodSchema)
+
+  if (!def || !typeName) {
+    // Unknown node; return a permissive but valid schema
+    return { type: "string" }
   }
 
+  // Handle common wrappers first to preserve optional/nullable semantics
+  if (typeName === "ZodOptional" || typeName === "ZodDefault") {
+    return unwrap(def.innerType)
+  }
+  if (typeName === "ZodNullable") {
+    const inner = zodSchemaToJsonSchema(def.innerType)
+    return attachDesc({ anyOf: [inner, { type: "null" }] }, zodSchema)
+  }
+  if (typeName === "ZodEffects") {
+    // Effects add parsing/transform logic; for schema purposes, unwrap
+    return unwrap(def.schema || def.innerType || def.type)
+  }
+  if (typeName === "ZodBranded" || typeName === "ZodReadonly") {
+    return unwrap(def.type || def.innerType)
+  }
+
+  // Core compound/object types
   if (typeName === "ZodObject") {
     const shape = def.shape()
     const properties: Record<string, any> = {}
     const required: string[] = []
     for (const [key, value] of Object.entries(shape)) {
       properties[key] = zodSchemaToJsonSchema(value)
-      if (isZodSchemaRequired(value)) {
-        required.push(key)
-      }
+      if (isZodSchemaRequired(value)) required.push(key)
     }
-    return withDesc({
+    const obj: any = {
       type: "object",
       properties,
-      required: required.length ? required : undefined,
       additionalProperties: false,
-    })
+    }
+    if (required.length) obj.required = required
+    return attachDesc(obj, zodSchema)
   }
-
-  if (typeName === "ZodString") {
-    return withDesc({ type: "string" })
-  }
-  if (typeName === "ZodNumber") {
-    return withDesc({ type: "number" })
-  }
-  if (typeName === "ZodBoolean") {
-    return withDesc({ type: "boolean" })
+  if (typeName === "ZodRecord") {
+    // Represent records as object with additionalProperties
+    const valSchema = zodSchemaToJsonSchema(def.valueType)
+    return attachDesc({ type: "object", additionalProperties: valSchema }, zodSchema)
   }
   if (typeName === "ZodArray") {
-    return withDesc({ type: "array", items: zodSchemaToJsonSchema(def.type) })
+    const itemSchema = zodSchemaToJsonSchema(def.type)
+    return attachDesc({ type: "array", items: itemSchema }, zodSchema)
   }
-  if (typeName === "ZodEnum") {
-    return withDesc({ type: "string", enum: def.values })
+  if (typeName === "ZodTuple") {
+    const items = (def.items || []).map((i: any) => zodSchemaToJsonSchema(i))
+    const schema: any = { type: "array", items, minItems: items.length, maxItems: items.length }
+    if (def.rest) {
+      schema.additionalItems = zodSchemaToJsonSchema(def.rest)
+      delete schema.maxItems
+    } else {
+      schema.additionalItems = false
+    }
+    return attachDesc(schema, zodSchema)
+  }
+  if (typeName === "ZodUnion") {
+    const options = (def.options || []).map((o: any) => zodSchemaToJsonSchema(o))
+    return attachDesc({ anyOf: options }, zodSchema)
+  }
+  if (typeName === "ZodDiscriminatedUnion") {
+    const options = Array.from(def.options.values()).map((o: any) => zodSchemaToJsonSchema(o))
+    return attachDesc({ anyOf: options }, zodSchema)
+  }
+  if (typeName === "ZodIntersection") {
+    const left = zodSchemaToJsonSchema(def.left)
+    const right = zodSchemaToJsonSchema(def.right)
+    return attachDesc({ allOf: [left, right] }, zodSchema)
   }
 
-  // Fallback
-  return withDesc({ type: "string", description: "Unsupported schema type" })
+  // Core scalar types
+  if (typeName === "ZodString") {
+    return attachDesc({ type: "string" }, zodSchema)
+  }
+  if (typeName === "ZodNumber") {
+    const checks = def?.checks
+    if (Array.isArray(checks) && checks.some((c: any) => c?.kind === "int")) {
+      return attachDesc({ type: "integer" }, zodSchema)
+    }
+    return attachDesc({ type: "number" }, zodSchema)
+  }
+  if (typeName === "ZodBigInt") {
+    return attachDesc({ type: "integer" }, zodSchema)
+  }
+  if (typeName === "ZodBoolean") {
+    return attachDesc({ type: "boolean" }, zodSchema)
+  }
+  if (typeName === "ZodDate") {
+    return attachDesc({ type: "string", format: "date-time" }, zodSchema)
+  }
+  if (typeName === "ZodNull") {
+    return attachDesc({ type: "null" }, zodSchema)
+  }
+  if (typeName === "ZodEnum") {
+    return attachDesc({ type: "string", enum: def.values }, zodSchema)
+  }
+  if (typeName === "ZodNativeEnum") {
+    const vals = Object.values(def.values).filter((v) => typeof v === "string" || typeof v === "number")
+    return attachDesc({ enum: vals }, zodSchema)
+  }
+  if (typeName === "ZodLiteral") {
+    const v = def.value
+    const litSchema: any = { enum: [v] }
+    if (typeof v === "string") litSchema.type = "string"
+    else if (typeof v === "number") litSchema.type = "number"
+    else if (typeof v === "boolean") litSchema.type = "boolean"
+    return attachDesc(litSchema, zodSchema)
+  }
+  if (typeName === "ZodSet") {
+    return attachDesc({ type: "array", items: zodSchemaToJsonSchema(def.valueType), uniqueItems: true }, zodSchema)
+  }
+  if (typeName === "ZodMap") {
+    // Approximate maps as object with free-form values
+    return attachDesc({ type: "object", additionalProperties: zodSchemaToJsonSchema(def.valueType) }, zodSchema)
+  }
+  if (typeName === "ZodAny" || typeName === "ZodUnknown") {
+    // Permissive schema without noisy placeholder descriptions
+    return attachDesc({ type: "string" }, zodSchema)
+  }
+
+  // Last resort: fall back to a simple string without adding placeholder description
+  return attachDesc({ type: "string" }, zodSchema)
 }
