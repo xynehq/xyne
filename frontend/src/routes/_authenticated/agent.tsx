@@ -1933,6 +1933,9 @@ function AgentComponent() {
     // Also clear selected items and their details for all Collections
     setSelectedItemsInCollection({})
     setSelectedItemDetailsInCollection({})
+    // Also clear Google Drive selections
+    setSelectedItemsInGoogleDrive(new Set())
+    setSelectedItemDetailsInGoogleDrive({})
   }
 
   const currentSelectedIntegrationObjects = useMemo(() => {
@@ -2196,6 +2199,10 @@ function AgentComponent() {
       const dataSourceIds: string[] = []
       let hasDataSourceSelections = false
 
+      // Collect Google Drive docIds
+      const googleDriveDocIds: string[] = []
+      let hasGoogleDriveSelections = false
+
       // Process each selected integration
       for (const [integrationId, isSelected] of Object.entries(
         selectedIntegrations,
@@ -2241,6 +2248,18 @@ function AgentComponent() {
             dataSourceIds.push(integrationId)
             hasDataSourceSelections = true
           }
+          // For Google Drive, collect selected docIds
+          else if (integrationId === "googledrive") {
+            selectedItemsInGoogleDrive.forEach((itemId) => {
+              const itemDetail = selectedItemDetailsInGoogleDrive[itemId]
+              if (itemDetail && itemDetail.fields?.docId) {
+                googleDriveDocIds.push(itemDetail.fields.docId)
+              } else if (itemDetail && itemDetail.docId) {
+                googleDriveDocIds.push(itemDetail.docId)
+              }
+            })
+            hasGoogleDriveSelections = true
+          }
           // For other integrations, use the integration ID as key
           else {
             appIntegrationsObject[integrationId] = {
@@ -2264,6 +2283,14 @@ function AgentComponent() {
         appIntegrationsObject["DataSource"] = {
           itemIds: dataSourceIds,
           selectedAll: dataSourceIds.length === 0,
+        }
+      }
+
+      // Add Google Drive selections if any exist
+      if (selectedIntegrations["googledrive"] || hasGoogleDriveSelections) {
+        appIntegrationsObject["googledrive"] = {
+          itemIds: googleDriveDocIds,
+          selectedAll: googleDriveDocIds.length === 0,
         }
       }
 
