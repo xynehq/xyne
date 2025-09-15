@@ -72,6 +72,9 @@ import {
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
 import { getActualNameFromEnum } from "@/ai/modelConfig"
+import { getProviderByModel } from "@/ai/provider"
+import { Models } from "@/ai/types"
+import type { Message } from "@aws-sdk/client-bedrock-runtime"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -1935,11 +1938,27 @@ const executeWorkflowTool = async (
         const inputType = aiConfig.inputType || "text" // Default to text
         const aiModelEnum = aiConfig.aiModel || aiConfig.model || "googleai-gemini-2-5-flash"
         const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
-        const geminiApiKey =
-          aiConfig.gemini_api_key || process.env.GEMINI_API_KEY
 
         // Convert enum value to actual API model name
         const aiModel = getActualNameFromEnum(aiModelEnum) || "gemini-2.5-flash"
+        
+        // Map to Models enum for provider selection, preferring VertexAI for compatible models
+        let modelId: Models
+        
+        // Map Google AI models to their VertexAI equivalents for better enterprise integration
+        switch (aiModelEnum) {
+          case "googleai-gemini-2-5-flash":
+            modelId = Models.Vertex_Gemini_2_5_Flash
+            break
+          case "googleai-gemini-2-0-flash-thinking":
+            // Map to closest VertexAI equivalent or keep original if no direct mapping
+            modelId = Models.Vertex_Gemini_2_5_Flash // fallback to 2.5 Flash
+            break
+          default:
+            // Check if it's already a VertexAI model or use as-is
+            modelId = aiModelEnum as Models
+            break
+        }
         
         Logger.info(`Using model enum: ${aiModelEnum}, actual model: ${aiModel}`)
         try {
@@ -1956,13 +1975,13 @@ const executeWorkflowTool = async (
 
             // Process text fields
             const textFields = Object.entries(formSubmission)
-              .filter(([key, value]) => typeof value === "string")
+              .filter(([, value]) => typeof value === "string")
               .map(([key, value]) => `${key}: ${value}`)
               .join("\n")
 
             // Process uploaded files
             const fileContents = []
-            for (const [key, value] of Object.entries(formSubmission)) {
+            for (const [, value] of Object.entries(formSubmission)) {
               if (value && typeof value === "object" && (value as any).absolutePath) {
                 try {
                   const fileData = value as any
@@ -2020,7 +2039,7 @@ const executeWorkflowTool = async (
                       const imageBuffer = await fs.readFile(
                         fileData.absolutePath,
                       )
-                      const processedImage = await sharp
+                      await sharp
                         .default(imageBuffer)
                         .greyscale()
                         .normalize()
@@ -2092,44 +2111,44 @@ const executeWorkflowTool = async (
             }
           }
 
-          // Call Gemini API
-          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`
-          Logger.info(`Calling Gemini API at: ${geminiUrl}`)
+          // Use VertexAI provider instead of direct Gemini API
           const fullPrompt = `${prompt}\n\nInput to analyze:\n${analysisInput.slice(0, 8000)}`
-
-          const geminiResponse = await fetch(geminiUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [
+          Logger.info(`Calling VertexAI provider with model: ${modelId}`)
+          
+          const messages: Message[] = [
+            {
+              role: "user",
+              content: [
                 {
-                  parts: [{ text: fullPrompt }],
+                  text: fullPrompt,
                 },
               ],
-              generationConfig: {
-                temperature: 0.3,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 2048,
-              },
-            }),
-          })
+            },
+          ]
 
-          if (!geminiResponse.ok) {
+          const modelParams = {
+            modelId,
+            systemPrompt: "You are an AI assistant that analyzes content and provides helpful insights.",
+            maxTokens: 2048,
+            temperature: 0.3,
+            stream: false,
+          }
+
+          const provider = getProviderByModel(modelId)
+          const response = await provider.converse(messages, modelParams)
+
+          if (!response.text) {
             return {
               status: "error",
               result: {
-                error: `Gemini API error: ${geminiResponse.status}`,
+                error: "No response from AI provider",
                 inputType,
                 inputMetadata,
               },
             }
           }
 
-          const geminiData = await geminiResponse.json()
-          const aiOutput =
-            geminiData.candidates?.[0]?.content?.parts?.[0]?.text ||
-            "No response from AI"
+          const aiOutput = response.text
 
           return {
             status: "success",
@@ -2139,7 +2158,7 @@ const executeWorkflowTool = async (
               modelEnum: aiModelEnum,
               inputType,
               inputMetadata,
-              usage: geminiData.usageMetadata || {},
+              cost: response.cost || 0,
               processedAt: new Date().toISOString(),
             },
           }
@@ -3221,36 +3240,56 @@ export const GetFormDefinitionApi = async (c: Context) => {
   }
 }
 
-// Get Gemini model enum names for workflow tools
-export const GetGeminiModelEnumsApi = async (c: Context) => {
+// Get VertexAI model enum names for workflow tools (replaces GetGeminiModelEnumsApi)
+export const GetVertexAIModelEnumsApi = async (c: Context) => {
   try {
     const { MODEL_CONFIGURATIONS } = await import("@/ai/modelConfig")
     const { AIProviders } = await import("@/ai/types")
     
-    // Get all Google AI model enum values
-    const geminiModelEnums = Object.entries(MODEL_CONFIGURATIONS)
-      .filter(([_, config]) => config.provider === AIProviders.GoogleAI)
+    // Get all VertexAI model enum values (includes both Claude and Gemini models)
+    const vertexAIModelEnums = Object.entries(MODEL_CONFIGURATIONS)
+      .filter(([_, config]) => config.provider === AIProviders.VertexAI)
       .map(([enumValue, config]) => ({
-        enumValue, // e.g., "googleai-gemini-2-5-flash"
-        labelName: config.labelName, // e.g., "Gemini 2.5 Flash" 
-        actualName: config.actualName, // e.g., "gemini-2.5-flash"
+        enumValue, // e.g., "vertex-gemini-2-5-flash", "vertex-claude-sonnet-4"
+        labelName: config.labelName, // e.g., "Gemini 2.5 Flash", "Claude Sonnet 4"
+        actualName: config.actualName, // e.g., "gemini-2.5-flash", "claude-sonnet-4@20250514"
         description: config.description,
         reasoning: config.reasoning,
         websearch: config.websearch,
         deepResearch: config.deepResearch,
+        // Add model type for better categorization in frontend
+        modelType: enumValue.includes('gemini') ? 'gemini' : 
+                   enumValue.includes('claude') ? 'claude' : 'other',
       }))
+      .sort((a, b) => {
+        // Sort by model type (Claude first, then Gemini), then by name
+        if (a.modelType !== b.modelType) {
+          if (a.modelType === 'claude') return -1
+          if (b.modelType === 'claude') return 1
+          if (a.modelType === 'gemini') return -1
+          if (b.modelType === 'gemini') return 1
+        }
+        return a.labelName.localeCompare(b.labelName)
+      })
 
     return c.json({
       success: true,
-      data: geminiModelEnums,
-      count: geminiModelEnums.length,
+      data: vertexAIModelEnums,
+      count: vertexAIModelEnums.length,
+      message: "VertexAI models include both Claude and Gemini models optimized for enterprise use",
     })
   } catch (error) {
-    Logger.error(error, "Failed to get Gemini model enums")
+    Logger.error(error, "Failed to get VertexAI model enums")
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
   }
+}
+
+// Legacy endpoint - kept for backward compatibility but redirects to VertexAI
+export const GetGeminiModelEnumsApi = async (c: Context) => {
+  Logger.warn("GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead")
+  return GetVertexAIModelEnumsApi(c)
 }
 
 // Serve workflow file

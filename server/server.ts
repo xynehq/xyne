@@ -187,6 +187,7 @@ import {
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
+  GetVertexAIModelEnumsApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -949,6 +950,7 @@ export const AppRoutes = app
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+  .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
