@@ -683,13 +683,6 @@ export const HighlightApi = async (c: Context) => {
       });
     }
 
-    const MAX_DOC_LEN = 1_000_000; // 1MB
-    if (documentContent.length > MAX_DOC_LEN) {
-      throw new HTTPException(413, {
-        message: "documentContent too large"
-      });
-    }
-
     const {
       matchThreshold,
       maxChunkLength,

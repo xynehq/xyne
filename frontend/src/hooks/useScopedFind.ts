@@ -36,7 +36,7 @@ export function useScopedFind(
   const { documentOperationsRef } = useDocumentOperations();
   const { 
     caseSensitive = false,
-    highlightClass = "scoped-find", 
+    highlightClass = "bg-yellow-200/60 dark:bg-yellow-200/40 rounded-sm px-0.5 py-px", 
     matchThreshold = 0.3,
     maxChunkLength = 500,
     debug = false
@@ -180,7 +180,7 @@ export function useScopedFind(
     const root = containerRef.current;
     if (!root) return;
     
-    const marks = root.querySelectorAll<HTMLElement>(`mark.${highlightClass}`);
+    const marks = root.querySelectorAll<HTMLElement>('mark[data-match-index]');
     marks.forEach((m) => {
       const parent = m.parentNode!;
       // unwrap <mark>
@@ -191,7 +191,7 @@ export function useScopedFind(
     
     setMatches([]);
     setIndex(0);
-  }, [containerRef, highlightClass]);
+  }, [containerRef]);
 
   const highlightText = useCallback(
     async (text: string): Promise<boolean> => {

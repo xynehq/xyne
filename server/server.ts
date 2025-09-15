@@ -879,7 +879,7 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
-  .get("/c/:cId/files/:itemId/content", GetChunkContentApi)
+  .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
   .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(

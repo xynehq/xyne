@@ -1275,7 +1275,7 @@ function KnowledgeManagementContent() {
     
     if (newChunkIndex !== null && selectedDocument?.file.id === documentId) {
       try {
-        const chunkContentResponse = await api.c[":cId"].files[":itemId"].content.$get({
+        const chunkContentResponse = await api.chunk[":cId"].files[":itemId"].content.$get({
           param: { cId: newChunkIndex.toString(), itemId: documentId },
         })
         
