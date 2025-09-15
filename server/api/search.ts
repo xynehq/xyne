@@ -15,6 +15,8 @@ import {
   DeleteDocument,
   updateUserQueryHistory,
   searchVespaAgent,
+  getFolderItems,
+  GetDocumentsByDocIds,
 } from "@/search/vespa"
 import { z } from "zod"
 import config from "@/config"
@@ -26,7 +28,10 @@ import {
   type VespaUser,
   SlackEntity,
   SearchModes,
+  fileSchema,
+  DriveEntity,
 } from "@xyne/vespa-ts/types"
+
 import {
   VespaAutocompleteResponseToResult,
   VespaSearchResponseToSearchResult,
@@ -68,6 +73,7 @@ import type {
 } from "@xyne/vespa-ts/types"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { chunkDocument } from "@/chunks"
+import { getTracer } from "@/tracer"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -657,4 +663,59 @@ export const AnswerApi = async (c: Context) => {
       loggerWithChild({ email: email }).error("SSE stream aborted")
     })
   })
+}
+
+export const GetDriveItem = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const body = await c.req.json()
+  const { parentId } = body
+  try {
+    const docIds = []
+    if (parentId) {
+      docIds.push(parentId)
+    }
+    const resp = await getFolderItems(
+      docIds,
+      fileSchema,
+      DriveEntity.Folder,
+      email,
+    )
+    return c.json(resp)
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      `Error fetcing Drive item for parentId:${parentId}`,
+    )
+    throw new HTTPException(500, {
+      message: "Error processing agent search results",
+    })
+  }
+}
+
+export const GetDriveItemsByDocIds = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  const email = sub
+  const body = await c.req.json()
+  const { docIds } = body
+
+  if (!docIds || !Array.isArray(docIds) || docIds.length === 0) {
+    return c.json({ root: { children: [] } })
+  }
+
+  try {
+    const tracer = getTracer("search")
+    const span = tracer.startSpan("GetDriveItemsByDocIds")
+
+    const resp = await GetDocumentsByDocIds(docIds, span)
+
+    span.end()
+    return c.json(resp)
+  } catch (error) {
+    loggerWithChild({ email: email }).error(
+      `Error fetching Drive items for docIds:${docIds.join(",")}`,
+    )
+    throw new HTTPException(500, {
+      message: "Error fetching Google Drive items by docIds",
+    })
+  }
 }
