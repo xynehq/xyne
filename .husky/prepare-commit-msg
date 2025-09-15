@@ -1,10 +1,19 @@
 #!/bin/sh
 
-# Added to integrate Commitizen for standardized commit messages
-# Additional logic to prevent infinite loops, setting CZ_SKIP_HOOK environment variable to 1 when commitzen is invoked
+# Commitizen integration for standardized commit messages
 if [ -z "$CZ_SKIP_HOOK" ]; then
   export CZ_SKIP_HOOK=1
-  cd server
-  exec < /dev/tty bunx cz
-fi
 
+  # $2 = commit source (merge, squash, revert, message, template, etc.)
+  # Skip when Git already prepared a message or user supplied -m/-F/--file
+  case "$2" in
+    merge|squash|revert|message|commit|template)
+      exit 0
+      ;;
+  esac
+
+  cd server || exit 1
+
+  # Run Commitizen in hook mode so it writes into COMMIT_EDITMSG
+  exec < /dev/tty bunx cz --hook "$1" || exit 0
+fi
