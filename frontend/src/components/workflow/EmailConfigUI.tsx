@@ -303,14 +303,9 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             disabled={emailConfig.emailAddresses.length === 0}
             className={`w-full rounded-full ${
               emailConfig.emailAddresses.length === 0
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed hover:bg-gray-100"
-                : "text-white hover:opacity-90"
+                ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800"
+                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white"
             }`}
-            style={emailConfig.emailAddresses.length > 0 ? { 
-              backgroundColor: '#181B1D', 
-              borderColor: '#181B1D',
-              color: 'white'
-            } : {}}
           >
             Save Configuration
           </Button>

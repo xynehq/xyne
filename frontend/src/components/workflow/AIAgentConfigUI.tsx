@@ -528,12 +528,7 @@ Always strive for excellence and helpfulness in your responses while adhering to
         <div className="pt-6 px-0">
           <Button
             onClick={handleSave}
-            className="w-full text-white rounded-full hover:opacity-90"
-            style={{ 
-              backgroundColor: '#181B1D', 
-              borderColor: '#181B1D',
-              color: 'white'
-            }}
+            className="w-full bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-full"
           >
             Save Configuration
           </Button>

@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import Dropdown from "@/components/ui/dropdown"
 import { FileText, ChevronDown, Upload, File, X } from "lucide-react"
-import { BackArrowIcon, CloseIcon } from "./WorkflowIcons"
+import { BackArrowIcon } from "./WorkflowIcons"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface OnFormSubmissionUIProps {
@@ -338,15 +338,17 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 
         <button
           onClick={onClose || onBack}
-          className="flex items-center justify-center w-6 h-6 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+          className="flex items-center justify-center"
           style={{
+            width: "24px",
+            height: "24px",
             padding: "0",
             border: "none",
             background: "transparent",
             cursor: "pointer",
           }}
         >
-          <CloseIcon width={24} height={24} />
+          <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
       </div>
 
@@ -629,7 +631,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         <div className="pt-6 px-0">
           <Button
             onClick={handleSave}
-            className="w-full bg-gray-900 hover:bg-gray-900 text-white rounded-full shadow-none"
+            className="w-full bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-full shadow-none"
           >
             Save Configuration
           </Button>
