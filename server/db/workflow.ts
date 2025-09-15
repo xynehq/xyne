@@ -269,12 +269,25 @@ export const updateWorkflowStepExecution = async (
   id: string,
   data: Partial<InsertWorkflowStepExecution>,
 ): Promise<SelectWorkflowStepExecution | null> => {
+  const updateData: any = {
+    ...data,
+    updatedAt: new Date(),
+  }
+
+  // Ensure array fields are properly typed
+  if (data.prevStepIds) {
+    updateData.prevStepIds = Array.from(data.prevStepIds)
+  }
+  if (data.nextStepIds) {
+    updateData.nextStepIds = Array.from(data.nextStepIds)
+  }
+  if (data.toolExecIds) {
+    updateData.toolExecIds = Array.from(data.toolExecIds)
+  }
+
   const [updated] = await trx
     .update(workflowStepExecution)
-    .set({
-      ...data,
-      updatedAt: new Date(),
-    })
+    .set(updateData)
     .where(eq(workflowStepExecution.id, id))
     .returning()
 
