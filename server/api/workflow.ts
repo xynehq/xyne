@@ -201,17 +201,26 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       ][]
 
       requestData.rootStepInput = {}
+      console.log("Processing multipart entries for execute-with-input:", entries.map(([k, v]) => `${k}: ${typeof v === 'string' ? v : `[File: ${v.name || 'unknown'}]`}`))
+      
+      // Generic handling: put ALL form data into rootStepInput
       for (const [key, value] of entries) {
-        if (key === "name" || key === "description") {
-          requestData[key] = value as string
-        } else if (typeof value === "string") {
-          requestData.rootStepInput[key] = value
-        } else if (value instanceof File) {
-          // We'll handle file uploads after validation
-          requestData.rootStepInput[key] = value
-          hasFileUploads = true
+        if (key.startsWith("workflow")) {
+          // Handle workflow metadata with "workflow" prefix
+          const metadataKey = key.replace("workflow", "").toLowerCase()
+          if (metadataKey === "name") requestData.name = value as string
+          if (metadataKey === "description") requestData.description = value as string
+        } else {
+          // Everything else goes into rootStepInput (all form fields and files)
+          if (typeof value === "string") {
+            requestData.rootStepInput[key] = value
+          } else if (value instanceof File) {
+            requestData.rootStepInput[key] = value
+            hasFileUploads = true
+          }
         }
       }
+      console.log("Parsed requestData:", JSON.stringify(requestData, null, 2))
     } else {
       requestData = await c.req.json()
     }
@@ -1039,6 +1048,9 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         string,
         FormDataEntryValue,
       ][]
+      console.log("Multipart entries received:", entries.map(([key, value]) => 
+        `${key}: ${typeof value === 'string' ? value : `[File: ${value.name || 'unknown'}]`}`
+      ))
       for (const [key, value] of entries) {
         if (key !== "stepId" && typeof value === "string") {
           formData[key] = value
@@ -1525,6 +1537,167 @@ const extractContentFromPath = (
   }
 }
 
+// Get content from specified path with file input handling via Vespa
+const getContentFromPath = async (
+  previousStepResults: any,
+  contentPath: string,
+): Promise<{
+  content: string
+  hasFileInputs: boolean
+  fileCount: number
+  textFieldCount: number
+}> => {
+  try {
+    // Extract content using simplified input paths approach
+    if (!contentPath.startsWith("input.")) {
+      return {
+        content: `Invalid path: ${contentPath}. Only paths starting with 'input.' are supported.`,
+        hasFileInputs: false,
+        fileCount: 0,
+        textFieldCount: 0
+      }
+    }
+
+    // Get the latest step
+    const stepKeys = Object.keys(previousStepResults)
+    if (stepKeys.length === 0) {
+      return {
+        content: "No previous steps available",
+        hasFileInputs: false,
+        fileCount: 0,
+        textFieldCount: 0
+      }
+    }
+
+    const latestStepKey = stepKeys[stepKeys.length - 1]
+    const latestStepResult = previousStepResults[latestStepKey]
+
+    // Extract the requested field from "input.{fieldName}"
+    const requestedField = contentPath.slice(6) // Remove "input." prefix
+    
+    // Special handling for "formData" - use the form data processing logic below
+    if (requestedField === "formData") {
+      // Fall through to form data processing logic below
+    } else {
+      // Generic field lookup: search through all previous step results for the requested field
+      for (const stepKey of stepKeys.reverse()) {
+        const stepResult = previousStepResults[stepKey]
+        
+        // Check in direct result path
+        if (stepResult?.result?.[requestedField]) {
+          const fieldValue = stepResult.result[requestedField]
+          return {
+            content: typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue, null, 2),
+            hasFileInputs: false,
+            fileCount: 0,
+            textFieldCount: 1
+          }
+        }
+        
+        // Check in nested result structures
+        if (stepResult?.result?.result?.[requestedField]) {
+          const fieldValue = stepResult.result.result[requestedField]
+          return {
+            content: typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue, null, 2),
+            hasFileInputs: false,
+            fileCount: 0,
+            textFieldCount: 1
+          }
+        }
+      }
+      
+      return {
+        content: `No '${requestedField}' found in previous step results`,
+        hasFileInputs: false,
+        fileCount: 0,
+        textFieldCount: 0
+      }
+    }
+
+    if (!latestStepResult?.formSubmission?.formData && !latestStepResult?.result) {
+      return {
+        content: "Latest step has no result data",
+        hasFileInputs: false,
+        fileCount: 0,
+        textFieldCount: 0
+      }
+    }
+
+    // Get form data (for form submissions) or result data
+    const formData = latestStepResult?.formSubmission?.formData || latestStepResult?.result || {}
+    
+    let contentParts: string[] = []
+    let fileCount = 0
+    let textFieldCount = 0
+    let hasFileInputs = false
+
+    // Process each field in the form data
+    for (const [key, value] of Object.entries(formData)) {
+      if (typeof value === "string") {
+        // Text field
+        contentParts.push(`${key}: ${value}`)
+        textFieldCount++
+      } else if (value && typeof value === "object" && 'absolutePath' in value) {
+        // This is a file upload object
+        hasFileInputs = true
+        fileCount++
+        
+        try {
+          // Try to get file content from Vespa if it's an enhanced upload
+          if ('vespaDocId' in value) {
+            const { GetDocument } = await import("@/search/vespa")
+            const { KbItemsSchema } = await import("@/search/types")
+            const vespaDoc = await GetDocument(KbItemsSchema, value.vespaDocId)
+            
+            if (vespaDoc?.fields?.chunks) {
+              const fileContent = (vespaDoc.fields.chunks as string[]).join("\n")
+              contentParts.push(`File ${key} (${value.originalFileName}): ${fileContent}`)
+            } else {
+              contentParts.push(`File ${key}: ${value.originalFileName} (content not processed yet)`)
+            }
+          } else {
+            // Regular file upload - try to read from disk
+            try {
+              const fs = await import("node:fs/promises")
+              const fileBuffer = await fs.readFile(value.absolutePath)
+              
+              // Basic text extraction for common file types
+              if (value.mimetype?.includes("text/") || value.fileExtension === "txt") {
+                const textContent = fileBuffer.toString("utf-8")
+                contentParts.push(`File ${key} (${value.originalFileName}): ${textContent}`)
+              } else {
+                contentParts.push(`File ${key}: ${value.originalFileName} (${value.mimetype})`)
+              }
+            } catch (readError) {
+              contentParts.push(`File ${key}: ${value.originalFileName} (could not read content)`)
+            }
+          }
+        } catch (vespaError) {
+          Logger.warn(`Failed to fetch file content from Vespa for ${key}:`, vespaError)
+          contentParts.push(`File ${key}: ${value.originalFileName} (content fetch failed)`)
+        }
+      }
+    }
+
+    const content = contentParts.join("\n\n")
+
+    return {
+      content: content || "No content found in specified path",
+      hasFileInputs,
+      fileCount,
+      textFieldCount
+    }
+  } catch (error) {
+    Logger.error("Error getting content from path:", error)
+    return {
+      content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+      hasFileInputs: false,
+      fileCount: 0,
+      textFieldCount: 0
+    }
+  }
+}
+
 // Execute workflow tool (Python scripts, etc.)
 const executeWorkflowTool = async (
   tool: any,
@@ -1564,25 +1737,22 @@ const executeWorkflowTool = async (
         )
 
       case "email":
-        // Enhanced email tool using config for recipients and configurable path for content extraction
+        // Email tool with content_path support
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
         const fromEmail = emailConfig.from_email || "aman.asrani@juspay.in"
         const subject = emailConfig.subject || "Workflow Results"
         const contentType = emailConfig.content_type || "html"
-
-        // New configurable content path feature
-        const contentPath =
-          emailConfig.content_path || emailConfig.content_source_path
+        const emailContentPath = emailConfig.content_path || emailConfig.content_source_path
 
         try {
           let emailBody = ""
 
-          if (contentPath) {
+          if (emailContentPath) {
             // Extract content using configurable path
-            emailBody = extractContentFromPath(previousStepResults, contentPath)
+            emailBody = extractContentFromPath(previousStepResults, emailContentPath)
             if (!emailBody) {
-              emailBody = `No content found at path: ${contentPath}`
+              emailBody = `No content found at path: ${emailContentPath}`
             }
           } else {
             // Fallback to previous behavior - get from first step
@@ -1707,149 +1877,36 @@ const executeWorkflowTool = async (
         }
 
       case "ai_agent":
-        // Enhanced AI agent with Text/Form input type support
+        // AI agent with content_path support
         const aiConfig = tool.config || {}
-        const inputType = aiConfig.inputType || "text" // Default to text
         const aiModel = aiConfig.aiModel || aiConfig.model || "gemini-1.5-flash"
         const prompt = aiConfig.prompt || "Please analyze the provided content"
         const geminiApiKey =
           aiConfig.gemini_api_key || "AIzaSyCdGmhO4rI7_5QlH8LWGg5rPAAGa6Z3iWw"
+        const contentPath = aiConfig.content_path
 
         try {
           let analysisInput = ""
           let inputMetadata = {}
 
-          if (inputType === "form") {
-            // Extract form data and files from previous step results
-            const prevStepData = Object.values(previousStepResults)[0] as any
-            const formSubmission =
-              prevStepData?.formSubmission?.formData ||
-              prevStepData?.result?.formData ||
-              {}
-
-            // Process text fields
-            const textFields = Object.entries(formSubmission)
-              .filter(([key, value]) => typeof value === "string")
-              .map(([key, value]) => `${key}: ${value}`)
-              .join("\n")
-
-            // Process uploaded files
-            const fileContents = []
-            for (const [key, value] of Object.entries(formSubmission)) {
-              if (value && typeof value === "object" && value.absolutePath) {
-                try {
-                  const fileData = value as any
-                  const fileExt = fileData.fileExtension?.toLowerCase()
-
-                  if (fileExt === "txt") {
-                    // Text files - read directly
-                    const fs = await import("node:fs/promises")
-                    const content = await fs.readFile(
-                      fileData.absolutePath,
-                      "utf-8",
-                    )
-                    fileContents.push(
-                      `File: ${fileData.originalFileName}\nContent:\n${content}`,
-                    )
-                  } else if (fileExt === "pdf") {
-                    // PDF files - extract text using pdf-parse (Node.js friendly)
-                    try {
-                      const fs = await import("node:fs/promises")
-                      const pdfParse = require("pdf-parse")
-
-                      // Read PDF file
-                      const pdfBuffer = await fs.readFile(fileData.absolutePath)
-
-                      // Parse PDF with pdf-parse
-                      const pdfData = await pdfParse(pdfBuffer)
-
-                      const cleanedText = pdfData.text.trim()
-                      if (cleanedText && cleanedText.length > 10) {
-                        fileContents.push(
-                          `File: ${fileData.originalFileName}\nContent:\n${cleanedText}`,
-                        )
-                      } else {
-                        fileContents.push(
-                          `File: ${fileData.originalFileName}\nContent: [PDF file - no readable text found]`,
-                        )
-                      }
-                    } catch (pdfError) {
-                      // Fallback: just indicate PDF was processed but couldn't extract text
-                      fileContents.push(
-                        `File: ${fileData.originalFileName}\nType: PDF document (${fileData.fileSize} bytes)\nNote: PDF text extraction failed. File contains ${fileData.fileSize} bytes of content that may include text, images, or other data.`,
-                      )
-                    }
-                  } else if (
-                    ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(
-                      fileExt,
-                    )
-                  ) {
-                    // Image files - OCR text extraction using sharp + canvas
-                    try {
-                      const fs = await import("node:fs/promises")
-                      const sharp = await import("sharp")
-
-                      // Convert image to high-contrast format for better OCR
-                      const imageBuffer = await fs.readFile(
-                        fileData.absolutePath,
-                      )
-                      const processedImage = await sharp
-                        .default(imageBuffer)
-                        .greyscale()
-                        .normalize()
-                        .sharpen()
-                        .png()
-                        .toBuffer()
-
-                      // For now, indicate image was processed but OCR would need additional setup
-                      // Full OCR would require tesseract.js or similar
-                      const imageInfo = await sharp
-                        .default(imageBuffer)
-                        .metadata()
-                      fileContents.push(
-                        `File: ${fileData.originalFileName}\nType: Image (${imageInfo.width}x${imageInfo.height} ${fileExt.toUpperCase()})\nNote: Image processed but text extraction requires OCR setup. Image contains visual content that may include text, charts, or diagrams.`,
-                      )
-                    } catch (imageError) {
-                      fileContents.push(
-                        `File: ${fileData.originalFileName}\nError: Image processing failed - ${imageError.message}`,
-                      )
-                    }
-                  } else if (["doc", "docx"].includes(fileExt)) {
-                    // Word documents - would need additional library like mammoth
-                    fileContents.push(
-                      `File: ${fileData.originalFileName}\nType: Microsoft Word document\nNote: Word document processing requires additional setup. File contains ${fileData.fileSize} bytes of content.`,
-                    )
-                  } else {
-                    // Unsupported file type
-                    fileContents.push(
-                      `File: ${fileData.originalFileName}\nType: ${fileExt.toUpperCase()} (${fileData.fileSize} bytes)\nNote: File type not supported for content extraction`,
-                    )
-                  }
-                } catch (fileError) {
-                  fileContents.push(
-                    `File: ${value.originalFileName}\nError: Could not read file - ${fileError.message}`,
-                  )
-                }
-              }
-            }
-
-            analysisInput = [textFields, ...fileContents]
-              .filter(Boolean)
-              .join("\n\n")
+          if (contentPath) {
+            // Get content from specified path
+            const pathData = await getContentFromPath(previousStepResults, contentPath)
+            analysisInput = pathData.content
             inputMetadata = {
-              inputType: "form",
-              formFields: Object.keys(formSubmission).length,
-              filesProcessed: fileContents.length,
+              contentPath: contentPath,
+              hasFileInputs: pathData.hasFileInputs,
+              fileCount: pathData.fileCount,
+              textFieldCount: pathData.textFieldCount
             }
           } else {
-            // Text input - get from previous step result
+            // Fallback to previous behavior
             const prevStepData = Object.values(previousStepResults)[0] as any
             analysisInput =
               prevStepData?.result?.output ||
               prevStepData?.result?.content ||
               JSON.stringify(prevStepData?.result || {})
             inputMetadata = {
-              inputType: "text",
               sourceStep: Object.keys(previousStepResults)[0] || "unknown",
             }
           }
@@ -1859,7 +1916,7 @@ const executeWorkflowTool = async (
               status: "error",
               result: {
                 error: "No input content found for AI analysis",
-                inputType,
+                contentPath,
                 inputMetadata,
               },
             }
@@ -1893,7 +1950,7 @@ const executeWorkflowTool = async (
               status: "error",
               result: {
                 error: `Gemini API error: ${geminiResponse.status}`,
-                inputType,
+                contentPath,
                 inputMetadata,
               },
             }
@@ -1909,7 +1966,7 @@ const executeWorkflowTool = async (
             result: {
               aiOutput,
               model: aiModel,
-              inputType,
+              contentPath,
               inputMetadata,
               usage: geminiData.usageMetadata || {},
               processedAt: new Date().toISOString(),
@@ -1921,7 +1978,7 @@ const executeWorkflowTool = async (
             result: {
               error: "AI agent execution failed",
               message: error instanceof Error ? error.message : String(error),
-              inputType: aiConfig.inputType,
+              contentPath: aiConfig.content_path,
             },
           }
         }
