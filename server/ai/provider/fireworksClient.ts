@@ -40,14 +40,14 @@ interface ModelParameters {
 
 // Interface for API request options
 type ToolDef = {
-  type: 'function'
+  type: "function"
   function: { name: string; description?: string; parameters?: any }
 }
 
 interface RequestOptions extends ModelParameters {
   messages: ChatMessage[]
   tools?: ToolDef[]
-  tool_choice?: 'auto' | 'none' | 'required'
+  tool_choice?: "auto" | "none" | "required"
 }
 
 // Interfaces for API responses
@@ -183,8 +183,8 @@ class Fireworks {
     messages: ChatMessage[],
     options: Partial<RequestOptions> = {},
   ): AsyncGenerator<
-    | { type: 'text'; text: string }
-    | { type: 'tool_call'; name: string; arguments: string },
+    | { type: "text"; text: string }
+    | { type: "tool_call"; name: string; arguments: string },
     void,
     unknown
   > {
@@ -234,14 +234,14 @@ class Fireworks {
 
                 if (fn && (fn.name || fn.arguments)) {
                   yield {
-                    type: 'tool_call',
-                    name: fn.name || '',
-                    arguments: fn.arguments || '{}',
+                    type: "tool_call",
+                    name: fn.name || "",
+                    arguments: fn.arguments || "{}",
                   }
                 }
 
                 if (content) {
-                  yield { type: 'text', text: content }
+                  yield { type: "text", text: content }
                 }
               } catch (error) {
                 console.error("Error parsing JSON:", error)

@@ -51,8 +51,10 @@ export const makeXyneJAFProvider = <Ctx>(
         max_new_tokens: agent.modelConfig?.maxTokens,
         systemPrompt: agent.instructions(state),
         tools: tools.length ? tools : undefined,
-        tool_choice: tools.length ? advRun.toolChoice ?? 'auto' : undefined,
-        parallel_tool_calls: tools.length ? advRun.parallelToolCalls ?? true : undefined,
+        tool_choice: tools.length ? (advRun.toolChoice ?? "auto") : undefined,
+        parallel_tool_calls: tools.length
+          ? (advRun.parallelToolCalls ?? true)
+          : undefined,
       } as any)
 
       const content = result.text || ""

@@ -5,7 +5,7 @@ import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
 
 async function testPdfDirect() {
   let pdfPath = "/Users/aayush.shah/Downloads/small2.pdf"
-    // const pdfPath = "/Users/aayush.shah/Downloads/Aayush_Resume_2025.pdf"
+  // const pdfPath = "/Users/aayush.shah/Downloads/Aayush_Resume_2025.pdf"
   pdfPath = "/Users/aayush.shah/Downloads/somatosensory.pdf"
   try {
     console.log("=== DIRECT PDF PROCESSING TEST ===")
@@ -16,8 +16,12 @@ async function testPdfDirect() {
     const pdfBuffer = readFileSync(pdfPath)
     console.log("File size:", pdfBuffer.length, "bytes")
 
-    console.log("\n2. Testing direct PDF processing (current knowledge base flow)...")
-    console.log("This simulates exactly what happens in the knowledge base upload:")
+    console.log(
+      "\n2. Testing direct PDF processing (current knowledge base flow)...",
+    )
+    console.log(
+      "This simulates exactly what happens in the knowledge base upload:",
+    )
     console.log("- FileProcessorService.processFile() is called")
     console.log("- extractImages defaults to false")
     console.log("- describeImages defaults to false")
@@ -28,7 +32,7 @@ async function testPdfDirect() {
       "application/pdf",
       "small2.pdf",
       "test-doc-id",
-      pdfPath
+      pdfPath,
       // extractImages and describeImages default to false
     )
 
@@ -45,8 +49,8 @@ async function testPdfDirect() {
     const imageResult = await extractTextAndImagesWithChunksFromPDF(
       new Uint8Array(pdfBuffer),
       "test-doc-with-images",
-      true,  // extractImages enabled
-      true   // describeImages enabled
+      true, // extractImages enabled
+      true, // describeImages enabled
     )
 
     console.log("\n=== RESULTS WITH IMAGES ENABLED ===")
@@ -56,8 +60,18 @@ async function testPdfDirect() {
     console.log("Image chunk positions:", imageResult.image_chunk_pos.length)
 
     console.log("\n=== COMPARISON ===")
-    console.log("Current KB flow - Text chunks:", result.chunks.length, "Image chunks:", result.image_chunks.length)
-    console.log("With images    - Text chunks:", imageResult.text_chunks.length, "Image chunks:", imageResult.image_chunks.length)
+    console.log(
+      "Current KB flow - Text chunks:",
+      result.chunks.length,
+      "Image chunks:",
+      result.image_chunks.length,
+    )
+    console.log(
+      "With images    - Text chunks:",
+      imageResult.text_chunks.length,
+      "Image chunks:",
+      imageResult.image_chunks.length,
+    )
 
     if (result.chunks.length > 0) {
       console.log("\n=== SAMPLE TEXT CHUNKS ===")
@@ -77,8 +91,9 @@ async function testPdfDirect() {
 
     console.log("\n=== TEST COMPLETED ===")
     console.log("✓ Check the debug logs above from pdfChunks.ts")
-    console.log("✓ You can see exactly what's being processed in the current knowledge base flow")
-
+    console.log(
+      "✓ You can see exactly what's being processed in the current knowledge base flow",
+    )
   } catch (error) {
     console.error("Error processing PDF:", error)
     process.exit(1)

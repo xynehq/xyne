@@ -240,7 +240,7 @@ export const ListCollectionsApi = async (c: Context) => {
     const collections = showOnlyOwn
       ? await getCollectionsByOwner(db, user.id)
       : await getAccessibleCollections(db, user.id)
-    
+
     // If includeItems is requested, fetch items for each collection
     if (includeItems) {
       const collectionsWithItems = await Promise.all(
@@ -253,8 +253,12 @@ export const ListCollectionsApi = async (c: Context) => {
                 items: [], // Return empty items array for inaccessible collections
               }
             }
-            
-            const items = await getCollectionItemsByParent(db, collection.id, null)
+
+            const items = await getCollectionItemsByParent(
+              db,
+              collection.id,
+              null,
+            )
             return {
               ...collection,
               items,
@@ -269,12 +273,12 @@ export const ListCollectionsApi = async (c: Context) => {
               items: [], // Return empty items array on error
             }
           }
-        })
+        }),
       )
-      
+
       return c.json(collectionsWithItems)
     }
-    
+
     return c.json(collections)
   } catch (error) {
     const errMsg = getErrorMessage(error)

@@ -76,7 +76,7 @@ export class FileProcessorService {
         // Process spreadsheet
         let workbook: XLSX.WorkBook
         if (!storagePath) {
-          workbook = XLSX.read(buffer, { type: 'buffer' })
+          workbook = XLSX.read(buffer, { type: "buffer" })
         } else {
           workbook = XLSX.readFile(storagePath)
         }

@@ -156,19 +156,20 @@ export class BedrockProvider extends BaseProvider {
     })
     // Build Bedrock tool configuration if tools provided
     // Bedrock Converse expects tools as { toolSpec: { name, description, inputSchema: { json } } }
-    const toolConfig = params.tools && params.tools.length
-      ? {
-          tools: params.tools.map((t) => ({
-            toolSpec: {
-              name: t.name,
-              description: t.description,
-              inputSchema: {
-                json: t.parameters || { type: "object", properties: {} },
+    const toolConfig =
+      params.tools && params.tools.length
+        ? {
+            tools: params.tools.map((t) => ({
+              toolSpec: {
+                name: t.name,
+                description: t.description,
+                inputSchema: {
+                  json: t.parameters || { type: "object", properties: {} },
+                },
               },
-            },
-          })),
-        }
-      : undefined
+            })),
+          }
+        : undefined
 
     const command = new ConverseCommand({
       modelId: modelParams.modelId,
@@ -303,19 +304,20 @@ export class BedrockProvider extends BaseProvider {
 
     // Build Bedrock tool configuration if tools provided
     // Bedrock Converse expects tools as { toolSpec: { name, description, inputSchema: { json } } }
-    const toolConfig = params.tools && params.tools.length
-      ? {
-          tools: params.tools.map((t) => ({
-            toolSpec: {
-              name: t.name,
-              description: t.description,
-              inputSchema: {
-                json: t.parameters || { type: "object", properties: {} },
+    const toolConfig =
+      params.tools && params.tools.length
+        ? {
+            tools: params.tools.map((t) => ({
+              toolSpec: {
+                name: t.name,
+                description: t.description,
+                inputSchema: {
+                  json: t.parameters || { type: "object", properties: {} },
+                },
               },
-            },
-          })),
-        }
-      : undefined
+            })),
+          }
+        : undefined
 
     const command = new ConverseStreamCommand({
       modelId: modelParams.modelId,
@@ -344,7 +346,8 @@ export class BedrockProvider extends BaseProvider {
       // using two different iteration for reasoning and normal text we are lossing some data of normal text
       if (response.stream) {
         // Accumulate tool use inputs by toolUseId
-        const toolUseBuffers: Record<string, { name: string; args: string }> = {}
+        const toolUseBuffers: Record<string, { name: string; args: string }> =
+          {}
         for await (const chunk of response.stream) {
           // Handle reasoning content
           const reasoning =
@@ -374,13 +377,16 @@ export class BedrockProvider extends BaseProvider {
           const metadata = chunk.metadata
 
           // Detect tool use start
-          const toolUseStart: any = (chunk as any)?.contentBlockStart?.start?.toolUse
+          const toolUseStart: any = (chunk as any)?.contentBlockStart?.start
+            ?.toolUse
           if (toolUseStart?.name) {
-            const id = toolUseStart.toolUseId || `${Date.now()}-${Math.random()}`
+            const id =
+              toolUseStart.toolUseId || `${Date.now()}-${Math.random()}`
             toolUseBuffers[id] = { name: toolUseStart.name, args: "" }
           }
           // Accumulate tool use input JSON deltas (best-effort mapping of Bedrock stream)
-          const toolUseDelta: any = (chunk as any)?.contentBlockDelta?.delta?.toolUse
+          const toolUseDelta: any = (chunk as any)?.contentBlockDelta?.delta
+            ?.toolUse
           if (toolUseDelta?.inputText && Object.keys(toolUseBuffers).length) {
             // If SDK emits inputText chunks
             const lastId = Object.keys(toolUseBuffers).slice(-1)[0]
@@ -391,7 +397,8 @@ export class BedrockProvider extends BaseProvider {
             toolUseBuffers[lastId].args += JSON.stringify(toolUseDelta.input)
           }
           // On content block stop, flush tool call if present
-          const toolUseStop: any = (chunk as any)?.contentBlockStop?.stop?.toolUse
+          const toolUseStop: any = (chunk as any)?.contentBlockStop?.stop
+            ?.toolUse
           if (toolUseStop) {
             const id = toolUseStop.toolUseId
             const rec = id ? toolUseBuffers[id] : undefined

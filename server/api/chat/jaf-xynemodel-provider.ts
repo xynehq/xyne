@@ -47,9 +47,9 @@ export type MakeXyneJAFProviderOptions<Ctx> = {
   ) => boolean
 }
 
-export function makeXyneJAFProvider<Ctx extends { userCtx?: string; agentPrompt?: string; userMessage?: string }>(
-  opts: MakeXyneJAFProviderOptions<Ctx> = {},
-): JAFModelProvider<Ctx> {
+export function makeXyneJAFProvider<
+  Ctx extends { userCtx?: string; agentPrompt?: string; userMessage?: string },
+>(opts: MakeXyneJAFProviderOptions<Ctx> = {}): JAFModelProvider<Ctx> {
   return {
     async getCompletion(
       state: Readonly<JAFRunState<Ctx>>,
@@ -73,8 +73,13 @@ export function makeXyneJAFProvider<Ctx extends { userCtx?: string; agentPrompt?
       // 1) Tool planning path: prompt-driven selection using Xyne’s tool selector
       if (shouldPlanTool) {
         try {
-          const userQuery = getTextContent(lastMsg?.content || "") || state.context?.userMessage || ""
-          const toolListStr = buildToolsOverview(agent.tools ? [...agent.tools] : [])
+          const userQuery =
+            getTextContent(lastMsg?.content || "") ||
+            state.context?.userMessage ||
+            ""
+          const toolListStr = buildToolsOverview(
+            agent.tools ? [...agent.tools] : [],
+          )
 
           const params: ModelParams = {
             modelId: xyneModel,
@@ -93,7 +98,10 @@ export function makeXyneJAFProvider<Ctx extends { userCtx?: string; agentPrompt?
             state.context?.agentPrompt,
           )
 
-          if (selection?.tool && agent.tools?.some((t) => t.schema.name === selection.tool)) {
+          if (
+            selection?.tool &&
+            agent.tools?.some((t) => t.schema.name === selection.tool)
+          ) {
             // Return an OpenAI-compatible tool call response for JAF engine
             const callId = `xyne_tool_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
             return {

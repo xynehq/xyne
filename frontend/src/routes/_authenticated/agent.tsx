@@ -1931,11 +1931,11 @@ function AgentComponent() {
         )
     }
 
-    let agentPromptPayload: AgentPromptPayload;
+    let agentPromptPayload: AgentPromptPayload
 
     if (selectedChatAgentExternalId === null) {
       // Test Current Form Config - construct complete agent configuration
-      
+
       const appIntegrationsObject: Record<
         string,
         {
@@ -2038,16 +2038,19 @@ function AgentComponent() {
       }
     }
     url.searchParams.append("message", encodeURIComponent(messageToSend))
-    
+
     // Add agent ID to the request if using an agent
     if (chatConfigAgent?.externalId) {
       url.searchParams.append("agentId", chatConfigAgent.externalId)
     } else {
       // If no agent is used (the user is not authenticated), we can use the default agent
-      url.searchParams.append("agentPromptPayload", JSON.stringify(agentPromptPayload))
+      url.searchParams.append(
+        "agentPromptPayload",
+        JSON.stringify(agentPromptPayload),
+      )
       url.searchParams.append("agentId", DEFAULT_TEST_AGENT_ID)
     }
-    
+
     // Get model configuration from ChatBox
     const modelConfig = chatBoxRef.current?.getCurrentModelConfig()
 

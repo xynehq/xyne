@@ -68,66 +68,66 @@ export const createCitationLink =
               </span>
             </TooltipTrigger>
             {showTooltip && (
-            <TooltipContent
-              side="top"
-              align="center"
-              className="max-w-sm p-0 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg overflow-hidden"
-              onPointerDownOutside={(e) => {
-                // Prevent closing when clicking inside the tooltip
-                e.preventDefault()
-              }}
-            >
-              <div
-                className="flex items-start gap-3 p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                onClick={(e) => {
+              <TooltipContent
+                side="top"
+                align="center"
+                className="max-w-sm p-0 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg overflow-hidden"
+                onPointerDownOutside={(e) => {
+                  // Prevent closing when clicking inside the tooltip
                   e.preventDefault()
-                  e.stopPropagation()
-                  if (onCitationClick) {
-                    onCitationClick(citation)
-                  }
-                  setIsTooltipOpen(false)
                 }}
               >
-                {/* Document Icon */}
-                <div className="flex-shrink-0 mt-0.5">
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="text-gray-600 dark:text-gray-400"
-                  >
-                    <path
-                      d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                <div
+                  className="flex items-start gap-3 p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (onCitationClick) {
+                      onCitationClick(citation)
+                    }
+                    setIsTooltipOpen(false)
+                  }}
+                >
+                  {/* Document Icon */}
+                  <div className="flex-shrink-0 mt-0.5">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
                       fill="none"
-                    />
-                    <polyline
-                      points="14,2 14,8 20,8"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
-                  </svg>
-                </div>
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="text-gray-600 dark:text-gray-400"
+                    >
+                      <path
+                        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        fill="none"
+                      />
+                      <polyline
+                        points="14,2 14,8 20,8"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        fill="none"
+                      />
+                    </svg>
+                  </div>
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-gray-900 dark:text-gray-100 leading-tight truncate">
-                    {citation.title.split("/").pop() || "Untitled Document"}
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-tight truncate">
-                    {citation.title.replace(/[^/]*$/, "") || "No file name"}
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm text-gray-900 dark:text-gray-100 leading-tight truncate">
+                      {citation.title.split("/").pop() || "Untitled Document"}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-tight truncate">
+                      {citation.title.replace(/[^/]*$/, "") || "No file name"}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </TooltipContent>
+              </TooltipContent>
             )}
           </Tooltip>
         </TooltipProvider>
