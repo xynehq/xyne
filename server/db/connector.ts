@@ -399,7 +399,7 @@ export const getConnectorByAppAndEmailId = async (
 export const updateConnector = async (
   trx: TxnOrClient,
   connectorId: number,
-  updateData: Partial<SelectConnector>,
+  updateData: Partial<typeof connectors.$inferInsert>, // TODO: restrict updatable fields
 ): Promise<SelectConnector> => {
   const updatedConnectors = await trx
     .update(connectors)

@@ -404,7 +404,7 @@ export const CreateOAuthProvider = async (c: Context) => {
     }
     const provider = await createOAuthProvider(trx, {
       clientId: clientId!,
-      clientSecret: clientSecret!,
+      clientSecret: clientSecret as string,
       oauthScopes: scopes || [],
       workspaceId: user.workspaceId,
       userId: user.id,
