@@ -9,14 +9,14 @@ import { BackArrowIcon, CloseIcon } from "./WorkflowIcons"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface OnFormSubmissionUIProps {
-  isVisible?: boolean // Whether the sidebar is visible
+  isVisible?: boolean 
   onBack: () => void
-  onClose?: () => void // New prop for closing all sidebars
+  onClose?: () => void 
   onSave?: (formConfig: FormConfig, apiResponse?: any) => void
   initialConfig?: FormConfig
-  toolData?: any // Tool data from the backend
-  toolId?: string // Tool ID for API updates
-  showBackButton?: boolean // Whether to show the back button
+  toolData?: any 
+  toolId?: string 
+  showBackButton?: boolean 
 }
 
 interface FormField {
@@ -24,8 +24,8 @@ interface FormField {
   name: string
   placeholder: string
   type: "text" | "email" | "file" | "number" | "textarea" | "dropdown"
-  options?: string[] // For dropdown fields
-  fileTypes?: string[] // For file upload validation
+  options?: string[] 
+  fileTypes?: string[] 
   required?: boolean
   maxSize?: string
 }
@@ -36,7 +36,7 @@ export interface FormConfig {
   fields: FormField[]
 }
 
-// Predefined list of valid file types
+
 const VALID_FILE_TYPES = [
   "pdf", "doc", "docx", "txt", "rtf", "odt",
   "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg",
@@ -48,12 +48,12 @@ const VALID_FILE_TYPES = [
   "py", "java", "cpp", "c", "cs", "php"
 ]
 
-// Helper function to normalize file type (remove dot if present)
+
 const normalizeFileType = (type: string): string => {
   return type.startsWith('.') ? type.slice(1).toLowerCase() : type.toLowerCase()
 }
 
-// Helper function to validate file type
+
 const isValidFileType = (type: string): boolean => {
   const normalized = normalizeFileType(type)
   return VALID_FILE_TYPES.includes(normalized)
@@ -71,13 +71,13 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 }) => {
   const initialFieldId = crypto.randomUUID()
 
-  // Parse toolData to populate form fields following the specified extraction paths
+  
   const getInitialFormConfig = (): FormConfig => {
-    // Extract form title and description from workflow_tools data (as specified by user)
+    
     const formTitle = toolData?.value?.title || initialConfig?.title || ""
     const formDescription = toolData?.value?.description || initialConfig?.description || ""
     
-    // Extract fields from tool data
+    
     let convertedFields: FormField[] = []
     
     if (toolData?.value?.fields && Array.isArray(toolData.value.fields)) {
@@ -133,7 +133,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     getInitialFormConfig(),
   )
 
-  // Update form config when initialConfig or toolData changes
+  
   React.useEffect(() => {
     setFormConfig(getInitialFormConfig())
   }, [initialConfig, toolData])
@@ -146,7 +146,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   }>({})
   const [newFileType, setNewFileType] = useState("")
 
-  // Ensure file fields have default file types and required=true when component mounts
+  
   React.useEffect(() => {
     setFormConfig(prev => ({
       ...prev,
@@ -162,7 +162,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 
   const handleSave = async () => {
     try {
-      // If we have a toolId, update the tool via API
+      
       console.log("tool id here",toolId)
       if (toolId) {
         const updatedToolData = {
@@ -192,17 +192,17 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         console.log("tool id here 2",toolId)
         console.log("Form tool updated successfully, API response:", apiResponse)
         
-        // Call the parent save handler with API response
+        
         console.log("Form configuration saved:", formConfig)
         onSave?.(formConfig, apiResponse)
       } else {
-        // Call the parent save handler without API response for new nodes
+        
         console.log("Form configuration saved:", formConfig)
         onSave?.(formConfig)
       }
     } catch (error) {
       console.error("Failed to save form configuration:", error)
-      // Still call the parent handler even if API call fails
+      
       onSave?.(formConfig)
     }
   }
@@ -221,7 +221,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
       ...prev,
       fields: prev.fields.filter((field) => field.id !== fieldId),
     }))
-    // Remove from collapsed set if it was there
+    
     setCollapsedFieldIds((prev) => {
       const newSet = new Set(prev)
       newSet.delete(fieldId)
@@ -414,9 +414,9 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                       setCollapsedFieldIds((prev) => {
                         const newSet = new Set(prev)
                         if (newSet.has(field.id)) {
-                          newSet.delete(field.id) // Expand (remove from collapsed)
+                          newSet.delete(field.id) 
                         } else {
-                          newSet.add(field.id) // Collapse (add to collapsed)
+                          newSet.add(field.id) 
                         }
                         return newSet
                       })

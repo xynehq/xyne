@@ -11,7 +11,7 @@ import { userWorkflowsAPI, workflowExecutionsAPI } from "@/components/workflow/a
 import { api } from "@/api"
 import vectorIcon from "@/assets/vector.svg"
 import playIcon from "@/assets/play.svg"
-import { ChevronDown, Plus, Layout, Upload, ChevronRight, Search } from "lucide-react"
+import { ChevronDown, Plus, Layout, ChevronRight, Search } from "lucide-react"
 
 interface WorkflowTemplate {
   id: string;

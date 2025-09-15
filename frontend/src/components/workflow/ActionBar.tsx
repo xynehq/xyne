@@ -1,4 +1,5 @@
 import React from "react"
+import { Play, Minus, Plus } from "lucide-react"
 
 interface ActionBarProps {
   onExecute?: () => void
@@ -40,15 +41,7 @@ const ActionBar: React.FC<ActionBarProps> = ({
             : 'bg-slate-800 hover:bg-slate-700 text-white cursor-pointer'
         }`}
       >
-        <svg
-          className="w-4 h-4"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-        </svg>
+        <Play className="w-4 h-4" fill="currentColor" />
         Execute Workflow
       </button>
 
@@ -58,15 +51,7 @@ const ActionBar: React.FC<ActionBarProps> = ({
           disabled={zoomLevel <= 50}
           className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          <svg
-            className="w-3 h-3 text-slate-600"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
+          <Minus className="w-3 h-3 text-slate-600" />
         </button>
         
         <span className="text-sm font-medium text-slate-700 px-2 min-w-[45px] text-center">
@@ -78,16 +63,7 @@ const ActionBar: React.FC<ActionBarProps> = ({
           disabled={zoomLevel >= 200}
           className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          <svg
-            className="w-3 h-3 text-slate-600"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
+          <Plus className="w-3 h-3 text-slate-600" />
         </button>
       </div>
     </div>

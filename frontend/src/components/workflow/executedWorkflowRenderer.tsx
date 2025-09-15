@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect } from "react"
-import { Bot, Mail } from "lucide-react"
+import { Bot, Mail, Settings, X, FileTextIcon , FileText} from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -16,8 +16,6 @@ import {
   NodeProps,
   Connection,
   useReactFlow,
-  Panel,
-  OnSelectionChangeParams,
   OnNodesDelete,
   OnEdgesDelete,
 } from "@xyflow/react"
@@ -116,11 +114,7 @@ interface ExecutionWorkflowData {
     updatedAt: string
   }>
 }
-import {
-  EditorIcon,
-  SettingsIcon,
-  FormDocumentIcon,
-} from "./WorkflowIcons"
+
 import botLogo from "@/assets/bot-logo.svg"
 
 // Custom Node Component
@@ -562,7 +556,7 @@ const StepNode: React.FC<NodeProps> = ({
                 background: "#E8F9D1",
               }}
             >
-              <FormDocumentIcon width={16} height={16} />
+              <FileTextIcon width={16} height={16} />
             </div>
 
             <h3
@@ -892,9 +886,7 @@ const StepNode: React.FC<NodeProps> = ({
                 background: "#E5E7EB",
               }}
             >
-              <svg width={16} height={16} viewBox="0 0 24 24" fill="#6B7280">
-                <path d="M12 2L13.09 8.26L19 7L17.74 13.74L21 15L14.74 16.26L13 21L7.26 19.74L5 21L6.26 14.74L3 13L9.26 11.74L11 7L16.74 8.26L19 7L17.74 13.74L21 15L14.74 16.26L13 21Z" />
-              </svg>
+              <Settings width={16} height={16} color="#6B7280" /> 
             </div>
 
             <h3
@@ -1054,7 +1046,7 @@ const Header = ({
   workflowName,
 }: { onBackToWorkflows?: () => void; workflowName?: string }) => {
   return (
-    <div className="flex flex-col items-start px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px] gap-3">
+    <div className="flex flex-col items-start justify-center px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px] gap-3">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 w-full">
         <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
@@ -1069,21 +1061,6 @@ const Header = ({
             / {workflowName || "Untitled Workflow"}
           </span>
         </div>
-      </div>
-
-      {/* Full-width divider */}
-      <div className="w-full h-px bg-slate-200 dark:bg-gray-700 -mx-6 self-stretch" />
-
-      {/* Editor/Settings Toggle - positioned below divider */}
-      <div className="flex items-center rounded-xl overflow-hidden border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800">
-        <button className="my-1 mx-1 px-4 py-1.5 bg-white dark:bg-gray-700 text-slate-800 dark:text-gray-200 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center rounded-lg shadow-sm">
-          <EditorIcon />
-          Editor
-        </button>
-        <button className="px-4 py-1.5 bg-transparent text-slate-500 dark:text-gray-400 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center">
-          <SettingsIcon />
-          Settings
-        </button>
       </div>
     </div>
   )
@@ -1114,16 +1091,7 @@ const ExecutionResultModal = ({
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-full transition-colors"
           >
-            <svg
-              className="w-5 h-5 text-gray-500"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
 
@@ -1262,16 +1230,7 @@ const ExecutionSidebar = ({
               onClick={onClose}
               className="p-1 hover:bg-gray-100 rounded-md transition-colors"
             >
-              <svg
-                className="w-4 h-4 text-gray-500"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <X className="w-4 h-4 text-gray-500" />
             </button>
           )}
         </div>
@@ -1875,19 +1834,7 @@ const ExecutionSidebar = ({
             ) : (
               <div className="text-center py-6">
                 <div className="text-gray-400 mb-2">
-                  <svg
-                    className="w-8 h-8 mx-auto"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="1"
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
+                  <FileText className="w-8 h-8 mx-auto" />
                 </div>
                 <p className="text-sm text-gray-500">
                   No output data available
@@ -1923,8 +1870,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   selectedTemplate,
   isLoadingTemplate,
 }) => {
-  const [selectedNodes, setSelectedNodes] = useState<Node[]>([])
-  const [selectedEdges, setSelectedEdges] = useState<Edge[]>([])
   const [, setZoomLevel] = useState(100)
   const [showResultModal, setShowResultModal] = useState(false)
   const [selectedResult, setSelectedResult] = useState<any>(null)
@@ -2189,7 +2134,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 type: "arrowclosed",
                 color: "#D1D5DB",
               },
-            })
+            } as any)
           })
         })
       }
@@ -2234,10 +2179,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     [setEdges],
   )
 
-  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
-    setSelectedNodes(params.nodes)
-    setSelectedEdges(params.edges)
-  }, [])
+  // const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+  //   setSelectedNodes(params.nodes)
+  // }, [])
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -2383,7 +2327,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             onNodeClick={onNodeClick}
             onNodesDelete={onNodesDelete}
             onEdgesDelete={onEdgesDelete}
-            onSelectionChange={onSelectionChange}
             nodeTypes={nodeTypes}
             connectionLineType={ConnectionLineType.SmoothStep}
             fitView

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { X } from "lucide-react"
+import { X, XCircle, FileText, AlertCircle } from "lucide-react"
 import fileUpIcon from "@/assets/file-up.svg"
 import checkCircleIcon from "@/assets/check-circle.svg"
 import { workflowExecutionsAPI } from "./api/ApiHandlers"
@@ -110,12 +110,8 @@ export function WorkflowExecutionModal({
   const [processingMessage, setProcessingMessage] = useState<string>(
     "Processing the File",
   )
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
-    null,
-  )
-  const [pollingAttempts, setPollingAttempts] = useState(0)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [maxPollingAttempts] = useState(150) // 5 minutes at 2-second intervals
-  const [retryCount, setRetryCount] = useState(0)
   const [maxRetries] = useState(3)
   const [executionId, setExecutionId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -123,11 +119,11 @@ export function WorkflowExecutionModal({
   // Cleanup polling on component unmount
   useEffect(() => {
     return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
       }
     }
-  }, [pollingInterval])
+  }, [])
 
   const resetModalState = () => {
     setSelectedFile(null)
@@ -138,12 +134,10 @@ export function WorkflowExecutionModal({
     setIsCompleted(false)
     setIsFailed(false)
     setProcessingMessage("")
-    setPollingAttempts(0)
-    setRetryCount(0)
     setExecutionId(null)
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
@@ -241,18 +235,12 @@ export function WorkflowExecutionModal({
   const executeWorkflow = async (file: File) => {
     setIsUploading(true)
     try {
-      console.log("Executing workflow with template ID:", templateId)
-      console.log("Selected file:", file.name)
-      console.log("Workflow template:", workflowTemplate)
-
       // Create form data matching the curl command format
       const formData: Record<string, any> = {
         name: `${workflowName} - ${new Date().toLocaleString()}`,
         description: `Execution of ${workflowName} with file: ${file.name}`,
         file_description: `Test document: ${file.name}`,
       }
-
-      console.log("Generated form data:", formData)
 
       const executionData = {
         name: formData.name,
@@ -265,8 +253,6 @@ export function WorkflowExecutionModal({
         templateId,
         executionData,
       )
-
-      console.log("🚀 WORKFLOW EXECUTION RESPONSE:", response)
 
       // Extract message from response and set it for display
       if (response.message) {
@@ -285,7 +271,6 @@ export function WorkflowExecutionModal({
 
         // Extract execution ID from response.data.execution.id
         const currentExecutionId = response.data?.execution?.id
-        console.log("📋 Extracted execution ID:", currentExecutionId)
 
         if (currentExecutionId) {
           // Store execution ID for later use
@@ -297,7 +282,6 @@ export function WorkflowExecutionModal({
           // Try to extract from other possible locations
           const alternativeId = response.data?.id || response.execution?.id || response.id
           if (alternativeId) {
-            console.log("📋 Using alternative execution ID:", alternativeId)
             setExecutionId(alternativeId)
             startStatusPolling(alternativeId)
           } else {
@@ -342,11 +326,6 @@ export function WorkflowExecutionModal({
   const handleStartExecution = async () => {
     if (!selectedFile) return
 
-    console.log("Starting execution for workflow:", workflowName)
-    console.log("Selected file:", selectedFile.name)
-    console.log("File size:", selectedFile.size, "bytes")
-    console.log("File type:", selectedFile.type)
-
     setIsProcessing(true)
     await executeWorkflow(selectedFile)
   }
@@ -366,12 +345,10 @@ export function WorkflowExecutionModal({
     setIsCompleted(false)
     setIsFailed(false)
     setUploadError(null)
-    setProcessingMessage("")
-    setPollingAttempts(0)
-    setRetryCount(0)
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
+    setProcessingMessage("")      
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
@@ -379,29 +356,26 @@ export function WorkflowExecutionModal({
   }
 
   const stopPolling = () => {
-    if (pollingInterval) {
-      console.log("🛑 Stopping polling")
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
-    }
-    setPollingAttempts(0)
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }  
   }
 
   const startStatusPolling = async (executionId: string) => {
-    console.log("🔄 Starting status polling for execution ID:", executionId)
 
     // Clear any existing interval first
-    stopPolling()
-    setPollingAttempts(0)
-    setRetryCount(0)
+    stopPolling()      
+
+    let currentAttempts = 0
+    let currentRetryCount = 0
 
     const checkStatus = async () => {
       try {
-        setPollingAttempts(prev => prev + 1)
+        currentAttempts += 1      
         
         // Check if we've exceeded max polling attempts (timeout)
-        if (pollingAttempts >= maxPollingAttempts) {
-          console.log("⏰ Polling timeout reached")
+        if (currentAttempts >= maxPollingAttempts) {
           stopPolling()
           setIsProcessing(false)
           setIsFailed(true)
@@ -417,18 +391,15 @@ export function WorkflowExecutionModal({
         }
 
         const statusData = await response.json()
-        console.log("📊 Status polling response:", statusData)
 
         // Reset retry count on successful request
-        setRetryCount(0)
+        currentRetryCount = 0        
 
-        if (statusData.success && statusData.status === "completed") {
-          console.log("✅ Execution completed!")
+        if (statusData.status === "completed") {
           stopPolling()
           setIsProcessing(false)
           setIsCompleted(true)
         } else if (statusData.status === "failed") {
-          console.log("❌ Execution failed!")
           stopPolling()
           setIsProcessing(false)
           setIsFailed(true)
@@ -455,27 +426,22 @@ export function WorkflowExecutionModal({
         
       } catch (error) {
         console.error("Status polling error:", error)
-        setRetryCount(prev => prev + 1)
+        currentRetryCount += 1        
         
         // If we've exceeded max retries, stop polling and show error
-        if (retryCount >= maxRetries) {
-          console.log("❌ Max polling retries exceeded")
+        if (currentRetryCount >= maxRetries) {
           stopPolling()
           setIsProcessing(false)
           setIsFailed(true)
           setUploadError(`Failed to check execution status: ${extractErrorMessage(error)}`)
           return
         }
-        
-        // Otherwise, continue polling with exponential backoff
-        console.log(`🔄 Retrying polling (attempt ${retryCount + 1}/${maxRetries})`)
       }
     }
 
     // Start polling every 2 seconds
     const interval = setInterval(checkStatus, 2000)
-    setPollingInterval(interval)
-    console.log("⏰ Polling interval started:", interval)
+    pollingIntervalRef.current = interval
 
     // Also check immediately
     checkStatus()
@@ -510,11 +476,7 @@ export function WorkflowExecutionModal({
                 {/* Error Icon */}
                 <div className="w-16 h-16 flex items-center justify-center mb-6">
                   <div className="w-16 h-16 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center">
-                    <svg className="w-8 h-8 text-red-600 dark:text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="15" y1="9" x2="9" y2="15"></line>
-                      <line x1="9" y1="9" x2="15" y2="15"></line>
-                    </svg>
+                    <XCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
                   </div>
                 </div>
 
@@ -648,19 +610,7 @@ export function WorkflowExecutionModal({
                 // Selected File Display
                 <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl px-6 py-16 text-center bg-gray-50 dark:bg-gray-800 w-full min-h-[280px] flex flex-col items-center justify-center">
                   <div className="flex items-center gap-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-4 py-3 shadow-sm">
-                    <svg
-                      className="w-6 h-6 text-gray-600 dark:text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
+                    <FileText className="w-6 h-6 text-gray-600 dark:text-gray-400" />
                     <span className="text-gray-900 dark:text-gray-100 font-medium">
                       {selectedFile.name}
                     </span>
@@ -668,19 +618,7 @@ export function WorkflowExecutionModal({
                       onClick={handleDiscardFile}
                       className="ml-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M6 18L18 6M6 6l12 12"
-                        />
-                      </svg>
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
                 </div>
@@ -737,9 +675,7 @@ export function WorkflowExecutionModal({
                 <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0">
-                      <svg className="w-5 h-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                      </svg>
+                      <AlertCircle className="w-5 h-5 text-red-400" />
                     </div>
                     <div className="flex-1">
                       <h3 className="text-sm font-medium text-red-800 dark:text-red-300">
