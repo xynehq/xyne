@@ -38,7 +38,7 @@
     "dompurify": "^3.2.6",
     "hono": "^4.6.15",
     "jszip": "^3.10.1",
-    "lucide-react": "^0.475.0",
+    "lucide-react": "^0.544.0",
     "mermaid": "^11.6.0",
     "notion-md-crawler": "^1.0.0",
     "pdfjs-dist": "^5.3.93",
