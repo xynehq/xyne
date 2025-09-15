@@ -1296,7 +1296,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       describeImages,
     })
 
-    console.log("All text chunks", { text_chunks })
+    Logger.debug("All text chunks", { text_chunks })
     Logger.debug("All text chunks", { text_chunks })
     Logger.debug("All text chunk positions", { text_chunk_pos })
     Logger.debug("All image chunks", { image_chunks })
