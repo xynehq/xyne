@@ -768,83 +768,6 @@ export const AppRoutes = app
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
-  .post(
-    "/workflow/templates",
-    AuthMiddleware,
-    zValidator("json", createWorkflowTemplateSchema),
-    CreateWorkflowTemplateApi,
-  )
-  .post(
-    "/workflow/templates/complex",
-    AuthMiddleware,
-    zValidator("json", createComplexWorkflowTemplateSchema),
-    CreateComplexWorkflowTemplateApi,
-  )
-  .get("/workflow/templates", AuthMiddleware, ListWorkflowTemplatesApi)
-  .get("/workflow/templates/:templateId", AuthMiddleware, GetWorkflowTemplateApi)
-  .put(
-    "/workflow/templates/:templateId",
-    AuthMiddleware,
-    zValidator("json", updateWorkflowTemplateSchema),
-    UpdateWorkflowTemplateApi,
-  )
-  .post("/workflow/templates/:templateId/execute", AuthMiddleware, ExecuteTemplateApi)
-  .post(
-    "/workflow/templates/:templateId/execute-with-input",
-    AuthMiddleware,
-    ExecuteWorkflowWithInputApi,
-  )
-  .post(
-    "/workflow/templates/:templateId/steps",
-    AuthMiddleware,
-    zValidator("json", addStepToWorkflowSchema),
-    AddStepToWorkflowApi,
-  )
-  .post(
-    "/workflow/executions",
-    AuthMiddleware,
-    zValidator("json", createWorkflowExecutionSchema),
-    CreateWorkflowExecutionApi,
-  )
-  .get(
-    "/workflow/executions",
-    AuthMiddleware,
-    zValidator("query", listWorkflowExecutionsQuerySchema),
-    ListWorkflowExecutionsApi,
-  )
-  .get("/workflow/executions/:executionId", AuthMiddleware, GetWorkflowExecutionApi)
-  .get(
-    "/workflow/executions/:executionId/status",
-    AuthMiddleware,
-    GetWorkflowExecutionStatusApi,
-  )
-  .post(
-    "/workflow/tools",
-    AuthMiddleware,
-    zValidator("json", createWorkflowToolSchema),
-    CreateWorkflowToolApi,
-  )
-  .get("/workflow/tools", AuthMiddleware, ListWorkflowToolsApi)
-  .get("/workflow/tools/:toolId", AuthMiddleware, GetWorkflowToolApi)
-  .put(
-    "/workflow/tools/:toolId",
-    AuthMiddleware,
-    zValidator("json", updateWorkflowToolSchema),
-    UpdateWorkflowToolApi,
-  )
-  .delete("/workflow/tools/:toolId", AuthMiddleware, DeleteWorkflowToolApi)
-  .delete("/workflow/steps/:stepId", AuthMiddleware, DeleteWorkflowStepTemplateApi)
-  .put(
-    "/workflow/steps/:stepId",
-    AuthMiddleware,
-    zValidator("json", updateWorkflowStepExecutionSchema),
-    UpdateWorkflowStepExecutionApi,
-  )
-  .post("/workflow/steps/:stepId/complete", AuthMiddleware, CompleteWorkflowStepExecutionApi)
-  .get("/workflow/steps/:stepId/form", AuthMiddleware, GetFormDefinitionApi)
-  .post("/workflow/steps/submit-form", AuthMiddleware, SubmitFormStepApi)
-  .get("/workflow/files/:fileId", AuthMiddleware, ServeWorkflowFileApi)
-  .get("/workflow/models/gemini", AuthMiddleware, GetGeminiModelEnumsApi)
   // Auth middleware for all other routes
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
@@ -960,6 +883,75 @@ export const AppRoutes = app
   )
   .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
   .get("/tuning/ws/:jobId", TuningWsRoute)
+
+  // Workflow Routes
+  .post(
+    "/workflow/templates",
+    zValidator("json", createWorkflowTemplateSchema),
+    CreateWorkflowTemplateApi,
+  )
+  .post(
+    "/workflow/templates/complex",
+    zValidator("json", createComplexWorkflowTemplateSchema),
+    CreateComplexWorkflowTemplateApi,
+  )
+  .get("/workflow/templates", ListWorkflowTemplatesApi)
+  .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
+  .put(
+    "/workflow/templates/:templateId",
+    zValidator("json", updateWorkflowTemplateSchema),
+    UpdateWorkflowTemplateApi,
+  )
+  .post("/workflow/templates/:templateId/execute", ExecuteTemplateApi)
+  .post(
+    "/workflow/templates/:templateId/execute-with-input",
+    ExecuteWorkflowWithInputApi,
+  )
+  .post(
+    "/workflow/templates/:templateId/steps",
+    zValidator("json", addStepToWorkflowSchema),
+    AddStepToWorkflowApi,
+  )
+  .post(
+    "/workflow/executions",
+    zValidator("json", createWorkflowExecutionSchema),
+    CreateWorkflowExecutionApi,
+  )
+  .get(
+    "/workflow/executions",
+    zValidator("query", listWorkflowExecutionsQuerySchema),
+    ListWorkflowExecutionsApi,
+  )
+  .get("/workflow/executions/:executionId", GetWorkflowExecutionApi)
+  .get(
+    "/workflow/executions/:executionId/status",
+    GetWorkflowExecutionStatusApi,
+  )
+  .post(
+    "/workflow/tools",
+    zValidator("json", createWorkflowToolSchema),
+    CreateWorkflowToolApi,
+  )
+  .get("/workflow/tools", ListWorkflowToolsApi)
+  .get("/workflow/tools/:toolId", GetWorkflowToolApi)
+  .put(
+    "/workflow/tools/:toolId",
+    zValidator("json", updateWorkflowToolSchema),
+    UpdateWorkflowToolApi,
+  )
+  .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
+  .put(
+    "/workflow/steps/:stepId",
+    zValidator("json", updateWorkflowStepExecutionSchema),
+    UpdateWorkflowStepExecutionApi,
+  )
+  .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
+  .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
+  .post("/workflow/steps/submit-form", SubmitFormStepApi)
+  .get("/workflow/files/:fileId", ServeWorkflowFileApi)
+  .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agent/generate-prompt", GeneratePromptApi)
@@ -1454,6 +1446,72 @@ app.get(
   "/knowledgeManagement",
   AuthRedirect,
   serveStatic({ path: "./dist/index.html" }),
+)
+
+// Comprehensive health check endpoint
+
+const createHealthCheckHandler = (
+  checkFn: () => Promise<HealthStatusResponse>,
+  serviceName: ServiceName,
+) => {
+  return async (c: Context) => {
+    try {
+      const health = await checkFn()
+      const statusCode =
+        health.status === HealthStatusType.Healthy ||
+        health.status === HealthStatusType.Degraded
+          ? 200
+          : 503
+      return c.json(health, statusCode)
+    } catch (error) {
+      Logger.error(error, `Health check endpoint failed for ${serviceName}`)
+      return c.json(
+        {
+          status: HealthStatusType.Unhealthy,
+          timestamp: new Date().toISOString(),
+          error: "Health check failed",
+          details: error instanceof Error ? error.message : "Unknown error",
+        },
+        503,
+      )
+    }
+  }
+}
+
+app.get("/health", async (c) => {
+  try {
+    const health = await checkOverallSystemHealth()
+    const statusCode =
+      health.status === HealthStatusType.Healthy
+        ? 200
+        : health.status === HealthStatusType.Degraded
+          ? 200
+          : 503
+
+    return c.json(health, statusCode)
+  } catch (error) {
+    Logger.error(error, "Health check endpoint failed")
+    return c.json(
+      {
+        status: HealthStatusType.Unhealthy,
+        timestamp: new Date().toISOString(),
+        error: "Health check failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      503,
+    )
+  }
+})
+
+// Postgres health check endpoint
+app.get(
+  "/health/postgres",
+  createHealthCheckHandler(checkPostgresHealth, ServiceName.postgres),
+)
+// Vespa health check endpoint
+app.get(
+  "/health/vespa",
+  createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
 )
 
 export const init = async () => {
