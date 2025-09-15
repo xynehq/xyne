@@ -169,15 +169,13 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
     })
 
     setSelectedIntegrations((prev) => {
-      const newSelectedSet = new Set(selectedItemsInGoogleDrive)
-      if (isCurrentlySelected) {
-        newSelectedSet.delete(itemId)
-      } else {
-        newSelectedSet.add(itemId)
-      }
+      // Compute the new size based on the current operation to avoid race condition
+      const currentSize = selectedItemsInGoogleDrive.size
+      const newSize = isCurrentlySelected ? currentSize - 1 : currentSize + 1
+
       return {
         ...prev,
-        googledrive: newSelectedSet.size > 0,
+        googledrive: newSize > 0,
       }
     })
   }
