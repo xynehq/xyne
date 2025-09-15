@@ -227,6 +227,73 @@ export type ChangeStepStatusResponse = {
 export interface WorkflowTemplate {
   id: string
   name: string
+  description: string
+  version: string
+  status: string
+  config: {
+    ai_model?: string
+    max_file_size?: string
+    auto_execution?: boolean
+    schema_version?: string
+    allowed_file_types?: string[]
+    supports_file_upload?: boolean
+  }
+  createdBy: string
+  rootWorkflowStepTemplateId: string
+  createdAt: string
+  updatedAt: string
+  rootStep?: {
+    id: string
+    workflowTemplateId: string
+    name: string
+    description: string
+    type: string
+    timeEstimate: number
+    metadata: {
+      icon?: string
+      step_order?: number
+      schema_version?: string
+      user_instructions?: string
+    }
+    tool?: {
+      id: string
+      type: string
+      value: {
+        fields?: Array<{
+          name: string
+          type: string
+          required?: boolean
+          default?: any
+        }>
+        [key: string]: any
+      }
+      config: any
+      createdBy: string
+      createdAt: string
+      updatedAt: string
+    }
+  }
+}
+
+export interface WorkflowCardProps {
+  workflow: WorkflowTemplate
+  onViewClick?: (templateId: string) => void
+  onViewExecution?: (executionId: string) => void
+}
+
+export interface WorkflowExecutionModalProps {
+  isOpen: boolean
+  onClose: () => void
+  workflowName: string
+  workflowDescription: string
+  templateId: string
+  workflowTemplate: WorkflowTemplate
+  onViewExecution?: (executionId: string) => void
+}
+
+export interface LegacyWorkflowTemplate {
+  id: string
+  name: string
   description?: string
   version?: string
   status?: string

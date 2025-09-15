@@ -5,67 +5,7 @@ import fileUpIcon from "@/assets/file-up.svg"
 import checkCircleIcon from "@/assets/check-circle.svg"
 import { workflowExecutionsAPI } from "./api/ApiHandlers"
 import { api } from "../../api"
-
-interface WorkflowTemplate {
-  id: string
-  name: string
-  description: string
-  version: string
-  status: string
-  config: {
-    ai_model?: string
-    max_file_size?: string
-    auto_execution?: boolean
-    schema_version?: string
-    allowed_file_types?: string[]
-    supports_file_upload?: boolean
-  }
-  createdBy: string
-  rootWorkflowStepTemplateId: string
-  createdAt: string
-  updatedAt: string
-  rootStep?: {
-    id: string
-    workflowTemplateId: string
-    name: string
-    description: string
-    type: string
-    timeEstimate: number
-    metadata: {
-      icon?: string
-      step_order?: number
-      schema_version?: string
-      user_instructions?: string
-    }
-    tool?: {
-      id: string
-      type: string
-      value: {
-        fields?: Array<{
-          name: string
-          type: string
-          required?: boolean
-          default?: any
-        }>
-        [key: string]: any
-      }
-      config: any
-      createdBy: string
-      createdAt: string
-      updatedAt: string
-    }
-  }
-}
-
-interface WorkflowExecutionModalProps {
-  isOpen: boolean
-  onClose: () => void
-  workflowName: string
-  workflowDescription: string
-  templateId: string
-  workflowTemplate: WorkflowTemplate
-  onViewExecution?: (executionId: string) => void
-}
+import { WorkflowExecutionModalProps } from "./Types"
 
 const SUPPORTED_FILE_TYPES = {
   // Text files

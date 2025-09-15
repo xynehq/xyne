@@ -2,55 +2,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import botLogo from "@/assets/bot-logo.svg"
-
-interface WorkflowTemplate {
-  id: string
-  name: string
-  description: string
-  version: string
-  status: string
-  config: {
-    ai_model?: string
-    max_file_size?: string
-    auto_execution?: boolean
-    schema_version?: string
-    allowed_file_types?: string[]
-    supports_file_upload?: boolean
-  }
-  createdBy: string
-  rootWorkflowStepTemplateId: string
-  createdAt: string
-  updatedAt: string
-  rootStep?: {
-    id: string
-    workflowTemplateId: string
-    name: string
-    description: string
-    type: string
-    timeEstimate: number
-    metadata: {
-      icon?: string
-      step_order?: number
-      schema_version?: string
-      user_instructions?: string
-    }
-    tool?: {
-      id: string
-      type: string
-      value: any
-      config: any
-      createdBy: string
-      createdAt: string
-      updatedAt: string
-    }
-  }
-}
-
-interface WorkflowCardProps {
-  workflow: WorkflowTemplate
-  onViewClick?: (templateId: string) => void
-  onViewExecution?: (executionId: string) => void
-}
+import { WorkflowCardProps } from "./Types"
 
 export function WorkflowCard({ workflow, onViewClick, onViewExecution }: WorkflowCardProps) {
   const [showExecutionModal, setShowExecutionModal] = useState(false)
