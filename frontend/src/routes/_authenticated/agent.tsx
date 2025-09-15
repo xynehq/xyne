@@ -362,7 +362,6 @@ function AgentComponent() {
       })
       if (response.ok) {
         const data = await response.json()
-        console.log(data)
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
         setCurrentItems(items)
@@ -389,7 +388,6 @@ function AgentComponent() {
       })
       if (response.ok) {
         const data = await response.json()
-        console.log(data)
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
         setCurrentItems(items)
@@ -542,7 +540,6 @@ function AgentComponent() {
         })
 
         if (response.ok) {
-          console.log("Entity search response:")
           const data = await response.json()
           // @ts-ignore
           const results = (data.results || []) as FetchedDataSource[]
@@ -1634,8 +1631,6 @@ function AgentComponent() {
         )
         if (!integration) continue
 
-        console.log(`Processing integration: ${integrationId}`, integration)
-
         // For collections, collect item IDs with appropriate prefixes
         if (integrationId.startsWith("cl_")) {
           const collectionId = integrationId.replace("cl_", "")
@@ -1675,29 +1670,20 @@ function AgentComponent() {
         else if (integrationId === "googledrive") {
           const selectedDocIds: string[] = []
 
-          console.log("Processing Google Drive integration...")
-          console.log(
-            "selectedItemsInGoogleDrive size:",
-            selectedItemsInGoogleDrive.size,
-          )
 
           // Get the docIds from selectedItemDetailsInGoogleDrive
           selectedItemsInGoogleDrive.forEach((itemId) => {
             const itemDetail = selectedItemDetailsInGoogleDrive[itemId]
-            console.log(`Processing Google Drive item ${itemId}:`, itemDetail)
 
             if (itemDetail && itemDetail.fields?.docId) {
               selectedDocIds.push(itemDetail.fields.docId)
-              console.log(`Added docId: ${itemDetail.fields.docId}`)
             } else if (itemDetail && itemDetail.docId) {
               selectedDocIds.push(itemDetail.docId)
-              console.log(`Added docId (fallback): ${itemDetail.docId}`)
             } else {
               console.warn(`No docId found for item ${itemId}:`, itemDetail)
             }
           })
 
-          console.log("Final selectedDocIds for Google Drive:", selectedDocIds)
 
           appIntegrationsObject[integrationId] = {
             itemIds: selectedDocIds,
@@ -1706,10 +1692,6 @@ function AgentComponent() {
             selectedAll: selectedItemsInGoogleDrive.size === 0,
           }
 
-          console.log(
-            "Google Drive integration object:",
-            appIntegrationsObject[integrationId],
-          )
         }
         // For other integrations, use the integration ID as key
         else {
@@ -1745,7 +1727,6 @@ function AgentComponent() {
       }
     }
 
-    console.log("=== Final appIntegrationsObject ===", appIntegrationsObject)
 
     const agentPayload = {
       name: agentName,

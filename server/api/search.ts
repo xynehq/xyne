@@ -687,7 +687,7 @@ export const GetDriveItem = async (c: Context) => {
       `Error fetcing Drive item for parentId:${parentId}`,
     )
     throw new HTTPException(500, {
-      message: "Error processing agent search results",
+      message: "Error processing agent search results for Google Drive",
     })
   }
 }
