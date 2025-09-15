@@ -546,8 +546,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
         ]
         const ctmStack: [number, number, number, number, number, number][] = []
 
-
-
         let imagesOnPage = 0
         let vectorOpsDetected = false
         for (let i = 0; i < opList.fnArray.length; i++) {
@@ -694,216 +692,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
                 // This will fall through to the crop fallback logic below
               } else {
                 try {
-                  // Fast paths for Canvas or Image-like objects returned by page.objs
-                  const isCanvasLike = (obj: any) =>
-                    obj &&
-                    typeof obj.getContext === "function" &&
-                    typeof obj.width === "number" &&
-                    typeof obj.height === "number"
-                  const isImageLike = (obj: any) =>
-                    obj &&
-                    typeof obj.width === "number" &&
-                    typeof obj.height === "number" &&
-                    typeof obj.getContext !== "function"
-
-                  if (isCanvasLike(imageDict)) {
-                    const c: any = imageDict
-                    const width: number = c.width
-                    const height: number = c.height
-                    if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
-                      Logger.debug("Skipped small canvas image", {
-                        imageName,
-                        width,
-                        height,
-                        minRequired: MIN_IMAGE_DIM_PX,
-                      })
-                    } else {
-                      const buffer = c.toBuffer("image/png")
-                      if (
-                        buffer.length <=
-                        DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
-                      ) {
-                        // @ts-ignore
-                        let type = await imageType(buffer)
-                        if (!type) type = { mime: "image/png", ext: "png" }
-                        if (
-                          DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
-                        ) {
-                          const imageHash = crypto
-                            .createHash("md5")
-                            .update(new Uint8Array(buffer))
-                            .digest("hex")
-                          let description = "This is an image."
-                          if (seenHashDescriptions.has(imageHash)) {
-                            description = seenHashDescriptions.get(imageHash)!
-                          } else {
-                            try {
-                              description = describeImages
-                                ? await describeImageWithllm(buffer)
-                                : description
-                            } catch {
-                              // ignore
-                            }
-                            if (
-                              !description ||
-                              description === "No description returned." ||
-                              description === "Image is not worth describing."
-                            ) {
-                              Logger.warn(
-                                `Skipping image with poor description: ${imageName} on page ${pageNum}`,
-                              )
-                              break
-                            }
-                            seenHashDescriptions.set(imageHash, description)
-                          }
-                          try {
-                            const baseDir = path.resolve(
-                              process.env.IMAGE_DIR ||
-                                "downloads/xyne_images_db",
-                            )
-                            const outputDir = path.join(baseDir, docid)
-                            await fsPromises.mkdir(outputDir, {
-                              recursive: true,
-                            })
-                            const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
-                            const imagePath = path.join(
-                              outputDir,
-                              imageFilename,
-                            )
-                            await fsPromises.writeFile(
-                              imagePath,
-                              buffer as NodeJS.ArrayBufferView,
-                            )
-                            Logger.info(
-                              `Saved image (objs/canvas) to: ${imagePath}`,
-                            )
-                          } catch (e) {
-                            Logger.error(
-                              `Failed to save objs/canvas image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
-                            )
-                            // Skip on failure
-                            break
-                          }
-                          image_chunks.push(description)
-                          image_chunk_pos.push(globalSeq.value)
-                          if (includeImageMarkersInText) {
-                            text_chunks.push(`[[IMG#${globalSeq.value}]]`)
-                            text_chunk_pos.push(globalSeq.value)
-                          }
-                          globalSeq.value++
-                          imagesOnPage += 1
-                          Logger.debug(
-                            `Successfully processed objs/canvas image ${imageName} on page ${pageNum}`,
-                          )
-                          break
-                        }
-                      } else {
-                        Logger.warn(
-                          `Skipping objs/canvas image due to size ${(buffer.length / (1024 * 1024)).toFixed(2)} MB: ${imageName}`,
-                        )
-                      }
-                    }
-                  }
-
-                  if (isImageLike(imageDict)) {
-                    const imgLike: any = imageDict
-                    const width: number = imgLike.width
-                    const height: number = imgLike.height
-                    if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
-                      Logger.debug("Skipped small image-like object", {
-                        imageName,
-                        width,
-                        height,
-                        minRequired: MIN_IMAGE_DIM_PX,
-                      })
-                    } else {
-                      const cnv = createCanvas(width, height)
-                      const cctx = cnv.getContext("2d")
-                      try {
-                        // @ts-ignore draw directly
-                        cctx.drawImage(imgLike, 0, 0)
-                        const buffer = cnv.toBuffer("image/png")
-                        // @ts-ignore
-                        let type = await imageType(buffer)
-                        if (!type) type = { mime: "image/png", ext: "png" }
-                        if (
-                          DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
-                        ) {
-                          const imageHash = crypto
-                            .createHash("md5")
-                            .update(new Uint8Array(buffer))
-                            .digest("hex")
-                          let description = "This is an image."
-                          if (seenHashDescriptions.has(imageHash)) {
-                            description = seenHashDescriptions.get(imageHash)!
-                          } else {
-                            try {
-                              description = describeImages
-                                ? await describeImageWithllm(buffer)
-                                : description
-                            } catch {
-                              // ignore
-                            }
-                            if (
-                              !description ||
-                              description === "No description returned." ||
-                              description === "Image is not worth describing."
-                            ) {
-                              Logger.warn(
-                                `Skipping image with poor description: ${imageName} on page ${pageNum}`,
-                              )
-                              break
-                            }
-                            seenHashDescriptions.set(imageHash, description)
-                          }
-                          try {
-                            const baseDir = path.resolve(
-                              process.env.IMAGE_DIR ||
-                                "downloads/xyne_images_db",
-                            )
-                            const outputDir = path.join(baseDir, docid)
-                            await fsPromises.mkdir(outputDir, {
-                              recursive: true,
-                            })
-                            const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
-                            const imagePath = path.join(
-                              outputDir,
-                              imageFilename,
-                            )
-                            await fsPromises.writeFile(
-                              imagePath,
-                              buffer as NodeJS.ArrayBufferView,
-                            )
-                            Logger.info(
-                              `Saved image (objs/image) to: ${imagePath}`,
-                            )
-                          } catch (e) {
-                            Logger.error(
-                              `Failed to save objs/image image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
-                            )
-                            break
-                          }
-                          image_chunks.push(description)
-                          image_chunk_pos.push(globalSeq.value)
-                          if (includeImageMarkersInText) {
-                            text_chunks.push(`[[IMG#${globalSeq.value}]]`)
-                            text_chunk_pos.push(globalSeq.value)
-                          }
-                          globalSeq.value++
-                          imagesOnPage += 1
-                          Logger.debug(
-                            `Successfully processed objs/image image ${imageName} on page ${pageNum}`,
-                          )
-                          break
-                        }
-                      } catch (e) {
-                        Logger.debug(
-                          `Drawing objs image failed for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
-                        )
-                      }
-                    }
-                  }
-
                   const width: number = (imageDict.width ??
                     imageDict.w) as number
                   const height: number = (imageDict.height ??
@@ -975,6 +763,230 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       imageName,
                     },
                   )
+                  // Fast paths for Canvas or Image-like objects returned by page.objs
+                  const isCanvasLike = (obj: any) =>
+                    obj &&
+                    typeof obj.getContext === "function" &&
+                    typeof obj.width === "number" &&
+                    typeof obj.height === "number"
+                  const isImageLike = (obj: any) =>
+                    obj &&
+                    typeof obj.width === "number" &&
+                    typeof obj.height === "number" &&
+                    typeof obj.getContext !== "function"
+
+                  if (isCanvasLike(imageDict)) {
+                    const c: any = imageDict
+                    const width: number = c.width
+                    const height: number = c.height
+                    if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
+                      Logger.debug("Skipped small canvas image", {
+                        imageName,
+                        width,
+                        height,
+                        minRequired: MIN_IMAGE_DIM_PX,
+                      })
+                    } else {
+                      const buffer = c.toBuffer("image/png")
+                      // Run all filters BEFORE attempting LLM description
+                      if (
+                        buffer.length >
+                        DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
+                      ) {
+                        Logger.warn(
+                          `Skipping objs/canvas image due to size ${(buffer.length / (1024 * 1024)).toFixed(2)} MB: ${imageName}`,
+                        )
+                      } else {
+                        // @ts-ignore
+                        let type = await imageType(buffer)
+                        if (!type) type = { mime: "image/png", ext: "png" }
+                        if (
+                          DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
+                        ) {
+                          const imageHash = crypto
+                            .createHash("md5")
+                            .update(new Uint8Array(buffer))
+                            .digest("hex")
+                          let description = "This is an image."
+                          if (seenHashDescriptions.has(imageHash)) {
+                            description = seenHashDescriptions.get(imageHash)!
+                          } else {
+                            try {
+                              description = describeImages
+                                ? await describeImageWithllm(buffer)
+                                : description
+                            } catch {
+                              // ignore
+                            }
+                            // Check description quality after LLM call
+                            if (
+                              !description ||
+                              description === "No description returned." ||
+                              description === "Image is not worth describing."
+                            ) {
+                              Logger.warn(
+                                `Skipping image with poor description: ${imageName} on page ${pageNum}`,
+                              )
+                              break
+                            }
+                            seenHashDescriptions.set(imageHash, description)
+                          }
+                          try {
+                            const baseDir = path.resolve(
+                              process.env.IMAGE_DIR ||
+                                "downloads/xyne_images_db",
+                            )
+                            const outputDir = path.join(baseDir, docid)
+                            await fsPromises.mkdir(outputDir, {
+                              recursive: true,
+                            })
+                            const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
+                            const imagePath = path.join(
+                              outputDir,
+                              imageFilename,
+                            )
+                            await fsPromises.writeFile(
+                              imagePath,
+                              buffer as NodeJS.ArrayBufferView,
+                            )
+                            Logger.info(
+                              `Saved image (objs/canvas) to: ${imagePath}`,
+                            )
+                          } catch (e) {
+                            Logger.error(
+                              `Failed to save objs/canvas image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
+                            )
+                            // Skip on failure
+                            break
+                          }
+                          image_chunks.push(description)
+                          image_chunk_pos.push(globalSeq.value)
+                          if (includeImageMarkersInText) {
+                            text_chunks.push(`[[IMG#${globalSeq.value}]]`)
+                            text_chunk_pos.push(globalSeq.value)
+                          }
+                          globalSeq.value++
+                          imagesOnPage += 1
+                          Logger.debug(
+                            `Successfully processed objs/canvas image ${imageName} on page ${pageNum}`,
+                          )
+                          break
+                        }
+                      }
+                    }
+                  }
+
+                  if (isImageLike(imageDict)) {
+                    const imgLike: any = imageDict
+                    const width: number = imgLike.width
+                    const height: number = imgLike.height
+                    if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
+                      Logger.debug("Skipped small image-like object", {
+                        imageName,
+                        width,
+                        height,
+                        minRequired: MIN_IMAGE_DIM_PX,
+                      })
+                    } else {
+                      const cnv = createCanvas(width, height)
+                      const cctx = cnv.getContext("2d")
+                      
+                      try {
+                        
+                        // @ts-ignore draw directly
+                        cctx.drawImage(imgLike, 0, 0)
+                        const buffer = cnv.toBuffer("image/png")
+                        // Run all filters BEFORE attempting LLM description
+                        if (
+                          buffer.length >
+                          DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
+                        ) {
+                          Logger.warn(
+                            `Skipping objs/image image due to size ${(buffer.length / (1024 * 1024)).toFixed(2)} MB: ${imageName}`,
+                          )
+                          break
+                        }
+                        // @ts-ignore
+                        let type = await imageType(buffer)
+                        if (!type) type = { mime: "image/png", ext: "png" }
+                        if (
+                          DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)
+                        ) {
+                          const imageHash = crypto
+                            .createHash("md5")
+                            .update(new Uint8Array(buffer))
+                            .digest("hex")
+                          let description = "This is an image."
+                          if (seenHashDescriptions.has(imageHash)) {
+                            description = seenHashDescriptions.get(imageHash)!
+                          } else {
+                            try {
+                              description = describeImages
+                                ? await describeImageWithllm(buffer)
+                                : description
+                            } catch {
+                              // ignore
+                            }
+                            // Check description quality after LLM call
+                            if (
+                              !description ||
+                              description === "No description returned." ||
+                              description === "Image is not worth describing."
+                            ) {
+                              Logger.warn(
+                                `Skipping image with poor description: ${imageName} on page ${pageNum}`,
+                              )
+                              break
+                            }
+                            seenHashDescriptions.set(imageHash, description)
+                          }
+                          try {
+                            const baseDir = path.resolve(
+                              process.env.IMAGE_DIR ||
+                                "downloads/xyne_images_db",
+                            )
+                            const outputDir = path.join(baseDir, docid)
+                            await fsPromises.mkdir(outputDir, {
+                              recursive: true,
+                            })
+                            const imageFilename = `${globalSeq.value}.${type.ext || "png"}`
+                            const imagePath = path.join(
+                              outputDir,
+                              imageFilename,
+                            )
+                            await fsPromises.writeFile(
+                              imagePath,
+                              buffer as NodeJS.ArrayBufferView,
+                            )
+                            Logger.info(
+                              `Saved image (objs/image) to: ${imagePath}`,
+                            )
+                          } catch (e) {
+                            Logger.error(
+                              `Failed to save objs/image image for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
+                            )
+                            break
+                          }
+                          image_chunks.push(description)
+                          image_chunk_pos.push(globalSeq.value)
+                          if (includeImageMarkersInText) {
+                            text_chunks.push(`[[IMG#${globalSeq.value}]]`)
+                            text_chunk_pos.push(globalSeq.value)
+                          }
+                          globalSeq.value++
+                          imagesOnPage += 1
+                          Logger.debug(
+                            `Successfully processed objs/image image ${imageName} on page ${pageNum}`,
+                          )
+                          break
+                        }
+                      } catch (e) {
+                        Logger.debug(
+                          `Drawing objs image failed for ${imageName} on page ${pageNum}: ${e instanceof Error ? e.message : e}`,
+                        )
+                      }
+                    }
+                  }
 
                   let uint8Data: Uint8Array
                   if (rawData instanceof Uint8Array) {
@@ -1211,7 +1223,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     }
 
                     Logger.debug(
-                      "MIME type check passed, proceeding with processing",
+                      "All filters passed, proceeding with image description",
                       {
                         imageName,
                       },
@@ -1267,15 +1279,20 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           "Using default description (describeImages=false)",
                         )
                       }
+                      
+                      // Check description quality after LLM call
                       if (
                         !description ||
                         description === "No description returned." ||
                         description === "Image is not worth describing."
                       ) {
-                        Logger.debug("Skipping image with insufficient description", {
-                          imageName,
-                          previousDescription: description,
-                        })
+                        Logger.debug(
+                          "Skipping image with insufficient description",
+                          {
+                            imageName,
+                            previousDescription: description,
+                          },
+                        )
                         Logger.warn(
                           `Skipping image with poor description: ${imageName} on page ${pageNum}`,
                         )
@@ -1343,9 +1360,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
               break
           }
         }
-
-        // Vector snapshot functionality removed (no longer creating fallback canvas)
-
         // End of page: process paragraphs
         const overlapText = processTextParagraphs(
           paragraphs,
