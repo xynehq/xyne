@@ -1,3 +1,16 @@
+# [1.2.0](https://github.com/xynehq/xyne/compare/v1.1.0...v1.2.0) (2025-09-15)
+
+
+### Bug Fixes
+
+* deduplicate listing collection items ([#775](https://github.com/xynehq/xyne/issues/775)) ([fcba776](https://github.com/xynehq/xyne/commit/fcba7766893384698aafe7116a6fd9e4e873b1ea))
+* **kb:** listing kb at one level  ([#813](https://github.com/xynehq/xyne/issues/813)) ([78ef6d2](https://github.com/xynehq/xyne/commit/78ef6d2b3defe0c7017ef7e7f708e800bc5b5075))
+
+
+### Features
+
+* **vespa:** Integrate Vespa via @xyne/vespa-ts TypeScript package ([#724](https://github.com/xynehq/xyne/issues/724)) ([2e45bb1](https://github.com/xynehq/xyne/commit/2e45bb199225521a2a62bcbe0b11d4817386b187))
+
 # [1.1.0](https://github.com/xynehq/xyne/compare/v1.0.1...v1.1.0) (2025-09-11)
 
 
