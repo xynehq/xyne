@@ -1670,7 +1670,6 @@ function AgentComponent() {
         else if (integrationId === "googledrive") {
           const selectedDocIds: string[] = []
 
-
           // Get the docIds from selectedItemDetailsInGoogleDrive
           selectedItemsInGoogleDrive.forEach((itemId) => {
             const itemDetail = selectedItemDetailsInGoogleDrive[itemId]
@@ -1684,14 +1683,12 @@ function AgentComponent() {
             }
           })
 
-
           appIntegrationsObject[integrationId] = {
             itemIds: selectedDocIds,
             // selectedAll is true when no specific items are selected (whole Google Drive)
             // selectedAll is false when specific items are selected
             selectedAll: selectedItemsInGoogleDrive.size === 0,
           }
-
         }
         // For other integrations, use the integration ID as key
         else {
@@ -1726,7 +1723,6 @@ function AgentComponent() {
         selectedAll: dataSourceIds.length === 0,
       }
     }
-
 
     const agentPayload = {
       name: agentName,
@@ -2593,6 +2589,57 @@ function AgentComponent() {
     if (!container || userHasScrolled) return
     container.scrollTop = container.scrollHeight
   }, [messages, currentResp?.resp])
+
+  // Helper function for Google Drive item selection
+  function handleGoogleDriveItemSelection(
+    itemId: string,
+    itemDetail: any,
+    selectedItemsInGoogleDrive: Set<string>,
+    setSelectedItemsInGoogleDrive: React.Dispatch<
+      React.SetStateAction<Set<string>>
+    >,
+    setSelectedItemDetailsInGoogleDrive: React.Dispatch<
+      React.SetStateAction<Record<string, any>>
+    >,
+    setSelectedIntegrations: React.Dispatch<
+      React.SetStateAction<Record<string, boolean>>
+    >,
+  ) {
+    const isCurrentlySelected = selectedItemsInGoogleDrive.has(itemId)
+
+    setSelectedItemsInGoogleDrive((prev) => {
+      const newSet = new Set(prev)
+      if (isCurrentlySelected) {
+        newSet.delete(itemId)
+      } else {
+        newSet.add(itemId)
+      }
+      return newSet
+    })
+
+    setSelectedItemDetailsInGoogleDrive((prev) => {
+      const newState = { ...prev }
+      if (isCurrentlySelected) {
+        delete newState[itemId]
+      } else {
+        newState[itemId] = itemDetail
+      }
+      return newState
+    })
+
+    setSelectedIntegrations((prev) => {
+      const newSelectedSet = new Set(selectedItemsInGoogleDrive)
+      if (isCurrentlySelected) {
+        newSelectedSet.delete(itemId)
+      } else {
+        newSelectedSet.add(itemId)
+      }
+      return {
+        ...prev,
+        googledrive: newSelectedSet.size > 0,
+      }
+    })
+  }
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
@@ -3671,116 +3718,51 @@ function AgentComponent() {
                                                           )}
                                                           onChange={(e) => {
                                                             e.stopPropagation()
-
-                                                            const isCurrentlySelected =
-                                                              selectedItemsInGoogleDrive.has(
-                                                                itemId,
-                                                              )
-
-                                                            setSelectedItemsInGoogleDrive(
-                                                              (prev) => {
-                                                                const newSet =
-                                                                  new Set(prev)
-                                                                if (
-                                                                  isCurrentlySelected
-                                                                ) {
-                                                                  newSet.delete(
+                                                            // Use helper function
+                                                            handleGoogleDriveItemSelection(
+                                                              itemId,
+                                                              // Normalize the data structure for search results
+                                                              {
+                                                                ...result,
+                                                                fields: {
+                                                                  docId:
+                                                                    result
+                                                                      .fields
+                                                                      ?.docId ||
+                                                                    result.docId ||
                                                                     itemId,
-                                                                  )
-                                                                } else {
-                                                                  newSet.add(
-                                                                    itemId,
-                                                                  )
-                                                                }
-                                                                return newSet
+                                                                  title:
+                                                                    result
+                                                                      .fields
+                                                                      ?.title ||
+                                                                    result
+                                                                      .fields
+                                                                      ?.name ||
+                                                                    result.title ||
+                                                                    result.name ||
+                                                                    itemTitle,
+                                                                  name:
+                                                                    result
+                                                                      .fields
+                                                                      ?.name ||
+                                                                    result
+                                                                      .fields
+                                                                      ?.title ||
+                                                                    result.name ||
+                                                                    result.title ||
+                                                                    itemTitle,
+                                                                  entity:
+                                                                    result
+                                                                      .fields
+                                                                      ?.entity ||
+                                                                    result.entity ||
+                                                                    itemEntity,
+                                                                },
                                                               },
-                                                            )
-
-                                                            setSelectedItemDetailsInGoogleDrive(
-                                                              (prev) => {
-                                                                const newState =
-                                                                  { ...prev }
-                                                                if (
-                                                                  isCurrentlySelected
-                                                                ) {
-                                                                  delete newState[
-                                                                    itemId
-                                                                  ]
-                                                                } else {
-                                                                  // Normalize the data structure for search results
-                                                                  const normalizedItem =
-                                                                    {
-                                                                      ...result,
-                                                                      fields: {
-                                                                        docId:
-                                                                          result
-                                                                            .fields
-                                                                            ?.docId ||
-                                                                          result.docId ||
-                                                                          itemId,
-                                                                        title:
-                                                                          result
-                                                                            .fields
-                                                                            ?.title ||
-                                                                          result
-                                                                            .fields
-                                                                            ?.name ||
-                                                                          result.title ||
-                                                                          result.name ||
-                                                                          itemTitle,
-                                                                        name:
-                                                                          result
-                                                                            .fields
-                                                                            ?.name ||
-                                                                          result
-                                                                            .fields
-                                                                            ?.title ||
-                                                                          result.name ||
-                                                                          result.title ||
-                                                                          itemTitle,
-                                                                        entity:
-                                                                          result
-                                                                            .fields
-                                                                            ?.entity ||
-                                                                          result.entity ||
-                                                                          itemEntity,
-                                                                      },
-                                                                    }
-                                                                  newState[
-                                                                    itemId
-                                                                  ] =
-                                                                    normalizedItem
-                                                                }
-                                                                return newState
-                                                              },
-                                                            )
-
-                                                            // Auto-select/deselect the Google Drive integration
-                                                            setSelectedIntegrations(
-                                                              (prev) => {
-                                                                const newSelectedSet =
-                                                                  new Set(
-                                                                    selectedItemsInGoogleDrive,
-                                                                  )
-                                                                if (
-                                                                  isCurrentlySelected
-                                                                ) {
-                                                                  newSelectedSet.delete(
-                                                                    itemId,
-                                                                  )
-                                                                } else {
-                                                                  newSelectedSet.add(
-                                                                    itemId,
-                                                                  )
-                                                                }
-
-                                                                return {
-                                                                  ...prev,
-                                                                  googledrive:
-                                                                    newSelectedSet.size >
-                                                                    0,
-                                                                }
-                                                              },
+                                                              selectedItemsInGoogleDrive,
+                                                              setSelectedItemsInGoogleDrive,
+                                                              setSelectedItemDetailsInGoogleDrive,
+                                                              setSelectedIntegrations,
                                                             )
                                                           }}
                                                           className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
@@ -4239,74 +4221,14 @@ function AgentComponent() {
                                                       )}
                                                       onChange={(e) => {
                                                         e.stopPropagation()
-
-                                                        const isCurrentlySelected =
-                                                          selectedItemsInGoogleDrive.has(
-                                                            itemId,
-                                                          )
-
-                                                        setSelectedItemsInGoogleDrive(
-                                                          (prev) => {
-                                                            const newSet =
-                                                              new Set(prev)
-                                                            if (
-                                                              isCurrentlySelected
-                                                            ) {
-                                                              newSet.delete(
-                                                                itemId,
-                                                              )
-                                                            } else {
-                                                              newSet.add(itemId)
-                                                            }
-                                                            return newSet
-                                                          },
-                                                        )
-
-                                                        setSelectedItemDetailsInGoogleDrive(
-                                                          (prev) => {
-                                                            const newState = {
-                                                              ...prev,
-                                                            }
-                                                            if (
-                                                              isCurrentlySelected
-                                                            ) {
-                                                              delete newState[
-                                                                itemId
-                                                              ]
-                                                            } else {
-                                                              newState[itemId] =
-                                                                item
-                                                            }
-                                                            return newState
-                                                          },
-                                                        )
-
-                                                        // Auto-select/deselect the Google Drive integration
-                                                        setSelectedIntegrations(
-                                                          (prev) => {
-                                                            const newSelectedSet =
-                                                              new Set(
-                                                                selectedItemsInGoogleDrive,
-                                                              )
-                                                            if (
-                                                              isCurrentlySelected
-                                                            ) {
-                                                              newSelectedSet.delete(
-                                                                itemId,
-                                                              )
-                                                            } else {
-                                                              newSelectedSet.add(
-                                                                itemId,
-                                                              )
-                                                            }
-
-                                                            return {
-                                                              ...prev,
-                                                              googledrive:
-                                                                newSelectedSet.size >
-                                                                0,
-                                                            }
-                                                          },
+                                                        // Use helper function
+                                                        handleGoogleDriveItemSelection(
+                                                          itemId,
+                                                          item,
+                                                          selectedItemsInGoogleDrive,
+                                                          setSelectedItemsInGoogleDrive,
+                                                          setSelectedItemDetailsInGoogleDrive,
+                                                          setSelectedIntegrations,
                                                         )
                                                       }}
                                                       className="w-4 h-4 mr-3"
