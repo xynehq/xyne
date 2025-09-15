@@ -317,21 +317,11 @@ export const workflowExecutionsAPI = {
     formData.append("name", executionData.name)
     formData.append("description", executionData.description)
 
-    // Add the uploaded file if provided
-    if (executionData.file) {
-      formData.append("document_file", executionData.file)
-      console.log("✅ File appended to FormData as 'document_file'")
-    } else {
-      console.warn("⚠️ No file provided in executionData")
-    }
-
     // Add additional form data fields (excluding name and description to avoid duplicates)
     Object.entries(executionData.formData).forEach(([key, value]) => {
       if (key !== "name" && key !== "description") {
         if (value instanceof File) {
-          // If it's a file in formData, also append it as document_file
           formData.append("document_file", value)
-          console.log(`✅ File from formData[${key}] appended as 'document_file'`)
         } else {
           formData.append(key, String(value))
         }
@@ -349,13 +339,7 @@ export const workflowExecutionsAPI = {
 
     if (!hasDocumentFile && executionData.file) {
       formData.append("document_file", executionData.file)
-      console.log("✅ Added main file as document_file (fallback)")
     }
-
-    if (!hasDocumentFile && !executionData.file) {
-      console.error("❌ No file found to append as document_file!")
-    }
-
     // Use direct fetch for file uploads as Hono client may not handle FormData correctly
     const response = await fetch(
       `/api/v1/workflow/templates/${templateId}/execute-with-input`,

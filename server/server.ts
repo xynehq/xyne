@@ -1,5 +1,4 @@
 import { type Context, Hono, type Next } from "hono"
-import { cors } from "hono/cors"
 import {
   AnswerApi,
   AutocompleteApi,
@@ -768,7 +767,6 @@ export const AppRoutes = app
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
-  // Auth middleware for all other routes
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(
@@ -1448,6 +1446,7 @@ app.get(
   serveStatic({ path: "./dist/index.html" }),
 )
 
+// START of Health Check Endpoints
 // Comprehensive health check endpoint
 
 const createHealthCheckHandler = (
