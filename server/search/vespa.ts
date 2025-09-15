@@ -81,12 +81,11 @@ export const searchVespa = async (
     )
     isSlackConnected =
       connector && connector.status === ConnectorStatus.Connected
-  } catch (error) {
-    Logger.error(error, "Error fetching Slack connector")
-  }
+  } catch (error) {}
 
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
+    recencyDecayRate: options.recencyDecayRate || 0.1,
     isSlackConnected,
   })
 }
@@ -107,7 +106,12 @@ export const searchVespaAgent = async (
     app,
     entity,
     AgentApps,
-    { ...options, driveIds, clVespaIds },
+    {
+      ...options,
+      driveIds,
+      clVespaIds,
+      recencyDecayRate: options.recencyDecayRate || 0.1,
+    },
   )
 }
 
