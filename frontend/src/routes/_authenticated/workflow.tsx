@@ -137,6 +137,7 @@ function WorkflowComponent() {
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false)
   const [isExecutionMode, setIsExecutionMode] = useState(false)
   const [workflowSearchTerm, setWorkflowSearchTerm] = useState("")
+  const [isBuilderMode, setIsBuilderMode] = useState(true) // true for create/edit, false for view-only
 
 
   const fetchWorkflows = async () => {
@@ -411,6 +412,7 @@ function WorkflowComponent() {
       
       setSelectedTemplate(template)
       setIsExecutionMode(false)
+      setIsBuilderMode(editable) // Set builder mode based on editable parameter
       setViewMode("builder")
     } catch (error) {
       console.error('❌ Failed to fetch template:', error)
@@ -686,7 +688,10 @@ function WorkflowComponent() {
                       padding: '12px',
                       opacity: 1
                     }}
-                    onClick={() => setViewMode("builder")}
+                    onClick={() => {
+                      setIsBuilderMode(true) // Create from blank = builder mode
+                      setViewMode("builder")
+                    }}
                   >
                     <div className="flex items-center justify-between h-full">
                       <div className="flex items-center gap-3">
@@ -747,39 +752,6 @@ function WorkflowComponent() {
                       </div>
                     </div>
                   </div>
-
-                  <div 
-                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 w-full opacity-50 cursor-not-allowed"
-                    style={{
-                      height: '64px',
-                      borderRadius: '16px',
-                      padding: '12px'
-                    }}
-                  >
-                    <div className="flex items-center justify-between h-full">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-[#F2F2F3] dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                          <Upload className="w-5 h-5 text-gray-400 dark:text-gray-500" />
-                        </div>
-                        <span 
-                          className="text-gray-400 dark:text-gray-500"
-                          style={{
-                            fontFamily: 'Inter',
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            lineHeight: '100%',
-                            letterSpacing: '-1%',
-                            verticalAlign: 'middle'
-                          }}
-                        >
-                          Import DSL file
-                        </span>
-                      </div>
-                      <div className="text-gray-300 dark:text-gray-600">
-                        <ChevronRight className="w-5 h-5" />
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Your Workflows Section */}
@@ -834,17 +806,58 @@ function WorkflowComponent() {
                     )
                     
                     if (filteredWorkflows.length > 0) {
-                      return (
-                        <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
-                          {filteredWorkflows.map((workflow) => (
-                            <WorkflowCard 
-                              key={workflow.id} 
-                              workflow={workflow} 
-                              onViewClick={(templateId) => handleViewWorkflow(templateId, false)} // false = view-only mode
-                            />
-                          ))}
-                        </div>
-                      )
+                      // If 4 or fewer workflows, show fixed 4-column grid with placeholders
+                      if (filteredWorkflows.length <= 4) {
+                        const placeholdersNeeded = 4 - filteredWorkflows.length
+                        const placeholders = Array.from({ length: placeholdersNeeded }, (_, index) => ({
+                          id: `placeholder-${index}`,
+                          name: '',
+                          description: '',
+                          version: '',
+                          status: '',
+                          config: {},
+                          createdBy: '',
+                          rootWorkflowStepTemplateId: '',
+                          createdAt: '',
+                          updatedAt: '',
+                          isPlaceholder: true
+                        }))
+                        
+                        return (
+                          <div className="grid grid-cols-4 gap-4 w-full">
+                            {filteredWorkflows.map((workflow) => (
+                              <WorkflowCard 
+                                key={workflow.id} 
+                                workflow={workflow} 
+                                onViewClick={(templateId) => handleViewWorkflow(templateId, false)} // false = view-only mode
+                                onViewExecution={handleViewExecution}
+                              />
+                            ))}
+                            {placeholders.map((placeholder) => (
+                              <div 
+                                key={placeholder.id}
+                                style={{ height: '200px', minHeight: '200px' }}
+                              >
+                                {/* Empty placeholder */}
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      } else {
+                        // More than 4 workflows, use dynamic grid
+                        return (
+                          <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
+                            {filteredWorkflows.map((workflow) => (
+                              <WorkflowCard 
+                                key={workflow.id} 
+                                workflow={workflow} 
+                                onViewClick={(templateId) => handleViewWorkflow(templateId, false)} // false = view-only mode
+                                onViewExecution={handleViewExecution}
+                              />
+                            ))}
+                          </div>
+                        )
+                      }
                     } else if (workflowSearchTerm) {
                       return (
                         <div className="text-center py-12">
@@ -975,7 +988,8 @@ function WorkflowComponent() {
                   onBackToWorkflows={() => {
                     setViewMode("list")
                     setSelectedTemplate(null)
-                            setIsExecutionMode(false)
+                    setIsExecutionMode(false)
+                    setIsBuilderMode(true) // Reset to builder mode
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
@@ -986,11 +1000,14 @@ function WorkflowComponent() {
                   onBackToWorkflows={() => {
                     setViewMode("list")
                     setSelectedTemplate(null)
-                            setIsExecutionMode(false)
+                    setIsExecutionMode(false)
+                    setIsBuilderMode(true) // Reset to builder mode
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
                   isEditableMode={selectedTemplate === null}
+                  builder={isBuilderMode}
+                  onViewExecution={handleViewExecution}
                 />
               )}
             </div>

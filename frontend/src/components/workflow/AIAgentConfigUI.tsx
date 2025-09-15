@@ -41,7 +41,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
 }) => {
   const [agentConfig, setAgentConfig] = useState<AIAgentConfig>({
     name: "AI Agent",
-    description: "",
+    description: "some agent description",
     model: "googleai-gemini-2-5-flash",
     inputPrompt: "$json.input",
     systemPrompt: "",
@@ -56,15 +56,16 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
       
       if (stepData?.config) {
         existingConfig = stepData.config
-      } else if (toolData?.value || toolData?.config) {
-        existingConfig = toolData.value || toolData.config || {}
+      } else if (toolData) {
+        // For existing workflows, use the toolData directly as existingConfig
+        existingConfig = toolData.val || toolData.value || toolData.config || {}
       }
       
       if (existingConfig) {
         setAgentConfig({
           name: existingConfig.name || "AI Agent",
-          description: existingConfig.description || "",
-          model: getValidModelId(existingConfig.model),
+          description: existingConfig.description || "some agent description",
+          model: existingConfig.model,
           inputPrompt: existingConfig.inputPrompt || "$json.input",
           systemPrompt: existingConfig.systemPrompt || "",
           knowledgeBase: existingConfig.knowledgeBase || "",
@@ -73,7 +74,7 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
         // Reset to defaults for new AI Agent
         setAgentConfig({
           name: "AI Agent",
-          description: "",
+          description: "some agent description",
           model: getValidModelId(undefined), // This will return the default valid model
           inputPrompt: "$json.input",
           systemPrompt: "",
@@ -293,16 +294,22 @@ Always strive for excellence and helpfulness in your responses while adhering to
 
   const handleSave = async () => {
     try {
+      // Create config without placeholder description
+      const configToSave = {
+        ...agentConfig,
+        description: agentConfig.description === "some agent description" ? "" : agentConfig.description
+      }
+
       // If we have a toolId, update the tool via API
       if (toolId) {
         const updatedToolData = {
           type: "ai_agent",
-          value: agentConfig,
+          value: configToSave,
           config: {
             ...toolData?.config,
-            model: agentConfig.model,
-            name: agentConfig.name,
-            description: agentConfig.description,
+            model: configToSave.model,
+            name: configToSave.name,
+            description: configToSave.description,
           },
         }
 
@@ -310,12 +317,16 @@ Always strive for excellence and helpfulness in your responses while adhering to
         console.log("AI Agent tool updated successfully")
       }
 
-      // Call the parent save handler
-      onSave?.(agentConfig)
+      // Call the parent save handler with cleaned config
+      onSave?.(configToSave)
     } catch (error) {
       console.error("Failed to save AI agent configuration:", error)
       // Still call the parent handler even if API call fails
-      onSave?.(agentConfig)
+      const configToSave = {
+        ...agentConfig,
+        description: agentConfig.description === "some agent description" ? "" : agentConfig.description
+      }
+      onSave?.(configToSave)
     }
   }
 
@@ -589,7 +600,12 @@ Always strive for excellence and helpfulness in your responses while adhering to
         <div className="pt-6 px-0">
           <Button
             onClick={handleSave}
-            className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-full"
+            className="w-full text-white rounded-full hover:opacity-90"
+            style={{ 
+              backgroundColor: '#181B1D', 
+              borderColor: '#181B1D',
+              color: 'white'
+            }}
           >
             Save Configuration
           </Button>

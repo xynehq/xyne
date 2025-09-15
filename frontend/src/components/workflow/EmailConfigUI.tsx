@@ -2,7 +2,7 @@ import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, X, Trash2 } from "lucide-react"
+import { ArrowLeft, X, Trash2, CornerDownLeft } from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface EmailConfigUIProps {
@@ -233,9 +233,9 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 className="w-full pr-16 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               />
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                <span className="text-xs text-slate-400 dark:text-gray-500 bg-slate-100 dark:bg-gray-700 px-2 py-1 rounded">
-                  click "enter" to add
-                </span>
+                <div className="flex items-center justify-center w-6 h-6">
+                  <CornerDownLeft className="w-4 h-4 text-slate-400 dark:text-gray-500" />
+                </div>
               </div>
             </div>
 
@@ -302,8 +302,13 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
             className={`w-full rounded-full ${
               emailConfig.emailAddresses.length === 0
                 ? "bg-gray-100 text-gray-400 cursor-not-allowed hover:bg-gray-100"
-                : "bg-gray-200 hover:bg-gray-300 text-gray-800"
+                : "text-white hover:opacity-90"
             }`}
+            style={emailConfig.emailAddresses.length > 0 ? { 
+              backgroundColor: '#181B1D', 
+              borderColor: '#181B1D',
+              color: 'white'
+            } : {}}
           >
             Save Configuration
           </Button>

@@ -381,7 +381,20 @@ const StepNode: React.FC<NodeProps> = ({
                 letterSpacing: "-0.14px",
               }}
             >
-              {step.name || aiConfig?.name || "AI Agent"}
+              {(() => {
+                // First try to get name from workflow_tools[index].val.name
+                if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.name) {
+                  return (tools[0].val as any).name
+                }
+                
+                // Try to get name from workflow_tools[index].value.name
+                if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.name) {
+                  return (tools[0] as any).value.name
+                }
+                
+                // Fallback to existing logic
+                return step.name || aiConfig?.name || "AI Agent"
+              })()}
             </h3>
           </div>
 
@@ -391,9 +404,22 @@ const StepNode: React.FC<NodeProps> = ({
           {/* Description text */}
           <div className="px-4 pb-4">
             <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {step.description ||
-                aiConfig?.description ||
-                `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`}
+              {(() => {
+                // First try to get description from workflow_tools[index].val.description
+                if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+                
+                // Try to get description from workflow_tools[index].value.description
+                if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+                
+                // Fallback to existing logic
+                return step.description ||
+                  aiConfig?.description ||
+                  `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`
+              })()}
             </p>
           </div>
 
@@ -621,7 +647,20 @@ const StepNode: React.FC<NodeProps> = ({
                 letterSpacing: "-0.14px",
               }}
             >
-              {step.name || "Email"}
+              {(() => {
+                // First try to get title from workflow_tools[index].val.title
+                if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+                  return (tools[0].val as any).title
+                }
+                
+                // Try to get title from workflow_tools[index].value.title
+                if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+                  return (tools[0] as any).value.title
+                }
+                
+                // Fallback to existing logic
+                return step.name || "Email"
+              })()}
             </h3>
           </div>
 
@@ -631,10 +670,23 @@ const StepNode: React.FC<NodeProps> = ({
           {/* Description text */}
           <div className="px-4 pb-4">
             <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {step.description ||
-                (emailAddresses && emailAddresses.length > 0
-                  ? `Send emails to ${emailAddresses.join(", ")} via automated workflow.`
-                  : "Send automated email notifications to specified recipients.")}
+              {(() => {
+                // First try to get description from workflow_tools[index].val.description
+                if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+                
+                // Try to get description from workflow_tools[index].value.description
+                if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+                
+                // Fallback to existing logic
+                return step.description ||
+                  (emailAddresses && emailAddresses.length > 0
+                    ? `Send emails to ${emailAddresses.join(", ")} via automated workflow.`
+                    : "Send automated email notifications to specified recipients.")
+              })()}
             </p>
           </div>
 
@@ -748,10 +800,23 @@ const StepNode: React.FC<NodeProps> = ({
                 letterSpacing: "-0.14px",
               }}
             >
-              {step.name ||
-                (step as any).config?.title ||
-                (hasFormTool && tools?.[0] && typeof tools[0].val === 'object' && tools[0].val?.title) ||
-                "Form Submission"}
+              {(() => {
+                // First try to get title from workflow_tools[index].val.title
+                if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+                  return (tools[0].val as any).title
+                }
+                
+                // Try to get title from workflow_tools[index].value.title
+                if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+                  return (tools[0] as any).value.title
+                }
+                
+                // Fallback to existing logic
+                return step.name ||
+                  (step as any).config?.title ||
+                  (hasFormTool && tools?.[0] && typeof tools[0].val === 'object' && tools[0].val?.title) ||
+                  "Form Submission"
+              })()}
             </h3>
           </div>
 
@@ -762,7 +827,17 @@ const StepNode: React.FC<NodeProps> = ({
           <div className="px-4 pb-4">
             <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
               {(() => {
-                // If step has description, use it first
+                // First try to get description from workflow_tools[index].val.description
+                if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+                
+                // Try to get description from workflow_tools[index].value.description
+                if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+                
+                // If step has description, use it next
                 if (step.description) {
                   return step.description
                 }
@@ -1711,6 +1786,8 @@ interface WorkflowBuilderProps {
   selectedTemplate?: WorkflowTemplate | null
   isLoadingTemplate?: boolean
   isEditableMode?: boolean
+  builder?: boolean // true for create mode, false for view mode
+  onViewExecution?: (executionId: string) => void
 }
 
 // Internal component that uses ReactFlow hooks
@@ -1720,7 +1797,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   selectedTemplate,
   isLoadingTemplate,
   isEditableMode,
+  builder = true, // Default to builder mode
+  onViewExecution,
 }) => {
+  // Console log the builder prop value
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([])
   const [nodeCounter, setNodeCounter] = useState(1)
   const [showEmptyCanvas, setShowEmptyCanvas] = useState(true)
@@ -1774,6 +1854,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  // Utility function to get tool ID from step ID
+  const getToolIdFromStepId = useCallback((stepId: string): string | undefined => {
+    console.log("Finding toolId for node:", stepId)
+    const node = nodes.find((n) => n.id === stepId)
+    console.log("Found node:", node)
+    const tools = node?.data?.tools as Tool[] | undefined
+    console.log("Found tools:", tools)
+    return tools && tools.length > 0 ? tools[0]?.id : undefined
+  }, [nodes])
   
   // Helper function to get workflow name consistently across components
   const getWorkflowName = useCallback(() => {
@@ -1839,6 +1929,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         let stepTools = []
         let toolExecutions: any[] = []
 
+
         if (isExecution) {
           // For executions, get tool executions from toolExecIds
           toolExecutions =
@@ -1862,6 +1953,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               step.toolIds?.includes(tool.id),
             ) || []
         }
+
 
         // Check if this is the last step (no nextStepIds or empty nextStepIds)
         const isLastStep = !step.nextStepIds || step.nextStepIds.length === 0
@@ -1917,11 +2009,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             id: `${step.id}-${targetStepId}`,
             source: step.id,
             target: targetStepId,
-            type: "straight",
+            type: "smoothstep",
             animated: false,
             style: {
               stroke: "#D1D5DB",
               strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
             },
             markerEnd: {
               type: "arrowclosed",
@@ -1929,7 +2027,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             },
             sourceHandle: "bottom",
             targetHandle: "top",
-          })
+          } as any)
         })
       })
 
@@ -1957,7 +2055,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       const newEdge = {
         ...params,
         id: `${params.source}-${params.target}`,
-        type: "straight",
+        type: "smoothstep",
         animated: false,
         style: {
           stroke: "#D1D5DB",
@@ -2728,15 +2826,21 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           }
 
           // Create edge connecting source to new node
-          const newEdge: Edge = {
+          const newEdge = {
             id: `${selectedNodeForNext}-${newNodeId}`,
             source: selectedNodeForNext,
             target: newNodeId,
-            type: "straight",
+            type: "smoothstep",
             animated: false,
             style: {
               stroke: "#D1D5DB",
               strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
             },
             markerEnd: {
               type: "arrowclosed" as const,
@@ -2744,7 +2848,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             },
             sourceHandle: "bottom",
             targetHandle: "top",
-          }
+          } as any
 
           // Update nodes and edges
           setNodes((prevNodes) => [...prevNodes, newNode])
@@ -2776,7 +2880,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           : `AI agent to analyze and summarize documents using ${agentConfig.model}`
 
         const aiAgentTool = {
-          id: `tool-${selectedAgentNodeId}`,
+          id: getToolIdFromStepId(selectedAgentNodeId),
           type: "ai_agent",
           val: agentConfig,
           value: agentConfig,
@@ -2903,15 +3007,21 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           }
 
           // Create edge connecting source to new node
-          const newEdge: Edge = {
+          const newEdge = {
             id: `${selectedNodeForNext}-${newNodeId}`,
             source: selectedNodeForNext,
             target: newNodeId,
-            type: "straight",
+            type: "smoothstep",
             animated: false,
             style: {
               stroke: "#D1D5DB",
               strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
             },
             markerEnd: {
               type: "arrowclosed" as const,
@@ -2919,7 +3029,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             },
             sourceHandle: "bottom",
             targetHandle: "top",
-          }
+          } as any
 
           // Update nodes and edges
           setNodes((prevNodes) => [...prevNodes, newNode])
@@ -2947,7 +3057,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       } else if (selectedEmailNodeId && selectedEmailNodeId !== "pending") {
         // Update existing Email node with the configuration
         const emailTool = {
-          id: `tool-${selectedEmailNodeId}`,
+          id: getToolIdFromStepId(selectedEmailNodeId),
           type: "email",
           val: emailConfig,
           value: emailConfig,
@@ -3073,7 +3183,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       } else if (selectedFormNodeId && selectedFormNodeId !== "pending") {
         // Update existing form submission node
         const formTool = {
-          id: `tool-${selectedFormNodeId}`,
+          id: getToolIdFromStepId(selectedFormNodeId),
           type: "form",
           val: formConfig,
           value: formConfig,
@@ -3185,7 +3295,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         workflowName={getWorkflowName()}
         selectedTemplate={selectedTemplate}
         onWorkflowNameChange={handleWorkflowNameChange}
-        isEditable={isEditableMode}
+        isEditable={builder}
       />
 
       {/* Main content area */}
@@ -3211,10 +3321,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             snapToGrid={true}
             snapGrid={[20, 20]}
             defaultEdgeOptions={{
-              type: 'straight',
+              type: 'smoothstep',
               style: { 
                 strokeWidth: 2,
-                stroke: '#D1D5DB'
+                stroke: '#D1D5DB',
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round'
               },
               markerEnd: { 
                 type: 'arrowclosed',
@@ -3224,6 +3336,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             connectionLineStyle={{
               strokeWidth: 2,
               stroke: '#D1D5DB',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
             }}
             proOptions={{ hideAttribution: true }}
           >
@@ -3374,11 +3488,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                     }
 
                     // Create edge connecting source to new node
-                    const newEdge: Edge = {
+                    const newEdge = {
                       id: `${selectedNodeForNext}-${newNodeId}`,
                       source: selectedNodeForNext,
                       target: newNodeId,
-                      type: "straight",
+                      type: "smoothstep",
                       animated: false,
                       style: {
                         stroke: "#D1D5DB",
@@ -3441,15 +3555,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                   })()
                 : undefined
             }
-            toolId={
-              selectedAgentNodeId
-                ? (() => {
-                    const node = nodes.find((n) => n.id === selectedAgentNodeId)
-                    const tools = node?.data?.tools as Tool[] | undefined
-                    return tools && tools.length > 0 ? tools[0]?.id : undefined
-                  })()
-                : undefined
-            }
+            toolId={selectedAgentNodeId ? getToolIdFromStepId(selectedAgentNodeId) : undefined}
             stepData={
               selectedAgentNodeId
                 ? (() => {
@@ -3486,15 +3592,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                   })()
                 : undefined
             }
-            toolId={
-              selectedEmailNodeId
-                ? (() => {
-                    const node = nodes.find((n) => n.id === selectedEmailNodeId)
-                    const tools = node?.data?.tools as Tool[] | undefined
-                    return tools && tools.length > 0 ? tools[0]?.id : undefined
-                  })()
-                : undefined
-            }
+            toolId={selectedEmailNodeId ? getToolIdFromStepId(selectedEmailNodeId) : undefined}
             stepData={
               selectedEmailNodeId
                 ? (() => {
@@ -3541,15 +3639,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                   })()
                 : undefined
             }
-            toolId={
-              selectedFormNodeId
-                ? (() => {
-                    const node = nodes.find((n) => n.id === selectedFormNodeId)
-                    const tools = node?.data?.tools as Tool[] | undefined
-                    return tools && tools.length > 0 ? tools[0]?.id : undefined
-                  })()
-                : undefined
-            }
+            toolId={selectedFormNodeId ? getToolIdFromStepId(selectedFormNodeId) : undefined}
           />
       </div>
 
@@ -3572,6 +3662,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           workflowDescription={(createdTemplate || selectedTemplate)?.description || "User-created workflow"}
           templateId={(createdTemplate || selectedTemplate)!.id}
           workflowTemplate={(createdTemplate || selectedTemplate)!}
+          onViewExecution={onViewExecution}
         />
       )}
 

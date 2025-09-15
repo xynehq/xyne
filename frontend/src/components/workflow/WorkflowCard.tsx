@@ -49,9 +49,10 @@ interface WorkflowTemplate {
 interface WorkflowCardProps {
   workflow: WorkflowTemplate
   onViewClick?: (templateId: string) => void
+  onViewExecution?: (executionId: string) => void
 }
 
-export function WorkflowCard({ workflow, onViewClick }: WorkflowCardProps) {
+export function WorkflowCard({ workflow, onViewClick, onViewExecution }: WorkflowCardProps) {
   const [showExecutionModal, setShowExecutionModal] = useState(false)
 
   const formatDate = (dateString: string) => {
@@ -121,6 +122,7 @@ export function WorkflowCard({ workflow, onViewClick }: WorkflowCardProps) {
         workflowDescription={workflow.description}
         templateId={workflow.id}
         workflowTemplate={workflow}
+        onViewExecution={onViewExecution}
       />
     </div>
   )

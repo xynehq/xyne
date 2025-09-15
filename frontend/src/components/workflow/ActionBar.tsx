@@ -14,7 +14,7 @@ const ActionBar: React.FC<ActionBarProps> = ({
   disabled = false,
 }) => {
   const handleZoomIn = () => {
-    const zoomLevels = [50, 75, 100, 125, 150]
+    const zoomLevels = [50, 75, 100, 125, 150, 175, 200]
     const currentIndex = zoomLevels.indexOf(zoomLevel)
     if (currentIndex < zoomLevels.length - 1 && onZoomChange) {
       onZoomChange(zoomLevels[currentIndex + 1])
@@ -22,7 +22,7 @@ const ActionBar: React.FC<ActionBarProps> = ({
   }
 
   const handleZoomOut = () => {
-    const zoomLevels = [50, 75, 100, 125, 150]
+    const zoomLevels = [50, 75, 100, 125, 150, 175, 200]
     const currentIndex = zoomLevels.indexOf(zoomLevel)
     if (currentIndex > 0 && onZoomChange) {
       onZoomChange(zoomLevels[currentIndex - 1])
@@ -49,7 +49,7 @@ const ActionBar: React.FC<ActionBarProps> = ({
         >
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
-        Execute
+        Execute Workflow
       </button>
 
       <div className="flex items-center gap-1 border border-slate-200 rounded-full px-1 py-1 bg-white">
@@ -75,7 +75,7 @@ const ActionBar: React.FC<ActionBarProps> = ({
         
         <button
           onClick={handleZoomIn}
-          disabled={zoomLevel >= 150}
+          disabled={zoomLevel >= 200}
           className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           <svg

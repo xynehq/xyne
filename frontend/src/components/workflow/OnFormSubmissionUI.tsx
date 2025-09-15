@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import Dropdown from "@/components/ui/dropdown"
 import { FileText, ChevronDown, Upload, File, X } from "lucide-react"
 import { BackArrowIcon, CloseIcon } from "./WorkflowIcons"
 import { workflowToolsAPI } from "./api/ApiHandlers"
@@ -11,7 +12,7 @@ interface OnFormSubmissionUIProps {
   isVisible?: boolean // Whether the sidebar is visible
   onBack: () => void
   onClose?: () => void // New prop for closing all sidebars
-  onSave?: (formConfig: FormConfig) => void
+  onSave?: (formConfig: FormConfig, apiResponse?: any) => void
   initialConfig?: FormConfig
   toolData?: any // Tool data from the backend
   toolId?: string // Tool ID for API updates
@@ -35,6 +36,29 @@ export interface FormConfig {
   fields: FormField[]
 }
 
+// Predefined list of valid file types
+const VALID_FILE_TYPES = [
+  "pdf", "doc", "docx", "txt", "rtf", "odt",
+  "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg",
+  "mp4", "avi", "mov", "wmv", "flv", "webm",
+  "mp3", "wav", "flac", "aac", "ogg",
+  "zip", "rar", "7z", "tar", "gz",
+  "xls", "xlsx", "csv", "ppt", "pptx",
+  "json", "xml", "html", "css", "js", "ts",
+  "py", "java", "cpp", "c", "cs", "php"
+]
+
+// Helper function to normalize file type (remove dot if present)
+const normalizeFileType = (type: string): string => {
+  return type.startsWith('.') ? type.slice(1).toLowerCase() : type.toLowerCase()
+}
+
+// Helper function to validate file type
+const isValidFileType = (type: string): boolean => {
+  const normalized = normalizeFileType(type)
+  return VALID_FILE_TYPES.includes(normalized)
+}
+
 const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   isVisible = true,
   onBack,
@@ -47,26 +71,32 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 }) => {
   const initialFieldId = crypto.randomUUID()
 
-  // Parse toolData to populate form fields
+  // Parse toolData to populate form fields following the specified extraction paths
   const getInitialFormConfig = (): FormConfig => {
-    if (toolData?.value) {
-      const { title = "", description = "", fields = [] } = toolData.value
-
-      // Convert backend fields to our FormField interface
-      const convertedFields: FormField[] = fields.map((field: any) => ({
+    // Extract form title and description from workflow_tools data (as specified by user)
+    const formTitle = toolData?.value?.title || initialConfig?.title || ""
+    const formDescription = toolData?.value?.description || initialConfig?.description || ""
+    
+    // Extract fields from tool data
+    let convertedFields: FormField[] = []
+    
+    if (toolData?.value?.fields && Array.isArray(toolData.value.fields)) {
+      convertedFields = toolData.value.fields.map((field: any) => ({
         id: field.id || crypto.randomUUID(),
-        name: field.label || field.name || field.id || "Field",
+        name: field.name || field.label || field.id || "Field",
         placeholder: field.placeholder || "",
         type: field.type === "upload" ? "file" : field.type || "text",
         options: field.options || [],
-        fileTypes: field.fileTypes && field.fileTypes.length > 0 ? field.fileTypes : (field.type === "file" || field.type === "upload" ? ["pdf", "doc", "docx", "txt", "jpg", "png"] : []),
-        required: field.required || false,
+        fileTypes: field.filetypes || field.fileTypes || (field.type === "file" || field.type === "upload" ? ["pdf", "doc", "docx", "txt", "jpg", "png"] : []),
+        required: field.required !== undefined ? field.required : true,
         maxSize: field.maxSize || "",
       }))
+    }
 
+    if (initialConfig || toolData?.value) {
       return {
-        title,
-        description,
+        title: formTitle,
+        description: formDescription,
         fields:
           convertedFields.length > 0
             ? convertedFields
@@ -76,6 +106,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                   name: "Field 1",
                   placeholder: "",
                   type: "file",
+                  required: true,
                 },
               ],
       }
@@ -91,6 +122,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
             name: "Field 1",
             placeholder: "",
             type: "file",
+            required: true,
           },
         ],
       }
@@ -101,14 +133,20 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     getInitialFormConfig(),
   )
 
+  // Update form config when initialConfig or toolData changes
+  React.useEffect(() => {
+    setFormConfig(getInitialFormConfig())
+  }, [initialConfig, toolData])
+
   const [collapsedFieldIds, setCollapsedFieldIds] = useState<Set<string>>(
     new Set(),
   )
   const [uploadedFiles, setUploadedFiles] = useState<{
     [fieldId: string]: File[]
   }>({})
+  const [newFileType, setNewFileType] = useState("")
 
-  // Ensure file fields have default file types when component mounts
+  // Ensure file fields have default file types and required=true when component mounts
   React.useEffect(() => {
     setFormConfig(prev => ({
       ...prev,
@@ -116,7 +154,8 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         ...field,
         fileTypes: field.type === "file" && (!field.fileTypes || field.fileTypes.length === 0) 
           ? ["pdf", "doc", "docx", "txt", "jpg", "png"] 
-          : field.fileTypes
+          : field.fileTypes,
+        required: true
       }))
     }))
   }, [])
@@ -124,6 +163,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   const handleSave = async () => {
     try {
       // If we have a toolId, update the tool via API
+      console.log("tool id here",toolId)
       if (toolId) {
         const updatedToolData = {
           type: "form",
@@ -148,12 +188,18 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
           },
         }
 
-        await workflowToolsAPI.updateTool(toolId, updatedToolData)
-        console.log("Form tool updated successfully")
+        const apiResponse = await workflowToolsAPI.updateTool(toolId, updatedToolData)
+        console.log("tool id here 2",toolId)
+        console.log("Form tool updated successfully, API response:", apiResponse)
+        
+        // Call the parent save handler with API response
+        console.log("Form configuration saved:", formConfig)
+        onSave?.(formConfig, apiResponse)
+      } else {
+        // Call the parent save handler without API response for new nodes
+        console.log("Form configuration saved:", formConfig)
+        onSave?.(formConfig)
       }
-
-      // Call the parent save handler
-      onSave?.(formConfig)
     } catch (error) {
       console.error("Failed to save form configuration:", error)
       // Still call the parent handler even if API call fails
@@ -190,6 +236,35 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
       ...prev,
       [fieldId]: prev[fieldId]?.filter((_, index) => index !== fileIndex) || [],
     }))
+  }
+
+  const addFileType = (fieldId: string, fileType: string) => {
+    const normalized = normalizeFileType(fileType.trim())
+    const currentFileTypes = getFieldById(fieldId)?.fileTypes || []
+    
+    if (normalized && isValidFileType(normalized) && !currentFileTypes.includes(normalized)) {
+      updateField(fieldId, {
+        fileTypes: [...currentFileTypes, normalized]
+      })
+      setNewFileType("")
+    }
+  }
+
+  const removeFileType = (fieldId: string, typeToRemove: string) => {
+    updateField(fieldId, {
+      fileTypes: getFieldById(fieldId)?.fileTypes?.filter(type => type !== typeToRemove) || []
+    })
+  }
+
+  const getFieldById = (fieldId: string) => {
+    return formConfig.fields.find(field => field.id === fieldId)
+  }
+
+  const handleFileTypeKeyDown = (e: React.KeyboardEvent, fieldId: string) => {
+    if (e.key === "Enter" && newFileType.trim()) {
+      e.preventDefault()
+      addFileType(fieldId, newFileType)
+    }
   }
 
   const getFieldTypeIcon = (type: string) => {
@@ -247,7 +322,6 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         <h2
           className="flex-1 text-gray-900 dark:text-gray-100"
           style={{
-            alignSelf: "stretch",
             fontFamily: "Inter",
             fontSize: "16px",
             fontStyle: "normal",
@@ -262,10 +336,8 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
 
         <button
           onClick={onClose || onBack}
-          className="flex items-center justify-center"
+          className="flex items-center justify-center w-6 h-6 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
           style={{
-            width: "24px",
-            height: "24px",
             padding: "0",
             border: "none",
             background: "transparent",
@@ -316,7 +388,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                 }))
               }
               placeholder="type here"
-              className="w-full min-h-[80px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
+              className="w-full min-h-[80px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 placeholder-gray-400 dark:placeholder-gray-400"
             />
           </div>
 
@@ -337,7 +409,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                 >
                   {/* Field Header */}
                   <div
-                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                    className="flex items-center justify-between p-3 cursor-pointer"
                     onClick={() =>
                       setCollapsedFieldIds((prev) => {
                         const newSet = new Set(prev)
@@ -386,59 +458,28 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                         <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                           Input Type
                         </Label>
-                        <div className="relative">
-                          <select
-                            value={field.type}
-                            onChange={(e) =>
-                              updateField(field.id, {
-                                type: e.target.value as FormField["type"],
-                              })
-                            }
-                            className="w-full h-9 px-3 py-1 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md text-sm text-slate-900 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-gray-500 focus:border-slate-400 dark:focus:border-gray-500 appearance-none cursor-pointer"
-                            style={{
-                              background: "white",
-                              color: "#1f2937",
-                            }}
-                          >
-                            <option
-                              value="file"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              File
-                            </option>
-                            <option
-                              value="text"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Text
-                            </option>
-                            <option
-                              value="email"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Email
-                            </option>
-                            <option
-                              value="number"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Number
-                            </option>
-                            <option
-                              value="textarea"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Textarea
-                            </option>
-                            <option
-                              value="dropdown"
-                              style={{ background: "white", color: "#1f2937" }}
-                            >
-                              Dropdown
-                            </option>
-                          </select>
-                          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500 dark:text-gray-400 pointer-events-none" />
-                        </div>
+                        <Dropdown
+                          options={[
+                            { value: "file", label: "File" },
+                            { value: "text", label: "Text" },
+                            { value: "email", label: "Email" },
+                            { value: "number", label: "Number" },
+                            { value: "textarea", label: "Textarea" },
+                            { value: "dropdown", label: "Dropdown" }
+                          ]}
+                          value={field.type}
+                          onSelect={(value) =>
+                            updateField(field.id, {
+                              type: value as FormField["type"],
+                            })
+                          }
+                          placeholder="Select input type"
+                          variant="outline"
+                          size="md"
+                          rounded="6px"
+                          border="1px solid #E2E8F0"
+                          fontSize="text-sm"
+                        />
                       </div>
 
                       {/* Field Type Specific Content */}
@@ -483,22 +524,46 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                             )}
 
                           {/* File Type Configuration */}
-                          <div className="space-y-2">
+                          <div className="space-y-3">
                             <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                              Allowed File Types (comma-separated)
+                              Allowed File Types
                             </Label>
-                            <Input
-                              value={field.fileTypes?.join(", ") || ""}
-                              onChange={(e) =>
-                                updateField(field.id, {
-                                  fileTypes: e.target.value
-                                    .split(",")
-                                    .map((type) => type.trim())
-                                    .filter(Boolean),
-                                })
-                              }
-                              className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
-                            />
+                            
+                            {/* Tag input box with pills inside */}
+                            <div className="relative">
+                              <div className="min-h-[40px] w-full px-3 py-2 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md flex flex-wrap items-center gap-1 focus-within:ring-1 focus-within:ring-slate-400 dark:focus-within:ring-gray-500 focus-within:border-slate-400 dark:focus-within:border-gray-500">
+                                {/* Display existing file types as pills inside the input */}
+                                {field.fileTypes?.map((fileType, index) => (
+                                  <div
+                                    key={index}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                                  >
+                                    <span>.{fileType}</span>
+                                    <button
+                                      onClick={() => removeFileType(field.id, fileType)}
+                                      className="hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5"
+                                      type="button"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                                
+                                {/* Input field for adding new file types */}
+                                <input
+                                  type="text"
+                                  value={newFileType}
+                                  onChange={(e) => setNewFileType(e.target.value)}
+                                  onKeyDown={(e) => handleFileTypeKeyDown(e, field.id)}
+                                  placeholder={field.fileTypes?.length === 0 ? "Enter file type (e.g., pdf, jpg)" : ""}
+                                  className="flex-1 min-w-[120px] bg-transparent border-none outline-none text-sm text-slate-900 dark:text-gray-300 placeholder-slate-400 dark:placeholder-gray-500"
+                                />
+                              </div>
+                            </div>
+                            
+                            <p className="text-xs text-slate-500 dark:text-gray-400">
+                              Valid file types: {VALID_FILE_TYPES.slice(0, 10).join(", ")}, and more...
+                            </p>
                           </div>
                         </div>
                       ) : field.type === "dropdown" ? (
@@ -538,26 +603,6 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                         </div>
                       )}
 
-                      {/* Required Field Checkbox */}
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id={`required-${field.id}`}
-                          checked={field.required || false}
-                          onChange={(e) =>
-                            updateField(field.id, {
-                              required: e.target.checked,
-                            })
-                          }
-                          className="w-4 h-4 text-blue-600 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 dark:focus:ring-blue-400"
-                        />
-                        <Label
-                          htmlFor={`required-${field.id}`}
-                          className="text-sm font-medium text-slate-700 dark:text-gray-300"
-                        >
-                          Required field
-                        </Label>
-                      </div>
 
                       {/* Remove Field Button */}
                       {formConfig.fields.length > 1 && (
@@ -582,7 +627,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         <div className="pt-6 px-0">
           <Button
             onClick={handleSave}
-            className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-full"
+            className="w-full bg-gray-900 hover:bg-gray-900 text-white rounded-full shadow-none"
           >
             Save Configuration
           </Button>

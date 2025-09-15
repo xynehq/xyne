@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { X } from "lucide-react"
 import fileUpIcon from "@/assets/file-up.svg"
@@ -64,6 +64,7 @@ interface WorkflowExecutionModalProps {
   workflowDescription: string
   templateId: string
   workflowTemplate: WorkflowTemplate
+  onViewExecution?: (executionId: string) => void
 }
 
 const SUPPORTED_FILE_TYPES = {
@@ -97,6 +98,7 @@ export function WorkflowExecutionModal({
   workflowDescription,
   templateId,
   workflowTemplate,
+  onViewExecution,
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [, setIsUploading] = useState(false)
@@ -104,13 +106,28 @@ export function WorkflowExecutionModal({
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCompleted, setIsCompleted] = useState(false)
+  const [isFailed, setIsFailed] = useState(false)
   const [processingMessage, setProcessingMessage] = useState<string>(
     "Processing the File",
   )
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
     null,
   )
+  const [pollingAttempts, setPollingAttempts] = useState(0)
+  const [maxPollingAttempts] = useState(150) // 5 minutes at 2-second intervals
+  const [retryCount, setRetryCount] = useState(0)
+  const [maxRetries] = useState(3)
+  const [executionId, setExecutionId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Cleanup polling on component unmount
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval)
+      }
+    }
+  }, [pollingInterval])
 
   const resetModalState = () => {
     setSelectedFile(null)
@@ -119,7 +136,11 @@ export function WorkflowExecutionModal({
     setUploadError(null)
     setIsProcessing(false)
     setIsCompleted(false)
+    setIsFailed(false)
     setProcessingMessage("")
+    setPollingAttempts(0)
+    setRetryCount(0)
+    setExecutionId(null)
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
@@ -132,6 +153,59 @@ export function WorkflowExecutionModal({
   const handleClose = () => {
     resetModalState()
     onClose()
+  }
+
+  // Function to extract meaningful error messages from various error sources
+  const extractErrorMessage = (error: any): string => {
+    // Handle HTTP response errors
+    if (error?.response) {
+      const response = error.response
+      if (response.data?.error) {
+        return response.data.error
+      }
+      if (response.data?.message) {
+        return response.data.message
+      }
+      if (response.statusText) {
+        return `HTTP ${response.status}: ${response.statusText}`
+      }
+    }
+
+    // Handle API response errors
+    if (error?.error && typeof error.error === 'string') {
+      return error.error
+    }
+    if (error?.message && typeof error.message === 'string') {
+      return error.message
+    }
+
+    // Handle Error objects
+    if (error instanceof Error) {
+      return error.message
+    }
+
+    // Handle network errors
+    if (error?.code === 'NETWORK_ERROR' || error?.name === 'NetworkError') {
+      return "Network connection failed. Please check your internet connection and try again."
+    }
+
+    // Handle timeout errors
+    if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
+      return "Request timed out. The operation took too long to complete."
+    }
+
+    // Handle validation errors
+    if (error?.validation && Array.isArray(error.validation)) {
+      return error.validation.map((v: any) => v.message || v).join(', ')
+    }
+
+    // Fallback for unknown error structures
+    if (typeof error === 'string') {
+      return error
+    }
+
+    // Last resort fallback
+    return "An unexpected error occurred. Please try again."
   }
 
   if (!isOpen) return null
@@ -202,32 +276,45 @@ export function WorkflowExecutionModal({
       if (response.error || response.status === "error") {
         setIsUploaded(false)
         setIsProcessing(false)
-        setUploadError(
-          `Execution failed: ${response.error || response.message}`,
-        )
+        setIsFailed(true)
+        const errorMessage = extractErrorMessage(response.error || response.message || response)
+        setUploadError(`Execution failed: ${errorMessage}`)
       } else {
         setIsUploaded(true)
+        setIsProcessing(true) // Set processing state
 
         // Extract execution ID from response.data.execution.id
-        const executionId = response.data?.execution?.id
-        console.log("📋 Extracted execution ID:", executionId)
+        const currentExecutionId = response.data?.execution?.id
+        console.log("📋 Extracted execution ID:", currentExecutionId)
 
-        if (executionId) {
+        if (currentExecutionId) {
+          // Store execution ID for later use
+          setExecutionId(currentExecutionId)
           // Start polling for completion with the execution ID
-          startStatusPolling(executionId)
+          startStatusPolling(currentExecutionId)
         } else {
           console.warn("No execution ID found in response")
-          // Fallback to old polling mechanism
-          startPolling()
+          // Try to extract from other possible locations
+          const alternativeId = response.data?.id || response.execution?.id || response.id
+          if (alternativeId) {
+            console.log("📋 Using alternative execution ID:", alternativeId)
+            setExecutionId(alternativeId)
+            startStatusPolling(alternativeId)
+          } else {
+            // If no ID found, show error
+            setIsProcessing(false)
+            setIsFailed(true)
+            setUploadError("Execution started but could not track progress. Please check execution status manually.")
+          }
         }
       }
     } catch (error) {
       console.error("Execution error:", error)
       setIsUploaded(false)
       setIsProcessing(false)
-      setUploadError(
-        `Execution failed: ${error instanceof Error ? error.message : "Please check your connection and try again."}`,
-      )
+      setIsFailed(true)
+      const errorMessage = extractErrorMessage(error)
+      setUploadError(`Execution failed: ${errorMessage}`)
     } finally {
       setIsUploading(false)
     }
@@ -277,8 +364,11 @@ export function WorkflowExecutionModal({
     setIsUploaded(false)
     setIsProcessing(false)
     setIsCompleted(false)
+    setIsFailed(false)
     setUploadError(null)
     setProcessingMessage("")
+    setPollingAttempts(0)
+    setRetryCount(0)
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
@@ -288,50 +378,97 @@ export function WorkflowExecutionModal({
     }
   }
 
+  const stopPolling = () => {
+    if (pollingInterval) {
+      console.log("🛑 Stopping polling")
+      clearInterval(pollingInterval)
+      setPollingInterval(null)
+    }
+    setPollingAttempts(0)
+  }
+
   const startStatusPolling = async (executionId: string) => {
     console.log("🔄 Starting status polling for execution ID:", executionId)
 
     // Clear any existing interval first
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
-    }
+    stopPolling()
+    setPollingAttempts(0)
+    setRetryCount(0)
 
     const checkStatus = async () => {
       try {
+        setPollingAttempts(prev => prev + 1)
+        
+        // Check if we've exceeded max polling attempts (timeout)
+        if (pollingAttempts >= maxPollingAttempts) {
+          console.log("⏰ Polling timeout reached")
+          stopPolling()
+          setIsProcessing(false)
+          setIsFailed(true)
+          setUploadError("Execution timed out. The process is taking longer than expected. Please check the execution status manually.")
+          return
+        }
+
         const response = await api.workflow.executions[executionId].status.$get()
+
+        // Check if response is ok
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
 
         const statusData = await response.json()
         console.log("📊 Status polling response:", statusData)
 
+        // Reset retry count on successful request
+        setRetryCount(0)
+
         if (statusData.success && statusData.status === "completed") {
           console.log("✅ Execution completed!")
+          stopPolling()
           setIsProcessing(false)
           setIsCompleted(true)
-          // Clear the polling interval
-          setPollingInterval((currentInterval) => {
-            if (currentInterval) {
-              console.log("🛑 Stopping polling - execution completed")
-              clearInterval(currentInterval)
-            }
-            return null
-          })
         } else if (statusData.status === "failed") {
           console.log("❌ Execution failed!")
+          stopPolling()
           setIsProcessing(false)
-          setUploadError("Execution failed")
-          // Clear the polling interval
-          setPollingInterval((currentInterval) => {
-            if (currentInterval) {
-              console.log("🛑 Stopping polling - execution failed")
-              clearInterval(currentInterval)
-            }
-            return null
-          })
+          setIsFailed(true)
+          
+          // Extract error message from status data
+          let errorMessage = "Execution failed"
+          if (statusData.error) {
+            errorMessage = extractErrorMessage(statusData.error)
+          } else if (statusData.message && statusData.message !== "Execution failed") {
+            errorMessage = statusData.message
+          }
+          
+          setUploadError(errorMessage)
+        } else if (statusData.status === "active" || statusData.status === "pending") {
+          // Update processing message if provided
+          if (statusData.message && statusData.message !== processingMessage) {
+            setProcessingMessage(statusData.message)
+          }
+          // Continue polling - no action needed
+        } else {
+          // Unknown status
+          console.warn("⚠️ Unknown execution status:", statusData.status)
         }
-        // If status is still pending, continue polling
+        
       } catch (error) {
         console.error("Status polling error:", error)
+        setRetryCount(prev => prev + 1)
+        
+        // If we've exceeded max retries, stop polling and show error
+        if (retryCount >= maxRetries) {
+          console.log("❌ Max polling retries exceeded")
+          stopPolling()
+          setIsProcessing(false)
+          setIsFailed(true)
+          setUploadError(`Failed to check execution status: ${extractErrorMessage(error)}`)
+          return
+        }
+        
+        // Otherwise, continue polling with exponential backoff
+        console.log(`🔄 Retrying polling (attempt ${retryCount + 1}/${maxRetries})`)
       }
     }
 
@@ -344,16 +481,6 @@ export function WorkflowExecutionModal({
     checkStatus()
   }
 
-  const startPolling = () => {
-    console.log("Starting polling for process completion...")
-    // For now, simulate completion after 5 seconds since we don't have a status endpoint
-    setTimeout(() => {
-      console.log("Process completed!")
-      setPollingInterval(null)
-      setIsProcessing(false)
-      setIsCompleted(true)
-    }, 5000) // Complete after 5 seconds
-  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -366,7 +493,59 @@ export function WorkflowExecutionModal({
           <X className="w-6 h-6 text-gray-500 dark:text-gray-400" />
         </button>
 
-        {isCompleted ? (
+        {isFailed ? (
+          // Error Page
+          <>
+            {/* Header */}
+            <div className="p-8 pb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                {workflowName}
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 text-base">{workflowDescription}</p>
+            </div>
+
+            {/* Error Content */}
+            <div className="px-8 pb-8">
+              <div className="border border-dashed border-red-300 dark:border-red-600 rounded-xl px-6 py-16 text-center bg-red-50 dark:bg-red-900/20 w-full min-h-[280px] flex flex-col items-center justify-center">
+                {/* Error Icon */}
+                <div className="w-16 h-16 flex items-center justify-center mb-6">
+                  <div className="w-16 h-16 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center">
+                    <svg className="w-8 h-8 text-red-600 dark:text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="15" y1="9" x2="9" y2="15"></line>
+                      <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Error Message */}
+                <h3 className="text-red-900 dark:text-red-100 text-lg font-semibold mb-2">
+                  Execution Failed
+                </h3>
+                <p className="text-red-700 dark:text-red-300 text-sm max-w-md">
+                  {uploadError || "The workflow execution encountered an error and could not be completed."}
+                </p>
+              </div>
+
+              {/* Try Again Button */}
+              <div className="flex justify-end mt-6">
+                <Button
+                  onClick={() => {
+                    setIsFailed(false)
+                    setUploadError(null)
+                    if (selectedFile) {
+                      setIsProcessing(true)
+                      executeWorkflow(selectedFile)
+                    }
+                  }}
+                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-medium"
+                >
+                  Try Again
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : isCompleted ? (
           // Completion Page
           <>
             {/* Header */}
@@ -395,8 +574,20 @@ export function WorkflowExecutionModal({
                 </p>
               </div>
 
-              {/* Upload Another Button */}
-              <div className="flex justify-end mt-6">
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 mt-6">
+                <Button
+                  onClick={() => {
+                    if (executionId && onViewExecution) {
+                      onViewExecution(executionId)
+                      handleClose() // Close the modal after navigating
+                    }
+                  }}
+                  disabled={!executionId}
+                  className="bg-white hover:bg-gray-50 text-gray-800 border border-gray-300 px-6 py-2 rounded-full font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  View Workflow
+                </Button>
                 <Button
                   onClick={handleUploadAnother}
                   className="bg-black hover:bg-gray-800 text-white px-6 py-2 rounded-full font-medium"
@@ -544,7 +735,37 @@ export function WorkflowExecutionModal({
               {/* Error Display */}
               {uploadError && (
                 <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                  <p className="text-sm text-red-800 dark:text-red-400">{uploadError}</p>
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0">
+                      <svg className="w-5 h-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-sm font-medium text-red-800 dark:text-red-300">
+                        Execution Error
+                      </h3>
+                      <p className="text-sm text-red-700 dark:text-red-400 mt-1">
+                        {uploadError}
+                      </p>
+                      {(uploadError.includes("Network") || uploadError.includes("timeout") || uploadError.includes("Failed to check")) && (
+                        <div className="mt-3">
+                          <button
+                            onClick={() => {
+                              setUploadError(null)
+                              if (selectedFile) {
+                                setIsProcessing(true)
+                                executeWorkflow(selectedFile)
+                              }
+                            }}
+                            className="text-sm bg-red-100 hover:bg-red-200 dark:bg-red-800 dark:hover:bg-red-700 text-red-800 dark:text-red-200 px-3 py-1 rounded-md transition-colors"
+                          >
+                            Retry Execution
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

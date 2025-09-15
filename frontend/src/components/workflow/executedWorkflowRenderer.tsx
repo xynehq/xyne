@@ -2173,11 +2173,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               id: `${step.id}-${targetStepId}`,
               source: step.id,
               target: targetStepId,
-              type: "straight",
+              type: "smoothstep",
               animated: false,
               style: {
                 stroke: "#D1D5DB",
                 strokeWidth: 2,
+                strokeLinecap: "round",
+                strokeLinejoin: "round",
+              },
+              pathOptions: {
+                borderRadius: 20,
+                offset: 20,
               },
               markerEnd: {
                 type: "arrowclosed",
@@ -2206,11 +2212,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       const newEdge = {
         ...params,
         id: `${params.source}-${params.target}`,
-        type: "straight",
+        type: "smoothstep",
         animated: false,
         style: {
           stroke: "#6B7280",
           strokeWidth: 2,
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+        },
+        pathOptions: {
+          borderRadius: 20,
+          offset: 20,
         },
         markerEnd: {
           type: "arrowclosed",
@@ -2373,36 +2385,34 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             onEdgesDelete={onEdgesDelete}
             onSelectionChange={onSelectionChange}
             nodeTypes={nodeTypes}
-            connectionLineType={ConnectionLineType.Straight}
+            connectionLineType={ConnectionLineType.SmoothStep}
             fitView
             className="bg-gray-100 dark:bg-slate-900"
             multiSelectionKeyCode="Shift"
             deleteKeyCode="Delete"
             snapToGrid={true}
             snapGrid={[15, 15]}
+            defaultEdgeOptions={{
+              type: 'smoothstep',
+              style: { 
+                strokeWidth: 2,
+                stroke: '#D1D5DB',
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round'
+              },
+              markerEnd: { 
+                type: 'arrowclosed',
+                color: '#D1D5DB'
+              },
+            }}
+            connectionLineStyle={{
+              strokeWidth: 2,
+              stroke: '#D1D5DB',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            }}
             proOptions={{ hideAttribution: true }}
           >
-            {/* Selection Info Panel */}
-            {(selectedNodes.length > 0 || selectedEdges.length > 0) && (
-              <Panel position="top-right">
-                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-md border border-slate-200 dark:border-gray-700 min-w-[200px]">
-                  <div className="text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">
-                    Selection Info
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    Nodes: {selectedNodes.length} | Edges:{" "}
-                    {selectedEdges.length}
-                  </div>
-                  {selectedNodes.length === 1 && selectedNodes[0].data?.step ? (
-                    <div className="text-xs mt-1 text-gray-700 dark:text-gray-300">
-                      <strong>Step:</strong>{" "}
-                      {(selectedNodes[0].data.step as Step).name || "Unnamed"}
-                    </div>
-                  ) : null}
-                </div>
-              </Panel>
-            )}
-
 
             {/* Loading Template Content */}
             {isLoadingTemplate && (
