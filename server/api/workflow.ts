@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
+import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
@@ -268,7 +269,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Validate input based on root step type
-    if (rootStep.type === "manual" && rootStepTool?.type === "form") {
+    if (rootStep.type === StepType.MANUAL && rootStepTool?.type === ToolType.FORM) {
       // Validate form input
       const formDefinition = rootStepTool.value as any
       const formFields = formDefinition?.fields || []
@@ -340,7 +341,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           })
         }
       }
-    } else if (rootStep.type === "automated") {
+    } else if (rootStep.type === StepType.AUTOMATED) {
       // For automated steps, no input validation needed
       if (Object.keys(requestData.rootStepInput).length > 0) {
         throw new HTTPException(400, {
@@ -361,7 +362,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         description:
           requestData.description || `Execution of ${template[0].name}`,
         metadata: requestData.metadata || {},
-        status: "active",
+        status: WorkflowStatus.ACTIVE,
         rootWorkflowStepExeId: null,
       })
       .returning()
@@ -378,7 +379,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       workflowStepTemplateId: step.id,
       name: step.name,
       type: step.type,
-      status: "draft" as const,
+      status: WorkflowStatus.DRAFT as const,
       parentStepId: step.parentStepId,
       prevStepIds: step.prevStepIds || [],
       nextStepIds: step.nextStepIds || [],
@@ -418,7 +419,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       // Handle file uploads if present
       if (
         contentType.includes("multipart/form-data") &&
-        rootStepTool.type === "form"
+        rootStepTool.type === ToolType.FORM
       ) {
         const formDefinition = rootStepTool.value as any
         const formFields = formDefinition?.fields || []
@@ -462,7 +463,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         .values({
           workflowToolId: rootStepTool.id,
           workflowExecutionId: execution.id,
-          status: "completed",
+          status: ToolExecutionStatus.COMPLETED,
           result: {
             formData: processedFormData,
             submittedAt: new Date().toISOString(),
@@ -479,7 +480,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     await db
       .update(workflowStepExecution)
       .set({
-        status: "completed",
+        status: WorkflowStatus.COMPLETED,
         completedBy: "api",
         completedAt: new Date(),
         toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
@@ -523,7 +524,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         },
         rootStepExecution: {
           ...rootStepExecution,
-          status: "completed",
+          status: ToolExecutionStatus.COMPLETED,
         },
         toolExecution: toolExecutionRecord,
         statusPollingUrl: `/api/v1/workflow/executions/${execution.id}/status`,
@@ -596,7 +597,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
         description:
           requestData.description || `Execution of ${template[0].name}`,
         metadata: requestData.metadata || {},
-        status: "active",
+        status: WorkflowStatus.ACTIVE,
         rootWorkflowStepExeId: null,
       })
       .returning()
@@ -607,7 +608,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       workflowStepTemplateId: step.id,
       name: step.name,
       type: step.type,
-      status: "draft" as const,
+      status: WorkflowStatus.DRAFT as const,
       parentStepId: step.parentStepId,
       prevStepIds: step.prevStepIds || [],
       nextStepIds: step.nextStepIds || [],
@@ -637,7 +638,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     // Auto-execute workflow starting from root step if it's automated
     let executionResults = {}
 
-    if (rootStepExecution && rootStepExecution.type === "automated") {
+    if (rootStepExecution && rootStepExecution.type === StepType.AUTOMATED) {
       executionResults = await executeWorkflowChain(
         execution.id,
         rootStepExecution.id,
@@ -675,7 +676,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       .from(workflowExecution)
       .where(eq(workflowExecution.id, executionId))
 
-    if (!currentExecution || currentExecution.status === "completed" || currentExecution.status === "failed") {
+    if (!currentExecution || currentExecution.status === WorkflowStatus.COMPLETED || currentExecution.status === WorkflowStatus.FAILED) {
       return false // Already completed or failed, no update needed
     }
 
@@ -692,7 +693,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
     // 3. OR it has completed tool executions
     const executedSteps = allStepExecutions.filter(step => {
       const isRootStep = currentExecution.rootWorkflowStepExeId === step.id
-      const hasBeenStarted = step.status !== "draft"
+      const hasBeenStarted = step.status !== WorkflowStatus.DRAFT
       const hasToolExecutions = step.toolExecIds && step.toolExecIds.length > 0
       
       return isRootStep || hasBeenStarted || hasToolExecutions
@@ -703,11 +704,11 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
     )
 
     // Check completion conditions
-    const completedSteps = executedSteps.filter(step => step.status === "completed")
-    const failedSteps = executedSteps.filter(step => step.status === "failed")
-    const activeSteps = executedSteps.filter(step => step.status === "active")
+    const completedSteps = executedSteps.filter(step => step.status === WorkflowStatus.COMPLETED)
+    const failedSteps = executedSteps.filter(step => step.status === WorkflowStatus.FAILED)
+    const activeSteps = executedSteps.filter(step => step.status === WorkflowStatus.ACTIVE)
     const manualStepsAwaitingInput = executedSteps.filter(step => 
-      step.type === "manual" && step.status === "draft"
+      step.type === StepType.MANUAL && step.status === WorkflowStatus.DRAFT
     )
 
     Logger.info(
@@ -782,7 +783,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       await db
         .update(workflowExecution)
         .set({
-          status: "completed",
+          status: ToolExecutionStatus.COMPLETED,
           completedAt: new Date(),
           completedBy: "system",
           metadata: progressMetadata
@@ -820,7 +821,7 @@ const executeAutomatedWorkflowSteps = async (
         (s) => s.workflowStepTemplateId === nextStepTemplateId,
       )
 
-      if (nextStep && nextStep.type === "automated") {
+      if (nextStep && nextStep.type === StepType.AUTOMATED) {
         Logger.info(
           `Executing automated step: ${nextStep.name} (${nextStep.id})`,
         )
@@ -847,7 +848,7 @@ const executeAutomatedWorkflowSteps = async (
       .where(eq(workflowStepExecution.workflowExecutionId, executionId))
 
     const allStepsCompleted = updatedStepExecutions.every(
-      (step) => step.status === "completed",
+      (step) => step.status === WorkflowStatus.COMPLETED,
     )
 
     if (allStepsCompleted) {
@@ -857,7 +858,7 @@ const executeAutomatedWorkflowSteps = async (
       await db
         .update(workflowExecution)
         .set({
-          status: "completed",
+          status: ToolExecutionStatus.COMPLETED,
           completedAt: new Date(),
           completedBy: "system",
         })
@@ -879,7 +880,7 @@ const executeAutomatedWorkflowSteps = async (
         .from(workflowExecution)
         .where(eq(workflowExecution.id, executionId))
 
-      if (currentExecution && currentExecution.status !== "failed") {
+      if (currentExecution && currentExecution.status !== WorkflowStatus.FAILED) {
         // Only mark as failed if not already failed (to avoid overriding specific failure info)
         await db
           .update(workflowExecution)
@@ -921,7 +922,7 @@ const executeWorkflowChain = async (
     const step = stepExecution[0]
 
     // If step is manual, wait for user input
-    if (step.type === "manual") {
+    if (step.type === StepType.MANUAL) {
       return previousResults
     }
 
@@ -1021,7 +1022,7 @@ const executeWorkflowChain = async (
         .values({
           workflowToolId: tool.id,
           workflowExecutionId: executionId,
-          status: "completed",
+          status: ToolExecutionStatus.COMPLETED,
           result: toolResult.result,
           startedAt: new Date(),
           completedAt: new Date(),
@@ -1044,7 +1045,7 @@ const executeWorkflowChain = async (
           .values({
             workflowToolId: tool.id,
             workflowExecutionId: executionId,
-            status: "completed",
+            status: ToolExecutionStatus.COMPLETED,
             result: {
               ...sanitizedResult,
               _note: "Result was sanitized due to unicode characters",
@@ -1066,7 +1067,7 @@ const executeWorkflowChain = async (
           .values({
             workflowToolId: tool.id,
             workflowExecutionId: executionId,
-            status: "completed",
+            status: ToolExecutionStatus.COMPLETED,
             result: {
               status: "executed_with_db_error",
               message:
@@ -1085,7 +1086,7 @@ const executeWorkflowChain = async (
     await db
       .update(workflowStepExecution)
       .set({
-        status: "completed",
+        status: WorkflowStatus.COMPLETED,
         completedBy: "system",
         completedAt: new Date(),
         toolExecIds: [toolExecutionRecord.id],
@@ -1114,7 +1115,7 @@ const executeWorkflowChain = async (
           (s) => s.workflowStepTemplateId === nextStepId,
         )
 
-        if (nextStep && nextStep.type === "automated") {
+        if (nextStep && nextStep.type === StepType.AUTOMATED) {
           // Recursively execute next automated step
           await executeWorkflowChain(
             executionId,
@@ -1133,7 +1134,7 @@ const executeWorkflowChain = async (
       .where(eq(workflowStepExecution.workflowExecutionId, executionId))
 
     const allStepsCompleted = allStepExecutions.every(
-      (stepExec) => stepExec.status === "completed",
+      (stepExec) => stepExec.status === WorkflowStatus.COMPLETED,
     )
 
     if (allStepsCompleted) {
@@ -1143,14 +1144,14 @@ const executeWorkflowChain = async (
         .from(workflowExecution)
         .where(eq(workflowExecution.id, executionId))
 
-      if (currentExecution && currentExecution.status !== "completed") {
+      if (currentExecution && currentExecution.status !== WorkflowStatus.COMPLETED) {
         Logger.info(
           `All steps completed for workflow execution ${executionId}, marking as completed`,
         )
         await db
           .update(workflowExecution)
           .set({
-            status: "completed",
+            status: ToolExecutionStatus.COMPLETED,
             completedAt: new Date(),
             completedBy: "system",
           })
@@ -1485,7 +1486,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       .values({
         workflowToolId: formTool.id,
         workflowExecutionId: stepExecution.workflowExecutionId,
-        status: "completed",
+        status: WorkflowStatus.COMPLETED,
         result: {
           formData: formData,
           submittedAt: new Date().toISOString(),
@@ -1503,7 +1504,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
     await db
       .update(workflowStepExecution)
       .set({
-        status: "completed",
+        status: WorkflowStatus.COMPLETED,
         completedBy: "demo",
         completedAt: new Date(),
         toolExecIds: [toolExecutionRecord.id],
@@ -1551,7 +1552,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
           (s) => s.workflowStepTemplateId === nextStepTemplateId,
         )
 
-        if (nextStep && nextStep.type === "automated") {
+        if (nextStep && nextStep.type === StepType.AUTOMATED) {
           await executeWorkflowChain(
             stepExecution.workflowExecutionId,
             nextStep.id,
@@ -2267,7 +2268,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       // Process form tools to ensure file fields use "document_file" as ID
       let processedValue = tool.value || {}
       
-      if (tool.type === "form" && processedValue.fields && Array.isArray(processedValue.fields)) {
+      if (tool.type === ToolType.FORM && processedValue.fields && Array.isArray(processedValue.fields)) {
         processedValue = {
           ...processedValue,
           fields: processedValue.fields.map((field: any) => {
@@ -3115,7 +3116,7 @@ export const UpdateWorkflowStepExecutionApi = async (c: Context) => {
       .set({
         status: requestData.status,
         completedBy: requestData.completedBy,
-        completedAt: requestData.status === "completed" ? new Date() : null,
+        completedAt: requestData.status === WorkflowStatus.COMPLETED ? new Date() : null,
         metadata: requestData.metadata,
       })
       .where(eq(workflowStepExecution.id, stepId))
@@ -3141,7 +3142,7 @@ export const CompleteWorkflowStepExecutionApi = async (c: Context) => {
     const [stepExecution] = await db
       .update(workflowStepExecution)
       .set({
-        status: "completed",
+        status: WorkflowStatus.COMPLETED,
         completedBy: "demo",
         completedAt: new Date(),
       })

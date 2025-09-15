@@ -770,70 +770,81 @@ export const AppRoutes = app
   .post("/refresh-token", getNewAccessRefreshToken)
   .post(
     "/workflow/templates",
+    AuthMiddleware,
     zValidator("json", createWorkflowTemplateSchema),
     CreateWorkflowTemplateApi,
   )
   .post(
     "/workflow/templates/complex",
+    AuthMiddleware,
     zValidator("json", createComplexWorkflowTemplateSchema),
     CreateComplexWorkflowTemplateApi,
   )
-  .get("/workflow/templates", ListWorkflowTemplatesApi)
-  .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
+  .get("/workflow/templates", AuthMiddleware, ListWorkflowTemplatesApi)
+  .get("/workflow/templates/:templateId", AuthMiddleware, GetWorkflowTemplateApi)
   .put(
     "/workflow/templates/:templateId",
+    AuthMiddleware,
     zValidator("json", updateWorkflowTemplateSchema),
     UpdateWorkflowTemplateApi,
   )
-  .post("/workflow/templates/:templateId/execute", ExecuteTemplateApi)
+  .post("/workflow/templates/:templateId/execute", AuthMiddleware, ExecuteTemplateApi)
   .post(
     "/workflow/templates/:templateId/execute-with-input",
+    AuthMiddleware,
     ExecuteWorkflowWithInputApi,
   )
   .post(
     "/workflow/templates/:templateId/steps",
+    AuthMiddleware,
     zValidator("json", addStepToWorkflowSchema),
     AddStepToWorkflowApi,
   )
   .post(
     "/workflow/executions",
+    AuthMiddleware,
     zValidator("json", createWorkflowExecutionSchema),
     CreateWorkflowExecutionApi,
   )
   .get(
     "/workflow/executions",
+    AuthMiddleware,
     zValidator("query", listWorkflowExecutionsQuerySchema),
     ListWorkflowExecutionsApi,
   )
-  .get("/workflow/executions/:executionId", GetWorkflowExecutionApi)
+  .get("/workflow/executions/:executionId", AuthMiddleware, GetWorkflowExecutionApi)
   .get(
     "/workflow/executions/:executionId/status",
+    AuthMiddleware,
     GetWorkflowExecutionStatusApi,
   )
   .post(
     "/workflow/tools",
+    AuthMiddleware,
     zValidator("json", createWorkflowToolSchema),
     CreateWorkflowToolApi,
   )
-  .get("/workflow/tools", ListWorkflowToolsApi)
-  .get("/workflow/tools/:toolId", GetWorkflowToolApi)
+  .get("/workflow/tools", AuthMiddleware, ListWorkflowToolsApi)
+  .get("/workflow/tools/:toolId", AuthMiddleware, GetWorkflowToolApi)
   .put(
     "/workflow/tools/:toolId",
+    AuthMiddleware,
     zValidator("json", updateWorkflowToolSchema),
     UpdateWorkflowToolApi,
   )
-  .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
-  .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
+  .delete("/workflow/tools/:toolId", AuthMiddleware, DeleteWorkflowToolApi)
+  .delete("/workflow/steps/:stepId", AuthMiddleware, DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
+    AuthMiddleware,
     zValidator("json", updateWorkflowStepExecutionSchema),
     UpdateWorkflowStepExecutionApi,
   )
-  .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
-  .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
-  .post("/workflow/steps/submit-form", SubmitFormStepApi)
-  .get("/workflow/files/:fileId", ServeWorkflowFileApi)
-  .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+  .post("/workflow/steps/:stepId/complete", AuthMiddleware, CompleteWorkflowStepExecutionApi)
+  .get("/workflow/steps/:stepId/form", AuthMiddleware, GetFormDefinitionApi)
+  .post("/workflow/steps/submit-form", AuthMiddleware, SubmitFormStepApi)
+  .get("/workflow/files/:fileId", AuthMiddleware, ServeWorkflowFileApi)
+  .get("/workflow/models/gemini", AuthMiddleware, GetGeminiModelEnumsApi)
   // Auth middleware for all other routes
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)

@@ -11,6 +11,12 @@ import {
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
+import {
+  WorkflowStatus,
+  StepType,
+  ToolType,
+  ToolExecutionStatus,
+} from "@/types/workflowTypes"
 
 // Custom UUID array type for PostgreSQL
 export const uuidArray = customType<{
@@ -42,38 +48,13 @@ export const uuidArray = customType<{
   },
 })
 
-// Workflow Status Enum
-export const workflowStatusEnum = pgEnum("workflow_status", [
-  "draft",
-  "active",
-  "paused",
-  "completed",
-  "failed",
-])
+export const workflowStatusEnum = pgEnum("workflow_status", Object.values(WorkflowStatus) as [string, ...string[]])
 
-// Step Type Enum
-export const stepTypeEnum = pgEnum("step_type", ["manual", "automated"])
+export const stepTypeEnum = pgEnum("step_type", Object.values(StepType) as [string, ...string[]])
 
-// Tool Type Enum
-export const toolTypeEnum = pgEnum("tool_type", [
-  "delay",
-  "python_script",
-  "slack",
-  "gmail",
-  "agent",
-  "merged_node",
-  "form",
-  "email",
-  "ai_agent",
-])
+export const toolTypeEnum = pgEnum("tool_type", Object.values(ToolType) as [string, ...string[]])
 
-// Tool Execution Status Enum
-export const toolExecutionStatusEnum = pgEnum("tool_execution_status", [
-  "pending",
-  "running",
-  "completed",
-  "failed",
-])
+export const toolExecutionStatusEnum = pgEnum("tool_execution_status", Object.values(ToolExecutionStatus) as [string, ...string[]])
 
 // 1. Workflow Templates Table (renamed from workflow_templates)
 export const workflowTemplate = pgTable("workflow_template", {
@@ -81,7 +62,7 @@ export const workflowTemplate = pgTable("workflow_template", {
   name: text("name").notNull(),
   description: text("description"),
   version: text("version").notNull().default("1.0.0"),
-  status: workflowStatusEnum("status").notNull().default("draft"),
+  status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
   config: jsonb("config").default({}),
   createdBy: text("created_by"),
   rootWorkflowStepTemplateId: uuid("root_workflow_step_template_id"), // UUID reference
@@ -102,7 +83,7 @@ export const workflowStepTemplate = pgTable("workflow_step_template", {
     .references(() => workflowTemplate.id),
   name: text("name").notNull(),
   description: text("description"),
-  type: stepTypeEnum("type").notNull().default("automated"),
+  type: stepTypeEnum("type").notNull().default(StepType.AUTOMATED),
   // Removed: status column
   parentStepId: uuid("parent_step_id"), // UUID reference
   prevStepIds: uuidArray("prev_step_ids").default([]), // Array of UUIDs
@@ -143,7 +124,7 @@ export const workflowExecution = pgTable("workflow_execution", {
     .references(() => workflowTemplate.id),
   name: text("name").notNull(),
   description: text("description"),
-  status: workflowStatusEnum("status").notNull().default("draft"),
+  status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
   metadata: jsonb("metadata").default({}),
   rootWorkflowStepExeId: uuid("root_workflow_step_exe_id"), // UUID reference
   createdBy: text("created_by"),
@@ -168,8 +149,8 @@ export const workflowStepExecution = pgTable("workflow_step_execution", {
     .notNull()
     .references(() => workflowStepTemplate.id),
   name: text("name").notNull(),
-  type: stepTypeEnum("type").notNull().default("automated"),
-  status: workflowStatusEnum("status").notNull().default("draft"), // Using workflow status instead of step status
+  type: stepTypeEnum("type").notNull().default(StepType.AUTOMATED),
+  status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT), // Using workflow status instead of step status
   parentStepId: uuid("parent_step_id"), // UUID reference
   prevStepIds: uuidArray("prev_step_ids").default([]), // Array of UUIDs
   nextStepIds: uuidArray("next_step_ids").default([]), // Array of UUIDs
@@ -194,7 +175,7 @@ export const toolExecution = pgTable("tool_execution", {
     .notNull()
     .references(() => workflowTool.id),
   workflowExecutionId: uuid("workflow_execution_id").notNull(), // Renamed from stepId
-  status: toolExecutionStatusEnum("status").notNull().default("pending"),
+  status: toolExecutionStatusEnum("status").notNull().default(ToolExecutionStatus.PENDING),
   result: jsonb("result"), // Execution result/output
   // Removed: errorMessage column
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -290,23 +271,13 @@ export const createWorkflowTemplateSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   version: z.string().default("1.0.0"),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
 })
 
 export const createWorkflowToolSchema = z.object({
-  type: z.enum([
-    "delay",
-    "python_script",
-    "slack",
-    "gmail",
-    "agent",
-    "merged_node",
-    "form",
-    "email",
-    "ai_agent",
-  ]),
-  value: z.union([z.string(), z.number(), z.record(z.any())]).optional(),
-  config: z.record(z.any()).optional(),
+  type: z.enum(Object.values(ToolType) as [string, ...string[]]),
+  value: z.union([z.string(), z.number(), z.record(z.string(), z.any())]).optional(),
+  config: z.record(z.string(), z.any()).optional(),
 })
 
 export const updateWorkflowToolSchema = createWorkflowToolSchema
@@ -320,19 +291,19 @@ export const createWorkflowStepTemplateSchema = z.object({
   workflowTemplateId: z.string().uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
-  type: z.enum(["manual", "automated"]).default("automated"),
+  type: z.enum(Object.values(StepType) as [string, ...string[]]).default(StepType.AUTOMATED),
   parentStepId: z.string().uuid().optional(),
   prevStepIds: z.array(z.string().uuid()).default([]),
   nextStepIds: z.array(z.string().uuid()).default([]),
   toolIds: z.array(z.string().uuid()).default([]),
   timeEstimate: z.number().int().min(0).default(0),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 export const executeWorkflowSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 // Additional schemas required by server.ts
@@ -367,13 +338,13 @@ export const createComplexWorkflowTemplateSchema = z.object({
         type: z.string(),
         status: z.string().optional(),
         contents: z.array(z.any()).optional(),
-        config: z.record(z.any()).optional(),
+        config: z.record(z.string(), z.any()).optional(),
       }),
       tools: z.array(z.object({
         id: z.string().optional(),
         type: z.string(),
         value: z.any().optional(),
-        config: z.record(z.any()).optional(),
+        config: z.record(z.string(), z.any()).optional(),
       })).optional(),
       isActive: z.boolean().optional(),
       isCompleted: z.boolean().optional(),
@@ -387,8 +358,8 @@ export const createComplexWorkflowTemplateSchema = z.object({
     type: z.string().optional(),
     sourceHandle: z.string().optional(),
     targetHandle: z.string().optional(),
-    style: z.record(z.any()).optional(),
-    markerEnd: z.record(z.any()).optional(),
+    style: z.record(z.string(), z.any()).optional(),
+    markerEnd: z.record(z.string(), z.any()).optional(),
   })),
   metadata: z.object({
     nodeCount: z.number(),
@@ -402,7 +373,7 @@ export const createWorkflowExecutionSchema = z.object({
   workflowTemplateId: z.string().uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 export const updateWorkflowExecutionSchema =
@@ -410,37 +381,27 @@ export const updateWorkflowExecutionSchema =
 
 export const updateWorkflowStepExecutionSchema = z.object({
   status: z
-    .enum(["draft", "active", "paused", "completed", "failed"])
+    .enum(Object.values(WorkflowStatus) as [string, ...string[]])
     .optional(),
   completedBy: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 })
 
 export const formSubmissionSchema = z.object({
   stepId: z.string().uuid(),
-  formData: z.record(z.any()),
+  formData: z.record(z.string(), z.any()),
 })
 
 export const addStepToWorkflowSchema = z.object({
   stepName: z.string().min(1).max(255),
   stepDescription: z.string().optional(),
-  stepType: z.enum(["manual", "automated"]).default("automated"),
+  stepType: z.enum(Object.values(StepType) as [string, ...string[]]).default(StepType.AUTOMATED),
   timeEstimate: z.number().int().min(0).default(300),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   tool: z.object({
-    type: z.enum([
-      "delay",
-      "python_script",
-      "slack",
-      "gmail",
-      "agent",
-      "merged_node",
-      "form",
-      "email",
-      "ai_agent",
-    ]),
-    value: z.union([z.string(), z.number(), z.record(z.any())]).optional(),
-    config: z.record(z.any()).optional(),
+    type: z.enum(Object.values(ToolType) as [string, ...string[]]),
+    value: z.union([z.string(), z.number(), z.record(z.string(), z.any())]).optional(),
+    config: z.record(z.string(), z.any()).optional(),
   }),
 })
 

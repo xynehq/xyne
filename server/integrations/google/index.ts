@@ -356,7 +356,7 @@ export const listUsers = async (
   let nextPageToken = null
   try {
     do {
-      const res: any =
+      const res: GaxiosResponse<admin_directory_v1.Schema$Users> =
         await retryWithBackoff(
           () =>
             admin.users.list({

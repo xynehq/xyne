@@ -1,4 +1,4 @@
-import { and, eq, desc } from "drizzle-orm"
+import { and, eq, desc, inArray } from "drizzle-orm"
 import type { TxnOrClient } from "@/types"
 import {
   workflowTool,
@@ -8,21 +8,13 @@ import {
   type InsertWorkflowTool,
   type InsertToolExecution,
 } from "@/db/schema"
+import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 
 // Tool Operations
 export const createWorkflowTool = async (
   trx: TxnOrClient,
   data: {
-    type:
-      | "delay"
-      | "python_script"
-      | "slack"
-      | "gmail"
-      | "agent"
-      | "merged_node"
-      | "form"
-      | "email"
-      | "ai_agent"
+    type: ToolType
     value?: string | number | Record<string, any>
     config?: Record<string, any>
     createdBy?: string
@@ -65,8 +57,6 @@ export const getAllWorkflowTools = async (
   return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
 }
 
-// Note: The new schema doesn't have workflowTemplateId in workflowTool table
-// Tools are now linked through step templates via toolIds array
 export const getWorkflowToolsByIds = async (
   trx: TxnOrClient,
   toolIds: string[],
@@ -76,10 +66,7 @@ export const getWorkflowToolsByIds = async (
   const results = await trx
     .select()
     .from(workflowTool)
-    .where(
-      // Use SQL IN clause for multiple IDs
-      eq(workflowTool.id, toolIds[0]) // This needs to be updated to handle multiple IDs properly
-    )
+    .where(inArray(workflowTool.id, toolIds))
     .orderBy(desc(workflowTool.createdAt))
   
   return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
@@ -122,7 +109,7 @@ export const createToolExecution = async (
   data: {
     workflowToolId: string
     workflowExecutionId: string
-    status?: "pending" | "running" | "completed" | "failed"
+    status?: ToolExecutionStatus
     result?: any
   },
 ): Promise<SelectToolExecution> => {
@@ -131,7 +118,7 @@ export const createToolExecution = async (
     .values({
       workflowToolId: data.workflowToolId,
       workflowExecutionId: data.workflowExecutionId,
-      status: data.status || "pending",
+      status: data.status || ToolExecutionStatus.PENDING,
       result: data.result,
     })
     .returning()
@@ -200,7 +187,7 @@ export const markToolExecutionStarted = async (
   id: string,
 ): Promise<SelectToolExecution | null> => {
   return updateToolExecution(trx, id, {
-    status: "running",
+    status: ToolExecutionStatus.RUNNING,
     startedAt: new Date(),
   })
 }
@@ -211,7 +198,7 @@ export const markToolExecutionCompleted = async (
   result: any,
 ): Promise<SelectToolExecution | null> => {
   return updateToolExecution(trx, id, {
-    status: "completed",
+    status: ToolExecutionStatus.COMPLETED,
     result,
     completedAt: new Date(),
   })
@@ -223,7 +210,7 @@ export const markToolExecutionFailed = async (
   result?: any,
 ): Promise<SelectToolExecution | null> => {
   return updateToolExecution(trx, id, {
-    status: "failed",
+    status: ToolExecutionStatus.FAILED,
     result,
     completedAt: new Date(),
   })

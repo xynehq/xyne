@@ -19,6 +19,7 @@ import {
   type InsertWorkflowExecution,
   type InsertWorkflowStepExecution,
 } from "@/db/schema"
+import { StepType } from "@/types/workflowTypes"
 
 // Workflow Template Operations
 export const createWorkflowTemplate = async (
@@ -95,7 +96,7 @@ export const createWorkflowStepTemplate = async (
     workflowTemplateId: string
     name: string
     description?: string
-    type: "manual" | "automated"
+    type: StepType
     parentStepId?: string
     prevStepIds?: string[]
     nextStepIds?: string[]
@@ -209,7 +210,7 @@ export const createWorkflowStepExecution = async (
     workflowExecutionId: string
     workflowStepTemplateId: string
     name: string
-    type: "manual" | "automated"
+    type: StepType
     parentStepId?: string
     prevStepIds?: string[]
     nextStepIds?: string[]
