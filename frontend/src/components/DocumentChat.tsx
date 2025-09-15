@@ -33,9 +33,11 @@ import React, {
   } from "../routes/_authenticated/chat"
   import { createCitationLink, Citation } from "@/components/CitationLink"
   import Retry from "@/assets/retry.svg"
+  import { PersistentMap } from "@/utils/chatUtils"
   
-  // Module-level map to store tempChatId -> actual chatId mapping (backend-generated)
-  export const tempChatIdToChatIdMap = new Map<string, string>()
+  // Persistent storage for tempChatId -> actual chatId mapping using sessionStorage
+  const TEMP_CHAT_ID_MAP_KEY = "tempChatIdToChatIdMap"
+  const tempChatIdToChatIdMap = new PersistentMap(TEMP_CHAT_ID_MAP_KEY)
   
   export const THINKING_PLACEHOLDER = "Thinking"
   
@@ -45,7 +47,7 @@ import React, {
     documentName: string
     initialChatId?: string | null
     onChatCreated?: (chatId: string) => void
-    onChunkIndexChange?: (chunkIndex: number | null) => void
+    onChunkIndexChange?: (chunkIndex: number | null, documentId: string) => void
   }
   
   const ChatMessage = ({
@@ -695,8 +697,7 @@ import React, {
     }
 
     const handleCitationClick = (citation: Citation, chunkIndex?: number) => {
-      // onChunkIndexChange?.(chunkIndex || null)
-      // console.log("citation", citation, "chunkIndex", chunkIndex)
+      onChunkIndexChange?.(chunkIndex ?? null, citation.itemId ?? documentId)
     }
   
     // Populate feedbackMap from loaded messages
