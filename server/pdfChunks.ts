@@ -890,9 +890,8 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     } else {
                       const cnv = createCanvas(width, height)
                       const cctx = cnv.getContext("2d")
-                      
+
                       try {
-                        
                         // @ts-ignore draw directly
                         cctx.drawImage(imgLike, 0, 0)
                         const buffer = cnv.toBuffer("image/png")
@@ -1279,7 +1278,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                           "Using default description (describeImages=false)",
                         )
                       }
-                      
+
                       // Check description quality after LLM call
                       if (
                         !description ||

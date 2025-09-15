@@ -262,20 +262,20 @@ html {
   width: 100% !important;
 }
 
-.docx-preview-wrapper { 
-  background: white !important; 
-  padding: 0 !important; 
-  display: flex; 
-  flex-flow: column; 
+.docx-preview-wrapper {
+  background: white !important;
+  padding: 0 !important;
+  display: flex;
+  flex-flow: column;
   align-items: center;
   min-height: 100% !important;
   height: auto !important;
   width: 100% !important;
 }
 
-.docx-preview-wrapper > section.docx-preview { 
-  background: white; 
-  box-shadow: none !important; 
+.docx-preview-wrapper > section.docx-preview {
+  background: white;
+  box-shadow: none !important;
   padding-top: 40px !important;
   margin: 0;
   padding: 20px;
@@ -307,9 +307,9 @@ html {
   }
 }
 
-.docx-preview { 
-  color: #333; 
-  font-family: 'Calibri', 'Arial', sans-serif;
+.docx-preview {
+  color: #333;
+  font-family: "Calibri", "Arial", sans-serif;
   line-height: 1.6;
   word-wrap: break-word;
   overflow-wrap: break-word;
@@ -325,8 +325,8 @@ html {
   max-width: 100%;
 }
 
-.docx-preview table { 
-  border-collapse: collapse; 
+.docx-preview table {
+  border-collapse: collapse;
   width: 100% !important;
   max-width: 100% !important;
   min-width: auto !important;
@@ -337,8 +337,8 @@ html {
   overflow-x: auto;
 }
 
-.docx-preview table td, 
-.docx-preview table th { 
+.docx-preview table td,
+.docx-preview table th {
   border: 1px solid #ddd;
   padding: 8px;
   vertical-align: top;
@@ -347,57 +347,105 @@ html {
   white-space: normal;
 }
 
-.docx-preview p { 
-  margin: 0.5em 0; 
+.docx-preview p {
+  margin: 0.5em 0;
 }
 
-.docx-preview h1 { font-size: 2.5em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview h2 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview h3 { font-size: 1.75em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview h4 { font-size: 1.5em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview h5 { font-size: 1.25em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview h6 { font-size: 1em; font-weight: bold; margin: 0.67em 0; }
-
-.docx-preview_heading1 { font-size: 2.5em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview_heading2 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview_heading3 { font-size: 1.75em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview_heading4 { font-size: 1.5em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview_heading5 { font-size: 1.25em; font-weight: bold; margin: 0.67em 0; }
-.docx-preview_heading6 { font-size: 1em; font-weight: bold; margin: 0.67em 0; }
-
-.docx-preview img { 
-  max-width: 100%; 
-  height: auto; 
+.docx-preview h1 {
+  font-size: 2.5em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview h2 {
+  font-size: 2em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview h3 {
+  font-size: 1.75em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview h4 {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview h5 {
+  font-size: 1.25em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview h6 {
+  font-size: 1em;
+  font-weight: bold;
+  margin: 0.67em 0;
 }
 
-.docx-preview a { 
-  color: #0066cc; 
-  text-decoration: underline; 
+.docx-preview_heading1 {
+  font-size: 2.5em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview_heading2 {
+  font-size: 2em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview_heading3 {
+  font-size: 1.75em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview_heading4 {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview_heading5 {
+  font-size: 1.25em;
+  font-weight: bold;
+  margin: 0.67em 0;
+}
+.docx-preview_heading6 {
+  font-size: 1em;
+  font-weight: bold;
+  margin: 0.67em 0;
 }
 
-.docx-preview ul, 
-.docx-preview ol { 
-  margin: 0.5em 0; 
-  padding-left: 2em; 
+.docx-preview img {
+  max-width: 100%;
+  height: auto;
 }
 
-.docx-preview li { 
-  margin: 0.25em 0; 
+.docx-preview a {
+  color: #0066cc;
+  text-decoration: underline;
 }
 
-.docx-preview-comment-ref { 
+.docx-preview ul,
+.docx-preview ol {
+  margin: 0.5em 0;
+  padding-left: 2em;
+}
+
+.docx-preview li {
+  margin: 0.25em 0;
+}
+
+.docx-preview-comment-ref {
   cursor: pointer;
   color: #0066cc;
   text-decoration: none;
   font-weight: bold;
 }
 
-.docx-preview-comment-popover { 
+.docx-preview-comment-popover {
   background: #f9f9f9;
   border: 1px solid #ddd;
   border-radius: 4px;
   padding: 0.5rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .docx-preview section + section {
@@ -411,13 +459,13 @@ html {
     background: white !important;
     padding: 0;
   }
-  
+
   .docx-preview-wrapper > section.docx-preview {
     box-shadow: none !important;
     margin: 0;
     padding: 0;
   }
-  
+
   .docx-preview section + section {
     page-break-before: always;
     border-top: none;

@@ -381,18 +381,26 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
   }
 
   // Special handling for Vertex AI models - create appropriate provider based on model type
-  if (providerType === AIProviders.VertexAI && VertexProjectId && VertexRegion) {
-    const isGeminiModel = modelId.toString().toLowerCase().includes('gemini')
-    const requiredProvider = isGeminiModel ? VertexProvider.GOOGLE : VertexProvider.ANTHROPIC
-    
+  if (
+    providerType === AIProviders.VertexAI &&
+    VertexProjectId &&
+    VertexRegion
+  ) {
+    const isGeminiModel = modelId.toString().toLowerCase().includes("gemini")
+    const requiredProvider = isGeminiModel
+      ? VertexProvider.GOOGLE
+      : VertexProvider.ANTHROPIC
+
     // Create a new provider instance with the correct backend for this model
     const vertexProvider = new VertexAiProvider({
       projectId: VertexProjectId,
       region: VertexRegion,
       provider: requiredProvider,
     })
-    
-    Logger.info(`Created VertexAI provider for model ${modelId} with ${requiredProvider} backend`)
+
+    Logger.info(
+      `Created VertexAI provider for model ${modelId} with ${requiredProvider} backend`,
+    )
     return vertexProvider
   }
 
@@ -1124,13 +1132,12 @@ export const baselineRAGJsonStream = (
 
   if (specificFiles) {
     Logger.info("Using baselineFilesContextPromptJson")
-    if(isMsgWithSources) {
+    if (isMsgWithSources) {
       params.systemPrompt = agentBaselineFileContextPromptJson(
         userCtx,
         retrievedCtx,
       )
-    }
-    else if(!isAgentPromptEmpty(params.agentPrompt)) {
+    } else if (!isAgentPromptEmpty(params.agentPrompt)) {
       params.systemPrompt = agentBaselineFilesContextPromptJson(
         userCtx,
         indexToCitation(retrievedCtx),
@@ -1935,14 +1942,14 @@ export const agentWithNoIntegrationsQuestion = (
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
-
     if (!params.modelId) {
       params.modelId = defaultBestModel
     }
     if (!params.systemPrompt) {
       if (!isAgentPromptEmpty(params.agentPrompt)) {
         const agentPromptData = parseAgentPrompt(params.agentPrompt)
-        params.systemPrompt = askQuestionSystemPrompt + "\n\n" + agentPromptData.prompt
+        params.systemPrompt =
+          askQuestionSystemPrompt + "\n\n" + agentPromptData.prompt
       } else {
         params.systemPrompt = agentWithNoIntegrationsSystemPrompt
       }
@@ -1955,7 +1962,6 @@ export const agentWithNoIntegrationsQuestion = (
     const messages: Message[] = params.messages
       ? [...params.messages, baseMessage]
       : [baseMessage]
-
 
     return getProviderByModel(params.modelId).converseStream(messages, params)
   } catch (error) {

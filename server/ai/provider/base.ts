@@ -20,7 +20,8 @@ abstract class Provider implements LLMProvider {
     // Look up the actual model name from MODEL_CONFIGURATIONS
     // This resolves enum values like "vertex-claude-sonnet-4" to actual API model names like "claude-sonnet-4@20250514"
     const modelConfig = MODEL_CONFIGURATIONS[params.modelId || defaultFastModel]
-    const actualModelId = modelConfig?.actualName || params.modelId || defaultFastModel
+    const actualModelId =
+      modelConfig?.actualName || params.modelId || defaultFastModel
     return {
       maxTokens: params.max_new_tokens || 1024 * 8,
       topP: params.top_p || 0.9,

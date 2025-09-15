@@ -508,9 +508,11 @@ function RouteComponent() {
                       item.lastUpdatedByEmail || user?.email || "Unknown",
                   })),
                 ),
-                isOpen: collection.name.toLowerCase() === uploadingCollectionName.toLowerCase() 
-                  ? true // Open the newly uploaded collection
-                  : (collection.items || []).length > 0,
+                isOpen:
+                  collection.name.toLowerCase() ===
+                  uploadingCollectionName.toLowerCase()
+                    ? true // Open the newly uploaded collection
+                    : (collection.items || []).length > 0,
                 lastUpdated: new Date(collection.updatedAt).toLocaleString(
                   "en-GB",
                   {
@@ -699,8 +701,7 @@ function RouteComponent() {
             totalFileCount: item.totalFileCount,
             updatedAt: item.updatedAt,
             id: item.id,
-            updatedBy:
-              item.lastUpdatedByEmail || user?.email || "Unknown",
+            updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
           })),
         ),
         isOpen: true,
