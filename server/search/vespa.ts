@@ -85,7 +85,8 @@ export const searchVespa = async (
 
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
-    recencyDecayRate: options.recencyDecayRate || 0.1,
+    recencyDecayRate:
+      options.recencyDecayRate || config.defaultRecencyDecayRate,
     isSlackConnected,
   })
 }
@@ -110,7 +111,8 @@ export const searchVespaAgent = async (
       ...options,
       driveIds,
       clVespaIds,
-      recencyDecayRate: options.recencyDecayRate || 0.1,
+      recencyDecayRate:
+        options.recencyDecayRate || config.defaultRecencyDecayRate,
     },
   )
 }
