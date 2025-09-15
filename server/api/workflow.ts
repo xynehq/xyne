@@ -62,16 +62,87 @@ import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import { getErrorMessage } from "@/utils"
 import { handleAttachmentUpload } from "@/api/files"
+import { handleSingleFileUploadToDataSource } from "@/api/dataSource"
 import {
   handleWorkflowFileUpload,
   validateFormData,
   buildValidationSchema,
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
+import { handleDataSourceFileUpload } from "@/integrations/dataSource"
+import { createId } from "@paralleldrive/cuid2"
+import { getUserByEmail } from "@/db/user"
+import { db } from "@/db/client"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
 const Logger = getLogger(Subsystem.WorkflowApi)
+
+/**
+ * Handle workflow file upload using attachment upload infrastructure
+ */
+async function handleWorkflowFileUploadViaAttachments(
+  file: File,
+  workflowExecutionId: string,
+  workflowStepId: string,
+  userEmail: string = "workflow-system",
+  validation?: any,
+): Promise<WorkflowFileUpload & { attachmentResult?: any }> {
+  // First validate the file using existing validation logic
+  if (validation) {
+    const { validateFileUpload } = await import("./workflowFileHandler")
+    const validationResult = validateFileUpload(file, validation)
+    if (!validationResult.isValid) {
+      throw new Error(validationResult.error)
+    }
+  }
+
+  try {
+    // Create a context object that mimics what handleAttachmentUpload expects
+    const mockContext = {
+      req: {
+        formData: async () => {
+          const formData = new FormData()
+          formData.append('attachment', file)
+          return formData
+        }
+      },
+      get: (key: string) => {
+        if (key === 'jwtPayload') {
+          return { sub: 'demo@example.com' } // Use demo email to bypass user lookup
+        }
+        return null
+      },
+      json: (data: any) => ({ json: data })
+    }
+
+    // Use handleAttachmentUpload for file processing
+    const attachmentResult = await handleAttachmentUpload(mockContext as any)
+
+    // Also create the basic file upload for backward compatibility
+    const basicFileUpload = await handleWorkflowFileUpload(
+      file,
+      workflowExecutionId,
+      workflowStepId,
+      validation,
+    )
+
+    Logger.info(
+      `Workflow file uploaded via attachments: ${file.name} (${file.size} bytes)`,
+    )
+
+    // Combine the results
+    return {
+      ...basicFileUpload,
+      attachmentResult: attachmentResult.json,
+    }
+  } catch (error) {
+    Logger.error(error, "Workflow file upload via attachments failed")
+    throw new Error(
+      `File upload failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
 
 // New Workflow API Routes
 export const workflowRouter = new Hono()
@@ -201,15 +272,22 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       ][]
 
       requestData.rootStepInput = {}
-      console.log("Processing multipart entries for execute-with-input:", entries.map(([k, v]) => `${k}: ${typeof v === 'string' ? v : `[File: ${v.name || 'unknown'}]`}`))
-      
+      console.log(
+        "Processing multipart entries for execute-with-input:",
+        entries.map(
+          ([k, v]) =>
+            `${k}: ${typeof v === "string" ? v : `[File: ${v.name || "unknown"}]`}`,
+        ),
+      )
+
       // Generic handling: put ALL form data into rootStepInput
       for (const [key, value] of entries) {
         if (key.startsWith("workflow")) {
           // Handle workflow metadata with "workflow" prefix
           const metadataKey = key.replace("workflow", "").toLowerCase()
           if (metadataKey === "name") requestData.name = value as string
-          if (metadataKey === "description") requestData.description = value as string
+          if (metadataKey === "description")
+            requestData.description = value as string
         } else {
           // Everything else goes into rootStepInput (all form fields and files)
           if (typeof value === "string") {
@@ -439,10 +517,11 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                 const fileValidation =
                   buildValidationSchema(formFields)[field.id]?.fileValidation
 
-                const uploadedFile = await handleWorkflowFileUpload(
+                const uploadedFile = await handleWorkflowFileUploadViaAttachments(
                   file,
                   execution.id,
                   rootStepExecution.id,
+                  "api",
                   fileValidation,
                 )
 
@@ -1048,9 +1127,13 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
         string,
         FormDataEntryValue,
       ][]
-      console.log("Multipart entries received:", entries.map(([key, value]) => 
-        `${key}: ${typeof value === 'string' ? value : `[File: ${value.name || 'unknown'}]`}`
-      ))
+      console.log(
+        "Multipart entries received:",
+        entries.map(
+          ([key, value]) =>
+            `${key}: ${typeof value === "string" ? value : `[File: ${value.name || "unknown"}]`}`,
+        ),
+      )
       for (const [key, value] of entries) {
         if (key !== "stepId" && typeof value === "string") {
           formData[key] = value
@@ -1140,10 +1223,11 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
               const file = files[0] // Use first file
               const fileValidation = validationSchema[field.id]?.fileValidation
 
-              const uploadedFile = await handleWorkflowFileUpload(
+              const uploadedFile = await handleWorkflowFileUploadViaAttachments(
                 file,
                 currentStepExecution.workflowExecutionId,
                 currentStepExecution.id,
+                "demo",
                 fileValidation,
               )
 
@@ -1554,7 +1638,7 @@ const getContentFromPath = async (
         content: `Invalid path: ${contentPath}. Only paths starting with 'input.' are supported.`,
         hasFileInputs: false,
         fileCount: 0,
-        textFieldCount: 0
+        textFieldCount: 0,
       }
     }
 
@@ -1565,7 +1649,7 @@ const getContentFromPath = async (
         content: "No previous steps available",
         hasFileInputs: false,
         fileCount: 0,
-        textFieldCount: 0
+        textFieldCount: 0,
       }
     }
 
@@ -1574,7 +1658,7 @@ const getContentFromPath = async (
 
     // Extract the requested field from "input.{fieldName}"
     const requestedField = contentPath.slice(6) // Remove "input." prefix
-    
+
     // Special handling for "formData" - use the form data processing logic below
     if (requestedField === "formData") {
       // Fall through to form data processing logic below
@@ -1582,50 +1666,62 @@ const getContentFromPath = async (
       // Generic field lookup: search through all previous step results for the requested field
       for (const stepKey of stepKeys.reverse()) {
         const stepResult = previousStepResults[stepKey]
-        
+
         // Check in direct result path
         if (stepResult?.result?.[requestedField]) {
           const fieldValue = stepResult.result[requestedField]
           return {
-            content: typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue, null, 2),
+            content:
+              typeof fieldValue === "string"
+                ? fieldValue
+                : JSON.stringify(fieldValue, null, 2),
             hasFileInputs: false,
             fileCount: 0,
-            textFieldCount: 1
+            textFieldCount: 1,
           }
         }
-        
+
         // Check in nested result structures
         if (stepResult?.result?.result?.[requestedField]) {
           const fieldValue = stepResult.result.result[requestedField]
           return {
-            content: typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue, null, 2),
+            content:
+              typeof fieldValue === "string"
+                ? fieldValue
+                : JSON.stringify(fieldValue, null, 2),
             hasFileInputs: false,
             fileCount: 0,
-            textFieldCount: 1
+            textFieldCount: 1,
           }
         }
       }
-      
+
       return {
         content: `No '${requestedField}' found in previous step results`,
         hasFileInputs: false,
         fileCount: 0,
-        textFieldCount: 0
+        textFieldCount: 0,
       }
     }
 
-    if (!latestStepResult?.formSubmission?.formData && !latestStepResult?.result) {
+    if (
+      !latestStepResult?.formSubmission?.formData &&
+      !latestStepResult?.result
+    ) {
       return {
         content: "Latest step has no result data",
         hasFileInputs: false,
         fileCount: 0,
-        textFieldCount: 0
+        textFieldCount: 0,
       }
     }
 
     // Get form data (for form submissions) or result data
-    const formData = latestStepResult?.formSubmission?.formData || latestStepResult?.result || {}
-    
+    const formData =
+      latestStepResult?.formSubmission?.formData ||
+      latestStepResult?.result ||
+      {}
+
     let contentParts: string[] = []
     let fileCount = 0
     let textFieldCount = 0
@@ -1637,44 +1733,88 @@ const getContentFromPath = async (
         // Text field
         contentParts.push(`${key}: ${value}`)
         textFieldCount++
-      } else if (value && typeof value === "object" && 'absolutePath' in value) {
+      } else if (
+        value &&
+        typeof value === "object" &&
+        "absolutePath" in value
+      ) {
         // This is a file upload object
         hasFileInputs = true
         fileCount++
-        
+
         try {
-          // Try to get file content from Vespa if it's an enhanced upload
-          if ('vespaDocId' in value) {
-            const { GetDocument } = await import("@/search/vespa")
-            const { KbItemsSchema } = await import("@/search/types")
-            const vespaDoc = await GetDocument(KbItemsSchema, value.vespaDocId)
+          // Try to get file content from DataSource if it's a new upload
+          if ("dataSourceResult" in value && value.dataSourceResult?.fileProcessingResult?.docId) {
+            const { getDocumentOrNull } = await import("@/search/vespa")
+            const { dataSourceFileSchema } = await import("@/search/types")
             
-            if (vespaDoc?.fields?.chunks) {
-              const fileContent = (vespaDoc.fields.chunks as string[]).join("\n")
-              contentParts.push(`File ${key} (${value.originalFileName}): ${fileContent}`)
+            const docId = value.dataSourceResult.fileProcessingResult.docId
+            const vespaDoc = await getDocumentOrNull(dataSourceFileSchema, docId)
+            
+            if (vespaDoc?.fields) {
+              const fields = vespaDoc.fields as any
+              // Combine all text chunks into full content
+              const textContent = (fields.chunks || []).join("\n")
+              // Also include image chunk descriptions if available
+              const imageContent = (fields.image_chunks || []).join("\n")
+              
+              let fullContent = ""
+              if (textContent) {
+                fullContent += textContent
+              }
+              if (imageContent) {
+                if (fullContent) fullContent += "\n\n--- Image Descriptions ---\n"
+                fullContent += imageContent
+              }
+              
+              if (fullContent) {
+                contentParts.push(
+                  `File ${key} (${value.originalFileName}): ${fullContent}`,
+                )
+              } else {
+                contentParts.push(
+                  `File ${key}: ${value.originalFileName} (content not extracted)`,
+                )
+              }
             } else {
-              contentParts.push(`File ${key}: ${value.originalFileName} (content not processed yet)`)
+              contentParts.push(
+                `File ${key}: ${value.originalFileName} (content not available)`,
+              )
             }
           } else {
             // Regular file upload - try to read from disk
             try {
               const fs = await import("node:fs/promises")
               const fileBuffer = await fs.readFile(value.absolutePath)
-              
+
               // Basic text extraction for common file types
-              if (value.mimetype?.includes("text/") || value.fileExtension === "txt") {
+              if (
+                value.mimetype?.includes("text/") ||
+                value.fileExtension === "txt"
+              ) {
                 const textContent = fileBuffer.toString("utf-8")
-                contentParts.push(`File ${key} (${value.originalFileName}): ${textContent}`)
+                contentParts.push(
+                  `File ${key} (${value.originalFileName}): ${textContent}`,
+                )
               } else {
-                contentParts.push(`File ${key}: ${value.originalFileName} (${value.mimetype})`)
+                contentParts.push(
+                  `File ${key}: ${value.originalFileName} (${value.mimetype})`,
+                )
               }
             } catch (readError) {
-              contentParts.push(`File ${key}: ${value.originalFileName} (could not read content)`)
+              contentParts.push(
+                `File ${key}: ${value.originalFileName} (could not read content)`,
+              )
             }
           }
         } catch (vespaError) {
-          Logger.warn(`Failed to fetch file content from Vespa for ${key}:`, vespaError)
-          contentParts.push(`File ${key}: ${value.originalFileName} (content fetch failed)`)
+          Logger.warn(
+            `Failed to fetch file content from Vespa for ${key}:`,
+            vespaError,
+          )
+          contentParts.push(
+            `File ${key}: ${value.originalFileName} (content fetch failed)`,
+          )
         }
       }
     }
@@ -1685,7 +1825,7 @@ const getContentFromPath = async (
       content: content || "No content found in specified path",
       hasFileInputs,
       fileCount,
-      textFieldCount
+      textFieldCount,
     }
   } catch (error) {
     Logger.error("Error getting content from path:", error)
@@ -1693,7 +1833,7 @@ const getContentFromPath = async (
       content: `Error: ${error instanceof Error ? error.message : String(error)}`,
       hasFileInputs: false,
       fileCount: 0,
-      textFieldCount: 0
+      textFieldCount: 0,
     }
   }
 }
@@ -1743,14 +1883,18 @@ const executeWorkflowTool = async (
         const fromEmail = emailConfig.from_email || "aman.asrani@juspay.in"
         const subject = emailConfig.subject || "Workflow Results"
         const contentType = emailConfig.content_type || "html"
-        const emailContentPath = emailConfig.content_path || emailConfig.content_source_path
+        const emailContentPath =
+          emailConfig.content_path || emailConfig.content_source_path
 
         try {
           let emailBody = ""
 
           if (emailContentPath) {
             // Extract content using configurable path
-            emailBody = extractContentFromPath(previousStepResults, emailContentPath)
+            emailBody = extractContentFromPath(
+              previousStepResults,
+              emailContentPath,
+            )
             if (!emailBody) {
               emailBody = `No content found at path: ${emailContentPath}`
             }
@@ -1891,13 +2035,16 @@ const executeWorkflowTool = async (
 
           if (contentPath) {
             // Get content from specified path
-            const pathData = await getContentFromPath(previousStepResults, contentPath)
+            const pathData = await getContentFromPath(
+              previousStepResults,
+              contentPath,
+            )
             analysisInput = pathData.content
             inputMetadata = {
               contentPath: contentPath,
               hasFileInputs: pathData.hasFileInputs,
               fileCount: pathData.fileCount,
-              textFieldCount: pathData.textFieldCount
+              textFieldCount: pathData.textFieldCount,
             }
           } else {
             // Fallback to previous behavior

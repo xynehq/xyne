@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # app:
   # image: xyne
@@ -31,8 +29,6 @@ services:
     restart: always
     networks:
       - xyne
-    extra_hosts:
-    - "host.docker.internal:host-gateway"
 
   grafana:
     image: grafana/grafana

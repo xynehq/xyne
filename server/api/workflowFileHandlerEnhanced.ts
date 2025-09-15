@@ -7,12 +7,19 @@ import { FileProcessorService } from "@/services/fileProcessor"
 import { insert } from "@/search/vespa"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
-import type { WorkflowFileUpload, FileValidationRule } from "./workflowFileHandler"
+import type {
+  WorkflowFileUpload,
+  FileValidationRule,
+} from "./workflowFileHandler"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 
 // Enhanced workflow file upload with KB-style processing
-const WORKFLOW_STORAGE_ROOT = path.join(process.cwd(), "storage", "workflow_files")
+const WORKFLOW_STORAGE_ROOT = path.join(
+  process.cwd(),
+  "storage",
+  "workflow_files",
+)
 
 export interface EnhancedWorkflowFileUpload extends WorkflowFileUpload {
   vespaDocId: string
@@ -63,7 +70,7 @@ function getWorkflowStoragePath(
   const date = new Date()
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
-  
+
   return path.join(
     WORKFLOW_STORAGE_ROOT,
     executionId,
@@ -128,7 +135,8 @@ export async function handleEnhancedWorkflowFileUpload(
       storagePath,
     )
 
-    const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
+    const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
+      processingResult
 
     // Create Vespa document for workflow file
     const vespaDoc = {
@@ -210,7 +218,7 @@ export async function getWorkflowFileContent(
     // Get document from Vespa
     const { GetDocument } = await import("@/search/vespa")
     const vespaDoc = await GetDocument(KbItemsSchema, vespaDocId)
-    
+
     if (!vespaDoc || !vespaDoc.fields) {
       return null
     }
@@ -220,7 +228,7 @@ export async function getWorkflowFileContent(
 
     // Combine all text chunks into full content
     const textContent = (fields.chunks || []).join("\n")
-    
+
     return {
       fileId: fields.itemId,
       vespaDocId: vespaDocId,
@@ -234,7 +242,10 @@ export async function getWorkflowFileContent(
       uploadedAt: new Date(fields.createdAt).toISOString(),
     }
   } catch (error) {
-    Logger.error(error, `Failed to retrieve workflow file content: ${vespaDocId}`)
+    Logger.error(
+      error,
+      `Failed to retrieve workflow file content: ${vespaDocId}`,
+    )
     return null
   }
 }
@@ -248,25 +259,25 @@ export async function getWorkflowExecutionFiles(
   try {
     // Search Vespa for files in this execution
     const { searchVespaAgent, Apps } = await import("@/search/vespa")
-    
+
     const searchResult = await searchVespaAgent(
       `clId:${executionId}`, // Search by collection ID (execution ID)
       "workflow-system",
       Apps.KnowledgeBase,
       KnowledgeBaseEntity.File,
       [Apps.KnowledgeBase],
-      { limit: 100 }
+      { limit: 100 },
     )
 
     const files: WorkflowFileAccessInfo[] = []
-    
+
     if (searchResult.root?.children) {
       for (const child of searchResult.root.children) {
         const fields = child.fields as any
         if (fields) {
           const metadata = JSON.parse(fields.metadata || "{}")
           const textContent = (fields.chunks || []).join("\n")
-          
+
           files.push({
             fileId: fields.itemId,
             vespaDocId: fields.docId,
@@ -285,7 +296,10 @@ export async function getWorkflowExecutionFiles(
 
     return files
   } catch (error) {
-    Logger.error(error, `Failed to retrieve workflow execution files: ${executionId}`)
+    Logger.error(
+      error,
+      `Failed to retrieve workflow execution files: ${executionId}`,
+    )
     return []
   }
 }
@@ -298,7 +312,7 @@ export async function getWorkflowStepFiles(
   stepId: string,
 ): Promise<WorkflowFileAccessInfo[]> {
   const allFiles = await getWorkflowExecutionFiles(executionId)
-  return allFiles.filter(file => file.metadata.workflowStepId === stepId)
+  return allFiles.filter((file) => file.metadata.workflowStepId === stepId)
 }
 
 /**
@@ -311,24 +325,24 @@ export async function searchWorkflowFiles(
 ): Promise<WorkflowFileAccessInfo[]> {
   try {
     const { searchVespaAgent, Apps } = await import("@/search/vespa")
-    
+
     // Build search query
     let searchQuery = query
     if (executionId) {
       searchQuery = `${query} AND clId:${executionId}`
     }
-    
+
     const searchResult = await searchVespaAgent(
       searchQuery,
       "workflow-system",
       Apps.KnowledgeBase,
       KnowledgeBaseEntity.File,
       [Apps.KnowledgeBase],
-      { limit }
+      { limit },
     )
 
     const files: WorkflowFileAccessInfo[] = []
-    
+
     if (searchResult.root?.children) {
       for (const child of searchResult.root.children) {
         const fields = child.fields as any
@@ -337,7 +351,7 @@ export async function searchWorkflowFiles(
           // Only include workflow files
           if (metadata.isWorkflowFile) {
             const textContent = (fields.chunks || []).join("\n")
-            
+
             files.push({
               fileId: fields.itemId,
               vespaDocId: fields.docId,
@@ -369,22 +383,22 @@ export async function getWorkflowFilesAsContext(
   executionId: string,
   stepId?: string,
 ): Promise<string> {
-  const files = stepId 
+  const files = stepId
     ? await getWorkflowStepFiles(executionId, stepId)
     : await getWorkflowExecutionFiles(executionId)
-  
+
   if (files.length === 0) {
     return "No files available in this workflow."
   }
 
   let context = "Available files in this workflow:\n\n"
-  
+
   for (const file of files) {
     context += `File: ${file.fileName}\n`
     context += `Type: ${file.mimeType}\n`
     context += `Size: ${(file.fileSize / 1024).toFixed(1)} KB\n`
     context += `Uploaded: ${file.uploadedAt}\n`
-    
+
     if (file.content && file.content.length > 0) {
       // Truncate content for context (similar to current AI processing)
       const truncatedContent = file.content.slice(0, 4000)
@@ -393,10 +407,10 @@ export async function getWorkflowFilesAsContext(
         context += `... (content truncated, full content available via file search)\n`
       }
     }
-    
+
     context += "\n---\n\n"
   }
-  
+
   return context
 }
 
