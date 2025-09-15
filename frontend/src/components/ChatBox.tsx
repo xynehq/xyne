@@ -11,7 +11,6 @@ import { useNavigate } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
-  AtSign,
   Layers,
   Square,
   ChevronDown,
@@ -329,8 +328,14 @@ const TooltipWrapper: React.FC<{
   <TooltipProvider delayDuration={delayDuration}>
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent>
-        <p>{content}</p>
+      <TooltipContent
+        className="!bg-gray-900 dark:!bg-gray-800 !text-white !border-0 !px-3 !py-2 !text-xs !rounded-lg !shadow-lg !overflow-visible relative"
+        sideOffset={12}
+      >
+        <div className="relative">
+          <p className="!text-white !m-0">{content}</p>
+          <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-800" />
+        </div>
       </TooltipContent>
     </Tooltip>
   </TooltipProvider>
@@ -2128,46 +2133,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       fetchResults(currentSearchTerm, nextPage, true)
     }
 
-    const handleAtMentionClick = () => {
-      const input = inputRef.current
-      if (!input) return
-
-      const textContentBeforeAt = input.textContent || ""
-
-      const textToAppend =
-        textContentBeforeAt.length === 0 ||
-        textContentBeforeAt.endsWith(" ") ||
-        textContentBeforeAt.endsWith("\n") ||
-        textContentBeforeAt.endsWith("\u00A0")
-          ? "@"
-          : " @"
-
-      const atTextNode = document.createTextNode(textToAppend)
-
-      input.appendChild(atTextNode)
-
-      const newTextContent = input.textContent || ""
-      setQuery(newTextContent)
-      setIsPlaceholderVisible(newTextContent.length === 0)
-
-      const newAtSymbolIndex =
-        textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
-      setCaretPosition(input, newTextContent.length)
-
-      setActiveAtMentionIndex(newAtSymbolIndex)
-      setReferenceSearchTerm("")
-      setShowReferenceBox(true)
-      updateReferenceBoxPosition(newAtSymbolIndex)
-      setSearchMode("citations")
-      setGlobalResults([])
-      setGlobalError(null)
-      setPage(1)
-      setTotalCount(0)
-      setSelectedRefIndex(-1)
-
-      input.focus()
-    }
-
     useEffect(() => {
       if (
         showReferenceBox &&
@@ -2468,7 +2433,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
-                Ask anything across apps...
+                Ask a question or type @ to search your apps
               </div>
             )}
             <div
@@ -2944,21 +2909,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               />
             </TooltipWrapper>
 
-            {/* Vertical Divider */}
-            {showAdvancedOptions && (
-              <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
-            )}
-
             {showAdvancedOptions && (
               <>
-                <TooltipWrapper content="find and attach specific document">
-                  <AtSign
-                    size={16}
-                    className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-                    onClick={handleAtMentionClick}
-                  />
-                </TooltipWrapper>
-
                 {/* Capability Selector with Slider Animation */}
                 <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
                   {/* Slider Background */}
@@ -2975,7 +2927,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   />
 
                   {/* Always show all three capability buttons */}
-                  <TooltipWrapper content="reasoning">
+                  <TooltipWrapper content="Reasoning">
                     <button
                       onClick={() => handleCapabilityChange("reasoning")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2988,7 +2940,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     </button>
                   </TooltipWrapper>
 
-                  <TooltipWrapper content="websearch">
+                  <TooltipWrapper content="Web Search">
                     <button
                       onClick={() => handleCapabilityChange("websearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -3001,7 +2953,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     </button>
                   </TooltipWrapper>
 
-                  <TooltipWrapper content="deepresearch">
+                  <TooltipWrapper content="Deep Thinking">
                     <button
                       onClick={() => handleCapabilityChange("deepResearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -3564,25 +3516,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       Filter Sources
                     </DropdownMenuLabel>
                     {selectedSourcesCount > 0 ? (
-                      <TooltipProvider delayDuration={100}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              onClick={handleClearAllSources}
-                              className="p-1 rounded-full hover:bg-[#EDF2F7] dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                              aria-label="Clear all selected sources"
-                            >
-                              <RotateCcw size={16} />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="bottom"
-                            className="bg-black text-white text-xs rounded-sm"
-                          >
-                            <p>Clear all</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <TooltipWrapper content="Clear all" delayDuration={100}>
+                        <button
+                          onClick={handleClearAllSources}
+                          className="p-1 rounded-full hover:bg-[#EDF2F7] dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                          aria-label="Clear all selected sources"
+                        >
+                          <RotateCcw size={16} />
+                        </button>
+                      </TooltipWrapper>
                     ) : (
                       <button
                         className="p-1 rounded-full text-transparent"
