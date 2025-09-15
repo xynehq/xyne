@@ -9,7 +9,7 @@ import {
   pgEnum,
   unique,
 } from "drizzle-orm/pg-core"
-import { createInsertSchema, createSelectSchema } from "drizzle-zod"
+import { createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { encryptedText } from "../customType"
 import { Encryption } from "@/utils/encryption"

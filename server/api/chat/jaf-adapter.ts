@@ -19,7 +19,7 @@ type AgentToolParameter = {
   required: boolean
 }
 
-function paramsToZod(parameters: Record<string, AgentToolParameter>): z.ZodObject<any> {
+function paramsToZod(parameters: Record<string, AgentToolParameter>): z.ZodTypeAny {
   const shape: Record<string, z.ZodTypeAny> = {}
   for (const [key, spec] of Object.entries(parameters || {})) {
     let schema: z.ZodTypeAny
@@ -102,7 +102,7 @@ function jsonSchemaToZod(schema: any): z.ZodTypeAny {
         shape[key] = required.includes(key) ? zodProp : zodProp.optional()
       }
       // Allow additional properties to pass through to the tool call
-      let obj: z.AnyZodObject = z.object(shape)
+      let obj: z.ZodObject<any, any> = z.object(shape)
       if (schema.additionalProperties) {
         // If additionalProperties is a schema, try to honor it; else allow any
         if (typeof schema.additionalProperties === "object") {
@@ -148,7 +148,7 @@ function jsonSchemaToZod(schema: any): z.ZodTypeAny {
   }
 }
 
-function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.AnyZodObject {
+function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.ZodObject<any, any> {
   if (!schemaStr) return z.object({}).passthrough()
   try {
     const parsed = JSON.parse(schemaStr)
@@ -157,7 +157,7 @@ function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.AnyZodObje
     const zod = jsonSchemaToZod(inputSchema)
     // Ensure top-level is an object; Gemini/Vertex requires parameters to be OBJECT
     if (zod instanceof z.ZodObject) {
-      return zod as z.AnyZodObject
+      return zod as z.ZodObject<any, any>
     }
     // Fallback: wrap in an object under a generic key
     return z.object({ input: zod }).passthrough()
@@ -178,7 +178,7 @@ export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
       schema: {
         name,
         description: at.description,
-        parameters: paramsToZod(at.parameters || {}),
+        parameters: paramsToZod(at.parameters || {}) as any,
       },
       async execute(args, context) {
         try {
@@ -233,7 +233,7 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<any, JAFAdapt
           name: toolName,
           description: `MCP tool from connector ${connectorId}`,
           // Parse MCP tool JSON schema; ensure an OBJECT at top-level for Vertex/Gemini
-          parameters: mcpToolSchemaStringToZodObject(t.toolSchema),
+          parameters: mcpToolSchemaStringToZodObject(t.toolSchema) as any,
         },
         async execute(args, context) {
           try {

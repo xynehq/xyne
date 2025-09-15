@@ -403,7 +403,7 @@ export const updateConnector = async (
 ): Promise<SelectConnector> => {
   const updatedConnectors = await trx
     .update(connectors)
-    .set(updateData)
+    .set(updateData as any)
     .where(eq(connectors.id, connectorId))
     .returning()
 

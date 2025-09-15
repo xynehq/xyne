@@ -20,7 +20,7 @@ export const createOAuthProvider = async (
   try {
     const inserted = await trx
       .insert(oauthProviders)
-      .values(toInsert)
+      .values(toInsert as any)
       .returning()
     Logger.info("Provider inserted successfully")
     return inserted[0]
