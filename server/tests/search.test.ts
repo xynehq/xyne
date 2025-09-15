@@ -1,14 +1,14 @@
-import { VespaSearchResponseToSearchResult } from "@/search/mappers"
+import { VespaSearchResponseToSearchResult } from "@xyne/vespa-ts/mappers"
 import type {
   VespaAutocompleteUser,
   VespaEventSearch,
   VespaFileSearch,
   VespaMailSearch,
-  VespaSearchResponse,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { searchVespa } from "@/search/vespa"
 import type { SearchResponse } from "@/shared/types"
 import { describe, expect, test, beforeAll, mock, beforeEach } from "bun:test"
+import { chunkDocument } from "@/chunks"
 
 type MatchFeatures = {
   "query(alpha)": number
@@ -24,7 +24,10 @@ const user = "junaid.s@xynehq.com"
 const search = async (query: string): Promise<SearchResponse> => {
   return VespaSearchResponseToSearchResult(
     await searchVespa(query, user, null, null, { limit: 10 }),
-  )
+    {
+      chunkDocument: chunkDocument,
+    },
+  ) as SearchResponse
 }
 
 describe.skip("search events", () => {

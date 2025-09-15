@@ -12,7 +12,7 @@ import {
   MailAttachmentEntity,
   MailEntity,
   SlackEntity,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { ContextSysthesisState, XyneTools } from "@/shared/types"
 import {
   internalTools,

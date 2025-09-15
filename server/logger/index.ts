@@ -11,6 +11,9 @@ import {
 import config from "@/config"
 import { object } from "zod"
 
+// Export Subsystem for other modules
+export { Subsystem }
+
 const { JwtPayloadKey } = config
 
 const humanize = (times: string[]) => {

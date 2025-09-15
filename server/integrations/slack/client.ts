@@ -35,7 +35,7 @@ import { generateSearchQueryOrAnswerFromConversation } from "@/ai/provider"
 import { userContext } from "@/ai/context"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import { QueryType } from "@/ai/types"
-import { Apps } from "@/search/types"
+import { Apps } from "@xyne/vespa-ts/types"
 import { getTracer } from "@/tracer"
 
 const Logger = getLogger(Subsystem.Slack)

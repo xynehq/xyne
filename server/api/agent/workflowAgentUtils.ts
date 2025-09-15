@@ -11,8 +11,8 @@ import type { Message, ConversationRole } from "@aws-sdk/client-bedrock-runtime"
 import { Subsystem, MessageRole } from "@/types"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { GetDocumentsByDocIds } from "@/search/vespa" // Retrieve non-image attachments from Vespa
-import { answerContextMap, cleanContext } from "@/ai/context"  // Transform Vespa results to text
-import { VespaSearchResultsSchema } from "@/search/types"  // Type for Vespa results
+import { answerContextMap, cleanContext } from "@/ai/context" // Transform Vespa results to text
+import { VespaSearchResultsSchema } from "@xyne/vespa-ts/types" // Type for Vespa results
 import { getTracer, type Span } from "@/tracer"
 import { createAgentSchema } from "@/api/agent"
 import type { CreateAgentPayload } from "@/api/agent"
