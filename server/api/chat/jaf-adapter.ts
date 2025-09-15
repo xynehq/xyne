@@ -19,7 +19,9 @@ type AgentToolParameter = {
   required: boolean
 }
 
-function paramsToZod(parameters: Record<string, AgentToolParameter>): z.ZodObject<any> {
+function paramsToZod(
+  parameters: Record<string, AgentToolParameter>,
+): z.ZodObject<any> {
   const shape: Record<string, z.ZodTypeAny> = {}
   for (const [key, spec] of Object.entries(parameters || {})) {
     let schema: z.ZodTypeAny
@@ -58,11 +60,16 @@ function jsonSchemaToZod(schema: any): z.ZodTypeAny {
   const t = schema.type
   if (Array.isArray(t)) {
     // Prefer object if available, else union
-    if (t.includes("object")) return jsonSchemaToZod({ ...schema, type: "object" })
+    if (t.includes("object"))
+      return jsonSchemaToZod({ ...schema, type: "object" })
     const opts = t.map((tt) => jsonSchemaToZod({ ...schema, type: tt }))
     if (opts.length >= 2) {
       const [a, b, ...rest] = opts
-      return z.union([a, b, ...rest] as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]])
+      return z.union([a, b, ...rest] as [
+        z.ZodTypeAny,
+        z.ZodTypeAny,
+        ...z.ZodTypeAny[],
+      ])
     }
     return opts[0] ?? z.any()
   }
@@ -121,7 +128,11 @@ function jsonSchemaToZod(schema: any): z.ZodTypeAny {
         const opts = schema.anyOf.map((s: any) => jsonSchemaToZod(s))
         if (opts.length >= 2) {
           const [a, b, ...rest] = opts
-          return z.union([a, b, ...rest] as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]])
+          return z.union([a, b, ...rest] as [
+            z.ZodTypeAny,
+            z.ZodTypeAny,
+            ...z.ZodTypeAny[],
+          ])
         }
         return opts[0] ?? z.any()
       }
@@ -129,7 +140,11 @@ function jsonSchemaToZod(schema: any): z.ZodTypeAny {
         const opts = schema.oneOf.map((s: any) => jsonSchemaToZod(s))
         if (opts.length >= 2) {
           const [a, b, ...rest] = opts
-          return z.union([a, b, ...rest] as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]])
+          return z.union([a, b, ...rest] as [
+            z.ZodTypeAny,
+            z.ZodTypeAny,
+            ...z.ZodTypeAny[],
+          ])
         }
         return opts[0] ?? z.any()
       }
@@ -148,7 +163,9 @@ function jsonSchemaToZod(schema: any): z.ZodTypeAny {
   }
 }
 
-function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.AnyZodObject {
+function mcpToolSchemaStringToZodObject(
+  schemaStr?: string | null,
+): z.AnyZodObject {
   if (!schemaStr) return z.object({}).passthrough()
   try {
     const parsed = JSON.parse(schemaStr)
@@ -173,7 +190,7 @@ export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
     if (name === "fall_back" || name === "get_user_info") {
       continue
     }
-    
+
     tools.push({
       schema: {
         name,
@@ -198,11 +215,11 @@ export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
             toolName: name,
             contexts,
           })
-        }catch (err: any) { 
-           return ToolResponse.error( 
-             "EXECUTION_FAILED", 
-              `Internal tool ${name} failed: ${err?.message || String(err)}`, 
-            ) 
+        } catch (err: any) {
+          return ToolResponse.error(
+            "EXECUTION_FAILED",
+            `Internal tool ${name} failed: ${err?.message || String(err)}`,
+          )
         }
       },
     })
@@ -223,7 +240,9 @@ export type FinalToolsList = Record<
   }
 >
 
-export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<any, JAFAdapterCtx>[] {
+export function buildMCPJAFTools(
+  finalTools: FinalToolsList,
+): Tool<any, JAFAdapterCtx>[] {
   const tools: Tool<any, JAFAdapterCtx>[] = []
   for (const [connectorId, info] of Object.entries(finalTools)) {
     for (const t of info.tools) {
@@ -237,7 +256,10 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<any, JAFAdapt
         },
         async execute(args, context) {
           try {
-            const mcpResp = await info.client.callTool({ name: toolName, arguments: args })
+            const mcpResp = await info.client.callTool({
+              name: toolName,
+              arguments: args,
+            })
             let formattedContent = "Tool executed successfully."
             let newFragments: MinimalAgentFragment[] = []
 
@@ -265,7 +287,11 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<any, JAFAdapt
               connectorId,
             })
           } catch (err: any) {
-            return ToolResponse.error("EXECUTION_FAILED", `MCP tool ${toolName} failed: ${err?.message || String(err)}`, { connectorId })
+            return ToolResponse.error(
+              "EXECUTION_FAILED",
+              `MCP tool ${toolName} failed: ${err?.message || String(err)}`,
+              { connectorId },
+            )
           }
         },
       })
@@ -281,8 +307,14 @@ export function buildToolsOverview(tools: Tool<any, any>[]): string {
     .join("\n")
 }
 
-export function buildContextSection(fragments: MinimalAgentFragment[], maxItems = 12): string {
+export function buildContextSection(
+  fragments: MinimalAgentFragment[],
+  maxItems = 12,
+): string {
   if (!fragments || fragments.length === 0) return ""
-  const ctx = answerContextMapFromFragments(fragments.slice(0, maxItems), maxItems)
+  const ctx = answerContextMapFromFragments(
+    fragments.slice(0, maxItems),
+    maxItems,
+  )
   return `\n\nContext Fragments (use [n] to cite):\n${ctx}`
 }

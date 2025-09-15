@@ -102,6 +102,6 @@ export async function extractCollectionVespaIds(
       .map((item: any) => item.vespaDocId!)
     clVespaIds.push(...clfIds)
   }
-  
+
   return clVespaIds
 }

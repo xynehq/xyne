@@ -458,7 +458,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       `Reusing description for repeated image ${imageName} on page ${pageNum}`,
                     )
                   } else {
-                    if(describeImages) {
+                    if (describeImages) {
                       description = await describeImageWithllm(buffer)
                     } else {
                       description = "This is an image."

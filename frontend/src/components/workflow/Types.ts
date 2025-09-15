@@ -1,8 +1,8 @@
 export interface UserDetail {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
+  id: string
+  name: string
+  email: string
+  role: string
 }
 
 export type Status =
@@ -184,10 +184,10 @@ export interface FlowContextProps {
 }
 
 export interface FlowProps {
-  title?: string;
-  flow?: Flow | TemplateFlow | LegacyFlow;
-  className?: string;
-  user?: UserDetail;
+  title?: string
+  flow?: Flow | TemplateFlow | LegacyFlow
+  className?: string
+  user?: UserDetail
 }
 
 export interface StepGeneratorData {
