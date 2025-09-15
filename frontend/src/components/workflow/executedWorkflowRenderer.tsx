@@ -1264,11 +1264,6 @@ const ExecutionSidebar = ({
                             tool.result?.formData?.document_file
                               ?.originalFileName
                           ) {
-                            console.log(
-                              `📁 Input Card - Using output filename from tool ${index}:`,
-                              tool.result.formData.document_file
-                                .originalFileName,
-                            )
                             return (
                               <div key={index} className="text-xs">
                                 <div className="text-gray-900">
@@ -1359,10 +1354,6 @@ const ExecutionSidebar = ({
                             if (typeof output === "object" && output) {
                               // Check for email step response with model and aiOutput
                               if (output.model && output.aiOutput) {
-                                console.log(
-                                  "📧 Input Card - Extracted email response:",
-                                  { model: output.model, aiOutput: output.aiOutput }
-                                )
                                 return (
                                   <div className="space-y-2">
                                     <div>
@@ -1385,11 +1376,6 @@ const ExecutionSidebar = ({
                                 output.formData.document_file &&
                                 output.formData.document_file.originalFileName
                               ) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (formData.document_file.originalFileName):",
-                                  output.formData.document_file
-                                    .originalFileName,
-                                )
                                 return (
                                   <span>
                                     📁{" "}
@@ -1408,11 +1394,6 @@ const ExecutionSidebar = ({
                                 output.result.formData.document_file
                                   .originalFileName
                               ) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (result.formData.document_file.originalFileName):",
-                                  output.result.formData.document_file
-                                    .originalFileName,
-                                )
                                 return (
                                   <span>
                                     📁{" "}
@@ -1425,10 +1406,6 @@ const ExecutionSidebar = ({
                               }
                               // Fallback: Check for direct file_name property (like "uber bill.pdf" case)
                               if (output.file_name) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (direct file_name):",
-                                  output.file_name,
-                                )
                                 return <span>📁 {output.file_name}</span>
                               }
                               // Fallback: Check for nested file_name in result property
@@ -1437,26 +1414,14 @@ const ExecutionSidebar = ({
                                 typeof output.result === "object" &&
                                 output.result.file_name
                               ) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (result.file_name):",
-                                  output.result.file_name,
-                                )
                                 return <span>📁 {output.result.file_name}</span>
                               }
                               // Fallback: Check if this is the full output structure with file_name at root level
                               if (output.status && output.file_name) {
-                                console.log(
-                                  "📁 Input Card - Extracted filename (status+file_name):",
-                                  output.file_name,
-                                )
                                 return <span>📁 {output.file_name}</span>
                               }
                             }
                             // Default to showing full JSON
-                            console.log(
-                              "📁 Input Card - No filename found, showing full JSON:",
-                              output,
-                            )
                             return (
                               <pre className="whitespace-pre-wrap">
                                 {typeof output === "object"
@@ -1486,166 +1451,12 @@ const ExecutionSidebar = ({
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-gray-700">Output</h3>
           {(() => {
-            console.log("📊 Output Card Data:", {
-              tools: tools,
-              toolsLength: tools?.length,
-              toolsData: tools?.map((tool: any, index: number) => ({
-                index,
-                id: tool.id,
-                type: tool.type,
-                status: tool.status,
-                hasResult: !!tool.result,
-                resultType: typeof tool.result,
-                result: tool.result,
-              })),
-            })
 
-            // Extract filename from output card data
-            let outputFilenameFound = false
-            tools?.forEach((tool: any, index: number) => {
-              if (
-                tool.result &&
-                tool.result.formData &&
-                tool.result.formData.document_file &&
-                tool.result.formData.document_file.originalFileName
-              ) {
-                console.log(
-                  `📁 Output Card - Extracted filename from tool ${index}:`,
-                  tool.result.formData.document_file.originalFileName,
-                )
-                console.log(
-                  `📁 Output Card - Full document_file object:`,
-                  tool.result.formData.document_file,
-                )
-                outputFilenameFound = true
-              } else {
-                console.log(
-                  `📁 Output Card - No filename found in tool ${index}, checking structure:`,
-                  {
-                    hasResult: !!tool.result,
-                    hasFormData: !!tool.result?.formData,
-                    hasDocumentFile: !!tool.result?.formData?.document_file,
-                    hasOriginalFileName:
-                      !!tool.result?.formData?.document_file?.originalFileName,
-                    resultStructure: tool.result
-                      ? Object.keys(tool.result)
-                      : "no result",
-                  },
-                )
-              }
-            })
 
-            // If no filename found in output, check input data
-            if (!outputFilenameFound) {
-              console.log(
-                "📁 No filename found in output, checking input data...",
-              )
 
-              // Get previous step output for input
-              const previousOutput = (() => {
-                if (
-                  !step.prevStepIds ||
-                  step.prevStepIds.length === 0 ||
-                  !workflowData
-                )
-                  return null
-                const prevStepTemplateId = step.prevStepIds[0]
-                const prevStep = workflowData.stepExecutions?.find(
-                  (s: any) => s.workflowStepTemplateId === prevStepTemplateId,
-                )
-                if (!prevStep) return null
-                const prevStepTools =
-                  workflowData.toolExecutions?.filter((toolExec: any) =>
-                    prevStep.toolExecIds?.includes(toolExec.id),
-                  ) || []
-                if (prevStepTools.length === 0) return null
-                return prevStepTools
-                  .map((tool: any) => tool.result)
-                  .filter(Boolean)
-              })()
-
-              // Check form submission data (first step)
-              if (step.metadata?.formSubmission?.formData) {
-                console.log(
-                  "📁 Input Card - Checking form submission data:",
-                  step.metadata.formSubmission.formData,
-                )
-                Object.entries(step.metadata.formSubmission.formData).forEach(
-                  ([key, value]) => {
-                    if (
-                      value &&
-                      typeof value === "object" &&
-                      "originalName" in value
-                    ) {
-                      console.log(
-                        `📁 Input Card - Found filename in form data ${key}:`,
-                        (value as any).originalName,
-                      )
-                    }
-                    if (
-                      value &&
-                      typeof value === "object" &&
-                      "filename" in value
-                    ) {
-                      console.log(
-                        `📁 Input Card - Found filename in form data ${key}:`,
-                        (value as any).filename,
-                      )
-                    }
-                  },
-                )
-              }
-
-              // Check previous step output
-              if (previousOutput && previousOutput.length > 0) {
-                console.log(
-                  "📁 Input Card - Checking previous step output:",
-                  previousOutput,
-                )
-                previousOutput.forEach((output: any, index: number) => {
-                  // Check for same path as output card: result.formData.document_file.originalFileName
-                  if (
-                    output?.result?.formData?.document_file?.originalFileName
-                  ) {
-                    console.log(
-                      `📁 Input Card - Found result.formData.document_file.originalFileName in previous output ${index}:`,
-                      output.result.formData.document_file.originalFileName,
-                    )
-                  }
-                  // Check for direct formData path: formData.document_file.originalFileName
-                  if (output?.formData?.document_file?.originalFileName) {
-                    console.log(
-                      `📁 Input Card - Found formData.document_file.originalFileName in previous output ${index}:`,
-                      output.formData.document_file.originalFileName,
-                    )
-                  }
-                  // Fallback paths
-                  if (output?.file_name) {
-                    console.log(
-                      `📁 Input Card - Found file_name in previous output ${index}:`,
-                      output.file_name,
-                    )
-                  }
-                  if (output?.result?.file_name) {
-                    console.log(
-                      `📁 Input Card - Found result.file_name in previous output ${index}:`,
-                      output.result.file_name,
-                    )
-                  }
-                })
-              } else {
-                console.log("📁 Input Card - No previous step output available")
-              }
-            }
 
             return tools && tools.length > 0 ? (
               tools.map((tool: any, index: number) => {
-                console.log(`📊 Rendering tool ${index}:`, {
-                  id: tool.id,
-                  type: tool.type,
-                  status: tool.status,
-                  result: tool.result,
-                })
 
                 return (
                   <div
@@ -1855,7 +1666,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       selectedTemplate &&
       (selectedTemplate.steps || selectedTemplate.stepExecutions)
     ) {
-      console.log("Creating workflow from template:", selectedTemplate)
 
           // Check if this is an execution (has stepExecutions) or template (has steps)
       const isExecution = !!selectedTemplate.stepExecutions
@@ -1863,31 +1673,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         ? selectedTemplate.stepExecutions
         : selectedTemplate.steps
 
-      // Log step executions structure for debugging
-      if (isExecution && selectedTemplate.stepExecutions) {
-        const stepExecutions = selectedTemplate.stepExecutions
-        console.log("📋 Step Executions Structure:", {
-          totalSteps: stepExecutions.length,
-          firstStep: stepExecutions[0]
-            ? {
-                id: stepExecutions[0].id,
-                name: stepExecutions[0].name,
-                prevStepIds: stepExecutions[0].prevStepIds,
-                nextStepIds: stepExecutions[0].nextStepIds,
-                workflowStepTemplateId: stepExecutions[0].workflowStepTemplateId,
-              }
-            : null,
-          secondStep: stepExecutions[1]
-            ? {
-                id: stepExecutions[1].id,
-                name: stepExecutions[1].name,
-                prevStepIds: stepExecutions[1].prevStepIds,
-                nextStepIds: stepExecutions[1].nextStepIds,
-                workflowStepTemplateId: stepExecutions[1].workflowStepTemplateId,
-              }
-            : null,
-        })
-      }
 
       // Sort steps for top-to-bottom execution flow starting with root step
       const sortedSteps = (() => {
@@ -1899,7 +1684,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           const rootStep = stepsData.find((step: any) => step.id === rootStepExeId)
           
           if (rootStep) {
-            console.log("📋 Found root step:", rootStep.name, "ID:", rootStep.id)
             
             // Build execution order starting from root step
             const orderedSteps: any[] = []
@@ -1931,7 +1715,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               }
             })
             
-            console.log("📋 Execution order:", orderedSteps.map(s => ({ name: s.name, id: s.id })))
             return orderedSteps
           }
         }
@@ -1953,8 +1736,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         })
       })()
 
-      console.log("Original steps:", stepsData)
-      console.log("Sorted steps:", sortedSteps)
 
       // Create nodes from steps in top-down layout
       const templateNodes: Node[] = sortedSteps.map((step, index) => {
@@ -1970,29 +1751,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               executionStep.toolExecIds?.includes(toolExec.id),
             ) || []
 
-          console.log("🔧 Tool Execution Mapping:", {
-            stepName: step.name,
-            stepType: step.type,
-            toolExecIds: executionStep.toolExecIds,
-            prevStepIds: step.prevStepIds,
-            nextStepIds: step.nextStepIds,
-            foundToolExecutions: toolExecutions.map((te) => ({
-              id: te.id,
-              type: te.type,
-              toolType: te.toolType,
-              status: te.status,
-            })),
-          })
 
-          // Log toolType from API response
-          toolExecutions.forEach((toolExec: any) => {
-            console.log("📡 API Response toolType:", {
-              toolExecutionId: toolExec.id,
-              apiToolType: toolExec.toolType,
-              legacyType: toolExec.type,
-              stepName: step.name,
-            })
-          })
 
           // Create tool info from executions
           stepTools = toolExecutions.map((toolExec: any) => ({
@@ -2004,14 +1763,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             result: toolExec.result,
           }))
 
-          console.log("🔧 Created StepTools:", {
-            stepName: step.name,
-            stepTools: stepTools.map((st: any) => ({
-              id: st.id,
-              type: st.type,
-              status: st.status,
-            })),
-          })
         } else {
           // For templates, use workflow_tools
           const templateStep = step as any
@@ -2102,8 +1853,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         })
       }
 
-      console.log("Created nodes:", templateNodes.length)
-      console.log("Created edges:", templateEdges.length)
 
       setNodes(templateNodes)
       setEdges(templateEdges)
@@ -2157,14 +1906,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Check if this is an execution workflow node
       const isExecution = (step as any).isExecution
 
-      console.log(
-        "🎯 Node clicked:",
-        node.id,
-        "Is execution:",
-        isExecution,
-        "Step type:",
-        step.type,
-      )
 
       // Close execution sidebar first
       setShowExecutionSidebar(false)
@@ -2173,7 +1914,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       if (isExecution) {
         setSelectedExecutionNode({ step, tools, node })
         setShowExecutionSidebar(true)
-        console.log("📊 Opening execution sidebar")
         return
       }
 

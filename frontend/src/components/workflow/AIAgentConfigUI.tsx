@@ -249,10 +249,10 @@ Return only the enhanced system prompt without any additional explanation.`
             }
           })
 
-          eventSource.onerror = () => {
+          eventSource.addEventListener("error", () => {
             eventSource?.close()
             reject(new Error("Connection error during prompt generation"))
-          }
+          })
         })
         
         
