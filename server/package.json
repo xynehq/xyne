@@ -111,8 +111,7 @@
     "commitizen": {
       "path": "@digitalroute/cz-conventional-changelog-for-jira",
       "jiraPrefix": "XYN-",
-      "jiraOptional": false,
-      "jiraPrompt": "Enter LINEAR issue (e.g. XYN-123):"
+      "jiraOptional": false
     }
   }
 }
