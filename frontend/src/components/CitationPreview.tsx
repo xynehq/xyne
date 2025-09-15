@@ -6,6 +6,8 @@ import DocxViewer from "./DocxViewer"
 import ReadmeViewer from "./ReadmeViewer"
 import { api } from "@/api"
 import { authFetch } from "@/utils/authFetch"
+import ExcelViewer from "./ExcelViewer"
+import CsvViewer from "./CsvViewer"
 
 interface CitationPreviewProps {
   citation: Citation | null
@@ -90,6 +92,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
       const file = new File([documentContent], fileName, {
         type: documentContent.type || getDefaultMimeType(extension),
       })
+      console.log("extnesion for the file",extension)
 
       switch (extension) {
         case "pdf":
@@ -130,6 +133,27 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
               }}
             />
           )
+          case "xlsx":
+          case "xls":
+            return(
+              <ExcelViewer
+                key={citation.docId}
+                source={file}
+                className="h-full"
+                style={{ overflow: "visible" }}
+                
+              />
+            )
+            case "csv":
+              return(
+                <CsvViewer
+                  key={citation.docId}
+                  source={file}
+                  className="h-full"
+                  style={{ overflow: "visible" }}
+                />
+              )
+          
         default:
           // For other file types, try to display as text or show a generic message
           return (
