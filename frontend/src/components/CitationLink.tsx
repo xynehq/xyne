@@ -136,21 +136,20 @@ export const createCitationLink =
 
     // Regular link for non-citation URLs
     const isNumericChild =
-      !citation?.title.endsWith(".pdf") &&
       typeof children === "string" &&
       !isNaN(parseInt(children)) &&
       parseInt(children).toString() === children.trim()
 
     return (
       <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">
-        {isNumericChild ? (
+        {isNumericChild ? !citation?.title?.endsWith(".pdf") ? (
           <span
             className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-900 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150 no-underline"
             style={{ textDecoration: "none" }}
           >
             {children}
           </span>
-        ) : undefined}
+        ) : undefined : ( children )}
       </a>
     )
   }
