@@ -43,7 +43,7 @@ export const createCitationLink =
           ? citations.find((c) => c.url === href)
           : undefined
 
-    if (citation && citation.clId && citation.itemId) {
+    if (citation && citation.clId && citation.itemId && !citation.title.endsWith(".pdf")) {
       return (
         <TooltipProvider delayDuration={200}>
           <Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen}>
@@ -136,6 +136,7 @@ export const createCitationLink =
 
     // Regular link for non-citation URLs
     const isNumericChild =
+      !citation?.title.endsWith(".pdf") &&
       typeof children === "string" &&
       !isNaN(parseInt(children)) &&
       parseInt(children).toString() === children.trim()
@@ -149,9 +150,7 @@ export const createCitationLink =
           >
             {children}
           </span>
-        ) : (
-          children
-        )}
+        ) : undefined}
       </a>
     )
   }
