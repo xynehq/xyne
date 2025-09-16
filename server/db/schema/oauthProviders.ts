@@ -56,6 +56,7 @@ export const oauthProviders = pgTable("oauth_providers", {
 export const insertProviderSchema = createInsertSchema(oauthProviders, {
   // added to prevent type error
   oauthScopes: z.array(z.string()),
+  clientSecret: z.string().nullable().optional(),
 }).omit({
   createdAt: true,
   updatedAt: true,
