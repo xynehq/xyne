@@ -129,7 +129,7 @@ const DocumentViewerContainer = memo(
     }
     loadingDocument: boolean
   }) => {
-    console.log("DocumentViewerContainer render",selectedDocument)
+    console.log("DocumentViewerContainer render", selectedDocument)
     return (
       <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
         {loadingDocument && (
@@ -176,40 +176,36 @@ const DocumentViewerContainer = memo(
                 className="h-full"
                 style={{ height: "100%", overflow: "auto" }}
               />
-            ) : 
-            selectedDocument.file.name.toLowerCase().endsWith(".xlsx") ||
- selectedDocument.file.name.toLowerCase().endsWith(".xls") ? (
-  <ExcelViewer
-    key={selectedDocument.file.id}
-    source={
-      new File(
-        [selectedDocument.content],
-        selectedDocument.file.name,
-        {
-          type:
-            selectedDocument.content.type ||
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        },
-      )
-    }
-    className="h-full w-full"
-  />
-) : 
-    selectedDocument.file.name.toLowerCase().endsWith(".csv") ? (
-  <CsvViewer
-    key={selectedDocument.file.id}
-    source={
-      new File(
-        [selectedDocument.content], // content from your FileNode
-        selectedDocument.file.name,
-        { type: selectedDocument.content.type || "text/csv" }
-      )
-    }
-    className="h-full w-full"
-  />
-):
-
-            (
+            ) : selectedDocument.file.name.toLowerCase().endsWith(".xlsx") ||
+              selectedDocument.file.name.toLowerCase().endsWith(".xls") ? (
+              <ExcelViewer
+                key={selectedDocument.file.id}
+                source={
+                  new File(
+                    [selectedDocument.content],
+                    selectedDocument.file.name,
+                    {
+                      type:
+                        selectedDocument.content.type ||
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    },
+                  )
+                }
+                className="h-full w-full"
+              />
+            ) : selectedDocument.file.name.toLowerCase().endsWith(".csv") ? (
+              <CsvViewer
+                key={selectedDocument.file.id}
+                source={
+                  new File(
+                    [selectedDocument.content], // content from your FileNode
+                    selectedDocument.file.name,
+                    { type: selectedDocument.content.type || "text/csv" },
+                  )
+                }
+                className="h-full w-full"
+              />
+            ) : (
               <div className="h-full p-6 overflow-auto">
                 <DocxViewer
                   key={selectedDocument.file.id}
@@ -544,9 +540,11 @@ function RouteComponent() {
                       item.lastUpdatedByEmail || user?.email || "Unknown",
                   })),
                 ),
-                isOpen: collection.name.toLowerCase() === uploadingCollectionName.toLowerCase() 
-                  ? true // Open the newly uploaded collection
-                  : (collection.items || []).length > 0,
+                isOpen:
+                  collection.name.toLowerCase() ===
+                  uploadingCollectionName.toLowerCase()
+                    ? true // Open the newly uploaded collection
+                    : (collection.items || []).length > 0,
                 lastUpdated: new Date(collection.updatedAt).toLocaleString(
                   "en-GB",
                   {
@@ -735,8 +733,7 @@ function RouteComponent() {
             totalFileCount: item.totalFileCount,
             updatedAt: item.updatedAt,
             id: item.id,
-            updatedBy:
-              item.lastUpdatedByEmail || user?.email || "Unknown",
+            updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
           })),
         ),
         isOpen: true,
@@ -1086,14 +1083,14 @@ function RouteComponent() {
   const handleFileClick = async (file: FileNode, collection: Collection) => {
     // Handle .docx, .pdf, and .md files
     const fileName = file.name.toLowerCase()
-    console.log("File clicked:", file)
     if (
       file.type !== "file" ||
       (!fileName.endsWith(".docx") &&
         !fileName.endsWith(".pdf") &&
         !fileName.endsWith(".md") &&
         !fileName.endsWith(".xlsx") &&
-        !fileName.endsWith(".xls")) && !fileName.endsWith(".csv")
+        !fileName.endsWith(".xls") &&
+        !fileName.endsWith(".csv"))
     ) {
       showToast(
         "Preview Not Available",

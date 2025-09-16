@@ -4249,7 +4249,7 @@ export const MessageApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title,
+            title: "Untitled",
             attachments: [],
             agentId: agentPromptValue,
           })
@@ -7164,17 +7164,16 @@ export const GetAvailableModelsApi = async (c: Context) => {
 export const GenerateChatTitleApi = async (c: Context) => {
   let email = ""
   try {
-    
     const { sub, workspaceId } = c.get(JwtPayloadKey)
     email = sub
 
     // @ts-ignore
     const { chatId, message } = c.req.valid("json")
-   
-    const currentChat=await getChatMessagesWithAuth(db,chatId,email)
-    let llmResponse="";
-    if(currentChat[1] && currentChat[1].message){
-      llmResponse=currentChat[1].message;
+
+    const currentChat = await getChatMessagesWithAuth(db, chatId, email)
+    let llmResponse = ""
+    if (currentChat[1] && currentChat[1].message) {
+      llmResponse = currentChat[1].message
     }
 
     const { user, workspace } = await getUserAndWorkspaceByEmail(
@@ -7188,10 +7187,14 @@ export const GenerateChatTitleApi = async (c: Context) => {
       `Generating title for chat ${chatId} with message: ${String(message).substring(0, 100)}...`,
     )
 
-    const titleResp = await generateTitleUsingQuery(message, {
-      modelId: defaultFastModel,
-      stream: false,
-    }, llmResponse)
+    const titleResp = await generateTitleUsingQuery(
+      message,
+      {
+        modelId: defaultFastModel,
+        stream: false,
+      },
+      llmResponse,
+    )
 
     loggerWithChild({ email: email }).info(
       `Generated title: ${titleResp.title}`,
