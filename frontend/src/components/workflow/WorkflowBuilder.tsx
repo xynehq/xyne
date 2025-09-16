@@ -2594,15 +2594,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         throw error
       }
     } else {
-      // Template creation mode - first create template, then open execution modal
-      console.log("Creating workflow template for execution...")
+      // Template creation mode - prepare workflow data and open execution modal
+      console.log("Preparing workflow data for execution...")
       
       // Check if we have nodes to create a workflow
       if (nodes.length === 0) {
         throw new Error("Cannot execute workflow: No workflow steps defined. Please add at least one step to your workflow.")
       }
 
-      // Create the workflow state payload for the complex template API
+      // Create the workflow state payload that will be sent to the complex template API
       // Use the centralized name resolution function to ensure consistency
       const derivedName = getWorkflowName()
       
@@ -2614,7 +2614,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         nodesCount: nodes.length
       })
       
-      const workflowState = {
+      const workflowData = {
         name: derivedName,
         description: selectedTemplate?.description || "Workflow created from builder",
         version: "1.0.0",
@@ -2656,43 +2656,29 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         }
       }
       
-      console.log("=== WORKFLOW STATE FOR BACKEND API ===")
-      console.log(JSON.stringify(workflowState, null, 2))
-      console.log("=== END WORKFLOW STATE ===")
+      console.log("=== WORKFLOW DATA FOR EXECUTION MODAL ===")
+      console.log(JSON.stringify(workflowData, null, 2))
+      console.log("=== END WORKFLOW DATA ===")
 
-      try {
-        // Create the workflow template in the backend
-        const response = await api.workflow.templates.complex.$post({
-          json: workflowState,
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(`Failed to create workflow template: ${response.status} ${response.statusText}. ${errorText.substring(0, 200)}`)
-        }
-
-        const result = await response.json()
-        console.log("✅ Workflow template created successfully:", result)
-
-        // Update the selectedTemplate state with the newly created template
-        if (result.success && result.data) {
-          // The API returns the created template - we can use this for execution
-          const newTemplate = result.data
-          
-          // Store the created template for use in the execution modal
-          setCreatedTemplate(newTemplate)
-          
-          // Open the WorkflowExecutionModal with the created template
-          setShowExecutionModal(true)
-          
-          console.log("📋 Template ID for execution:", newTemplate.id)
-        } else {
-          throw new Error("Failed to create workflow template: Invalid response format")
-        }
-      } catch (error) {
-        console.error("❌ Failed to create workflow template:", error)
-        throw error
-      }
+      // Store the workflow data for the execution modal
+      setCreatedTemplate({
+        id: 'pending-creation', // Temporary ID to indicate pending creation
+        name: workflowData.name,
+        description: workflowData.description,
+        version: workflowData.version,
+        status: 'draft',
+        config: workflowData.config,
+        createdBy: 'current-user',
+        rootWorkflowStepTemplateId: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        workflowData: workflowData // Store the complete workflow data for template creation
+      } as any)
+      
+      // Open the WorkflowExecutionModal with the workflow data
+      setShowExecutionModal(true)
+      
+      console.log("📋 Opening execution modal with workflow data for template creation")
     }
   }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName])
 
@@ -3659,8 +3645,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           }}
           workflowName={(createdTemplate || selectedTemplate)?.name || "Custom Workflow"}
           workflowDescription={(createdTemplate || selectedTemplate)?.description || "User-created workflow"}
-          templateId={(createdTemplate || selectedTemplate)!.id}
-          workflowTemplate={(createdTemplate || selectedTemplate)!}
+          templateId={(createdTemplate || selectedTemplate)?.id !== 'pending-creation' ? (createdTemplate || selectedTemplate)?.id : undefined}
+          workflowTemplate={(createdTemplate || selectedTemplate)?.id !== 'pending-creation' ? (createdTemplate || selectedTemplate) || undefined : undefined}
+          workflowData={(createdTemplate as any)?.workflowData}
           onViewExecution={onViewExecution}
         />
       )}

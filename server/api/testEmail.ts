@@ -11,8 +11,8 @@ export const sendMailHelper = async (c: Context) => {
 
     if (process.env.NODE_ENV !== "production") {
         Logger.debug("SES env debug", {
-          awsAccessKeyIdPrefix: process.env.AWS_ACCESS_KEY_ID?.slice(0, 4) ?? "unset",
-          awsRegion: process.env.AWS_REGION ?? "unset",
+          awsAccessKeyIdPrefix: process.env.SES_AWS_ACCESS_KEY_ID?.slice(0, 4) ?? "unset",
+          awsRegion: process.env.SES_AWS_REGION ?? "unset",
           sesFromEmail: process.env.SES_FROM_EMAIL ?? "unset",
         })
       }
