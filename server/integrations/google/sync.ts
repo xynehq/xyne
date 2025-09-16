@@ -1386,7 +1386,7 @@ export const handleGoogleServiceAccountChanges = async (
     syncJobs = await getAppSyncJobsByEmail(
       db,
       Apps.GoogleDrive,
-      AuthType.OAuth,
+      AuthType.ServiceAccount,
       data.email,
     )
     loggerWithChild({ email: data.email ?? "" }).info(
