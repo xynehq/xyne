@@ -51,6 +51,8 @@ import { generateUUID } from "@/utils/chatUtils"
 import { useScopedFind } from "@/hooks/useScopedFind"
 import { PersistentMap } from "@/utils/chatUtils"
 import { DocumentOperationsProvider, useDocumentOperations } from "@/contexts/DocumentOperationsContext"
+import ExcelViewer from "@/components/ExcelViewer"
+import CsvViewer from "@/components/CsvViewer"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -176,6 +178,41 @@ const DocumentViewerContainer = memo(
               style={{ height: "100%", overflow: "auto" }}
             />
           </div>
+        )
+      }
+      if(name.endsWith(".xlsx") || name.endsWith(".xls") ){
+           return (
+             <div ref={containerRef} data-container-ref="true" className="h-full">
+               <ExcelViewer
+                 source={
+                   new File(
+                     [selectedDocument.content],
+                     selectedDocument.file.name,
+                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+                   )
+                 }
+                 className="h-full"
+                 style={{ height: "100%", overflow: "auto" }}
+               />
+             </div>
+           )
+      }
+
+      if(name.endsWith(".csv")){
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+               <CsvViewer
+                 source={
+                   new File(
+                     [selectedDocument.content],
+                     selectedDocument.file.name,
+                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+                   )
+                 }
+                 className="h-full"
+                 style={{ height: "100%", overflow: "auto" }}
+               />
+             </div>
         )
       }
     
@@ -1128,7 +1165,9 @@ function KnowledgeManagementContent() {
       file.type !== "file" ||
       (!fileName.endsWith(".docx") &&
         !fileName.endsWith(".pdf") &&
-        !fileName.endsWith(".md"))
+        !fileName.endsWith(".md") &&
+        !fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".xls")
+    )
     ) {
       showToast(
         "Preview Not Available",
