@@ -301,12 +301,11 @@ export interface ModelParams {
     description?: string
     parameters?: any
   }>
-  tool_choice?: 'auto' | 'none' | 'required'
+  tool_choice?: "auto" | "none" | "required"
   parallel_tool_calls?: boolean
   webSearch?: boolean
   agentWithNoIntegrations?: boolean
   deepResearchEnabled?: boolean
-
 }
 
 export interface ConverseResponse {
@@ -316,7 +315,7 @@ export interface ConverseResponse {
   reasoning?: boolean
   tool_calls?: Array<{
     id: string
-    type: 'function'
+    type: "function"
     function: { name: string; arguments: string }
   }>
   sources?: WebSearchSource[]
@@ -473,6 +472,7 @@ interface PillValue {
   threadId?: string
   app?: Apps
   entity?: string
+  url?: string
 }
 
 interface PillQueryItem {

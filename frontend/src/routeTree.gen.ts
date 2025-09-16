@@ -28,7 +28,6 @@ import { Route as AuthenticatedIntegrationsMicrosoftImport } from './routes/_aut
 import { Route as AuthenticatedIntegrationsMcpImport } from './routes/_authenticated/integrations/mcp'
 import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
 import { Route as AuthenticatedIntegrationsFileuploadImport } from './routes/_authenticated/integrations/fileupload'
-import { Route as AuthenticatedIntegrationsCreatetoolImport } from './routes/_authenticated/integrations/createtool'
 import { Route as AuthenticatedIntegrationsApiKeyImport } from './routes/_authenticated/integrations/apiKey'
 import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
@@ -146,13 +145,6 @@ const AuthenticatedIntegrationsFileuploadRoute =
   AuthenticatedIntegrationsFileuploadImport.update({
     id: '/integrations/fileupload',
     path: '/integrations/fileupload',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-
-const AuthenticatedIntegrationsCreatetoolRoute =
-  AuthenticatedIntegrationsCreatetoolImport.update({
-    id: '/integrations/createtool',
-    path: '/integrations/createtool',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -313,13 +305,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDataSourceDocIdImport
       parentRoute: typeof AuthenticatedImport
     }
-    '/_authenticated/integrations/createtool': {
-      id: '/_authenticated/integrations/createtool'
-      path: '/integrations/createtool'
-      fullPath: '/integrations/createtool'
-      preLoaderRoute: typeof AuthenticatedIntegrationsCreatetoolImport
-      parentRoute: typeof AuthenticatedImport
-    }
     '/_authenticated/integrations/apiKey': {
       id: '/_authenticated/integrations/apiKey'
       path: '/integrations/apiKey'
@@ -437,7 +422,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
-  AuthenticatedIntegrationsCreatetoolRoute: typeof AuthenticatedIntegrationsCreatetoolRoute
   AuthenticatedIntegrationsApiKeyRoute: typeof AuthenticatedIntegrationsApiKeyRoute
   AuthenticatedIntegrationsFileuploadRoute: typeof AuthenticatedIntegrationsFileuploadRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
@@ -463,8 +447,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
-  AuthenticatedIntegrationsCreatetoolRoute:
-    AuthenticatedIntegrationsCreatetoolRoute,
   AuthenticatedIntegrationsApiKeyRoute: AuthenticatedIntegrationsApiKeyRoute,
   AuthenticatedIntegrationsFileuploadRoute:
     AuthenticatedIntegrationsFileuploadRoute,
@@ -505,7 +487,6 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
-  '/integrations/createtool': typeof AuthenticatedIntegrationsCreatetoolRoute
   '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
@@ -534,7 +515,6 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
-  '/integrations/createtool': typeof AuthenticatedIntegrationsCreatetoolRoute
   '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
@@ -565,7 +545,6 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
-  '/_authenticated/integrations/createtool': typeof AuthenticatedIntegrationsCreatetoolRoute
   '/_authenticated/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/_authenticated/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/_authenticated/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
@@ -597,7 +576,6 @@ export interface FileRouteTypes {
     | '/'
     | '/chat/$chatId'
     | '/dataSource/$docId'
-    | '/integrations/createtool'
     | '/integrations/apiKey'
     | '/integrations/fileupload'
     | '/integrations/google'
@@ -625,7 +603,6 @@ export interface FileRouteTypes {
     | '/'
     | '/chat/$chatId'
     | '/dataSource/$docId'
-    | '/integrations/createtool'
     | '/integrations/apiKey'
     | '/integrations/fileupload'
     | '/integrations/google'
@@ -654,7 +631,6 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dataSource/$docId'
-    | '/_authenticated/integrations/createtool'
     | '/_authenticated/integrations/apiKey'
     | '/_authenticated/integrations/fileupload'
     | '/_authenticated/integrations/google'
@@ -710,7 +686,6 @@ export const routeTree = rootRoute
         "/_authenticated/workflow",
         "/_authenticated/",
         "/_authenticated/dataSource/$docId",
-        "/_authenticated/integrations/createtool",
         "/_authenticated/integrations/apiKey",
         "/_authenticated/integrations/fileupload",
         "/_authenticated/integrations/google",
@@ -773,10 +748,6 @@ export const routeTree = rootRoute
     },
     "/_authenticated/dataSource/$docId": {
       "filePath": "_authenticated/dataSource.$docId.tsx",
-      "parent": "/_authenticated"
-    },
-    "/_authenticated/integrations/createtool": {
-      "filePath": "_authenticated/integrations/createtool.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/integrations/apiKey": {
