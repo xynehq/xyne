@@ -1686,6 +1686,7 @@ export const GetFileContentApi = async (c: Context) => {
 // Download file (supports all file types with true streaming and range requests)
 export const DownloadFileApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
+  const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
 
   // Get user from database
@@ -1697,6 +1698,29 @@ export const DownloadFileApi = async (c: Context) => {
   const user = users[0]
 
   try {
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
+    }
+
+    // Check access: owner can always access, others only if Collection is public
+    if (collection.ownerId !== user.id && collection.isPrivate) {
+      throw new HTTPException(403, {
+        message: "You don't have access to this Collection",
+      })
+    }
+
+    const item = await getCollectionItemById(db, itemId)
+    if (!item || item.type !== "file") {
+      throw new HTTPException(404, { message: "File not found" })
+    }
+
+    // Verify item belongs to this Collection by checking collectionId directly
+    if (item.collectionId !== collectionId) {
+      throw new HTTPException(404, {
+        message: "File not found in this knowledge base",
+      })
+    }
 
     const collectionFile = await getCollectionFileByItemId(db, itemId)
     if (!collectionFile) {
