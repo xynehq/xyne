@@ -1936,7 +1936,7 @@ const executeWorkflowTool = async (
         const aiValue = tool.value || {}
         
         const inputType = aiConfig.inputType || "text" // Default to text
-        const aiModelEnum = aiConfig.aiModel || aiConfig.model || "googleai-gemini-2-5-flash"
+        const aiModelEnum = aiConfig.aiModel || aiConfig.model || "vertex-gemini-2-5-flash"
         const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
 
         // Convert enum value to actual API model name
@@ -1944,6 +1944,8 @@ const executeWorkflowTool = async (
         
         // Map to Models enum for provider selection, preferring VertexAI for compatible models
         let modelId: Models
+        const isModels = (v: string): v is Models =>
+          (Object.values(Models) as string[]).includes(v as Models)
         
         // Map Google AI models to their VertexAI equivalents for better enterprise integration
         switch (aiModelEnum) {
@@ -1955,9 +1957,13 @@ const executeWorkflowTool = async (
             modelId = Models.Vertex_Gemini_2_5_Flash // fallback to 2.5 Flash
             break
           default:
-            // Check if it's already a VertexAI model or use as-is
-            modelId = aiModelEnum as Models
-            break
+            // Check if it's already a valid model enum, otherwise use a fallback
+            if (Object.values(Models).includes(aiModelEnum as Models)) {
+              modelId = aiModelEnum as Models;
+            } else {
+              Logger.warn(`Unsupported model enum: '${aiModelEnum}', falling back to Vertex_Gemini_2_5_Flash.`);
+              modelId = Models.Vertex_Gemini_2_5_Flash;
+            }
         }
         
         Logger.info(`Using model enum: ${aiModelEnum}, actual model: ${aiModel}`)
@@ -3262,14 +3268,14 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
                    enumValue.includes('claude') ? 'claude' : 'other',
       }))
       .sort((a, b) => {
-        // Sort by model type (Claude first, then Gemini), then by name
-        if (a.modelType !== b.modelType) {
-          if (a.modelType === 'claude') return -1
-          if (b.modelType === 'claude') return 1
-          if (a.modelType === 'gemini') return -1
-          if (b.modelType === 'gemini') return 1
+        const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
+        const orderA = typeOrder[a.modelType] ?? 99;
+        const orderB = typeOrder[b.modelType] ?? 99;
+
+        if (orderA !== orderB) {
+          return orderA - orderB;
         }
-        return a.labelName.localeCompare(b.labelName)
+        return a.labelName.localeCompare(b.labelName);
       })
 
     return c.json({
