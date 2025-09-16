@@ -723,6 +723,7 @@ export const userChat = (
 export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
+  llmResponse?: string,
 ): Promise<{ title: string; cost: number }> => {
   Logger.info("inside generateTitleUsingQuery")
   try {
@@ -743,7 +744,12 @@ export const generateTitleUsingQuery = async (
           role: "user",
           content: [
             {
-              text: query,
+              text: `First user query:
+${query}
+
+Assistant response:
+${llmResponse}
+        `,
             },
           ],
         },

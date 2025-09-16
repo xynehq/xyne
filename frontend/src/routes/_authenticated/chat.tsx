@@ -400,7 +400,15 @@ export const ChatPage = ({
   const [streamingTitle, setStreamingTitle] = useState<string>("")
 
   // Smooth title streaming function - animates from left to right
-  const updateTitleWithAnimation = (newTitle: string) => {
+  const updateTitleWithAnimation = useCallback((newTitle: string) => {
+    // Set the title and force a re-render
+    setChatTitle((prevTitle) => {
+      return newTitle
+    })
+
+    // Force a re-render by updating the forceUpdate counter
+
+    // Start the animation
     setIsTitleUpdating(true)
     setStreamingTitle("")
 
@@ -413,12 +421,11 @@ export const ChatPage = ({
         currentIndex++
       } else {
         clearInterval(streamInterval)
-        setChatTitle(newTitle)
         setIsTitleUpdating(false)
         setStreamingTitle("")
       }
     }, 50) // 50ms per character for smooth streaming effect
-  }
+  }, []) // Empty dependency array since we're using functional updates
 
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
@@ -680,8 +687,10 @@ export const ChatPage = ({
     if (!hasHandledQueryParam.current || isWithChatId) {
       // Data will be loaded via useChatHistory hook
     }
+    if (!chatTitle) {
+      setChatTitle(isWithChatId ? data?.chat?.title || null : null)
+    }
 
-    setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
 
     // Populate feedbackMap from loaded messages
@@ -759,9 +768,9 @@ export const ChatPage = ({
   useEffect(() => {
     const shouldUpdateTitle =
       chatId &&
-      !chatTitle &&
+      chatTitle === "Untitled" &&
       !isStreaming &&
-      messages.length === 2 && // At least user + assistant message
+      messages.length >= 2 && // At least user + assistant message
       messages[0]?.messageRole === "user"
 
     if (shouldUpdateTitle && !isSharedChat) {
@@ -805,7 +814,7 @@ export const ChatPage = ({
           // Fail silently - this is a background operation
         })
     }
-  }, [chatId, chatTitle, isStreaming, messages, isSharedChat, queryClient])
+  }, [chatId, isStreaming, isSharedChat, queryClient])
 
   const handleSend = async (
     messageToSend: string,
