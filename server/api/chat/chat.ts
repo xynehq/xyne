@@ -7176,9 +7176,9 @@ export const GenerateChatTitleApi = async (c: Context) => {
     const { chatId, message } = c.req.valid("json")
 
     const currentChat = await getChatMessagesWithAuth(db, chatId, email)
-    let llmResponse = ""
+    let assistantResponse = ""
     if (currentChat[1].messageRole === "assistant" && currentChat[1].message) {
-      llmResponse = currentChat[1].message
+      assistantResponse = currentChat[1].message
     }
 
     const { user, workspace } = await getUserAndWorkspaceByEmail(
@@ -7198,7 +7198,7 @@ export const GenerateChatTitleApi = async (c: Context) => {
         modelId: defaultFastModel,
         stream: false,
       },
-      llmResponse,
+      assistantResponse,
     )
 
     loggerWithChild({ email: email }).info(

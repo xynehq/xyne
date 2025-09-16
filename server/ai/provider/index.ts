@@ -723,7 +723,7 @@ export const userChat = (
 export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
-  llmResponse?: string,
+  assistantResponse?: string,
 ): Promise<{ title: string; cost: number }> => {
   Logger.info("inside generateTitleUsingQuery")
   try {
@@ -737,6 +737,9 @@ export const generateTitleUsingQuery = async (
 
     params.json = true
     Logger.info("inside generateTitleUsingQuery")
+    if(assistantResponse === undefined){
+      assistantResponse = ""
+    }
 
     let { text, cost } = await getProviderByModel(params.modelId).converse(
       [
@@ -748,7 +751,7 @@ export const generateTitleUsingQuery = async (
 ${query}
 
 Assistant response:
-${llmResponse}
+${assistantResponse}
         `,
             },
           ],

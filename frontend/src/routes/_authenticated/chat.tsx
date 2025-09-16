@@ -425,7 +425,7 @@ export const ChatPage = ({
         setStreamingTitle("")
       }
     }, 50) // 50ms per character for smooth streaming effect
-  }, []) // Empty dependency array since we're using functional updates
+  }, []) 
 
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
