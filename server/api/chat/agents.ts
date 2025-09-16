@@ -984,6 +984,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         console.error("Failed to parse selectedModelConfig:", error)
       }
     }
+    
 
     // Convert friendly model label to actual model value
     let actualModelId = modelId ? getModelValueFromLabel(modelId) : null

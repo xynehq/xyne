@@ -4206,7 +4206,6 @@ export const MessageApi = async (c: Context) => {
         fileIds = []
       }
     }
-
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
@@ -4747,17 +4746,23 @@ export const MessageApi = async (c: Context) => {
               loggerWithChild({ email: email }).info(
                 "Using web search for the question",
               )
-              searchOrAnswerIterator = webSearchQuestion(message, ctx, {
-                modelId: Models.Gemini_2_5_Flash,
-                stream: true,
-                json: false,
-                agentPrompt: JSON.stringify(agentDetails),
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: llmFormattedMessages,
-                webSearch: true,
-              })
+              searchOrAnswerIterator = webSearchQuestion(
+                message,
+                ctx,
+                {
+                  modelId: Models.Gemini_2_5_Flash,
+                  stream: true,
+                  json: false,
+                  agentPrompt: JSON.stringify(agentDetails),
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: llmFormattedMessages,
+                  webSearch: true,
+                },
+                extractedInfo.webSearchResults,
+              )
             } else {
               searchOrAnswerIterator =
                 generateSearchQueryOrAnswerFromConversation(

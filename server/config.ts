@@ -210,4 +210,5 @@ export default {
   MAX_IMAGE_SIZE_BYTES,
   MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
   vespaEndpoint: `http://${vespaBaseHost}:8080`,
+  defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
 }
