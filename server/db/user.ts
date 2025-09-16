@@ -18,8 +18,7 @@ import { createId } from "@paralleldrive/cuid2"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
-import { Apps } from "@/search/types"
-import type { UserRole } from "@/shared/types"
+import { Apps, type UserRole } from "@/shared/types"
 
 // Define an interface for the shape of data after processing and before Zod parsing
 interface ProcessedUser
