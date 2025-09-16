@@ -7177,7 +7177,7 @@ export const GenerateChatTitleApi = async (c: Context) => {
 
     const currentChat = await getChatMessagesWithAuth(db, chatId, email)
     let llmResponse = ""
-    if (currentChat[1] && currentChat[1].message) {
+    if (currentChat[1].messageRole === "assistant" && currentChat[1].message) {
       llmResponse = currentChat[1].message
     }
 

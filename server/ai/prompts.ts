@@ -124,7 +124,7 @@ export const userChatSystem = (
 
 // Title Generation System Prompt
 export const generateTitleSystemPrompt = `
-  You are an assistant tasked with generating a concise and relevant title for a chat based on the user's query and assistand response.
+  You are an assistant tasked with generating a concise and relevant title for a chat based on the user's query and assistant response.
 
   Please provide a suitable title that accurately reflects the essence of the query in JSON format as follows:
   {
