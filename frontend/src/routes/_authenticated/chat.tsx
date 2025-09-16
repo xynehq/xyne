@@ -1072,12 +1072,9 @@ export const ChatPage = ({
     setIsCitationPreviewOpen(true)
     setCameFromSources(fromSources)
     // Only close sources panel when opening citation preview, but preserve state for back navigation
-    if (fromSources) {
-      setShowSources(false)
-      // Don't clear currentCitations and currentMessageId when coming from sources
-    } else {
+    setShowSources(false)
+    if (!fromSources) {
       // Clear sources state when coming from inline citations
-      setShowSources(false)
       setCurrentCitations([])
       setCurrentMessageId(null)
     }
@@ -1559,10 +1556,7 @@ const Sources = ({
         />
       </div>
       <div className="flex-1 overflow-y-auto px-[40px] pb-[24px]">
-        <CitationList 
-          citations={citations} 
-          onCitationClick={(citation) => onCitationClick?.(citation, true)} 
-        />
+        <CitationList citations={citations} onCitationClick={onCitationClick} />
       </div>
     </div>
   ) : null

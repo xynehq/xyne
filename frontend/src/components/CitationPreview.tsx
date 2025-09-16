@@ -184,8 +184,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
             {showBackButton && onBackToSources && (
               <button
                 onClick={onBackToSources}
-                className="mr-4 p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Back to sources"
+                className="mr-4 p-2 text-gray-600 dark:text-gray-300 transition-colors rounded-md"
               >
                 <ArrowLeft size={20} />
               </button>
