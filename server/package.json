@@ -9,7 +9,7 @@
     "@types/bun": "latest",
     "@types/html-to-text": "^9.0.4",
     "@types/uuid": "^10.0.0",
-    "drizzle-kit": "^0.24.2",
+    "drizzle-kit": "0.31.4",
     "husky": "^9.1.7",
     "p-queue": "^8.0.1"
   },
