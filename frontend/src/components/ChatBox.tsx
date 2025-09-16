@@ -14,7 +14,7 @@ import {
   Layers,
   Square,
   ChevronDown,
-  Infinity,
+  // Infinity,
   Check,
   Link,
   Search,
@@ -360,7 +360,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       chatId,
       agentIdFromChatData, // Destructure new prop
       user, // Destructure user prop
-      setIsAgenticMode,
+      // setIsAgenticMode,
       isAgenticMode = false,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
@@ -3572,7 +3572,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {showAdvancedOptions && (
+            {/* {showAdvancedOptions && (
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -3592,7 +3592,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   Agent
                 </span>
               </button>
-            )}
+            )} */}
 
             {/* Model Selection Dropdown */}
             {(showAdvancedOptions || hideButtons) && (
