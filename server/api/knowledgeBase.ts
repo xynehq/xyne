@@ -1660,7 +1660,7 @@ export const GetFileContentApi = async (c: Context) => {
     return new Response(new Uint8Array(fileContent), {
       headers: {
         "Content-Type": collectionFile.mimeType || "application/octet-stream",
-        "Content-Disposition": `inline; filename="${collectionFile.originalName}"`,
+        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(collectionFile.originalName || 'file')}`,
         "Cache-Control": "private, max-age=3600",
       },
     })
