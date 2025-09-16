@@ -157,17 +157,17 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
       if (containerRef.current) {
         // Remove width constraints from all sections
         const sections = containerRef.current.querySelectorAll(
-          'section.docx-preview, section.docx-viewer'
-        );
+          "section.docx-preview, section.docx-viewer",
+        )
         sections.forEach((el) => {
-          const section = el as HTMLElement;
-          section.style.removeProperty('width');
-          section.style.removeProperty('max-width');
-          section.style.removeProperty('min-width');
-          section.style.width = '100%';
-          section.style.maxWidth = '100%';
-          section.style.minWidth = 'auto';
-        });
+          const section = el as HTMLElement
+          section.style.removeProperty("width")
+          section.style.removeProperty("max-width")
+          section.style.removeProperty("min-width")
+          section.style.width = "100%"
+          section.style.maxWidth = "100%"
+          section.style.minWidth = "auto"
+        })
 
         // Remove width constraints from all wrappers
         const wrappers = containerRef.current.querySelectorAll(
@@ -186,16 +186,16 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
         });
 
         // Make tables responsive
-        const tables = containerRef.current.querySelectorAll('table');
+        const tables = containerRef.current.querySelectorAll("table")
         tables.forEach((table) => {
-          const tableEl = table as HTMLElement;
-          tableEl.style.width = '100%';
-          tableEl.style.maxWidth = '100%';
-          tableEl.style.minWidth = 'auto';
-          tableEl.style.tableLayout = 'fixed'; // Better for responsive tables
-          
+          const tableEl = table as HTMLElement
+          tableEl.style.width = "100%"
+          tableEl.style.maxWidth = "100%"
+          tableEl.style.minWidth = "auto"
+          tableEl.style.tableLayout = "fixed" // Better for responsive tables
+
           // Make all cells wrap content properly
-          const cells = tableEl.querySelectorAll('td, th');
+          const cells = tableEl.querySelectorAll("td, th")
           cells.forEach((cell) => {
             const cellEl = cell as HTMLElement;
             cellEl.style.overflowWrap = 'break-word';
@@ -208,13 +208,13 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
         });
 
         // Make images responsive
-        const images = containerRef.current.querySelectorAll('img');
+        const images = containerRef.current.querySelectorAll("img")
         images.forEach((img) => {
-          const imgEl = img as HTMLElement;
-          imgEl.style.maxWidth = '100%';
-          imgEl.style.height = 'auto';
-          imgEl.style.width = 'auto';
-        });
+          const imgEl = img as HTMLElement
+          imgEl.style.maxWidth = "100%"
+          imgEl.style.height = "auto"
+          imgEl.style.width = "auto"
+        })
       }
     } catch (e) {
       const errorMessage =
@@ -239,7 +239,9 @@ export const DocxViewer: React.FC<DocxViewerProps> = ({
         <div className="absolute inset-0 flex items-center justify-center bg-white/90 dark:bg-[#1E1E1E]/90 z-10">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 dark:border-gray-300 mx-auto mb-4"></div>
-            <p className="text-gray-600 dark:text-gray-300">Loading document...</p>
+            <p className="text-gray-600 dark:text-gray-300">
+              Loading document...
+            </p>
           </div>
         </div>
       )}

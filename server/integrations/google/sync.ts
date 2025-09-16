@@ -179,7 +179,7 @@ const deleteUpdateStatsForGoogleSheets = async (
   }
 }
 
-const deleteWholeSpreadsheet = async (
+export const deleteWholeSpreadsheet = async (
   docFields: VespaFile,
   docId: string,
   stats: ChangeStats,
