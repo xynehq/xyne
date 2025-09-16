@@ -46,6 +46,8 @@ import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
+import { getAuth, safeGet } from "./agent"
+import { ApiKeyScopes } from "@/shared/types"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
@@ -124,7 +126,18 @@ function getStoragePath(
 
 // Create a new Collection
 export const CreateCollectionApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.CREATE_COLLECTION)) {
+      return c.json(
+        { message: "API key does not have scope to create collections" },
+        403,
+      )
+    }
+  }
 
   // Get user from database like other APIs do
   const users = await getUserByEmail(db, userEmail)
@@ -160,6 +173,7 @@ export const CreateCollectionApi = async (c: Context) => {
         ...(validatedData.metadata || {}),
         vespaDocId: vespaDocId, // Store the vespaDocId in metadata
       },
+      via_apiKey,
     }
 
     loggerWithChild({ email: userEmail }).info(
@@ -226,7 +240,18 @@ export const CreateCollectionApi = async (c: Context) => {
 
 // List Collections for a user
 export const ListCollectionsApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.LIST_COLLECTIONS)) {
+      return c.json(
+        { message: "API key does not have scope to list collections" },
+        403,
+      )
+    }
+  }
   const showOnlyOwn = c.req.query("ownOnly") === "true"
   const includeItems = c.req.query("includeItems") === "true"
 
@@ -389,7 +414,18 @@ export const UpdateCollectionApi = async (c: Context) => {
 
 // Delete a Collection
 export const DeleteCollectionApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.DELETE_COLLECTION)) {
+      return c.json(
+        { message: "API key does not have scope to delete collections" },
+        403,
+      )
+    }
+  }
   const collectionId = c.req.param("clId")
 
   // Get user from database
@@ -876,7 +912,18 @@ async function ensureFolderPath(
 
 // Upload files
 export const UploadFilesApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.UPLOAD_FILES)) {
+      return c.json(
+        { message: "API key does not have scope to upload files to KB" },
+        403,
+      )
+    }
+  }
   const collectionId = c.req.param("clId")
   const requestPath = c.req.path
 
@@ -1325,7 +1372,18 @@ export const UploadFilesApi = async (c: Context) => {
 
 // Delete an item
 export const DeleteItemApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.DELETE_COLLECTION_ITEM)) {
+      return c.json(
+        { message: "API key does not have scope to delete collection items" },
+        403,
+      )
+    }
+  }
   const collectionId = c.req.param("clId")
   const itemId = c.req.param("itemId")
 

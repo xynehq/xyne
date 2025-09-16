@@ -21,7 +21,6 @@ import { Route as AuthenticatedSearchImport } from './routes/_authenticated/sear
 import { Route as AuthenticatedKnowledgeManagementImport } from './routes/_authenticated/knowledgeManagement'
 import { Route as AuthenticatedDashboardImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
-import { Route as AuthenticatedApiKeyImport } from './routes/_authenticated/api-key'
 import { Route as AuthenticatedAgentImport } from './routes/_authenticated/agent'
 import { Route as AuthenticatedIntegrationsIndexImport } from './routes/_authenticated/integrations/index'
 import { Route as AuthenticatedIntegrationsSlackImport } from './routes/_authenticated/integrations/slack'
@@ -29,6 +28,7 @@ import { Route as AuthenticatedIntegrationsMicrosoftImport } from './routes/_aut
 import { Route as AuthenticatedIntegrationsMcpImport } from './routes/_authenticated/integrations/mcp'
 import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authenticated/integrations/google'
 import { Route as AuthenticatedIntegrationsFileuploadImport } from './routes/_authenticated/integrations/fileupload'
+import { Route as AuthenticatedIntegrationsApiKeyImport } from './routes/_authenticated/integrations/apiKey'
 import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
@@ -100,12 +100,6 @@ const AuthenticatedChatRoute = AuthenticatedChatImport.update({
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
-const AuthenticatedApiKeyRoute = AuthenticatedApiKeyImport.update({
-  id: '/api-key',
-  path: '/api-key',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-
 const AuthenticatedAgentRoute = AuthenticatedAgentImport.update({
   id: '/agent',
   path: '/agent',
@@ -151,6 +145,13 @@ const AuthenticatedIntegrationsFileuploadRoute =
   AuthenticatedIntegrationsFileuploadImport.update({
     id: '/integrations/fileupload',
     path: '/integrations/fileupload',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedIntegrationsApiKeyRoute =
+  AuthenticatedIntegrationsApiKeyImport.update({
+    id: '/integrations/apiKey',
+    path: '/integrations/apiKey',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -234,13 +235,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentImport
       parentRoute: typeof AuthenticatedImport
     }
-    '/_authenticated/api-key': {
-      id: '/_authenticated/api-key'
-      path: '/api-key'
-      fullPath: '/api-key'
-      preLoaderRoute: typeof AuthenticatedApiKeyImport
-      parentRoute: typeof AuthenticatedImport
-    }
     '/_authenticated/chat': {
       id: '/_authenticated/chat'
       path: '/chat'
@@ -309,6 +303,13 @@ declare module '@tanstack/react-router' {
       path: '/dataSource/$docId'
       fullPath: '/dataSource/$docId'
       preLoaderRoute: typeof AuthenticatedDataSourceDocIdImport
+      parentRoute: typeof AuthenticatedImport
+    }
+    '/_authenticated/integrations/apiKey': {
+      id: '/_authenticated/integrations/apiKey'
+      path: '/integrations/apiKey'
+      fullPath: '/integrations/apiKey'
+      preLoaderRoute: typeof AuthenticatedIntegrationsApiKeyImport
       parentRoute: typeof AuthenticatedImport
     }
     '/_authenticated/integrations/fileupload': {
@@ -413,7 +414,6 @@ const AuthenticatedChatRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAgentRoute: typeof AuthenticatedAgentRoute
-  AuthenticatedApiKeyRoute: typeof AuthenticatedApiKeyRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedKnowledgeManagementRoute: typeof AuthenticatedKnowledgeManagementRoute
@@ -422,6 +422,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
+  AuthenticatedIntegrationsApiKeyRoute: typeof AuthenticatedIntegrationsApiKeyRoute
   AuthenticatedIntegrationsFileuploadRoute: typeof AuthenticatedIntegrationsFileuploadRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
   AuthenticatedIntegrationsMcpRoute: typeof AuthenticatedIntegrationsMcpRoute
@@ -438,7 +439,6 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAgentRoute: AuthenticatedAgentRoute,
-  AuthenticatedApiKeyRoute: AuthenticatedApiKeyRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedKnowledgeManagementRoute: AuthenticatedKnowledgeManagementRoute,
@@ -447,6 +447,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
+  AuthenticatedIntegrationsApiKeyRoute: AuthenticatedIntegrationsApiKeyRoute,
   AuthenticatedIntegrationsFileuploadRoute:
     AuthenticatedIntegrationsFileuploadRoute,
   AuthenticatedIntegrationsGoogleRoute: AuthenticatedIntegrationsGoogleRoute,
@@ -476,7 +477,6 @@ export interface FileRoutesByFullPath {
   '': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
   '/agent': typeof AuthenticatedAgentRoute
-  '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
@@ -487,6 +487,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
@@ -504,7 +505,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/agent': typeof AuthenticatedAgentRoute
-  '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
@@ -515,6 +515,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
@@ -534,7 +535,6 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/agent': typeof AuthenticatedAgentRoute
-  '/_authenticated/api-key': typeof AuthenticatedApiKeyRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
@@ -545,6 +545,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
+  '/_authenticated/integrations/apiKey': typeof AuthenticatedIntegrationsApiKeyRoute
   '/_authenticated/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
   '/_authenticated/integrations/google': typeof AuthenticatedIntegrationsGoogleRoute
   '/_authenticated/integrations/mcp': typeof AuthenticatedIntegrationsMcpRoute
@@ -565,7 +566,6 @@ export interface FileRouteTypes {
     | ''
     | '/auth'
     | '/agent'
-    | '/api-key'
     | '/chat'
     | '/dashboard'
     | '/knowledgeManagement'
@@ -576,6 +576,7 @@ export interface FileRouteTypes {
     | '/'
     | '/chat/$chatId'
     | '/dataSource/$docId'
+    | '/integrations/apiKey'
     | '/integrations/fileupload'
     | '/integrations/google'
     | '/integrations/mcp'
@@ -592,7 +593,6 @@ export interface FileRouteTypes {
   to:
     | '/auth'
     | '/agent'
-    | '/api-key'
     | '/chat'
     | '/dashboard'
     | '/knowledgeManagement'
@@ -603,6 +603,7 @@ export interface FileRouteTypes {
     | '/'
     | '/chat/$chatId'
     | '/dataSource/$docId'
+    | '/integrations/apiKey'
     | '/integrations/fileupload'
     | '/integrations/google'
     | '/integrations/mcp'
@@ -620,7 +621,6 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/agent'
-    | '/_authenticated/api-key'
     | '/_authenticated/chat'
     | '/_authenticated/dashboard'
     | '/_authenticated/knowledgeManagement'
@@ -631,6 +631,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dataSource/$docId'
+    | '/_authenticated/integrations/apiKey'
     | '/_authenticated/integrations/fileupload'
     | '/_authenticated/integrations/google'
     | '/_authenticated/integrations/mcp'
@@ -677,7 +678,6 @@ export const routeTree = rootRoute
       "filePath": "_authenticated.tsx",
       "children": [
         "/_authenticated/agent",
-        "/_authenticated/api-key",
         "/_authenticated/chat",
         "/_authenticated/dashboard",
         "/_authenticated/knowledgeManagement",
@@ -686,6 +686,7 @@ export const routeTree = rootRoute
         "/_authenticated/workflow",
         "/_authenticated/",
         "/_authenticated/dataSource/$docId",
+        "/_authenticated/integrations/apiKey",
         "/_authenticated/integrations/fileupload",
         "/_authenticated/integrations/google",
         "/_authenticated/integrations/mcp",
@@ -705,10 +706,6 @@ export const routeTree = rootRoute
     },
     "/_authenticated/agent": {
       "filePath": "_authenticated/agent.tsx",
-      "parent": "/_authenticated"
-    },
-    "/_authenticated/api-key": {
-      "filePath": "_authenticated/api-key.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/chat": {
@@ -751,6 +748,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/dataSource/$docId": {
       "filePath": "_authenticated/dataSource.$docId.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/integrations/apiKey": {
+      "filePath": "_authenticated/integrations/apiKey.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/integrations/fileupload": {

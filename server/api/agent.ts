@@ -27,7 +27,7 @@ import { getErrorMessage } from "@/utils"
 import { selectPublicAgentSchema } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { users } from "@/db/schema"
-import { UserAgentRole } from "@/shared/types"
+import { ApiKeyScopes, UserAgentRole } from "@/shared/types"
 import { getCollectionItemById } from "@/db/knowledgeBase"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.AgentApi)
@@ -121,11 +121,40 @@ export const listAgentsSchema = z.object({
   filter: z.enum(["all", "madeByMe", "sharedToMe"]).optional().default("all"),
 })
 
-export const CreateAgentApi = async (c: Context) => {
-  let email = ""
+export const safeGet = <T>(c: Context, key: string): T | undefined => {
   try {
-    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    email = sub
+    return c.get(key) as T
+  } catch {
+    return undefined
+  }
+}
+
+type Auth = { email: string; workspaceExternalId: string; via_apiKey: boolean }
+
+export const getAuth = (c: Context): Auth => {
+  const jwt = safeGet<{ sub: string; workspaceId: string }>(c, JwtPayloadKey)
+  return {
+    email: jwt?.sub ?? safeGet<string>(c, "userEmail") ?? "",
+    workspaceExternalId:
+      jwt?.workspaceId ?? safeGet<string>(c, "workspaceId") ?? "",
+    via_apiKey: jwt?.sub && jwt?.workspaceId ? false : true,
+  }
+}
+
+export const CreateAgentApi = async (c: Context) => {
+  const { email, workspaceExternalId, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.CREATE_AGENT)) {
+      return c.json(
+        { message: "API key does not have scope to create agents" },
+        403,
+      )
+    }
+  }
+  try {
     const body = await c.req.json<CreateAgentPayload>()
 
     const validatedBody = createAgentSchema.parse(body)
@@ -154,6 +183,7 @@ export const CreateAgentApi = async (c: Context) => {
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
       docIds: validatedBody.docIds,
+      via_apiKey,
     }
 
     // Create agent and sync user permissions in a transaction
@@ -200,10 +230,20 @@ export const CreateAgentApi = async (c: Context) => {
 }
 
 export const UpdateAgentApi = async (c: Context) => {
-  let email = ""
+  const { email, workspaceExternalId, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.UPDATE_AGENT)) {
+      return c.json(
+        { message: "API key does not have scope to update agents" },
+        403,
+      )
+    }
+  }
+
   try {
-    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    email = sub
     const agentExternalId = c.req.param("agentExternalId")
     const body = await c.req.json<UpdateAgentPayload>()
 
@@ -304,10 +344,19 @@ export const UpdateAgentApi = async (c: Context) => {
 }
 
 export const DeleteAgentApi = async (c: Context) => {
-  let email = ""
+  const { email, workspaceExternalId, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.DELETE_AGENT)) {
+      return c.json(
+        { message: "API key does not have scope to delete agents" },
+        403,
+      )
+    }
+  }
   try {
-    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    email = sub // For logging or audit if needed, not directly used in delete logic by ID
     const agentExternalId = c.req.param("agentExternalId")
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
