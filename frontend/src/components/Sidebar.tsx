@@ -57,6 +57,14 @@ export const Sidebar = ({
     try {
       const res = await api.auth.logout.$post()
       if (res.ok) {
+        // Clear document chat mappings from sessionStorage on logout
+        try {
+          sessionStorage.removeItem("documentToTempChatMap")
+          sessionStorage.removeItem("tempChatIdToChatIdMap")
+        } catch (error) {
+          console.error("Failed to clear document chat mappings on logout:", error)
+        }
+        
         router.navigate({ to: "/auth" })
       } else {
         toast({
@@ -171,7 +179,7 @@ export const Sidebar = ({
             </Tooltip>
           </div>
 
-           <Link
+          <Link
             to="/workflow"
             className={cn(
               "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",

@@ -19,6 +19,8 @@ import {
   SearchSlackChannels,
   agentChatMessageSchema,
   chatTitleSchema,
+  HighlightApi,
+  highlightSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -162,6 +164,42 @@ import {
   GetAgentApi,
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
+import {
+  CreateWorkflowTemplateApi,
+  CreateComplexWorkflowTemplateApi,
+  ExecuteTemplateApi,
+  ExecuteWorkflowWithInputApi,
+  GetWorkflowTemplateApi,
+  ListWorkflowTemplatesApi,
+  UpdateWorkflowTemplateApi,
+  CreateWorkflowExecutionApi,
+  GetWorkflowExecutionApi,
+  GetWorkflowExecutionStatusApi,
+  ListWorkflowExecutionsApi,
+  CreateWorkflowToolApi,
+  GetWorkflowToolApi,
+  ListWorkflowToolsApi,
+  UpdateWorkflowToolApi,
+  DeleteWorkflowToolApi,
+  AddStepToWorkflowApi,
+  DeleteWorkflowStepTemplateApi,
+  UpdateWorkflowStepExecutionApi,
+  CompleteWorkflowStepExecutionApi,
+  SubmitFormStepApi,
+  GetFormDefinitionApi,
+  ServeWorkflowFileApi,
+  GetGeminiModelEnumsApi,
+  GetVertexAIModelEnumsApi,
+  createWorkflowTemplateSchema,
+  createComplexWorkflowTemplateSchema,
+  updateWorkflowTemplateSchema,
+  createWorkflowExecutionSchema,
+  updateWorkflowExecutionSchema,
+  createWorkflowToolSchema,
+  updateWorkflowStepExecutionSchema,
+  formSubmissionSchema,
+  listWorkflowExecutionsQuerySchema,
+} from "@/api/workflow"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
   handleAttachmentUpload,
@@ -187,6 +225,7 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
+  GetChunkContentApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -201,7 +240,14 @@ import {
 const { JwtPayloadKey } = config
 import { updateMetricsFromThread } from "@/metrics/utils"
 
-import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
+import {
+  agents,
+  apiKeys,
+  users,
+  type PublicUserWorkspace,
+  updateWorkflowToolSchema,
+  addStepToWorkflowSchema,
+} from "./db/schema"
 import { sendMailHelper } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
@@ -839,6 +885,76 @@ export const AppRoutes = app
   )
   .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
   .get("/tuning/ws/:jobId", TuningWsRoute)
+
+  // Workflow Routes
+  .post(
+    "/workflow/templates",
+    zValidator("json", createWorkflowTemplateSchema),
+    CreateWorkflowTemplateApi,
+  )
+  .post(
+    "/workflow/templates/complex",
+    zValidator("json", createComplexWorkflowTemplateSchema),
+    CreateComplexWorkflowTemplateApi,
+  )
+  .get("/workflow/templates", ListWorkflowTemplatesApi)
+  .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
+  .put(
+    "/workflow/templates/:templateId",
+    zValidator("json", updateWorkflowTemplateSchema),
+    UpdateWorkflowTemplateApi,
+  )
+  .post("/workflow/templates/:templateId/execute", ExecuteTemplateApi)
+  .post(
+    "/workflow/templates/:templateId/execute-with-input",
+    ExecuteWorkflowWithInputApi,
+  )
+  .post(
+    "/workflow/templates/:templateId/steps",
+    zValidator("json", addStepToWorkflowSchema),
+    AddStepToWorkflowApi,
+  )
+  .post(
+    "/workflow/executions",
+    zValidator("json", createWorkflowExecutionSchema),
+    CreateWorkflowExecutionApi,
+  )
+  .get(
+    "/workflow/executions",
+    zValidator("query", listWorkflowExecutionsQuerySchema),
+    ListWorkflowExecutionsApi,
+  )
+  .get("/workflow/executions/:executionId", GetWorkflowExecutionApi)
+  .get(
+    "/workflow/executions/:executionId/status",
+    GetWorkflowExecutionStatusApi,
+  )
+  .post(
+    "/workflow/tools",
+    zValidator("json", createWorkflowToolSchema),
+    CreateWorkflowToolApi,
+  )
+  .get("/workflow/tools", ListWorkflowToolsApi)
+  .get("/workflow/tools/:toolId", GetWorkflowToolApi)
+  .put(
+    "/workflow/tools/:toolId",
+    zValidator("json", updateWorkflowToolSchema),
+    UpdateWorkflowToolApi,
+  )
+  .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
+  .put(
+    "/workflow/steps/:stepId",
+    zValidator("json", updateWorkflowStepExecutionSchema),
+    UpdateWorkflowStepExecutionApi,
+  )
+  .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
+  .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
+  .post("/workflow/steps/submit-form", SubmitFormStepApi)
+  .get("/workflow/files/:fileId", ServeWorkflowFileApi)
+  .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+  .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
+
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agent/generate-prompt", GeneratePromptApi)
@@ -876,6 +992,8 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+  .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
+  .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(
     "/oauth/create",
