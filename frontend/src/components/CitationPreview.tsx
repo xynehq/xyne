@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react"
-import { X, FileText, ExternalLink } from "lucide-react"
+import { X, FileText, ExternalLink, ArrowLeft } from "lucide-react"
 import { Citation } from "shared/types"
 import PdfViewer from "./PdfViewer"
 import DocxViewer from "./DocxViewer"
@@ -11,10 +11,12 @@ interface CitationPreviewProps {
   citation: Citation | null
   isOpen: boolean
   onClose: () => void
+  onBackToSources?: () => void
+  showBackButton?: boolean
 }
 
 export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
-  ({ citation, isOpen, onClose }) => {
+  ({ citation, isOpen, onClose, onBackToSources, showBackButton = false }) => {
     const [documentContent, setDocumentContent] = useState<Blob | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -178,20 +180,32 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
       <div className="fixed top-0 right-0 bottom-0 w-[47.5%] border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col z-50 shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
-              {citation.title.split("/").pop() || "Document Preview"}
-            </h3>
-            {citation?.app && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Source:{" "}
-                {citation.title.replace(/\/[^/]*$/, "") || "Unknown Source"}
-              </p>
+          <div className="flex items-center flex-1 min-w-0">
+            {showBackButton && onBackToSources && (
+              <button
+                onClick={onBackToSources}
+                className="mr-4 p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Back to sources"
+              >
+                <ArrowLeft size={20} />
+              </button>
             )}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                {citation.title.split("/").pop() || "Document Preview"}
+              </h3>
+              {citation?.app && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Source:{" "}
+                  {citation.title.replace(/\/[^/]*$/, "") || "Unknown Source"}
+                </p>
+              )}
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="ml-4 p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+            className="ml-4 p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+            title="Close preview"
           >
             <X size={20} />
           </button>
