@@ -16,8 +16,8 @@ import { Subsystem } from "@/types" // Import Subsystem type
 import config from "@/config" // Import config
 import { getProviderByModel } from "@/ai/provider" // Restore provider getter
 import type { LLMProvider, Models } from "@/ai/types" // Import AI types
-import { searchVespa, GetRandomDocument, SearchModes } from "@/search/vespa" // Import Vespa functions
-import { getSortedScoredChunks } from "@/search/mappers" // Import sorter
+import { searchVespa, GetRandomDocument } from "@/search/vespa" // Import Vespa functions
+import { getSortedScoredChunks } from "@xyne/vespa-ts/mappers" // Import sorter
 import pLimit from "p-limit" // Import p-limit
 import type { Message } from "@aws-sdk/client-bedrock-runtime" // Required for provider interface
 import {
@@ -26,7 +26,7 @@ import {
   userSchema,
   eventSchema,
   mailAttachmentSchema,
-} from "@/search/types" // Import schema names/types
+} from "@xyne/vespa-ts/types" // Import schema names/types
 import { upsertUserPersonalization } from "@/db/personalization" // Import personalization upsert
 import { db } from "@/db/client" // Import db client
 import { getUserByEmail } from "@/db/user" // Import user getter
@@ -35,9 +35,10 @@ import {
   getUserPersonalization,
   getUserPersonalizationByEmail,
 } from "@/db/personalization" // Import personalization getters
+import type { SelectPersonalization } from "@/db/schema" // Import personalization type
 import { Ollama } from "ollama" // Import the base Ollama client library
 import { OllamaProvider } from "@/ai/provider/ollama" // Import our specific provider wrapper
-
+import { SearchModes } from "@xyne/vespa-ts/types" // Import SearchModes enum
 // --- Define and Export WS Connections Map --- (Defined ONCE)
 export const tuningWsConnections = new Map<
   string,
@@ -1060,7 +1061,7 @@ async function optimizeAlpha(
       [SearchModes.NativeRank]: {
         alpha: bestAlpha, // Save the float alpha directly
       },
-    }
+    } as SelectPersonalization["parameters"]
     await upsertUserPersonalization(
       db,
       userId,

@@ -11,7 +11,7 @@ import {
   type Mail,
   type MailAttachment,
   type VespaMailAttachment,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { ifMailDocumentsExist, insert, IfMailDocExist } from "@/search/vespa"
 import { Subsystem, type GoogleClient } from "@/types"
 import { gmail_v1, google } from "googleapis"

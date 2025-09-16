@@ -1,8 +1,9 @@
 import config from "@/config"
 import { messageFeedbackEnum } from "@/db/schema"
-import { Apps, entitySchema, type Entity } from "@/search/types"
+import { Apps, type Entity } from "@xyne/vespa-ts/types"
 import type { Span } from "@/tracer"
 import { z } from "zod"
+import { entitySchema } from "@/shared/types"
 
 const {
   JwtPayloadKey,

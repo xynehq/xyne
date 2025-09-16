@@ -9,9 +9,11 @@ import {
   ArrowLeft,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
-import { useState, useCallback, useEffect, memo } from "react"
+import { useState, useCallback, useEffect, memo, useRef, useMemo } from "react"
 import { Input } from "@/components/ui/input"
 import CollectionFileUpload, {
   SelectedFile as FileUploadSelectedFile,
@@ -46,9 +48,13 @@ import ReadmeViewer from "@/components/ReadmeViewer"
 import { DocumentChat } from "@/components/DocumentChat"
 import { authFetch } from "@/utils/authFetch"
 import { generateUUID } from "@/utils/chatUtils"
+import { useScopedFind } from "@/hooks/useScopedFind"
+import { PersistentMap } from "@/utils/chatUtils"
+import { DocumentOperationsProvider, useDocumentOperations } from "@/contexts/DocumentOperationsContext"
 
-// Module-level map to store documentId -> tempChatId mapping (frontend-generated UUIDs)
-const documentToTempChatMap = new Map<string, string>()
+// Persistent storage for documentId -> tempChatId mapping using sessionStorage
+const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
+const documentToTempChatMap = new PersistentMap(DOCUMENT_CHAT_MAP_KEY)
 
 export const Route = createFileRoute("/_authenticated/knowledgeManagement")({
   component: RouteComponent,
@@ -125,6 +131,132 @@ const DocumentViewerContainer = memo(
     }
     loadingDocument: boolean
   }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { documentOperationsRef } = useDocumentOperations();
+
+    const viewerElement = useMemo(() => {
+      if (!selectedDocument?.content) return null
+    
+      const name = selectedDocument.file.name.toLowerCase()
+    
+      if (name.endsWith(".pdf")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <PdfViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  { type: selectedDocument.content.type || "application/pdf" },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+              scale={1.2}
+              showNavigation
+              displayMode="continuous"
+              documentOperationsRef={documentOperationsRef}
+            />
+          </div>
+        )
+      }
+    
+      if (name.endsWith(".md")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <ReadmeViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  { type: selectedDocument.content.type || "text/markdown" },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+            />
+          </div>
+        )
+      }
+    
+      return (
+        <div ref={containerRef} data-container-ref="true" className="h-full p-6 overflow-auto">
+          <DocxViewer
+            source={
+              new File(
+                [selectedDocument.content],
+                selectedDocument.file.name,
+                {
+                  type:
+                    selectedDocument.content.type ||
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                },
+              )
+            }
+            className="h-full max-w-4xl mx-auto"
+            style={{ height: "100%" }}
+            options={{
+              renderHeaders: true,
+              renderFooters: true,
+              renderFootnotes: true,
+              renderEndnotes: true,
+              renderComments: false,
+              renderChanges: false,
+              breakPages: true,
+              ignoreLastRenderedPageBreak: true,
+              inWrapper: true,
+              ignoreWidth: false,
+              ignoreHeight: false,
+              ignoreFonts: false,
+            }}
+          />
+        </div>
+      )
+    }, [selectedDocument?.file.id, selectedDocument?.file.name, selectedDocument?.content])
+    
+    const {
+      highlightText,
+      clearHighlights,
+      scrollToMatch,
+    } = useScopedFind(containerRef);
+
+    // Expose the highlight functions via the document operations ref
+    useEffect(() => {
+      if (documentOperationsRef?.current) {
+        documentOperationsRef.current.highlightText = async (text: string) => {
+          if (!containerRef.current) {
+            const container = document.querySelector('[data-container-ref="true"]');
+            if (container) {
+              (containerRef as any).current = container;
+            } else {
+              return false;
+            }
+          }
+
+          try {
+            const success = await highlightText(text);
+            return success;
+          } catch (error) {
+            console.error('Error calling highlightText:', error);
+            return false;
+          }
+        };
+        
+        documentOperationsRef.current.clearHighlights = clearHighlights;
+        documentOperationsRef.current.scrollToMatch = scrollToMatch;
+      }
+    }, [documentOperationsRef, highlightText, clearHighlights, scrollToMatch]);
+
+    useEffect(() => {
+      clearHighlights();
+    }, [selectedDocument?.file.id, clearHighlights]);
+
+    useEffect(() => {
+      return () => {
+        clearHighlights();
+      };
+    }, [clearHighlights]);
+
     return (
       <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
         {loadingDocument && (
@@ -139,72 +271,7 @@ const DocumentViewerContainer = memo(
         )}
         {selectedDocument.content ? (
           <div className="h-full">
-            {selectedDocument.file.name.toLowerCase().endsWith(".pdf") ? (
-              <PdfViewer
-                key={selectedDocument.file.id}
-                source={
-                  new File(
-                    [selectedDocument.content],
-                    selectedDocument.file.name,
-                    {
-                      type: selectedDocument.content.type || "application/pdf",
-                    },
-                  )
-                }
-                className="h-full"
-                style={{ height: "100%", overflow: "auto" }}
-                scale={1.2}
-                showNavigation={true}
-                displayMode="continuous"
-              />
-            ) : selectedDocument.file.name.toLowerCase().endsWith(".md") ? (
-              <ReadmeViewer
-                source={
-                  new File(
-                    [selectedDocument.content],
-                    selectedDocument.file.name,
-                    {
-                      type: selectedDocument.content.type || "text/markdown",
-                    },
-                  )
-                }
-                className="h-full"
-                style={{ height: "100%", overflow: "auto" }}
-              />
-            ) : (
-              <div className="h-full p-6 overflow-auto">
-                <DocxViewer
-                  key={selectedDocument.file.id}
-                  source={
-                    new File(
-                      [selectedDocument.content],
-                      selectedDocument.file.name,
-                      {
-                        type:
-                          selectedDocument.content.type ||
-                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                      },
-                    )
-                  }
-                  className="h-full max-w-4xl mx-auto"
-                  style={{ height: "100%" }}
-                  options={{
-                    renderHeaders: true,
-                    renderFooters: true,
-                    renderFootnotes: true,
-                    renderEndnotes: true,
-                    renderComments: false,
-                    renderChanges: false,
-                    breakPages: true,
-                    ignoreLastRenderedPageBreak: true,
-                    inWrapper: true,
-                    ignoreWidth: false,
-                    ignoreHeight: false,
-                    ignoreFonts: false,
-                  }}
-                />
-              </div>
-            )}
+            {viewerElement}
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
@@ -231,9 +298,18 @@ const DocumentViewerContainer = memo(
 DocumentViewerContainer.displayName = "DocumentViewerContainer"
 
 function RouteComponent() {
+  return (
+    <DocumentOperationsProvider>
+      <KnowledgeManagementContent />
+    </DocumentOperationsProvider>
+  )
+}
+
+function KnowledgeManagementContent() {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const { toast } = useToast()
+  const { documentOperationsRef } = useDocumentOperations()
   const [showNewCollection, setShowNewCollection] = useState(false)
   const [collectionName, setCollectionName] = useState("")
   const [collections, setCollections] = useState<Collection[]>([])
@@ -268,10 +344,10 @@ function RouteComponent() {
 
   // File tree visibility state
   const [isFileTreeCollapsed, setIsFileTreeCollapsed] = useState(true)
-  
+
   // Chat visibility state based on zoom level
   const [isChatHidden, setIsChatHidden] = useState(false)
-  
+
   // Chat overlay state - only used when isChatHidden is true
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false)
 
@@ -286,7 +362,7 @@ function RouteComponent() {
   // Zoom detection for chat component
   useEffect(() => {
     // Guard for SSR
-    if (typeof window === 'undefined') return
+    if (typeof window === "undefined") return
 
     const measureZoom = () => {
       // Method 1: Using window dimensions ratio
@@ -312,23 +388,23 @@ function RouteComponent() {
 
     // Recalculate on viewport-affecting events
     const onResize = () => measureZoom()
-    window.addEventListener('resize', onResize)
-    window.addEventListener('orientationchange', onResize)
-    
+    window.addEventListener("resize", onResize)
+    window.addEventListener("orientationchange", onResize)
+
     // Some browsers expose visualViewport events that fire on zoom
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', onResize)
+      window.visualViewport.addEventListener("resize", onResize)
     }
 
     return () => {
-      window.removeEventListener('resize', onResize)
-      window.removeEventListener('orientationchange', onResize)
+      window.removeEventListener("resize", onResize)
+      window.removeEventListener("orientationchange", onResize)
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', onResize)
+        window.visualViewport.removeEventListener("resize", onResize)
       }
     }
   }, [])
-          
+
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
 
   // Save upload state to localStorage whenever it changes
@@ -401,7 +477,9 @@ function RouteComponent() {
 
         // Check if the collection exists and has files
         try {
-          const response = await api.cl.$get()
+          const response = await api.cl.$get({
+            query: { includeItems: "true" },
+          })
           if (response.ok) {
             const data = await response.json()
             const existingCollection = data.find(
@@ -459,7 +537,9 @@ function RouteComponent() {
 
     const checkUploadProgress = async () => {
       try {
-        const response = await api.cl.$get()
+        const response = await api.cl.$get({
+          query: { includeItems: "true" },
+        })
         if (response.ok) {
           const data = await response.json()
           const existingCollection = data.find(
@@ -484,14 +564,27 @@ function RouteComponent() {
             clearUploadState()
 
             // Refresh collections to show the new one
+
             const updatedCollections = data.map(
-              (collection: CollectionType) => ({
+              (collection: CollectionType & { items?: CollectionItem[] }) => ({
                 id: collection.id,
                 name: collection.name,
                 description: collection.description,
-                files: collection.totalCount || 0,
-                items: [],
-                isOpen: false,
+                files: collection.totalItems || 0,
+                items: buildFileTree(
+                  (collection.items || []).map((item: CollectionItem) => ({
+                    name: item.name,
+                    type: item.type as "file" | "folder",
+                    totalFileCount: item.totalFileCount,
+                    updatedAt: item.updatedAt,
+                    id: item.id,
+                    updatedBy:
+                      item.lastUpdatedByEmail || user?.email || "Unknown",
+                  })),
+                ),
+                isOpen: collection.name.toLowerCase() === uploadingCollectionName.toLowerCase() 
+                  ? true // Open the newly uploaded collection
+                  : (collection.items || []).length > 0,
                 lastUpdated: new Date(collection.updatedAt).toLocaleString(
                   "en-GB",
                   {
@@ -503,10 +596,11 @@ function RouteComponent() {
                   },
                 ),
                 updatedBy: collection.lastUpdatedByEmail || "Unknown",
-                totalCount: collection.totalCount,
+                totalCount: collection.totalItems,
                 isPrivate: collection.isPrivate,
               }),
             )
+
             setCollections(updatedCollections)
 
             showToast(
@@ -529,31 +623,46 @@ function RouteComponent() {
   useEffect(() => {
     const fetchCollections = async () => {
       try {
-        const response = await api.cl.$get()
+        const response = await api.cl.$get({
+          query: { includeItems: "true" },
+        })
         if (response.ok) {
           const data = await response.json()
+
           setCollections(
-            data.map((collection: CollectionType) => ({
-              id: collection.id,
-              name: collection.name,
-              description: collection.description,
-              files: collection.totalItems || 0,
-              items: [],
-              isOpen: false,
-              lastUpdated: new Date(collection.updatedAt).toLocaleString(
-                "en-GB",
-                {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                },
-              ),
-              updatedBy: collection.lastUpdatedByEmail || "Unknown",
-              totalCount: collection.totalItems,
-              isPrivate: collection.isPrivate,
-            })),
+            data.map(
+              (collection: CollectionType & { items?: CollectionItem[] }) => ({
+                id: collection.id,
+                name: collection.name,
+                description: collection.description,
+                files: collection.totalItems || 0,
+                items: buildFileTree(
+                  (collection.items || []).map((item: CollectionItem) => ({
+                    name: item.name,
+                    type: item.type as "file" | "folder",
+                    totalFileCount: item.totalFileCount,
+                    updatedAt: item.updatedAt,
+                    id: item.id,
+                    updatedBy:
+                      item.lastUpdatedByEmail || user?.email || "Unknown",
+                  })),
+                ),
+                isOpen: (collection.items || []).length > 0, // Open if has items
+                lastUpdated: new Date(collection.updatedAt).toLocaleString(
+                  "en-GB",
+                  {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  },
+                ),
+                updatedBy: collection.lastUpdatedByEmail || "Unknown",
+                totalCount: collection.totalItems,
+                isPrivate: collection.isPrivate,
+              }),
+            ),
           )
         } else {
           showToast("Error", "Failed to fetch knowledge bases.", true)
@@ -568,7 +677,7 @@ function RouteComponent() {
     }
 
     fetchCollections()
-  }, [showToast])
+  }, [showToast, user?.email])
 
   const handleCloseModal = () => {
     setShowNewCollection(false)
@@ -638,6 +747,12 @@ function RouteComponent() {
       const clResponse = await api.cl[":id"].$get({ param: { id: cl.id } })
       const updatedCl = await clResponse.json()
 
+      // Also fetch the collection items to build the file tree
+      const itemsResponse = await api.cl[":id"].items.$get({
+        param: { id: cl.id },
+      })
+      const items = await itemsResponse.json()
+
       const newCollection: Collection = {
         id: updatedCl.id,
         name: updatedCl.name,
@@ -651,13 +766,35 @@ function RouteComponent() {
           minute: "2-digit",
         }),
         updatedBy: updatedCl.lastUpdatedByEmail || user?.email || "Unknown",
-        items: [],
-        isOpen: false,
+        items: buildFileTree(
+          items.map((item: CollectionItem) => ({
+            name: item.name,
+            type: item.type as "file" | "folder",
+            totalFileCount: item.totalFileCount,
+            updatedAt: item.updatedAt,
+            id: item.id,
+            updatedBy:
+              item.lastUpdatedByEmail || user?.email || "Unknown",
+          })),
+        ),
+        isOpen: true,
         totalCount: updatedCl.totalCount,
         isPrivate: updatedCl.isPrivate,
       }
 
-      setCollections((prev) => [newCollection, ...prev])
+      // Use Set-based approach to prevent duplicates
+      setCollections((prev) => {
+        const collectionsMap = new Map()
+
+        // Add existing collections
+        prev.forEach((col) => collectionsMap.set(col.id, col))
+
+        // Add/update new collection
+        collectionsMap.set(newCollection.id, newCollection)
+
+        return Array.from(collectionsMap.values())
+      })
+
       handleCloseModal()
       showToast(
         "Knowledge Base Created",
@@ -761,39 +898,40 @@ function RouteComponent() {
       })
       const items = await itemsResponse.json()
 
-      setCollections((prev) =>
-        prev.map((c) => {
-          if (c.id === addingToCollection.id) {
-            return {
-              ...c,
-              files: updatedCl.totalCount || 0,
-              items: buildFileTree(
-                items.map((item: CollectionItem) => ({
-                  name: item.name,
-                  type: item.type as "file" | "folder",
-                  totalFileCount: item.totalFileCount,
-                  updatedAt: item.updatedAt,
-                  id: item.id,
-                  updatedBy:
-                    item.lastUpdatedByEmail || user?.email || "Unknown",
-                })),
-              ),
-              lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
-                "en-GB",
-                {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                },
-              ),
-              updatedBy: updatedCl.lastUpdatedByEmail || "Unknown",
-            }
-          }
-          return c
-        }),
-      )
+      setCollections((prev) => {
+        const collectionsMap = new Map()
+
+        // Add existing collections
+        prev.forEach((col) => collectionsMap.set(col.id, col))
+
+        // Update the specific collection
+        const updatedCollection = {
+          ...collectionsMap.get(addingToCollection.id),
+          files: updatedCl.totalCount || 0,
+          items: buildFileTree(
+            items.map((item: CollectionItem) => ({
+              name: item.name,
+              type: item.type as "file" | "folder",
+              totalFileCount: item.totalFileCount,
+              updatedAt: item.updatedAt,
+              id: item.id,
+              updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+            })),
+          ),
+          lastUpdated: new Date(updatedCl.updatedAt).toLocaleString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          updatedBy: updatedCl.lastUpdatedByEmail || "Unknown",
+        }
+
+        collectionsMap.set(addingToCollection.id, updatedCollection)
+
+        return Array.from(collectionsMap.values())
+      })
 
       showToast(
         "Files Added",
@@ -906,26 +1044,36 @@ function RouteComponent() {
 
       if (response.ok) {
         const updatedCl = await response.json()
-        setCollections((prev) =>
-          prev.map((c) =>
-            c.id === editingCollection.id
-              ? {
-                  ...c,
-                  name: updatedCl.name,
-                  lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
-                    "en-GB",
-                    {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    },
-                  ),
-                }
-              : c,
-          ),
-        )
+
+        // Use Map-based approach to prevent duplicates during update
+        setCollections((prev) => {
+          const collectionsMap = new Map()
+
+          // Add existing collections
+          prev.forEach((col) => collectionsMap.set(col.id, col))
+
+          // Update the specific collection
+          const existingCollection = collectionsMap.get(editingCollection.id)
+          if (existingCollection) {
+            collectionsMap.set(editingCollection.id, {
+              ...existingCollection,
+              name: updatedCl.name,
+              lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
+                "en-GB",
+                {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                },
+              ),
+            })
+          }
+
+          return Array.from(collectionsMap.values())
+        })
+
         setEditingCollection(null)
         setCollectionName("")
         showToast("Collection Updated", "Successfully updated collection name.")
@@ -952,10 +1100,10 @@ function RouteComponent() {
       // Delete the collection
       await deleteCollection(deletingCollection.id)
 
-        // Remove from state
-        setCollections((prev) =>
-          prev.filter((c) => c.id !== deletingCollection.id),
-        )
+      // Remove from state
+      setCollections((prev) =>
+        prev.filter((c) => c.id !== deletingCollection.id),
+      )
       setDeletingCollection(null)
       showToast(
         "Collection Deleted",
@@ -985,8 +1133,8 @@ function RouteComponent() {
       showToast(
         "Preview Not Available",
         "Preview is only available for .docx, .pdf, and .md files.",
-        false
-      );
+        false,
+      )
       return
     }
 
@@ -1041,22 +1189,20 @@ function RouteComponent() {
       )
 
       if (!contentResponse.ok) {
-        let errorMessage = 'Failed to fetch document';
+        let errorMessage = "Failed to fetch document"
         try {
           // Try to get detailed error message from response
-          const errorData = await contentResponse.json();
-          errorMessage = errorData.message || `${errorMessage}: ${contentResponse.statusText}`;
+          const errorData = await contentResponse.json()
+          errorMessage =
+            errorData.message ||
+            `${errorMessage}: ${contentResponse.statusText}`
         } catch {
           // If JSON parsing fails, use status text
-          errorMessage = `${errorMessage}: ${contentResponse.statusText}`;
+          errorMessage = `${errorMessage}: ${contentResponse.statusText}`
         }
-  
-        showToast(
-          "Document Error",
-          errorMessage,
-          true
-        );
-        throw new Error(errorMessage);
+
+        showToast("Document Error", errorMessage, true)
+        throw new Error(errorMessage)
       }
 
       const blob = await contentResponse.blob()
@@ -1121,8 +1267,49 @@ function RouteComponent() {
   }
 
   // Handle chunk index changes from DocumentChat
-  const handleChunkIndexChange = (newChunkIndex: number | null) => {
-    // setChunkIndex(newChunkIndex)
+  const handleChunkIndexChange = async (newChunkIndex: number | null, documentId: string) => {
+    if (!documentId) {
+      console.error('handleChunkIndexChange called without documentId');
+      return;
+    }
+    
+    if (newChunkIndex !== null && selectedDocument?.file.id === documentId) {
+      try {
+        const chunkContentResponse = await api.chunk[":cId"].files[":itemId"].content.$get({
+          param: { cId: newChunkIndex.toString(), itemId: documentId },
+        })
+        
+        if (!chunkContentResponse.ok) {
+          console.error('Failed to fetch chunk content:', chunkContentResponse.status);
+          showToast('Error', 'Failed to load chunk content', true);
+          return;
+        }
+        
+        const chunkContent = await chunkContentResponse.json()
+
+        // Ensure we are still on the same document before mutating UI
+        if (selectedDocument?.file.id !== documentId) {
+          return;
+        }
+        
+        if (chunkContent && chunkContent.chunkContent) {
+          if (documentOperationsRef?.current?.clearHighlights) {
+            documentOperationsRef.current.clearHighlights()
+          }
+          
+          if (documentOperationsRef?.current?.highlightText) {
+            try {
+              await documentOperationsRef.current.highlightText(chunkContent.chunkContent);
+            } catch (error) {
+              console.error('Error highlighting chunk text:', chunkContent.chunkContent, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in handleChunkIndexChange:', error);
+        showToast('Error', 'Failed to process chunk navigation', true);
+      }
+    }
   }
 
   return (
@@ -1159,11 +1346,17 @@ function RouteComponent() {
                   </div>
                   <div className="ml-auto">
                     <Button
-                      onClick={() => setIsFileTreeCollapsed(!isFileTreeCollapsed)}
+                      onClick={() =>
+                        setIsFileTreeCollapsed(!isFileTreeCollapsed)
+                      }
                       variant="ghost"
                       size="sm"
                       className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto"
-                      title={isFileTreeCollapsed ? "Show file tree" : "Hide file tree"}
+                      title={
+                        isFileTreeCollapsed
+                          ? "Show file tree"
+                          : "Hide file tree"
+                      }
                     >
                       {isFileTreeCollapsed ? (
                         <PanelLeftOpen className="z-50" size={16} />
@@ -1204,17 +1397,17 @@ function RouteComponent() {
                     className="bg-red-500 hover:bg-red-600 text-white rounded-full p-3 shadow-lg transition-all duration-200 hover:scale-105 hover:animate-none"
                     title="Open chat overlay"
                   >
-                    <svg 
-                      width="20" 
-                      height="20" 
-                      viewBox="0 0 24 24" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      strokeWidth="2" 
-                      strokeLinecap="round" 
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
                       strokeLinejoin="round"
                     >
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                     </svg>
                   </Button>
                 </div>
@@ -1225,11 +1418,11 @@ function RouteComponent() {
             {isChatHidden && isChatOverlayOpen && (
               <div className="fixed inset-0 z-50 flex justify-end">
                 {/* Backdrop */}
-                <div 
-                  className="absolute inset-0 bg-black bg-opacity-30" 
+                <div
+                  className="absolute inset-0 bg-black bg-opacity-30"
                   onClick={() => setIsChatOverlayOpen(false)}
                 />
-                
+
                 {/* Chat overlay panel */}
                 <div className="relative bg-white dark:bg-[#1E1E1E] w-[50%] max-w-[50%] max-w-[90vw] h-full shadow-2xl transform transition-transform duration-300 ease-in-out">
                   {/* Close button */}
@@ -1244,7 +1437,7 @@ function RouteComponent() {
                       <X size={16} />
                     </Button>
                   </div>
-                  
+
                   {/* Chat component */}
                   <div className="h-full">
                     <DocumentChat
@@ -1266,7 +1459,7 @@ function RouteComponent() {
               <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex">
                 <div className="bg-gray-100 flex flex-col border-r border-gray-200 w-[30%] max-w-[400px] min-w-[250px] dark:bg-[#1E1E1E] dark:border-gray-700 lg:w-[300px] lg:min-w-[250px] lg:max-w-[400px] h-64 lg:h-full">
                   {/* Collection Header */}
-                  <div className="px-4 py-4 h-12 bg-gray-50 dark:bg-[#1E1E1E] border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                  <div className="px-4 py-4 h-12 bg-gray-50 dark:bg-[#1E1E1E] flex items-center justify-between sticky top-0 z-20">
                     <h2 className="text-sm font-bold font-mono text-gray-400 dark:text-gray-500 uppercase tracking-wider truncate">
                       {selectedDocument.collection.name}
                     </h2>
@@ -1308,30 +1501,34 @@ function RouteComponent() {
 
                                 if (n.isOpen && n.id) {
                                   try {
-                                const response = await api.cl[":id"].items.$get(
-                                  {
+                                    const response = await api.cl[
+                                      ":id"
+                                    ].items.$get({
                                       param: {
                                         id: selectedDocument.collection.id,
                                       },
                                       query: { parentId: n.id },
-                                  },
-                                )
+                                    })
                                     if (response.ok) {
                                       const items = await response.json()
 
-                                  n.children = items.map((item: CollectionItem) => ({
-                                        id: item.id,
-                                        name: item.name,
-                                        type: item.type as "file" | "folder",
-                                        updatedAt: item.updatedAt,
-                                        updatedBy:
-                                          item.lastUpdatedByEmail ||
-                                          user?.email ||
-                                          "Unknown",
-                                        isOpen: true,
-                                        children:
-                                          item.type === "folder" ? [] : undefined,
-                                      }))
+                                      n.children = items.map(
+                                        (item: CollectionItem) => ({
+                                          id: item.id,
+                                          name: item.name,
+                                          type: item.type as "file" | "folder",
+                                          lastUpdated: item.updatedAt,
+                                          updatedBy:
+                                            item.lastUpdatedByEmail ||
+                                            user?.email ||
+                                            "Unknown",
+                                          isOpen: false,
+                                          children:
+                                            item.type === "folder"
+                                              ? []
+                                              : undefined,
+                                        }),
+                                      )
                                     }
                                   } catch (error) {
                                     console.error(
@@ -1373,8 +1570,8 @@ function RouteComponent() {
                   </div>
                 </div>
                 {/* Click outside to close */}
-                <div 
-                  className="flex-1" 
+                <div
+                  className="flex-1"
                   onClick={() => setIsFileTreeCollapsed(true)}
                 />
               </div>
@@ -1390,49 +1587,49 @@ function RouteComponent() {
                 </h1>
                 <div className="flex items-center gap-4">
                   {/* <Search className="text-gray-400 dark:text-gray-500 h-6 w-6" /> */}
-                    <Button
-                      onClick={() => setShowNewCollection(true)}
-                      disabled={isUploading}
+                  <Button
+                    onClick={() => setShowNewCollection(true)}
+                    disabled={isUploading}
                     className="bg-slate-800 hover:bg-slate-700 dark:bg-[#2d2d2d] dark:hover:bg-[#404040] text-white rounded-full px-4 py-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Plus size={16} />
-                      <span className="font-mono text-[12px] font-medium">
-                        NEW COLLECTION
-                      </span>
-                    </Button>
+                  >
+                    <Plus size={16} />
+                    <span className="font-mono text-[12px] font-medium">
+                      NEW COLLECTION
+                    </span>
+                  </Button>
                 </div>
               </div>
               <div className="mt-12">
                 {/* Show skeleton loader when uploading */}
                 {isUploading && batchProgress.total > 0 && (
-                    <div className="mb-8">
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                            {uploadingCollectionName}
-                          </h2>
-                          <span className="text-sm text-gray-500 dark:text-gray-400">
-                            uploading files...
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          {batchProgress.current} / {batchProgress.total} files
-                          processed
-                        </div>
+                  <div className="mb-8">
+                    <div className="flex justify-between items-center mb-4">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                          {uploadingCollectionName}
+                        </h2>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          uploading files...
+                        </span>
                       </div>
-                      <FileUploadSkeleton
-                        totalFiles={batchProgress.total}
-                        processedFiles={batchProgress.current}
-                        currentBatch={batchProgress.batch}
-                        totalBatches={batchProgress.totalBatches}
-                      />
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        {batchProgress.current} / {batchProgress.total} files
+                        processed
+                      </div>
                     </div>
-                  )}
+                    <FileUploadSkeleton
+                      totalFiles={batchProgress.total}
+                      processedFiles={batchProgress.current}
+                      currentBatch={batchProgress.batch}
+                      totalBatches={batchProgress.totalBatches}
+                    />
+                  </div>
+                )}
 
-                {collections.map((collection, index) => (
-                  <div key={index} className="mb-8">
+                {collections.map((collection) => (
+                  <div key={collection.id} className="mb-8">
                     <div
-                      className="flex justify-between items-center mb-4 cursor-pointer"
+                      className="sticky mb-2 cursor-pointer top-0 bg-white dark:bg-[#1E1E1E] py-1"
                       onClick={async () => {
                         const updatedCollections = [...collections]
                         const coll = updatedCollections.find(
@@ -1465,26 +1662,47 @@ function RouteComponent() {
                         }
                       }}
                     >
-                      <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                        {collection.name}
-                      </h2>
-                      <div className="flex items-center gap-4">
+                      <div className="absolute left-[-24px] top-1/2 transform -translate-y-1/2">
+                        {collection.isOpen ? (
+                          <ChevronDown
+                            size={16}
+                            className="text-gray-600 dark:text-gray-400"
+                          />
+                        ) : (
+                          <ChevronRight
+                            size={16}
+                            className="text-gray-600 dark:text-gray-400"
+                          />
+                        )}
+                      </div>
+
+                      {/* Collection header aligned with table grid */}
+                      <div className="grid grid-cols-12 gap-4 items-center">
+                        <div className="col-span-5">
+                          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                            {collection.name}
+                          </h2>
+                        </div>
+                        <div className="col-span-7 flex justify-end items-center gap-4">
                           <Plus
                             size={16}
-                          className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                            className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
                             onClick={(e) => {
                               e.stopPropagation()
-                            !isUploading && handleOpenAddFilesModal(collection)
-                          }}
-                        />
-                        <DropdownMenu
-                          open={openDropdown === collection.id}
-                          onOpenChange={(open) => setOpenDropdown(open ? collection.id : null)}
-                        >
-                          <DropdownMenuTrigger asChild>
-                            <MoreHorizontal
-                              size={16}
-                              className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
+                              !isUploading &&
+                                handleOpenAddFilesModal(collection)
+                            }}
+                          />
+                          <DropdownMenu
+                            open={openDropdown === collection.id}
+                            onOpenChange={(open) =>
+                              setOpenDropdown(open ? collection.id : null)
+                            }
+                          >
+                            <DropdownMenuTrigger asChild>
+                              <MoreHorizontal
+                                size={16}
+                                className={`cursor-pointer text-gray-600 dark:text-gray-400 ${isUploading ? "opacity-50 cursor-not-allowed" : ""}`}
                                 onClick={(e) => e.stopPropagation()}
                               />
                             </DropdownMenuTrigger>
@@ -1492,33 +1710,35 @@ function RouteComponent() {
                               <DropdownMenuItem
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                !isUploading && handleEditCollection(collection)
-                              }}
-                              disabled={isUploading}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              <span>Edit</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (!isUploading) {
-                                  setDeletingCollection(collection)
-                                  setOpenDropdown(null)
-                                }
-                              }}
-                              disabled={isUploading}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              <span>Delete</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                  !isUploading &&
+                                    handleEditCollection(collection)
+                                }}
+                                disabled={isUploading}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                <span>Edit</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!isUploading) {
+                                    setDeletingCollection(collection)
+                                    setOpenDropdown(null)
+                                  }
+                                }}
+                                disabled={isUploading}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </div>
                     {collection.isOpen && (
                       <>
-                        <div className="grid grid-cols-12 gap-4 text-sm text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
+                        <div className="grid grid-cols-12 gap-4 text-sm font-mono text-gray-500 dark:text-gray-400 pb-2 border-b border-gray-200 dark:border-gray-700">
                           <div className="col-span-5">FOLDER</div>
                           <div className="col-span-2"></div>
                           <div className="col-span-1 text-center">FILES</div>
@@ -1633,7 +1853,7 @@ function RouteComponent() {
                           }}
                         />
                       </>
-                      )}
+                    )}
                   </div>
                 ))}
               </div>
@@ -1802,19 +2022,19 @@ function RouteComponent() {
                   </div>
                 </div>
                 <CollectionFileUpload
-                      onFilesSelect={handleFilesSelect}
-                      onRemoveFile={handleRemoveFile}
-                      onRemoveAllFiles={handleRemoveAllFiles}
-                      selectedFiles={selectedFiles}
-                      onUpload={
-                        addingToCollection
-                          ? handleAddFilesToCollection
-                          : handleUpload
-                      }
-                      isUploading={isUploading}
-                      collectionName={collectionName}
-                      batchProgress={batchProgress}
-                    />
+                  onFilesSelect={handleFilesSelect}
+                  onRemoveFile={handleRemoveFile}
+                  onRemoveAllFiles={handleRemoveAllFiles}
+                  selectedFiles={selectedFiles}
+                  onUpload={
+                    addingToCollection
+                      ? handleAddFilesToCollection
+                      : handleUpload
+                  }
+                  isUploading={isUploading}
+                  collectionName={collectionName}
+                  batchProgress={batchProgress}
+                />
               </div>
             </div>
           </div>

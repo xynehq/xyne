@@ -58,6 +58,14 @@ export const Sidebar = ({
     try {
       const res = await api.auth.logout.$post()
       if (res.ok) {
+        // Clear document chat mappings from sessionStorage on logout
+        try {
+          sessionStorage.removeItem("documentToTempChatMap")
+          sessionStorage.removeItem("tempChatIdToChatIdMap")
+        } catch (error) {
+          console.error("Failed to clear document chat mappings on logout:", error)
+        }
+        
         router.navigate({ to: "/auth" })
       } else {
         toast({

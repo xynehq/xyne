@@ -11,8 +11,6 @@ import {
   eventSchema,
   fileSchema,
   GooglePeopleEntity,
-  isValidApp,
-  isValidEntity,
   mailAttachmentSchema,
   MailEntity,
   mailSchema,
@@ -37,7 +35,9 @@ import {
   type VespaUser,
   KbItemsSchema,
   KnowledgeBaseEntity,
-} from "@/search/types"
+  MailAttachmentEntity,
+  WebSearchEntity,
+} from "@xyne/vespa-ts/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
@@ -357,7 +357,10 @@ export const extractImageFileNames = (
   return { imageFileNames }
 }
 
-export const searchToCitation = (result: VespaSearchResults, chunkIndex?: number): Citation => {
+export const searchToCitation = (
+  result: VespaSearchResults,
+  chunkIndex?: number,
+): Citation => {
   const fields = result.fields
   if (result.fields.sddocname === userSchema) {
     return {
@@ -454,9 +457,7 @@ export const searchToCitation = (result: VespaSearchResults, chunkIndex?: number
   }
 }
 
-const searchToCitations = (
-  results: z.infer<typeof VespaSearchResultsSchema>[],
-): Citation[] => {
+const searchToCitations = (results: VespaSearchResults[]): Citation[] => {
   if (results.length === 0) {
     return []
   }
@@ -514,11 +515,13 @@ export const extractFileIdsFromMessage = async (
   totalValidFileIdsFromLinkCount: number
   fileIds: string[]
   threadIds: string[]
+  webSearchResults?: { title: string; url: string }[]
 }> => {
   const fileIds: string[] = []
   const threadIds: string[] = []
   const driveItem: string[] = []
   const collectionFolderIds: string[] = []
+  const webSearchResults: { title: string; url: string }[] = []
   if (pathRefId) {
     collectionFolderIds.push(pathRefId)
   }
@@ -534,14 +537,21 @@ export const extractFileIdsFromMessage = async (
           obj?.value?.entity == DriveEntity.Folder
         ) {
           driveItem.push(obj?.value?.docId)
-        } else fileIds.push(obj?.value?.docId)
+        } else if (obj?.value?.app === Apps.WebSearch) {
+          webSearchResults.push({
+            title: obj?.value?.title ?? "",
+            url: obj?.value?.url || "",
+          })
+        } else {
+          fileIds.push(obj?.value?.docId)
+        }
         // Check if this pill has a threadId (for email threads)
         if (obj?.value?.threadId && obj?.value?.app === Apps.Gmail) {
           threadIds.push(obj?.value?.threadId)
         }
 
         const pillValue = obj.value
-        const docId = pillValue.docId
+        const docId = obj.value.app !== Apps.WebSearch ? pillValue.docId : ""
 
         // Check if this is a Google Sheets reference with wholeSheet: true
         if (pillValue.wholeSheet === true) {
@@ -655,7 +665,12 @@ export const extractFileIdsFromMessage = async (
     fileIds.push(...vespaIds)
   }
 
-  return { totalValidFileIdsFromLinkCount, fileIds, threadIds }
+  return {
+    totalValidFileIdsFromLinkCount,
+    fileIds: fileIds.filter(Boolean),
+    threadIds: threadIds.filter(Boolean),
+    webSearchResults,
+  }
 }
 
 export const handleError = (error: any) => {
@@ -1022,7 +1037,7 @@ export function findOptimalCitationInsertionPoint(
 
   // Look for the next newline after the target index
   for (let i = targetIndex; i < text.length; i++) {
-    if (text[i] === '\n' || text[i] === '\r') {
+    if (text[i] === "\n" || text[i] === "\r") {
       return i // Place citation just before the newline
     }
   }
@@ -1031,25 +1046,61 @@ export function findOptimalCitationInsertionPoint(
   for (let i = targetIndex; i < text.length; i++) {
     if (/[.!?]/.test(text[i])) {
       // Check if it's a real sentence ending (not decimal number)
-      const prevChar = i > 0 ? text[i - 1] : ''
-      const nextChar = i < text.length - 1 ? text[i + 1] : ''
-      
+      const prevChar = i > 0 ? text[i - 1] : ""
+      const nextChar = i < text.length - 1 ? text[i + 1] : ""
+
       // Skip if it's a decimal number
-      if (text[i] === '.' && /\d/.test(prevChar) && /\d/.test(nextChar)) {
+      if (text[i] === "." && /\d/.test(prevChar) && /\d/.test(nextChar)) {
         continue
       }
-      
+
       return i + 1 // Place after the sentence ending
     }
   }
 
   // Fallback: find the next space
   for (let i = targetIndex; i < text.length; i++) {
-    if (text[i] === ' ') {
+    if (text[i] === " ") {
       return i + 1 // Place after the space
     }
   }
 
   // Final fallback: end of text
   return text.length
+}
+
+export const isValidApp = (app: string): boolean => {
+  return app
+    ? Object.values(Apps)
+        .map((v) => v.toLowerCase())
+        .includes(app.toLowerCase() as Apps)
+    : false
+}
+
+export const isValidEntity = (entity: string): boolean => {
+  const normalizedEntity = entity?.toLowerCase()
+  return normalizedEntity
+    ? Object.values(DriveEntity)
+        .map((v) => v.toLowerCase())
+        .includes(normalizedEntity) ||
+        Object.values(MailEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(CalendarEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(MailAttachmentEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(GooglePeopleEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(SlackEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity) ||
+        Object.values(WebSearchEntity)
+          .map((v) => v.toLowerCase())
+          .includes(normalizedEntity)
+    : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
+      false
 }

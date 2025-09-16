@@ -13,7 +13,7 @@ import {
   type VespaSearchResult,
   type VespaSearchResults,
   type VespaUser,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import OpenAI from "openai"
 import pc from "picocolors"
 import {

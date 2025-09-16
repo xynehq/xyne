@@ -88,7 +88,6 @@ import type { chatSchema, MessageRetryReqType } from "@/api/search"
 import { getTracer, type Span, type Tracer } from "@/tracer"
 import {
   searchVespa,
-  SearchModes,
   searchVespaInFiles,
   getItems,
   GetDocumentsByDocIds,
@@ -98,6 +97,7 @@ import {
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,
+  SearchVespaThreads,
   DeleteDocument,
 } from "@/search/vespa"
 import {
@@ -108,11 +108,10 @@ import {
   dataSourceFileSchema,
   DriveEntity,
   GooglePeopleEntity,
-  isValidApp,
-  isValidEntity,
   MailAttachmentEntity,
   MailEntity,
   mailSchema,
+  SearchModes,
   SlackEntity,
   WebSearchEntity,
   type Entity,
@@ -126,9 +125,8 @@ import {
   type VespaSearchResultsSchema,
   KnowledgeBaseEntity,
   KbItemsSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
-import { SearchVespaThreads } from "@/search/vespa"
 import {
   getChatTraceByExternalId,
   insertChatTrace,
@@ -139,7 +137,7 @@ import {
   getUserPersonalizationByEmail,
   getUserPersonalizationAlpha,
 } from "@/db/personalization"
-import { appToSchemaMapper, entityToSchemaMapper } from "@/search/mappers"
+import { appToSchemaMapper, entityToSchemaMapper } from "@xyne/vespa-ts/mappers"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
@@ -175,6 +173,8 @@ import {
   findOptimalCitationInsertionPoint,
   textToCitationIndex,
   textToImageCitationIndex,
+  isValidApp,
+  isValidEntity,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -1182,7 +1182,7 @@ export function buildContext(
       ?.map(
         (v, i) =>
           `Index ${i + startIndex} \n ${answerContextMap(
-            v as z.infer<typeof VespaSearchResultsSchema>,
+            v as VespaSearchResults,
             maxSummaryCount,
           )}`,
       )
@@ -1427,7 +1427,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   if (classification.filterQuery) {
     message = classification.filterQuery
   }
-  let searchResults
+  let searchResults: VespaSearchResponse
   if (!agentPrompt) {
     searchResults = await searchVespa(message, email, null, null, {
       limit: pageSize,
@@ -1492,7 +1492,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const rewriteSpan = pageSpan?.startSpan("query_rewrite")
       const vespaSearchSpan = rewriteSpan?.startSpan("vespa_search")
 
-      let results
+      let results: VespaSearchResponse
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
           limit: pageSize,
@@ -1616,7 +1616,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         //     ?.map((v: VespaSearchResult) => (v.fields as any).docId)
         //     ?.filter((v) => !!v),
         // })
-        let results
+        let results: VespaSearchResponse
         if (!agentPrompt) {
           results = await searchVespa(query, email, null, null, {
             limit: pageSize,
@@ -1736,7 +1736,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
-          limit: pageSize,
+          limit: pageSize + pageSize * pageNumber,
           offset: pageNumber * pageSize,
           alpha: userAlpha,
           excludedIds: latestIds,
@@ -1750,7 +1750,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           null,
           agentAppEnums,
           {
-            limit: pageSize,
+            limit: pageSize + pageSize * pageNumber,
             offset: pageNumber * pageSize,
             alpha: userAlpha,
             excludedIds: latestIds,
@@ -1795,7 +1795,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const searchSpan = pageSearchSpan?.startSpan("vespa_search")
       if (!agentPrompt) {
         results = await searchVespa(message, email, null, null, {
-          limit: pageSize,
+          limit: pageSize + pageSize * pageNumber,
           offset: pageNumber * pageSize,
           alpha: userAlpha,
           span: searchSpan,
@@ -1808,7 +1808,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           null,
           agentAppEnums,
           {
-            limit: pageSize,
+            limit: pageSize + pageSize * pageNumber,
             offset: pageNumber * pageSize,
             alpha: userAlpha,
             span: searchSpan,
@@ -2063,7 +2063,7 @@ async function* generateAnswerFromGivenContext(
   //     ?.map(
   //       (v, i) =>
   //         `Index ${i + startIndex} \n ${answerContextMap(
-  //           v as z.infer<typeof VespaSearchResultsSchema>,
+  //           v as VespaSearchResults,
   //           0,
   //           true,
   //         )}`,
@@ -2103,7 +2103,7 @@ async function* generateAnswerFromGivenContext(
   const startIndex = isReasoning ? previousResultsLength : 0
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = answerContextMap(
-      v as z.infer<typeof VespaSearchResultsSchema>,
+      v as VespaSearchResults,
       0,
       true,
       isMsgWithSources,
@@ -2238,7 +2238,7 @@ async function* generateAnswerFromGivenContext(
         ?.map(
           (v, i) =>
             `Index ${i + startIndex} \n ${answerContextMap(
-              v as z.infer<typeof VespaSearchResultsSchema>,
+              v as VespaSearchResults,
               20,
               true,
             )}`,
@@ -3233,7 +3233,7 @@ async function* generateMetadataQueryAnswer(
         `Search Iteration - ${iteration} : ${SearchModes.GlobalSorted}`,
       )
 
-      let searchResults
+      let searchResults: VespaSearchResponse
       if (!agentPrompt) {
         searchResults = await searchVespa(
           classification.filterQuery,
@@ -3242,6 +3242,7 @@ async function* generateMetadataQueryAnswer(
           entities ?? null,
           {
             ...searchOps,
+            limit: pageSize + pageSize * iteration,
             offset: pageSize * iteration,
             span: pageSpan,
           },
@@ -3256,6 +3257,7 @@ async function* generateMetadataQueryAnswer(
           agentAppEnums,
           {
             ...searchOps,
+            limit: pageSize + pageSize * iteration,
             offset: pageSize * iteration,
             span: pageSpan,
             dataSourceIds: agentSpecificDataSourceIds,
@@ -3401,7 +3403,7 @@ async function* generateMetadataQueryAnswer(
           app: apps ?? null,
           entity: entities ?? null,
           timestampRange,
-          limit: userSpecifiedCountLimit,
+          limit: userSpecifiedCountLimit + (classification.filters.offset || 0),
           offset: classification.filters.offset || 0,
           asc: sortDirection === "asc",
           intent: resolvedIntent || {},
@@ -3423,7 +3425,7 @@ async function* generateMetadataQueryAnswer(
         app: apps ?? null,
         entity: entities ?? null,
         timestampRange,
-        limit: userSpecifiedCountLimit,
+        limit: userSpecifiedCountLimit + (classification.filters.offset || 0),
         offset: classification.filters.offset || 0,
         asc: sortDirection === "asc",
         intent: resolvedIntent || {},
@@ -3433,7 +3435,7 @@ async function* generateMetadataQueryAnswer(
         `[GetItems] Query parameters: ${JSON.stringify(getItemsParams)}`,
       )
 
-      searchResults = await getItems(getItemsParams)
+      searchResults = (await getItems(getItemsParams)) as VespaSearchResponse
       items = searchResults!.root.children || []
       loggerWithChild({ email: email }).info(
         `[GetItems] Query completed - Retrieved ${items.length} items`,
@@ -3538,7 +3540,7 @@ async function* generateMetadataQueryAnswer(
         `Search ${QueryType.SearchWithFilters} Iteration - ${iteration} : ${rankProfile}`,
       )
 
-      let searchResults
+      let searchResults: VespaSearchResponse
       if (!agentPrompt) {
         searchResults = await searchVespa(
           query,
@@ -3547,6 +3549,7 @@ async function* generateMetadataQueryAnswer(
           entities ?? null,
           {
             ...searchOptions,
+            limit: pageSize + pageSize * iteration,
             offset: pageSize * iteration,
           },
         )
@@ -3561,6 +3564,7 @@ async function* generateMetadataQueryAnswer(
           {
             ...searchOptions,
             offset: pageSize * iteration,
+            limit: pageSize + pageSize * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             selectedItem: selectedItem,
@@ -3990,27 +3994,27 @@ function buildTopicConversationThread(
   return conversationThread
 }
 /**
-   * MessageApi - Main chat endpoint with intelligent routing
-   * 
-   * Routes chat requests to specialized handlers based on configuration:
-   * - MessageWithToolsApi: For agentic mode without web search
-   * - AgentMessageApi: For agent conversations
-   * - Default RAG flow: For standard chat with search capabilities
-   * 
-   * Features:
-   * - Model config parsing (reasoning, websearch, deepResearch)
-   * - Attachment handling (images and documents)
-   * - Real-time streaming with Server-Sent Events
-   * - Agent permission checks and context extraction
-   * - Cost tracking and comprehensive error handling
-   * 
-   * @param c - Hono context with request data and JWT payload
-   * @returns StreamSSE response with real-time chat data
-   * @throws HTTPException(400) - Invalid model or missing parameters
-   * @throws HTTPException(403) - Agent access denied
-   * @throws HTTPException(500) - Server errors or model failures
-   */
-  export const MessageApi = async (c: Context) => {
+ * MessageApi - Main chat endpoint with intelligent routing
+ *
+ * Routes chat requests to specialized handlers based on configuration:
+ * - MessageWithToolsApi: For agentic mode without web search
+ * - AgentMessageApi: For agent conversations
+ * - Default RAG flow: For standard chat with search capabilities
+ *
+ * Features:
+ * - Model config parsing (reasoning, websearch, deepResearch)
+ * - Attachment handling (images and documents)
+ * - Real-time streaming with Server-Sent Events
+ * - Agent permission checks and context extraction
+ * - Cost tracking and comprehensive error handling
+ *
+ * @param c - Hono context with request data and JWT payload
+ * @returns StreamSSE response with real-time chat data
+ * @throws HTTPException(400) - Invalid model or missing parameters
+ * @throws HTTPException(403) - Agent access denied
+ * @throws HTTPException(500) - Server errors or model failures
+ */
+export const MessageApi = async (c: Context) => {
   // we will use this in catch
   // if the value exists then we send the error to the frontend via it
 
@@ -4201,7 +4205,6 @@ function buildTopicConversationThread(
         fileIds = []
       }
     }
-
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo = isMsgWithContext
       ? await extractFileIdsFromMessage(message, email)
@@ -4742,17 +4745,23 @@ function buildTopicConversationThread(
               loggerWithChild({ email: email }).info(
                 "Using web search for the question",
               )
-              searchOrAnswerIterator = webSearchQuestion(message, ctx, {
-                modelId: Models.Gemini_2_5_Flash,
-                stream: true,
-                json: false,
-                agentPrompt: JSON.stringify(agentDetails),
-                reasoning:
-                  userRequestsReasoning &&
-                  ragPipelineConfig[RagPipelineStages.AnswerOrSearch].reasoning,
-                messages: llmFormattedMessages,
-                webSearch: true,
-              })
+              searchOrAnswerIterator = webSearchQuestion(
+                message,
+                ctx,
+                {
+                  modelId: Models.Gemini_2_5_Flash,
+                  stream: true,
+                  json: false,
+                  agentPrompt: JSON.stringify(agentDetails),
+                  reasoning:
+                    userRequestsReasoning &&
+                    ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
+                      .reasoning,
+                  messages: llmFormattedMessages,
+                  webSearch: true,
+                },
+                extractedInfo.webSearchResults,
+              )
             } else {
               searchOrAnswerIterator =
                 generateSearchQueryOrAnswerFromConversation(

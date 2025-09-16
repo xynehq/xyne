@@ -31,18 +31,15 @@ import {
   generateFileVespaDocId,
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
+  getCollectionFilesVespaIds,
   // Legacy aliases for backward compatibility
-  } from "@/db/knowledgeBase"
+} from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"
-import type { 
-  Collection, 
-  CollectionItem, 
-  File as DbFile, 
-} from "@/db/schema"
+import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
-import { insert, DeleteDocument } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@/search/types"
+import { insert, DeleteDocument, GetDocument } from "@/search/vespa"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import crypto from "crypto"
 import { FileProcessorService } from "@/services/fileProcessor"
 import {
@@ -81,20 +78,20 @@ const createCollectionSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   isPrivate: z.boolean().optional().default(true),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.any(), z.any()).optional(),
 })
 
 const updateCollectionSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
   isPrivate: z.boolean().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.any(), z.any()).optional(),
 })
 
 const createFolderSchema = z.object({
   name: z.string().min(1).max(255),
   parentId: z.string().uuid().nullable().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.any(), z.any()).optional(),
 })
 
 // Helper functions
@@ -210,10 +207,10 @@ export const CreateCollectionApi = async (c: Context) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       loggerWithChild({ email: userEmail }).error(
-        `Validation error: ${JSON.stringify(error.errors)}`,
+        `Validation error: ${JSON.stringify(error)}`,
       )
       throw new HTTPException(400, {
-        message: `Invalid request data: ${error.errors.map((e) => e.message).join(", ")}`,
+        message: `Invalid request data: ${JSON.stringify(error)}`,
       })
     }
     const errMsg = getErrorMessage(error)
@@ -231,6 +228,7 @@ export const CreateCollectionApi = async (c: Context) => {
 export const ListCollectionsApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const showOnlyOwn = c.req.query("ownOnly") === "true"
+  const includeItems = c.req.query("includeItems") === "true"
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -243,6 +241,41 @@ export const ListCollectionsApi = async (c: Context) => {
     const collections = showOnlyOwn
       ? await getCollectionsByOwner(db, user.id)
       : await getAccessibleCollections(db, user.id)
+    
+    // If includeItems is requested, fetch items for each collection
+    if (includeItems) {
+      const collectionsWithItems = await Promise.all(
+        collections.map(async (collection) => {
+          try {
+            // Check access: owner can always access, others only if Collection is public
+            if (collection.ownerId !== user.id && collection.isPrivate) {
+              return {
+                ...collection,
+                items: [], // Return empty items array for inaccessible collections
+              }
+            }
+            
+            const items = await getCollectionItemsByParent(db, collection.id, null)
+            return {
+              ...collection,
+              items,
+            }
+          } catch (error) {
+            loggerWithChild({ email: userEmail }).warn(
+              error,
+              `Failed to fetch items for collection ${collection.id}: ${getErrorMessage(error)}`,
+            )
+            return {
+              ...collection,
+              items: [], // Return empty items array on error
+            }
+          }
+        })
+      )
+      
+      return c.json(collectionsWithItems)
+    }
+    
     return c.json(collections)
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -339,7 +372,7 @@ export const UpdateCollectionApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     if (error instanceof z.ZodError) {
       throw new HTTPException(400, {
-        message: `Invalid request data: ${error.errors.map((e) => e.message).join(", ")}`,
+        message: `Invalid request data: ${JSON.stringify(error)}`,
       })
     }
 
@@ -660,7 +693,7 @@ export const CreateFolderApi = async (c: Context) => {
     if (error instanceof HTTPException) throw error
     if (error instanceof z.ZodError) {
       throw new HTTPException(400, {
-        message: `Invalid request data: ${error.errors.map((e) => e.message).join(", ")}`,
+        message: `Invalid request data: ${JSON.stringify(error)}`,
       })
     }
 
@@ -1526,7 +1559,7 @@ export const GetFilePreviewApi = async (c: Context) => {
     // For now, just return the storage path that can be used for preview
     // In a real implementation, this might return a signed URL or preview service URL
     return c.json({
-      previewUrl: `/api/v1/kb/${collectionId}/files/${itemId}/content`,
+      previewUrl: `/api/v1/cl/${collectionId}/files/${itemId}/content`,
       mimeType: collectionFile.mimeType,
       fileName: collectionFile.originalName,
     })
@@ -1540,6 +1573,67 @@ export const GetFilePreviewApi = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Failed to get file preview",
+    })
+  }
+}
+
+export const GetChunkContentApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const chunkIndex = parseInt(c.req.param("cId"))
+  const itemId = c.req.param("itemId")
+
+  try {
+    const collectionFile = await getCollectionFileByItemId(db, itemId)
+    if (!collectionFile) {
+      throw new HTTPException(404, { message: "File data not found" })
+    }
+
+    const vespaIds = await getCollectionFilesVespaIds([itemId], db)
+    if (vespaIds.length === 0) {
+      throw new HTTPException(404, { message: "Vespa document ID not found" })
+    }
+    if (!vespaIds[0].vespaDocId) {
+      throw new HTTPException(404, { message: "Vespa document ID is null" })
+    }
+
+    const resp = await GetDocument(KbItemsSchema, vespaIds[0].vespaDocId)
+    
+    if (!resp || !resp.fields) {
+      throw new HTTPException(404, { message: "Invalid Vespa document response" })
+    }
+    
+    if (resp.fields.sddocname && resp.fields.sddocname !== "kb_items") {
+      throw new HTTPException(404, { message: "Invalid document type" })
+    }
+    
+    if (!resp.fields.chunks_pos || !resp.fields.chunks) {
+      throw new HTTPException(404, { message: "Document missing chunk data" })
+    }
+    
+    const index = resp.fields.chunks_pos.findIndex((pos: number) => pos === chunkIndex)
+    if (index === -1) {
+      throw new HTTPException(404, { message: "Chunk index not found" })
+    }
+
+    // Get the chunk content from Vespa response
+    const chunkContent = resp.fields.chunks[index]
+    if (!chunkContent) {
+      throw new HTTPException(404, { message: "Chunk content not found" })
+    }
+
+    return c.json({
+      chunkContent: chunkContent,
+    })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to get chunk content: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to get chunk content",
     })
   }
 }

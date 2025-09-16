@@ -4,6 +4,7 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist"
 import "pdfjs-dist/web/pdf_viewer.css"
 import { authFetch } from "@/utils/authFetch"
 import { useTheme } from "@/components/ThemeContext"
+import { DocumentOperations, useDocumentOperations } from "@/contexts/DocumentOperationsContext"
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js"
 
@@ -24,6 +25,8 @@ interface PdfViewerProps {
   displayMode?: "paginated" | "continuous"
   /** Show page navigation controls (only applies to paginated mode) */
   showNavigation?: boolean
+  /** Ref to expose document operations */
+  documentOperationsRef?: React.RefObject<DocumentOperations>
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -35,7 +38,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   scale = 1.5,
   displayMode = "continuous",
   showNavigation = false,
-}) => {
+  documentOperationsRef,
+}, ref) => {
+  const { setRenderAllPagesForHighlighting } = useDocumentOperations()
   const { theme } = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -50,6 +55,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set())
   const [currentVisiblePage, setCurrentVisiblePage] = useState<number>(1)
   const observerRef = useRef<IntersectionObserver | null>(null)
+  const [allPagesRendered, setAllPagesRendered] = useState<boolean>(false)
+  const renderingPagesRef = useRef<Set<number>>(new Set())
 
   // Use a stable key for the source to avoid unnecessary re-renders
   const sourceKey = useMemo(() => {
@@ -71,6 +78,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         setPdf(null)
         setTotalPages(0)
         setRenderedPages(new Set())
+        setAllPagesRendered(false)
 
         if (!source) {
           throw new Error("No document source provided")
@@ -263,7 +271,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   // Render a specific page for continuous mode
   const renderPageToContinuousCanvas = async (pageNum: number) => {
-    if (!pdf || renderedPages.has(pageNum)) return
+    if (!pdf || renderedPages.has(pageNum) || renderingPagesRef.current.has(pageNum)) return
+
+    // Mark page as in-flight to prevent duplicate renders
+    renderingPagesRef.current.add(pageNum)
 
     try {
       const page: PDFPageProxy = await pdf.getPage(pageNum)
@@ -302,8 +313,44 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       setRenderedPages((prev) => new Set([...prev, pageNum]))
     } catch (e) {
       console.error(`Failed to render page ${pageNum}:`, e)
+    } finally {
+      renderingPagesRef.current.delete(pageNum)
     }
   }
+
+  // Render all pages for highlighting purposes
+  const renderAllPagesForHighlighting = useCallback(async () => {
+    if (!pdf || allPagesRendered || displayMode !== "continuous") return
+    
+    try {
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        if (!renderedPages.has(pageNum) && !renderingPagesRef.current.has(pageNum)) {
+          await renderPageToContinuousCanvas(pageNum)
+          
+          // Yield to the event loop between pages so IntersectionObserver/UI can progress
+          await Promise.resolve()
+        }
+      }
+      
+      setAllPagesRendered(true)
+    } catch (e) {
+      console.error('Failed to render all pages for highlighting:', e)
+    }
+  }, [pdf, allPagesRendered, displayMode, totalPages, renderedPages])
+
+  useEffect(() => {
+    if (documentOperationsRef?.current) {
+      documentOperationsRef.current.renderAllPagesForHighlighting = renderAllPagesForHighlighting
+    }
+  }, [documentOperationsRef, renderAllPagesForHighlighting])
+
+  useEffect(() => {
+    setRenderAllPagesForHighlighting(renderAllPagesForHighlighting)
+    
+    return () => {
+      setRenderAllPagesForHighlighting(null)
+    }
+  }, [setRenderAllPagesForHighlighting, renderAllPagesForHighlighting])
 
   // Setup IntersectionObserver for lazy loading in continuous mode
   useEffect(() => {
@@ -322,7 +369,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             const pageNum = parseInt(
               entry.target.getAttribute("data-page-num") || "0",
             )
-            if (pageNum > 0 && !renderedPages.has(pageNum)) {
+            if (pageNum > 0 && !renderedPages.has(pageNum) && !renderingPagesRef.current.has(pageNum)) {
               renderPageToContinuousCanvas(pageNum)
             }
           }
@@ -431,6 +478,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       }
     }
   }
+
 
   return (
     <div

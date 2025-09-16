@@ -17,7 +17,7 @@ import type {
   MailAttachmentEntity,
   MailEntity,
   PeopleEntity,
-} from "./search/types"
+} from "@xyne/vespa-ts/types"
 
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
@@ -171,7 +171,7 @@ export const addApiKeyMCPConnectorSchema = z.object({
   url: z.string().url({ message: "must be a valid HTTP(S) URL" }),
   name: z.string(),
   mode: z.nativeEnum(MCPConnectorMode),
-  headers: z.record(z.string()),
+  headers: z.record(z.string(), z.string()),
 })
 
 export type ApiKeyMCPConnector = z.infer<typeof addApiKeyMCPConnectorSchema>
@@ -353,7 +353,7 @@ const CalendarEventsChangeTokenSchema = z.object({
   lastSyncedAt: z.coerce.date(),
 })
 
-// Microsoft delta token schemas 
+// Microsoft delta token schemas
 const MicrosoftDriveDeltaTokenSchema = z.object({
   type: z.literal("microsoftDriveDeltaToken"),
   driveToken: z.string(),
@@ -364,7 +364,7 @@ const MicrosoftDriveDeltaTokenSchema = z.object({
 const MicrosoftOutlookDeltaTokenSchema = z.object({
   type: z.literal("microsoftOutlookDeltaToken"),
   deltaToken: z.string().optional(), // Backward compatibility
-  deltaTokens: z.record(z.string()).optional(), // New multi-folder approach
+  deltaTokens: z.record(z.string(), z.string()).optional(), // New multi-folder approach
   lastSyncedAt: z.coerce.date(),
 })
 
@@ -473,6 +473,7 @@ export enum Subsystem {
   AI = "AI",
   Tuning = "Tuning",
   AgentApi = "AgentApi",
+  WorkflowApi = "WorkflowApi",
   Metric = "Metric",
   Slack = "Slack",
 }

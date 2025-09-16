@@ -82,7 +82,7 @@ import {
   type VespaEvent,
   type VespaFileWithDrivePermission,
   fileSchema,
-} from "@/search/types"
+} from "@xyne/vespa-ts/types"
 import {
   UserListingError,
   CouldNotFinishJobSuccessfully,
@@ -879,7 +879,7 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
 
     const oauth2Client = new google.auth.OAuth2({
       clientId: googleProvider.clientId!,
-      clientSecret: googleProvider.clientSecret,
+      clientSecret: googleProvider.clientSecret as string,
       redirectUri: `${config.host}/oauth/callback`,
     })
 
@@ -2152,7 +2152,7 @@ export const getSpreadsheet = async (
   id: string,
   client: GoogleClient,
   email: string,
-): Promise<GaxiosResponse<sheets_v4.Schema$Spreadsheet> | null> => {
+): Promise<any | null> => {
   try {
     return retryWithBackoff(
       () => sheets.spreadsheets.get({ spreadsheetId: id }),
@@ -2990,7 +2990,7 @@ export async function* listFiles(
   }
 
   do {
-    const res: GaxiosResponse<drive_v3.Schema$FileList> =
+    const res: any =
       await retryWithBackoff(
         () =>
           drive.files.list({
@@ -3041,7 +3041,7 @@ export const googleDocsVespa = async (
         email: userEmail,
       })
       try {
-        const docResponse: GaxiosResponse<docs_v1.Schema$Document> =
+        const docResponse: any =
           await retryWithBackoff(
             () =>
               docs.documents.get({
@@ -3383,7 +3383,7 @@ export async function countDriveFiles(
   }
 
   do {
-    const res: GaxiosResponse<drive_v3.Schema$FileList> =
+    const res: any =
       await retryWithBackoff(
         () =>
           drive.files.list({
