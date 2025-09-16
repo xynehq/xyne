@@ -104,6 +104,61 @@ services:
     networks:
       - xyne
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: xyne-keycloak-prod
+    environment:
+      # Admin credentials - Change these in production!
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      
+      # Database configuration
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://xyne-db:5432/keycloak
+      - KC_DB_USERNAME=${POSTGRES_USER:-xyne}
+      - KC_DB_PASSWORD=${POSTGRES_PASSWORD:-xyne}
+      
+      # Production optimizations
+      - KC_HOSTNAME_STRICT=false
+      - KC_HOSTNAME_STRICT_HTTPS=false
+      - KC_HTTP_ENABLED=true
+      - KC_PROXY=edge
+      
+      # Security and performance
+      - KC_HEALTH_ENABLED=true
+      - KC_METRICS_ENABLED=true
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL:-INFO}
+      
+      # Cache configuration for production
+      - KC_CACHE=ispn
+      - KC_CACHE_STACK=kubernetes
+    ports:
+      - "${KEYCLOAK_PORT:-8081}:8080"
+    command: ["start", "--optimized"]
+    depends_on:
+      - xyne-db
+    networks:
+      - xyne
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    volumes:
+      # Optional: Mount custom themes or providers
+      # - ./keycloak/themes:/opt/keycloak/themes
+      # - ./keycloak/providers:/opt/keycloak/providers
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
 networks:
   xyne:
     driver: bridge
