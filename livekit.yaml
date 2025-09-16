@@ -1,0 +1,16 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+
+# Keys will be loaded from environment variable
+
+development: true
+
+room:
+  empty_timeout: 600
+  max_participants: 100
+
+logging:
+  level: info

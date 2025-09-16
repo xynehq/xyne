@@ -13,6 +13,9 @@ import {
   BarChart3,
   BookOpen,
   Workflow,
+  Users,
+  // Phone,
+  // Search,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import HistoryModal from "@/components/HistoryModal"
@@ -34,6 +37,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
 import { toast } from "@/hooks/use-toast"
+import UsersModal from "@/components/UsersModal"
 
 export const Sidebar = ({
   className = "",
@@ -48,6 +52,7 @@ export const Sidebar = ({
 }) => {
   const location = useLocation()
   const [showHistory, setShowHistory] = useState<boolean>(false)
+  const [showUsers, setShowUsers] = useState<boolean>(false)
   const { theme, toggleTheme } = useTheme()
   const isDarkMode = theme === "dark"
 
@@ -106,15 +111,16 @@ export const Sidebar = ({
         !isReferenceBox &&
         !isAtMentionArea &&
         !isBookmarkButton &&
-        showHistory
+        (showHistory || showUsers)
       ) {
-        setShowHistory(false)
+        if (showHistory) setShowHistory(false)
+        if (showUsers) setShowUsers(false)
       }
     }
 
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [showHistory])
+  }, [showHistory, showUsers])
 
   // toggleDarkMode is now toggleTheme from context (no separate function needed here)
 
@@ -131,6 +137,11 @@ export const Sidebar = ({
           <HistoryModal
             pathname={location.pathname}
             onClose={() => setShowHistory(false)}
+          />
+        )}
+        {showUsers && (
+          <UsersModal
+            onClose={() => setShowUsers(false)}
           />
         )}
         <div className="flex flex-col items-center pt-4">
@@ -179,7 +190,26 @@ export const Sidebar = ({
             </Tooltip>
           </div>
 
-          <Link
+          <div
+            onClick={() => setShowUsers((users) => !users)}
+            className={cn(
+              "flex w-8 h-8 rounded-lg items-center justify-center cursor-pointer hover:bg-[#D8DFE680] dark:hover:bg-gray-700 mt-[10px]",
+              showUsers && "bg-[#D8DFE680] dark:bg-gray-700",
+            )}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Users
+                  size={18}
+                  stroke="#384049"
+                  className="dark:stroke-[#F1F3F4]"
+                />
+              </TooltipTrigger>
+              <Tip side="right" info="Users & Calls" />
+            </Tooltip>
+          </div>
+
+           <Link
             to="/workflow"
             className={cn(
               "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",

@@ -22,6 +22,7 @@ import {
   HighlightApi,
   highlightSchema,
 } from "@/api/search"
+import { callNotificationService } from "@/services/callNotifications"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -100,6 +101,16 @@ import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
 import { GetUserWorkspaceInfo } from "@/api/auth"
+import { SearchWorkspaceUsersApi, searchUsersSchema } from "@/api/users"
+import { 
+  InitiateCallApi, 
+  JoinCallApi, 
+  EndCallApi, 
+  GetActiveCallsApi,
+  initiateCallSchema,
+  joinCallSchema,
+  endCallSchema
+} from "@/api/calls"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -414,6 +425,58 @@ export const WsApp = app.get(
         if (connectorId) {
           wsConnections.delete(connectorId)
         }
+      },
+    }
+  }),
+)
+
+// WebSocket endpoint for call notifications
+export const CallNotificationWs = app.get(
+  "/ws/calls",
+  AuthMiddleware,
+  upgradeWebSocket((c) => {
+    const payload = c.get(JwtPayloadKey)
+    const userEmail = payload.sub
+    let userId: string | undefined
+    
+    return {
+      async onOpen(event, ws) {
+        // Get user details from database
+        const user = await getUserByEmail(db, userEmail)
+        if (user.length > 0) {
+          userId = user[0].externalId
+          // Register user for call notifications
+          callNotificationService.registerUser(userId, ws)
+          Logger.info(`User ${userId} connected for call notifications`)
+        }
+      },
+      onMessage(event, ws) {
+        try {
+          const message = JSON.parse(event.data.toString())
+          Logger.info(`Call notification message from user ${userId}:`, message)
+          
+          // Handle different message types (accept call, reject call, etc.)
+          switch (message.type) {
+            case 'call_response':
+              // Handle call acceptance/rejection
+              if (message.callId && message.response) {
+                callNotificationService.notifyCallStatus(
+                  message.callerId, 
+                  message.response, 
+                  { callId: message.callId, targetUserId: userId }
+                )
+              }
+              break
+          }
+        } catch (error) {
+          Logger.error(`Error parsing call notification message: ${error}`)
+        }
+      },
+      onClose: (event, ws) => {
+        if (userId) {
+          callNotificationService.removeUser(userId)
+        }
+        Logger.info(`Call notification connection closed for user ${userId}`)
       },
     }
   }),
@@ -961,6 +1024,12 @@ export const AppRoutes = app
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
   .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
+  .get("/workspace/users/search", zValidator("query", searchUsersSchema), SearchWorkspaceUsersApi)
+  // Call routes
+  .post("/calls/initiate", zValidator("json", initiateCallSchema), InitiateCallApi)
+  .post("/calls/join", zValidator("json", joinCallSchema), JoinCallApi)
+  .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
+  .get("/calls/active", GetActiveCallsApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
@@ -1445,6 +1514,7 @@ app.get(
   serveStatic({ path: "./dist/index.html" }),
 )
 app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/call", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))

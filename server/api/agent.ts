@@ -446,9 +446,10 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
     // Get all users in the workspace
     const workspaceUsers = await db
       .select({
-        id: users.id,
+        id: users.externalId, // Use externalId instead of internal id
         name: users.name,
         email: users.email,
+        photoLink: users.photoLink,
       })
       .from(users)
       .where(eq(users.workspaceId, userAndWorkspace.workspace.id))

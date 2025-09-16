@@ -11,6 +11,7 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as CallImport } from './routes/call'
 import { Route as AuthImport } from './routes/auth'
 import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexImport } from './routes/_authenticated/index'
@@ -39,6 +40,12 @@ import { Route as AuthenticatedAdminIntegrationsMcpImport } from './routes/_auth
 import { Route as AuthenticatedAdminIntegrationsGoogleImport } from './routes/_authenticated/admin/integrations/google'
 
 // Create/Update Routes
+
+const CallRoute = CallImport.update({
+  id: '/call',
+  path: '/call',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const AuthRoute = AuthImport.update({
   id: '/auth',
@@ -225,6 +232,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthImport
+      parentRoute: typeof rootRoute
+    }
+    '/call': {
+      id: '/call'
+      path: '/call'
+      fullPath: '/call'
+      preLoaderRoute: typeof CallImport
       parentRoute: typeof rootRoute
     }
     '/_authenticated/agent': {
@@ -475,6 +489,7 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 export interface FileRoutesByFullPath {
   '': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
+  '/call': typeof CallRoute
   '/agent': typeof AuthenticatedAgentRoute
   '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
@@ -503,6 +518,7 @@ export interface FileRoutesByFullPath {
 
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
+  '/call': typeof CallRoute
   '/agent': typeof AuthenticatedAgentRoute
   '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
@@ -533,6 +549,7 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/auth': typeof AuthRoute
+  '/call': typeof CallRoute
   '/_authenticated/agent': typeof AuthenticatedAgentRoute
   '/_authenticated/api-key': typeof AuthenticatedApiKeyRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
@@ -564,6 +581,7 @@ export interface FileRouteTypes {
   fullPaths:
     | ''
     | '/auth'
+    | '/call'
     | '/agent'
     | '/api-key'
     | '/chat'
@@ -591,6 +609,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
+    | '/call'
     | '/agent'
     | '/api-key'
     | '/chat'
@@ -619,6 +638,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authenticated'
     | '/auth'
+    | '/call'
     | '/_authenticated/agent'
     | '/_authenticated/api-key'
     | '/_authenticated/chat'
@@ -649,12 +669,14 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AuthRoute: typeof AuthRoute
+  CallRoute: typeof CallRoute
   OauthSuccessRoute: typeof OauthSuccessRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AuthRoute: AuthRoute,
+  CallRoute: CallRoute,
   OauthSuccessRoute: OauthSuccessRoute,
 }
 
@@ -670,6 +692,7 @@ export const routeTree = rootRoute
       "children": [
         "/_authenticated",
         "/auth",
+        "/call",
         "/oauth/success"
       ]
     },
@@ -702,6 +725,9 @@ export const routeTree = rootRoute
     },
     "/auth": {
       "filePath": "auth.tsx"
+    },
+    "/call": {
+      "filePath": "call.tsx"
     },
     "/_authenticated/agent": {
       "filePath": "_authenticated/agent.tsx",

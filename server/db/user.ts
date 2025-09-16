@@ -179,3 +179,43 @@ export const getUserById = async (
   }
   return parsedRes.data
 }
+
+export const getUsersByWorkspace = async (
+  trx: TxnOrClient,
+  workspaceExternalId: string,
+): Promise<SelectUser[]> => {
+  const resp = await trx
+    .select()
+    .from(users)
+    .where(
+      and(
+        eq(users.workspaceExternalId, workspaceExternalId),
+        eq(users.deletedAt, new Date('1970-01-01T00:00:00Z'))
+      )
+    )
+  
+  return resp.map(user => {
+    const parsedRes = selectUserSchema.safeParse(user)
+    if (!parsedRes.success) {
+      throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
+    }
+    return parsedRes.data
+  })
+}
+
+export const getAllActiveUsers = async (
+  trx: TxnOrClient,
+): Promise<SelectUser[]> => {
+  const resp = await trx
+    .select()
+    .from(users)
+    .where(eq(users.deletedAt, new Date('1970-01-01T00:00:00Z')))
+  
+  return resp.map(user => {
+    const parsedRes = selectUserSchema.safeParse(user)
+    if (!parsedRes.success) {
+      throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
+    }
+    return parsedRes.data
+  })
+}
