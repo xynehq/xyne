@@ -126,7 +126,6 @@ import { toast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
 import React from "react"
-
 // import { jsonToHtmlMessage } from "@/lib/messageUtils"
 import { CLASS_NAMES } from "@/lib/constants"
 import { Reference, ToolsListItem, toolsListItemSchema } from "@/types"
@@ -401,15 +400,7 @@ export const ChatPage = ({
   const [streamingTitle, setStreamingTitle] = useState<string>("")
 
   // Smooth title streaming function - animates from left to right
-  const updateTitleWithAnimation = useCallback((newTitle: string) => {
-    // Set the title and force a re-render
-    setChatTitle((prevTitle) => {
-      return newTitle
-    })
-
-    // Force a re-render by updating the forceUpdate counter
-
-    // Start the animation
+  const updateTitleWithAnimation = (newTitle: string) => {
     setIsTitleUpdating(true)
     setStreamingTitle("")
 
@@ -422,11 +413,12 @@ export const ChatPage = ({
         currentIndex++
       } else {
         clearInterval(streamInterval)
+        setChatTitle(newTitle)
         setIsTitleUpdating(false)
         setStreamingTitle("")
       }
     }, 50) // 50ms per character for smooth streaming effect
-  }, []) // Empty dependency array since we're using functional updates
+  }
 
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
@@ -623,8 +615,6 @@ export const ChatPage = ({
 
   useEffect(() => {
     if (!isEditing && currentChat?.title && currentChat.title !== chatTitle) {
-      // Don't override if currentChat.title is "Untitled" and we have a different title
-
       setChatTitle(currentChat.title)
       setEditedTitle(currentChat.title)
     }
@@ -689,10 +679,8 @@ export const ChatPage = ({
     if (!hasHandledQueryParam.current || isWithChatId) {
       // Data will be loaded via useChatHistory hook
     }
-    if (!chatTitle) {
-      setChatTitle(isWithChatId ? data?.chat?.title || null : null)
-    }
 
+    setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
 
     // Populate feedbackMap from loaded messages
@@ -770,9 +758,9 @@ export const ChatPage = ({
   useEffect(() => {
     const shouldUpdateTitle =
       chatId &&
-      chatTitle === "Untitled" &&
+      !chatTitle &&
       !isStreaming &&
-      messages.length >= 2 && // At least user + assistant message
+      messages.length === 2 && // At least user + assistant message
       messages[0]?.messageRole === "user"
 
     if (shouldUpdateTitle && !isSharedChat) {
@@ -791,6 +779,7 @@ export const ChatPage = ({
               title: string
             }
             if (result.success) {
+              updateTitleWithAnimation(result.title)
               // Update cached chat data
               queryClient.setQueryData<any>(
                 ["chatHistory", chatId],
@@ -807,7 +796,6 @@ export const ChatPage = ({
                   return old
                 },
               )
-              updateTitleWithAnimation(result.title)
             }
           }
         })
@@ -816,7 +804,7 @@ export const ChatPage = ({
           // Fail silently - this is a background operation
         })
     }
-  }, [chatId, isStreaming, isSharedChat, queryClient])
+  }, [chatId, chatTitle, isStreaming, messages, isSharedChat, queryClient])
 
   const handleSend = async (
     messageToSend: string,

@@ -147,7 +147,7 @@ function parseAgentPrompt(
   if (!agentPromptString) {
     return defaults
   }
-   
+
   try {
     const parsed = JSON.parse(agentPromptString) as ParsedPromptCandidate
 
@@ -723,7 +723,6 @@ export const userChat = (
 export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
-  llmResponse?: string,
 ): Promise<{ title: string; cost: number }> => {
   Logger.info("inside generateTitleUsingQuery")
   try {
@@ -737,26 +736,20 @@ export const generateTitleUsingQuery = async (
 
     params.json = true
     Logger.info("inside generateTitleUsingQuery")
-    
-  
-    let {  text, cost } = await getProviderByModel(params.modelId).converse(
-  [
-    {
-      role: "user",
-      content: [
-        {
-          text: `First user query:
-${query}
 
-Assistant response:
-${llmResponse}
-        `,
+    let { text, cost } = await getProviderByModel(params.modelId).converse(
+      [
+        {
+          role: "user",
+          content: [
+            {
+              text: query,
+            },
+          ],
         },
       ],
-    },
-  ],
-  params,
-);
+      params,
+    )
     Logger.info("after getProvider generateTitleUsingQuery")
     if (isReasoning && text?.includes(EndThinkingToken)) {
       text = text?.split(EndThinkingToken)[1]

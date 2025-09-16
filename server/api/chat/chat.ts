@@ -49,7 +49,6 @@ import {
   getChatMessagesWithAuth,
   getMessageCountsByChats,
   getMessageFeedbackStats,
-  getAllMessages,
 } from "@/db/message"
 import { eq, and } from "drizzle-orm"
 import { nanoid } from "nanoid"
@@ -4248,7 +4247,7 @@ export const MessageApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title: "Untitled",
+            title,
             attachments: [],
             agentId: agentPromptValue,
           })
@@ -7175,12 +7174,6 @@ export const GenerateChatTitleApi = async (c: Context) => {
     // @ts-ignore
     const { chatId, message } = c.req.valid("json")
 
-    const currentChat = await getChatMessagesWithAuth(db, chatId, email)
-    let llmResponse = ""
-    if (currentChat[1] && currentChat[1].message) {
-      llmResponse = currentChat[1].message
-    }
-
     const { user, workspace } = await getUserAndWorkspaceByEmail(
       db,
       workspaceId,
@@ -7192,14 +7185,10 @@ export const GenerateChatTitleApi = async (c: Context) => {
       `Generating title for chat ${chatId} with message: ${String(message).substring(0, 100)}...`,
     )
 
-    const titleResp = await generateTitleUsingQuery(
-      message,
-      {
-        modelId: defaultFastModel,
-        stream: false,
-      },
-      llmResponse,
-    )
+    const titleResp = await generateTitleUsingQuery(message, {
+      modelId: defaultFastModel,
+      stream: false,
+    })
 
     loggerWithChild({ email: email }).info(
       `Generated title: ${titleResp.title}`,
