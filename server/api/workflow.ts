@@ -75,6 +75,9 @@ import {
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
 import { getActualNameFromEnum } from "@/ai/modelConfig"
+import { getProviderByModel } from "@/ai/provider"
+import { Models } from "@/ai/types"
+import type { Message } from "@aws-sdk/client-bedrock-runtime"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -3325,36 +3328,56 @@ export const GetFormDefinitionApi = async (c: Context) => {
   }
 }
 
-// Get Gemini model enum names for workflow tools
-export const GetGeminiModelEnumsApi = async (c: Context) => {
+// Get VertexAI model enum names for workflow tools (replaces GetGeminiModelEnumsApi)
+export const GetVertexAIModelEnumsApi = async (c: Context) => {
   try {
     const { MODEL_CONFIGURATIONS } = await import("@/ai/modelConfig")
     const { AIProviders } = await import("@/ai/types")
-
-    // Get all Google AI model enum values
-    const geminiModelEnums = Object.entries(MODEL_CONFIGURATIONS)
-      .filter(([_, config]) => config.provider === AIProviders.GoogleAI)
+    
+    // Get all VertexAI model enum values (includes both Claude and Gemini models)
+    const vertexAIModelEnums = Object.entries(MODEL_CONFIGURATIONS)
+      .filter(([_, config]) => config.provider === AIProviders.VertexAI)
       .map(([enumValue, config]) => ({
-        enumValue, // e.g., "googleai-gemini-2-5-flash"
-        labelName: config.labelName, // e.g., "Gemini 2.5 Flash" 
-        actualName: config.actualName, // e.g., "gemini-2.5-flash"
+        enumValue, // e.g., "vertex-gemini-2-5-flash", "vertex-claude-sonnet-4"
+        labelName: config.labelName, // e.g., "Gemini 2.5 Flash", "Claude Sonnet 4"
+        actualName: config.actualName, // e.g., "gemini-2.5-flash", "claude-sonnet-4@20250514"
         description: config.description,
         reasoning: config.reasoning,
         websearch: config.websearch,
         deepResearch: config.deepResearch,
+        // Add model type for better categorization in frontend
+        modelType: enumValue.includes('gemini') ? 'gemini' : 
+                   enumValue.includes('claude') ? 'claude' : 'other',
       }))
+      .sort((a, b) => {
+        const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
+        const orderA = typeOrder[a.modelType] ?? 99;
+        const orderB = typeOrder[b.modelType] ?? 99;
+
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+        return a.labelName.localeCompare(b.labelName);
+      })
 
     return c.json({
       success: true,
-      data: geminiModelEnums,
-      count: geminiModelEnums.length,
+      data: vertexAIModelEnums,
+      count: vertexAIModelEnums.length,
+      message: "VertexAI models include both Claude and Gemini models optimized for enterprise use",
     })
   } catch (error) {
-    Logger.error(error, "Failed to get Gemini model enums")
+    Logger.error(error, "Failed to get VertexAI model enums")
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
   }
+}
+
+// Legacy endpoint - kept for backward compatibility but redirects to VertexAI
+export const GetGeminiModelEnumsApi = async (c: Context) => {
+  Logger.warn("GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead")
+  return GetVertexAIModelEnumsApi(c)
 }
 
 // Serve workflow file

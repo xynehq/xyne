@@ -403,7 +403,7 @@ export const handleAttachmentServe = async (c: Context) => {
 
     // Set appropriate headers
     c.header("Content-Type", fileType || "application/octet-stream")
-    c.header("Content-Disposition", `inline; filename="${fileName}"`)
+    c.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(fileName || 'file')}`)
     c.header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
 
     // Stream the file

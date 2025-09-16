@@ -38,6 +38,7 @@ export function WorkflowExecutionModal({
   workflowDescription,
   templateId,
   workflowTemplate,
+  workflowData,
   onViewExecution,
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -172,7 +173,8 @@ export function WorkflowExecutionModal({
     }
   }
 
-  const executeWorkflow = async (file: File) => {
+  const executeWorkflow = async (file: File, execTemplateId?: string) => {
+    const currentTemplateId = execTemplateId || templateId
     setIsUploading(true)
     try {
       // Create form data matching the curl command format
@@ -190,7 +192,7 @@ export function WorkflowExecutionModal({
       }
 
       const response = await workflowExecutionsAPI.executeTemplate(
-        templateId,
+        currentTemplateId!,
         executionData,
       )
 
@@ -267,7 +269,48 @@ export function WorkflowExecutionModal({
     if (!selectedFile) return
 
     setIsProcessing(true)
-    await executeWorkflow(selectedFile)
+    
+    try {
+      // If workflowData is provided, create template first, then execute
+      if (workflowData && !templateId) {
+        console.log("Creating workflow template and executing...")
+        
+        // Create the workflow template via complex.post API
+        const createResponse = await api.workflow.templates.complex.$post({
+          json: workflowData,
+        })
+
+        if (!createResponse.ok) {
+          const errorText = await createResponse.text()
+          throw new Error(`Failed to create workflow template: ${createResponse.status} ${createResponse.statusText}. ${errorText.substring(0, 200)}`)
+        }
+
+        const createResult = await createResponse.json()
+        console.log("✅ Workflow template created successfully:", createResult)
+
+        if (!createResult.success || !createResult.data) {
+          throw new Error("Failed to create workflow template: Invalid response format")
+        }
+
+        // Extract the created template ID
+        const createdTemplateId = createResult.data.id
+        console.log("📋 Created template ID:", createdTemplateId)
+
+        // Now execute with the created template
+        await executeWorkflow(selectedFile, createdTemplateId)
+      } else if (templateId) {
+        // Use existing template ID
+        await executeWorkflow(selectedFile, templateId)
+      } else {
+        throw new Error("No template ID or workflow data provided for execution")
+      }
+    } catch (error) {
+      console.error("Execution error:", error)
+      setIsProcessing(false)
+      setIsFailed(true)
+      const errorMessage = extractErrorMessage(error)
+      setUploadError(`Execution failed: ${errorMessage}`)
+    }
   }
 
   const handleDiscardFile = () => {

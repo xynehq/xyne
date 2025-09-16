@@ -300,10 +300,6 @@ const StepNode: React.FC<NodeProps> = ({
                 onClick={(e) => {
                   e.stopPropagation()
                   e.preventDefault()
-                  console.log(
-                    "Plus button clicked for unconfigured AI agent:",
-                    id,
-                  )
                   const event = new CustomEvent("openWhatHappensNext", {
                     detail: { nodeId: id },
                   })
@@ -453,7 +449,6 @@ const StepNode: React.FC<NodeProps> = ({
               onClick={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
-                console.log("Plus button clicked for node:", id)
                 const event = new CustomEvent("openWhatHappensNext", {
                   detail: { nodeId: id },
                 })
@@ -569,7 +564,6 @@ const StepNode: React.FC<NodeProps> = ({
                 onClick={(e) => {
                   e.stopPropagation()
                   e.preventDefault()
-                  console.log("Plus button clicked for unconfigured email:", id)
                   const event = new CustomEvent("openWhatHappensNext", {
                     detail: { nodeId: id },
                   })
@@ -719,7 +713,6 @@ const StepNode: React.FC<NodeProps> = ({
               onClick={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
-                console.log("Plus button clicked for node:", id)
                 const event = new CustomEvent("openWhatHappensNext", {
                   detail: { nodeId: id },
                 })
@@ -970,7 +963,6 @@ const StepNode: React.FC<NodeProps> = ({
               onClick={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
-                console.log("Plus button clicked for node:", id)
                 const event = new CustomEvent("openWhatHappensNext", {
                   detail: { nodeId: id },
                 })
@@ -1856,11 +1848,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   // Utility function to get tool ID from step ID
   const getToolIdFromStepId = useCallback((stepId: string): string | undefined => {
-    console.log("Finding toolId for node:", stepId)
     const node = nodes.find((n) => n.id === stepId)
-    console.log("Found node:", node)
     const tools = node?.data?.tools as Tool[] | undefined
-    console.log("Found tools:", tools)
     return tools && tools.length > 0 ? tools[0]?.id : undefined
   }, [nodes])
   
@@ -1893,8 +1882,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       templateToUse &&
       (templateToUse.steps || templateToUse.stepExecutions)
     ) {
-      console.log("Creating workflow from template:", templateToUse)
-
       // Check if this is an execution (has stepExecutions) or template (has steps)
       const isExecution =
         templateToUse.stepExecutions &&
@@ -1918,9 +1905,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         // Final fallback to creation time
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       }) : []
-
-      console.log("Original steps:", stepsData)
-      console.log("Sorted steps:", sortedSteps)
 
       // Create nodes from steps in top-down layout
       const templateNodes: Node[] = sortedSteps.map((step: any, index: number) => {
@@ -2030,9 +2014,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         })
       })
 
-      console.log("Created nodes:", templateNodes.length)
-      console.log("Created edges:", templateEdges.length)
-
       setNodes(templateNodes)
       setEdges(templateEdges)
       setNodeCounter((stepsData?.length || 0) + 1)
@@ -2093,17 +2074,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       const primaryTool = tools[0]
       const toolType = primaryTool?.type || step.type
 
-      console.log(
-        "🎯 Node clicked:",
-        node.id,
-        "Tool type:",
-        toolType,
-        "Step type:",
-        step.type,
-      )
-
-      // Always override sidebar with clicked node data
-
       // Close menu sidebars when nodes are clicked
       setShowTriggersSidebar(false)
       setShowWhatHappensNextUI(false)
@@ -2123,7 +2093,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open Form config sidebar
           setSelectedFormNodeId(node.id)
           setShowOnFormSubmissionUI(true)
-          console.log("📝 Opening form config sidebar")
           break
 
         case "python_code":
@@ -2131,30 +2100,21 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open What Happens Next sidebar for Python code configuration
           setSelectedNodeForNext(node.id)
           setShowWhatHappensNextUI(true)
-          console.log(
-            "🐍 Opening Python code config sidebar for type:",
-            toolType,
-          )
           break
 
         case "email":
           // Open Email config sidebar
           setSelectedEmailNodeId(node.id)
           setShowEmailConfigUI(true)
-          console.log("📧 Opening email config sidebar")
           break
 
         case "ai_agent":
           // Open AI Agent config sidebar
           setSelectedAgentNodeId(node.id)
           setShowAIAgentConfigUI(true)
-          console.log("🤖 Opening AI agent config sidebar")
           break
 
         default:
-          // For unknown types, don't open What Happens Next sidebar - this was causing the bug
-          console.log("❓ Unknown node type:", toolType, "- not opening sidebar")
-
           if (onStepClick) {
             onStepClick(step)
           }
@@ -2345,8 +2305,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   useEffect(() => {
     const handleOpenWhatHappensNext = (event: CustomEvent) => {
       const { nodeId } = event.detail
-      console.log("Plus button clicked, opening What Happens Next for node:", nodeId)
-      
+
       // Close all other sidebars when What Happens Next opens
       setShowTriggersSidebar(false)
       setShowAIAgentConfigUI(false)
@@ -2359,9 +2318,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
 
     const handleOpenTriggersSidebar = (event: CustomEvent) => {
-      const { nodeId } = event.detail
-      console.log("Add first step clicked, opening triggers sidebar for node:", nodeId)
-      
       // Close all other sidebars
       setShowWhatHappensNextUI(false)
       setShowAIAgentConfigUI(false)
@@ -2424,13 +2380,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       try {
         // Use the status endpoint for lightweight polling
         const statusData = await workflowExecutionsAPI.fetchStatus(executionId)
-        
-        console.log("📊 Polling status for execution:", executionId, "Status:", statusData.status)
 
         // Check if workflow is completed or failed to stop polling
         if (statusData.success) {
           if (statusData.status === "completed") {
-            console.log("✅ Workflow execution completed!")
             // Fetch full details to update nodes with final status
             const fullData = await workflowExecutionsAPI.fetchById(executionId)
             
@@ -2456,7 +2409,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             
             stopPolling()
           } else if (statusData.status === "failed") {
-            console.log("❌ Workflow execution failed!")
             // Update nodes to show failed status
             setNodes((currentNodes) =>
               currentNodes.map((node) => ({
@@ -2536,10 +2488,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const executeWorkflow = useCallback(async (file?: File) => {
     if (file) {
-      // File execution mode - requires existing template
-      console.log("Executing workflow with file:", file.name)
-      console.log("Selected template:", selectedTemplate)
-
       try {
         // Check if we have a valid template (prioritize createdTemplate over selectedTemplate)
         const currentTemplate = createdTemplate || selectedTemplate
@@ -2555,8 +2503,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           file_description: `Test document: ${file.name}`,
         }
 
-        console.log("Generated form data:", formData)
-
         const executionData = {
           name: formData.name,
           description: formData.description,
@@ -2569,8 +2515,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           executionData,
         )
 
-        console.log("🚀 WORKFLOW EXECUTION RESPONSE:", response)
-
         // Handle response similar to execution modal
         if (response.error || response.status === "error") {
           console.error("Execution failed:", response.error || response.message)
@@ -2578,7 +2522,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         } else {
           // Extract execution ID from response.data.execution.id
           const executionId = response.data?.execution?.id
-          console.log("📋 Extracted execution ID:", executionId)
 
           if (executionId) {
             // Start polling for completion with the execution ID
@@ -2594,27 +2537,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         throw error
       }
     } else {
-      // Template creation mode - first create template, then open execution modal
-      console.log("Creating workflow template for execution...")
-      
       // Check if we have nodes to create a workflow
       if (nodes.length === 0) {
         throw new Error("Cannot execute workflow: No workflow steps defined. Please add at least one step to your workflow.")
       }
 
-      // Create the workflow state payload for the complex template API
+      // Create the workflow state payload that will be sent to the complex template API
       // Use the centralized name resolution function to ensure consistency
       const derivedName = getWorkflowName()
       
-      console.log("🔍 Debug workflow name values:", {
-        currentWorkflowName,
-        selectedTemplateName: selectedTemplate?.name,
-        derivedName,
-        isBlankWorkflow: !selectedTemplate,
-        nodesCount: nodes.length
-      })
-      
-      const workflowState = {
+      const workflowData = {
         name: derivedName,
         description: selectedTemplate?.description || "Workflow created from builder",
         version: "1.0.0",
@@ -2655,53 +2587,30 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           workflowType: templateWorkflow ? 'template-based' : 'user-created'
         }
       }
+
+      // Store the workflow data for the execution modal
+      setCreatedTemplate({
+        id: 'pending-creation', // Temporary ID to indicate pending creation
+        name: workflowData.name,
+        description: workflowData.description,
+        version: workflowData.version,
+        status: 'draft',
+        config: workflowData.config,
+        createdBy: 'current-user',
+        rootWorkflowStepTemplateId: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        workflowData: workflowData // Store the complete workflow data for template creation
+      } as any)
       
-      console.log("=== WORKFLOW STATE FOR BACKEND API ===")
-      console.log(JSON.stringify(workflowState, null, 2))
-      console.log("=== END WORKFLOW STATE ===")
-
-      try {
-        // Create the workflow template in the backend
-        const response = await api.workflow.templates.complex.$post({
-          json: workflowState,
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(`Failed to create workflow template: ${response.status} ${response.statusText}. ${errorText.substring(0, 200)}`)
-        }
-
-        const result = await response.json()
-        console.log("✅ Workflow template created successfully:", result)
-
-        // Update the selectedTemplate state with the newly created template
-        if (result.success && result.data) {
-          // The API returns the created template - we can use this for execution
-          const newTemplate = result.data
-          
-          // Store the created template for use in the execution modal
-          setCreatedTemplate(newTemplate)
-          
-          // Open the WorkflowExecutionModal with the created template
-          setShowExecutionModal(true)
-          
-          console.log("📋 Template ID for execution:", newTemplate.id)
-        } else {
-          throw new Error("Failed to create workflow template: Invalid response format")
-        }
-      } catch (error) {
-        console.error("❌ Failed to create workflow template:", error)
-        throw error
-      }
+      // Open the WorkflowExecutionModal with the workflow data
+      setShowExecutionModal(true)
     }
   }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName])
 
   const handleTriggerClick = useCallback(
     (triggerId: string) => {
       if (triggerId === "form") {
-        // Don't create form submission node yet, just open configuration sidebar
-        console.log("🎯 Form trigger selected - opening form config sidebar")
-        
         // Close TriggersSidebar with slide-out animation when OnFormSubmissionUI opens
         setShowTriggersSidebar(false)
         setSelectedFormNodeId("pending") // Temporary ID to indicate we're in creation mode
@@ -2721,8 +2630,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
 
   const handleWhatHappensNextAction = useCallback(async (actionId: string) => {
-    console.log("Selected action:", actionId)
-    
     if (actionId === "ai_agent") {
       // When AI Agent is selected from WhatHappensNextUI, keep it visible in background
       if (selectedNodeForNext) {
@@ -2766,12 +2673,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleAIAgentConfigSave = useCallback(
     (agentConfig: AIAgentConfig) => {
-      console.log("🔧 AI Agent Config Save - selectedAgentNodeId:", selectedAgentNodeId, "selectedNodeForNext:", selectedNodeForNext)
-      
       if (selectedAgentNodeId === "pending" && selectedNodeForNext) {
         // Create new AI Agent node when saving configuration
         const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
-        console.log("📍 Source node found:", sourceNode)
         if (sourceNode) {
           const newNodeId = `ai-agent-${nodeCounter}`
           
@@ -2950,12 +2854,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleEmailConfigSave = useCallback(
     (emailConfig: EmailConfig) => {
-      console.log("📧 Email Config Save - selectedEmailNodeId:", selectedEmailNodeId, "selectedNodeForNext:", selectedNodeForNext)
-      
       if (selectedEmailNodeId === "pending" && selectedNodeForNext) {
         // Create new Email node when saving configuration
         const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
-        console.log("📍 Source node found:", sourceNode)
         if (sourceNode) {
           const newNodeId = `email-${nodeCounter}`
           
@@ -3126,12 +3027,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleOnFormSubmissionSave = useCallback(
     (formConfig: FormConfig) => {
-      console.log("📝 Form Config Save - selectedFormNodeId:", selectedFormNodeId)
-      
       if (selectedFormNodeId === "pending") {
         // Create new form submission node when saving configuration
-        console.log("✨ Creating new form submission node")
-        
         const newNodeId = "form-submission"
         
         // Create the tool object for Form
@@ -3233,8 +3130,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [])
 
   const handleTemplateSelect = useCallback(async (template: any) => {
-    console.log('Selected template:', template)
-    
     // Find the full template data from availableTemplates
     const fullTemplate = availableTemplates.find(t => t.id === template.id)
     if (fullTemplate) {
@@ -3244,7 +3139,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         if (response.ok) {
           const result = await response.json()
           if (result.success && result.data) {
-            console.log('Setting detailed template:', result.data)
             // Set the detailed template which will trigger the useEffect to create nodes
             setLocalSelectedTemplate(result.data)
           } else {
@@ -3275,7 +3169,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   // Handler for workflow name change
   const handleWorkflowNameChange = useCallback((newName: string) => {
-    console.log("🏷️ Workflow name changing from:", currentWorkflowName, "to:", newName)
     setCurrentWorkflowName(newName)
     // Here you could also update the selectedTemplate if needed
     // or make an API call to save the name change
@@ -3449,8 +3342,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               }
               selectedTemplate={selectedTemplate}
               onStepCreated={(stepData) => {
-                console.log("Step created:", stepData)
-                
                 // Create visual step below the selected node
                 if (selectedNodeForNext && stepData) {
                   const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
@@ -3659,8 +3550,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           }}
           workflowName={(createdTemplate || selectedTemplate)?.name || "Custom Workflow"}
           workflowDescription={(createdTemplate || selectedTemplate)?.description || "User-created workflow"}
-          templateId={(createdTemplate || selectedTemplate)!.id}
-          workflowTemplate={(createdTemplate || selectedTemplate)!}
+          templateId={(createdTemplate || selectedTemplate)?.id !== 'pending-creation' ? (createdTemplate || selectedTemplate)?.id : undefined}
+          workflowTemplate={(createdTemplate || selectedTemplate)?.id !== 'pending-creation' ? (createdTemplate || selectedTemplate) || undefined : undefined}
+          workflowData={(createdTemplate as any)?.workflowData}
           onViewExecution={onViewExecution}
         />
       )}

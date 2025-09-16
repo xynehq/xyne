@@ -19,6 +19,8 @@ import {
   SearchSlackChannels,
   agentChatMessageSchema,
   chatTitleSchema,
+  HighlightApi,
+  highlightSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -187,6 +189,7 @@ import {
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
+  GetVertexAIModelEnumsApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -222,6 +225,7 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
+  GetChunkContentApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -949,6 +953,7 @@ export const AppRoutes = app
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+  .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
@@ -987,6 +992,8 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+  .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
+  .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(
     "/oauth/create",
@@ -1361,6 +1368,7 @@ app.get("/chat", AuthRedirect, async (c, next) => {
 })
 app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+app.get("/workflow", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))

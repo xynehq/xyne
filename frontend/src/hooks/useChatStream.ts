@@ -292,7 +292,7 @@ export const startStream = async (
     url.searchParams.append("chatId", chatId)
   }
   if (isAgenticMode) {
-    url.searchParams.append("agentic", "true")
+    url.searchParams.append("agentic", "false")
   }
   // Build selected model JSON configuration (optional)
   let modelConfig: { model?: string; capabilities?: any } | null = null
