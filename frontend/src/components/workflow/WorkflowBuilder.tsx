@@ -1,5 +1,5 @@
-import React, { useCallback, useState, useEffect } from 'react';
-import { Bot, Mail } from 'lucide-react';
+import React, { useCallback, useState, useEffect, useRef } from "react"
+import { Bot, Mail } from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -20,16 +20,122 @@ import {
   OnSelectionChangeParams,
   OnNodesDelete,
   OnEdgesDelete,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { Flow, TemplateFlow, Step, UserDetail, Tool, StepExecution } from './Types';
-import ActionBar from './ActionBar';
+} from "@xyflow/react"
+import "@xyflow/react/dist/style.css"
 import {
-  DelayIcon,
-  PythonScriptIcon,
-  DefaultToolIcon,
-  EditorIcon,
-  SettingsIcon,
+  Flow,
+  TemplateFlow,
+  Step,
+  UserDetail,
+  Tool,
+} from "./Types"
+import { api } from "../../api"
+
+// Import WorkflowTemplate type
+interface WorkflowTemplate {
+  id: string
+  name: string
+  description: string
+  version: string
+  status: string
+  config: {
+    ai_model?: string
+    max_file_size?: string
+    auto_execution?: boolean
+    schema_version?: string
+    allowed_file_types?: string[]
+    supports_file_upload?: boolean
+  }
+  createdBy: string
+  rootWorkflowStepTemplateId: string
+  createdAt: string
+  updatedAt: string
+  steps?: Array<{
+    id: string
+    workflowTemplateId: string
+    name: string
+    description: string
+    type: string
+    parentStepId: string | null
+    prevStepIds: string[]
+    nextStepIds: string[]
+    toolIds: string[]
+    timeEstimate: number
+    metadata: {
+      icon?: string
+      step_order?: number
+      schema_version?: string
+      user_instructions?: string
+      ai_model?: string
+      automated_description?: string
+    }
+    createdAt: string
+    updatedAt: string
+  }>
+  workflow_tools?: Array<{
+    id: string
+    type: string
+    value: any
+    config: any
+    createdBy: string
+    createdAt: string
+    updatedAt: string
+  }>
+  rootStep?: {
+    id: string
+    workflowTemplateId: string
+    name: string
+    description: string
+    type: string
+    timeEstimate: number
+    metadata: {
+      icon?: string
+      step_order?: number
+      schema_version?: string
+      user_instructions?: string
+    }
+    tool?: {
+      id: string
+      type: string
+      value: any
+      config: any
+      createdBy: string
+      createdAt: string
+      updatedAt: string
+    }
+  }
+  stepExecutions?: Array<{
+    id: string
+    workflowExecutionId: string
+    workflowStepTemplateId: string
+    name: string
+    type: string
+    status: string
+    parentStepId: string | null
+    prevStepIds: string[]
+    nextStepIds: string[]
+    toolExecIds: string[]
+    timeEstimate: number
+    metadata: any
+    completedBy: string | null
+    createdAt: string
+    updatedAt: string
+    completedAt: string | null
+  }>
+  toolExecutions?: Array<{
+    id: string
+    workflowToolId: string
+    workflowExecutionId: string
+    status: string
+    result: any
+    startedAt: string | null
+    completedAt: string | null
+    createdAt: string
+    updatedAt: string
+  }>
+}
+import ActionBar from "./ActionBar"
+import {
   ManualTriggerIcon,
   AppEventIcon,
   ScheduleIcon,
@@ -39,94 +145,126 @@ import {
   HelpIcon,
   TemplatesIcon,
   AddIcon,
-  FormDocumentIcon
-} from './WorkflowIcons';
-import { workflowTemplatesAPI, workflowsAPI } from './api/ApiHandlers';
-import WhatHappensNextUI from './WhatHappensNextUI';
-import AIAgentConfigUI, { AIAgentConfig } from './AIAgentConfigUI';
-import EmailConfigUI, { EmailConfig } from './EmailConfigUI';
-import OnFormSubmissionUI, { FormConfig } from './OnFormSubmissionUI';
-
-
-// Tool Card Component
-const ToolCard: React.FC<{ tool: Tool }> = ({ tool }) => {
-  const getToolIcon = (type: string) => {
-    switch (type) {
-      case 'delay':
-        return <DelayIcon />;
-      case 'python_script':
-        return <PythonScriptIcon />;
-      default:
-        return <DefaultToolIcon />;
-    }
-  };
-
-  const getToolColor = (type: string) => {
-    switch (type) {
-      case 'delay':
-        return 'bg-yellow-50 border-yellow-200 text-yellow-800';
-      case 'python_script':
-        return 'bg-blue-50 border-blue-200 text-blue-800';
-      default:
-        return 'bg-gray-50 border-gray-200 text-gray-800';
-    }
-  };
-
-  return (
-    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${getToolColor(tool.type)}`}>
-      {getToolIcon(tool.type)}
-      <span>{tool.type}</span>
-      {tool.config.description && (
-        <span className="text-xs opacity-75">• {tool.config.description}</span>
-      )}
-    </div>
-  );
-};
+  FormDocumentIcon,
+} from "./WorkflowIcons"
+import {
+  workflowExecutionsAPI,
+} from "./api/ApiHandlers"
+import WhatHappensNextUI from "./WhatHappensNextUI"
+import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
+import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
+import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
+import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
+import { TemplateSelectionModal } from "./TemplateSelectionModal"
 
 // Custom Node Component
-const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) => {
-  const { step, isActive, isCompleted, tools, hasNext } = data as { 
-    step: Step; 
-    isActive?: boolean; 
-    isCompleted?: boolean; 
-    tools?: Tool[];
-    hasNext?: boolean;
-  };
+const StepNode: React.FC<NodeProps> = ({
+  data,
+  isConnectable,
+  selected,
+  id,
+}) => {
+  const { step, isActive, isCompleted, tools, hasNext, isTriggerSelector } = data as {
+    step: Step
+    isActive?: boolean
+    isCompleted?: boolean
+    tools?: Tool[]
+    hasNext?: boolean
+    isTriggerSelector?: boolean
+  }
 
-  // Special rendering for AI Agent nodes
-  if (step.type === 'ai_agent') {
-    const isConfigured = (step as any).config?.name && (step as any).config?.name.trim() !== '';
-    
+  // Special rendering for "Select trigger from the sidebar" node
+  if (isTriggerSelector || step.name === "Select trigger from the sidebar" || step.type === "trigger_selector") {
+    return (
+      <>
+        <div
+          className="px-8 py-5 bg-white dark:bg-gray-800 border-2 border-dashed border-slate-300 dark:border-gray-600 hover:border-slate-400 dark:hover:border-gray-500 rounded-xl text-slate-700 dark:text-gray-300 text-base font-medium cursor-pointer flex items-center gap-3 transition-all duration-200 min-w-[200px] justify-center hover:bg-slate-50 dark:hover:bg-gray-700 hover:-translate-y-px hover:shadow-md"
+          onClick={(e) => {
+            e.stopPropagation()
+            // This will open the triggers sidebar
+            const event = new CustomEvent("openTriggersSidebar", {
+              detail: { nodeId: id },
+            })
+            window.dispatchEvent(event)
+          }}
+        >
+          <svg
+            className="w-5 h-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Select trigger from sidebar
+        </div>
+
+        {/* ReactFlow Handles - invisible but functional */}
+        <Handle
+          type="target"
+          position={Position.Top}
+          id="top"
+          isConnectable={isConnectable}
+          className="opacity-0"
+        />
+
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="bottom"
+          isConnectable={isConnectable}
+          className="opacity-0"
+        />
+      </>
+    )
+  }
+
+  // Special rendering for AI Agent nodes and steps with ai_agent tools
+  const hasAIAgentTool =
+    tools && tools.length > 0 && tools[0].type === "ai_agent"
+  if (step.type === "ai_agent" || hasAIAgentTool) {
+    // Get config from step or tool
+    const aiConfig =
+      (step as any).config || (hasAIAgentTool && tools?.[0]?.val) || {}
+    const isConfigured = 
+      (aiConfig?.name && aiConfig?.name.trim() !== "") || 
+      step.name || 
+      step.description ||
+      (hasAIAgentTool && tools?.[0])
+
     if (!isConfigured) {
       // Show only icon when not configured
       return (
         <>
-          <div 
-            className="relative cursor-pointer hover:shadow-lg transition-shadow"
+          <div
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+              selected 
+                ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+                : "border-gray-300 dark:border-gray-600"
+            }`}
             style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '12px',
-              border: '2px solid #181B1D',
-              background: '#FFF',
-              boxShadow: '0 0 0 2px #E2E2E2',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              width: "80px",
+              height: "80px",
+              borderRadius: "12px",
+              boxShadow: "0 0 0 2px #E2E2E2",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
             {/* Blue bot icon with background */}
-            <div 
-              className="flex justify-center items-center flex-shrink-0"
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-blue-50 dark:bg-blue-900/50"
               style={{
-                display: 'flex',
-                width: '32px',
-                height: '32px',
-                padding: '6px',
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderRadius: '6px',
-                background: '#EBF4FF'
+                display: "flex",
+                width: "32px",
+                height: "32px",
+                padding: "6px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "6px",
               }}
             >
               <Bot width={20} height={20} color="#2563EB" />
@@ -140,7 +278,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
               isConnectable={isConnectable}
               className="opacity-0"
             />
-            
+
             <Handle
               type="source"
               position={Position.Bottom}
@@ -153,67 +291,135 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
               <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
             </div>
+
+            {/* Add Next Step Button for unconfigured AI Agent */}
+            {hasNext && (
+              <div
+                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+                style={{ top: "calc(100% + 8px)" }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  console.log(
+                    "Plus button clicked for unconfigured AI agent:",
+                    id,
+                  )
+                  const event = new CustomEvent("openWhatHappensNext", {
+                    detail: { nodeId: id },
+                  })
+                  window.dispatchEvent(event)
+                }}
+              >
+                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+                <div
+                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                  }}
+                >
+                  <svg
+                    className="w-4 h-4 text-white"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                </div>
+              </div>
+            )}
           </div>
         </>
-      );
+      )
     }
 
     // Show full content when configured
     return (
       <>
-        <div 
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
-            width: '320px',
-            minHeight: '122px',
-            borderRadius: '12px',
-            border: '2px solid #181B1D',
-            background: '#FFF',
-            boxShadow: '0 0 0 2px #E2E2E2'
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
           <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
             {/* Blue bot icon with background */}
-            <div 
-              className="flex justify-center items-center flex-shrink-0"
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-blue-50 dark:bg-blue-900/50"
               style={{
-                display: 'flex',
-                width: '24px',
-                height: '24px',
-                padding: '4px',
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderRadius: '4.8px',
-                background: '#EBF4FF'
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
               }}
             >
               <Bot width={16} height={16} color="#2563EB" />
             </div>
-            
-            <h3 
-              className="text-gray-800 truncate flex-1"
+
+            <h3
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
               style={{
-                fontFamily: 'Inter',
-                fontSize: '14px',
-                fontStyle: 'normal',
-                fontWeight: '600',
-                lineHeight: 'normal',
-                letterSpacing: '-0.14px',
-                color: '#3B4145'
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
               }}
             >
-              {(step as any).config?.name || 'AI Agent'}
+              {(() => {
+                // First try to get name from workflow_tools[index].val.name
+                if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.name) {
+                  return (tools[0].val as any).name
+                }
+                
+                // Try to get name from workflow_tools[index].value.name
+                if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.name) {
+                  return (tools[0] as any).value.name
+                }
+                
+                // Fallback to existing logic
+                return step.name || aiConfig?.name || "AI Agent"
+              })()}
             </h3>
           </div>
-          
+
           {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
-          
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
+
           {/* Description text */}
           <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              {(step as any).config?.description || `AI agent to analyze and summarize documents using ${(step as any).config?.model || 'gpt-oss-120b'}.`}
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {(() => {
+                // First try to get description from workflow_tools[index].val.description
+                if (hasAIAgentTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+                
+                // Try to get description from workflow_tools[index].value.description
+                if (hasAIAgentTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+                
+                // Fallback to existing logic
+                return step.description ||
+                  aiConfig?.description ||
+                  `AI agent to analyze and summarize documents using ${aiConfig?.model || "gpt-oss-120b"}.`
+              })()}
             </p>
           </div>
 
@@ -225,7 +431,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             isConnectable={isConnectable}
             className="opacity-0"
           />
-          
+
           <Handle
             type="source"
             position={Position.Bottom}
@@ -236,31 +442,39 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
 
           {/* Bottom center connection point - visual only */}
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
           </div>
 
           {/* Add Next Step Button */}
           {hasNext && (
-            <div 
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-10" 
-              style={{ top: 'calc(100% + 8px)' }}
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
               onClick={(e) => {
-                e.stopPropagation();
-                const event = new CustomEvent('openWhatHappensNext', { 
-                  detail: { nodeId: id } 
-                });
-                window.dispatchEvent(event);
+                e.stopPropagation()
+                e.preventDefault()
+                console.log("Plus button clicked for node:", id)
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
               }}
             >
               <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div 
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors"
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
                 style={{
-                  width: '28px',
-                  height: '28px'
+                  width: "28px",
+                  height: "28px",
                 }}
               >
-                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
@@ -269,43 +483,57 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           )}
         </div>
       </>
-    );
+    )
   }
 
-  // Special rendering for Email nodes
-  if (step.type === 'email') {
-    const isConfigured = (step as any).config?.emailAddresses && (step as any).config?.emailAddresses.length > 0;
-    
+  // Special rendering for Email nodes and steps with email tools
+  const hasEmailTool = tools && tools.length > 0 && tools[0].type === "email"
+  if (step.type === "email" || hasEmailTool) {
+    // Get config from step or tool
+    const emailConfig =
+      (step as any).config || (hasEmailTool && tools?.[0]?.val) || {}
+    const emailAddresses =
+      emailConfig?.emailAddresses ||
+      emailConfig?.to_email ||
+      (hasEmailTool && tools?.[0]?.config?.to_email) ||
+      []
+    // Consider configured if has email addresses OR if step has name/description
+    const isConfigured =
+      (Array.isArray(emailAddresses) && emailAddresses.length > 0) ||
+      step.name ||
+      step.description
+
     if (!isConfigured) {
       // Show only icon when not configured
       return (
         <>
-          <div 
-            className="relative cursor-pointer hover:shadow-lg transition-shadow"
+          <div
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+              selected 
+                ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+                : "border-gray-300 dark:border-gray-600"
+            }`}
             style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '12px',
-              border: '2px solid #181B1D',
-              background: '#FFF',
-              boxShadow: '0 0 0 2px #E2E2E2',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              width: "80px",
+              height: "80px",
+              borderRadius: "12px",
+              boxShadow: "0 0 0 2px #E2E2E2",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
             {/* Purple mail icon with background */}
-            <div 
-              className="flex justify-center items-center flex-shrink-0"
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-purple-50 dark:bg-purple-900/50"
               style={{
-                display: 'flex',
-                width: '32px',
-                height: '32px',
-                padding: '6px',
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderRadius: '6px',
-                background: '#F3E8FF'
+                display: "flex",
+                width: "32px",
+                height: "32px",
+                padding: "6px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "6px",
               }}
             >
               <Mail width={20} height={20} color="#7C3AED" />
@@ -319,7 +547,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
               isConnectable={isConnectable}
               className="opacity-0"
             />
-            
+
             <Handle
               type="source"
               position={Position.Bottom}
@@ -332,269 +560,131 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
               <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
             </div>
+
+            {/* Add Next Step Button for unconfigured Email */}
+            {hasNext && (
+              <div
+                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+                style={{ top: "calc(100% + 8px)" }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  console.log("Plus button clicked for unconfigured email:", id)
+                  const event = new CustomEvent("openWhatHappensNext", {
+                    detail: { nodeId: id },
+                  })
+                  window.dispatchEvent(event)
+                }}
+              >
+                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+                <div
+                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                  }}
+                >
+                  <svg
+                    className="w-4 h-4 text-white"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                </div>
+              </div>
+            )}
           </div>
         </>
-      );
+      )
     }
 
     // Show full content when configured
     return (
       <>
-        <div 
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
           style={{
-            width: '320px',
-            minHeight: '122px',
-            borderRadius: '12px',
-            border: '2px solid #181B1D',
-            background: '#FFF',
-            boxShadow: '0 0 0 2px #E2E2E2'
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
           <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
             {/* Purple mail icon with background */}
-            <div 
-              className="flex justify-center items-center flex-shrink-0"
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-purple-50 dark:bg-purple-900/50"
               style={{
-                display: 'flex',
-                width: '24px',
-                height: '24px',
-                padding: '4px',
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderRadius: '4.8px',
-                background: '#F3E8FF'
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
               }}
             >
               <Mail width={16} height={16} color="#7C3AED" />
             </div>
-            
-            <h3 
-              className="text-gray-800 truncate flex-1"
+
+            <h3
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
               style={{
-                fontFamily: 'Inter',
-                fontSize: '14px',
-                fontStyle: 'normal',
-                fontWeight: '600',
-                lineHeight: 'normal',
-                letterSpacing: '-0.14px',
-                color: '#3B4145'
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
               }}
             >
-              {step.name || 'Email'}
-            </h3>
-          </div>
-          
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
-          
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
-              Send emails to {(step as any).config?.emailAddresses?.join(', ') || 'specified recipients'} via automated workflow.
-            </p>
-          </div>
-
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-          
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div 
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-10" 
-              style={{ top: 'calc(100% + 8px)' }}
-              onClick={(e) => {
-                e.stopPropagation();
-                const event = new CustomEvent('openWhatHappensNext', { 
-                  detail: { nodeId: id } 
-                });
-                window.dispatchEvent(event);
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div 
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors"
-                style={{
-                  width: '28px',
-                  height: '28px'
-                }}
-              >
-                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
-    );
-  }
-
-  // Special rendering for form submission nodes
-  if (step.type === 'form_submission') {
-    return (
-      <>
-        <div 
-          className="relative cursor-pointer hover:shadow-lg transition-shadow"
-          style={{
-            width: '320px',
-            minHeight: '122px',
-            borderRadius: '12px',
-            border: '2px solid #181B1D',
-            background: '#FFF',
-            boxShadow: '0 0 0 2px #E2E2E2'
-          }}
-        >
-          {/* Header with icon and title */}
-          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
-            {/* Green document icon with background */}
-            <div 
-              className="flex justify-center items-center flex-shrink-0"
-              style={{
-                display: 'flex',
-                width: '24px',
-                height: '24px',
-                padding: '4px',
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderRadius: '4.8px',
-                background: '#E8F9D1'
-              }}
-            >
-              <FormDocumentIcon width={16} height={16} />
-            </div>
-            
-            <h3 
-              className="text-gray-800 truncate flex-1"
-              style={{
-                fontFamily: 'Inter',
-                fontSize: '14px',
-                fontStyle: 'normal',
-                fontWeight: '600',
-                lineHeight: 'normal',
-                letterSpacing: '-0.14px',
-                color: '#3B4145'
-              }}
-            >
-              {(step as any).config?.title || 'Form Submission'}
-            </h3>
-          </div>
-          
-          {/* Full-width horizontal divider */}
-          <div className="w-full h-px bg-gray-200 mb-3"></div>
-          
-          {/* Description text */}
-          <div className="px-4 pb-4">
-            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
               {(() => {
-                const config = (step as any).config;
-                
-                // If user has configured the form, show form details
-                if (config?.title || config?.description || (config?.fields && config.fields.length > 0)) {
-                  const fieldCount = config?.fields?.length || 0;
-                  const fields = config?.fields || [];
-                  
-                  // Build description based on what's configured
-                  let description = '';
-                  
-                  if (config.description) {
-                    description = config.description;
-                    
-                    // Add field information even with custom description
-                    if (fields.length > 0) {
-                      const fieldDescriptions = fields.map((field: any) => {
-                        if (field.type === 'file') {
-                          return `Upload a ${field.name || 'file'} in formats such as PDF, DOCX or JPG`;
-                        } else if (field.type === 'email') {
-                          return `Enter ${field.name || 'email address'}`;
-                        } else if (field.type === 'text') {
-                          return `Enter ${field.name || 'text'}`;
-                        } else if (field.type === 'textarea') {
-                          return `Enter ${field.name || 'detailed text'}`;
-                        } else if (field.type === 'number') {
-                          return `Enter ${field.name || 'number'}`;
-                        }
-                        return `${field.name || field.type}`;
-                      });
-                      
-                      description += `. ${fieldDescriptions.join(', ')}`;
-                    }
-                  } else if (config.title) {
-                    description = `Form "${config.title}" with ${fieldCount} field${fieldCount !== 1 ? 's' : ''}`;
-                    
-                    // Add field details
-                    if (fields.length > 0) {
-                      const fieldDescriptions = fields.map((field: any) => {
-                        if (field.type === 'file') {
-                          return `Upload a ${field.name || 'file'} in formats such as PDF, DOCX or JPG`;
-                        } else if (field.type === 'email') {
-                          return `Enter ${field.name || 'email address'}`;
-                        } else if (field.type === 'text') {
-                          return `Enter ${field.name || 'text'}`;
-                        } else if (field.type === 'textarea') {
-                          return `Enter ${field.name || 'detailed text'}`;
-                        } else if (field.type === 'number') {
-                          return `Enter ${field.name || 'number'}`;
-                        }
-                        return `${field.name || field.type}`;
-                      });
-                      
-                      if (fieldDescriptions.length === 1) {
-                        description = fieldDescriptions[0];
-                      } else {
-                        description += `. Fields: ${fieldDescriptions.join(', ')}`;
-                      }
-                    }
-                  } else if (fieldCount > 0) {
-                    // Show field details when only fields are configured
-                    const fieldDescriptions = fields.map((field: any) => {
-                      if (field.type === 'file') {
-                        return `Upload a ${field.name || 'file'} in formats such as PDF, DOCX or JPG`;
-                      } else if (field.type === 'email') {
-                        return `Enter ${field.name || 'email address'}`;
-                      } else if (field.type === 'text') {
-                        return `Enter ${field.name || 'text'}`;
-                      } else if (field.type === 'textarea') {
-                        return `Enter ${field.name || 'detailed text'}`;
-                      } else if (field.type === 'number') {
-                        return `Enter ${field.name || 'number'}`;
-                      }
-                      return `${field.name || field.type}`;
-                    });
-                    
-                    if (fieldDescriptions.length === 1) {
-                      description = fieldDescriptions[0];
-                    } else {
-                      description = `Form with ${fieldCount} fields: ${fieldDescriptions.join(', ')}`;
-                    }
-                  }
-                  
-                  return description || 'Custom form configuration';
+                // First try to get title from workflow_tools[index].val.title
+                if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+                  return (tools[0].val as any).title
                 }
                 
-                // Fallback content when no configuration
-                return 'Upload a file in formats such as PDF, DOCX, or JPG.';
+                // Try to get title from workflow_tools[index].value.title
+                if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+                  return (tools[0] as any).value.title
+                }
+                
+                // Fallback to existing logic
+                return step.name || "Email"
+              })()}
+            </h3>
+          </div>
+
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
+
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {(() => {
+                // First try to get description from workflow_tools[index].val.description
+                if (hasEmailTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+                
+                // Try to get description from workflow_tools[index].value.description
+                if (hasEmailTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+                
+                // Always generate description from email addresses
+                return (emailAddresses && emailAddresses.length > 0
+                  ? `Send emails to ${emailAddresses.join(", ")}`
+                  : "Send automated email notifications to specified recipients.")
               })()}
             </p>
           </div>
@@ -607,7 +697,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             isConnectable={isConnectable}
             className="opacity-0"
           />
-          
+
           <Handle
             type="source"
             position={Position.Bottom}
@@ -618,31 +708,39 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
 
           {/* Bottom center connection point - visual only */}
           <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
           </div>
 
           {/* Add Next Step Button */}
           {hasNext && (
-            <div 
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-10" 
-              style={{ top: 'calc(100% + 8px)' }}
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
               onClick={(e) => {
-                e.stopPropagation();
-                const event = new CustomEvent('openWhatHappensNext', { 
-                  detail: { nodeId: id } 
-                });
-                window.dispatchEvent(event);
+                e.stopPropagation()
+                e.preventDefault()
+                console.log("Plus button clicked for node:", id)
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
               }}
             >
               <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div 
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors"
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
                 style={{
-                  width: '28px',
-                  height: '28px'
+                  width: "28px",
+                  height: "28px",
                 }}
               >
-                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
@@ -651,26 +749,278 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           )}
         </div>
       </>
-    );
+    )
   }
-  
+
+  // Special rendering for form submission nodes and steps with form tools
+  const hasFormTool = tools && tools.length > 0 && tools[0].type === "form"
+  if (step.type === "form_submission" || hasFormTool) {
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Green document icon with background */}
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+              }}
+            >
+              <FormDocumentIcon width={16} height={16} />
+            </div>
+
+            <h3
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+              }}
+            >
+              {(() => {
+                // First try to get title from workflow_tools[index].val.title
+                if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+                  return (tools[0].val as any).title
+                }
+                
+                // Try to get title from workflow_tools[index].value.title
+                if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+                  return (tools[0] as any).value.title
+                }
+                
+                // Fallback to existing logic
+                return step.name ||
+                  (step as any).config?.title ||
+                  (hasFormTool && tools?.[0] && typeof tools[0].val === 'object' && tools[0].val?.title) ||
+                  "Form Submission"
+              })()}
+            </h3>
+          </div>
+
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
+
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {(() => {
+                // First try to get description from workflow_tools[index].val.description
+                if (hasFormTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+                
+                // Try to get description from workflow_tools[index].value.description
+                if (hasFormTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+                
+                // If step has description, use it next
+                if (step.description) {
+                  return step.description
+                }
+
+                // Get config from step or tool
+                const config =
+                  (step as any).config ||
+                  (hasFormTool && tools?.[0]?.val) ||
+                  {}
+
+                // If user has configured the form, show form details
+                if (
+                  config?.title ||
+                  config?.description ||
+                  (config?.fields && config.fields.length > 0)
+                ) {
+                  const fieldCount = config?.fields?.length || 0
+                  const fields = config?.fields || []
+
+                  // Build description based on what's configured
+                  let description = ""
+
+                  if (config.description) {
+                    description = config.description
+
+                    // Add field information even with custom description
+                    if (fields.length > 0) {
+                      const fieldDescriptions = fields.map((field: any) => {
+                        if (field.type === "file") {
+                          return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                        } else if (field.type === "email") {
+                          return `Enter ${field.name || "email address"}`
+                        } else if (field.type === "text") {
+                          return `Enter ${field.name || "text"}`
+                        } else if (field.type === "textarea") {
+                          return `Enter ${field.name || "detailed text"}`
+                        } else if (field.type === "number") {
+                          return `Enter ${field.name || "number"}`
+                        }
+                        return `${field.name || field.type}`
+                      })
+
+                      description += `. ${fieldDescriptions.join(", ")}`
+                    }
+                  } else if (config.title) {
+                    description = `Form "${config.title}" with ${fieldCount} field${fieldCount !== 1 ? "s" : ""}`
+
+                    // Add field details
+                    if (fields.length > 0) {
+                      const fieldDescriptions = fields.map((field: any) => {
+                        if (field.type === "file") {
+                          return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                        } else if (field.type === "email") {
+                          return `Enter ${field.name || "email address"}`
+                        } else if (field.type === "text") {
+                          return `Enter ${field.name || "text"}`
+                        } else if (field.type === "textarea") {
+                          return `Enter ${field.name || "detailed text"}`
+                        } else if (field.type === "number") {
+                          return `Enter ${field.name || "number"}`
+                        }
+                        return `${field.name || field.type}`
+                      })
+
+                      if (fieldDescriptions.length === 1) {
+                        description = fieldDescriptions[0]
+                      } else {
+                        description += `. Fields: ${fieldDescriptions.join(", ")}`
+                      }
+                    }
+                  } else if (fieldCount > 0) {
+                    // Show field details when only fields are configured
+                    const fieldDescriptions = fields.map((field: any) => {
+                      if (field.type === "file") {
+                        return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                      } else if (field.type === "email") {
+                        return `Enter ${field.name || "email address"}`
+                      } else if (field.type === "text") {
+                        return `Enter ${field.name || "text"}`
+                      } else if (field.type === "textarea") {
+                        return `Enter ${field.name || "detailed text"}`
+                      } else if (field.type === "number") {
+                        return `Enter ${field.name || "number"}`
+                      }
+                      return `${field.name || field.type}`
+                    })
+
+                    if (fieldDescriptions.length === 1) {
+                      description = fieldDescriptions[0]
+                    } else {
+                      description = `Form with ${fieldCount} fields: ${fieldDescriptions.join(", ")}`
+                    }
+                  }
+
+                  return description || "Custom form configuration"
+                }
+
+                // Fallback content when no configuration
+                return "Upload a file in formats such as PDF, DOCX, or JPG."
+              })()}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+
+          {/* Add Next Step Button */}
+          {hasNext && (
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                console.log("Plus button clicked for node:", id)
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
+              }}
+            >
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                style={{
+                  width: "28px",
+                  height: "28px",
+                }}
+              >
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
   const getNodeClasses = () => {
-    const baseClasses = 'rounded-2xl border-2 transition-all duration-300 ease-in-out p-6 min-w-[180px] min-h-[90px] text-center flex flex-col items-center justify-center cursor-pointer relative backdrop-blur-sm';
-    
+    const baseClasses =
+      "rounded-2xl border-2 transition-all duration-300 ease-in-out p-6 min-w-[180px] min-h-[90px] text-center flex flex-col items-center justify-center cursor-pointer relative backdrop-blur-sm"
+
     if (isCompleted) {
-      return `${baseClasses} border-emerald-600 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/30 dark:to-emerald-800/20 text-emerald-900 dark:text-emerald-300 shadow-lg shadow-emerald-500/15`;
+      return `${baseClasses} border-emerald-600 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/30 dark:to-emerald-800/20 text-emerald-900 dark:text-emerald-300 shadow-lg shadow-emerald-500/15`
     }
-    
+
     if (isActive) {
-      return `${baseClasses} border-blue-600 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 text-blue-900 dark:text-blue-300 shadow-lg shadow-blue-500/15`;
+      return `${baseClasses} border-blue-600 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 text-blue-900 dark:text-blue-300 shadow-lg shadow-blue-500/15`
     }
-    
+
     if (selected) {
-      return `${baseClasses} border-purple-600 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 text-purple-900 dark:text-purple-300 shadow-xl shadow-purple-500/15`;
+      return `${baseClasses} border-purple-600 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 text-purple-900 dark:text-purple-300 shadow-xl shadow-purple-500/15`
     }
-    
-    return `${baseClasses} border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 shadow-md shadow-black/8 dark:shadow-black/20`;
-  };
+
+    return `${baseClasses} border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 shadow-md shadow-black/8 dark:shadow-black/20`
+  }
 
   return (
     <>
@@ -681,10 +1031,14 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
           id="top"
           isConnectable={isConnectable}
           className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${
-            isCompleted ? 'bg-emerald-600' : isActive ? 'bg-blue-600' : 'bg-gray-400 dark:bg-gray-500'
+            isCompleted
+              ? "bg-emerald-600"
+              : isActive
+                ? "bg-blue-600"
+                : "bg-gray-400 dark:bg-gray-500"
           }`}
         />
-        
+
         <div className="flex items-center gap-2 mb-1">
           {isCompleted && (
             <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold">
@@ -695,7 +1049,7 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
           )}
           <div className="font-semibold text-base leading-tight">
-            {step.name || 'Unnamed Step'}
+            {step.name || "Unnamed Step"}
           </div>
           {isActive && !isCompleted && (
             <div className="text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 px-2 py-1 rounded-full">
@@ -703,61 +1057,63 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
             </div>
           )}
         </div>
-        
+
         {/* Status indicator */}
         {step.status && (
           <div className="text-xs opacity-70 uppercase tracking-wider font-medium mb-1">
-            {step.status === 'running' || step.status === 'in_progress' ? 'In Progress' : 
-             step.status === 'completed' || step.status === 'done' ? 'Completed' : 
-             step.status === 'pending' ? 'Pending' : 
-             step.status}
+            {step.status === "running" || step.status === "in_progress"
+              ? "In Progress"
+              : step.status === "completed" || step.status === "done"
+                ? "Completed"
+                : step.status === "pending"
+                  ? "Pending"
+                  : step.status}
           </div>
         )}
-        
-        {/* Display tools below step name */}
-        {tools && tools.length > 0 && (
-          <div className="flex flex-col gap-1 mt-2 w-full">
-            {tools.map((tool) => (
-              <ToolCard key={tool.id} tool={tool} />
-            ))}
-          </div>
-        )}
-        
 
-        
         <Handle
           type="source"
           position={Position.Bottom}
           id="bottom"
           isConnectable={isConnectable}
           className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${
-            isCompleted ? 'bg-emerald-600' : isActive ? 'bg-blue-600' : 'bg-gray-400 dark:bg-gray-500'
+            isCompleted
+              ? "bg-emerald-600"
+              : isActive
+                ? "bg-blue-600"
+                : "bg-gray-400 dark:bg-gray-500"
           }`}
         />
-        
+
         {/* Add Next Step Button */}
         {hasNext && (
-          <div 
-            className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-10" 
-            style={{ top: 'calc(100% + 8px)' }}
+          <div
+            className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-10"
+            style={{ top: "calc(100% + 8px)" }}
             onClick={(e) => {
-              e.stopPropagation();
+              e.stopPropagation()
               // This will be handled by the parent component
-              const event = new CustomEvent('openWhatHappensNext', { 
-                detail: { nodeId: id } 
-              });
-              window.dispatchEvent(event);
+              const event = new CustomEvent("openWhatHappensNext", {
+                detail: { nodeId: id },
+              })
+              window.dispatchEvent(event)
             }}
           >
-            <div className="w-0.5 h-6 bg-gray-300 mb-2"></div>
-            <div 
+            <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+            <div
               className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors"
               style={{
-                width: '28px',
-                height: '28px'
+                width: "28px",
+                height: "28px",
               }}
             >
-              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="w-4 h-4 text-white"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
@@ -766,108 +1122,495 @@ const StepNode: React.FC<NodeProps> = ({ data, isConnectable, selected, id }) =>
         )}
       </div>
     </>
-  );
-};
+  )
+}
 
 // Header component
-const Header = ({ onBackToWorkflows }: { onBackToWorkflows?: () => void }) => {
+const Header = ({
+  onBackToWorkflows,
+  workflowName,
+  selectedTemplate,
+  onWorkflowNameChange,
+  isEditable = true,
+}: { 
+  onBackToWorkflows?: () => void; 
+  workflowName?: string;
+  selectedTemplate?: WorkflowTemplate | null;
+  onWorkflowNameChange?: (newName: string) => void;
+  isEditable?: boolean;
+}) => {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingName, setEditingName] = useState("")
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const currentName = workflowName || selectedTemplate?.name || "Untitled Workflow"
+
+  const handleDoubleClick = () => {
+    setEditingName(currentName)
+    setIsEditing(true)
+  }
+
+  const handleSave = () => {
+    if (editingName.trim() && editingName !== currentName) {
+      onWorkflowNameChange?.(editingName.trim())
+    }
+    setIsEditing(false)
+  }
+
+  const handleCancel = () => {
+    setEditingName("")
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSave()
+    } else if (e.key === "Escape") {
+      handleCancel()
+    }
+  }
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [isEditing])
+
   return (
-    <div className="flex flex-col items-start px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px] gap-3">
+    <div className="flex items-center justify-start px-6 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px]">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 w-full">
-        <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
-          <span 
-            className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
-            onClick={onBackToWorkflows}
-          >
-            Workflow
-          </span>
-          <span className='text-[#3B4145] dark:text-gray-300 text-sm font-medium leading-5'> / Untitled Workflow</span>
-        </div>
-      </div>
-      
-      {/* Full-width divider */}
-      <div className="w-full h-px bg-slate-200 dark:bg-gray-700 -mx-6 self-stretch" />
-      
-      {/* Editor/Settings Toggle - positioned below divider */}
-      <div className="flex items-center rounded-xl overflow-hidden border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-800">
-        <button className="my-1 mx-1 px-4 py-1.5 bg-white dark:bg-gray-700 text-slate-800 dark:text-gray-200 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center rounded-lg shadow-sm">
-          <EditorIcon />
-          Editor
-        </button>
-        <button className="px-4 py-1.5 bg-transparent text-slate-500 dark:text-gray-400 text-sm font-medium border-none cursor-pointer flex items-center gap-1.5 h-8 min-w-[80px] justify-center">
-          <SettingsIcon />
-          Settings
-        </button>
+      <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
+        <span
+          className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
+          onClick={onBackToWorkflows}
+        >
+          Workflow
+        </span>
+        <span className="text-[#3B4145] dark:text-gray-300 text-sm font-medium leading-5">
+          {" "}
+          / {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onBlur={handleSave}
+              onKeyDown={handleKeyDown}
+              className="bg-transparent border-b border-blue-500 dark:border-blue-400 outline-none text-[#3B4145] dark:text-gray-300 text-sm font-medium min-w-[120px] max-w-[300px]"
+              style={{ width: `${Math.max(120, editingName.length * 8)}px` }}
+            />
+          ) : (
+            <span 
+              className={isEditable 
+                ? "cursor-pointer hover:text-[#1a1d20] dark:hover:text-gray-100 transition-colors"
+                : "text-[#3B4145] dark:text-gray-300"
+              }
+              onDoubleClick={isEditable ? handleDoubleClick : undefined}
+              title={isEditable ? "Double-click to edit workflow name" : undefined}
+            >
+              {currentName}
+            </span>
+          )}
+        </span>
       </div>
     </div>
-  );
-};
+  )
+}
 
 // Right Sidebar - SELECT TRIGGERS Panel
-const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: boolean; onClose?: () => void; onTriggerClick?: (triggerId: string) => void }) => {
+// Execution Result Modal Component
+const ExecutionResultModal = ({
+  isVisible,
+  result,
+  onClose,
+}: {
+  isVisible: boolean
+  result: any
+  onClose?: () => void
+}) => {
+  if (!isVisible) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] mx-4 relative overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900">
+            Execution Result
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <svg
+              className="w-5 h-5 text-gray-500"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
+          <div className="bg-gray-50 p-4 rounded-lg border">
+            <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
+              {typeof result === "object"
+                ? JSON.stringify(result, null, 2)
+                : String(result)}
+            </pre>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end p-6 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Tools Sidebar Component
+const ToolsSidebar = ({
+  isVisible,
+  nodeInfo,
+  tools,
+  onClose,
+  onResultClick,
+}: {
+  isVisible: boolean
+  nodeInfo: any
+  tools: Tool[] | null
+  onClose?: () => void
+  onResultClick?: (result: any) => void
+}) => {
+  return (
+    <div
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white border-l border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ease-in-out z-40 ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
+      }`}
+    >
+      {/* Header */}
+      <div className="px-6 pt-5 pb-4 border-b border-slate-200">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-sm font-semibold text-gray-700 tracking-wider uppercase">
+            NODE DETAILS
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+            >
+              <svg
+                className="w-4 h-4 text-gray-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          )}
+        </div>
+        <div className="text-sm text-slate-500 leading-5 font-normal">
+          {nodeInfo?.step?.name || "Selected node information"}
+        </div>
+      </div>
+
+      {/* Node Information */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-6">
+        {/* Step Information */}
+        {nodeInfo?.step && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                Step Information
+              </h3>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-xs font-medium text-gray-500">
+                    Name:
+                  </span>
+                  <span className="text-xs text-gray-900">
+                    {nodeInfo.step.name}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs font-medium text-gray-500">
+                    Type:
+                  </span>
+                  <span className="text-xs text-gray-900">
+                    {nodeInfo.step.type || "Unknown"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs font-medium text-gray-500">
+                    Status:
+                  </span>
+                  <span className="text-xs text-gray-900">
+                    {nodeInfo.step.status || "Pending"}
+                  </span>
+                </div>
+                {nodeInfo.step.description && (
+                  <div>
+                    <span className="text-xs font-medium text-gray-500">
+                      Description:
+                    </span>
+                    <p className="text-xs text-gray-900 mt-1">
+                      {nodeInfo.step.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tools Information */}
+        {tools && tools.length > 0 && (
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-gray-700">
+              Associated Tools
+            </h3>
+            {tools.map((tool, index) => (
+              <div
+                key={tool.id || index}
+                className="border border-gray-200 rounded-lg p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-900">
+                    {tool.type}
+                  </span>
+                  <div className="flex gap-2">
+                    {(tool as any).status && (
+                      <span
+                        className={`text-xs px-2 py-1 rounded ${
+                          (tool as any).status === "completed"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {(tool as any).status}
+                      </span>
+                    )}
+                    <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
+                      Tool
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tool Execution Result (for executions) */}
+                {(tool as any).result && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-semibold text-gray-600">
+                        Execution Result
+                      </h4>
+                      <button
+                        onClick={() => onResultClick?.((tool as any).result)}
+                        className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                      >
+                        View Full
+                      </button>
+                    </div>
+                    <div
+                      className="text-xs text-gray-900 bg-green-50 p-3 rounded max-h-40 overflow-y-auto border border-green-200 cursor-pointer hover:bg-green-100 transition-colors"
+                      onClick={() => onResultClick?.((tool as any).result)}
+                    >
+                      <pre className="whitespace-pre-wrap">
+                        {typeof (tool as any).result === "object"
+                          ? JSON.stringify((tool as any).result, null, 2)
+                          : String((tool as any).result)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+
+                {/* Regular tool config (for templates) */}
+                {tool.config && !(tool as any).result && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold text-gray-600">
+                      Configuration
+                    </h4>
+                    <div className="space-y-1">
+                      {Object.entries(tool.config).map(([key, value]) => (
+                        <div key={key} className="flex justify-between text-xs">
+                          <span className="text-gray-500 capitalize">
+                            {key.replace(/_/g, " ")}:
+                          </span>
+                          <span
+                            className="text-gray-900 max-w-[200px] truncate"
+                            title={String(value)}
+                          >
+                            {typeof value === "object"
+                              ? JSON.stringify(value)
+                              : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(tool as any).val && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold text-gray-600">
+                      Tool Value
+                    </h4>
+                    <div className="text-xs text-gray-900 bg-gray-50 p-2 rounded max-h-20 overflow-y-auto">
+                      <pre>
+                        {typeof (tool as any).val === "object"
+                          ? JSON.stringify((tool as any).val, null, 2)
+                          : String((tool as any).val)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* No Tools Message */}
+        {(!tools || tools.length === 0) && (
+          <div className="text-center py-8">
+            <div className="text-gray-400 mb-2">
+              <svg
+                className="w-12 h-12 mx-auto"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1"
+                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                />
+              </svg>
+            </div>
+            <p className="text-sm text-gray-500">
+              No tools associated with this node
+            </p>
+          </div>
+        )}
+
+        {/* Position Information */}
+        {nodeInfo?.position && (
+          <div className="space-y-2 pt-4 border-t border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-700">Position</h3>
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">X:</span>
+                <span className="text-gray-900">
+                  {Math.round(nodeInfo.position.x)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Y:</span>
+                <span className="text-gray-900">
+                  {Math.round(nodeInfo.position.y)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const TriggersSidebar = ({
+  isVisible,
+  onTriggerClick,
+  onClose,
+}: {
+  isVisible: boolean
+  onClose?: () => void
+  onTriggerClick?: (triggerId: string) => void
+}) => {
   const triggers = [
     {
-      id: 'form',
-      name: 'On Form Submission',
-      description: 'Generate webforms in Xyne and pass their responses to the workflow',
+      id: "form",
+      name: "On Form Submission",
+      description:
+        "Generate webforms in Xyne and pass their responses to the workflow",
       icon: <FormSubmissionIcon width={20} height={20} />,
-      enabled: true
+      enabled: true,
     },
     {
-      id: 'manual',
-      name: 'Trigger Manually',
-      description: 'Runs the flow when triggered manually. Good for getting started quickly',
+      id: "manual",
+      name: "Trigger Manually",
+      description:
+        "Runs the flow when triggered manually. Good for getting started quickly",
       icon: <ManualTriggerIcon width={20} height={20} />,
-      enabled: false
+      enabled: false,
     },
     {
-      id: 'app_event',
-      name: 'On App Event',
-      description: 'Connect different apps to the workflow',
+      id: "app_event",
+      name: "On App Event",
+      description: "Connect different apps to the workflow",
       icon: <AppEventIcon width={20} height={20} />,
-      enabled: false
+      enabled: false,
     },
     {
-      id: 'schedule',
-      name: 'On Schedule',
-      description: 'Runs the flow every day, hour or custom interval',
+      id: "schedule",
+      name: "On Schedule",
+      description: "Runs the flow every day, hour or custom interval",
       icon: <ScheduleIcon width={20} height={20} />,
-      enabled: false
+      enabled: false,
     },
     {
-      id: 'workflow',
-      name: 'When executed by another workflow',
-      description: 'Runs the flow when called by the Execute Workflow node from a different workflow',
+      id: "workflow",
+      name: "When executed by another workflow",
+      description:
+        "Runs the flow when called by the Execute Workflow node from a different workflow",
       icon: <WorkflowExecutionIcon width={20} height={20} />,
-      enabled: false
+      enabled: false,
     },
     {
-      id: 'chat',
-      name: 'On Chat Message',
-      description: 'Runs the flow when a user sends a chat message. For use with AI nodes',
+      id: "chat",
+      name: "On Chat Message",
+      description:
+        "Runs the flow when a user sends a chat message. For use with AI nodes",
       icon: <ChatMessageIcon width={20} height={20} />,
-      enabled: false
-    }
-  ];
+      enabled: false,
+    },
+  ]
 
   const resources = [
     {
-      id: 'create_workflow',
-      name: 'How to create a workflow',
-      icon: <HelpIcon width={20} height={20} />
+      id: "create_workflow",
+      name: "How to create a workflow",
+      icon: <HelpIcon width={20} height={20} />,
     },
     {
-      id: 'templates',
-      name: 'Templates',
-      icon: <TemplatesIcon width={20} height={20} />
-    }
-  ];
+      id: "templates",
+      name: "Templates",
+      icon: <TemplatesIcon width={20} height={20} />,
+    },
+  ]
 
   return (
-    <div className={`h-full bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
-      isVisible ? 'translate-x-0 w-[380px]' : 'translate-x-full w-0'
-    }`}>
+    <div
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-40 ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
+      }`}
+    >
       {/* Header */}
       <div className="px-6 pt-5 pb-4 border-b border-slate-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-1.5">
@@ -879,7 +1622,13 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
               onClick={onClose}
               className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
             >
-              <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="w-4 h-4 text-gray-500 dark:text-gray-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
@@ -894,28 +1643,36 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
       {/* Triggers List */}
       <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-1">
         {/* Enabled triggers */}
-        {triggers.filter(trigger => trigger.enabled).map((trigger) => (
-          <div
-            key={trigger.id}
-            onClick={() => onTriggerClick?.(trigger.id)}
-            className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all duration-150 bg-transparent hover:bg-slate-50 dark:hover:bg-gray-800 text-slate-700 dark:text-gray-300 min-h-[60px]"
-          >
-            <div className="w-5 h-5 flex items-center justify-center text-slate-500 dark:text-gray-400 flex-shrink-0">
-              {trigger.icon}
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-slate-700 dark:text-gray-300 leading-5">
-                {trigger.name}
+        {triggers
+          .filter((trigger) => trigger.enabled)
+          .map((trigger) => (
+            <div
+              key={trigger.id}
+              onClick={() => onTriggerClick?.(trigger.id)}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-all duration-150 bg-transparent hover:bg-slate-50 dark:hover:bg-gray-800 text-slate-700 dark:text-gray-300 min-h-[60px]"
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-slate-500 dark:text-gray-400 flex-shrink-0">
+                {trigger.icon}
               </div>
-              <div className="text-xs text-slate-500 dark:text-gray-400 leading-4 mt-1">
-                {trigger.description}
+              <div className="flex-1">
+                <div className="text-sm font-medium text-slate-700 dark:text-gray-300 leading-5">
+                  {trigger.name}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-gray-400 leading-4 mt-1">
+                  {trigger.description}
+                </div>
               </div>
+              <svg
+                className="w-4 h-4 text-slate-400 dark:text-gray-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
             </div>
-            <svg className="w-4 h-4 text-slate-400 dark:text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </div>
-        ))}
+          ))}
 
         {/* Coming Soon Section */}
         <div className="mt-6 mb-4">
@@ -925,27 +1682,35 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
         </div>
 
         {/* Disabled triggers */}
-        {triggers.filter(trigger => !trigger.enabled).map((trigger) => (
-          <div
-            key={trigger.id}
-            className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-not-allowed transition-all duration-150 bg-transparent text-slate-400 dark:text-gray-600 min-h-[60px] opacity-60"
-          >
-            <div className="w-5 h-5 flex items-center justify-center text-slate-400 dark:text-gray-600 flex-shrink-0">
-              {trigger.icon}
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-slate-400 dark:text-gray-600 leading-5">
-                {trigger.name}
+        {triggers
+          .filter((trigger) => !trigger.enabled)
+          .map((trigger) => (
+            <div
+              key={trigger.id}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-not-allowed transition-all duration-150 bg-transparent text-slate-400 dark:text-gray-600 min-h-[60px] opacity-60"
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-slate-400 dark:text-gray-600 flex-shrink-0">
+                {trigger.icon}
               </div>
-              <div className="text-xs text-slate-400 dark:text-gray-600 leading-4 mt-1">
-                {trigger.description}
+              <div className="flex-1">
+                <div className="text-sm font-medium text-slate-400 dark:text-gray-600 leading-5">
+                  {trigger.name}
+                </div>
+                <div className="text-xs text-slate-400 dark:text-gray-600 leading-4 mt-1">
+                  {trigger.description}
+                </div>
               </div>
+              <svg
+                className="w-4 h-4 text-slate-300 dark:text-gray-700"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
             </div>
-            <svg className="w-4 h-4 text-slate-300 dark:text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </div>
-        ))}
+          ))}
       </div>
 
       {/* Helpful Resources Section */}
@@ -953,7 +1718,7 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
         <div className="text-xs font-semibold text-slate-500 dark:text-gray-500 tracking-wider uppercase mb-4">
           HELPFUL RESOURCES
         </div>
-        
+
         {resources.map((resource) => (
           <div
             key={resource.id}
@@ -969,12 +1734,12 @@ const TriggersSidebar = ({ isVisible, onTriggerClick, onClose }: { isVisible: bo
         ))}
       </div>
     </div>
-  );
-};
+  )
+}
 
 const EmptyCanvas: React.FC<{
-  onAddFirstStep: () => void;
-  onStartWithTemplate: () => void;
+  onAddFirstStep: () => void
+  onStartWithTemplate: () => void
 }> = ({ onAddFirstStep, onStartWithTemplate }) => {
   return (
     <div className="flex flex-col items-center justify-center gap-8 p-12 text-center">
@@ -986,7 +1751,7 @@ const EmptyCanvas: React.FC<{
         <AddIcon />
         Add first step
       </button>
-      
+
       {/* Divider */}
       <div className="flex items-center gap-4 w-full max-w-[300px]">
         <div className="flex-1 h-px bg-slate-200 dark:bg-gray-600" />
@@ -995,7 +1760,7 @@ const EmptyCanvas: React.FC<{
         </div>
         <div className="flex-1 h-px bg-slate-200 dark:bg-gray-600" />
       </div>
-      
+
       {/* Secondary Button */}
       <button
         onClick={onStartWithTemplate}
@@ -1004,1025 +1769,1910 @@ const EmptyCanvas: React.FC<{
         Start with a Template
       </button>
     </div>
-  );
-};
-
-
+  )
+}
 
 const nodeTypes = {
   stepNode: StepNode,
-};
+}
 
 interface WorkflowBuilderProps {
-  flow?: Flow | TemplateFlow;
-  activeStepId?: string;
-  onStepClick?: (step: Step) => void;
-  user?: UserDetail;
-  onBackToWorkflows?: () => void;
+  flow?: Flow | TemplateFlow
+  activeStepId?: string
+  onStepClick?: (step: Step) => void
+  user?: UserDetail
+  onBackToWorkflows?: () => void
+  selectedTemplate?: WorkflowTemplate | null
+  isLoadingTemplate?: boolean
+  isEditableMode?: boolean
+  builder?: boolean // true for create mode, false for view mode
+  onViewExecution?: (executionId: string) => void
 }
 
 // Internal component that uses ReactFlow hooks
-const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({ 
+const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   onStepClick,
   onBackToWorkflows,
+  selectedTemplate,
+  isLoadingTemplate,
+  isEditableMode,
+  builder = true, // Default to builder mode
+  onViewExecution,
 }) => {
-  const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
-  const [selectedEdges, setSelectedEdges] = useState<Edge[]>([]);
-  const [nodeCounter, setNodeCounter] = useState(1);
-  const [showEmptyCanvas, setShowEmptyCanvas] = useState(true);
-  const [showTriggersSidebar, setShowTriggersSidebar] = useState(false);
-  const [showWhatHappensNextUI, setShowWhatHappensNextUI] = useState(false);
-  const [showAIAgentConfigUI, setShowAIAgentConfigUI] = useState(false);
-  const [showEmailConfigUI, setShowEmailConfigUI] = useState(false);
-  const [showOnFormSubmissionUI, setShowOnFormSubmissionUI] = useState(false);
-  const [selectedNodeForNext, setSelectedNodeForNext] = useState<string | null>(null);
-  const [selectedAgentNodeId, setSelectedAgentNodeId] = useState<string | null>(null);
-  const [selectedEmailNodeId, setSelectedEmailNodeId] = useState<string | null>(null);
-  const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(null);
-  const [zoomLevel, setZoomLevel] = useState(100);
+  // Console log the builder prop value
+  const [selectedNodes, setSelectedNodes] = useState<Node[]>([])
+  const [nodeCounter, setNodeCounter] = useState(1)
+  const [showEmptyCanvas, setShowEmptyCanvas] = useState(true)
+  const [showTriggersSidebar, setShowTriggersSidebar] = useState(false)
+  const [showWhatHappensNextUI, setShowWhatHappensNextUI] = useState(false)
+  const [showAIAgentConfigUI, setShowAIAgentConfigUI] = useState(false)
+  const [showEmailConfigUI, setShowEmailConfigUI] = useState(false)
+  const [showOnFormSubmissionUI, setShowOnFormSubmissionUI] = useState(false)
+  const [selectedNodeForNext, setSelectedNodeForNext] = useState<string | null>(
+    null,
+  )
+  const [selectedAgentNodeId, setSelectedAgentNodeId] = useState<string | null>(
+    null,
+  )
+  const [selectedEmailNodeId, setSelectedEmailNodeId] = useState<string | null>(
+    null,
+  )
+  const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
+    null,
+  )
+  const [zoomLevel, setZoomLevel] = useState(100)
+  const [showToolsSidebar, setShowToolsSidebar] = useState(false)
+  const [selectedNodeTools] = useState<Tool[] | null>(
+    null,
+  )
+  const [selectedNodeInfo] = useState<any>(null)
+  const [showResultModal, setShowResultModal] = useState(false)
+  const [selectedResult, setSelectedResult] = useState<any>(null)
+  const [showExecutionModal, setShowExecutionModal] = useState(false)
+  const [createdTemplate, setCreatedTemplate] = useState<WorkflowTemplate | null>(null)
+  const [showTemplateSelectionModal, setShowTemplateSelectionModal] = useState(false)
+  const [availableTemplates, setAvailableTemplates] = useState<WorkflowTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [localSelectedTemplate, setLocalSelectedTemplate] = useState<WorkflowTemplate | null>(null)
   // Template workflow state (for creating the initial workflow)
-  const [templateWorkflow, setTemplateWorkflow] = useState<TemplateFlow | null>(null);
-  const [, setIsLoadingTemplate] = useState(false);
-  const [, setTemplateError] = useState<string | null>(null);
-  
+  const [templateWorkflow] = useState<TemplateFlow | null>(
+    null,
+  )
   // Running workflow state (for real-time updates)
-  const [, setWorkflow] = useState<Flow | null>(null);
-  const [, setIsPolling] = useState(false);
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [, setIsPolling] = useState(false)
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
+    null,
+  )
+  // Workflow name state
+  const [currentWorkflowName, setCurrentWorkflowName] = useState<string>("")
 
   // Empty initial state
-  const initialNodes: Node[] = [];
-  const initialEdges: Edge[] = [];
+  const initialNodes: Node[] = []
+  const initialEdges: Edge[] = []
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const { fitView, zoomTo, getViewport } = useReactFlow();
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
-  // Fetch specific workflow template by ID on component mount
+  // Utility function to get tool ID from step ID
+  const getToolIdFromStepId = useCallback((stepId: string): string | undefined => {
+    console.log("Finding toolId for node:", stepId)
+    const node = nodes.find((n) => n.id === stepId)
+    console.log("Found node:", node)
+    const tools = node?.data?.tools as Tool[] | undefined
+    console.log("Found tools:", tools)
+    return tools && tools.length > 0 ? tools[0]?.id : undefined
+  }, [nodes])
+  
+  // Helper function to get workflow name consistently across components
+  const getWorkflowName = useCallback(() => {
+    // If user has set a custom name, use it
+    if (currentWorkflowName && currentWorkflowName.trim() !== "") {
+      return currentWorkflowName
+    }
+    
+    // If we have a selected template, use its name
+    if (selectedTemplate?.name) {
+      return selectedTemplate.name
+    }
+    
+    // For blank workflows without a custom name, use "Untitled Workflow"
+    if (!selectedTemplate && nodes.length > 0) {
+      return "Untitled Workflow"
+    }
+    
+    // Final fallback
+    return "Untitled Workflow"
+  }, [currentWorkflowName, selectedTemplate?.name, selectedTemplate, nodes.length])
+  const { fitView, zoomTo, getViewport } = useReactFlow()
+
+  // Create nodes and edges from selectedTemplate or localSelectedTemplate
   useEffect(() => {
-    const fetchWorkflowTemplate = async () => {
-      const templateId = 'a50e8400-e29b-41d4-a716-446655440010';
-      setIsLoadingTemplate(true);
-      setTemplateError(null);
+    const templateToUse = localSelectedTemplate || selectedTemplate
+    if (
+      templateToUse &&
+      (templateToUse.steps || templateToUse.stepExecutions)
+    ) {
+      console.log("Creating workflow from template:", templateToUse)
+
+      // Check if this is an execution (has stepExecutions) or template (has steps)
+      const isExecution =
+        templateToUse.stepExecutions &&
+        Array.isArray(templateToUse.stepExecutions)
+      const stepsData = isExecution
+        ? templateToUse.stepExecutions
+        : templateToUse.steps
+
+      // Sort steps by step_order or creation order before creating nodes
+      const sortedSteps = stepsData ? [...stepsData].sort((a, b) => {
+        // First try to sort by step_order in metadata
+        const orderA = a.metadata?.step_order ?? 999
+        const orderB = b.metadata?.step_order ?? 999
+        if (orderA !== orderB) {
+          return orderA - orderB
+        }
+        // Fallback to sorting by nextStepIds relationships
+        // If step A's nextStepIds contains step B's id, A should come first
+        if (a.nextStepIds?.includes(b.id)) return -1
+        if (b.nextStepIds?.includes(a.id)) return 1
+        // Final fallback to creation time
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      }) : []
+
+      console.log("Original steps:", stepsData)
+      console.log("Sorted steps:", sortedSteps)
+
+      // Create nodes from steps in top-down layout
+      const templateNodes: Node[] = sortedSteps.map((step: any, index: number) => {
+        // Find associated tools for this step
+        let stepTools = []
+        let toolExecutions: any[] = []
+
+
+        if (isExecution) {
+          // For executions, get tool executions from toolExecIds
+          toolExecutions =
+            templateToUse.toolExecutions?.filter((toolExec) =>
+              step.toolExecIds?.includes(toolExec.id),
+            ) || []
+
+          // Create tool info from executions
+          stepTools = toolExecutions.map((toolExec) => ({
+            id: toolExec.id,
+            type: "execution_tool",
+            config: toolExec.result || {},
+            toolExecutionId: toolExec.id,
+            status: toolExec.status,
+            result: toolExec.result,
+          }))
+        } else {
+          // For templates, use workflow_tools
+          stepTools =
+            templateToUse.workflow_tools?.filter((tool) =>
+              step.toolIds?.includes(tool.id),
+            ) || []
+        }
+
+
+        // Check if this is the last step (no nextStepIds or empty nextStepIds)
+        const isLastStep = !step.nextStepIds || step.nextStepIds.length === 0
+        const hasNextFlag = isLastStep
+
+        return {
+          id: step.id,
+          type: "stepNode",
+          position: {
+            x: 400, // Consistent X position for perfect vertical straight line alignment
+            y: 100 + index * 250, // Increased spacing for better visual separation while maintaining straight lines
+          },
+          data: {
+            step: {
+              id: step.id,
+              name: step.name,
+              status: isExecution ? step.status : "pending",
+              description:
+                step.description || step.metadata?.automated_description,
+              type: step.type,
+              contents: [],
+              metadata: step.metadata,
+              isExecution,
+              toolExecutions: isExecution ? toolExecutions : undefined,
+            },
+            tools: stepTools,
+            isActive: isExecution && step.status === "running",
+            isCompleted: isExecution && step.status === "completed",
+            hasNext: hasNextFlag, // Show plus button on last step
+          },
+          draggable: true,
+        }
+      })
+
+      // Create edges from nextStepIds
+      const templateEdges: Edge[] = []
+      stepsData?.forEach((step) => {
+        step.nextStepIds?.forEach((nextStepId) => {
+          // For executions, we need to map template step IDs to execution step IDs
+          let targetStepId = nextStepId
+
+          if (isExecution) {
+            // Find the step execution that corresponds to this template step ID
+            const targetStepExecution = stepsData?.find(
+              (s: any) => s.workflowStepTemplateId === nextStepId,
+            )
+            if (targetStepExecution) {
+              targetStepId = targetStepExecution.id
+            }
+          }
+
+          templateEdges.push({
+            id: `${step.id}-${targetStepId}`,
+            source: step.id,
+            target: targetStepId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
+            },
+            markerEnd: {
+              type: "arrowclosed",
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          } as any)
+        })
+      })
+
+      console.log("Created nodes:", templateNodes.length)
+      console.log("Created edges:", templateEdges.length)
+
+      setNodes(templateNodes)
+      setEdges(templateEdges)
+      setNodeCounter((stepsData?.length || 0) + 1)
+      setShowEmptyCanvas(false)
       
-      try {
-        const response = await workflowTemplatesAPI.fetchById(templateId);
-        
-        if (response.error) {
-          throw new Error(response.error);
-        }
-        
-        if (response.data) {
-          setTemplateWorkflow(response.data);
-        }
-      } catch (error) {
-        console.error('Fetch error:', error);
-        setTemplateError(error instanceof Error ? error.message : 'Network error');
-      } finally {
-        setIsLoadingTemplate(false);
+      // Initialize current workflow name with template name
+      if (!currentWorkflowName && templateToUse.name) {
+        setCurrentWorkflowName(templateToUse.name)
       }
-    };
 
-    fetchWorkflowTemplate();
-  }, []);
-
+      setTimeout(() => {
+        fitView({ padding: 0.2 })
+      }, 50)
+    }
+  }, [selectedTemplate, localSelectedTemplate, setNodes, setEdges, fitView, currentWorkflowName, setCurrentWorkflowName])
 
   const onConnect = useCallback(
     (params: Connection) => {
       const newEdge = {
         ...params,
         id: `${params.source}-${params.target}`,
-        type: 'straight',
+        type: "smoothstep",
         animated: false,
         style: {
-          stroke: '#6B7280',
+          stroke: "#D1D5DB",
           strokeWidth: 2,
         },
         markerEnd: {
-          type: 'arrowclosed',
-          color: '#6B7280',
+          type: "arrowclosed",
+          color: "#D1D5DB",
         },
-      };
-      setEdges((eds) => addEdge(newEdge, eds));
+        sourceHandle: "bottom",
+        targetHandle: "top",
+      }
+      setEdges((eds) => addEdge(newEdge, eds))
     },
-    [setEdges]
-  );
+    [setEdges],
+  )
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
-    setSelectedNodes(params.nodes);
-    setSelectedEdges(params.edges);
-  }, []);
+    setSelectedNodes(params.nodes)
+  }, [])
 
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    // Generic node click handler that opens appropriate config sidebar
-    const step = node.data?.step as Step;
-    if (!step) return;
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      // Generic node click handler that opens appropriate sidebar based on tool type
+      const step = node.data?.step as Step
+      const tools = (node.data?.tools as Tool[]) || []
 
-    // Handle different node types
-    switch (step.type) {
-      case 'ai_agent':
-        // Open AI Agent config sidebar
-        setSelectedAgentNodeId(node.id);
-        setShowAIAgentConfigUI(true);
-        setShowTriggersSidebar(false);
-        setShowWhatHappensNextUI(false);
-        setShowEmailConfigUI(false);
-        break;
-        
-      case 'email':
-        // Open Email config sidebar
-        setSelectedEmailNodeId(node.id);
-        setShowEmailConfigUI(true);
-        setShowTriggersSidebar(false);
-        setShowWhatHappensNextUI(false);
-        setShowAIAgentConfigUI(false);
-        break;
-        
-      case 'form_submission':
-        // Open Form Submission config view for editing
-        setSelectedFormNodeId(node.id);
-        setShowOnFormSubmissionUI(true);
-        setShowTriggersSidebar(false);
-        setShowWhatHappensNextUI(false);
-        setShowAIAgentConfigUI(false);
-        setShowEmailConfigUI(false);
-        break;
-        
-      default:
-        if (onStepClick) {
-          onStepClick(step);
-        }
-        break;
-    }
-  }, [onStepClick]);
+      if (!step) return
 
-  const onNodesDelete = useCallback<OnNodesDelete>((_deleted) => {
-    if (nodes.length === _deleted.length) {
-      setShowEmptyCanvas(true);
-    }
-  }, [nodes.length]);
+      // Don't allow clicking on the initial "Select trigger from the sidebar" node
+      if (step.name === "Select trigger from the sidebar") {
+        return
+      }
+
+      // Get the first tool to determine type
+      const primaryTool = tools[0]
+      const toolType = primaryTool?.type || step.type
+
+      console.log(
+        "🎯 Node clicked:",
+        node.id,
+        "Tool type:",
+        toolType,
+        "Step type:",
+        step.type,
+      )
+
+      // Always override sidebar with clicked node data
+
+      // Close menu sidebars when nodes are clicked
+      setShowTriggersSidebar(false)
+      setShowWhatHappensNextUI(false)
+      
+      // Close all node config sidebars and clear selected node IDs
+      setShowAIAgentConfigUI(false)
+      setShowEmailConfigUI(false)
+      setShowOnFormSubmissionUI(false)
+      setSelectedNodeForNext(null)
+      setSelectedAgentNodeId(null)
+      setSelectedEmailNodeId(null)
+      setSelectedFormNodeId(null)
+
+      // Handle different tool types
+      switch (toolType) {
+        case "form":
+          // Open Form config sidebar
+          setSelectedFormNodeId(node.id)
+          setShowOnFormSubmissionUI(true)
+          console.log("📝 Opening form config sidebar")
+          break
+
+        case "python_code":
+        case "python_script":
+          // Open What Happens Next sidebar for Python code configuration
+          setSelectedNodeForNext(node.id)
+          setShowWhatHappensNextUI(true)
+          console.log(
+            "🐍 Opening Python code config sidebar for type:",
+            toolType,
+          )
+          break
+
+        case "email":
+          // Open Email config sidebar
+          setSelectedEmailNodeId(node.id)
+          setShowEmailConfigUI(true)
+          console.log("📧 Opening email config sidebar")
+          break
+
+        case "ai_agent":
+          // Open AI Agent config sidebar
+          setSelectedAgentNodeId(node.id)
+          setShowAIAgentConfigUI(true)
+          console.log("🤖 Opening AI agent config sidebar")
+          break
+
+        default:
+          // For unknown types, don't open What Happens Next sidebar - this was causing the bug
+          console.log("❓ Unknown node type:", toolType, "- not opening sidebar")
+
+          if (onStepClick) {
+            onStepClick(step)
+          }
+          break
+      }
+    },
+    [
+      onStepClick, 
+      showWhatHappensNextUI, 
+      selectedNodeForNext,
+      showAIAgentConfigUI,
+      selectedAgentNodeId,
+      showEmailConfigUI,
+      selectedEmailNodeId,
+      showOnFormSubmissionUI,
+      selectedFormNodeId
+    ],
+  )
+
+  const onNodesDelete = useCallback<OnNodesDelete>(
+    (_deleted) => {
+      if (nodes.length === _deleted.length) {
+        setShowEmptyCanvas(true)
+      }
+    },
+    [nodes.length],
+  )
 
   const onEdgesDelete = useCallback<OnEdgesDelete>((_deleted) => {
     // Handle edge deletion if needed in the future
-  }, []);
+  }, [])
 
   const addFirstStep = useCallback(() => {
-    setShowTriggersSidebar(true);
+    setShowTriggersSidebar(true)
     const newNode: Node = {
-      id: '1',
-      type: 'stepNode',
-      position: { x: 400, y: 200 },
-      data: { 
-        step: { 
-          id: '1', 
-          name: 'Select trigger from the sidebar', 
-          status: 'PENDING',
-          contents: []
-        }, 
-        isActive: false, 
-        isCompleted: false 
+      id: "1",
+      type: "stepNode",
+      position: { x: 400, y: 100 }, // Consistent X position for straight line connections, starting higher
+      data: {
+        step: {
+          id: "1",
+          name: "Select trigger from the sidebar",
+          status: "PENDING",
+          contents: [],
+          type: "trigger_selector", // Special type to identify this node
+        },
+        isActive: false,
+        isCompleted: false,
+        isTriggerSelector: true, // Flag for immediate identification
       },
       draggable: true,
-    };
-    
-    setNodes([newNode]);
-    setNodeCounter(2);
-    setShowEmptyCanvas(false);
-    setZoomLevel(100);
-    
-    setTimeout(() => {
-      zoomTo(1);
-    }, 50);
-  }, [setNodes, zoomTo]);
-
-  const startWithTemplate = useCallback(() => {
-    if (!templateWorkflow) {
-      console.error('No template workflow available');
-      return;
     }
 
-    // Convert template workflow template_steps to nodes
-    const templateNodes: Node[] = templateWorkflow.template_steps.map((templateStep, index) => {
-      // Find the associated tool for this step
-      const associatedTool = templateWorkflow.tools?.find(tool => tool.id === templateStep.tool_id);
-      
-      // Get all tools for this step (in case there are multiple)
-      const stepTools = templateStep.tool_id ? 
-        templateWorkflow.tools?.filter(tool => tool.id === templateStep.tool_id) || [] : 
-        [];
-      
-      return {
-        id: templateStep.id,
-        type: 'stepNode',
-        position: { 
-          x: 200 + (index * 300), 
-          y: 200 + (index % 2 === 0 ? 0 : 100) 
-        },
-        data: { 
-          step: {
-            id: templateStep.id,
-            name: associatedTool ? `${associatedTool.type === 'delay' ? 'Processing Delay' : associatedTool.type === 'python_script' ? (index === 1 ? 'Process Data' : 'Send Notification') : `Step ${index + 1}: ${associatedTool.type}`}` : (index === 0 ? 'Start Workflow' : `Step ${index + 1}`),
-            status: 'pending',
-            description: associatedTool?.config.description || 'Template step',
-            type: associatedTool?.type || 'unknown',
-            tool_id: templateStep.tool_id,
-            prevStepIds: templateStep.prevStepIds,
-            nextStepIds: templateStep.nextStepIds,
-            contents: []
-          }, 
-          tools: stepTools, // Pass tools data to the node
-          isActive: false, 
-          isCompleted: false 
-        },
-        draggable: true,
-      };
-    });
+    setNodes([newNode])
+    setNodeCounter(2)
+    setShowEmptyCanvas(false)
+    setZoomLevel(100)
 
-    // Create edges based on nextStepIds
-    const templateEdges: Edge[] = [];
-    templateWorkflow.template_steps.forEach(templateStep => {
-      templateStep.nextStepIds.forEach(nextStepId => {
-        templateEdges.push({
-          id: `${templateStep.id}-${nextStepId}`,
-          source: templateStep.id,
-          target: nextStepId,
-          type: 'straight',
-          animated: false,
-          style: {
-            stroke: '#3B82F6',
-            strokeWidth: 2,
-          },
-          markerEnd: {
-            type: 'arrowclosed',
-            color: '#3B82F6',
-          },
-        });
-      });
-    });
-    
-    setNodes(templateNodes);
-    setEdges(templateEdges);
-    setNodeCounter(templateWorkflow.template_steps.length + 1);
-    setShowEmptyCanvas(false);
-    
     setTimeout(() => {
-      fitView({ padding: 0.2 });
-    }, 50);
-  }, [templateWorkflow, setNodes, setEdges, fitView]);
+      zoomTo(1)
+    }, 50)
+  }, [setNodes, zoomTo])
+
+  // Function to fetch available templates
+  const fetchTemplates = useCallback(async () => {
+    setTemplatesLoading(true)
+    setTemplatesError(null)
+    
+    try {
+      const response = await api.workflow.templates.$get()
+      if (!response.ok) {
+        throw new Error(`Failed to fetch templates: ${response.status} ${response.statusText}`)
+      }
+      
+      const result = await response.json()
+      if (result.success && result.data) {
+        setAvailableTemplates(result.data)
+      } else {
+        throw new Error('Invalid response format')
+      }
+    } catch (error) {
+      console.error('Error fetching templates:', error)
+      setTemplatesError(error instanceof Error ? error.message : 'Failed to fetch templates')
+      setAvailableTemplates([])
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }, [])
+
+  const startWithTemplate = useCallback(async () => {
+    // Fetch templates and open the selection modal
+    setShowTemplateSelectionModal(true)
+    await fetchTemplates()
+  }, [fetchTemplates])
 
   const addNewNode = useCallback(() => {
     const newNode: Node = {
       id: nodeCounter.toString(),
-      type: 'stepNode',
-      position: { 
-        x: Math.random() * 400 + 200, 
-        y: Math.random() * 300 + 150 
+      type: "stepNode",
+      position: {
+        x: Math.random() * 400 + 200,
+        y: Math.random() * 300 + 150,
       },
-      data: { 
-        step: { 
-          id: nodeCounter.toString(), 
-          name: `New Step ${nodeCounter}`, 
-          status: 'PENDING',
-          contents: []
-        }, 
-        isActive: false, 
-        isCompleted: false 
+      data: {
+        step: {
+          id: nodeCounter.toString(),
+          name: `New Step ${nodeCounter}`,
+          status: "PENDING",
+          contents: [],
+        },
+        isActive: false,
+        isCompleted: false,
       },
       draggable: true,
-    };
-    
-    setNodes((nds) => [...nds, newNode]);
-    setNodeCounter(prev => prev + 1);
-    setShowEmptyCanvas(false);
-  }, [nodeCounter, setNodes, setShowEmptyCanvas]);
-  
+    }
+
+    setNodes((nds) => [...nds, newNode])
+    setNodeCounter((prev) => prev + 1)
+    setShowEmptyCanvas(false)
+  }, [nodeCounter, setNodes, setShowEmptyCanvas])
+
   // Prevent unused variable warning
-  void addNewNode;
+  void addNewNode
 
   const deleteSelectedNodes = useCallback(() => {
     if (selectedNodes.length > 0) {
-      const nodeIdsToDelete = selectedNodes.map(node => node.id);
-      setNodes((nds) => nds.filter(node => !nodeIdsToDelete.includes(node.id)));
-      setEdges((eds) => eds.filter(edge => 
-        !nodeIdsToDelete.includes(edge.source) && !nodeIdsToDelete.includes(edge.target)
-      ));
+      const nodeIdsToDelete = selectedNodes.map((node) => node.id)
+      setNodes((nds) =>
+        nds.filter((node) => !nodeIdsToDelete.includes(node.id)),
+      )
+      setEdges((eds) =>
+        eds.filter(
+          (edge) =>
+            !nodeIdsToDelete.includes(edge.source) &&
+            !nodeIdsToDelete.includes(edge.target),
+        ),
+      )
     }
-  }, [selectedNodes, setNodes, setEdges]);
-  
-  // Prevent unused variable warning
-  void deleteSelectedNodes;
+  }, [selectedNodes, setNodes, setEdges])
 
-  const handleZoomChange = useCallback((zoom: number) => {
-    setZoomLevel(zoom);
-    zoomTo(zoom / 100);
-  }, [zoomTo]);
+  // Prevent unused variable warning
+  void deleteSelectedNodes
+
+  const handleZoomChange = useCallback(
+    (zoom: number) => {
+      setZoomLevel(zoom)
+      zoomTo(zoom / 100)
+    },
+    [zoomTo],
+  )
 
   // Sync zoom level with touchpad zoom gestures
   useEffect(() => {
     const handleViewportChange = () => {
-      const viewport = getViewport();
-      const newZoomLevel = Math.round(viewport.zoom * 100);
-      setZoomLevel(newZoomLevel);
-    };
+      const viewport = getViewport()
+      const newZoomLevel = Math.round(viewport.zoom * 100)
+      setZoomLevel(newZoomLevel)
+    }
 
     // Listen for viewport changes (including touchpad zoom)
-    const reactFlowWrapper = document.querySelector('.react-flow__viewport');
+    const reactFlowWrapper = document.querySelector(".react-flow__viewport")
     if (reactFlowWrapper) {
-      const observer = new MutationObserver(handleViewportChange);
+      const observer = new MutationObserver(handleViewportChange)
       observer.observe(reactFlowWrapper, {
         attributes: true,
-        attributeFilter: ['style']
-      });
+        attributeFilter: ["style"],
+      })
 
       // Also listen for wheel events to capture immediate zoom changes
       const handleWheel = (e: Event) => {
-        const wheelEvent = e as WheelEvent;
+        const wheelEvent = e as WheelEvent
         if (wheelEvent.ctrlKey || wheelEvent.metaKey) {
           // Delay the viewport check to ensure it's updated
-          setTimeout(handleViewportChange, 10);
+          setTimeout(handleViewportChange, 10)
         }
-      };
+      }
 
-      reactFlowWrapper.addEventListener('wheel', handleWheel, { passive: true });
+      reactFlowWrapper.addEventListener("wheel", handleWheel, { passive: true })
 
       return () => {
-        observer.disconnect();
-        reactFlowWrapper.removeEventListener('wheel', handleWheel);
-      };
+        observer.disconnect()
+        reactFlowWrapper.removeEventListener("wheel", handleWheel)
+      }
     }
-  }, [getViewport]);
+  }, [getViewport])
 
   // Listen for custom events from StepNode + icons
   useEffect(() => {
     const handleOpenWhatHappensNext = (event: CustomEvent) => {
-      const { nodeId } = event.detail;
-      setSelectedNodeForNext(nodeId);
-      setShowWhatHappensNextUI(true);
-    };
+      const { nodeId } = event.detail
+      console.log("Plus button clicked, opening What Happens Next for node:", nodeId)
+      
+      // Close all other sidebars when What Happens Next opens
+      setShowTriggersSidebar(false)
+      setShowAIAgentConfigUI(false)
+      setShowEmailConfigUI(false)
+      setShowOnFormSubmissionUI(false)
+      
+      // Open What Happens Next sidebar
+      setSelectedNodeForNext(nodeId)
+      setShowWhatHappensNextUI(true)
+    }
 
-    window.addEventListener('openWhatHappensNext' as any, handleOpenWhatHappensNext);
-    
+    const handleOpenTriggersSidebar = (event: CustomEvent) => {
+      const { nodeId } = event.detail
+      console.log("Add first step clicked, opening triggers sidebar for node:", nodeId)
+      
+      // Close all other sidebars
+      setShowWhatHappensNextUI(false)
+      setShowAIAgentConfigUI(false)
+      setShowEmailConfigUI(false)
+      setShowOnFormSubmissionUI(false)
+      
+      // Open Triggers sidebar
+      setShowTriggersSidebar(true)
+    }
+
+    window.addEventListener(
+      "openWhatHappensNext" as any,
+      handleOpenWhatHappensNext,
+    )
+
+    window.addEventListener(
+      "openTriggersSidebar" as any,
+      handleOpenTriggersSidebar,
+    )
+
     return () => {
-      window.removeEventListener('openWhatHappensNext' as any, handleOpenWhatHappensNext);
-    };
-  }, []);
-
-  // Function to fetch workflow status
-  const fetchWorkflowStatus = useCallback(async (workflowId: string) => {
-    try {
-      const response = await workflowsAPI.fetchById(workflowId);
-      
-      if (response.error) {
-        throw new Error(`Failed to fetch workflow status: ${response.error}`);
-      }
-
-      if (!response.data) {
-        throw new Error('No workflow data received');
-      }
-      
-      const workflowData = response.data;
-      
-      // Update the running workflow state
-      setWorkflow(workflowData);
-      
-      // Update nodes based on workflow step statuses - match by step name
-      if (workflowData?.step_exe) {
-        setNodes(currentNodes => 
-          currentNodes.map(node => {
-            // Try to match by step name first, then fall back to id
-            const stepExeArray = workflowData.step_exe as StepExecution[];
-            const matchingStep = stepExeArray?.find((stepItem) => {
-              const step = stepItem as StepExecution;
-              // Match by step name (more reliable for template vs running workflow)  
-              const nodeStep = node.data?.step as Step;
-              if (nodeStep?.name && step.name) {
-                const nameMatch = nodeStep.name === step.name;
-                return nameMatch;
-              }
-              // Fall back to ID matching
-              const idMatch = (step as any)?.id === node.id;
-              return idMatch;
-            });
-            
-            if (matchingStep) {
-              return {
-                ...node,
-                data: {
-                  ...node.data,
-                  isActive: matchingStep.status === 'running' || matchingStep.status === 'in_progress',
-                  isCompleted: matchingStep.status === 'completed' || matchingStep.status === 'done',
-                  step: node.data.step ? {
-                    ...node.data.step,
-                    status: matchingStep.status
-                  } : {
-                    id: matchingStep?.id || node.id,
-                    name: matchingStep?.name || 'Unknown Step',
-                    status: matchingStep?.status || 'unknown',
-                    contents: []
-                  }
-                }
-              };
-            }
-            return node;
-          })
-        );
-      }
-      
-      // Check if workflow is completed or failed to stop polling
-      if (workflowData?.workflow_info?.status === 'completed' || workflowData?.workflow_info?.status === 'failed' || workflowData?.workflow_info?.status === 'cancelled') {
-        stopPolling();
-      }
-      
-    } catch (error) {
-      console.error('Error fetching workflow status:', error);
+      window.removeEventListener(
+        "openWhatHappensNext" as any,
+        handleOpenWhatHappensNext,
+      )
+      window.removeEventListener(
+        "openTriggersSidebar" as any,
+        handleOpenTriggersSidebar,
+      )
     }
-  }, [setWorkflow, setNodes]);
+  }, [])
 
-  // Function to start polling
-  const startPolling = useCallback((workflowId: string) => {
-    setIsPolling(true);
-    
-    // Clear any existing interval
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-    }
-    
-    // Start polling every second
-    const interval = setInterval(() => {
-      fetchWorkflowStatus(workflowId);
-    }, 1000);
-    
-    setPollingInterval(interval);
-  }, [pollingInterval, fetchWorkflowStatus, setIsPolling, setPollingInterval]);
+  // Update all nodes with anyNodeSelected flag
+  useEffect(() => {
+    const anySelected = selectedNodes.length > 0
+    setNodes((prevNodes) => 
+      prevNodes.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          anyNodeSelected: anySelected
+        }
+      }))
+    )
+  }, [selectedNodes, setNodes])
 
   // Function to stop polling
   const stopPolling = useCallback(() => {
-    setIsPolling(false);
-    
+    setIsPolling(false)
+
     if (pollingInterval) {
-      clearInterval(pollingInterval);
-      setPollingInterval(null);
+      clearInterval(pollingInterval)
+      setPollingInterval(null)
     }
-  }, [pollingInterval, setIsPolling, setPollingInterval]);
+  }, [pollingInterval, setIsPolling, setPollingInterval])
+
+  // Function to fetch workflow execution status
+  const fetchWorkflowStatus = useCallback(
+    async (executionId: string) => {
+      try {
+        // Use the status endpoint for lightweight polling
+        const statusData = await workflowExecutionsAPI.fetchStatus(executionId)
+        
+        console.log("📊 Polling status for execution:", executionId, "Status:", statusData.status)
+
+        // Check if workflow is completed or failed to stop polling
+        if (statusData.success) {
+          if (statusData.status === "completed") {
+            console.log("✅ Workflow execution completed!")
+            // Fetch full details to update nodes with final status
+            const fullData = await workflowExecutionsAPI.fetchById(executionId)
+            
+            // Update nodes to show completed status
+            if (fullData?.stepExecutions) {
+              setNodes((currentNodes) =>
+                currentNodes.map((node) => ({
+                  ...node,
+                  data: {
+                    ...node.data,
+                    isActive: false,
+                    isCompleted: true,
+                    step: node.data.step
+                      ? {
+                          ...node.data.step,
+                          status: "completed",
+                        }
+                      : node.data.step,
+                  },
+                })),
+              )
+            }
+            
+            stopPolling()
+          } else if (statusData.status === "failed") {
+            console.log("❌ Workflow execution failed!")
+            // Update nodes to show failed status
+            setNodes((currentNodes) =>
+              currentNodes.map((node) => ({
+                ...node,
+                data: {
+                  ...node.data,
+                  isActive: false,
+                  isCompleted: false,
+                  step: node.data.step
+                    ? {
+                        ...node.data.step,
+                        status: "failed",
+                      }
+                    : node.data.step,
+                },
+              })),
+            )
+            
+            stopPolling()
+          } else if (statusData.status === "active") {
+            // Update nodes to show active status
+            setNodes((currentNodes) =>
+              currentNodes.map((node, index) => ({
+                ...node,
+                data: {
+                  ...node.data,
+                  isActive: index === 0, // Show first step as active for simplicity
+                  isCompleted: false,
+                  step: node.data.step
+                    ? {
+                        ...node.data.step,
+                        status: "running",
+                      }
+                    : node.data.step,
+                },
+              })),
+            )
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching workflow status:", error)
+        // Stop polling on persistent errors
+        stopPolling()
+      }
+    },
+    [setNodes, stopPolling],
+  )
+
+  // Function to start polling
+  const startPolling = useCallback(
+    (workflowId: string) => {
+      setIsPolling(true)
+
+      // Clear any existing interval
+      if (pollingInterval) {
+        clearInterval(pollingInterval)
+      }
+
+      // Start polling every second
+      const interval = setInterval(() => {
+        fetchWorkflowStatus(workflowId)
+      }, 1000)
+
+      setPollingInterval(interval)
+    },
+    [pollingInterval, fetchWorkflowStatus, setIsPolling, setPollingInterval],
+  )
 
   // Cleanup polling on component unmount
   useEffect(() => {
     return () => {
       if (pollingInterval) {
-        clearInterval(pollingInterval);
+        clearInterval(pollingInterval)
       }
-    };
-  }, [pollingInterval]);
-
-  const executeNode = useCallback(async () => {
-    if (!templateWorkflow) {
-      console.error('No workflow template loaded');
-      return;
     }
-    
-    try {
-      // Step 1: Instantiate the workflow template
-      const instantiateResponse = await workflowTemplatesAPI.instantiate(templateWorkflow.template_id, {
-        name: "Test Webhook Flow",
-        metadata: {
-          description: "Testing webhook workflow",
-          environment: "test"
-        }
-      });
-      
-      if (instantiateResponse.error || !instantiateResponse.data) {
-        throw new Error(`Failed to instantiate workflow: ${instantiateResponse.error || 'No data returned'}`);
-      }
-      
-      const workflowInstance = instantiateResponse.data;
-      
-      // Set initial workflow state after instantiation
+  }, [pollingInterval])
+
+  const executeWorkflow = useCallback(async (file?: File) => {
+    if (file) {
+      // File execution mode - requires existing template
+      console.log("Executing workflow with file:", file.name)
+      console.log("Selected template:", selectedTemplate)
+
       try {
-        const initialWorkflowResponse = await workflowsAPI.fetchById(workflowInstance.workflowId);
+        // Check if we have a valid template (prioritize createdTemplate over selectedTemplate)
+        const currentTemplate = createdTemplate || selectedTemplate
+        const templateId = currentTemplate?.id
+        if (!templateId || templateId === "custom") {
+          throw new Error("Cannot execute workflow with file: No valid template ID available. Please save the workflow as a template first.")
+        }
+
+        // Create form data matching the curl command format
+        const formData: Record<string, any> = {
+          name: `${currentTemplate?.name || "Workflow"} - ${new Date().toLocaleString()}`,
+          description: `Execution of ${currentTemplate?.name || "workflow"} with file: ${file.name}`,
+          file_description: `Test document: ${file.name}`,
+        }
+
+        console.log("Generated form data:", formData)
+
+        const executionData = {
+          name: formData.name,
+          description: formData.description,
+          file: file,
+          formData: formData,
+        }
         
-        if (!initialWorkflowResponse.error && initialWorkflowResponse.data) {
-          setWorkflow(initialWorkflowResponse.data);
+        const response = await workflowExecutionsAPI.executeTemplate(
+          templateId,
+          executionData,
+        )
+
+        console.log("🚀 WORKFLOW EXECUTION RESPONSE:", response)
+
+        // Handle response similar to execution modal
+        if (response.error || response.status === "error") {
+          console.error("Execution failed:", response.error || response.message)
+          throw new Error(response.error || response.message || "Execution failed")
+        } else {
+          // Extract execution ID from response.data.execution.id
+          const executionId = response.data?.execution?.id
+          console.log("📋 Extracted execution ID:", executionId)
+
+          if (executionId) {
+            // Start polling for completion with the execution ID
+            startPolling(executionId)
+          } else {
+            console.warn("No execution ID found in response")
+          }
         }
+
+        return response
       } catch (error) {
-        console.warn('Failed to fetch initial workflow state:', error);
+        console.error("Execution error:", error)
+        throw error
       }
+    } else {
+      // Template creation mode - prepare workflow data and open execution modal
+      console.log("Preparing workflow data for execution...")
       
-      // Step 2: Run the workflow
-      const runResponse = await workflowsAPI.run(workflowInstance.workflowId);
-      
-      if (runResponse.error) {
-        throw new Error(`Failed to run workflow: ${runResponse.error}`);
+      // Check if we have nodes to create a workflow
+      if (nodes.length === 0) {
+        throw new Error("Cannot execute workflow: No workflow steps defined. Please add at least one step to your workflow.")
       }
-      
-      // const runResult = runResponse.data; // Not used currently
-      
-      // Step 3: Complete a workflow step (root step ID)
-      const stepCompleteResponse = await workflowsAPI.completeStep(workflowInstance.rootStepId);
 
-      if (stepCompleteResponse.error) {
-        console.warn(`Failed to complete step: ${stepCompleteResponse.error}`);
-        // Continue execution even if step completion fails
-      } 
+      // Create the workflow state payload that will be sent to the complex template API
+      // Use the centralized name resolution function to ensure consistency
+      const derivedName = getWorkflowName()
       
-      // Mark all nodes as active/running initially
-      setNodes(nodes => nodes.map(node => ({
-        ...node,
-        data: {
-          ...node.data,
-          isActive: true,
-          isCompleted: false
+      console.log("🔍 Debug workflow name values:", {
+        currentWorkflowName,
+        selectedTemplateName: selectedTemplate?.name,
+        derivedName,
+        isBlankWorkflow: !selectedTemplate,
+        nodesCount: nodes.length
+      })
+      
+      const workflowData = {
+        name: derivedName,
+        description: selectedTemplate?.description || "Workflow created from builder",
+        version: "1.0.0",
+        config: {
+          ai_model: "gemini-1.5-pro",
+          max_file_size: "10MB",
+          auto_execution: false,
+          schema_version: "1.0",
+          allowed_file_types: ["pdf", "docx", "txt", "jpg", "png"],
+          supports_file_upload: true,
+        },
+        nodes: nodes.map(node => ({
+          id: node.id,
+          type: node.type,
+          position: node.position,
+          data: {
+            step: node.data?.step,
+            tools: node.data?.tools,
+            isActive: node.data?.isActive,
+            isCompleted: node.data?.isCompleted,
+            hasNext: node.data?.hasNext,
+          }
+        })),
+        edges: edges.map(edge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: edge.type,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle,
+          style: edge.style,
+          markerEnd: edge.markerEnd,
+        })),
+        metadata: {
+          nodeCount: nodes.length,
+          edgeCount: edges.length,
+          createdAt: new Date().toISOString(),
+          workflowType: templateWorkflow ? 'template-based' : 'user-created'
         }
-      })));
+      }
       
-      // Start polling for workflow status updates
-      startPolling(workflowInstance.workflowId);
+      console.log("=== WORKFLOW DATA FOR EXECUTION MODAL ===")
+      console.log(JSON.stringify(workflowData, null, 2))
+      console.log("=== END WORKFLOW DATA ===")
+
+      // Store the workflow data for the execution modal
+      setCreatedTemplate({
+        id: 'pending-creation', // Temporary ID to indicate pending creation
+        name: workflowData.name,
+        description: workflowData.description,
+        version: workflowData.version,
+        status: 'draft',
+        config: workflowData.config,
+        createdBy: 'current-user',
+        rootWorkflowStepTemplateId: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        workflowData: workflowData // Store the complete workflow data for template creation
+      } as any)
       
-    } catch (error) {
-      console.error('Error executing workflow:', error);
-      // You could add error state here to show in UI
+      // Open the WorkflowExecutionModal with the workflow data
+      setShowExecutionModal(true)
+      
+      console.log("📋 Opening execution modal with workflow data for template creation")
     }
-  }, [templateWorkflow, setNodes, startPolling, setWorkflow]);
+  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName])
+
+  const handleTriggerClick = useCallback(
+    (triggerId: string) => {
+      if (triggerId === "form") {
+        // Don't create form submission node yet, just open configuration sidebar
+        console.log("🎯 Form trigger selected - opening form config sidebar")
+        
+        // Close TriggersSidebar with slide-out animation when OnFormSubmissionUI opens
+        setShowTriggersSidebar(false)
+        setSelectedFormNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowOnFormSubmissionUI(true)
+        setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
+
+        // Reset zoom to 100%
+        setZoomLevel(100)
+        setTimeout(() => {
+          zoomTo(1)
+        }, 50)
+      }
+      // Handle other triggers here as needed
+    },
+    [zoomTo],
+  )
 
 
-  const handleTriggerClick = useCallback((triggerId: string) => {
-    if (triggerId === 'form') {
-      // Create form submission node immediately so user can see and drag it
-      const formNode: Node = {
-        id: 'form-submission',
-        type: 'stepNode',
-        position: { x: 400, y: 200 },
-        data: { 
-          step: { 
-            id: 'form-submission', 
-            name: 'Form Submission', 
-            status: 'PENDING',
-            contents: [],
-            type: 'form_submission',
-            config: {
-              title: '',
-              description: '',
-              fields: [
-                {
-                  id: crypto.randomUUID(),
-                  name: 'Field 1',
-                  placeholder: '',
-                  type: 'file'
-                }
-              ]
-            }
-          }, 
-          isActive: false, 
-          isCompleted: false,
-          hasNext: false // Will be set to true after configuration
-        },
-        draggable: true,
-        selectable: true,
-      };
-      
-      setNodes([formNode]);
-      setNodeCounter(2);
-      setShowEmptyCanvas(false);
-      setSelectedFormNodeId('form-submission');
-      setShowOnFormSubmissionUI(true);
-      setShowTriggersSidebar(false);
-      
-      // Reset zoom to 100% to match AI Agent/Email zoom level
-      setZoomLevel(100);
-      setTimeout(() => {
-        zoomTo(1);
-      }, 50);
+  const handleWhatHappensNextAction = useCallback(async (actionId: string) => {
+    console.log("Selected action:", actionId)
+    
+    if (actionId === "ai_agent") {
+      // When AI Agent is selected from WhatHappensNextUI, keep it visible in background
+      if (selectedNodeForNext) {
+        // Keep selectedNodeForNext for later node creation on save
+        setSelectedAgentNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowAIAgentConfigUI(true)
+        // Note: Keep WhatHappensNextUI visible in background (z-40)
+        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
+      }
+    } else if (actionId === "email") {
+      // When Email is selected from WhatHappensNextUI, keep it visible in background
+      if (selectedNodeForNext) {
+        // Keep selectedNodeForNext for later node creation on save
+        setSelectedEmailNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowEmailConfigUI(true)
+        // Note: Keep WhatHappensNextUI visible in background (z-40)
+        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
+      }
     }
-    // Handle other triggers here as needed
-  }, [setNodes, zoomTo]);
-
-  const handleWhatHappensNextClose = useCallback(() => {
-    setShowWhatHappensNextUI(false);
-    setSelectedNodeForNext(null);
-  }, []);
-
-  const handleWhatHappensNextAction = useCallback((actionId: string) => {
-    if (actionId === 'ai_agent' && selectedNodeForNext) {
-      // Create AI Agent node positioned below the previous node
-      const agentNodeId = `agent-${nodeCounter}`;
-      
-      // Get the position of the source node to position directly below it
-      const sourceNode = nodes.find(n => n.id === selectedNodeForNext);
-      // Center the AI Agent node (80px) relative to the source node (320px)
-      // Offset by (320 - 80) / 2 = 120px to center it
-      const xPosition = sourceNode ? sourceNode.position.x + 120 : 400;
-      const yPosition = sourceNode ? sourceNode.position.y + 180 : 400;
-      
-      const agentNode: Node = {
-        id: agentNodeId,
-        type: 'stepNode',
-        position: { x: xPosition, y: yPosition },
-        data: { 
-          step: { 
-            id: agentNodeId, 
-            name: '', // Empty name so only icon shows initially
-            status: 'PENDING',
-            contents: [],
-            type: 'ai_agent',
-            config: {
-              name: '',
-              description: '',
-              model: 'gpt-oss-120b',
-              inputPrompt: '$json.input',
-              systemPrompt: '',
-              knowledgeBase: ''
-            }
-          }, 
-          isActive: false, 
-          isCompleted: false 
-        },
-        draggable: true,
-      };
-
-      // Create edge from selected node to new agent node
-      const newEdge: Edge = {
-        id: `${selectedNodeForNext}-${agentNode.id}`,
-        source: selectedNodeForNext,
-        target: agentNode.id,
-        sourceHandle: 'bottom',
-        targetHandle: 'top',
-        type: 'straight',
-        animated: false,
-        style: {
-          stroke: '#6B7280',
-          strokeWidth: 2,
-        },
-        markerEnd: {
-          type: 'arrowclosed',
-          color: '#6B7280',
-        },
-      };
-
-      // Add node and edge
-      setNodes((nds) => [...nds, agentNode]);
-      setEdges((eds) => [...eds, newEdge]);
-      setNodeCounter(prev => prev + 1);
-
-      // Update the source node to remove hasNext flag
-      setNodes((nds) => nds.map(node => 
-        node.id === selectedNodeForNext 
-          ? { ...node, data: { ...node.data, hasNext: false } }
-          : node
-      ));
-
-      // Reset zoom to 100% after adding new node
-      setZoomLevel(100);
-      setTimeout(() => {
-        zoomTo(1);
-      }, 50);
-
-      // Close What Happens Next and open AI Agent config
-      setShowWhatHappensNextUI(false);
-      setSelectedNodeForNext(null);
-      setSelectedAgentNodeId(agentNodeId);
-      setShowAIAgentConfigUI(true);
-    } else if (actionId === 'email' && selectedNodeForNext) {
-      // Create Email node positioned below the previous node
-      const emailNodeId = `email-${nodeCounter}`;
-      
-      // Get the position of the source node to position directly below it
-      const sourceNode = nodes.find(n => n.id === selectedNodeForNext);
-      // Center the Email icon node (80px) relative to the source node (320px)
-      // Offset by (320 - 80) / 2 = 120px to center it
-      const xPosition = sourceNode ? sourceNode.position.x + 120 : 400;
-      const yPosition = sourceNode ? sourceNode.position.y + 180 : 600;
-      
-      const emailNode: Node = {
-        id: emailNodeId,
-        type: 'stepNode',
-        position: { x: xPosition, y: yPosition },
-        data: { 
-          step: { 
-            id: emailNodeId, 
-            name: '', // Empty name so only icon shows initially
-            status: 'PENDING',
-            contents: [],
-            type: 'email',
-            config: {
-              sendingFrom: '',
-              emailAddresses: []
-            }
-          }, 
-          isActive: false, 
-          isCompleted: false 
-        },
-        draggable: true,
-      };
-
-      // Create edge from selected node to new email node
-      const newEdge: Edge = {
-        id: `${selectedNodeForNext}-${emailNode.id}`,
-        source: selectedNodeForNext,
-        target: emailNode.id,
-        sourceHandle: 'bottom',
-        targetHandle: 'top',
-        type: 'straight',
-        animated: false,
-        style: {
-          stroke: '#6B7280',
-          strokeWidth: 2,
-        },
-        markerEnd: {
-          type: 'arrowclosed',
-          color: '#6B7280',
-        },
-      };
-
-      // Add node and edge
-      setNodes((nds) => [...nds, emailNode]);
-      setEdges((eds) => [...eds, newEdge]);
-      setNodeCounter(prev => prev + 1);
-
-      // Update the source node to remove hasNext flag
-      setNodes((nds) => nds.map(node => 
-        node.id === selectedNodeForNext 
-          ? { ...node, data: { ...node.data, hasNext: false } }
-          : node
-      ));
-
-      // Reset zoom to 100% after adding new node
-      setZoomLevel(100);
-      setTimeout(() => {
-        zoomTo(1);
-      }, 50);
-
-      // Close What Happens Next and open Email config
-      setShowWhatHappensNextUI(false);
-      setSelectedNodeForNext(null);
-      setSelectedEmailNodeId(emailNodeId);
-      setShowEmailConfigUI(true);
-    }
-  }, [selectedNodeForNext, nodeCounter, nodes, setNodes, setEdges, zoomTo]);
+  }, [selectedNodeForNext])
 
   const handleAIAgentConfigBack = useCallback(() => {
-    setShowAIAgentConfigUI(false);
-    setSelectedAgentNodeId(null);
-  }, []);
-
-  const handleAIAgentConfigSave = useCallback((agentConfig: AIAgentConfig) => {
-    if (selectedAgentNodeId) {
-      // Format description with model information
-      const formattedDescription = agentConfig.description 
-        ? `${agentConfig.description} using ${agentConfig.model}`
-        : `AI agent to analyze and summarize documents using ${agentConfig.model}`;
-
-      // Find the source node that this AI Agent connects from
-      const sourceEdge = edges.find(edge => edge.target === selectedAgentNodeId);
-      const sourceNode = sourceEdge ? nodes.find(n => n.id === sourceEdge.source) : null;
-
-      // Update the AI Agent node with the configuration and add hasNext flag
-      setNodes((nds) => nds.map(node => 
-        node.id === selectedAgentNodeId 
-          ? { 
-              ...node,
-              // Reposition node to center below source node now that it's 320px wide
-              position: sourceNode ? {
-                x: sourceNode.position.x, // Align with source node (no offset for 320px node)
-                y: node.position.y // Keep same Y position
-              } : node.position,
-              data: { 
-                ...node.data, 
-                step: {
-                  ...(node.data.step || {}),
-                  name: agentConfig.name,
-                  config: {
-                    ...agentConfig,
-                    description: formattedDescription
-                  }
-                },
-                hasNext: true // Add the + icon after saving
-              } 
-            }
-          : node
-      ));
+    setShowAIAgentConfigUI(false)
+    
+    // If we're in creation mode (pending), go back to the "What Happens Next" menu
+    if (selectedAgentNodeId === "pending" && selectedNodeForNext) {
+      // Ensure WhatHappensNextUI is visible when we go back
+      setShowWhatHappensNextUI(true)
+      setSelectedAgentNodeId(null)
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedAgentNodeId(null)
+      setSelectedNodeForNext(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
     }
-    
-    // Reset zoom to 100% after saving configuration
-    setZoomLevel(100);
-    setTimeout(() => {
-      zoomTo(1);
-    }, 50);
-    
-    setShowAIAgentConfigUI(false);
-    setSelectedAgentNodeId(null);
-  }, [selectedAgentNodeId, edges, nodes, setNodes, zoomTo]);
+  }, [selectedAgentNodeId, selectedNodeForNext, setNodes])
+
+  const handleAIAgentConfigSave = useCallback(
+    (agentConfig: AIAgentConfig) => {
+      console.log("🔧 AI Agent Config Save - selectedAgentNodeId:", selectedAgentNodeId, "selectedNodeForNext:", selectedNodeForNext)
+      
+      if (selectedAgentNodeId === "pending" && selectedNodeForNext) {
+        // Create new AI Agent node when saving configuration
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        console.log("📍 Source node found:", sourceNode)
+        if (sourceNode) {
+          const newNodeId = `ai-agent-${nodeCounter}`
+          
+          // Use description as-is without model information
+          const formattedDescription = agentConfig.description
+            ? agentConfig.description
+            : "AI agent to analyze and summarize documents"
+
+          // Create the tool object for AI Agent
+          const aiAgentTool = {
+            id: `tool-${newNodeId}`,
+            type: "ai_agent",
+            val: agentConfig, // Use 'val' to match template structure
+            value: agentConfig, // Also include 'value' for compatibility
+            config: {
+              model: agentConfig.model,
+              name: agentConfig.name,
+              description: formattedDescription,
+              to_email: [],
+            },
+          }
+
+          // Create new node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: agentConfig.name,
+                description: formattedDescription,
+                type: "ai_agent",
+                status: "pending",
+                contents: [],
+                config: {
+                  ...agentConfig,
+                  description: formattedDescription,
+                },
+              },
+              tools: [aiAgentTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+            },
+            draggable: true,
+            selected: true, // Select the newly created node
+          }
+
+          // Create edge connecting source to new node
+          const newEdge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          } as any
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      hasNext: false,
+                    },
+                    selected: false, // Deselect source node
+                  }
+                : node.id === newNodeId
+                  ? node // Keep new node selected
+                  : { ...node, selected: false }, // Deselect all other nodes
+            ),
+          )
+        }
+      } else if (selectedAgentNodeId && selectedAgentNodeId !== "pending") {
+        // Update existing AI Agent node with the configuration
+        const formattedDescription = agentConfig.description
+          ? agentConfig.description
+          : "AI agent to analyze and summarize documents"
+
+        const aiAgentTool = {
+          id: getToolIdFromStepId(selectedAgentNodeId),
+          type: "ai_agent",
+          val: agentConfig,
+          value: agentConfig,
+          config: {
+            model: agentConfig.model,
+            name: agentConfig.name,
+            description: formattedDescription,
+            to_email: [],
+          },
+        }
+
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === selectedAgentNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: agentConfig.name,
+                      config: {
+                        ...agentConfig,
+                        description: formattedDescription,
+                      },
+                    },
+                    tools: [aiAgentTool],
+                    hasNext: !edges.some(edge => edge.source === selectedAgentNodeId),
+                  },
+                }
+              : node,
+          ),
+        )
+      }
+
+      // Reset zoom to 100% after saving configuration
+      setZoomLevel(100)
+      setTimeout(() => {
+        zoomTo(1)
+      }, 50)
+
+      setShowAIAgentConfigUI(false)
+      setSelectedAgentNodeId(null)
+      setSelectedNodeForNext(null)
+    },
+    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, zoomTo],
+  )
 
   const handleEmailConfigBack = useCallback(() => {
-    setShowEmailConfigUI(false);
-    setSelectedEmailNodeId(null);
-  }, []);
-
-  const handleEmailConfigSave = useCallback((emailConfig: EmailConfig) => {
-    if (selectedEmailNodeId) {
-      // Find the source node that this Email connects from
-      const sourceEdge = edges.find(edge => edge.target === selectedEmailNodeId);
-      const sourceNode = sourceEdge ? nodes.find(n => n.id === sourceEdge.source) : null;
-
-      // Update the Email node with the configuration and add hasNext flag
-      setNodes((nds) => nds.map(node => 
-        node.id === selectedEmailNodeId 
-          ? { 
-              ...node,
-              // Reposition node to center below source node now that it's 320px wide
-              position: sourceNode ? {
-                x: sourceNode.position.x, // Align with source node (no offset for 320px node)
-                y: node.position.y // Keep same Y position
-              } : node.position,
-              data: { 
-                ...node.data, 
-                step: {
-                  ...(node.data.step || {}),
-                  name: 'Email',
-                  config: {
-                    sendingFrom: emailConfig.sendingFrom,
-                    emailAddresses: emailConfig.emailAddresses
-                  }
-                },
-                hasNext: true // Add the + icon after saving
-              } 
-            }
-          : node
-      ));
+    setShowEmailConfigUI(false)
+    
+    // If we're in creation mode (pending), go back to the "What Happens Next" menu
+    if (selectedEmailNodeId === "pending" && selectedNodeForNext) {
+      // Ensure WhatHappensNextUI is visible when we go back
+      setShowWhatHappensNextUI(true)
+      setSelectedEmailNodeId(null)
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedEmailNodeId(null)
+      setSelectedNodeForNext(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
     }
+  }, [selectedEmailNodeId, selectedNodeForNext, setNodes])
 
-    // Reset zoom to 100% after saving configuration
-    setZoomLevel(100);
-    setTimeout(() => {
-      zoomTo(1);
-    }, 50);
+  const handleEmailConfigSave = useCallback(
+    (emailConfig: EmailConfig) => {
+      console.log("📧 Email Config Save - selectedEmailNodeId:", selectedEmailNodeId, "selectedNodeForNext:", selectedNodeForNext)
+      
+      if (selectedEmailNodeId === "pending" && selectedNodeForNext) {
+        // Create new Email node when saving configuration
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        console.log("📍 Source node found:", sourceNode)
+        if (sourceNode) {
+          const newNodeId = `email-${nodeCounter}`
+          
+          // Create the tool object for Email
+          const emailTool = {
+            id: `tool-${newNodeId}`,
+            type: "email",
+            val: emailConfig, // Use 'val' to match template structure
+            value: emailConfig, // Also include 'value' for compatibility
+            config: {
+              to_email: emailConfig.emailAddresses,
+              from_email: emailConfig.sendingFrom,
+              sendingFrom: emailConfig.sendingFrom,
+              emailAddresses: emailConfig.emailAddresses,
+            },
+          }
 
-    setShowEmailConfigUI(false);
-    setSelectedEmailNodeId(null);
-   }, [selectedEmailNodeId, edges, nodes, setNodes, zoomTo]);
+          // Create new node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: "Email",
+                type: "email",
+                status: "pending",
+                contents: [],
+                config: {
+                  sendingFrom: emailConfig.sendingFrom,
+                  emailAddresses: emailConfig.emailAddresses,
+                },
+              },
+              tools: [emailTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+            },
+            draggable: true,
+            selected: true, // Select the newly created node
+          }
+
+          // Create edge connecting source to new node
+          const newEdge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          } as any
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      hasNext: false,
+                    },
+                    selected: false, // Deselect source node
+                  }
+                : node.id === newNodeId
+                  ? node // Keep new node selected
+                  : { ...node, selected: false }, // Deselect all other nodes
+            ),
+          )
+        }
+      } else if (selectedEmailNodeId && selectedEmailNodeId !== "pending") {
+        // Update existing Email node with the configuration
+        const emailTool = {
+          id: getToolIdFromStepId(selectedEmailNodeId),
+          type: "email",
+          val: emailConfig,
+          value: emailConfig,
+          config: {
+            to_email: emailConfig.emailAddresses,
+            from_email: emailConfig.sendingFrom,
+            sendingFrom: emailConfig.sendingFrom,
+            emailAddresses: emailConfig.emailAddresses,
+          },
+        }
+
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === selectedEmailNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: "Email",
+                      config: {
+                        sendingFrom: emailConfig.sendingFrom,
+                        emailAddresses: emailConfig.emailAddresses,
+                      },
+                    },
+                    tools: [emailTool],
+                    hasNext: !edges.some(edge => edge.source === selectedEmailNodeId),
+                  },
+                }
+              : node,
+          ),
+        )
+      }
+
+      // Reset zoom to 100% after saving configuration
+      setZoomLevel(100)
+      setTimeout(() => {
+        zoomTo(1)
+      }, 50)
+
+      setShowEmailConfigUI(false)
+      setSelectedEmailNodeId(null)
+      setSelectedNodeForNext(null)
+    },
+    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, zoomTo],
+  )
 
   const handleOnFormSubmissionBack = useCallback(() => {
-    setShowOnFormSubmissionUI(false);
-    setSelectedFormNodeId(null);
-    // Go back to main workflow view
-  }, []);
+    setShowOnFormSubmissionUI(false)
+    
+    // If we're in creation mode (pending), go back to triggers sidebar
+    if (selectedFormNodeId === "pending") {
+      setShowTriggersSidebar(true)
+      setSelectedFormNodeId(null)
+      // If we were in pending mode (creating new trigger), show empty canvas again
+      if (nodes.length === 0) {
+        setShowEmptyCanvas(true)
+      }
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedFormNodeId(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedFormNodeId, nodes.length, setNodes])
 
-  const handleOnFormSubmissionSave = useCallback((formConfig: FormConfig) => {
-    // Always update the existing form submission node (since we create it immediately on trigger click)
-    if (selectedFormNodeId) {
-      setNodes((nds) => nds.map(node => 
-        node.id === selectedFormNodeId 
-          ? { 
-              ...node, 
-              data: { 
-                ...node.data, 
-                step: {
-                  ...(node.data.step || {}),
-                  name: formConfig.title || 'Form Submission',
-                  config: formConfig
-                },
-                hasNext: true // Enable + icon after configuration
-              } 
-            }
-          : node
-      ));
+  const handleOnFormSubmissionSave = useCallback(
+    (formConfig: FormConfig) => {
+      console.log("📝 Form Config Save - selectedFormNodeId:", selectedFormNodeId)
+      
+      if (selectedFormNodeId === "pending") {
+        // Create new form submission node when saving configuration
+        console.log("✨ Creating new form submission node")
+        
+        const newNodeId = "form-submission"
+        
+        // Create the tool object for Form
+        const formTool = {
+          id: `tool-${newNodeId}`,
+          type: "form",
+          val: formConfig, // Use 'val' to match template structure
+          value: formConfig, // Also include 'value' for compatibility
+          config: {
+            title: formConfig.title,
+            description: formConfig.description,
+            fields: formConfig.fields,
+          },
+        }
+
+        // Create form submission node
+        const formNode: Node = {
+          id: newNodeId,
+          type: "stepNode",
+          position: { x: 400, y: 100 }, // Consistent X position for straight line connections
+          data: {
+            step: {
+              id: newNodeId,
+              name: formConfig.title || "Form Submission",
+              status: "PENDING",
+              contents: [],
+              type: "form_submission",
+              config: formConfig,
+            },
+            tools: [formTool],
+            isActive: false,
+            isCompleted: false,
+            hasNext: true, // Show + icon since this is the starting node
+            anyNodeSelected: false,
+          },
+          draggable: true,
+          selectable: true,
+          selected: true, // Select the newly created node
+        }
+
+        setNodes([formNode])
+        setNodeCounter(2)
+        setSelectedNodes([formNode]) // Update selectedNodes for the anyNodeSelected flag
+
+      } else if (selectedFormNodeId && selectedFormNodeId !== "pending") {
+        // Update existing form submission node
+        const formTool = {
+          id: getToolIdFromStepId(selectedFormNodeId),
+          type: "form",
+          val: formConfig,
+          value: formConfig,
+          config: {
+            title: formConfig.title,
+            description: formConfig.description,
+            fields: formConfig.fields,
+          },
+        }
+
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === selectedFormNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: formConfig.title || "Form Submission",
+                      config: formConfig,
+                    },
+                    tools: [formTool],
+                    hasNext: !edges.some(edge => edge.source === selectedFormNodeId),
+                  },
+                }
+              : node,
+          ),
+        )
+      }
+
+      setShowOnFormSubmissionUI(false)
+      setSelectedFormNodeId(null)
+      setZoomLevel(100)
+
+      setTimeout(() => {
+        zoomTo(1)
+      }, 50)
+    },
+    [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges],
+  )
+
+  const handleResultClick = useCallback((result: any) => {
+    setSelectedResult(result)
+    setShowResultModal(true)
+  }, [])
+
+  const handleResultModalClose = useCallback(() => {
+    setShowResultModal(false)
+    setSelectedResult(null)
+  }, [])
+
+  const handleTemplateSelect = useCallback(async (template: any) => {
+    console.log('Selected template:', template)
+    
+    // Find the full template data from availableTemplates
+    const fullTemplate = availableTemplates.find(t => t.id === template.id)
+    if (fullTemplate) {
+      try {
+        // Fetch detailed template data including steps and tools
+        const response = await api.workflow.templates[fullTemplate.id].$get()
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success && result.data) {
+            console.log('Setting detailed template:', result.data)
+            // Set the detailed template which will trigger the useEffect to create nodes
+            setLocalSelectedTemplate(result.data)
+          } else {
+            console.error('Failed to get detailed template data')
+            setLocalSelectedTemplate(fullTemplate)
+          }
+        } else {
+          console.error('Failed to fetch detailed template')
+          setLocalSelectedTemplate(fullTemplate)
+        }
+      } catch (error) {
+        console.error('Error fetching detailed template:', error)
+        setLocalSelectedTemplate(fullTemplate)
+      }
+      
+      // Also trigger a custom event that the parent component can listen to (optional)
+      const event = new CustomEvent('templateSelected', { detail: fullTemplate })
+      window.dispatchEvent(event)
     }
     
-    setShowOnFormSubmissionUI(false);
-    setSelectedFormNodeId(null);
-    setZoomLevel(100);
-    
-    setTimeout(() => {
-      zoomTo(1);
-    }, 50);
-  }, [selectedFormNodeId, setNodes, zoomTo]);
+    setShowTemplateSelectionModal(false)
+  }, [availableTemplates])
 
+  const handleTemplateModalClose = useCallback(() => {
+    setShowTemplateSelectionModal(false)
+  }, [])
+
+
+  // Handler for workflow name change
+  const handleWorkflowNameChange = useCallback((newName: string) => {
+    console.log("🏷️ Workflow name changing from:", currentWorkflowName, "to:", newName)
+    setCurrentWorkflowName(newName)
+    // Here you could also update the selectedTemplate if needed
+    // or make an API call to save the name change
+  }, [currentWorkflowName])
+
+  // Use the centralized workflow name function for display consistency
 
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-gray-900 relative">
       {/* Header */}
-      <Header onBackToWorkflows={onBackToWorkflows} />
-      
+      <Header
+        onBackToWorkflows={onBackToWorkflows}
+        workflowName={getWorkflowName()}
+        selectedTemplate={selectedTemplate}
+        onWorkflowNameChange={handleWorkflowNameChange}
+        isEditable={builder}
+      />
+
       {/* Main content area */}
       <div className="flex flex-1 relative overflow-hidden">
         {/* Flow diagram area */}
         <div className="flex-1 bg-slate-50 dark:bg-gray-800 relative">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeClick={onNodeClick}
-        onNodesDelete={onNodesDelete}
-        onEdgesDelete={onEdgesDelete}
-        onSelectionChange={onSelectionChange}
-        nodeTypes={nodeTypes}
-        connectionLineType={ConnectionLineType.Straight}
-        fitView
-        className="bg-gray-100 dark:bg-slate-900"
-        multiSelectionKeyCode="Shift"
-        deleteKeyCode="Delete"
-        snapToGrid={true}
-        snapGrid={[15, 15]}
-        proOptions={{ hideAttribution: true }}
-      >
-        {/* Selection Info Panel */}
-        {(selectedNodes.length > 0 || selectedEdges.length > 0) && (
-          <Panel position="top-right">
-            <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-md border border-slate-200 dark:border-gray-700 min-w-[200px]">
-              <div className="text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">
-                Selection Info
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                Nodes: {selectedNodes.length} | Edges: {selectedEdges.length}
-              </div>
-              {selectedNodes.length === 1 && selectedNodes[0].data?.step ? (
-                <div className="text-xs mt-1 text-gray-700 dark:text-gray-300">
-                  <strong>Step:</strong> {(selectedNodes[0].data.step as Step).name || 'Unnamed'}
-                </div>
-              ) : null}
-            </div>
-          </Panel>
-        )}
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onNodesDelete={onNodesDelete}
+            onEdgesDelete={onEdgesDelete}
+            onSelectionChange={onSelectionChange}
+            nodeTypes={nodeTypes}
+            connectionLineType={ConnectionLineType.Straight}
+            fitView
+            className="bg-gray-100 dark:bg-slate-900"
+            multiSelectionKeyCode="Shift"
+            deleteKeyCode="Delete"
+            snapToGrid={true}
+            snapGrid={[20, 20]}
+            defaultEdgeOptions={{
+              type: 'smoothstep',
+              style: { 
+                strokeWidth: 2,
+                stroke: '#D1D5DB',
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round'
+              },
+              markerEnd: { 
+                type: 'arrowclosed',
+                color: '#D1D5DB'
+              },
+            }}
+            connectionLineStyle={{
+              strokeWidth: 2,
+              stroke: '#D1D5DB',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+            }}
+            proOptions={{ hideAttribution: true }}
+          >
 
-        {/* Empty Canvas Content */}
-        {showEmptyCanvas && (
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[5] text-center">
-            <EmptyCanvas 
-              onAddFirstStep={addFirstStep}
-              onStartWithTemplate={startWithTemplate}
+            {/* Empty Canvas Content */}
+            {showEmptyCanvas && !isLoadingTemplate && (
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[5] text-center">
+                <EmptyCanvas
+                  onAddFirstStep={addFirstStep}
+                  onStartWithTemplate={startWithTemplate}
+                />
+              </div>
+            )}
+
+            {/* Loading Template Content */}
+            {isLoadingTemplate && (
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[5] text-center">
+                <div className="bg-white p-6 rounded-lg shadow-md border border-slate-200">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-slate-600">Loading workflow template...</p>
+                </div>
+              </div>
+            )}
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={12}
+              size={1}
+              className="bg-gray-50 dark:bg-slate-900"
             />
-          </div>
-        )}
-        <Background 
-          variant={BackgroundVariant.Dots} 
-          gap={12} 
-          size={1}
-          className="bg-gray-50 dark:bg-slate-900"
+
+            {/* Action Bar at bottom center */}
+            {!showEmptyCanvas && (
+              <Panel position="bottom-center">
+                <ActionBar
+                  onExecute={async () => {
+                    try {
+                      await executeWorkflow()
+                    } catch (error) {
+                      console.error("Failed to execute workflow:", error)
+                      // You could add user notification here if needed
+                      alert(`Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`)
+                    }
+                  }}
+                  zoomLevel={zoomLevel}
+                  onZoomChange={handleZoomChange}
+                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector)}
+                />
+              </Panel>
+            )}
+          </ReactFlow>
+        </div>
+
+        {/* Tools Sidebar */}
+        <ToolsSidebar
+          isVisible={showToolsSidebar}
+          nodeInfo={selectedNodeInfo}
+          tools={selectedNodeTools}
+          onClose={() => setShowToolsSidebar(false)}
+          onResultClick={handleResultClick}
         />
 
-        {/* Action Bar at bottom center */}
-        {!showEmptyCanvas && (
-          <Panel position="bottom-center">
-            <ActionBar 
-              onExecute={executeNode} 
-              zoomLevel={zoomLevel} 
-              onZoomChange={handleZoomChange} 
-            />
-          </Panel>
-        )}
-      </ReactFlow>
-          </div>
-        
         {/* Right Triggers Sidebar */}
-        {!showWhatHappensNextUI && !showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && (
-          <TriggersSidebar 
-            isVisible={showTriggersSidebar}
-            onTriggerClick={handleTriggerClick}
-            onClose={() => setShowTriggersSidebar(false)}
-          />
-        )}
-        
-        {/* What Happens Next Sidebar */}
-        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && (
-          <WhatHappensNextUI 
-            isVisible={showWhatHappensNextUI}
-            onClose={handleWhatHappensNextClose}
-            onSelectAction={handleWhatHappensNextAction}
-          />
-        )}
-        
+        {!showWhatHappensNextUI &&
+          !showAIAgentConfigUI &&
+          !showEmailConfigUI &&
+          !showOnFormSubmissionUI && (
+            <TriggersSidebar
+              isVisible={showTriggersSidebar}
+              onTriggerClick={handleTriggerClick}
+              onClose={() => {
+                setShowTriggersSidebar(false)
+                // Clear all node selections when sidebar closes
+                setNodes((prevNodes) => 
+                  prevNodes.map(node => ({ ...node, selected: false }))
+                )
+                setSelectedNodes([])
+              }}
+            />
+          )}
+
+        {/* What Happens Next Sidebar - stays visible in background when node sidebars open */}
+        <WhatHappensNextUI
+              isVisible={showWhatHappensNextUI}
+              onClose={() => {
+                setShowWhatHappensNextUI(false)
+                // Don't clear selectedNodeForNext here since it's needed for node creation
+                // Only clear it when AI Agent/Email config is actually cancelled
+                // Clear all node selections when sidebar closes
+                setNodes((prevNodes) => 
+                  prevNodes.map(node => ({ ...node, selected: false }))
+                )
+                setSelectedNodes([])
+              }}
+              onSelectAction={handleWhatHappensNextAction}
+              selectedNodeId={selectedNodeForNext}
+              toolType={
+                selectedNodeForNext
+                  ? (() => {
+                      const node = nodes.find((n) => n.id === selectedNodeForNext)
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0]?.type : undefined
+                    })()
+                  : undefined
+              }
+              toolData={
+                selectedNodeForNext
+                  ? (() => {
+                      const node = nodes.find((n) => n.id === selectedNodeForNext)
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0] : undefined
+                    })()
+                  : undefined
+              }
+              selectedTemplate={selectedTemplate}
+              onStepCreated={(stepData) => {
+                console.log("Step created:", stepData)
+                
+                // Create visual step below the selected node
+                if (selectedNodeForNext && stepData) {
+                  const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+                  if (sourceNode) {
+                    const newNodeId = `step-${nodeCounter}`
+                    
+                    // Create new node positioned below the source node
+                    const newNode = {
+                      id: newNodeId,
+                      type: "stepNode",
+                      position: {
+                        x: 400, // Consistent X position for perfect straight line alignment
+                        y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+                      },
+                      data: {
+                        step: {
+                          id: newNodeId,
+                          name: stepData.name,
+                          description: stepData.description,
+                          type: stepData.type,
+                          status: "pending",
+                          contents: [],
+                          config: stepData.tool?.val || {},
+                        },
+                        tools: stepData.tool ? [stepData.tool] : [],
+                        isActive: false,
+                        isCompleted: false,
+                        hasNext: true, // Show + button on new step
+                      },
+                      draggable: true,
+                    }
+
+                    // Create edge connecting source to new node
+                    const newEdge = {
+                      id: `${selectedNodeForNext}-${newNodeId}`,
+                      source: selectedNodeForNext,
+                      target: newNodeId,
+                      type: "smoothstep",
+                      animated: false,
+                      style: {
+                        stroke: "#D1D5DB",
+                        strokeWidth: 2,
+                      },
+                      markerEnd: {
+                        type: "arrowclosed" as const,
+                        color: "#D1D5DB",
+                      },
+                      sourceHandle: "bottom",
+                      targetHandle: "top",
+                    }
+
+                    // Update nodes and edges
+                    setNodes((prevNodes) => [...prevNodes, newNode])
+                    setEdges((prevEdges) => [...prevEdges, newEdge])
+                    setNodeCounter((prev) => prev + 1)
+
+                    // Remove hasNext from source node since it now has a next step
+                    setNodes((prevNodes) =>
+                      prevNodes.map((node) =>
+                        node.id === selectedNodeForNext
+                          ? {
+                              ...node,
+                              data: {
+                                ...node.data,
+                                hasNext: false,
+                              },
+                            }
+                          : node,
+                      ),
+                    )
+                  }
+                }
+              }}
+            />
+
         {/* AI Agent Config Sidebar */}
         {!showEmailConfigUI && !showOnFormSubmissionUI && (
-          <AIAgentConfigUI 
+          <AIAgentConfigUI
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
+            onClose={() => {
+              setShowAIAgentConfigUI(false)
+              setSelectedAgentNodeId(null)
+              setSelectedNodeForNext(null)
+              setNodes((prevNodes) => 
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+            }}
             onSave={handleAIAgentConfigSave}
+            showBackButton={selectedAgentNodeId === "pending"}
+            builder={builder}
+            toolData={
+              selectedAgentNodeId
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedAgentNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0] : undefined
+                  })()
+                : undefined
+            }
+            toolId={selectedAgentNodeId ? getToolIdFromStepId(selectedAgentNodeId) : undefined}
+            stepData={
+              selectedAgentNodeId
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedAgentNodeId)
+                    return node?.data?.step
+                  })()
+                : undefined
+            }
           />
         )}
-        
+
         {/* Email Config Sidebar */}
         {!showAIAgentConfigUI && !showOnFormSubmissionUI && (
-          <EmailConfigUI 
+          <EmailConfigUI
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
+            onClose={() => {
+              setShowEmailConfigUI(false)
+              setSelectedEmailNodeId(null)
+              setSelectedNodeForNext(null)
+              setNodes((prevNodes) => 
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+            }}
             onSave={handleEmailConfigSave}
+            showBackButton={selectedEmailNodeId === "pending"}
+            builder={builder}
+            toolData={
+              selectedEmailNodeId
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedEmailNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0] : undefined
+                  })()
+                : undefined
+            }
+            toolId={selectedEmailNodeId ? getToolIdFromStepId(selectedEmailNodeId) : undefined}
+            stepData={
+              selectedEmailNodeId
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedEmailNodeId)
+                    return node?.data?.step
+                  })()
+                : undefined
+            }
           />
         )}
-        
+
         {/* On Form Submission Config Sidebar */}
-        {showOnFormSubmissionUI && (
-          <OnFormSubmissionUI 
+        <OnFormSubmissionUI
+            isVisible={showOnFormSubmissionUI}
             onBack={handleOnFormSubmissionBack}
+            onClose={() => {
+              setShowOnFormSubmissionUI(false)
+              setSelectedFormNodeId(null)
+              setNodes((prevNodes) => 
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+              // If we were in pending mode (creating new trigger), show empty canvas again
+              if (nodes.length === 0) {
+                setShowEmptyCanvas(true)
+              }
+            }}
             onSave={handleOnFormSubmissionSave}
-            initialConfig={selectedFormNodeId 
-              ? (nodes.find(n => n.id === selectedFormNodeId)?.data?.step as any)?.config 
-              : undefined}
+            showBackButton={selectedFormNodeId === "pending"}
+            builder={builder}
+            initialConfig={
+              selectedFormNodeId
+                ? (
+                    nodes.find((n) => n.id === selectedFormNodeId)?.data
+                      ?.step as any
+                  )?.config
+                : undefined
+            }
+            toolData={
+              selectedFormNodeId
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedFormNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0] : undefined
+                  })()
+                : undefined
+            }
+            toolId={selectedFormNodeId ? getToolIdFromStepId(selectedFormNodeId) : undefined}
           />
-        )}
       </div>
+
+      {/* Execution Result Modal */}
+      <ExecutionResultModal
+        isVisible={showResultModal}
+        result={selectedResult}
+        onClose={handleResultModalClose}
+      />
+
+      {/* Workflow Execution Modal */}
+      {showExecutionModal && (createdTemplate || selectedTemplate) && (
+        <WorkflowExecutionModal
+          isOpen={showExecutionModal}
+          onClose={() => {
+            setShowExecutionModal(false)
+            setCreatedTemplate(null) // Clear created template when modal closes
+          }}
+          workflowName={(createdTemplate || selectedTemplate)?.name || "Custom Workflow"}
+          workflowDescription={(createdTemplate || selectedTemplate)?.description || "User-created workflow"}
+          templateId={(createdTemplate || selectedTemplate)?.id !== 'pending-creation' ? (createdTemplate || selectedTemplate)?.id : undefined}
+          workflowTemplate={(createdTemplate || selectedTemplate)?.id !== 'pending-creation' ? (createdTemplate || selectedTemplate) || undefined : undefined}
+          workflowData={(createdTemplate as any)?.workflowData}
+          onViewExecution={onViewExecution}
+        />
+      )}
+
+      {/* Template Selection Modal */}
+      <TemplateSelectionModal
+        isOpen={showTemplateSelectionModal}
+        onClose={handleTemplateModalClose}
+        templates={availableTemplates
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first
+          .map(template => ({
+            id: template.id,
+            name: template.name,
+            description: template.description,
+            icon: "🔧", // Default icon, you can map based on template type
+            iconBgColor: "bg-blue-50",
+            isPlaceholder: false,
+          }))}
+        loading={templatesLoading}
+        error={templatesError}
+        onSelectTemplate={handleTemplateSelect}
+      />
     </div>
-  );
-};
+  )
+}
 
 // Main component wrapped with ReactFlowProvider
 const WorkflowBuilder: React.FC<WorkflowBuilderProps> = (props) => {
@@ -2030,7 +3680,7 @@ const WorkflowBuilder: React.FC<WorkflowBuilderProps> = (props) => {
     <ReactFlowProvider>
       <WorkflowBuilderInternal {...props} />
     </ReactFlowProvider>
-  );
-};
+  )
+}
 
-export default WorkflowBuilder;
+export default WorkflowBuilder

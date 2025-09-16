@@ -1,8 +1,8 @@
 export interface UserDetail {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
+  id: string
+  name: string
+  email: string
+  role: string
 }
 
 export type Status =
@@ -184,10 +184,10 @@ export interface FlowContextProps {
 }
 
 export interface FlowProps {
-  title?: string;
-  flow?: Flow | TemplateFlow | LegacyFlow;
-  className?: string;
-  user?: UserDetail;
+  title?: string
+  flow?: Flow | TemplateFlow | LegacyFlow
+  className?: string
+  user?: UserDetail
 }
 
 export interface StepGeneratorData {
@@ -225,6 +225,82 @@ export type ChangeStepStatusResponse = {
 }
 
 export interface WorkflowTemplate {
+  id: string
+  name: string
+  description: string
+  version: string
+  status: string
+  config: {
+    ai_model?: string
+    max_file_size?: string
+    auto_execution?: boolean
+    schema_version?: string
+    allowed_file_types?: string[]
+    supports_file_upload?: boolean
+  }
+  createdBy: string
+  rootWorkflowStepTemplateId: string
+  createdAt: string
+  updatedAt: string
+  rootStep?: {
+    id: string
+    workflowTemplateId: string
+    name: string
+    description: string
+    type: string
+    timeEstimate: number
+    metadata: {
+      icon?: string
+      step_order?: number
+      schema_version?: string
+      user_instructions?: string
+    }
+    tool?: {
+      id: string
+      type: string
+      value: {
+        fields?: Array<{
+          name: string
+          type: string
+          required?: boolean
+          default?: any
+        }>
+        [key: string]: any
+      }
+      config: any
+      createdBy: string
+      createdAt: string
+      updatedAt: string
+    }
+  }
+}
+
+export interface WorkflowCardProps {
+  workflow: WorkflowTemplate
+  onViewClick?: (templateId: string) => void
+  onViewExecution?: (executionId: string) => void
+}
+
+export interface WorkflowExecutionModalProps {
+  isOpen: boolean
+  onClose: () => void
+  workflowName: string
+  workflowDescription: string
+  templateId?: string
+  workflowTemplate?: WorkflowTemplate
+  workflowData?: {
+    name: string
+    description: string
+    version?: string
+    config?: any
+    nodes: any[]
+    edges: any[]
+    metadata?: any
+  }
+  onViewExecution?: (executionId: string) => void
+}
+
+export interface LegacyWorkflowTemplate {
   id: string
   name: string
   description?: string

@@ -46,3 +46,68 @@ export const processMessage = (text: string, citationMap: Record<number, number>
       })
     }
   }
+
+  export class PersistentMap {
+    private map: Map<string, string>
+    private storageKey: string
+  
+    constructor(storageKey: string) {
+      this.map = new Map()
+      this.storageKey = storageKey
+      this.loadFromStorage()
+    }
+  
+    private loadFromStorage() {
+      try {
+        const stored = sessionStorage.getItem(this.storageKey)
+        if (stored) {
+          const data = JSON.parse(stored)
+          this.map = new Map(Object.entries(data))
+        }
+      } catch (error) {
+        console.error("Failed to load document chat map from storage:", error)
+        this.map = new Map()
+      }
+    }
+  
+    private saveToStorage() {
+      try {
+        const data = Object.fromEntries(this.map)
+        sessionStorage.setItem(this.storageKey, JSON.stringify(data))
+      } catch (error) {
+        console.error("Failed to save document chat map to storage:", error)
+      }
+    }
+  
+    set(key: string, value: string) {
+      this.map.set(key, value)
+      this.saveToStorage()
+    }
+  
+    get(key: string): string | undefined {
+      return this.map.get(key)
+    }
+  
+    has(key: string): boolean {
+      return this.map.has(key)
+    }
+  
+    delete(key: string): boolean {
+      const result = this.map.delete(key)
+      this.saveToStorage()
+      return result
+    }
+  
+    clear() {
+      this.map.clear()
+      this.saveToStorage()
+    }
+  
+    size(): number {
+      return this.map.size
+    }
+  
+    entries(): IterableIterator<[string, string]> {
+      return this.map.entries()
+    }
+  }
