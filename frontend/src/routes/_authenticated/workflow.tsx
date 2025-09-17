@@ -955,6 +955,7 @@ function WorkflowComponent() {
                     setIsExecutionMode(false)
                     setIsBuilderMode(true) // Reset to builder mode
                   }}
+                  onRefreshWorkflows={fetchWorkflows}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
                   isEditableMode={selectedTemplate === null}
