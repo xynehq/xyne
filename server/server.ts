@@ -754,6 +754,15 @@ const getNewAccessRefreshToken = async (c: Context) => {
   }
 }
 
+// Test routes for workflow APIs (no authentication for testing)
+app.get("/test/workflow/templates", ListWorkflowTemplatesApi)
+app.get("/test/workflow/templates/:templateId", GetWorkflowTemplateApi)
+app.post("/test/workflow/templates", zValidator("json", createWorkflowTemplateSchema), CreateWorkflowTemplateApi)
+app.post("/test/workflow/templates/complex", zValidator("json", createComplexWorkflowTemplateSchema), CreateComplexWorkflowTemplateApi)
+app.post("/test/workflow/templates/:templateId/execute", ExecuteTemplateApi)
+app.get("/test/workflow/tools", ListWorkflowToolsApi)
+app.post("/test/workflow/tools", zValidator("json", createWorkflowToolSchema), CreateWorkflowToolApi)
+
 export const AppRoutes = app
   .basePath("/api/v1")
   .post(

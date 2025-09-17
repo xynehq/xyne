@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   customType,
+  varchar,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -15,7 +16,6 @@ import {
   WorkflowStatus,
   StepType,
   ToolType,
-  ToolExecutionStatus,
 } from "@/types/workflowTypes"
 
 // Custom UUID array type for PostgreSQL
@@ -41,230 +41,358 @@ export const uuidArray = customType<{
     // If it's a string in PostgreSQL array format: {uuid1,uuid2,uuid3}
     if (typeof value === "string") {
       if (value === "{}") return []
-      return value.slice(1, -1).split(",").filter(Boolean)
+      // Remove surrounding braces and split by comma
+      const cleaned = value.replace(/^\{|\}$/g, "")
+      return cleaned.split(",").map(uuid => uuid.trim()).filter(Boolean)
     }
 
     return []
   },
 })
 
-export const workflowStatusEnum = pgEnum("workflow_status", Object.values(WorkflowStatus) as [string, ...string[]])
+// New schema ENUMs to match database
+export const contentTypeEnum = pgEnum("content_type_enum", [
+  'text', 'html', 'markdown', 'form', 'api_call', 'file_upload'
+])
 
-export const stepTypeEnum = pgEnum("step_type", Object.values(StepType) as [string, ...string[]])
+export const historyActionEnum = pgEnum("history_action_enum", [
+  'created', 'updated', 'deleted', 'completed', 'started', 'paused', 'resumed', 'assigned', 'cancelled', 'failed'
+])
 
-export const toolTypeEnum = pgEnum("tool_type", Object.values(ToolType) as [string, ...string[]])
+export const httpMethodEnum = pgEnum("http_method_enum", [
+  'GET', 'POST', 'PUT', 'PATCH', 'DELETE'
+])
 
-export const toolExecutionStatusEnum = pgEnum("tool_execution_status", Object.values(ToolExecutionStatus) as [string, ...string[]])
+export const integrationStatusEnum = pgEnum("integration_status_enum", [
+  'pending', 'in_progress', 'completed', 'failed'
+])
 
-// 1. Workflow Templates Table (renamed from workflow_templates)
+export const workspaceStatusEnum = pgEnum("workspace_status_enum", [
+  'active', 'inactive', 'suspended', 'pending'
+])
+
+export const serviceConfigStatusEnum = pgEnum("service_config_status_enum", [
+  'active', 'inactive', 'draft'
+])
+
+export const serviceInstanceStatusEnum = pgEnum("service_instance_status_enum", [
+  'active', 'suspended', 'configured', 'pending'
+])
+
+export const stepStatusEnum = pgEnum("step_status_enum", [
+  'pending', 'done', 'blocked'
+])
+
+export const stepTypeEnum = pgEnum("step_type_enum", [
+  'manual', 'automated', 'conditional', 'parallel', 'approval'
+])
+
+export const workflowTemplateStatusEnum = pgEnum("workflow_template_status_enum", [
+  'active', 'draft', 'deprecated'
+])
+
+export const userRoleEnum = pgEnum("user_role_enum", [
+  'admin', 'manager', 'user', 'viewer'
+])
+
+export const userStatusEnum = pgEnum("user_status_enum", [
+  'active', 'inactive', 'suspended'
+])
+
+export const workflowStatusEnum = pgEnum("workflow_status_enum", [
+  'draft', 'active', 'completed'
+])
+
+export const toolTypeEnum = pgEnum("tool_type_enum", [
+  'python_script', 'slack', 'gmail', 'agent', 'delay', 'merged_node', 'form', 'email', 'ai_agent'
+])
+
+export const relationTypeEnum = pgEnum("relation_type_enum", [
+  'NEXT', 'PARENT', 'CHILD'
+])
+
+// Base tables for new schema
+export const workspace = pgTable("workspace", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 255 }).notNull(),
+})
+
+export const user = pgTable("user", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+})
+
+// Service config table
+export const workflowServiceConfig = pgTable("workflow_service_config", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 255 }).notNull(),
+  activeWorkflowTemplateId: uuid("active_workflow_template_id"),
+  category: varchar("category", { length: 100 }),
+  subcategory: varchar("subcategory", { length: 100 }),
+  selectionCriteria: jsonb("selection_criteria"),
+  status: serviceConfigStatusEnum("status").default('active'),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+})
+
+// Updated workflow template
 export const workflowTemplate = pgTable("workflow_template", {
-  id: uuid("id").notNull().primaryKey().defaultRandom(),
-  name: text("name").notNull(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  workflowServiceConfigId: uuid("workflow_service_config_id"),
+  rootWorkflowStepTemplateId: uuid("root_workflow_step_template_id"),
+  name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  version: text("version").notNull().default("1.0.0"),
-  status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
-  config: jsonb("config").default({}),
-  createdBy: text("created_by"),
-  rootWorkflowStepTemplateId: uuid("root_workflow_step_template_id"), // UUID reference
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  // Removed: workspaceId, deletedAt
+  version: varchar("version", { length: 50 }),
+  status: workflowTemplateStatusEnum("status").default('draft'),
+  config: jsonb("config"),
+  workspaceId: integer("workspace_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+  createdBy: integer("created_by"),
+  updatedBy: integer("updated_by"),
 })
 
-// 2. Workflow Step Templates Table (renamed from workflow_step_templates)
+// Updated workflow step template
 export const workflowStepTemplate = pgTable("workflow_step_template", {
-  id: uuid("id").notNull().primaryKey().defaultRandom(),
-  workflowTemplateId: uuid("workflow_template_id")
-    .notNull()
-    .references(() => workflowTemplate.id),
-  name: text("name").notNull(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  workflowTemplateId: uuid("workflow_template_id").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  type: stepTypeEnum("type").notNull().default(StepType.AUTOMATED),
-  // Removed: status column
-  parentStepId: uuid("parent_step_id"), // UUID reference
-  prevStepIds: uuidArray("prev_step_ids").default([]), // Array of UUIDs
-  nextStepIds: uuidArray("next_step_ids").default([]), // Array of UUIDs
-  toolIds: uuidArray("tool_ids").default([]), // Array of UUIDs (only one for now)
-  timeEstimate: integer("time_estimate").default(0), // in seconds
-  metadata: jsonb("metadata").default({}),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  // Removed: deletedAt
+  type: stepTypeEnum("type").notNull(),
+  status: stepStatusEnum("status").default('pending'),
+  toolIds: uuidArray("tool_ids").default([]),
+  timeEstimate: integer("time_estimate"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
 })
 
-// 3. Workflow Tools Table (renamed from workflow_tools)
+// Connection tables for step relationships
+export const workflowStepTemplateConnection = pgTable("workflow_step_template_connection", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fromStepId: uuid("from_step_id").notNull(),
+  toStepId: uuid("to_step_id").notNull(),
+  relationType: relationTypeEnum("relation_type").notNull(),
+  connectionConfig: jsonb("connection_config"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+})
+
+// Workflow tool templates and instances
+export const workflowToolTemplate = pgTable("workflow_tool_template", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  type: toolTypeEnum("type"),
+  name: varchar("name", { length: 255 }),
+  description: text("description"),
+  data: jsonb("data"),
+  defaultConfig: jsonb("default_config"),
+  workflowTemplateId: uuid("workflow_template_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+})
+
 export const workflowTool = pgTable("workflow_tool", {
-  id: uuid("id").notNull().primaryKey().defaultRandom(),
-  type: toolTypeEnum("type").notNull(),
-  value: jsonb("value"), // Can store string, number, or object based on tool type
-  config: jsonb("config").default({}),
-  createdBy: text("created_by"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  // Removed: workspaceId, deletedAt, workflowTemplateId
+  id: uuid("id").primaryKey().defaultRandom(),
+  type: toolTypeEnum("type"),
+  value: jsonb("value"),
+  config: jsonb("config"),
+  workflowTemplateId: uuid("workflow_template_id"),
+  workflowId: uuid("workflow_id"),
+  workflowToolTemplateId: uuid("workflow_tool_template_id"),
 })
 
-// 4. Workflow Executions Table (renamed from workflow_executions)
-export const workflowExecution = pgTable("workflow_execution", {
-  id: uuid("id").notNull().primaryKey().defaultRandom(),
-  workflowTemplateId: uuid("workflow_template_id")
-    .notNull()
-    .references(() => workflowTemplate.id),
-  name: text("name").notNull(),
+// Workflow instance tables
+export const workflow = pgTable("workflow", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull(),
+  workflowTemplateId: uuid("workflow_template_id"),
+  status: serviceInstanceStatusEnum("status").default('pending'),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+})
+
+export const workflowStep = pgTable("workflow_step", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workflowTemplateId: uuid("workflow_template_id").notNull(),
+  workflowId: uuid("workflow_id"),
+  name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
-  metadata: jsonb("metadata").default({}),
-  rootWorkflowStepExeId: uuid("root_workflow_step_exe_id"), // UUID reference
-  createdBy: text("created_by"),
-  completedBy: text("completed_by"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  // Removed: workspaceId, deletedAt
+  type: stepTypeEnum("type").notNull(),
+  status: stepStatusEnum("status").default('pending'),
+  workflowToolIds: uuidArray("workflow_tool_ids"),
+  timeEstimate: integer("time_estimate"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
 })
 
-// 5. Workflow Step Executions Table (renamed from workflow_step_executions)
-export const workflowStepExecution = pgTable("workflow_step_execution", {
-  id: uuid("id").notNull().primaryKey().defaultRandom(),
-  workflowExecutionId: uuid("workflow_execution_id")
-    .notNull()
-    .references(() => workflowExecution.id),
-  workflowStepTemplateId: uuid("workflow_step_template_id")
-    .notNull()
-    .references(() => workflowStepTemplate.id),
-  name: text("name").notNull(),
-  type: stepTypeEnum("type").notNull().default(StepType.AUTOMATED),
-  status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT), // Using workflow status instead of step status
-  parentStepId: uuid("parent_step_id"), // UUID reference
-  prevStepIds: uuidArray("prev_step_ids").default([]), // Array of UUIDs
-  nextStepIds: uuidArray("next_step_ids").default([]), // Array of UUIDs
-  toolExecIds: uuidArray("tool_exec_ids").default([]), // Renamed from toolIds, array of UUIDs
-  timeEstimate: integer("time_estimate").default(0),
-  metadata: jsonb("metadata").default({}),
-  completedBy: text("completed_by"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
+// Workflow execution tables (renamed)
+export const workflowExe = pgTable("workflow_exe", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  rootWorkflowStepExeId: uuid("root_workflow_step_exe_id"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  workflowTemplateId: uuid("workflow_template_id").notNull(),
+  status: workflowStatusEnum("status").default('draft'),
+  metadata: jsonb("metadata"),
+  workspaceId: uuid("workspace_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-  // Removed: deletedAt
 })
 
-// 6. Tool Executions Table (renamed from workflow_tool_executions)
-export const toolExecution = pgTable("tool_execution", {
-  id: uuid("id").notNull().primaryKey().defaultRandom(),
-  workflowToolId: uuid("workflow_tool_id") // Renamed from toolId
-    .notNull()
-    .references(() => workflowTool.id),
-  workflowExecutionId: uuid("workflow_execution_id").notNull(), // Renamed from stepId
-  status: toolExecutionStatusEnum("status").notNull().default(ToolExecutionStatus.PENDING),
-  result: jsonb("result"), // Execution result/output
-  // Removed: errorMessage column
-  startedAt: timestamp("started_at", { withTimezone: true }),
+export const workflowStepExe = pgTable("workflow_step_exe", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workflowExeId: uuid("workflow_exe_id").notNull(),
+  workflowStepTemplateId: uuid("workflow_step_template_id"),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: stepTypeEnum("type").notNull(),
+  status: stepStatusEnum("status").default('pending'),
+  metadata: jsonb("metadata"),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .default(sql`NOW()`),
+  completedBy: uuid("completed_by"),
+  timeEstimate: integer("time_estimate"),
+  toolIds: uuidArray("tool_ids"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
 })
 
-// Schema exports
+export const workflowStepExeConnection = pgTable("workflow_step_exe_connection", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fromStepId: uuid("from_step_id").notNull(),
+  toStepId: uuid("to_step_id").notNull(),
+  relationType: relationTypeEnum("relation_type").notNull(),
+  connectionConfig: jsonb("connection_config"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+})
+
+export const workflowToolExe = pgTable("workflow_tool_exec", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  result: jsonb("result"),
+  toolId: uuid("tool_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+})
+
+// Audit and history tables
+export const workflowEventLog = pgTable("workflow_event_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  entityType: varchar("entity_type", { length: 100 }).notNull(),
+  entityId: uuid("entity_id").notNull(),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  eventData: jsonb("event_data"),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  workspaceId: uuid("workspace_id"),
+})
+
+export const workflowHistory = pgTable("workflow_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workflowExeId: uuid("workflow_exe_id"),
+  workflowStepExeId: uuid("workflow_step_exe_id"),
+  action: historyActionEnum("action").notNull(),
+  oldData: jsonb("old_data"),
+  newData: jsonb("new_data"),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+  workspaceId: uuid("workspace_id"),
+})
+
+// Schema exports for new structure
 export const selectWorkflowTemplateSchema = createSelectSchema(workflowTemplate)
-export const selectWorkflowStepTemplateSchema =
-  createSelectSchema(workflowStepTemplate)
+export const selectWorkflowStepTemplateSchema = createSelectSchema(workflowStepTemplate)
+export const selectWorkflowToolTemplateSchema = createSelectSchema(workflowToolTemplate)
 export const selectWorkflowToolSchema = createSelectSchema(workflowTool)
-export const selectWorkflowExecutionSchema =
-  createSelectSchema(workflowExecution)
-export const selectWorkflowStepExecutionSchema = createSelectSchema(
-  workflowStepExecution,
-)
-export const selectToolExecutionSchema = createSelectSchema(toolExecution)
+export const selectWorkflowSchema = createSelectSchema(workflow)
+export const selectWorkflowStepSchema = createSelectSchema(workflowStep)
+export const selectWorkflowExeSchema = createSelectSchema(workflowExe)
+export const selectWorkflowStepExeSchema = createSelectSchema(workflowStepExe)
+export const selectWorkflowToolExeSchema = createSelectSchema(workflowToolExe)
+export const selectWorkflowServiceConfigSchema = createSelectSchema(workflowServiceConfig)
 
+// Keep legacy aliases for compatibility
+export const selectWorkflowExecutionSchema = selectWorkflowExeSchema
+export const selectWorkflowStepExecutionSchema = selectWorkflowStepExeSchema
+export const selectToolExecutionSchema = selectWorkflowToolExeSchema
+
+// Insert schemas for new structure
 export const insertWorkflowTemplateSchema = createInsertSchema(workflowTemplate)
-export const insertWorkflowStepTemplateSchema =
-  createInsertSchema(workflowStepTemplate)
+export const insertWorkflowStepTemplateSchema = createInsertSchema(workflowStepTemplate)
+export const insertWorkflowToolTemplateSchema = createInsertSchema(workflowToolTemplate)
 export const insertWorkflowToolSchema = createInsertSchema(workflowTool)
-export const insertWorkflowExecutionSchema =
-  createInsertSchema(workflowExecution)
-export const insertWorkflowStepExecutionSchema = createInsertSchema(
-  workflowStepExecution,
-)
-export const insertToolExecutionSchema = createInsertSchema(toolExecution)
+export const insertWorkflowSchema = createInsertSchema(workflow)
+export const insertWorkflowStepSchema = createInsertSchema(workflowStep)
+export const insertWorkflowExeSchema = createInsertSchema(workflowExe)
+export const insertWorkflowStepExeSchema = createInsertSchema(workflowStepExe)
+export const insertWorkflowToolExeSchema = createInsertSchema(workflowToolExe)
+export const insertWorkflowServiceConfigSchema = createInsertSchema(workflowServiceConfig)
 
-// Types
-export type SelectWorkflowTemplate = z.infer<
-  typeof selectWorkflowTemplateSchema
->
-export type SelectWorkflowStepTemplate = z.infer<
-  typeof selectWorkflowStepTemplateSchema
->
+// Keep legacy aliases for compatibility
+export const insertWorkflowExecutionSchema = insertWorkflowExeSchema
+export const insertWorkflowStepExecutionSchema = insertWorkflowStepExeSchema
+export const insertToolExecutionSchema = insertWorkflowToolExeSchema
+
+// Types for new structure
+export type SelectWorkflowTemplate = z.infer<typeof selectWorkflowTemplateSchema>
+export type SelectWorkflowStepTemplate = z.infer<typeof selectWorkflowStepTemplateSchema>
+export type SelectWorkflowToolTemplate = z.infer<typeof selectWorkflowToolTemplateSchema>
 export type SelectWorkflowTool = z.infer<typeof selectWorkflowToolSchema>
-export type SelectWorkflowExecution = z.infer<
-  typeof selectWorkflowExecutionSchema
->
-export type SelectWorkflowStepExecution = z.infer<
-  typeof selectWorkflowStepExecutionSchema
->
-export type SelectToolExecution = z.infer<typeof selectToolExecutionSchema>
+export type SelectWorkflow = z.infer<typeof selectWorkflowSchema>
+export type SelectWorkflowStep = z.infer<typeof selectWorkflowStepSchema>
+export type SelectWorkflowExe = z.infer<typeof selectWorkflowExeSchema>
+export type SelectWorkflowStepExe = z.infer<typeof selectWorkflowStepExeSchema>
+export type SelectWorkflowToolExe = z.infer<typeof selectWorkflowToolExeSchema>
+export type SelectWorkflowServiceConfig = z.infer<typeof selectWorkflowServiceConfigSchema>
 
-export type InsertWorkflowTemplate = z.infer<
-  typeof insertWorkflowTemplateSchema
->
-export type InsertWorkflowStepTemplate = z.infer<
-  typeof insertWorkflowStepTemplateSchema
->
+export type InsertWorkflowTemplate = z.infer<typeof insertWorkflowTemplateSchema>
+export type InsertWorkflowStepTemplate = z.infer<typeof insertWorkflowStepTemplateSchema>
+export type InsertWorkflowToolTemplate = z.infer<typeof insertWorkflowToolTemplateSchema>
 export type InsertWorkflowTool = z.infer<typeof insertWorkflowToolSchema>
-export type InsertWorkflowExecution = z.infer<
-  typeof insertWorkflowExecutionSchema
->
-export type InsertWorkflowStepExecution = z.infer<
-  typeof insertWorkflowStepExecutionSchema
->
-export type InsertToolExecution = z.infer<typeof insertToolExecutionSchema>
+export type InsertWorkflow = z.infer<typeof insertWorkflowSchema>
+export type InsertWorkflowStep = z.infer<typeof insertWorkflowStepSchema>
+export type InsertWorkflowExe = z.infer<typeof insertWorkflowExeSchema>
+export type InsertWorkflowStepExe = z.infer<typeof insertWorkflowStepExeSchema>
+export type InsertWorkflowToolExe = z.infer<typeof insertWorkflowToolExeSchema>
+export type InsertWorkflowServiceConfig = z.infer<typeof insertWorkflowServiceConfigSchema>
+
+// Legacy type aliases for compatibility
+export type SelectWorkflowExecution = SelectWorkflowExe
+export type SelectWorkflowStepExecution = SelectWorkflowStepExe
+export type SelectToolExecution = SelectWorkflowToolExe
+export type InsertWorkflowExecution = InsertWorkflowExe
+export type InsertWorkflowStepExecution = InsertWorkflowStepExe
+export type InsertToolExecution = InsertWorkflowToolExe
 
 // Public schemas (for API responses)
 export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema.omit({
   createdBy: true,
+  updatedBy: true,
 })
 
-export const publicWorkflowExecutionSchema = selectWorkflowExecutionSchema.omit(
-  {
-    createdBy: true,
-    completedBy: true,
-  },
-)
+export const publicWorkflowExeSchema = selectWorkflowExeSchema.omit({
+  createdBy: true,
+  updatedBy: true,
+  completedBy: true,
+})
+
+// Legacy alias
+export const publicWorkflowExecutionSchema = publicWorkflowExeSchema
 
 export const publicWorkflowToolSchema = selectWorkflowToolSchema.omit({
-  createdBy: true,
+  // No private fields to omit in the new tool schema
 })
 
 export type PublicWorkflowTemplate = z.infer<
   typeof publicWorkflowTemplateSchema
 >
-export type PublicWorkflowExecution = z.infer<
-  typeof publicWorkflowExecutionSchema
->
+export type PublicWorkflowExe = z.infer<typeof publicWorkflowExeSchema>
 export type PublicWorkflowTool = z.infer<typeof publicWorkflowToolSchema>
+
+// Legacy alias
+export type PublicWorkflowExecution = PublicWorkflowExe
 
 // API request schemas
 export const createWorkflowTemplateSchema = z.object({
