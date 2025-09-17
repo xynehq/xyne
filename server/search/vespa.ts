@@ -20,7 +20,8 @@ import {
   type Entity,
   type VespaQueryConfig,
 } from "@xyne/vespa-ts/types"
-import { db, getConnectorByAppAndEmailId } from "@/db/connector"
+import { db } from "@/db/client"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { AuthType, ConnectorStatus } from "@/shared/types"
 import { extractDriveIds, extractCollectionVespaIds } from "./utils"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
@@ -76,20 +77,22 @@ export const searchVespa = async (
   let isDriveConnected = false
   let isGmailConnected = false
   let isCalendarConnected = false
-  
-    let connector
-    try {
-      connector = await getConnectorByAppAndEmailId(
-        db,
-        Apps.Slack,
-        AuthType.OAuth,
-        email,
-      )
-      isSlackConnected = Boolean(
-        connector && connector.status === ConnectorStatus.Connected,
-      )
-    } catch (error) {}
-    try {
+
+  let connector
+  try {
+    connector = await getConnectorByAppAndEmailId(
+      db,
+      Apps.Slack,
+      AuthType.OAuth,
+      email,
+    )
+    isSlackConnected = Boolean(
+      connector && connector.status === ConnectorStatus.Connected,
+    )
+  } catch (error) {
+    Logger.error({ err: error, email }, "Error fetching Slack connector status")
+  }
+  try {
     const driveConnector = await getAppSyncJobsByEmail(
       db,
       Apps.GoogleDrive,
@@ -113,7 +116,12 @@ export const searchVespa = async (
     isCalendarConnected = Boolean(
       calendarConnector && calendarConnector.length > 0,
     )
-  } catch (error) {}
+  } catch (error) {
+    Logger.error(
+      { err: error, email },
+      "Error fetching Google sync jobs status",
+    )
+  }
 
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
