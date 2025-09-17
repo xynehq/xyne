@@ -20,9 +20,11 @@ import {
   type Entity,
   type VespaQueryConfig,
 } from "@xyne/vespa-ts/types"
-import { db, getConnectorByAppAndEmailId } from "@/db/connector"
+import { db } from "@/db/client"
+import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { AuthType, ConnectorStatus } from "@/shared/types"
 import { extractDriveIds, extractCollectionVespaIds } from "./utils"
+import { getAppSyncJobsByEmail } from "@/db/syncJob"
 // Define your Vespa endpoint and schema name
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
@@ -72,22 +74,61 @@ export const searchVespa = async (
   options: Partial<VespaQueryConfig> = {},
 ) => {
   let isSlackConnected = false
+  let isDriveConnected = false
+  let isGmailConnected = false
+  let isCalendarConnected = false
+
+  let connector
   try {
-    const connector = await getConnectorByAppAndEmailId(
+    connector = await getConnectorByAppAndEmailId(
       db,
       Apps.Slack,
       AuthType.OAuth,
       email,
     )
-    isSlackConnected =
-      connector && connector.status === ConnectorStatus.Connected
-  } catch (error) {}
+    isSlackConnected = Boolean(
+      connector && connector.status === ConnectorStatus.Connected,
+    )
+  } catch (error) {
+    Logger.error({ err: error, email }, "Error fetching Slack connector status")
+  }
+  try {
+    const [driveConnector, gmailConnector, calendarConnector] =
+      await Promise.all([
+        getAppSyncJobsByEmail(
+          db,
+          Apps.GoogleDrive,
+          AuthType.ServiceAccount,
+          email,
+        ),
+        getAppSyncJobsByEmail(db, Apps.Gmail, AuthType.ServiceAccount, email),
+        getAppSyncJobsByEmail(
+          db,
+          Apps.GoogleCalendar,
+          AuthType.ServiceAccount,
+          email,
+        ),
+      ])
+    isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
+    isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
+    isCalendarConnected = Boolean(
+      calendarConnector && calendarConnector.length > 0,
+    )
+  } catch (error) {
+    Logger.error(
+      { err: error, email },
+      "Error fetching Google sync jobs status",
+    )
+  }
 
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
     recencyDecayRate:
       options.recencyDecayRate || config.defaultRecencyDecayRate,
     isSlackConnected,
+    isDriveConnected,
+    isGmailConnected,
+    isCalendarConnected,
   })
 }
 
