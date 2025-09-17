@@ -12,7 +12,7 @@ const { JwtPayloadKey } = config
 // LiveKit configuration
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY!
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET!
-const LIVEKIT_URL = process.env.LIVEKIT_URL || "ws://localhost:7880"
+const LIVEKIT_URL = process.env.LIVEKIT_URL || "ws://10.10.50.22:7880"
 
 if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
   throw new Error("LiveKit API key and secret must be provided in environment variables")
@@ -32,6 +32,12 @@ export const joinCallSchema = z.object({
 
 export const endCallSchema = z.object({
   roomName: z.string().min(1, "Room name is required")
+})
+
+export const inviteToCallSchema = z.object({
+  roomName: z.string().min(1, "Room name is required"),
+  targetUserId: z.string().min(1, "Target user ID is required"),
+  callType: z.enum(["video", "audio"]).default("video")
 })
 
 // Generate LiveKit access token
@@ -91,7 +97,7 @@ export const InitiateCallApi = async (c: Context) => {
     // Create room in LiveKit
     await roomService.createRoom({
       name: roomName,
-      maxParticipants: 2,
+      maxParticipants: 10, // Allow more participants for group calls
       emptyTimeout: 300, // Room closes after 5 minutes if empty
     })
 
@@ -133,6 +139,7 @@ export const InitiateCallApi = async (c: Context) => {
       callerToken,
       targetToken,
       callType: validatedData.callType,
+      livekitUrl: LIVEKIT_URL,
       notificationSent, // Include whether notification was sent
       caller: {
         id: caller.externalId,
@@ -200,6 +207,108 @@ export const JoinCallApi = async (c: Context) => {
       throw error
     }
     throw new HTTPException(500, { message: "Failed to join call" })
+  }
+}
+
+// Invite a user to an existing call
+export const InviteToCallApi = async (c: Context) => {
+  try {
+    const { workspaceId, sub: inviterEmail } = c.get(JwtPayloadKey)
+    const requestBody = await c.req.json()
+    const { roomName, targetUserId, callType } = requestBody
+    
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "Workspace ID is required" })
+    }
+
+    // Validate input
+    const validatedData = inviteToCallSchema.parse({ roomName, targetUserId, callType })
+    
+    // Get inviter info
+    const inviterUsers = await getUserByEmail(db, inviterEmail)
+    if (!inviterUsers || inviterUsers.length === 0) {
+      throw new HTTPException(404, { message: "Inviter not found" })
+    }
+    const inviter = inviterUsers[0]
+
+    // Get all workspace users to find target user
+    const allUsers = await getAllActiveUsers(db)
+    const targetUser = allUsers.find(user => user.externalId === validatedData.targetUserId)
+    
+    if (!targetUser) {
+      throw new HTTPException(404, { message: "Target user not found" })
+    }
+
+    if (inviter.externalId === targetUser.externalId) {
+      throw new HTTPException(400, { message: "Cannot invite yourself" })
+    }
+
+    // Check if room exists
+    try {
+      const room = await roomService.listRooms([validatedData.roomName])
+      if (!room || room.length === 0) {
+        throw new HTTPException(404, { message: "Call room not found" })
+      }
+    } catch (error) {
+      throw new HTTPException(404, { message: "Call room not found" })
+    }
+
+    // Generate access token for the invited user
+    const targetToken = await generateAccessToken(targetUser.externalId, validatedData.roomName)
+
+    // Send real-time notification to target user
+    const callNotification = {
+      type: "incoming_call" as const,
+      callId: validatedData.roomName,
+      roomName: validatedData.roomName,
+      caller: {
+        id: inviter.externalId,
+        name: inviter.name,
+        email: inviter.email,
+        photoLink: inviter.photoLink
+      },
+      target: {
+        id: targetUser.externalId,
+        name: targetUser.name,
+        email: targetUser.email,
+        photoLink: targetUser.photoLink
+      },
+      callType: validatedData.callType,
+      targetToken,
+      timestamp: Date.now()
+    }
+
+    // Send notification via WebSocket
+    const notificationSent = callNotificationService.sendCallInvitation(callNotification)
+    
+    console.log(`User ${inviter.name} invited ${targetUser.name} to call ${validatedData.roomName}`)
+    console.log(`Real-time notification sent: ${notificationSent}`)
+
+    return c.json({
+      success: true,
+      roomName: validatedData.roomName,
+      targetToken,
+      callType: validatedData.callType,
+      notificationSent,
+      inviter: {
+        id: inviter.externalId,
+        name: inviter.name,
+        email: inviter.email,
+        photoLink: inviter.photoLink
+      },
+      target: {
+        id: targetUser.externalId,
+        name: targetUser.name,
+        email: targetUser.email,
+        photoLink: targetUser.photoLink
+      }
+    })
+  } catch (error) {
+    console.error("Error inviting user to call:", error)
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    throw new HTTPException(500, { message: "Failed to invite user to call" })
   }
 }
 

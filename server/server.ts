@@ -107,9 +107,11 @@ import {
   JoinCallApi, 
   EndCallApi, 
   GetActiveCallsApi,
+  InviteToCallApi,
   initiateCallSchema,
   joinCallSchema,
-  endCallSchema
+  endCallSchema,
+  inviteToCallSchema
 } from "@/api/calls"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
@@ -647,13 +649,13 @@ const handleAppValidation = async (c: Context) => {
 
     const accessToken = await generateTokens(
       user.email,
-      user.role,
-      user.workspaceExternalId,
+      existingUser.role,
+      existingUser.workspaceExternalId,
     )
     const refreshToken = await generateTokens(
       user.email,
-      user.role,
-      user.workspaceExternalId,
+      existingUser.role,
+      existingUser.workspaceExternalId,
       true,
     )
     // save refresh token generated in user schema
@@ -1027,6 +1029,7 @@ export const AppRoutes = app
   .get("/workspace/users/search", zValidator("query", searchUsersSchema), SearchWorkspaceUsersApi)
   // Call routes
   .post("/calls/initiate", zValidator("json", initiateCallSchema), InitiateCallApi)
+  .post("/calls/invite", zValidator("json", inviteToCallSchema), InviteToCallApi)
   .post("/calls/join", zValidator("json", joinCallSchema), JoinCallApi)
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
   .get("/calls/active", GetActiveCallsApi)

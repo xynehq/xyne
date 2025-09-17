@@ -5,6 +5,9 @@ import {
   formatChatMessageLinks,
 } from "@livekit/components-react"
 import "@livekit/components-styles/index.css"
+import { InviteUsersModal } from './InviteUsersModal'
+import { Button } from '@/components/ui/button'
+import { UserPlus } from 'lucide-react'
 
 const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || "ws://localhost:7880"
 
@@ -16,6 +19,7 @@ export default function CallPage() {
   const callType = urlParams.get("type") || "video"
   
   const [isCallEnded, setIsCallEnded] = useState(false)
+  const [showInviteModal, setShowInviteModal] = useState(false)
 
   const handleDisconnect = () => {
     setIsCallEnded(true)
@@ -77,8 +81,19 @@ export default function CallPage() {
             Room: {room}
           </p>
         </div>
-        <div className="text-sm text-gray-300">
-          <p>LiveKit Call Session</p>
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={() => setShowInviteModal(true)}
+            variant="outline"
+            size="sm"
+            className="bg-transparent border-gray-600 text-white hover:bg-gray-700"
+          >
+            <UserPlus className="h-4 w-4 mr-2" />
+            Invite People
+          </Button>
+          <div className="text-sm text-gray-300">
+            <p>LiveKit Call Session</p>
+          </div>
         </div>
       </div>
       
@@ -100,6 +115,14 @@ export default function CallPage() {
           />
         </LiveKitRoom>
       </div>
+      
+      {/* Invite Users Modal */}
+      <InviteUsersModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        roomName={room}
+        callType={callType as 'video' | 'audio'}
+      />
     </div>
   )
 }
