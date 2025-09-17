@@ -98,14 +98,25 @@ export const searchVespa = async (
         getAppSyncJobsByEmail(
           db,
           Apps.GoogleDrive,
-          AuthType.ServiceAccount,
+          process.env.NODE_ENV != "production"
+            ? AuthType.OAuth
+            : AuthType.ServiceAccount,
           email,
         ),
-        getAppSyncJobsByEmail(db, Apps.Gmail, AuthType.ServiceAccount, email),
+        getAppSyncJobsByEmail(
+          db,
+          Apps.Gmail,
+          process.env.NODE_ENV != "production"
+            ? AuthType.OAuth
+            : AuthType.ServiceAccount,
+          email,
+        ),
         getAppSyncJobsByEmail(
           db,
           Apps.GoogleCalendar,
-          AuthType.ServiceAccount,
+          process.env.NODE_ENV != "production"
+            ? AuthType.OAuth
+            : AuthType.ServiceAccount,
           email,
         ),
       ])
