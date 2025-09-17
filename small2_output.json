@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "source_path": "/Users/aayush.shah/Downloads/small2.pdf",
+    "source_name": "small2.pdf",
+    "asset_dir": "small2_assets",
+    "created_at": "2025-09-17T16:18:52Z",
+    "page_count": 2
+  },
+  "pages": [
+    {
+      "page_index": 0,
+      "width": 1440,
+      "height": 810,
+      "items": []
+    },
+    {
+      "page_index": 1,
+      "width": 1440,
+      "height": 810,
+      "items": []
+    }
+  ]
+}
