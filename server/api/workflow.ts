@@ -287,8 +287,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       formData.forEach((value, key) => {
         entries.push([key, value])
       })
-      Logger.info(`Parsed form data entries: ${JSON.stringify(entries, null, 2)}`)
-      Logger.info(`Parsed form data entries: ${JSON.stringify(entries, null, 2)}`)
 
       requestData.rootStepInput = {}
       for (const [key, value] of entries) {
