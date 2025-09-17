@@ -232,6 +232,7 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
+  DownloadFileApi,
   GetChunkContentApi,
 } from "@/api/knowledgeBase"
 import {
@@ -1001,6 +1002,7 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+  .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
   .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
   .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
