@@ -142,6 +142,7 @@ import {
   FormSubmissionIcon,
   WorkflowExecutionIcon,
   ChatMessageIcon,
+  WebhookIcon,
   HelpIcon,
   TemplatesIcon,
   AddIcon,
@@ -154,6 +155,7 @@ import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
+import WebhookConfigurationUI, { WebhookConfig } from "./WebhookConfigurationUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 
@@ -1557,7 +1559,7 @@ const TriggersSidebar = ({
       name: "On App Event",
       description: "Connect different apps to the workflow",
       icon: <AppEventIcon width={20} height={20} />,
-      enabled: false,
+      enabled: true,
     },
     {
       id: "schedule",
@@ -1565,6 +1567,13 @@ const TriggersSidebar = ({
       description: "Runs the flow every day, hour or custom interval",
       icon: <ScheduleIcon width={20} height={20} />,
       enabled: false,
+    },
+    {
+      id: "webhook",
+      name: "On Webhook Call",
+      description: "Runs the flow on receiving an HTTP request",
+      icon: <WebhookIcon width={20} height={20} />,
+      enabled: true,
     },
     {
       id: "workflow",
@@ -1810,6 +1819,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     null,
   )
   const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
+    null,
+  )
+  const [showWebhookConfigUI, setShowWebhookConfigUI] = useState(false)
+  const [selectedWebhookNodeId, setSelectedWebhookNodeId] = useState<string | null>(
     null,
   )
   const [zoomLevel, setZoomLevel] = useState(100)
@@ -2082,10 +2095,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowWebhookConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
       setSelectedFormNodeId(null)
+      setSelectedWebhookNodeId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -2114,6 +2129,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setShowAIAgentConfigUI(true)
           break
 
+        case "webhook":
+          // Open Webhook config sidebar
+          setSelectedWebhookNodeId(node.id)
+          setShowWebhookConfigUI(true)
+          break
+
         default:
           if (onStepClick) {
             onStepClick(step)
@@ -2130,7 +2151,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       showEmailConfigUI,
       selectedEmailNodeId,
       showOnFormSubmissionUI,
-      selectedFormNodeId
+      selectedFormNodeId,
+      showWebhookConfigUI,
+      selectedWebhookNodeId
     ],
   )
 
@@ -2311,6 +2334,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowWebhookConfigUI(false)
       
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
@@ -2323,6 +2347,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowWebhookConfigUI(false)
       
       // Open Triggers sidebar
       setShowTriggersSidebar(true)
@@ -2615,6 +2640,18 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         setShowTriggersSidebar(false)
         setSelectedFormNodeId("pending") // Temporary ID to indicate we're in creation mode
         setShowOnFormSubmissionUI(true)
+        setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
+
+        // Reset zoom to 100%
+        setZoomLevel(100)
+        setTimeout(() => {
+          zoomTo(1)
+        }, 50)
+      } else if (triggerId === "webhook") {
+        // Close TriggersSidebar with slide-out animation when WebhookConfigurationUI opens
+        setShowTriggersSidebar(false)
+        setSelectedWebhookNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowWebhookConfigUI(true)
         setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
 
         // Reset zoom to 100%
@@ -3119,6 +3156,130 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges],
   )
 
+  const handleWebhookConfigBack = useCallback(() => {
+    setShowWebhookConfigUI(false)
+    
+    // If we're in creation mode (pending), go back to triggers sidebar
+    if (selectedWebhookNodeId === "pending") {
+      setShowTriggersSidebar(true)
+      setSelectedWebhookNodeId(null)
+      // If we were in pending mode (creating new trigger), show empty canvas again
+      if (nodes.length === 0) {
+        setShowEmptyCanvas(true)
+      }
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedWebhookNodeId(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedWebhookNodeId, nodes.length, setNodes])
+
+  const handleWebhookConfigSave = useCallback(
+    (webhookConfig: WebhookConfig) => {
+      if (selectedWebhookNodeId === "pending") {
+        // Create new webhook node when saving configuration
+        const newNodeId = "webhook-trigger"
+        
+        // Create the tool object for Webhook
+        const webhookTool = {
+          id: `tool-${newNodeId}`,
+          type: "webhook",
+          val: webhookConfig, // Use 'val' to match template structure
+          value: webhookConfig, // Also include 'value' for compatibility
+          config: {
+            webhookUrl: webhookConfig.webhookUrl,
+            httpMethod: webhookConfig.httpMethod,
+            path: webhookConfig.path,
+            authentication: webhookConfig.authentication,
+            responseMode: webhookConfig.responseMode,
+            headers: webhookConfig.headers,
+            queryParams: webhookConfig.queryParams,
+          },
+        }
+
+        // Create webhook node
+        const webhookNode: Node = {
+          id: newNodeId,
+          type: "stepNode",
+          position: { x: 400, y: 100 }, // Consistent X position for straight line connections
+          data: {
+            step: {
+              id: newNodeId,
+              name: `Webhook: ${webhookConfig.path}`,
+              status: "PENDING",
+              contents: [],
+              type: "webhook",
+              config: webhookConfig,
+            },
+            tools: [webhookTool],
+            isActive: false,
+            isCompleted: false,
+            hasNext: true, // Show + icon since this is the starting node
+            anyNodeSelected: false,
+          },
+          draggable: true,
+          selectable: true,
+          selected: true, // Select the newly created node
+        }
+
+        setNodes([webhookNode])
+        setNodeCounter(2)
+        setSelectedNodes([webhookNode]) // Update selectedNodes for the anyNodeSelected flag
+
+      } else if (selectedWebhookNodeId && selectedWebhookNodeId !== "pending") {
+        // Update existing webhook node
+        const webhookTool = {
+          id: getToolIdFromStepId(selectedWebhookNodeId),
+          type: "webhook",
+          val: webhookConfig,
+          value: webhookConfig,
+          config: {
+            webhookUrl: webhookConfig.webhookUrl,
+            httpMethod: webhookConfig.httpMethod,
+            path: webhookConfig.path,
+            authentication: webhookConfig.authentication,
+            responseMode: webhookConfig.responseMode,
+            headers: webhookConfig.headers,
+            queryParams: webhookConfig.queryParams,
+          },
+        }
+
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === selectedWebhookNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: `Webhook: ${webhookConfig.path}`,
+                      config: webhookConfig,
+                    },
+                    tools: [webhookTool],
+                    hasNext: !edges.some(edge => edge.source === selectedWebhookNodeId),
+                  },
+                }
+              : node,
+          ),
+        )
+      }
+
+      setShowWebhookConfigUI(false)
+      setSelectedWebhookNodeId(null)
+      setZoomLevel(100)
+
+      setTimeout(() => {
+        zoomTo(1)
+      }, 50)
+    },
+    [selectedWebhookNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges, getToolIdFromStepId],
+  )
+
   const handleResultClick = useCallback((result: any) => {
     setSelectedResult(result)
     setShowResultModal(true)
@@ -3292,7 +3453,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         {!showWhatHappensNextUI &&
           !showAIAgentConfigUI &&
           !showEmailConfigUI &&
-          !showOnFormSubmissionUI && (
+          !showOnFormSubmissionUI &&
+          !showWebhookConfigUI && (
             <TriggersSidebar
               isVisible={showTriggersSidebar}
               onTriggerClick={handleTriggerClick}
@@ -3418,7 +3580,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             />
 
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && !showOnFormSubmissionUI && (
+        {!showEmailConfigUI && !showOnFormSubmissionUI && !showWebhookConfigUI && (
           <AIAgentConfigUI
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
@@ -3456,7 +3618,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
 
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && !showOnFormSubmissionUI && (
+        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showWebhookConfigUI && (
           <EmailConfigUI
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
@@ -3531,6 +3693,45 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }
             toolId={selectedFormNodeId ? getToolIdFromStepId(selectedFormNodeId) : undefined}
           />
+
+        {/* Webhook Configuration Sidebar */}
+        <WebhookConfigurationUI
+          isVisible={showWebhookConfigUI}
+          onBack={handleWebhookConfigBack}
+          onClose={() => {
+            setShowWebhookConfigUI(false)
+            setSelectedWebhookNodeId(null)
+            setNodes((prevNodes) => 
+              prevNodes.map(node => ({ ...node, selected: false }))
+            )
+            setSelectedNodes([])
+            // If we were in pending mode (creating new trigger), show empty canvas again
+            if (nodes.length === 0) {
+              setShowEmptyCanvas(true)
+            }
+          }}
+          onSave={handleWebhookConfigSave}
+          showBackButton={selectedWebhookNodeId === "pending"}
+          builder={builder}
+          initialConfig={
+            selectedWebhookNodeId
+              ? (
+                  nodes.find((n) => n.id === selectedWebhookNodeId)?.data
+                    ?.step as any
+                )?.config
+              : undefined
+          }
+          toolData={
+            selectedWebhookNodeId
+              ? (() => {
+                  const node = nodes.find((n) => n.id === selectedWebhookNodeId)
+                  const tools = node?.data?.tools as Tool[] | undefined
+                  return tools && tools.length > 0 ? tools[0] : undefined
+                })()
+              : undefined
+          }
+          toolId={selectedWebhookNodeId ? getToolIdFromStepId(selectedWebhookNodeId) : undefined}
+        />
       </div>
 
       {/* Execution Result Modal */}
