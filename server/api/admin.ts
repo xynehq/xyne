@@ -1,7 +1,12 @@
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { db } from "@/db/client"
-import { getUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
+import {
+  getUserAndWorkspaceByEmail,
+  getUserByEmail,
+  getAllUsers,
+  updateUser,
+} from "@/db/user"
 import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import {
@@ -9,6 +14,7 @@ import {
   type SSEClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import type { Job } from "pg-boss"
 import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
@@ -42,6 +48,7 @@ import {
   MCPClientConfig,
   Subsystem,
   updateToolsStatusSchema, // Added for tool status updates
+  type userRoleChange,
 } from "@/types"
 import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
@@ -96,6 +103,13 @@ import {
 } from "@/integrations/dataDeletion"
 import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
 import { clearUserSyncJob } from "@/db/syncJob"
+import { int } from "drizzle-orm/mysql-core"
+import {
+  handleGoogleOAuthChanges,
+  handleGoogleServiceAccountChanges,
+} from "@/integrations/google/sync"
+import { zValidator } from "@hono/zod-validator"
+import { handleSlackChanges } from "@/integrations/slack/sync"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
@@ -1856,6 +1870,126 @@ export const GetWorkspaceApiKeys = async (c: Context) => {
       {
         success: false,
         message: getErrorMessage(error),
+      },
+      500,
+    )
+  }
+}
+
+export const ListAllUsers = async (c: Context) => {
+  try {
+    const users = await getAllUsers(db)
+    return c.json({
+      success: true,
+      data: users,
+      message: `Successfully fetched the users`,
+    })
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        message: `Failed to fetch the users : ${getErrorMessage(error)}`,
+      },
+      500,
+    )
+  }
+}
+
+export const UpdateUser = async (c: Context) => {
+  try {
+    // @ts-ignore
+    const form: userRoleChange = c.req.valid("form")
+    const userId = form.userId
+    const role = form.newRole
+    const resp = await updateUser(db, parseInt(userId), role)
+    return c.json({
+      success: true,
+      message: "User role updated successfully",
+    })
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        message: `Failed to update the user:${getErrorMessage(error)}`,
+      },
+      500,
+    )
+  }
+}
+
+const syncByMailSchema = z.object({
+  email: z.string().email(),
+})
+
+export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
+  try {
+    Logger.info("HandlePerUserSync called")
+    const form = await c.req.parseBody()
+    const validatedData = syncByMailSchema.parse(form)
+    const targetUser = await getUserByEmail(db, validatedData.email)
+    if (!targetUser || !targetUser.length) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+
+    const jobData = {
+      email: validatedData.email,
+      syncOnlyCurrentUser: true,
+    }
+
+    const mockJob = {
+      data: jobData,
+      id: `manual-sync-${Date.now()}`,
+    }
+
+    await handleGoogleServiceAccountChanges(boss, mockJob as Job)
+
+    return c.json({
+      success: true,
+      message: "Google Workspace sync initiated successfully",
+    })
+  } catch (error) {
+    Logger.error(`Failed to sync googleWorkspace: ${getErrorMessage(error)}`)
+    return c.json(
+      {
+        success: false,
+        message: `Failed to sync googleWorkspace : ${getErrorMessage(error)}`,
+      },
+      500,
+    )
+  }
+}
+
+export const HandlePerUserSlackSync = async (c: Context) => {
+  try {
+    Logger.info("HandlePerUserSlackSync called")
+    const form = await c.req.parseBody()
+    const validatedData = syncByMailSchema.parse(form)
+    const targetUser = await getUserByEmail(db, validatedData.email)
+    if (!targetUser || !targetUser.length) {
+      throw new HTTPException(404, { message: "User not found" })
+    }
+    const jobData = {
+      email: validatedData.email,
+      syncOnlyCurrentUser: true,
+    }
+
+    const mockJob = {
+      data: jobData,
+      id: `manual-slack-sync-${Date.now()}`,
+    }
+
+    await handleSlackChanges(boss, mockJob as Job)
+
+    return c.json({
+      success: true,
+      message: "Slack sync initiated successfully",
+    })
+  } catch (error) {
+    Logger.error(`Failed to sync Slack: ${getErrorMessage(error)}`)
+    return c.json(
+      {
+        success: false,
+        message: `Failed to sync Slack: ${getErrorMessage(error)}`,
       },
       500,
     )
