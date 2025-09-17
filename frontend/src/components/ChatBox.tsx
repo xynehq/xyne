@@ -325,11 +325,12 @@ const TooltipWrapper: React.FC<{
   children: React.ReactElement
   content: string
   delayDuration?: number
-}> = ({ children, content, delayDuration = 500 }) => (
+  side?: "top" | "right" | "bottom" | "left"
+}> = ({ children, content, delayDuration = 500, side = "bottom" }) => (
   <TooltipProvider delayDuration={delayDuration}>
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent>
+      <TooltipContent side={side}>
         <p>{content}</p>
       </TooltipContent>
     </Tooltip>
@@ -3111,7 +3112,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   <DropdownMenuContent
                     className="w-72 relative rounded-xl bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700" // Increased width, added dark mode bg and border
                     align="start"
-                    side="top"
+                    side="bottom"
                   >
                     <DropdownMenuLabel className="p-2 text-gray-700 dark:text-slate-300">
                       Select a Connector
