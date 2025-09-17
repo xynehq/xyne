@@ -19,6 +19,8 @@ import {
   SearchSlackChannels,
   agentChatMessageSchema,
   chatTitleSchema,
+  GetDriveItem,
+  GetDriveItemsByDocIds,
   HighlightApi,
   highlightSchema,
 } from "@/api/search"
@@ -876,6 +878,8 @@ export const AppRoutes = app
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
+  .post("/search/driveitem", GetDriveItem)
+  .post("/search/driveitemsbydocids", GetDriveItemsByDocIds)
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(
