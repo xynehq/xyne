@@ -1371,12 +1371,6 @@ app.get(
   },
 )
 
-// Serving exact frontend routes and adding AuthRedirect wherever needed
-app.get("/auth", serveStatic({ path: "./dist/index.html" }))
-app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
-app.get("/assets/*", serveStatic({ root: "./dist" }))
-app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-
 // START of Health Check Endpoints
 // Comprehensive health check endpoint
 
@@ -1443,6 +1437,12 @@ app.get(
   "/health/vespa",
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
 )
+
+// Serving exact frontend routes and adding AuthRedirect wherever needed
+app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
+app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   if (isSlackEnabled()) {
