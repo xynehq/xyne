@@ -578,8 +578,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                     if (Array.isArray(attachments) && attachments.length > 0) {
                       const attachmentId = attachments[0].fileId
                       Logger.info(`Extracted attachment ID: ${attachmentId} for file ${field.id}`)
-                      console.log(`Extracted attachment ID: ${attachmentId} for file ${field.id}`)
-                      console.log(`Attachement ID =  ${attachmentId}`)
                       Logger.info(`File ${field.id} processed successfully with attachment ID: ${attachmentId}`)
 
                       finalProcessedData = {
@@ -1882,8 +1880,7 @@ const extractContentFromPath = (
       return "No previous steps available"
     }
 
-    Logger.info(`DEBUG - extractContentFromPath: Available step keys: ${JSON.stringify(stepKeys)}`)
-    Logger.info(`DEBUG - extractContentFromPath: Looking for path: ${contentPath}`)
+
 
     // Remove "input." prefix and get target property
     const propertyPath = contentPath.slice(6) // Remove "input."
@@ -1961,7 +1958,6 @@ const extractContentFromPath = (
 
     return `No content found for path '${contentPath}' in any step. Available steps: ${stepKeys.join(", ")}`
   } catch (error) {
-    console.error("Error extracting content from path:", error)
     return `Error: ${error instanceof Error ? error.message : String(error)}`
   }
 }
@@ -2057,9 +2053,6 @@ const executeWorkflowTool = async (
 
         try {
           let emailBody = ""
-          // emailBody = previousStepResults.latest?.result?.aiOutput || ""
-          // Logger.info(`DEBUG - Initial email body from latest step aiOutput: ${emailBody}`)
-          // this logger info is printing empty string even when there is content in aiOutput
 
           if (contentPath) {
             // Extract content using configurable path
@@ -2412,7 +2405,6 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
 }
 
 // Create complex workflow template from frontend workflow builder
-//Todo: need to create the agents here as well
 export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
   try {
 
