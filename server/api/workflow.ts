@@ -246,7 +246,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
   let email: string = ""
   let workspaceId: string = ""
   let via_apiKey = false
-  let body
   try {
     let jwtPayload
     try {
@@ -259,7 +258,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       email = jwtPayload.sub
       workspaceId = jwtPayload.workspaceId
       Logger.info(`Using JWT auth - email: ${email}, workspaceId: ${workspaceId}`)
-      Logger.info(`Request body: ${body}`)
 
     } else {
       // Try API key context
