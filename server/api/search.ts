@@ -459,9 +459,7 @@ export const SearchApi = async (c: Context) => {
     }
     try{
 
-    const driveConnector = await getAppSyncJobsByEmail(db,Apps.GoogleDrive,AuthType.ServiceAccount,email)
-    const gmailConnector = await getAppSyncJobsByEmail(db,Apps.Gmail,AuthType.ServiceAccount,email)
-    const calendarConnector = await getAppSyncJobsByEmail(db,Apps.GoogleCalendar,AuthType.ServiceAccount,email)
+    const [driveConnector,gmailConnector,calendarConnector] = await Promise.all([getAppSyncJobsByEmail(db,Apps.GoogleDrive,AuthType.ServiceAccount,email),getAppSyncJobsByEmail(db,Apps.Gmail,AuthType.ServiceAccount,email),getAppSyncJobsByEmail(db,Apps.GoogleCalendar,AuthType.ServiceAccount,email)])
     isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
     isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
     isCalendarConnected = Boolean(calendarConnector && calendarConnector.length > 0)
