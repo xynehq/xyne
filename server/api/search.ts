@@ -457,14 +457,29 @@ export const SearchApi = async (c: Context) => {
         "Error fetching Slack connector",
       )
     }
-    try{
-
-    const [driveConnector,gmailConnector,calendarConnector] = await Promise.all([getAppSyncJobsByEmail(db,Apps.GoogleDrive,AuthType.ServiceAccount,email),getAppSyncJobsByEmail(db,Apps.Gmail,AuthType.ServiceAccount,email),getAppSyncJobsByEmail(db,Apps.GoogleCalendar,AuthType.ServiceAccount,email)])
-    isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
-    isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
-    isCalendarConnected = Boolean(calendarConnector && calendarConnector.length > 0)
-    }
-    catch(error){
+    try {
+      const [driveConnector, gmailConnector, calendarConnector] =
+        await Promise.all([
+          getAppSyncJobsByEmail(
+            db,
+            Apps.GoogleDrive,
+            AuthType.ServiceAccount,
+            email,
+          ),
+          getAppSyncJobsByEmail(db, Apps.Gmail, AuthType.ServiceAccount, email),
+          getAppSyncJobsByEmail(
+            db,
+            Apps.GoogleCalendar,
+            AuthType.ServiceAccount,
+            email,
+          ),
+        ])
+      isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
+      isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
+      isCalendarConnected = Boolean(
+        calendarConnector && calendarConnector.length > 0,
+      )
+    } catch (error) {
       loggerWithChild({ email: email }).error(
         error,
         "Error fetching google sync Jobs",
