@@ -401,14 +401,9 @@ export const ChatPage = ({
 
   // Smooth title streaming function - animates from left to right
   const updateTitleWithAnimation = useCallback((newTitle: string) => {
-    // Set the title and force a re-render
     setChatTitle((prevTitle) => {
       return newTitle
     })
-
-    // Force a re-render by updating the forceUpdate counter
-
-    // Start the animation
     setIsTitleUpdating(true)
     setStreamingTitle("")
 
@@ -425,7 +420,7 @@ export const ChatPage = ({
         setStreamingTitle("")
       }
     }, 50) // 50ms per character for smooth streaming effect
-  }, []) 
+  }, [])
 
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
@@ -770,7 +765,7 @@ export const ChatPage = ({
       chatId &&
       chatTitle === "Untitled" &&
       !isStreaming &&
-      messages.length >= 2 && // At least user + assistant message
+      messages.length >= 2 &&
       messages[0]?.messageRole === "user"
 
     if (shouldUpdateTitle && !isSharedChat) {
