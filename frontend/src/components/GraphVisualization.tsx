@@ -3,7 +3,17 @@ import * as d3 from 'd3-force';
 import { select } from 'd3-selection';
 import { zoom, zoomIdentity } from 'd3-zoom';
 import { drag } from 'd3-drag';
-import { GraphData, GraphNode, GraphEdge, NODE_TYPE_CONFIG } from '../types/graph';
+import { GraphData, GraphNode, GraphEdge, NODE_TYPE_CONFIG, NodeType } from '../types/graph';
+
+// Safe accessor for node type config
+const getNodeTypeConfig = (type: NodeType | string) => {
+  return NODE_TYPE_CONFIG[type as NodeType] || { 
+    icon: '❓', 
+    color: '#6b7280', 
+    label: type || 'Unknown',
+    size: 16 
+  };
+};
 
 interface GraphVisualizationProps {
   graphData: GraphData;
@@ -40,11 +50,22 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
   onBackgroundClick,
   className = '',
   darkMode = false,
-  layoutMode = 'hierarchy'
+  layoutMode = 'graph'
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const simulationRef = useRef<d3.Simulation<D3Node, D3Edge> | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  
+  // Use refs for event handlers to prevent re-renders
+  const onNodeClickRef = useRef(onNodeClick);
+  const onEdgeClickRef = useRef(onEdgeClick);
+  const onBackgroundClickRef = useRef(onBackgroundClick);
+  
+  useEffect(() => {
+    onNodeClickRef.current = onNodeClick;
+    onEdgeClickRef.current = onEdgeClick;
+    onBackgroundClickRef.current = onBackgroundClick;
+  });
 
   const prepareData = useCallback((): { nodes: D3Node[], edges: D3Edge[] } => {
     const nodeMap = new Map<string, D3Node>();
@@ -126,7 +147,12 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
       )
       .force('center', d3.forceCenter(width / 2, height / 2))
       .force('collision', d3.forceCollide()
-        .radius((d: any) => NODE_TYPE_CONFIG[(d as D3Node).type].size + (layoutMode === 'hierarchy' ? 25 : 15))
+        .radius((d: any) => {
+          const nodeType = (d as D3Node).type;
+          const config = getNodeTypeConfig(nodeType);
+          const size = config.size;
+          return size + (layoutMode === 'hierarchy' ? 25 : 15);
+        })
         .strength(1.0)
         .iterations(layoutMode === 'hierarchy' ? 3 : 2)
       );
@@ -206,7 +232,7 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
     svg.on('click', (event) => {
       if (event.target === svg.node()) {
         setSelectedNode(null);
-        onBackgroundClick?.();
+        onBackgroundClickRef.current?.();
       }
     });
 
@@ -222,8 +248,9 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
       .attr('marker-end', darkMode ? 'url(#arrowhead-dark)' : 'url(#arrowhead-light)')
       .style('cursor', 'pointer')
       .on('click', (event, d) => {
+        event.preventDefault();
         event.stopPropagation();
-        onEdgeClick?.(d);
+        onEdgeClickRef.current?.(d);
       })
       .on('mouseenter', function() {
         select(this)
@@ -247,9 +274,10 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
       .attr('class', 'node')
       .style('cursor', 'pointer')
       .on('click', (event, d) => {
+        event.preventDefault();
         event.stopPropagation();
         setSelectedNode(d.id);
-        onNodeClick?.(d);
+        onNodeClickRef.current?.(d);
       })
       .call(
         drag<SVGGElement, D3Node>()
@@ -273,11 +301,11 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
           })
       );
 
-    // Add circles to node groups
+    // Add circles to node groups (without selection state - handled separately)
     nodeElements
       .append('circle')
-      .attr('r', d => NODE_TYPE_CONFIG[d.type].size)
-      .attr('fill', d => selectedNode === d.id ? '#ef4444' : NODE_TYPE_CONFIG[d.type].color)
+      .attr('r', d => getNodeTypeConfig(d.type).size)
+      .attr('fill', d => getNodeTypeConfig(d.type).color)
       .attr('stroke', '#fff')
       .attr('stroke-width', 2);
 
@@ -285,7 +313,7 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
     nodeElements
       .append('text')
       .text(d => d.name)
-      .attr('dy', d => NODE_TYPE_CONFIG[d.type].size + 15)
+      .attr('dy', d => getNodeTypeConfig(d.type).size + 15)
       .attr('text-anchor', 'middle')
       .attr('font-size', '12px')
       .attr('font-family', 'Inter, sans-serif')
@@ -306,8 +334,8 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
           if (!sourceNode.x || !sourceNode.y || !targetNode.x || !targetNode.y) return;
           
           // Calculate the edge endpoints, accounting for node radius
-          const sourceRadius = NODE_TYPE_CONFIG[sourceNode.type].size;
-          const targetRadius = NODE_TYPE_CONFIG[targetNode.type].size;
+          const sourceRadius = getNodeTypeConfig(sourceNode.type).size;
+          const targetRadius = getNodeTypeConfig(targetNode.type).size;
           
           // Calculate angle between nodes
           const dx = targetNode.x - sourceNode.x;
@@ -342,10 +370,6 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
   }, [
     prepareData, 
     createSimulation, 
-    selectedNode, 
-    onNodeClick, 
-    onEdgeClick, 
-    onBackgroundClick,
     darkMode
   ]);
 
@@ -390,13 +414,12 @@ export const GraphVisualization: React.FC<GraphVisualizationProps> = ({
     const svg = select(svgRef.current);
     svg.selectAll<SVGCircleElement, D3Node>('.node circle')
       .attr('fill', (d) => 
-        selectedNode === d.id ? '#ef4444' : NODE_TYPE_CONFIG[d.type].color
+        selectedNode === d.id ? '#ef4444' : getNodeTypeConfig(d.type).color
       )
-      .attr('r', (d) => 
-        selectedNode === d.id 
-          ? NODE_TYPE_CONFIG[d.type].size * 1.3 
-          : NODE_TYPE_CONFIG[d.type].size
-      );
+      .attr('r', (d) => {
+        const size = getNodeTypeConfig(d.type).size;
+        return selectedNode === d.id ? size * 1.3 : size;
+      });
   }, [selectedNode]);
 
   return (

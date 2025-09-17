@@ -1,295 +1,51 @@
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'child_process';
 import { getLogger } from '@/logger';
 import { Subsystem } from '@/types';
 
 const logger = getLogger(Subsystem.Db);
 
-// KuzuDB database path
-const KUZU_DB_PATH = process.env.KUZU_DB_PATH || path.join(process.cwd(), 'data', 'knowledge_graph.kuzu');
+// KuzuDB HTTP endpoint
+const KUZU_DB_URL = process.env.KUZU_DB_URL || 'http://localhost:7000';
 
-// Ensure the database directory exists
-const dbDir = path.dirname(KUZU_DB_PATH);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+// Load schema from JSON file
+const schemaPath = path.join(process.cwd(), 'knowledge-graph', 'schema.json');
+const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'));
 
-// Python executable path
-const PYTHON_PATH = '/usr/bin/python3';
-
-// Helper function to execute Python kuzu commands
-async function executeKuzuCommand(command: string, params: any = {}): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const pythonScript = `
-import kuzu
-import json
-import sys
-
-db_path = "${KUZU_DB_PATH}"
-db = kuzu.Database(db_path)
-conn = kuzu.Connection(db)
-
-try:
-    command = "${command}"
-    params = ${JSON.stringify(params)}
-    
-    if command == "create_schema":
-        # Create Node table
-        conn.execute("""
-            CREATE NODE TABLE IF NOT EXISTS GraphNode(
-                id STRING,
-                workspace_id STRING,
-                name STRING,
-                description STRING,
-                node_type STRING,
-                position_x DOUBLE,
-                position_y DOUBLE,
-                size INT64,
-                color STRING,
-                metadata STRING,
-                created_by STRING,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP,
-                source STRING,
-                PRIMARY KEY (id)
-            )
-        """)
-        
-        # Create Relationship table
-        conn.execute("""
-            CREATE REL TABLE IF NOT EXISTS CONNECTS(
-                FROM GraphNode TO GraphNode,
-                edge_id STRING,
-                workspace_id STRING,
-                relationship_type STRING,
-                weight DOUBLE,
-                metadata STRING,
-                created_by STRING,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            )
-        """)
-        print(json.dumps({"success": True}))
-        
-    elif command == "create_node":
-        # Convert timestamps to proper format for KuzuDB
-        from datetime import datetime
-        
-        # Parse and convert timestamps
-        created_at = datetime.fromisoformat(params['created_at'].replace('Z', '+00:00'))
-        updated_at = datetime.fromisoformat(params['updated_at'].replace('Z', '+00:00'))
-        
-        query = """
-            CREATE (n:GraphNode {
-                id: $id,
-                workspace_id: $workspace_id,
-                name: $name,
-                description: $description,
-                node_type: $node_type,
-                position_x: $position_x,
-                position_y: $position_y,
-                size: $size,
-                color: $color,
-                metadata: $metadata,
-                created_by: $created_by,
-                created_at: $created_at,
-                updated_at: $updated_at,
-                source: $source
-            })
-        """
-        
-        # Update params with converted timestamps
-        params_with_timestamps = params.copy()
-        params_with_timestamps['created_at'] = created_at
-        params_with_timestamps['updated_at'] = updated_at
-        
-        conn.execute(query, params_with_timestamps)
-        print(json.dumps({"success": True, "node": params}))
-        
-    elif command == "create_edge":
-        # Convert timestamps to proper format for KuzuDB
-        from datetime import datetime
-        
-        # Parse and convert timestamps
-        created_at = datetime.fromisoformat(params['created_at'].replace('Z', '+00:00'))
-        updated_at = datetime.fromisoformat(params['updated_at'].replace('Z', '+00:00'))
-        
-        query = """
-            MATCH (a:GraphNode {id: $from_node_id}), (b:GraphNode {id: $to_node_id})
-            CREATE (a)-[r:CONNECTS {
-                edge_id: $edge_id,
-                workspace_id: $workspace_id,
-                relationship_type: $relationship_type,
-                weight: $weight,
-                metadata: $metadata,
-                created_by: $created_by,
-                created_at: $created_at,
-                updated_at: $updated_at
-            }]->(b)
-        """
-        
-        # Update params with converted timestamps
-        params_with_timestamps = params.copy()
-        params_with_timestamps['created_at'] = created_at
-        params_with_timestamps['updated_at'] = updated_at
-        
-        conn.execute(query, params_with_timestamps)
-        print(json.dumps({"success": True, "edge": params}))
-        
-    elif command == "get_workspace_graph":
-        # Get nodes
-        nodes_query = """
-            MATCH (n:GraphNode)
-            WHERE n.workspace_id = $workspace_id
-            RETURN n.id as id, n.workspace_id as workspace_id, n.name as name, 
-                   n.description as description, n.node_type as node_type,
-                   n.position_x as position_x, n.position_y as position_y,
-                   n.size as size, n.color as color, n.metadata as metadata,
-                   n.created_by as created_by, n.created_at as created_at,
-                   n.updated_at as updated_at, n.source as source
-        """
-        nodes_result = conn.execute(nodes_query, params)
-        nodes = []
-        while nodes_result.has_next():
-            row = nodes_result.get_next()
-            nodes.append({
-                "id": row[0],
-                "workspace_id": row[1],
-                "name": row[2],
-                "description": row[3],
-                "node_type": row[4],
-                "position_x": row[5],
-                "position_y": row[6],
-                "size": row[7],
-                "color": row[8],
-                "metadata": row[9],
-                "created_by": row[10],
-                "created_at": row[11].isoformat() if row[11] else None,
-                "updated_at": row[12].isoformat() if row[12] else None,
-                "source": row[13]
-            })
-        
-        # Get edges
-        edges_query = """
-            MATCH (a:GraphNode)-[r:CONNECTS]->(b:GraphNode)
-            WHERE r.workspace_id = $workspace_id
-            RETURN r.edge_id as id, r.workspace_id as workspace_id,
-                   a.id as from_node_id, b.id as to_node_id,
-                   r.relationship_type as relationship_type, r.weight as weight,
-                   r.metadata as metadata, r.created_by as created_by,
-                   r.created_at as created_at, r.updated_at as updated_at
-        """
-        edges_result = conn.execute(edges_query, params)
-        edges = []
-        while edges_result.has_next():
-            row = edges_result.get_next()
-            edges.append({
-                "id": row[0],
-                "workspace_id": row[1],
-                "from_node_id": row[2],
-                "to_node_id": row[3],
-                "relationship_type": row[4],
-                "weight": row[5],
-                "metadata": row[6],
-                "created_by": row[7],
-                "created_at": row[8].isoformat() if row[8] else None,
-                "updated_at": row[9].isoformat() if row[9] else None
-            })
-        
-        print(json.dumps({"success": True, "nodes": nodes, "edges": edges}))
-        
-    elif command == "delete_node":
-        # Delete edges first
-        conn.execute("""
-            MATCH (a:GraphNode)-[r:CONNECTS]-(b:GraphNode)
-            WHERE a.id = $nodeId OR b.id = $nodeId
-            DELETE r
-        """, params)
-        
-        # Delete node
-        conn.execute("""
-            MATCH (n:GraphNode {id: $nodeId})
-            DELETE n
-        """, params)
-        
-        print(json.dumps({"success": True}))
-        
-    elif command == "delete_edge":
-        conn.execute("""
-            MATCH ()-[r:CONNECTS {edge_id: $edgeId}]->()
-            DELETE r
-        """, params)
-        print(json.dumps({"success": True}))
-        
-    elif command == "clear_workspace":
-        # Delete edges
-        conn.execute("""
-            MATCH ()-[r:CONNECTS]->()
-            WHERE r.workspace_id = $workspace_id
-            DELETE r
-        """, params)
-        
-        # Delete nodes
-        conn.execute("""
-            MATCH (n:GraphNode)
-            WHERE n.workspace_id = $workspace_id
-            DELETE n
-        """, params)
-        
-        print(json.dumps({"success": True}))
-        
-    else:
-        print(json.dumps({"error": "Unknown command"}))
-        
-except Exception as e:
-    print(json.dumps({"error": str(e)}))
-finally:
-    conn.close()
-    db.close()
-`;
-
-    const python = spawn(PYTHON_PATH, ['-c', pythonScript]);
-    let output = '';
-    let error = '';
-
-    python.stdout.on('data', (data) => {
-      output += data.toString();
+// Helper function to execute KuzuDB Cypher queries via HTTP
+async function executeKuzuQuery(query: string, parameters: Record<string, any> = {}): Promise<any> {
+  try {
+    const response = await fetch(`${KUZU_DB_URL}/cypher`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, parameters }),
     });
 
-    python.stderr.on('data', (data) => {
-      error += data.toString();
-    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`KuzuDB query failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
 
-    python.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Python process failed with code ${code}: ${error}`));
-        return;
-      }
-
-      try {
-        const result = JSON.parse(output.trim());
-        if (result.error) {
-          reject(new Error(result.error));
-        } else {
-          resolve(result);
-        }
-      } catch (e) {
-        reject(new Error(`Failed to parse Python output: ${output}`));
-      }
-    });
-  });
+    return await response.json();
+  } catch (error) {
+    logger.error(error, `Failed to execute KuzuDB query: ${query}`);
+    throw error;
+  }
 }
 
 // Test kuzu availability on startup
 let kuzuAvailable = false;
 (async () => {
   try {
-    await executeKuzuCommand('create_schema');
+    // Just test connection without creating schema
+    await executeKuzuQuery('MATCH (n) RETURN count(n) as nodeCount LIMIT 1');
     kuzuAvailable = true;
-    logger.info('KuzuDB (Python) successfully initialized');
+    logger.info('KuzuDB (HTTP) connection established');
   } catch (error) {
-    logger.error(error, 'Failed to initialize KuzuDB (Python)');
+    logger.warn('KuzuDB (HTTP) not available - will operate in read-only mode');
+    kuzuAvailable = false;
   }
 })();
 
@@ -371,7 +127,24 @@ class KuzuGraphService {
         source: nodeWithTimestamps.source,
       };
 
-      await executeKuzuCommand('create_node', params);
+      const nodeType = nodeWithTimestamps.node_type;
+      const properties = schema[nodeType];
+      const queryParts: string[] = [];
+      const queryParams: Record<string, any> = {};
+
+      for (const propName in properties) {
+        if (propName.includes('PRIMARY KEY')) {
+          const actualPropName = propName.replace(' PRIMARY KEY', '').trim();
+          queryParts.push(`${actualPropName}: $${actualPropName}`);
+          queryParams[actualPropName] = (nodeWithTimestamps as any)[actualPropName];
+        } else {
+          queryParts.push(`${propName}: $${propName}`);
+          queryParams[propName] = (nodeWithTimestamps as any)[propName];
+        }
+      }
+      
+      const createNodeQuery = `CREATE (n:${nodeType} {${queryParts.join(', ')}})`;
+      await executeKuzuQuery(createNodeQuery, queryParams);
       logger.info(`Created node ${nodeWithTimestamps.id} in KuzuDB`);
       return nodeWithTimestamps;
     } catch (error) {
@@ -409,7 +182,20 @@ class KuzuGraphService {
         updated_at: edgeWithTimestamps.updated_at,
       };
 
-      await executeKuzuCommand('create_edge', params);
+      const edgeProperties = schema['Relation'];
+      const queryParts: string[] = [];
+      const queryParams: Record<string, any> = {};
+
+      for (const propName in edgeProperties) {
+        if (propName === 'FROM' || propName === 'TO' || propName.includes('PRIMARY KEY')) continue;
+        queryParts.push(`${propName}: $${propName}`);
+        queryParams[propName] = (edgeWithTimestamps as any)[propName];
+      }
+      queryParams['from_node_id'] = edgeWithTimestamps.from_node_id;
+      queryParams['to_node_id'] = edgeWithTimestamps.to_node_id;
+
+      const createEdgeQuery = `MATCH (a:${edgeWithTimestamps.from_node_id} {id: $from_node_id}), (b:${edgeWithTimestamps.to_node_id} {id: $to_node_id}) CREATE (a)-[r:CONNECTS {${queryParts.join(', ')}}]->(b)`;
+      await executeKuzuQuery(createEdgeQuery, queryParams);
       logger.info(`Created edge ${edgeWithTimestamps.id} in KuzuDB`);
       return edgeWithTimestamps;
     } catch (error) {
@@ -427,17 +213,44 @@ class KuzuGraphService {
     }
 
     try {
-      const result = await executeKuzuCommand('get_workspace_graph', { workspace_id: workspaceId });
-      
-      const nodes: KuzuGraphNode[] = result.nodes.map((node: any) => ({
-        ...node,
-        metadata: JSON.parse(node.metadata || '{}'),
-      }));
+      const nodesResult = await executeKuzuQuery('MATCH (n) WHERE n.workspace_id = $workspace_id RETURN n as nodeData', { workspace_id: workspaceId });
+      const edgesResult = await executeKuzuQuery('MATCH (a)-[r:CONNECTS]->(b) WHERE r.workspace_id = $workspace_id RETURN r as edgeData, a.id as sourceId, b.id as targetId', { workspace_id: workspaceId });
 
-      const edges: KuzuGraphEdge[] = result.edges.map((edge: any) => ({
-        ...edge,
-        metadata: JSON.parse(edge.metadata || '{}'),
-      }));
+      const nodes: KuzuGraphNode[] = nodesResult.rows.map((row: any) => {
+        const node = row.nodeData;
+        return {
+          id: node.id,
+          workspace_id: node.workspace_id,
+          name: node.name,
+          description: node.description,
+          node_type: node.node_type,
+          position_x: node.position_x,
+          position_y: node.position_y,
+          size: node.size,
+          color: node.color,
+          metadata: JSON.parse(node.metadata || '{}'),
+          created_by: node.created_by,
+          created_at: node.created_at,
+          updated_at: node.updated_at,
+          source: node.source,
+        };
+      });
+
+      const edges: KuzuGraphEdge[] = edgesResult.rows.map((row: any) => {
+        const edge = row.edgeData;
+        return {
+          id: edge.id,
+          workspace_id: edge.workspace_id,
+          from_node_id: row.sourceId,
+          to_node_id: row.targetId,
+          relationship_type: edge.relationship_type,
+          weight: edge.weight,
+          metadata: JSON.parse(edge.metadata || '{}'),
+          created_by: edge.created_by,
+          created_at: edge.created_at,
+          updated_at: edge.updated_at,
+        };
+      });
 
       logger.info(`Retrieved ${nodes.length} nodes and ${edges.length} edges for workspace ${workspaceId}`);
       return { nodes, edges };
@@ -456,7 +269,7 @@ class KuzuGraphService {
     }
 
     try {
-      await executeKuzuCommand('delete_node', { nodeId });
+      await executeKuzuQuery('MATCH (n) WHERE n.id = $nodeId DELETE n', { nodeId });
       logger.info(`Deleted node ${nodeId} from KuzuDB`);
     } catch (error) {
       logger.error(error, `Failed to delete node ${nodeId} from KuzuDB`);
@@ -473,7 +286,7 @@ class KuzuGraphService {
     }
 
     try {
-      await executeKuzuCommand('delete_edge', { edgeId });
+      await executeKuzuQuery('MATCH ()-[r:CONNECTS]->(b) WHERE r.edge_id = $edgeId DELETE r', { edgeId });
       logger.info(`Deleted edge ${edgeId} from KuzuDB`);
     } catch (error) {
       logger.error(error, `Failed to delete edge ${edgeId} from KuzuDB`);
@@ -490,10 +303,135 @@ class KuzuGraphService {
     }
 
     try {
-      await executeKuzuCommand('clear_workspace', { workspace_id: workspaceId });
+      await executeKuzuQuery('MATCH (n) WHERE n.workspace_id = $workspace_id DETACH DELETE n', { workspace_id: workspaceId });
       logger.info(`Cleared all graph data for workspace ${workspaceId}`);
     } catch (error) {
       logger.error(error, `Failed to clear graph for workspace ${workspaceId}`);
+      throw error;
+    }
+  }
+
+  // Get ALL entities without permission filtering - for debugging
+  async getAllEntities(): Promise<{ nodes: any[], relations: any[] }> {
+    this.ensureInitialized();
+
+    if (!kuzuAvailable) {
+      logger.warn('KuzuDB not available');
+      return { nodes: [], relations: [] };
+    }
+
+    try {
+      const allNodes: any[] = [];
+      
+      // Query each entity type separately from the schema
+      const entityTypes = ['Person', 'Team', 'Organization', 'Project', 'Repository', 'Branch', 'CodeChangeRequest', 'Issue', 'Event', 'Topic'];
+      
+      for (const entityType of entityTypes) {
+        try {
+          const entityQuery = `MATCH (n:${entityType}) RETURN n, "${entityType}" as nodeType LIMIT 100`;
+          const entityResult = await executeKuzuQuery(entityQuery, {});
+          
+          if (entityResult.rows && entityResult.rows.length > 0) {
+            // Add entity type to each node - handle different response structures
+            const nodesWithType = entityResult.rows.map((row: any) => {
+              const nodeData = row.n || row[0] || row;
+              const actualType = row.nodeType || entityType;
+              return {
+                ...nodeData,
+                _actualKuzuType: actualType,
+                _label: actualType
+              };
+            });
+            allNodes.push(...nodesWithType);
+          }
+        } catch (entityError) {
+          logger.warn(`Failed to query ${entityType}: ${entityError}`);
+        }
+      }
+
+      // Get all relations
+      const relationsQuery = `MATCH (a)-[r]->(b) RETURN r, a.name as source, b.name as target`;
+      const relationsResult = await executeKuzuQuery(relationsQuery, {});
+
+      const relations = relationsResult.rows || [];
+      
+      logger.info(`Total nodes: ${allNodes.length}, Total relations: ${relations.length}`);
+      
+      return { nodes: allNodes, relations };
+    } catch (error) {
+      logger.error(error, `Failed to retrieve all entities`);
+      throw error;
+    }
+  }
+
+  // Fetch all nodes and relations based on permissions - query each entity type separately
+  async getAllDataByPermission(permission: string): Promise<{ nodes: any[], relations: any[] }> {
+    this.ensureInitialized();
+
+    if (!kuzuAvailable) {
+      logger.warn('KuzuDB not available');
+      return { nodes: [], relations: [] };
+    }
+
+
+    try {
+      // Use a single query to get all nodes with the permission filter - try with COUNT first to test
+      const testQuery = `MATCH (n) WHERE '${permission}' IN n.permissions RETURN count(n) as nodeCount`;
+      logger.info(`Testing count query: ${testQuery}`);
+      
+      let nodeResult;
+      try {
+        const testResult = await executeKuzuQuery(testQuery, {});
+        logger.info(`Count query result: ${JSON.stringify(testResult)}`);
+        
+        // If count works, try the full query with limit to avoid size issues
+        const nodeQuery = `MATCH (n) WHERE '${permission}' IN n.permissions RETURN n as node LIMIT 100`;
+        logger.info(`Executing full node query: ${nodeQuery}`);
+        nodeResult = await executeKuzuQuery(nodeQuery, {});
+        logger.info(`Node query returned ${nodeResult.rows?.length || 0} results`);
+      } catch (queryError) {
+        logger.error(`Query failed: ${queryError}`);
+        nodeResult = { rows: [] };
+      }
+      
+      const allNodes = (nodeResult.rows || []).map((row: any) => {
+        const nodeData = row.node;
+        const actualType = nodeData._label || 'entity';
+        
+        return {
+          ...nodeData,
+          _actualKuzuType: actualType,
+          _label: actualType
+        };
+      });
+
+      // Fetch all relations with a single query
+      const relationQuery = `MATCH (a)-[r]->(b) WHERE '${permission}' IN r.permissions RETURN r, a.name as source, b.name as target`;
+      let relationsResult;
+      try {
+        relationsResult = await executeKuzuQuery(relationQuery, {});
+      } catch (relationError) {
+        logger.warn(`Relations query failed: ${relationError}`);
+        relationsResult = { rows: [] };
+      }
+
+      const relations = relationsResult.rows || [];
+      
+      // Debug: Check if any nodes have permissions field and what values they contain
+      if (allNodes.length > 0) {
+        const nodeWithPermissions = allNodes.find((node: { permissions: string | any[]; }) => node.permissions && node.permissions.length > 0);
+        if (nodeWithPermissions) {
+          logger.info(`Sample permissions found: ${JSON.stringify(nodeWithPermissions.permissions)} (searching for: ${permission})`);
+        } else {
+          logger.warn(`No nodes have permissions field or all permissions arrays are empty`);
+        }
+      }
+      
+      logger.info(`Found ${allNodes.length} nodes and ${relations.length} relations for permission: ${permission}`);
+      
+      return { nodes: allNodes, relations };
+    } catch (error) {
+      logger.error(error, `Failed to retrieve data for permission: ${permission}`);
       throw error;
     }
   }

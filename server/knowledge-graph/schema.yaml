@@ -1,0 +1,150 @@
+# ==================== PEOPLE & ORGANIZATION ====================
+Person:
+  name: STRING PRIMARY KEY
+  emails: STRING[]
+  role: STRING[]
+  aliases: STRING[]
+  sourceSystemId: STRING
+  worksAt: STRING                # organization/company person works at
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]              # list of doc/mail/thread IDs
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+Team:
+  name: STRING PRIMARY KEY
+  aliases: STRING[]
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  permissions: STRING[]          # email addresses from permissions field
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+Organization:
+  name: STRING PRIMARY KEY
+  domain: STRING
+  aliases: STRING[]
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  industry: STRING
+  location: STRING[]
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+# ==================== PROJECTS & WORK ====================
+Project:
+  name: STRING PRIMARY KEY
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  status: STRING
+  startDate: DATE
+  aliases: STRING[]
+  endDate: DATE
+  client: STRING
+  tags: STRING[]
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+# ==================== CODE & DEVELOPMENT ====================
+Repository:
+  name: STRING PRIMARY KEY
+  url: STRING
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  language: STRING
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+Branch:
+  name: STRING PRIMARY KEY
+  repo: STRING
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  createdBy: STRING
+  createdAt: STRING
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+CodeChangeRequest:   # PullRequest / MergeRequest / CodeReview combined
+  entity_id: STRING PRIMARY KEY
+  title: STRING
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  status: STRING
+  author: STRING
+  reviewers: STRING[]             # list of Person.entity_id
+  repo: STRING
+  branch: STRING
+  createdAt: STRING
+  mergedAt: STRING
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+Issue:
+  entity_id: STRING PRIMARY KEY
+  id: STRING
+  name: STRING
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  status: STRING
+  reporter: STRING
+  assignees: STRING[]
+  labels: STRING[]
+  createdAt: STRING
+  closedAt: STRING
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+Event:
+  name: STRING PRIMARY KEY
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  type: STRING
+  startTime: STRING
+  linkedProject: STRING
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+Topic:
+  name: STRING PRIMARY KEY
+  keywords: STRING[]
+  aliases: STRING[]
+  relatedThreads: STRING[]
+  rawDescriptions: STRING[]      # direct extracted text from docs/mails
+  cleanDescription: STRING       # cleaned/normalized description
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  lastUpdated: STRING
+  embedding: DOUBLE[]
+
+# ==================== RELATIONSHIPS ====================
+# Generic Relation type to connect any two entities
+Relation:
+  FROM: ANY
+  TO: ANY
+  relation_id: STRING PRIMARY KEY
+  description: STRING[]
+  relationTag: STRING[]
+  type: STRING
+  strength: FLOAT
+  permissions: STRING[]          # email addresses from permissions field
+  sources: STRING[]
+  createdAt: STRING
+  lastUpdated: STRING
+  embedding: DOUBLE[]

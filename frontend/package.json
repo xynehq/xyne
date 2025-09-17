@@ -38,7 +38,6 @@
     "d3-zoom": "^3.0.0",
     "date-fns": "^4.1.0",
     "docx-preview": "^0.3.5",
-    "date-fns": "^4.1.0",
     "dompurify": "^3.2.6",
     "graphology": "^0.26.0",
     "graphology-layout-forceatlas2": "^0.10.1",

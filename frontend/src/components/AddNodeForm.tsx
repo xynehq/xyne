@@ -44,7 +44,7 @@ export const AddNodeForm: React.FC<AddNodeFormProps> = ({ onNodeAdd, onCancel })
       setFormData({
         name: '',
         description: '',
-        type: 'concept',
+        type: 'Topic',
         metadata: '{}'
       });
     } catch (error) {

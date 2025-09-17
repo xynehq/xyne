@@ -18,6 +18,7 @@ import { Route as OauthSuccessImport } from './routes/oauth/success'
 import { Route as AuthenticatedTuningImport } from './routes/_authenticated/tuning'
 import { Route as AuthenticatedSearchImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedKnowledgeManagementImport } from './routes/_authenticated/knowledgeManagement'
+import { Route as AuthenticatedKnowledgeGraphImport } from './routes/_authenticated/knowledge-graph'
 import { Route as AuthenticatedDashboardImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedChatImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedApiKeyImport } from './routes/_authenticated/api-key'
@@ -76,6 +77,13 @@ const AuthenticatedKnowledgeManagementRoute =
   AuthenticatedKnowledgeManagementImport.update({
     id: '/knowledgeManagement',
     path: '/knowledgeManagement',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
+const AuthenticatedKnowledgeGraphRoute =
+  AuthenticatedKnowledgeGraphImport.update({
+    id: '/knowledge-graph',
+    path: '/knowledge-graph',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -232,6 +240,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/knowledge-graph': {
+      id: '/_authenticated/knowledge-graph'
+      path: '/knowledge-graph'
+      fullPath: '/knowledge-graph'
+      preLoaderRoute: typeof AuthenticatedKnowledgeGraphImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/knowledgeManagement': {
       id: '/_authenticated/knowledgeManagement'
       path: '/knowledgeManagement'
@@ -372,6 +387,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedApiKeyRoute: typeof AuthenticatedApiKeyRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedKnowledgeGraphRoute: typeof AuthenticatedKnowledgeGraphRoute
   AuthenticatedKnowledgeManagementRoute: typeof AuthenticatedKnowledgeManagementRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
@@ -394,6 +410,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedApiKeyRoute: AuthenticatedApiKeyRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedKnowledgeGraphRoute: AuthenticatedKnowledgeGraphRoute,
   AuthenticatedKnowledgeManagementRoute: AuthenticatedKnowledgeManagementRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedTuningRoute: AuthenticatedTuningRoute,
@@ -427,6 +444,7 @@ export interface FileRoutesByFullPath {
   '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/knowledge-graph': typeof AuthenticatedKnowledgeGraphRoute
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
@@ -452,6 +470,7 @@ export interface FileRoutesByTo {
   '/api-key': typeof AuthenticatedApiKeyRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/knowledge-graph': typeof AuthenticatedKnowledgeGraphRoute
   '/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tuning': typeof AuthenticatedTuningRoute
@@ -479,6 +498,7 @@ export interface FileRoutesById {
   '/_authenticated/api-key': typeof AuthenticatedApiKeyRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/knowledge-graph': typeof AuthenticatedKnowledgeGraphRoute
   '/_authenticated/knowledgeManagement': typeof AuthenticatedKnowledgeManagementRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/tuning': typeof AuthenticatedTuningRoute
@@ -507,6 +527,7 @@ export interface FileRouteTypes {
     | '/api-key'
     | '/chat'
     | '/dashboard'
+    | '/knowledge-graph'
     | '/knowledgeManagement'
     | '/search'
     | '/tuning'
@@ -531,6 +552,7 @@ export interface FileRouteTypes {
     | '/api-key'
     | '/chat'
     | '/dashboard'
+    | '/knowledge-graph'
     | '/knowledgeManagement'
     | '/search'
     | '/tuning'
@@ -556,6 +578,7 @@ export interface FileRouteTypes {
     | '/_authenticated/api-key'
     | '/_authenticated/chat'
     | '/_authenticated/dashboard'
+    | '/_authenticated/knowledge-graph'
     | '/_authenticated/knowledgeManagement'
     | '/_authenticated/search'
     | '/_authenticated/tuning'
@@ -610,6 +633,7 @@ export const routeTree = rootRoute
         "/_authenticated/api-key",
         "/_authenticated/chat",
         "/_authenticated/dashboard",
+        "/_authenticated/knowledge-graph",
         "/_authenticated/knowledgeManagement",
         "/_authenticated/search",
         "/_authenticated/tuning",
@@ -647,6 +671,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/dashboard": {
       "filePath": "_authenticated/dashboard.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/knowledge-graph": {
+      "filePath": "_authenticated/knowledge-graph.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/knowledgeManagement": {

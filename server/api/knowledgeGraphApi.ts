@@ -22,7 +22,7 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
 
 const { JwtPayloadKey } = config
 
-type NodeType = 'collection' | 'folder' | 'file' | 'concept' | 'seed' | 'person' | 'company' | 'project' | 'document' | 'event' | 'tool' | 'entity' | 'relation'
+type NodeType = 'Person' | 'Team' | 'Organization' | 'Project' | 'Repository' | 'Branch' | 'CodeChangeRequest' | 'Issue' | 'Event' | 'Topic' | 'Relation'
 
 interface GraphNode {
   id: string
@@ -49,9 +49,10 @@ interface GraphData {
   edges: GraphEdge[]
 }
 
-// Generate hybrid knowledge graph data from file system + KuzuDB
+// Get knowledge graph data from KuzuDB with permission filtering
 export const GetKnowledgeGraphDataApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
+  const permission = c.req.query('permission')
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)
@@ -60,27 +61,28 @@ export const GetKnowledgeGraphDataApi = async (c: Context) => {
   }
   const user = users[0]
 
+  // If no permission provided, return empty graph
+  if (!permission) {
+    loggerWithChild({ email: userEmail }).info("No permission provided, returning empty graph")
+    return c.json({
+      nodes: [],
+      edges: []
+    })
+  }
+
   try {
-    loggerWithChild({ email: userEmail }).info("Starting to fetch knowledge graph data")
+    loggerWithChild({ email: userEmail }).info(`Fetching knowledge graph data for permission: ${permission}`)
     
     const kuzuService = getKuzuGraphService()
     
-    // Get persisted graph data from KuzuDB with error handling
-    let persistedGraph: { nodes: KuzuGraphNode[], edges: KuzuGraphEdge[] } = { nodes: [], edges: [] }
+    // Get permission-filtered data from KuzuDB
+    let kuzuData: { nodes: any[], relations: any[] } = { nodes: [], relations: [] }
     try {
-      persistedGraph = await kuzuService.getWorkspaceGraph(user.workspaceExternalId)
-      loggerWithChild({ email: userEmail }).info(`Retrieved ${persistedGraph.nodes.length} persisted nodes from KuzuDB`)
+      kuzuData = await kuzuService.getAllDataByPermission(permission)
+      loggerWithChild({ email: userEmail }).info(`Retrieved ${kuzuData.nodes.length} nodes and ${kuzuData.relations.length} relations for permission: ${permission}`)
+      
     } catch (kuzuError) {
-      loggerWithChild({ email: userEmail }).warn(`KuzuDB error, continuing with empty persisted graph: ${getErrorMessage(kuzuError)}`)
-    }
-    
-    // Get file system data for hybrid approach
-    let userCollections: any[] = []
-    try {
-      userCollections = await getAccessibleCollections(db, user.id)
-      loggerWithChild({ email: userEmail }).info(`Retrieved ${userCollections.length} collections`)
-    } catch (dbError) {
-      loggerWithChild({ email: userEmail }).warn(`Database error getting collections: ${getErrorMessage(dbError)}`)
+      loggerWithChild({ email: userEmail }).warn(`KuzuDB error: ${getErrorMessage(kuzuError)}`)
     }
     
     const graphData: GraphData = {
@@ -88,245 +90,92 @@ export const GetKnowledgeGraphDataApi = async (c: Context) => {
       edges: []
     }
     
-    // Add persisted custom nodes first
-    graphData.nodes = persistedGraph.nodes.map(kuzuNode => ({
-      id: kuzuNode.id,
-      name: kuzuNode.name,
-      description: kuzuNode.description || '',
-      type: kuzuNode.node_type as NodeType,
-      metadata: kuzuNode.metadata,
-      x: kuzuNode.position_x,
-      y: kuzuNode.position_y,
-      size: kuzuNode.size,
-      color: kuzuNode.color
-    }))
-    
-    // Add persisted custom edges
-    graphData.edges = persistedGraph.edges.map(kuzuEdge => ({
-      id: kuzuEdge.id,
-      from: kuzuEdge.from_node_id,
-      to: kuzuEdge.to_node_id,
-      relationship: kuzuEdge.relationship_type,
-      weight: kuzuEdge.weight,
-      metadata: kuzuEdge.metadata
-    }))
-
-    // Add file system derived nodes (only if not already in KuzuDB)
-    const existingNodeIds = new Set(graphData.nodes.map(n => n.id))
-    
-    for (const collection of userCollections) {
-      const collectionNodeId = `collection_${collection.id}`
+    // Convert KuzuDB nodes to graph format
+    graphData.nodes = kuzuData.nodes.map((node: any) => {
+      // Extract node data - KuzuDB returns data in 'n' property for object format
+      const nodeData = node.n || node[0] || node;
       
-      if (!existingNodeIds.has(collectionNodeId)) {
-        const collectionNode: GraphNode = {
-          id: collectionNodeId,
-          name: collection.name,
-          description: collection.description || "Knowledge Base Collection",
-          type: 'collection',
-          metadata: {
-            collectionId: collection.id,
-            isPrivate: collection.isPrivate,
-            createdAt: collection.createdAt,
-            itemCount: 0, // Will be updated below
-            source: 'file_system',
-            ...(collection.metadata || {})
-          }
-        }
-        graphData.nodes.push(collectionNode)
-      }
-
-      // Get all items in this collection (files and folders)
-      const allItems = await db
-        .select()
-        .from(collectionItems)
-        .where(
-          and(
-            eq(collectionItems.collectionId, collection.id),
-            isNull(collectionItems.deletedAt)
-          )
-        )
-
-      // Update collection metadata with item count
-      const collectionNode = graphData.nodes.find(n => n.id === collectionNodeId)
-      if (collectionNode) {
-        collectionNode.metadata.itemCount = allItems.length
-      }
-
-      // Create nodes for folders and files (only if not in KuzuDB)
-      const folderNodes = new Map<string, GraphNode>()
-      const fileNodes = new Map<string, GraphNode>()
-
-      for (const item of allItems) {
-        if (item.type === 'folder') {
-          const folderNodeId = `folder_${item.id}`
-          
-          if (!existingNodeIds.has(folderNodeId)) {
-            const folderNode: GraphNode = {
-              id: folderNodeId,
-              name: item.name,
-              description: `Folder in ${collection.name}`,
-              type: 'folder',
-              metadata: {
-                itemId: item.id,
-                collectionId: collection.id,
-                parentId: item.parentId,
-                path: item.path,
-                createdAt: item.createdAt,
-                source: 'file_system',
-                ...(item.metadata || {})
-              }
-            }
-            graphData.nodes.push(folderNode)
-          }
-          folderNodes.set(item.id, graphData.nodes.find(n => n.id === folderNodeId)!)
-
-          const folderNode = graphData.nodes.find(n => n.id === folderNodeId)
-          if (folderNode) {
-            // Connect folder to collection or parent folder
-            const parentNodeId = item.parentId ? 
-              (folderNodes.has(item.parentId) ? `folder_${item.parentId}` : `collection_${collection.id}`) :
-              `collection_${collection.id}`
-
-            graphData.edges.push({
-              id: `edge_${createId()}`,
-              from: parentNodeId,
-              to: folderNode.id,
-              relationship: 'contains',
-              metadata: { type: 'folder_relationship' }
-            })
-          }
-
-        } else if (item.type === 'file') {
-          const fileNodeId = `file_${item.id}`
-          
-          if (!existingNodeIds.has(fileNodeId)) {
-            const fileNode: GraphNode = {
-              id: fileNodeId,
-              name: item.name,
-              description: `File in ${collection.name}`,
-              type: 'file',
-              metadata: {
-                itemId: item.id,
-                collectionId: collection.id,
-                parentId: item.parentId,
-                path: item.path,
-                mimeType: item.mimeType,
-                fileSize: item.fileSize,
-                createdAt: item.createdAt,
-                source: 'file_system',
-                ...(item.metadata || {})
-              }
-            }
-            graphData.nodes.push(fileNode)
-          }
-          fileNodes.set(item.id, graphData.nodes.find(n => n.id === fileNodeId)!)
-
-          const fileNode = graphData.nodes.find(n => n.id === fileNodeId)
-          if (fileNode) {
-            // Connect file to collection or parent folder
-            const parentNodeId = item.parentId ? 
-              (folderNodes.has(item.parentId) ? `folder_${item.parentId}` : `collection_${collection.id}`) :
-              `collection_${collection.id}`
-
-            graphData.edges.push({
-              id: `edge_${createId()}`,
-              from: parentNodeId,
-              to: fileNode.id,
-              relationship: 'contains',
-              metadata: { type: 'file_relationship' }
-            })
-          }
-        }
-      }
-    }
-
-    // Add conceptual relationships between collections if they share similar content
-    // This creates a more interconnected graph
-    for (let i = 0; i < userCollections.length; i++) {
-      for (let j = i + 1; j < userCollections.length; j++) {
-        const collection1 = userCollections[i]
-        const collection2 = userCollections[j]
-
-        // Simple heuristic: if collections have similar names or tags, connect them
-        const name1 = collection1.name.toLowerCase()
-        const name2 = collection2.name.toLowerCase()
-        
-        const hasCommonWords = name1.split(' ').some((word: string) => 
-          word.length > 3 && name2.includes(word)
-        )
-
-        if (hasCommonWords) {
-          graphData.edges.push({
-            id: `edge_${createId()}`,
-            from: `collection_${collection1.id}`,
-            to: `collection_${collection2.id}`,
-            relationship: 'related_to',
-            metadata: { 
-              type: 'collection_similarity',
-              reason: 'similar_naming'
-            }
-          })
-        }
-      }
-    }
-
-    // Add some conceptual nodes based on content types if we have files
-    const contentTypes = new Set<string>()
-    const conceptNodes = new Map<string, GraphNode>()
-
-    for (const node of graphData.nodes) {
-      if (node.type === 'file' && node.metadata.mimeType) {
-        const baseType = node.metadata.mimeType.split('/')[0]
-        contentTypes.add(baseType)
-      }
-    }
-
-    // Create concept nodes for content types
-    for (const contentType of contentTypes) {
-      const conceptNode: GraphNode = {
-        id: `concept_${contentType}`,
-        name: `${contentType.charAt(0).toUpperCase() + contentType.slice(1)} Content`,
-        description: `All ${contentType} files in your knowledge base`,
-        type: 'concept',
+      const detectedType = getNodeTypeFromEntity(nodeData);
+      
+      // Extract actual KuzuDB schema type from the node
+      const actualKuzuType = nodeData._label || nodeData.label || nodeData.type || nodeData.node_type || 'entity';
+      
+      return {
+        id: nodeData.id || nodeData.name || `node_${createId()}`,
+        name: nodeData.name || 'Unnamed Node',
+        description: createNodeDescription(nodeData),
+        type: actualKuzuType as NodeType,
         metadata: {
-          contentType,
-          conceptType: 'file_type'
+          ...node,
+          source: 'kuzu_db',
+          actualKuzuType: actualKuzuType, // Add actual KuzuDB schema type
+          permissions: nodeData.permissions || [],
+          lastUpdated: nodeData.lastUpdated,
+          rawDescriptions: nodeData.rawDescriptions,
+          detectedType: detectedType,
+          originalKuzuData: nodeData
+        },
+        x: nodeData.position_x || 0,
+        y: nodeData.position_y || 0,
+        size: nodeData.size || 15,
+        color: nodeData.color || getColorForNodeType(detectedType)
+      };
+    })
+    
+    // Convert KuzuDB Relation edges to graph edges
+    graphData.edges = kuzuData.relations.map((relationRow: any) => {
+      // Handle object-based response structure like {"r": {...}, "source": "...", "target": "..."}
+      const relationData = relationRow.r || relationRow[0] || relationRow;
+      
+      // Get source and target node names from the query results
+      const sourceName = relationRow.source;
+      const targetName = relationRow.target;
+      
+      // Find the corresponding node IDs by matching names
+      const sourceNode = graphData.nodes.find(node => node.name === sourceName);
+      const targetNode = graphData.nodes.find(node => node.name === targetName);
+      
+      const fromId = sourceNode?.id;
+      const toId = targetNode?.id;
+      
+      return {
+        id: relationData?.relation_id || `edge_${createId()}`,
+        from: fromId || '',
+        to: toId || '',
+        relationship: relationData?.type || relationData?.relationTag?.[0] || 'Relation',
+        metadata: {
+          ...relationData,
+          source: 'kuzu_db',
+          actualKuzuType: 'Relation',
+          permissions: relationData?.permissions || [],
+          strength: relationData?.strength,
+          description: relationData?.description?.[0] || '',
+          relationTag: relationData?.relationTag,
+          sources: relationData?.sources,
+          createdAt: relationData?.createdAt,
+          lastUpdated: relationData?.lastUpdated,
+          originalRelationRow: relationRow
         }
-      }
-      graphData.nodes.push(conceptNode)
-      conceptNodes.set(contentType, conceptNode)
+      };
+    }).filter((edge: any) => edge.from && edge.to) // Only include edges with valid from/to
 
-      // Connect files of this type to the concept
-      for (const node of graphData.nodes) {
-        if (node.type === 'file' && node.metadata.mimeType?.startsWith(contentType)) {
-          graphData.edges.push({
-            id: `edge_${createId()}`,
-            from: conceptNode.id,
-            to: node.id,
-            relationship: 'categorizes',
-            metadata: { type: 'content_type_relationship' }
-          })
-        }
-      }
-    }
-
-    // If no data was found, add a helpful starter node
+    // If no data was found, add a helpful message
     if (graphData.nodes.length === 0) {
       graphData.nodes.push({
-        id: 'starter_node',
-        name: 'Welcome to Knowledge Graph',
-        description: 'Start by creating your first custom node or uploading files to your Knowledge Base to see them appear here.',
-        type: 'seed',
+        id: 'no_permission_data',
+        name: 'No Data for Permission',
+        description: `No nodes found for permission "${permission}". Try a different permission value or add data to KuzuDB.`,
+        type: 'Issue',
         metadata: {
           source: 'system',
-          isStarter: true,
+          permission: permission,
           created: new Date().toISOString()
         }
       })
     }
 
     loggerWithChild({ email: userEmail }).info(
-      `Generated knowledge graph with ${graphData.nodes.length} nodes and ${graphData.edges.length} edges`,
+      `Generated knowledge graph with ${graphData.nodes.length} nodes and ${graphData.edges.length} edges for permission: ${permission}`,
     )
 
     return c.json(graphData)
@@ -334,18 +183,17 @@ export const GetKnowledgeGraphDataApi = async (c: Context) => {
     const errMsg = getErrorMessage(error)
     loggerWithChild({ email: userEmail }).error(
       error,
-      `Failed to generate knowledge graph data: ${errMsg}`,
+      `Failed to fetch knowledge graph data: ${errMsg}`,
     )
     
     // Return a minimal fallback response instead of throwing an error
-    loggerWithChild({ email: userEmail }).warn("Returning fallback knowledge graph data")
     return c.json({
       nodes: [
         {
           id: 'error_fallback',
           name: 'Knowledge Graph Unavailable',
           description: 'There was an issue loading your knowledge graph. Please try refreshing or contact support if the issue persists.',
-          type: 'seed',
+          type: 'Issue',
           metadata: {
             source: 'system',
             isError: true,
@@ -357,6 +205,130 @@ export const GetKnowledgeGraphDataApi = async (c: Context) => {
       edges: []
     })
   }
+}
+
+// Helper function to determine node type from KuzuDB entity
+function getNodeTypeFromEntity(entity: any): string {
+  // First, check if KuzuDB provides the node label/type directly
+  // KuzuDB may return node type as part of metadata or structure
+  if (entity._label) return mapKuzuSchemaToFrontendType(entity._label)
+  if (entity.label) return mapKuzuSchemaToFrontendType(entity.label)
+  if (entity.type) return mapKuzuSchemaToFrontendType(entity.type)
+  if (entity.node_type) return mapKuzuSchemaToFrontendType(entity.node_type)
+  
+  // Map KuzuDB schema entity types to frontend node types
+  // Based on schema.yaml: Person, Team, Organization, Project, Repository, Branch, CodeChangeRequest, Issue, Event, Topic, Relation
+  
+  // Person entities (have emails field)
+  if (entity.emails !== undefined) return 'person'
+  
+  // Organization entities (have domain field)  
+  if (entity.domain !== undefined) return 'company'
+  
+  // Project entities (have startDate/endDate)
+  if (entity.startDate !== undefined || entity.endDate !== undefined) return 'project'
+  
+  // Repository entities (have url and language)
+  if (entity.url !== undefined && entity.language !== undefined) return 'tool'
+  
+  // Issue entities (have status and reporter)
+  if (entity.status !== undefined && entity.reporter !== undefined) return 'document'
+  
+  // Event entities (have startTime)
+  if (entity.startTime !== undefined) return 'event'
+  
+  // Topic entities (have keywords)
+  if (entity.keywords !== undefined) return 'concept'
+  
+  // Branch entities (have repo and createdBy)
+  if (entity.repo !== undefined && entity.createdBy !== undefined) return 'document'
+  
+  // CodeChangeRequest entities (have title and author)
+  if (entity.title !== undefined && entity.author !== undefined) return 'document'
+  
+  // Team entities (generic entities with team-like properties)
+  if (entity.name && entity.cleanDescription) return 'entity'
+  
+  // Relation entities
+  if (entity.relationTag !== undefined || entity.relation_id !== undefined) return 'relation'
+  
+  // Default to entity for unknown types
+  return 'entity'
+}
+
+// Helper function to map KuzuDB schema types to frontend types
+function mapKuzuSchemaToFrontendType(kuzuType: string): string {
+  const typeMapping: Record<string, string> = {
+    // KuzuDB schema types -> Frontend types
+    'Person': 'person',
+    'Team': 'entity', 
+    'Organization': 'company',
+    'Project': 'project',
+    'Repository': 'tool',
+    'Branch': 'document',
+    'CodeChangeRequest': 'document',
+    'Issue': 'document', 
+    'Event': 'event',
+    'Topic': 'concept',
+    'Relation': 'relation'
+  }
+  
+  return typeMapping[kuzuType] || 'entity'
+}
+
+// Helper function to create comprehensive node description from all attributes
+function createNodeDescription(nodeData: any): string {
+  const parts: string[] = [];
+  
+  // Add main description if available
+  if (nodeData.description || nodeData.cleanDescription) {
+    parts.push(nodeData.description || nodeData.cleanDescription);
+  }
+  
+  // Add all other attributes except embeddings and certain system fields
+  const excludeFields = ['embedding', 'embeddings', 'id', 'name', 'description', 'cleanDescription'];
+  
+  for (const [key, value] of Object.entries(nodeData)) {
+    if (excludeFields.includes(key) || value === null || value === undefined) {
+      continue;
+    }
+    
+    // Format the value based on its type
+    let formattedValue: string;
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      formattedValue = value.join(', ');
+    } else if (typeof value === 'object') {
+      formattedValue = JSON.stringify(value);
+    } else {
+      formattedValue = String(value);
+    }
+    
+    // Add to description if not empty
+    if (formattedValue && formattedValue.trim()) {
+      parts.push(`${key}: ${formattedValue}`);
+    }
+  }
+  
+  return parts.join('\n') || 'No description available';
+}
+
+// Helper function to get color for node type
+function getColorForNodeType(nodeType: string): string {
+  const colors: Record<string, string> = {
+    'Person': '#F4A261',
+    'Team': '#1D3557', 
+    'Organization': '#2A9D8F',
+    'Project': '#E9C46A',
+    'Repository': '#8D99AE',
+    'Branch': '#90A955',
+    'CodeChangeRequest': '#F77F00',
+    'Issue': '#E63946',
+    'Event': '#F77F00',
+    'Topic': '#457B9D',
+    'Relation': '#ec4899'
+  }
+  return colors[nodeType] || '#6b7280'
 }
 
 // Create a new custom node and persist to KuzuDB
