@@ -33,5 +33,6 @@ jobs:
         working-directory: ./server
         env:
           HUSKY: 0
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bunx semantic-release --no-ci
 
