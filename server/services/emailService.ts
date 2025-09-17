@@ -13,21 +13,21 @@ interface EmailOptions {
 
 class SimpleEmailService {
   private sesClient: SESClient | null = null
-  private fromEmail: string = process.env.SES_FROM_EMAIL || "noreply@xyne.com"
+  private fromEmail: string = process.env.SES_FROM_EMAIL || "noreply@xyne.io"
 
   constructor() {
     Logger.info("📧 Initializing Email Service...")
 
-    if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    if (process.env.SES_AWS_ACCESS_KEY_ID && process.env.SES_AWS_SECRET_ACCESS_KEY) {
       try {
         this.sesClient = new SESClient({
-          region: process.env.AWS_REGION || "us-east-1",
+          region: process.env.SES_AWS_REGION || "us-east-1",
           credentials: {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            accessKeyId: process.env.SES_AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.SES_AWS_SECRET_ACCESS_KEY,
           },
         })
-        this.fromEmail = process.env.SES_FROM_EMAIL || "noreply@xyne.com"
+        this.fromEmail = process.env.SES_FROM_EMAIL || "noreply@xyne.io"
         Logger.info("✅ Email service initialized with AWS credentials")
       } catch (error) {
         Logger.error("❌ Failed to initialize SES client:", {
@@ -97,7 +97,7 @@ class SimpleEmailService {
       //   console.error("Error Code:", err.Code || err.code)
       //   console.error("HTTP Status:", err.$metadata?.httpStatusCode)
       //   console.error("Request ID:", err.$metadata?.requestId)
-      //   console.error("Region:", process.env.AWS_REGION)
+      //   console.error("Region:", process.env.SES_AWS_REGION)
       //   console.error("From Email:", this.fromEmail)
       //   console.error("To Email:", to)
       //   console.error("Full Error Object:", err)

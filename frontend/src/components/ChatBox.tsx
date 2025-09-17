@@ -14,7 +14,7 @@ import {
   Layers,
   Square,
   ChevronDown,
-  Infinity,
+  // Infinity,
   Check,
   Link,
   Search,
@@ -57,12 +57,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { SmartTooltip } from "@/components/ui/smart-tooltip"
 import { getIcon } from "@/lib/common"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
 import { DriveEntity } from "shared/types"
@@ -319,28 +314,6 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
-// Reusable tooltip wrapper component
-const TooltipWrapper: React.FC<{
-  children: React.ReactElement
-  content: string
-  delayDuration?: number
-}> = ({ children, content, delayDuration = 500 }) => (
-  <TooltipProvider delayDuration={delayDuration}>
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent
-        className="!bg-gray-900 dark:!bg-gray-800 !text-white !border-0 !px-3 !py-2 !text-xs !rounded-lg !shadow-lg !overflow-visible relative"
-        sideOffset={12}
-      >
-        <div className="relative">
-          <p className="!text-white !m-0">{content}</p>
-          <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-800" />
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-)
-
 export interface ChatBoxRef {
   sendMessage: (message: string) => void
   getCurrentModelConfig: () => string | null
@@ -396,7 +369,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       chatId,
       agentIdFromChatData, // Destructure new prop
       user, // Destructure user prop
-      setIsAgenticMode,
+      // setIsAgenticMode,
       isAgenticMode = false,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
@@ -2909,7 +2882,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           )}
 
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-            <TooltipWrapper content="attachment">
+            <SmartTooltip content="attachment">
               <Attach
                 className={`${
                   selectedFiles.length >= MAX_ATTACHMENTS
@@ -2927,7 +2900,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
                 }
               />
-            </TooltipWrapper>
+            </SmartTooltip>
 
             {showAdvancedOptions && (
               <>
@@ -2947,7 +2920,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   />
 
                   {/* Always show all three capability buttons */}
-                  <TooltipWrapper content="Reasoning">
+                  <SmartTooltip content="Reasoning">
                     <button
                       onClick={() => handleCapabilityChange("reasoning")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2958,9 +2931,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Atom size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
 
-                  <TooltipWrapper content="Web Search">
+                  <SmartTooltip content="Web Search">
                     <button
                       onClick={() => handleCapabilityChange("websearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2971,9 +2944,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Globe size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
 
-                  <TooltipWrapper content="Deep Thinking">
+                  <SmartTooltip content="Deep Thinking">
                     <button
                       onClick={() => handleCapabilityChange("deepResearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2984,7 +2957,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Brain size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
                 </div>
               </>
             )}
@@ -3536,7 +3509,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       Filter Sources
                     </DropdownMenuLabel>
                     {selectedSourcesCount > 0 ? (
-                      <TooltipWrapper content="Clear all" delayDuration={100}>
+                      <SmartTooltip content="Clear all" delayDuration={100}>
                         <button
                           onClick={handleClearAllSources}
                           className="p-1 rounded-full hover:bg-[#EDF2F7] dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
@@ -3544,7 +3517,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         >
                           <RotateCcw size={16} />
                         </button>
-                      </TooltipWrapper>
+                      </SmartTooltip>
                     ) : (
                       <button
                         className="p-1 rounded-full text-transparent"
@@ -3592,7 +3565,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {showAdvancedOptions && (
+            {/* {showAdvancedOptions && (
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -3612,7 +3585,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   Agent
                 </span>
               </button>
-            )}
+            )} */}
 
             {/* Model Selection Dropdown */}
             {(showAdvancedOptions || hideButtons) && (
