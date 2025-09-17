@@ -2272,7 +2272,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     </p>
                   ) : (
                     <p className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 text-center">
-                      Start typing to search citations from this chat.
+                      Start typing to search and attach documents for this chat.
                     </p>
                   )}
                 </>
