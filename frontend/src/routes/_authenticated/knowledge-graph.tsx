@@ -1,12 +1,12 @@
-import { createFileRoute, useRouterState } from '@tanstack/react-router';
-import { KnowledgeGraph } from '../../components/KnowledgeGraph';
-import { Sidebar } from '../../components/Sidebar';
-import { errorComponent } from '@/components/error';
+import { createFileRoute, useRouterState } from "@tanstack/react-router"
+import { KnowledgeGraph } from "../../components/KnowledgeGraph"
+import { Sidebar } from "../../components/Sidebar"
+import { errorComponent } from "@/components/error"
 
 const KnowledgeGraphPage = () => {
-  const matches = useRouterState({ select: (s) => s.matches });
-  const { user, agentWhiteList } = matches[matches.length - 1].context;
-  
+  const matches = useRouterState({ select: (s) => s.matches })
+  const { user, agentWhiteList } = matches[matches.length - 1].context
+
   return (
     <div className="h-full w-full flex dark:bg-[#1E1E1E]">
       <Sidebar
@@ -18,10 +18,10 @@ const KnowledgeGraphPage = () => {
         <KnowledgeGraph />
       </div>
     </div>
-  );
-};
+  )
+}
 
-export const Route = createFileRoute('/_authenticated/knowledge-graph')({
+export const Route = createFileRoute("/_authenticated/knowledge-graph")({
   component: KnowledgeGraphPage,
   errorComponent: errorComponent,
-});
+})

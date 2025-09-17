@@ -171,15 +171,14 @@ const notifySubscribers = (streamId: string) => {
   }
 }
 
-
 // Helper function to append reasoning data to stream state
 const appendReasoningData = (streamState: StreamState, data: string) => {
   try {
     const stepData = JSON.parse(data)
-    
+
     // If this is a valid reasoning step, add it as a new line
     if (stepData.step || stepData.text) {
-      streamState.thinking += data + '\n'
+      streamState.thinking += data + "\n"
     } else {
       // Fallback to simple text accumulation
       streamState.thinking += data
@@ -210,11 +209,22 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
               method: "POST",
               credentials: "include",
             })
-            
+
             if (!refresh.ok) {
-              const errorText = await refresh.text().catch(() => "Unknown error")
-              console.error("Token refresh failed:", refresh.status, refresh.statusText, errorText)
-              return reject(new Error(`Token refresh failed: ${refresh.status} ${refresh.statusText}`))
+              const errorText = await refresh
+                .text()
+                .catch(() => "Unknown error")
+              console.error(
+                "Token refresh failed:",
+                refresh.status,
+                refresh.statusText,
+                errorText,
+              )
+              return reject(
+                new Error(
+                  `Token refresh failed: ${refresh.status} ${refresh.statusText}`,
+                ),
+              )
             }
 
             console.log("Token refreshed successfully, retrying connection...")
@@ -222,11 +232,19 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
             setTimeout(() => make(), 100)
           } catch (error) {
             console.error("Error during token refresh:", error)
-            return reject(new Error(`Token refresh error: ${error instanceof Error ? error.message : 'Unknown error'}`))
+            return reject(
+              new Error(
+                `Token refresh error: ${error instanceof Error ? error.message : "Unknown error"}`,
+              ),
+            )
           }
         } else {
           console.error("SSE connection failed after refresh attempt")
-          reject(new Error("Connection failed after token refresh. Please try again or refresh the page."))
+          reject(
+            new Error(
+              "Connection failed after token refresh. Please try again or refresh the page.",
+            ),
+          )
         }
       }
     }
@@ -877,7 +895,6 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
-        
         appendReasoningData(streamState, event.data)
         patchReasoningContent(event.data)
       })

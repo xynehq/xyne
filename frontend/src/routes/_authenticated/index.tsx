@@ -152,8 +152,8 @@ const Index = () => {
   const searchParams = useSearch({ from: "/_authenticated/" })
 
   useEffect(() => {
-    setPersistedAgentId(searchParams.agentId || null);
-  }, [searchParams.agentId]);
+    setPersistedAgentId(searchParams.agentId || null)
+  }, [searchParams.agentId])
 
   useEffect(() => {
     if (!autocompleteQuery) {
@@ -247,8 +247,8 @@ const Index = () => {
       }
       // If agentId is provided, use it, otherwise use the persisted agent ID from the URL
       if (agentId || persistedAgentId) {
-        searchParams.agentId = agentId || persistedAgentId as string
-      } 
+        searchParams.agentId = agentId || (persistedAgentId as string)
+      }
       if (isAgenticMode) {
         searchParams.agentic = true
       }

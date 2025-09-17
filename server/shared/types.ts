@@ -261,27 +261,27 @@ export const FileResponseSchema = VespaFileSchema.pick({
   .strip()
 
 export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
-    docId: true,
-    fileName: true,
-    app: true,
-    entity: true,
-    createdBy: true,
-    updatedAt: true,
-    itemId: true,
-    clId: true,
-    mimeType: true,
+  docId: true,
+  fileName: true,
+  app: true,
+  entity: true,
+  createdBy: true,
+  updatedAt: true,
+  itemId: true,
+  clId: true,
+  mimeType: true,
+})
+  .extend({
+    app: z.literal(Apps.KnowledgeBase),
+    type: z.literal(KbItemsSchema),
+    chunk: z.string().optional(),
+    chunkIndex: z.number().optional(),
+    chunks_summary: z.array(scoredChunk).optional(),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(), // Add matchfeatures
+    rankfeatures: z.any().optional(),
   })
-    .extend({
-      app: z.literal(Apps.KnowledgeBase),
-      type: z.literal(KbItemsSchema),
-      chunk: z.string().optional(),
-      chunkIndex: z.number().optional(),
-      chunks_summary: z.array(scoredChunk).optional(),
-      relevance: z.number(),
-      matchfeatures: z.any().optional(), // Add matchfeatures
-      rankfeatures: z.any().optional(),
-    })
-    .strip()
+  .strip()
 export const EventResponseSchema = VespaEventSchema.pick({
   docId: true,
   name: true,
@@ -478,7 +478,7 @@ export interface AgentReasoningStepEnhanced {
   stepId?: string
   stepSummary?: string
   aiGeneratedSummary?: string
-  status?: 'in_progress' | 'completed' | 'failed'
+  status?: "in_progress" | "completed" | "failed"
   timestamp?: number
   iteration?: number
   isIterationSummary?: boolean
@@ -501,12 +501,14 @@ export interface AgentReasoningToolSelected extends AgentReasoningStepEnhanced {
   toolName: AgentToolName | string // string for flexibility if new tools are added without enum update
 }
 
-export interface AgentReasoningToolParameters extends AgentReasoningStepEnhanced {
+export interface AgentReasoningToolParameters
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolParameters
   parameters: Record<string, any> // Parameters as an object
 }
 
-export interface AgentReasoningToolExecuting extends AgentReasoningStepEnhanced {
+export interface AgentReasoningToolExecuting
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ToolExecuting
   toolName: AgentToolName | string
 }
@@ -524,17 +526,20 @@ export interface AgentReasoningSynthesis extends AgentReasoningStepEnhanced {
   details: string // e.g., "Synthesizing answer from X fragments..."
 }
 
-export interface AgentReasoningValidationError extends AgentReasoningStepEnhanced {
+export interface AgentReasoningValidationError
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.ValidationError
   details: string // e.g., "Single result validation failed (POOR_MATCH #X). Will continue searching."
 }
 
-export interface AgentReasoningBroadeningSearch extends AgentReasoningStepEnhanced {
+export interface AgentReasoningBroadeningSearch
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.BroadeningSearch
   details: string // e.g., "Specific search failed validation X times. Attempting to broaden search."
 }
 
-export interface AgentReasoningAnalyzingQuery extends AgentReasoningStepEnhanced {
+export interface AgentReasoningAnalyzingQuery
+  extends AgentReasoningStepEnhanced {
   type: AgentReasoningStepType.AnalyzingQuery
   details: string // e.g., "Analyzing your question..."
 }

@@ -825,7 +825,7 @@ export const AppRoutes = app
   .get(
     "/cl/search",
     zValidator("query", searchKnowledgeBaseSchema),
-    SearchKnowledgeBaseApi
+    SearchKnowledgeBaseApi,
   )
   .get("/cl/:clId", GetCollectionApi)
   .put("/cl/:clId", UpdateCollectionApi)
