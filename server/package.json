@@ -5,13 +5,24 @@
   "version": "0.3.0",
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@digitalroute/cz-conventional-changelog-for-jira": "^8.0.1",
     "@faker-js/faker": "^9.3.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/npm": "^12.0.2",
+    "@semantic-release/release-notes-generator": "^14.1.0",
     "@types/bun": "latest",
     "@types/html-to-text": "^9.0.4",
     "@types/uuid": "^10.0.0",
+    "cz-conventional-changelog": "^3.3.0",
     "drizzle-kit": "0.31.4",
     "husky": "^9.1.7",
-    "p-queue": "^8.0.1"
+    "p-queue": "^8.0.1",
+    "semantic-release": "^24.2.7",
+    "commitizen": "^4.3.1"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -25,7 +36,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "format": "bunx biome format --write ../",
-    "prepare": "cd .. && husky .husky"
+    "prepare": "cd .. && husky .husky",
+    "commit": "cz",
+    "release": "semantic-release"
   },
   "dependencies": {
     "@anthropic-ai/vertex-sdk": "^0.13.1",
@@ -51,7 +64,7 @@
     "@slack/web-api": "^7.8.0",
     "@types/jszip": "^3.4.1",
     "@types/node": "^24.3.0",
-    "@xyne/vespa-ts": "^1.0.4",
+    "@xyne/vespa-ts": "^1.0.5",
     "@xynehq/jaf": "^0.1.4",
     "arctic": "^3.3.0",
     "async-mutex": "^0.5.0",
@@ -93,5 +106,12 @@
     "uuid": "^11.0.0",
     "xlsx": "^0.18.5",
     "zod": "^4.0.15"
+  },
+  "config": {
+    "commitizen": {
+      "path": "@digitalroute/cz-conventional-changelog-for-jira",
+      "jiraPrefix": "XYN-",
+      "jiraOptional": false
+    }
   }
 }

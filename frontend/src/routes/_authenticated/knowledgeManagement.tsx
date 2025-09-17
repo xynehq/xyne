@@ -51,6 +51,8 @@ import { generateUUID } from "@/utils/chatUtils"
 import { useScopedFind } from "@/hooks/useScopedFind"
 import { PersistentMap } from "@/utils/chatUtils"
 import { DocumentOperationsProvider, useDocumentOperations } from "@/contexts/DocumentOperationsContext"
+import ExcelViewer from "@/components/ExcelViewer"
+import CsvViewer from "@/components/CsvViewer"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -176,6 +178,41 @@ const DocumentViewerContainer = memo(
               style={{ height: "100%", overflow: "auto" }}
             />
           </div>
+        )
+      }
+      if(name.endsWith(".xlsx") || name.endsWith(".xls") ){
+           return (
+             <div ref={containerRef} data-container-ref="true" className="h-full">
+               <ExcelViewer
+                 source={
+                   new File(
+                     [selectedDocument.content],
+                     selectedDocument.file.name,
+                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+                   )
+                 }
+                 className="h-full"
+                 style={{ height: "100%", overflow: "auto" }}
+               />
+             </div>
+           )
+      }
+
+      if(name.endsWith(".csv")){
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+               <CsvViewer
+                 source={
+                   new File(
+                     [selectedDocument.content],
+                     selectedDocument.file.name,
+                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+                   )
+                 }
+                 className="h-full"
+                 style={{ height: "100%", overflow: "auto" }}
+               />
+             </div>
         )
       }
     
@@ -1128,7 +1165,9 @@ function KnowledgeManagementContent() {
       file.type !== "file" ||
       (!fileName.endsWith(".docx") &&
         !fileName.endsWith(".pdf") &&
-        !fileName.endsWith(".md"))
+        !fileName.endsWith(".md") &&
+        !fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".xls")
+    )
     ) {
       showToast(
         "Preview Not Available",
@@ -1217,6 +1256,35 @@ function KnowledgeManagementContent() {
       showToast("Error", "Failed to load document", true)
     } finally {
       setLoadingDocument(false)
+    }
+  }
+
+  const handleDownload = async (file: FileNode, collection: Collection) => {
+    if (file.type !== "file") return
+
+    try {
+      // Use hidden iframe approach to trigger download without opening new tab
+      // This preserves authentication cookies and lets the browser handle the download directly
+      const downloadUrl = `/api/v1/cl/${collection.id}/files/${file.id}/download`
+
+      // Create a hidden iframe to trigger the download
+      const iframe = document.createElement("iframe")
+      iframe.style.display = "none"
+      iframe.src = downloadUrl
+
+      document.body.appendChild(iframe)
+
+      // Clean up iframe after a short delay
+      setTimeout(() => {
+        if (iframe.parentNode) {
+          document.body.removeChild(iframe)
+        }
+      }, 1000)
+
+      showToast("Download Started", `"${file.name}" download started.`)
+    } catch (error) {
+      console.error("Error downloading file:", error)
+      showToast("Download Failed", "Failed to download file", true)
     }
   }
 
@@ -1749,6 +1817,9 @@ function KnowledgeManagementContent() {
                           items={collection.items}
                           onFileClick={(file: FileNode) =>
                             handleFileClick(file, collection)
+                          }
+                          onDownload={(file: FileNode, path: string) =>
+                            handleDownload(file, collection)
                           }
                           onAddFiles={(node, path) => {
                             const collection = collections.find((c) =>

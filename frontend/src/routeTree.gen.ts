@@ -31,6 +31,7 @@ import { Route as AuthenticatedIntegrationsGoogleImport } from './routes/_authen
 import { Route as AuthenticatedIntegrationsFileuploadImport } from './routes/_authenticated/integrations/fileupload'
 import { Route as AuthenticatedDataSourceDocIdImport } from './routes/_authenticated/dataSource.$docId'
 import { Route as AuthenticatedChatChatIdImport } from './routes/_authenticated/chat.$chatId'
+import { Route as AuthenticatedAdminUserManagementImport } from './routes/_authenticated/admin/userManagement'
 import { Route as AuthenticatedAdminIntegrationsIndexImport } from './routes/_authenticated/admin/integrations/index'
 import { Route as AuthenticatedTraceChatIdMsgIdImport } from './routes/_authenticated/trace.$chatId.$msgId'
 import { Route as AuthenticatedAdminIntegrationsSlackImport } from './routes/_authenticated/admin/integrations/slack'
@@ -167,6 +168,13 @@ const AuthenticatedChatChatIdRoute = AuthenticatedChatChatIdImport.update({
   getParentRoute: () => AuthenticatedChatRoute,
 } as any)
 
+const AuthenticatedAdminUserManagementRoute =
+  AuthenticatedAdminUserManagementImport.update({
+    id: '/admin/userManagement',
+    path: '/admin/userManagement',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+
 const AuthenticatedAdminIntegrationsIndexRoute =
   AuthenticatedAdminIntegrationsIndexImport.update({
     id: '/admin/integrations/',
@@ -297,6 +305,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexImport
       parentRoute: typeof AuthenticatedImport
     }
+    '/_authenticated/admin/userManagement': {
+      id: '/_authenticated/admin/userManagement'
+      path: '/admin/userManagement'
+      fullPath: '/admin/userManagement'
+      preLoaderRoute: typeof AuthenticatedAdminUserManagementImport
+      parentRoute: typeof AuthenticatedImport
+    }
     '/_authenticated/chat/$chatId': {
       id: '/_authenticated/chat/$chatId'
       path: '/$chatId'
@@ -421,6 +436,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTuningRoute: typeof AuthenticatedTuningRoute
   AuthenticatedWorkflowRoute: typeof AuthenticatedWorkflowRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAdminUserManagementRoute: typeof AuthenticatedAdminUserManagementRoute
   AuthenticatedDataSourceDocIdRoute: typeof AuthenticatedDataSourceDocIdRoute
   AuthenticatedIntegrationsFileuploadRoute: typeof AuthenticatedIntegrationsFileuploadRoute
   AuthenticatedIntegrationsGoogleRoute: typeof AuthenticatedIntegrationsGoogleRoute
@@ -446,6 +462,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTuningRoute: AuthenticatedTuningRoute,
   AuthenticatedWorkflowRoute: AuthenticatedWorkflowRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAdminUserManagementRoute: AuthenticatedAdminUserManagementRoute,
   AuthenticatedDataSourceDocIdRoute: AuthenticatedDataSourceDocIdRoute,
   AuthenticatedIntegrationsFileuploadRoute:
     AuthenticatedIntegrationsFileuploadRoute,
@@ -485,6 +502,7 @@ export interface FileRoutesByFullPath {
   '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
+  '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
@@ -513,6 +531,7 @@ export interface FileRoutesByTo {
   '/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/': typeof AuthenticatedIndexRoute
+  '/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
@@ -543,6 +562,7 @@ export interface FileRoutesById {
   '/_authenticated/workflow': typeof AuthenticatedWorkflowRoute
   '/oauth/success': typeof OauthSuccessRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/admin/userManagement': typeof AuthenticatedAdminUserManagementRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dataSource/$docId': typeof AuthenticatedDataSourceDocIdRoute
   '/_authenticated/integrations/fileupload': typeof AuthenticatedIntegrationsFileuploadRoute
@@ -574,6 +594,7 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/oauth/success'
     | '/'
+    | '/admin/userManagement'
     | '/chat/$chatId'
     | '/dataSource/$docId'
     | '/integrations/fileupload'
@@ -601,6 +622,7 @@ export interface FileRouteTypes {
     | '/workflow'
     | '/oauth/success'
     | '/'
+    | '/admin/userManagement'
     | '/chat/$chatId'
     | '/dataSource/$docId'
     | '/integrations/fileupload'
@@ -629,6 +651,7 @@ export interface FileRouteTypes {
     | '/_authenticated/workflow'
     | '/oauth/success'
     | '/_authenticated/'
+    | '/_authenticated/admin/userManagement'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dataSource/$docId'
     | '/_authenticated/integrations/fileupload'
@@ -685,6 +708,7 @@ export const routeTree = rootRoute
         "/_authenticated/tuning",
         "/_authenticated/workflow",
         "/_authenticated/",
+        "/_authenticated/admin/userManagement",
         "/_authenticated/dataSource/$docId",
         "/_authenticated/integrations/fileupload",
         "/_authenticated/integrations/google",
@@ -743,6 +767,10 @@ export const routeTree = rootRoute
     },
     "/_authenticated/": {
       "filePath": "_authenticated/index.tsx",
+      "parent": "/_authenticated"
+    },
+    "/_authenticated/admin/userManagement": {
+      "filePath": "_authenticated/admin/userManagement.tsx",
       "parent": "/_authenticated"
     },
     "/_authenticated/chat/$chatId": {
