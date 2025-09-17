@@ -1259,6 +1259,35 @@ function KnowledgeManagementContent() {
     }
   }
 
+  const handleDownload = async (file: FileNode, collection: Collection) => {
+    if (file.type !== "file") return
+
+    try {
+      // Use hidden iframe approach to trigger download without opening new tab
+      // This preserves authentication cookies and lets the browser handle the download directly
+      const downloadUrl = `/api/v1/cl/${collection.id}/files/${file.id}/download`
+
+      // Create a hidden iframe to trigger the download
+      const iframe = document.createElement("iframe")
+      iframe.style.display = "none"
+      iframe.src = downloadUrl
+
+      document.body.appendChild(iframe)
+
+      // Clean up iframe after a short delay
+      setTimeout(() => {
+        if (iframe.parentNode) {
+          document.body.removeChild(iframe)
+        }
+      }, 1000)
+
+      showToast("Download Started", `"${file.name}" download started.`)
+    } catch (error) {
+      console.error("Error downloading file:", error)
+      showToast("Download Failed", "Failed to download file", true)
+    }
+  }
+
   // Chat management functions
   const handleChatCreated = useCallback(
     (chatId: string) => {
@@ -1788,6 +1817,9 @@ function KnowledgeManagementContent() {
                           items={collection.items}
                           onFileClick={(file: FileNode) =>
                             handleFileClick(file, collection)
+                          }
+                          onDownload={(file: FileNode, path: string) =>
+                            handleDownload(file, collection)
                           }
                           onAddFiles={(node, path) => {
                             const collection = collections.find((c) =>
