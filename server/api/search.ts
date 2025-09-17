@@ -68,6 +68,7 @@ import type {
 } from "@xyne/vespa-ts/types"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { chunkDocument } from "@/chunks"
+import { getAppSyncJobsByEmail } from "@/db/syncJob"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -432,6 +433,9 @@ export const SearchApi = async (c: Context) => {
   )
   if (gc) {
     let isSlackConnected = false
+    let isDriveConnected = false
+    let isGmailConnected = false
+    let isCalendarConnected = false
     try {
       const connector = await getConnectorByAppAndEmailId(
         db,
@@ -447,12 +451,31 @@ export const SearchApi = async (c: Context) => {
         "Error fetching Slack connector",
       )
     }
+    try{
+
+    const driveConnector = await getAppSyncJobsByEmail(db,Apps.GoogleDrive,AuthType.ServiceAccount,email)
+    const gmailConnector = await getAppSyncJobsByEmail(db,Apps.Gmail,AuthType.ServiceAccount,email)
+    const calendarConnector = await getAppSyncJobsByEmail(db,Apps.GoogleCalendar,AuthType.ServiceAccount,email)
+    isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
+    isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
+    isCalendarConnected = Boolean(calendarConnector && calendarConnector.length > 0)
+    }
+    catch(error){
+      loggerWithChild({ email: email }).error(
+        error,
+        "Error fetching google sync Jobs",
+      )
+    }
+
     const tasks: Array<any> = [
       groupVespaSearch(
         decodedQuery,
         email,
         config.page,
         isSlackConnected,
+        isGmailConnected,
+        isCalendarConnected,
+        isDriveConnected,
         timestampRange,
       ),
       searchVespa(decodedQuery, email, app, entity, {

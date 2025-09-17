@@ -23,6 +23,7 @@ import {
 import { db, getConnectorByAppAndEmailId } from "@/db/connector"
 import { AuthType, ConnectorStatus } from "@/shared/types"
 import { extractDriveIds, extractCollectionVespaIds } from "./utils"
+import { getAppSyncJobsByEmail } from "@/db/syncJob"
 // Define your Vespa endpoint and schema name
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
@@ -72,15 +73,46 @@ export const searchVespa = async (
   options: Partial<VespaQueryConfig> = {},
 ) => {
   let isSlackConnected = false
-  try {
-    const connector = await getConnectorByAppAndEmailId(
+  let isDriveConnected = false
+  let isGmailConnected = false
+  let isCalendarConnected = false
+  
+    let connector
+    try {
+      connector = await getConnectorByAppAndEmailId(
+        db,
+        Apps.Slack,
+        AuthType.OAuth,
+        email,
+      )
+      isSlackConnected = Boolean(
+        connector && connector.status === ConnectorStatus.Connected,
+      )
+    } catch (error) {}
+    try {
+    const driveConnector = await getAppSyncJobsByEmail(
       db,
-      Apps.Slack,
-      AuthType.OAuth,
+      Apps.GoogleDrive,
+      AuthType.ServiceAccount,
       email,
     )
-    isSlackConnected =
-      connector && connector.status === ConnectorStatus.Connected
+    const gmailConnector = await getAppSyncJobsByEmail(
+      db,
+      Apps.Gmail,
+      AuthType.ServiceAccount,
+      email,
+    )
+    const calendarConnector = await getAppSyncJobsByEmail(
+      db,
+      Apps.GoogleCalendar,
+      AuthType.ServiceAccount,
+      email,
+    )
+    isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
+    isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
+    isCalendarConnected = Boolean(
+      calendarConnector && calendarConnector.length > 0,
+    )
   } catch (error) {}
 
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
@@ -88,6 +120,9 @@ export const searchVespa = async (
     recencyDecayRate:
       options.recencyDecayRate || config.defaultRecencyDecayRate,
     isSlackConnected,
+    isDriveConnected,
+    isGmailConnected,
+    isCalendarConnected,
   })
 }
 
