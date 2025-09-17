@@ -2,6 +2,8 @@ import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
+import { type SelectAgent } from "../db/schema"
+import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
@@ -33,6 +35,9 @@ import {
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
 } from "@/db/schema/workflows"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
+import { type CreateAgentPayload } from "./agent"
 import {
   eq,
   sql,
@@ -72,12 +77,14 @@ import {
   handleWorkflowFileUpload,
   validateFormData,
   buildValidationSchema,
+  type WorkflowFileData,
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
 import { getActualNameFromEnum } from "@/ai/modelConfig"
 import { getProviderByModel } from "@/ai/provider"
 import { Models } from "@/ai/types"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
+import { L } from "@/dist/assets/index-BAfFuDwx"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -94,40 +101,40 @@ interface AttachmentUploadResponse {
 
 // Utility function to extract attachment IDs from form data
 const extractAttachmentIds = (formData: Record<string, any>): {
-    imageAttachmentIds: string[]
-    documentAttachmentIds: string[]
-  } => {
-    const imageIds: string[] = []
-    const documentIds: string[] = []
+  imageAttachmentIds: string[]
+  documentAttachmentIds: string[]
+} => {
+  const imageIds: string[] = []
+  const documentIds: string[] = []
 
-    Object.entries(formData).forEach(([key, file]) => {
-      // More defensive checking
-      if (file &&
-          typeof file === 'object' &&
-          file !== null &&
-          'attachmentId' in file &&
-          file.attachmentId) {
+  Object.entries(formData).forEach(([key, file]) => {
+    // More defensive checking
+    if (file &&
+      typeof file === 'object' &&
+      file !== null &&
+      'attachmentId' in file &&
+      file.attachmentId) {
 
-        Logger.info(`Processing field ${key} with attachment ID: ${file.attachmentId}`)
+      Logger.info(`Processing field ${key} with attachment ID: ${file.attachmentId}`)
 
 
-        if ('attachmentMetadata' in file && file.attachmentMetadata) {
-          const metadata = file.attachmentMetadata as AttachmentMetadata
-          if (metadata.isImage) {
-            imageIds.push(file.attachmentId)
-          } else {
-            documentIds.push(file.attachmentId)
-          }
+      if ('attachmentMetadata' in file && file.attachmentMetadata) {
+        const metadata = file.attachmentMetadata as AttachmentMetadata
+        if (metadata.isImage) {
+          imageIds.push(file.attachmentId)
         } else {
-          // Fallback: assume non-image if no metadata
-          Logger.warn(`No attachmentMetadata found for ${key}, assuming document`)
           documentIds.push(file.attachmentId)
         }
+      } else {
+        // Fallback: assume non-image if no metadata
+        Logger.warn(`No attachmentMetadata found for ${key}, assuming document`)
+        documentIds.push(file.attachmentId)
       }
-    })
+    }
+  })
 
-    return { imageAttachmentIds: imageIds, documentAttachmentIds: documentIds }
-  }
+  return { imageAttachmentIds: imageIds, documentAttachmentIds: documentIds }
+}
 // List all workflow templates with root step details
 export const ListWorkflowTemplatesApi = async (c: Context) => {
   try {
@@ -261,6 +268,13 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       workspaceId = c.get("workspaceId")
       via_apiKey = true
     }
+
+    // Get user ID for agent creation
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, email)
+    const userId = userAndWorkspace.user.id
+    const workspaceInternalId = userAndWorkspace.workspace.id
+
+    Logger.info(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${workspaceInternalId}`)
 
     const templateId = c.req.param("templateId")
     const contentType = c.req.header("content-type") || ""
@@ -436,7 +450,15 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           `${template[0].name} - ${new Date().toLocaleDateString()}`,
         description:
           requestData.description || `Execution of ${template[0].name}`,
-        metadata: requestData.metadata || {},
+        metadata: {
+          ...requestData.metadata,
+          executionContext: {
+            userEmail: email,
+            workspaceId: workspaceId,
+            userId: userAndWorkspace?.user?.id,
+            workspaceInternalId: userAndWorkspace?.workspace?.id
+          }
+        },
         status: WorkflowStatus.ACTIVE,
         rootWorkflowStepExeId: null,
       })
@@ -506,18 +528,20 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
             if (file instanceof File) {
               try {
-                const fileValidation =
-                  buildValidationSchema(formFields)[field.id]?.fileValidation
-                const uploadedFile = await handleWorkflowFileUpload(
-                  file,
-                  execution.id,
-                  rootStepExecution.id,
-                  fileValidation,
-                )
-                Logger.info(`File uploaded to workflow storage: ${uploadedFile.relativePath}`)
+                const fileValidation = buildValidationSchema(formFields)[field.id]?.fileValidation
+                let finalProcessedData: WorkflowFileData = {
+                  originalFileName: file.name,
+                  fileName: file.name,
+                  fileSize: file.size,
+                  mimetype: file.type,
+                  uploadedAt: new Date().toISOString(),
+                  uploadedBy: "api",
+                  fileExtension: file.name.split('.').pop() || '',
+                  workflowExecutionId: execution.id,
+                  workflowStepId: rootStepExecution.id,
+                }
 
-                // INTEGRATION: Also process file with handleAttachmentUpload for agent compatibility
-                let finalProcessedData = uploadedFile
+                Logger.info(`Created basic file metadata: ${JSON.stringify(finalProcessedData)}`)
                 try {
                   // Create FormData for handleAttachmentUpload
                   const attachmentFormData = new FormData()
@@ -531,7 +555,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                     get: (key: string) => {
                       if (key === JwtPayloadKey) {
                         return {
-                          sub: email, 
+                          sub: email,
                           workspaceId: workspaceId
                         }
                       }
@@ -540,7 +564,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                     json: (data: any, status?: number) => {
 
                       Logger.info(`handleAttachmentUpload completed successfully: ${JSON.stringify(data)}`)
-                      return data 
+                      return data
                     }
                   } as Context
 
@@ -564,7 +588,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                       Logger.info(`File ${field.id} processed successfully with attachment ID: ${attachmentId}`)
 
                       finalProcessedData = {
-                        ...uploadedFile,
+                        ...finalProcessedData,
                         attachmentId: attachmentId,
                         attachmentMetadata: attachments[0]
                       }
@@ -581,13 +605,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                 }
 
                 processedFormData[field.id] = finalProcessedData
-                Logger.info(
-                  `File uploaded for field ${field.id}: ${uploadedFile.relativePath}`,
-                )
 
-                Logger.info(
-                  `File uploaded for field ${field.id}: ${uploadedFile.relativePath}`,
-                )
               } catch (uploadError) {
                 Logger.error(
                   uploadError,
@@ -1091,7 +1109,7 @@ const executeWorkflowChain = async (
     }
 
     // Execute the tool
-    const toolResult = await executeWorkflowTool(tool, previousResults)
+    const toolResult = await executeWorkflowTool(tool, previousResults, executionId)
 
     // Check if tool execution failed
     if (toolResult.status !== "success") {
@@ -1850,114 +1868,147 @@ else:
 // Helper function to extract content from previous step results using simplified input paths
 
 
-  const extractContentFromPath = (
-    previousStepResults: any,
-    contentPath: string,
-  ): string => {
-    try {
-      // New simplified approach: input.* always points to latest.result.*
-      // Examples: "input.aiOutput" -> latest step's result.aiOutput
-      //          "input.output" -> latest step's result.output
+const extractContentFromPath = (
+  previousStepResults: any,
+  contentPath: string,
+): string => {
+  try {
+    // New simplified approach: input.* always points to latest.result.*
+    // Examples: "input.aiOutput" -> latest step's result.aiOutput
+    //          "input.output" -> latest step's result.output
 
-      if (!contentPath.startsWith("input.")) {
-        return `Invalid path: ${contentPath}. Only paths starting with 'input.' are supported.`
+    if (!contentPath.startsWith("input.")) {
+      return `Invalid path: ${contentPath}. Only paths starting with 'input.' are supported.`
+    }
+
+    // Get all step keys
+    const stepKeys = Object.keys(previousStepResults)
+    if (stepKeys.length === 0) {
+      return "No previous steps available"
+    }
+
+    Logger.info(`DEBUG - extractContentFromPath: Available step keys: ${JSON.stringify(stepKeys)}`)
+    Logger.info(`DEBUG - extractContentFromPath: Looking for path: ${contentPath}`)
+
+    // Remove "input." prefix and get target property
+    const propertyPath = contentPath.slice(6) // Remove "input."
+    const pathParts = propertyPath.split(".")
+    const targetProperty = pathParts[0] // e.g., "aiOutput"
+
+    Logger.info(`DEBUG - extractContentFromPath: Target property: ${targetProperty}`)
+
+    // Strategy 1: Look for AI Agent step specifically (most common case for aiOutput)
+    if (targetProperty === "aiOutput") {
+      const aiAgentStep = previousStepResults["AI Agent"]
+      if (aiAgentStep?.result?.aiOutput) {
+        Logger.info(`DEBUG - extractContentFromPath: Found aiOutput in AI Agent step`)
+        return aiAgentStep.result.aiOutput
       }
+    }
 
-      // Get all step keys
-      const stepKeys = Object.keys(previousStepResults)
-      if (stepKeys.length === 0) {
-        return "No previous steps available"
-      }
+    // Strategy 2: Search through all steps to find the target property
+    for (const stepKey of stepKeys) {
+      const stepResult = previousStepResults[stepKey]
+      Logger.info(`DEBUG - extractContentFromPath: Checking step '${stepKey}': ${JSON.stringify(stepResult, null, 2)}`)
 
-      Logger.info(`DEBUG - extractContentFromPath: Available step keys: ${JSON.stringify(stepKeys)}`)
-      Logger.info(`DEBUG - extractContentFromPath: Looking for path: ${contentPath}`)
-
-      // Remove "input." prefix and get target property
-      const propertyPath = contentPath.slice(6) // Remove "input."
-      const pathParts = propertyPath.split(".")
-      const targetProperty = pathParts[0] // e.g., "aiOutput"
-
-      Logger.info(`DEBUG - extractContentFromPath: Target property: ${targetProperty}`)
-
-      // Strategy 1: Look for AI Agent step specifically (most common case for aiOutput)
-      if (targetProperty === "aiOutput") {
-        const aiAgentStep = previousStepResults["AI Agent"]
-        if (aiAgentStep?.result?.aiOutput) {
-          Logger.info(`DEBUG - extractContentFromPath: Found aiOutput in AI Agent step`)
-          return aiAgentStep.result.aiOutput
-        }
-      }
-
-      // Strategy 2: Search through all steps to find the target property
-      for (const stepKey of stepKeys) {
-        const stepResult = previousStepResults[stepKey]
-        Logger.info(`DEBUG - extractContentFromPath: Checking step '${stepKey}': ${JSON.stringify(stepResult, null, 2)}`)
-
-        if (stepResult?.result) {
-          let target = stepResult.result
-
-          // Navigate through the path starting from result
-          let found = true
-          for (const part of pathParts) {
-            if (target && typeof target === "object" && part in target) {
-              target = target[part]
-            } else {
-              found = false
-              break
-            }
-          }
-
-          if (found && target !== null && target !== undefined) {
-            Logger.info(`DEBUG - extractContentFromPath: Found target in step '${stepKey}'`)
-            // Convert result to string
-            if (typeof target === "string") {
-              return target
-            } else {
-              return JSON.stringify(target, null, 2)
-            }
-          }
-        }
-      }
-
-      // Strategy 3: Fallback to latest step (original logic)
-      const latestStepKey = stepKeys[stepKeys.length - 1]
-      const latestStepResult = previousStepResults[latestStepKey]
-
-      Logger.info(`DEBUG - extractContentFromPath: Fallback to latest step '${latestStepKey}': ${JSON.stringify(latestStepResult, null, 2)}`)
-
-      if (latestStepResult?.result) {
-        let target = latestStepResult.result
+      if (stepResult?.result) {
+        let target = stepResult.result
 
         // Navigate through the path starting from result
+        let found = true
         for (const part of pathParts) {
           if (target && typeof target === "object" && part in target) {
             target = target[part]
           } else {
-            Logger.info(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
-            return `Property '${part}' not found in any step result. Available steps: ${stepKeys.join(", ")}`
+            found = false
+            break
           }
         }
 
-        // Convert result to string
-        if (typeof target === "string") {
-          return target
-        } else if (target !== null && target !== undefined) {
-          return JSON.stringify(target, null, 2)
+        if (found && target !== null && target !== undefined) {
+          Logger.info(`DEBUG - extractContentFromPath: Found target in step '${stepKey}'`)
+          // Convert result to string
+          if (typeof target === "string") {
+            return target
+          } else {
+            return JSON.stringify(target, null, 2)
+          }
+        }
+      }
+    }
+
+    // Strategy 3: Fallback to latest step (original logic)
+    const latestStepKey = stepKeys[stepKeys.length - 1]
+    const latestStepResult = previousStepResults[latestStepKey]
+
+    Logger.info(`DEBUG - extractContentFromPath: Fallback to latest step '${latestStepKey}': ${JSON.stringify(latestStepResult, null, 2)}`)
+
+    if (latestStepResult?.result) {
+      let target = latestStepResult.result
+
+      // Navigate through the path starting from result
+      for (const part of pathParts) {
+        if (target && typeof target === "object" && part in target) {
+          target = target[part]
+        } else {
+          Logger.info(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
+          return `Property '${part}' not found in any step result. Available steps: ${stepKeys.join(", ")}`
         }
       }
 
-      return `No content found for path '${contentPath}' in any step. Available steps: ${stepKeys.join(", ")}`
-    } catch (error) {
-      console.error("Error extracting content from path:", error)
-      return `Error: ${error instanceof Error ? error.message : String(error)}`
+      // Convert result to string
+      if (typeof target === "string") {
+        return target
+      } else if (target !== null && target !== undefined) {
+        return JSON.stringify(target, null, 2)
+      }
     }
-  }
 
+    return `No content found for path '${contentPath}' in any step. Available steps: ${stepKeys.join(", ")}`
+  } catch (error) {
+    console.error("Error extracting content from path:", error)
+    return `Error: ${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
+// Helper function to get execution context (user info) from workflow execution
+const getExecutionContext = async (executionId: string): Promise<{
+  workspaceId: string
+  userEmail: string
+  workspaceInternalId: string
+  userId: string
+} | null> => {
+  try {
+    // Get workflow execution to access metadata
+    const [execution] = await db
+      .select()
+      .from(workflowExecution)
+      .where(eq(workflowExecution.id, executionId))
+
+    if (!execution || !execution.metadata) {
+      Logger.warn(`No execution context found for execution ${executionId}`)
+      return null
+    }
+
+    // Check if execution context was stored in metadata
+    const context = execution.metadata as any
+    if (context.executionContext) {
+      return context.executionContext
+    }
+
+    Logger.warn(`No execution context in metadata for execution ${executionId}`)
+    return null
+  } catch (error) {
+    Logger.error(error, `Failed to get execution context for ${executionId}`)
+    return null
+  }
+}
 
 // Execute workflow tool (Python scripts, etc.)
 const executeWorkflowTool = async (
   tool: any,
   previousStepResults: any = {},
+  executionId: string,
 ) => {
   try {
     switch (tool.type) {
@@ -1999,7 +2050,7 @@ const executeWorkflowTool = async (
         const emailConfig = tool.config || {}
         Logger.info(`DEBUG - Email tool config: ${JSON.stringify(emailConfig, null, 2)}`)
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
-      
+
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
         const subject = emailConfig.subject || "Workflow Results"
         const contentType = emailConfig.content_type || "html"
@@ -2134,15 +2185,50 @@ const executeWorkflowTool = async (
 
       case "ai_agent":
         const aiConfig = tool.config || {}
+
         const aiValue = tool.value || {}
 
+        const agentId = aiConfig.agentId
+        // this agent is is externalID from the agents table
+        Logger.info(`DEBUG - AI Agent tool agentId from config: ${agentId}`)
+
+        if (!agentId) {
+          Logger.error("No agent ID found in tool config - agent creation may have failed during template creation")
+          return {
+            status: "error",
+            result: {
+              error: "No agent ID configured for this AI agent tool",
+              details: "Agent should have been created during workflow template creation",
+              config: aiConfig
+            }
+          }
+        }
+
         try {
-          // Extract agent parameters with defaults
-          const agentId = aiConfig.agentId || "zk3i1cycov8i5arrhk5u7y20"
+
+
+          // Get execution context for user info
+          const executionContext = await getExecutionContext(executionId)
+          if (!executionContext) {
+            return {
+              status: "error",
+              result: {
+                error: "Could not retrieve execution context",
+                details: "User information not available for agent execution"
+              }
+            }
+          }
+
+          // Extract agent parameters with dynamic values
+          const agentId = aiConfig.agentId
+          Logger.info(`DEBUG (ExecuteWorkflowTool) - Using agentId: ${agentId}`)
           const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
+          Logger.info(`DEBUG (ExecuteWorkflowTool) - Using prompt: ${prompt}`)
           const temperature = aiConfig.temperature || 0.7
-          const workspaceId = "uxwyx18h74vdch0j8ir46aka"
-          const userEmail = "aman.asrani@juspay.in"
+          const workspaceId = executionContext.workspaceId
+          Logger.info(`DEBUG (ExecuteWorkflowTool) - Using workspaceId: ${workspaceId}`)
+          const userEmail = executionContext.userEmail
+          Logger.info(`DEBUG (ExecuteWorkflowTool) - Using userEmail: ${userEmail}`)
 
           // Process input content based on input type
           let userQuery = ""
@@ -2183,9 +2269,9 @@ const executeWorkflowTool = async (
 
               Logger.info("Debug - Extracted text fields:", textFields)
 
-                // // For now, use empty arrays - will be populated when handleAttachmentUpload is integrated
-                // attachmentFileIds = []
-                // nonImageAttachmentFileIds = ["att_a9b4896e-044a-4391-82d7-2befd06a40e7"]
+              // // For now, use empty arrays - will be populated when handleAttachmentUpload is integrated
+              // attachmentFileIds = []
+              // nonImageAttachmentFileIds = ["att_a9b4896e-044a-4391-82d7-2befd06a40e7"]
 
               userQuery = `${prompt}\n\nForm Data:\n${textFields}`
             } else {
@@ -2210,15 +2296,15 @@ const executeWorkflowTool = async (
           Logger.info(`Debug - Final userQuery: ${userQuery}`)
           Logger.info(`Debug - Image attachment IDs: ${imageAttachmentIds}`)
           Logger.info(`Debug - Document attachment IDs: ${documentAttachmentIds}`)
-          const result = await ExecuteAgentForWorkflow({
+          const result: ExecuteAgentResponse = await ExecuteAgentForWorkflow({
             agentId,
             userQuery,
             workspaceId,
             userEmail,
             isStreamable: false,
             temperature,
-            attachmentFileIds: imageAttachmentIds,      
-            nonImageAttachmentFileIds: documentAttachmentIds, 
+            attachmentFileIds: imageAttachmentIds,
+            nonImageAttachmentFileIds: documentAttachmentIds,
           })
 
           Logger.info("Debug - ExecuteAgentForWorkflow result:", JSON.stringify(result, null, 2))
@@ -2331,10 +2417,38 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
 }
 
 // Create complex workflow template from frontend workflow builder
+//Todo: need to create the agents here as well
 export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
   try {
-    const requestData = await c.req.json()
 
+    let jwtPayload
+    try {
+      jwtPayload = c.get(JwtPayloadKey)
+    } catch (e) {
+      Logger.info("No JWT payload found in context")
+    }
+
+    const userEmail = jwtPayload?.sub
+    Logger.info(`Creating complex workflow template for user: ${userEmail}`)
+    if (!userEmail) {
+      throw new HTTPException(401, { message: "Unauthorized - no user email" })
+    }
+
+    // Get workspace ID from JWT payload
+    const workspaceId = jwtPayload?.workspaceId
+    Logger.info(`Creating complex workflow template in workspace: ${workspaceId}`)
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "No workspace ID in token" })
+    }
+
+    // Get user ID for agent creation
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, userEmail)
+    const userId = userAndWorkspace.user.id
+    const workspaceInternalId = userAndWorkspace.workspace.id
+
+    Logger.info(`User ID: ${userId}, Workspace Internal ID: ${workspaceInternalId}`)
+    const requestData = await c.req.json()
+    Logger.info(`Creating complex workflow template with data: ${JSON.stringify(requestData, null, 2)}`)
     // Create the main workflow template
     const [template] = await db
       .insert(workflowTemplate)
@@ -2375,6 +2489,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       // Process form tools to ensure file fields use "document_file" as ID
       let processedValue = tool.value || {}
 
+
       if (tool.type === ToolType.FORM && processedValue.fields && Array.isArray(processedValue.fields)) {
         processedValue = {
           ...processedValue,
@@ -2394,9 +2509,53 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       let processedConfig = tool.config || {}
 
       if (tool.type === "ai_agent") {
-        processedConfig = {
-          ...processedConfig,
-          inputType: "form"
+        try {
+          Logger.info(`Creating agent for AI agent tool: ${JSON.stringify(tool.value)}`)
+
+          // Extract agent data from tool configuration
+          const agentData: CreateAgentPayload = {
+            name: tool.value?.name || `Workflow Agent - ${template.name}`,
+            description: tool.value?.description || "Auto-generated agent for workflow execution",
+            prompt: tool.value?.systemPrompt || "You are a helpful assistant that processes workflow data.",
+            model: tool.value?.model || "googleai-gemini-2-5-flash", // Use model from tool config
+            isPublic: false, // Workflow agents are private by default
+            appIntegrations: [], // No app integrations for workflow agents
+            allowWebSearch: false, // Disable web search for workflow agents
+            isRagOn: false, // Disable RAG for workflow agents
+            uploadedFileNames: [], // No uploaded files for workflow agents
+            docIds: [], // No document IDs for workflow agents
+            userEmails: [] // No additional users for permissions
+          }
+
+          Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
+
+          // Create the agent using createAgentForWorkflow
+          const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, workspaceInternalId)
+
+          Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
+
+          // Store the agent ID in the tool config for later use
+          processedConfig = {
+            ...processedConfig,
+            inputType: "form",
+            agentId: newAgent.externalId, // ← This replaces the hardcoded agent ID
+            createdAgentId: newAgent.externalId, // Store backup reference
+            agentName: newAgent.name,
+            dynamicallyCreated: true // Flag to indicate this was auto-created
+          }
+
+          Logger.info(`Tool config updated with agent ID: ${newAgent.externalId}`)
+
+        } catch (agentCreationError) {
+          Logger.error(agentCreationError, `Failed to create agent for workflow tool, using fallback config`)
+
+          // Fallback to original behavior if agent creation fails
+          processedConfig = {
+            ...processedConfig,
+            inputType: "form",
+            agentCreationFailed: true,
+            agentCreationError: agentCreationError instanceof Error ? agentCreationError.message : String(agentCreationError)
+          }
         }
       }
 
