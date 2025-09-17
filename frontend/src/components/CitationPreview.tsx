@@ -8,6 +8,7 @@ import { api } from "@/api"
 import { authFetch } from "@/utils/authFetch"
 import ExcelViewer from "./ExcelViewer"
 import CsvViewer from "./CsvViewer"
+import TxtViewer from "./TxtViewer"
 
 interface CitationPreviewProps {
   citation: Citation | null
@@ -147,6 +148,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
               />
             )
             case "csv":
+            case "tsv":
               return(
                 <CsvViewer
                   key={citation.docId}
@@ -155,7 +157,18 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
                   style={{ overflow: "visible" }}
                 />
               )
-          
+              case "txt":
+              case "text":
+                return(
+                  <TxtViewer
+                    key={citation.docId}
+                    source={file}
+                    className="h-full"
+                    style={{ overflow: "visible" }}
+                  />
+                )
+              
+
         default:
           // For other file types, try to display as text or show a generic message
           return (

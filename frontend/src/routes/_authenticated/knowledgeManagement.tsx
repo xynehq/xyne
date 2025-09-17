@@ -53,6 +53,8 @@ import { PersistentMap } from "@/utils/chatUtils"
 import { DocumentOperationsProvider, useDocumentOperations } from "@/contexts/DocumentOperationsContext"
 import ExcelViewer from "@/components/ExcelViewer"
 import CsvViewer from "@/components/CsvViewer"
+import TxtViewer from "@/components/TxtViewer"
+
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -199,7 +201,7 @@ const DocumentViewerContainer = memo(
            )
       }
 
-      if(name.endsWith(".csv")){
+      if(name.endsWith(".csv") || name.endsWith(".tsv")){
         return (
           <div ref={containerRef} data-container-ref="true" className="h-full">
                <CsvViewer
@@ -207,7 +209,24 @@ const DocumentViewerContainer = memo(
                    new File(
                      [selectedDocument.content],
                      selectedDocument.file.name,
-                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+                      {type: selectedDocument.content.type || (name.endsWith(".tsv") ? "text/tab-separated-values" : "text/csv")}
+                   )
+                 }
+                 className="h-full"
+                 style={{ height: "100%", overflow: "auto" }}
+               />
+             </div>
+        )
+      }
+      if(name.endsWith(".txt") || name.endsWith(".text")){
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+               <TxtViewer
+                 source={
+                   new File(
+                     [selectedDocument.content],
+                     selectedDocument.file.name,
+                     { type: selectedDocument.content.type || "text/plain" },
                    )
                  }
                  className="h-full"
@@ -1168,11 +1187,12 @@ function KnowledgeManagementContent() {
         !fileName.endsWith(".pdf") &&
         !fileName.endsWith(".md") &&
         !fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".xls")
+         && !fileName.endsWith('text') && !fileName.endsWith('txt') && !fileName.endsWith('.tsv')
     )
     ) {
       showToast(
         "Preview Not Available",
-        "Preview is only available for .docx, .pdf, and .md files.",
+        "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls,.txt,.tsv and .md files.",
         false,
       )
       return
