@@ -42,6 +42,7 @@ import {
   deleteUserDataSchema,
   ingestMoreChannelSchema,
   startSlackIngestionSchema,
+  UserRoleChangeSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -74,6 +75,10 @@ import {
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
   GetWorkspaceApiKeys,
+  ListAllUsers,
+  UpdateUser,
+  HandlePerUserSlackSync,
+  HandlePerUserGoogleWorkSpaceSync,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -1033,6 +1038,11 @@ export const AppRoutes = app
   // TODO: debug
   // for some reason the validation schema
   // is not making the keys mandatory
+  .get("/list_users", ListAllUsers)
+  .post("/change_role", zValidator("form", UserRoleChangeSchema), UpdateUser)
+  .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+  .post("syncSlackByMail", HandlePerUserSlackSync)
+  // create the provider + connector
   .post(
     "/oauth/create",
     zValidator("form", createOAuthProvider),
