@@ -8,6 +8,7 @@ import {
   DriveEntity,
   SlackEntity,
 } from "@/shared/types"
+import { UserRole } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
@@ -556,3 +557,9 @@ export type loggerChildSchema = {
   responseStatus?: string
   operationType?: OperationType
 }
+export const UserRoleChangeSchema = z.object({
+  userId: z.string(),
+  newRole: z.nativeEnum(UserRole),
+})
+
+export type userRoleChange = z.infer<typeof UserRoleChangeSchema>
