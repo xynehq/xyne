@@ -63,12 +63,17 @@ export async function extractDriveIds(
 
 export async function extractCollectionVespaIds(
   options: Partial<VespaQueryConfig>,
-): Promise<Array<{
-  collectionIds?: string[]
-  collectionFolderIds?: string[]
-  collectionFileIds?: string[]
-}>> {
-  if (!options.collectionSelections || options.collectionSelections.length === 0) {
+): Promise<
+  Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }>
+> {
+  if (
+    !options.collectionSelections ||
+    options.collectionSelections.length === 0
+  ) {
     return []
   }
 
@@ -87,9 +92,15 @@ export async function extractCollectionVespaIds(
     }
 
     // Handle folders - add original folders PLUS all their subfolders recursively
-    if (selection.collectionFolderIds && selection.collectionFolderIds.length > 0) {
+    if (
+      selection.collectionFolderIds &&
+      selection.collectionFolderIds.length > 0
+    ) {
       const allFolderIds = [...selection.collectionFolderIds]
-      const allSubFolderIds = await getAllFolderIds(selection.collectionFolderIds, db)
+      const allSubFolderIds = await getAllFolderIds(
+        selection.collectionFolderIds,
+        db,
+      )
       if (allSubFolderIds.length > 0) {
         allFolderIds.push(...allSubFolderIds)
       }
@@ -98,7 +109,10 @@ export async function extractCollectionVespaIds(
 
     // Handle files - convert database IDs to Vespa document IDs
     if (selection.collectionFileIds && selection.collectionFileIds.length > 0) {
-      const ids = await getCollectionFilesVespaIds(selection.collectionFileIds, db)
+      const ids = await getCollectionFilesVespaIds(
+        selection.collectionFileIds,
+        db,
+      )
       const vespaDocIds = ids
         .filter((item: any) => item.vespaDocId !== null)
         .map((item: any) => item.vespaDocId!)
@@ -107,6 +121,5 @@ export async function extractCollectionVespaIds(
 
     updatedSelections.push(updatedSelection)
   }
-  console.log("Updated collection selections: ", updatedSelections)
   return updatedSelections
 }
