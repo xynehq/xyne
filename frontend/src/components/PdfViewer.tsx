@@ -60,6 +60,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     width: number
     height: number
   } | null>(null)
+  const [retryCount, setRetryCount] = useState<number>(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const observerRef = useRef<IntersectionObserver | null>(null)
 
@@ -493,44 +494,41 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   // Create a simple, readable key for the Document component
   const documentKey = useMemo(() => {
+    let baseKey = ""
+    
     // If docId is provided, use it as the primary key (most stable)
     if (docId) {
-      return `doc-${docId}`
-    }
-    
-    if (!source) return "no-source"
-    
-    if (typeof source === "string") {
+      baseKey = `doc-${docId}`
+    } else if (!source) {
+      baseKey = "no-source"
+    } else if (typeof source === "string") {
       // For URLs, use the URL as the key
-      return `url-${source}`
-    }
-    
-    if (source instanceof File) {
+      baseKey = `url-${source}`
+    } else if (source instanceof File) {
       // For files, use name and size
-      return `file-${source.name}-${source.size}`
+      baseKey = `file-${source.name}-${source.size}`
+    } else {
+      // Use type assertion to avoid TypeScript narrowing issues
+      const sourceAny = source as any
+      
+      if (sourceAny instanceof ArrayBuffer) {
+        // For ArrayBuffers, use size
+        baseKey = `buffer-${sourceAny.byteLength}`
+      } else if (sourceAny instanceof Uint8Array) {
+        // For Uint8Arrays, use length
+        baseKey = `uint8-${sourceAny.length}`
+      } else if (sourceAny instanceof Blob) {
+        // For Blobs, use size and type
+        baseKey = `blob-${sourceAny.size}-${sourceAny.type}`
+      } else {
+        // Fallback for any other type
+        baseKey = `unknown-${Date.now()}`
+      }
     }
     
-    // Use type assertion to avoid TypeScript narrowing issues
-    const sourceAny = source as any
-    
-    if (sourceAny instanceof ArrayBuffer) {
-      // For ArrayBuffers, use size
-      return `buffer-${sourceAny.byteLength}`
-    }
-    
-    if (sourceAny instanceof Uint8Array) {
-      // For Uint8Arrays, use length
-      return `uint8-${sourceAny.length}`
-    }
-    
-    if (sourceAny instanceof Blob) {
-      // For Blobs, use size and type
-      return `blob-${sourceAny.size}-${sourceAny.type}`
-    }
-    
-    // Fallback for any other type
-    return `unknown-${Date.now()}`
-  }, [docId, source])
+    // Include retry count to force remount on retry
+    return `${baseKey}-retry-${retryCount}`
+  }, [docId, source, retryCount])
 
   return (
     <div
@@ -568,6 +566,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 setError(null)
                 setLoading(true)
                 setPageNumber(initialPage)
+                setRetryCount(prev => prev + 1)
               }}
               className="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
             >
