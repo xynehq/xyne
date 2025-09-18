@@ -687,6 +687,31 @@ export const getAllFolderItems = async (
   return res
 }
 
+// Get all folder IDs recursively (not files) - for parentId queries
+export const getAllFolderIds = async (
+  parentIds: string[],
+  trx: TxnOrClient,
+) => {
+  const res = []
+  let queue: any[] = []
+  for (const id of parentIds) {
+    queue.push(id)
+  }
+  while (queue.length > 0) {
+    const curr = queue.shift()
+
+    const resp = await getParentItems(curr, trx)
+    for (const item of resp) {
+      if (item.type == "folder") {
+        res.push(item.id) // Add folder ID to results
+        queue.push(item.id) // Continue traversing into this folder
+      }
+      // Skip files - we only want folder IDs
+    }
+  }
+  return res
+}
+
 export const getCollectionFilesVespaIds = async (
   collectionFileIds: string[],
   trx: TxnOrClient,
