@@ -2308,9 +2308,8 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     const userId = userAndWorkspace.user.id
     const workspaceInternalId = userAndWorkspace.workspace.id
 
-    Logger.info(`User ID: ${userId}, Workspace Internal ID: ${workspaceInternalId}`)
     const requestData = await c.req.json()
-    Logger.info(`Creating complex workflow template with data: ${JSON.stringify(requestData, null, 2)}`)
+   
     // Create the main workflow template
     const [template] = await db
       .insert(workflowTemplate)
