@@ -22,9 +22,7 @@ type AgentToolParameter = {
   required: boolean
 }
 
-function paramsToZod(
-  parameters: Record<string, AgentToolParameter>,
-): z.ZodObject<any> {
+function paramsToZod(parameters: Record<string, AgentToolParameter>): z.ZodObject<Record<string, z.ZodTypeAny>> {
   const shape: Record<string, z.ZodTypeAny> = {}
   for (const [key, spec] of Object.entries(parameters || {})) {
     let schema: z.ZodTypeAny
@@ -39,19 +37,23 @@ function paramsToZod(
         schema = z.boolean()
         break
       case "array":
-        schema = z.array(z.any())
+        schema = z.array(z.unknown())
         break
       case "object":
         // Ensure top-level parameter properties that are objects are valid JSON Schema objects
         schema = z.object({}).passthrough()
         break
       default:
-        schema = z.any()
+        schema = z.unknown()
     }
     if (!spec.required) schema = schema.optional()
     shape[key] = schema.describe(spec.description || "")
   }
   return z.object(shape)
+}
+
+type ZodObjectWithRawSchema = z.ZodObject<z.ZodRawShape, "passthrough"> & {
+  __xyne_raw_json_schema?: unknown
 }
 
 function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.AnyZodObject {
@@ -61,16 +63,16 @@ function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.AnyZodObje
   try {
     const parsed = JSON.parse(schemaStr)
     const inputSchema = parsed?.inputSchema || parsed?.parameters || parsed
-    const obj = z.object({}).passthrough()
-    ;(obj as any).__xyne_raw_json_schema = inputSchema
+    const obj = z.object({}).passthrough() as ZodObjectWithRawSchema
+    obj.__xyne_raw_json_schema = inputSchema
     return obj
   } catch {
     return z.object({}).passthrough()
   }
 }
 
-export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
-  const tools: Tool<any, JAFAdapterCtx>[] = []
+export function buildInternalJAFTools(): Tool<unknown, JAFAdapterCtx>[] {
+  const tools: Tool<unknown, JAFAdapterCtx>[] = []
   for (const [name, at] of Object.entries(agentTools)) {
     // Skip the fallbackTool as it's no longer needed
     if (name === "fall_back" || name === "get_user_info") {
@@ -101,11 +103,11 @@ export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
             toolName: name,
             contexts,
           })
-        } catch (err: any) {
-          return ToolResponse.error(
-            "EXECUTION_FAILED",
-            `Internal tool ${name} failed: ${err?.message || String(err)}`,
-          )
+        } catch (err) { 
+           return ToolResponse.error( 
+             "EXECUTION_FAILED", 
+              `Internal tool ${name} failed: ${err instanceof Error ? err.message : String(err)}`, 
+            ) 
         }
       },
     })
@@ -114,27 +116,31 @@ export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
 }
 
 export type MCPToolClient = {
-  callTool: (args: { name: string; arguments: any }) => Promise<any>
+  callTool: (args: { name: string; arguments: unknown }) => Promise<unknown>
   close?: () => Promise<void>
+}
+
+interface MCPToolItem {
+  toolName: string
+  toolSchema?: string | null
+  description?: string
 }
 
 export type FinalToolsList = Record<
   string,
   {
-    tools: Array<{ toolName: string; toolSchema?: string | null }>
+    tools: Array<MCPToolItem>
     client: MCPToolClient
   }
 >
 
-export function buildMCPJAFTools(
-  finalTools: FinalToolsList,
-): Tool<any, JAFAdapterCtx>[] {
-  const tools: Tool<any, JAFAdapterCtx>[] = []
+export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFAdapterCtx>[] {
+  const tools: Tool<unknown, JAFAdapterCtx>[] = []
   for (const [connectorId, info] of Object.entries(finalTools)) {
     for (const t of info.tools) {
       const toolName = t.toolName
       // Prefer DB description; else try schema description; fallback to generic
-      let toolDescription: string | undefined = (t as any).description || undefined
+      let toolDescription: string | undefined = t.description || undefined
       if (!toolDescription && t.toolSchema) {
         try {
           const parsed = JSON.parse(t.toolSchema)
@@ -162,15 +168,22 @@ export function buildMCPJAFTools(
 
             // Best-effort parse of MCP response content
             try {
-              const content = mcpResp?.content?.[0]?.text
+              interface MCPResponse {
+                content?: Array<{ text?: string }>
+                metadata?: { contexts?: unknown }
+                contexts?: unknown
+                data?: { contexts?: unknown }
+              }
+              const resp = mcpResp as MCPResponse
+              const content = resp?.content?.[0]?.text
               if (typeof content === "string" && content.trim().length > 0) {
                 formattedContent = content
               }
               // Opportunistically forward contexts if MCP server provides them
               const maybeContexts =
-                mcpResp?.metadata?.contexts ??
-                mcpResp?.contexts ??
-                mcpResp?.data?.contexts
+                resp?.metadata?.contexts ??
+                resp?.contexts ??
+                resp?.data?.contexts
               if (Array.isArray(maybeContexts)) {
                 newFragments = maybeContexts as MinimalAgentFragment[]
               }
@@ -183,12 +196,8 @@ export function buildMCPJAFTools(
               contexts: newFragments,
               connectorId,
             })
-          } catch (err: any) {
-            return ToolResponse.error(
-              "EXECUTION_FAILED",
-              `MCP tool ${toolName} failed: ${err?.message || String(err)}`,
-              { connectorId },
-            )
+          } catch (err) {
+            return ToolResponse.error("EXECUTION_FAILED", `MCP tool ${toolName} failed: ${err instanceof Error ? err.message : String(err)}`, { connectorId })
           }
         },
       })
@@ -197,7 +206,7 @@ export function buildMCPJAFTools(
   return tools
 }
 
-export function buildToolsOverview(tools: Tool<any, any>[]): string {
+export function buildToolsOverview(tools: Tool<unknown, unknown>[]): string {
   if (!tools || tools.length === 0) return "No tools available."
   return tools
     .map((t, idx) => `  ${idx + 1}. ${t.schema.name}: ${t.schema.description}`)
