@@ -1851,7 +1851,7 @@ const extractContentFromPath = (
         if (target && typeof target === "object" && part in target) {
           target = target[part]
         } else {
-          Logger.info(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
+          Logger.debug(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
           return `Property '${part}' not found in any step result. Available steps: ${stepKeys.join(", ")}`
         }
       }
@@ -1964,14 +1964,13 @@ const executeWorkflowTool = async (
           if (contentPath) {
             // Extract content using configurable path
             emailBody = extractContentFromPath(previousStepResults, contentPath)
-            Logger.info(`DEBUG - Extracted email body using path '${contentPath}': ${emailBody}`)
+
             if (!emailBody) {
               emailBody = `No content found at path: ${contentPath}`
             }
           } else {
             // Fallback to extracting from response.aiOutput path
             emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
-            Logger.info(`DEBUG - Extracted email body using default path 'input.aiOutput': ${emailBody}`)
             if (!emailBody) {
               emailBody = "No content available from previous step"
             }
@@ -2293,14 +2292,12 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     }
 
     const userEmail = jwtPayload?.sub
-    Logger.info(`Creating complex workflow template for user: ${userEmail}`)
     if (!userEmail) {
       throw new HTTPException(401, { message: "Unauthorized - no user email" })
     }
 
     // Get workspace ID from JWT payload
     const workspaceId = jwtPayload?.workspaceId
-    Logger.info(`Creating complex workflow template in workspace: ${workspaceId}`)
     if (!workspaceId) {
       throw new HTTPException(400, { message: "No workspace ID in token" })
     }
