@@ -36,6 +36,12 @@ export interface WorkflowFileUpload {
     attachmentMetadata?: AttachmentMetadata
   }
 
+export interface AttachmentUploadResponse {
+  success: boolean
+  attachments: AttachmentMetadata[]
+  message: string
+}
+
 export interface FileValidationRule {
   allowedTypes: string[]
   maxSize: number // in bytes

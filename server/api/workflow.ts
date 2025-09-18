@@ -78,6 +78,7 @@ import {
   validateFormData,
   buildValidationSchema,
   type WorkflowFileData,
+  type AttachmentUploadResponse,
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
 import { getActualNameFromEnum } from "@/ai/modelConfig"
@@ -92,11 +93,7 @@ const Logger = getLogger(Subsystem.WorkflowApi)
 // New Workflow API Routes
 export const workflowRouter = new Hono()
 
-interface AttachmentUploadResponse {
-  success: boolean
-  attachments: AttachmentMetadata[]
-  message: string
-}
+
 
 // Utility function to extract attachment IDs from form data
 const extractAttachmentIds = (formData: Record<string, any>): {
@@ -134,6 +131,8 @@ const extractAttachmentIds = (formData: Record<string, any>): {
 
   return { imageAttachmentIds: imageIds, documentAttachmentIds: documentIds }
 }
+
+
 // List all workflow templates with root step details
 export const ListWorkflowTemplatesApi = async (c: Context) => {
   try {
@@ -257,7 +256,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     if (jwtPayload?.sub && jwtPayload?.workspaceId) {
       email = jwtPayload.sub
       workspaceId = jwtPayload.workspaceId
-      Logger.info(`Using JWT auth - email: ${email}, workspaceId: ${workspaceId}`)
+      via_apiKey = false
 
     } else {
       // Try API key context
@@ -271,7 +270,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     const userId = userAndWorkspace.user.id
     const workspaceInternalId = userAndWorkspace.workspace.id
 
-    Logger.info(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${workspaceInternalId}`)
+    Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${workspaceInternalId}`)
 
     const templateId = c.req.param("templateId")
     const contentType = c.req.header("content-type") || ""
@@ -282,7 +281,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Handle both JSON and multipart form data
     if (contentType.includes("multipart/form-data")) {
       const formData = await c.req.formData()
-      Logger.info(`Received multipart/form-data request with ${formData} `)
+      Logger.debug(`Received multipart/form-data request with ${formData} `)
       const entries: [string, FormDataEntryValue][] = []
       formData.forEach((value, key) => {
         entries.push([key, value])
@@ -383,36 +382,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
             message: `Root step input validation failed: ${validationResult.errors.join(", ")}`,
           })
         }
-
-        // Handle file uploads with workflow file handler
-        for (const field of formFields) {
-          if (field.type === "file") {
-            const file = requestData.rootStepInput[field.id]
-
-            if (file instanceof File) {
-              try {
-                const fileValidation =
-                  validationSchema[field.id]?.fileValidation
-
-                // We'll create the execution first, then handle file upload
-                // For now, store the file object for later processing
-                requestData.rootStepInput[field.id] = file
-              } catch (uploadError) {
-                Logger.error(
-                  uploadError,
-                  `File validation failed for field ${field.id}`,
-                )
-                throw new HTTPException(400, {
-                  message: `File validation failed for ${field.id}: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`,
-                })
-              }
-            } else if (field.required) {
-              throw new HTTPException(400, {
-                message: `Required file field '${field.id}' is missing`,
-              })
-            }
-          }
-        }
+        
       } else {
         // JSON validation (no files)
         const validationResult = validateFormData(
@@ -435,6 +405,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Create workflow execution
+    //Workflow TODO : currently in metadata we are passing userEmail, workspaceId, userId, workspaceInternalId, but after db changes we can directly fetch userId and workspaceId from workflowExecution tablexw
     const [execution] = await db
       .insert(workflowExecution)
       .values({
@@ -450,8 +421,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           executionContext: {
             userEmail: email,
             workspaceId: workspaceId,
-            userId: userAndWorkspace?.user?.id,
-            workspaceInternalId: userAndWorkspace?.workspace?.id
           }
         },
         status: WorkflowStatus.ACTIVE,
@@ -536,13 +505,13 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                   workflowStepId: rootStepExecution.id,
                 }
 
-                Logger.info(`Created basic file metadata: ${JSON.stringify(finalProcessedData)}`)
                 try {
                   // Create FormData for handleAttachmentUpload
                   const attachmentFormData = new FormData()
                   attachmentFormData.append('attachment', file)
 
                   // Create mock context with JWT payload for handleAttachmentUpload
+                  //Workflow-TODO: instead of creating mock context, we should create a helper function inside handleAttachmentUpload to accept params directly, or need to refactor handleAttachmentUpload to be more modular
                   const mockContext = {
                     req: {
                       formData: async () => attachmentFormData
@@ -557,35 +526,24 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                       return undefined
                     },
                     json: (data: any, status?: number) => {
-
-                      Logger.info(`handleAttachmentUpload completed successfully: ${JSON.stringify(data)}`)
                       return data
                     }
                   } as Context
 
-
-                  Logger.info(`Created mock context ${JSON.stringify(mockContext)} for handleAttachmentUpload with user ${email} and workspace ${workspaceId}`)
-                  Logger.info(`Processing file ${field.id} with handleAttachmentUpload for agent compatibility`)
-
-                  // Call handleAttachmentUpload
+                  // workflow-TODO: add multifile Support 
+                  // call handleAttachmentUpload which store files in vespa and images in downloads/xyne_images_db
                   const attachmentResult = await handleAttachmentUpload(mockContext) as unknown as AttachmentUploadResponse
 
-                  Logger.info(`handleAttachmentUpload result for field ${field.id}: ${JSON.stringify(attachmentResult)}`)
 
                   if (attachmentResult && typeof attachmentResult === 'object' && 'attachments' in attachmentResult) {
-                    const attachments = attachmentResult.attachments
-                    Logger.info(`handleAttachmentUpload returned attachments array for field ${field.id}: ${JSON.stringify(attachments)}`)
+                    const attachments : AttachmentMetadata[] = attachmentResult.attachments
                     if (Array.isArray(attachments) && attachments.length > 0) {
                       const attachmentId = attachments[0].fileId
-                      Logger.info(`Extracted attachment ID: ${attachmentId} for file ${field.id}`)
-                      Logger.info(`File ${field.id} processed successfully with attachment ID: ${attachmentId}`)
-
                       finalProcessedData = {
                         ...finalProcessedData,
                         attachmentId: attachmentId,
                         attachmentMetadata: attachments[0]
                       }
-                      Logger.info(`Final processed data for field ${field.id}: ${JSON.stringify(finalProcessedData)}`)
                     }
                   } else {
                     Logger.warn(`handleAttachmentUpload did not return expected attachments array for field ${field.id}`)
@@ -1859,16 +1817,12 @@ else:
 }
 
 // Helper function to extract content from previous step results using simplified input paths
-
-
+// Workflow-Todo: This function can be enhanced to support more complex path syntaxes if needed, currently this 
 const extractContentFromPath = (
   previousStepResults: any,
   contentPath: string,
 ): string => {
   try {
-    // New simplified approach: input.* always points to latest.result.*
-    // Examples: "input.aiOutput" -> latest step's result.aiOutput
-    //          "input.output" -> latest step's result.output
 
     if (!contentPath.startsWith("input.")) {
       return `Invalid path: ${contentPath}. Only paths starting with 'input.' are supported.`
@@ -1880,60 +1834,12 @@ const extractContentFromPath = (
       return "No previous steps available"
     }
 
-
-
-    // Remove "input." prefix and get target property
     const propertyPath = contentPath.slice(6) // Remove "input."
     const pathParts = propertyPath.split(".")
-    const targetProperty = pathParts[0] // e.g., "aiOutput"
 
-    Logger.info(`DEBUG - extractContentFromPath: Target property: ${targetProperty}`)
 
-    // Strategy 1: Look for AI Agent step specifically (most common case for aiOutput)
-    if (targetProperty === "aiOutput") {
-      const aiAgentStep = previousStepResults["AI Agent"]
-      if (aiAgentStep?.result?.aiOutput) {
-        Logger.info(`DEBUG - extractContentFromPath: Found aiOutput in AI Agent step`)
-        return aiAgentStep.result.aiOutput
-      }
-    }
-
-    // Strategy 2: Search through all steps to find the target property
-    for (const stepKey of stepKeys) {
-      const stepResult = previousStepResults[stepKey]
-      Logger.info(`DEBUG - extractContentFromPath: Checking step '${stepKey}': ${JSON.stringify(stepResult, null, 2)}`)
-
-      if (stepResult?.result) {
-        let target = stepResult.result
-
-        // Navigate through the path starting from result
-        let found = true
-        for (const part of pathParts) {
-          if (target && typeof target === "object" && part in target) {
-            target = target[part]
-          } else {
-            found = false
-            break
-          }
-        }
-
-        if (found && target !== null && target !== undefined) {
-          Logger.info(`DEBUG - extractContentFromPath: Found target in step '${stepKey}'`)
-          // Convert result to string
-          if (typeof target === "string") {
-            return target
-          } else {
-            return JSON.stringify(target, null, 2)
-          }
-        }
-      }
-    }
-
-    // Strategy 3: Fallback to latest step (original logic)
     const latestStepKey = stepKeys[stepKeys.length - 1]
     const latestStepResult = previousStepResults[latestStepKey]
-
-    Logger.info(`DEBUG - extractContentFromPath: Fallback to latest step '${latestStepKey}': ${JSON.stringify(latestStepResult, null, 2)}`)
 
     if (latestStepResult?.result) {
       let target = latestStepResult.result
@@ -1963,6 +1869,7 @@ const extractContentFromPath = (
 }
 
 // Helper function to get execution context (user info) from workflow execution
+//Workflow-Todo : after DB Changes we might not need this function as we can fetch userId and workspaceId directly from workflowExecution table
 const getExecutionContext = async (executionId: string): Promise<{
   workspaceId: string
   userEmail: string
@@ -1982,6 +1889,7 @@ const getExecutionContext = async (executionId: string): Promise<{
     }
 
     // Check if execution context was stored in metadata
+  
     const context = execution.metadata as any
     if (context.executionContext) {
       return context.executionContext
@@ -2036,16 +1944,13 @@ const executeWorkflowTool = async (
 
       case "email":
         // Enhanced email tool using config for recipients and configurable path for content extraction
-        Logger.info(`DEBUG - Email tool previousStepResults: ${JSON.stringify(previousStepResults, null, 2)}`)
 
         const emailConfig = tool.config || {}
-        Logger.info(`DEBUG - Email tool config: ${JSON.stringify(emailConfig, null, 2)}`)
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
-
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
         const subject = emailConfig.subject || "Workflow Results"
         const contentType = emailConfig.content_type || "html"
-        Logger.info(`DEBUG - Email tool config details: toEmail=${JSON.stringify(toEmail)}, fromEmail=${fromEmail}, subject=${subject}, contentType=${contentType}`)
+        Logger.debug(`DEBUG - Email tool config details: toEmail=${JSON.stringify(toEmail)}, fromEmail=${fromEmail}, subject=${subject}, contentType=${contentType}`)
 
         // New configurable content path feature
         const contentPath =
@@ -2064,7 +1969,7 @@ const executeWorkflowTool = async (
           } else {
             // Fallback to extracting from response.aiOutput path
             emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
-            Logger.info("DEBUG - Extracted email body using default path 'input.aiOutput':", emailBody)
+            Logger.info(`DEBUG - Extracted email body using default path 'input.aiOutput': ${emailBody}`)
             if (!emailBody) {
               emailBody = "No content available from previous step"
             }
@@ -2173,12 +2078,9 @@ const executeWorkflowTool = async (
 
       case "ai_agent":
         const aiConfig = tool.config || {}
-
         const aiValue = tool.value || {}
-
         const agentId = aiConfig.agentId
-        // this agent is is externalID from the agents table
-        Logger.info(`DEBUG - AI Agent tool agentId from config: ${agentId}`)
+
 
         if (!agentId) {
           Logger.error("No agent ID found in tool config - agent creation may have failed during template creation")
@@ -2193,8 +2095,6 @@ const executeWorkflowTool = async (
         }
 
         try {
-
-
           // Get execution context for user info
           const executionContext = await getExecutionContext(executionId)
           if (!executionContext) {
@@ -2208,33 +2108,23 @@ const executeWorkflowTool = async (
           }
 
           // Extract agent parameters with dynamic values
-          const agentId = aiConfig.agentId
-          Logger.info(`DEBUG (ExecuteWorkflowTool) - Using agentId: ${agentId}`)
           const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
-          Logger.info(`DEBUG (ExecuteWorkflowTool) - Using prompt: ${prompt}`)
           const temperature = aiConfig.temperature || 0.7
           const workspaceId = executionContext.workspaceId
-          Logger.info(`DEBUG (ExecuteWorkflowTool) - Using workspaceId: ${workspaceId}`)
           const userEmail = executionContext.userEmail
-          Logger.info(`DEBUG (ExecuteWorkflowTool) - Using userEmail: ${userEmail}`)
 
           // Process input content based on input type
           let userQuery = ""
           let imageAttachmentIds: string[] = []
           let documentAttachmentIds: string[] = []
 
-          Logger.info(`Debug - Full previousStepResults: ${JSON.stringify(previousStepResults, null, 2)}`)
-
           if (aiConfig.inputType === "form") {
             // Extract form data from previous step - corrected data path
             const stepKeys = Object.keys(previousStepResults)
-            Logger.info(`Debug - Available step keys: ${stepKeys}`)
 
             if (stepKeys.length > 0) {
               const latestStepKey = stepKeys[stepKeys.length - 1]
               const prevStepData = previousStepResults[latestStepKey]
-
-              Logger.info(`Debug - Previous step data: ${JSON.stringify(prevStepData, null, 2)}`)
 
               // Try multiple possible paths for form data
               const formSubmission =
@@ -2247,19 +2137,11 @@ const executeWorkflowTool = async (
               imageAttachmentIds = extractedIds.imageAttachmentIds
               documentAttachmentIds = extractedIds.documentAttachmentIds
 
-              Logger.info("Debug - Form submission data:", JSON.stringify(formSubmission, null, 2))
-
               // Process text fields
               const textFields = Object.entries(formSubmission)
                 .filter(([key, value]) => typeof value === "string")
                 .map(([key, value]) => `${key}: ${value}`)
                 .join("\n")
-
-              Logger.info("Debug - Extracted text fields:", textFields)
-
-              // // For now, use empty arrays - will be populated when handleAttachmentUpload is integrated
-              // attachmentFileIds = []
-              // nonImageAttachmentFileIds = ["att_a9b4896e-044a-4391-82d7-2befd06a40e7"]
 
               userQuery = `${prompt}\n\nForm Data:\n${textFields}`
             } else {
@@ -2267,7 +2149,6 @@ const executeWorkflowTool = async (
               userQuery = prompt
             }
           } else {
-            // Text input type
             const stepKeys = Object.keys(previousStepResults)
             if (stepKeys.length > 0) {
               const latestStepKey = stepKeys[stepKeys.length - 1]
@@ -2280,10 +2161,6 @@ const executeWorkflowTool = async (
               userQuery = prompt
             }
           }
-
-          Logger.info(`Debug - Final userQuery: ${userQuery}`)
-          Logger.info(`Debug - Image attachment IDs: ${imageAttachmentIds}`)
-          Logger.info(`Debug - Document attachment IDs: ${documentAttachmentIds}`)
           const result: ExecuteAgentResponse = await ExecuteAgentForWorkflow({
             agentId,
             userQuery,
@@ -2294,8 +2171,6 @@ const executeWorkflowTool = async (
             attachmentFileIds: imageAttachmentIds,
             nonImageAttachmentFileIds: documentAttachmentIds,
           })
-
-          Logger.info("Debug - ExecuteAgentForWorkflow result:", JSON.stringify(result, null, 2))
 
           if (!result.success) {
             return {
