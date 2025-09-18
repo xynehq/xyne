@@ -11,11 +11,10 @@ import { useNavigate } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server" // For rendering ReactNode to HTML string
 import {
   ArrowRight,
-  AtSign,
   Layers,
   Square,
   ChevronDown,
-  Infinity,
+  // Infinity,
   Check,
   Link,
   Search,
@@ -58,12 +57,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { SmartTooltip } from "@/components/ui/smart-tooltip"
 import { getIcon } from "@/lib/common"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
 import { DriveEntity } from "shared/types"
@@ -320,25 +314,45 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
-// Reusable tooltip wrapper component
-const TooltipWrapper: React.FC<{
-  children: React.ReactElement
-  content: string
-  delayDuration?: number
-}> = ({ children, content, delayDuration = 500 }) => (
-  <TooltipProvider delayDuration={delayDuration}>
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent>
-        <p>{content}</p>
-      </TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-)
-
 export interface ChatBoxRef {
   sendMessage: (message: string) => void
   getCurrentModelConfig: () => string | null
+}
+
+// Utility functions for robust localStorage handling of selected model
+const getSelectedModelFromStorage = (): string => {
+  try {
+    return localStorage.getItem("selectedModel") || ""
+  } catch (error) {
+    console.warn("Failed to get selectedModel from localStorage:", error)
+    return ""
+  }
+}
+
+const setSelectedModelInStorage = (modelName: string): void => {
+  try {
+    if (modelName) {
+      localStorage.setItem("selectedModel", modelName)
+    } else {
+      localStorage.removeItem("selectedModel")
+    }
+  } catch (error) {
+    console.warn("Failed to set selectedModel in localStorage:", error)
+  }
+}
+
+const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
+  if (!availableModels || availableModels.length === 0) {
+    return ""
+  }
+
+  // Try to find Claude Sonnet 4 as default, otherwise use first available
+  const defaultModel =
+    availableModels.find(
+      (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
+    ) || availableModels[0]
+
+  return defaultModel.labelName
 }
 
 export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
@@ -355,7 +369,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       chatId,
       agentIdFromChatData, // Destructure new prop
       user, // Destructure user prop
-      setIsAgenticMode,
+      // setIsAgenticMode,
       isAgenticMode = false,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
@@ -539,24 +553,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     })
 
     const [selectedModel, setSelectedModel] = useState<string>(() => {
-      // Initialize based on current mode and localStorage
-      try {
-        const savedCapability = localStorage.getItem("selectedCapability") as
-          | "reasoning"
-          | "websearch"
-          | "deepResearch"
-          | null
-        if (savedCapability === "reasoning") {
-          return localStorage.getItem("reasoningModeModel") || ""
-        } else if (savedCapability === "websearch") {
-          return "Gemini 2.5 Flash" // Auto-select for web search
-        } else if (savedCapability === "deepResearch") {
-          return "GPT O3 Research" // Auto-select for deep research
-        }
-        return localStorage.getItem("reasoningModeModel") || ""
-      } catch {
-        return ""
-      }
+      // Simple localStorage-based initialization
+      return getSelectedModelFromStorage()
     })
 
     const [isModelsLoading, setIsModelsLoading] = useState(false)
@@ -644,17 +642,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
     const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId"
 
-    // Effect to persist reasoning mode model selection
+    // Effect to persist selected model to localStorage
     useEffect(() => {
-      if (selectedCapability === "reasoning" && selectedModel) {
-        try {
-          localStorage.setItem("reasoningModeModel", selectedModel)
+      if (selectedModel) {
+        setSelectedModelInStorage(selectedModel)
+        // Also update reasoningModeModel for backward compatibility
+        if (selectedCapability === "reasoning") {
           setReasoningModeModel(selectedModel)
-        } catch (error) {
-          console.warn(
-            "Failed to save reasoning mode model to localStorage:",
-            error,
-          )
         }
       }
     }, [selectedModel, selectedCapability])
@@ -671,6 +665,37 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         console.warn("Failed to save capability to localStorage:", error)
       }
     }, [selectedCapability])
+
+    // Effect to validate and set model when availableModels loads
+    useEffect(() => {
+      if (availableModels.length > 0) {
+        const savedModel = getSelectedModelFromStorage()
+
+        if (savedModel) {
+          // Check if saved model is still available
+          const isModelAvailable = allModelsWithO3.some(
+            (m) => m.labelName === savedModel,
+          )
+
+          if (isModelAvailable && savedModel !== selectedModel) {
+            // Restore saved model if it's available and different from current
+            setSelectedModel(savedModel)
+          } else if (!isModelAvailable && !selectedModel) {
+            // Saved model no longer available and no current selection, use default
+            const defaultModel = getDefaultModel(availableModels)
+            if (defaultModel) {
+              setSelectedModel(defaultModel)
+            }
+          }
+        } else if (!selectedModel) {
+          // No saved model and no current selection, use default
+          const defaultModel = getDefaultModel(availableModels)
+          if (defaultModel) {
+            setSelectedModel(defaultModel)
+          }
+        }
+      }
+    }, [availableModels, allModelsWithO3])
 
     // Effect to trigger animation when model changes
     useEffect(() => {
@@ -690,15 +715,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         if (newCapability === selectedCapability) {
           // Clicking the same capability toggles it off (deselects)
           setSelectedCapability(null)
-          // When deselected, restore reasoning mode model or default
-          if (reasoningModeModel) {
-            setSelectedModel(reasoningModeModel)
-          } else if (availableModels.length > 0) {
-            const defaultModel =
-              availableModels.find(
-                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
-              ) || availableModels[0]
-            setSelectedModel(defaultModel.labelName)
+          // When deselected, restore default model
+          const defaultModel = getDefaultModel(availableModels)
+          if (defaultModel) {
+            setSelectedModel(defaultModel)
           }
           return
         }
@@ -706,9 +726,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         setSelectedCapability(newCapability)
 
         if (newCapability === "reasoning") {
-          // Switch to reasoning mode - restore previous reasoning model or default
+          // Switch to reasoning mode - restore previous reasoning model or use current model
           const storedReasoningModel =
-            reasoningModeModel || localStorage.getItem("reasoningModeModel")
+            reasoningModeModel || getSelectedModelFromStorage()
           if (
             storedReasoningModel &&
             availableModels.find(
@@ -716,13 +736,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             )
           ) {
             setSelectedModel(storedReasoningModel)
-          } else if (availableModels.length > 0) {
-            // Default to Claude Sonnet 4 or first available model
-            const defaultModel =
-              availableModels.find(
-                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
-              ) || availableModels[0]
-            setSelectedModel(defaultModel.labelName)
+          } else {
+            // Use default model if no valid stored model
+            const defaultModel = getDefaultModel(availableModels)
+            if (defaultModel) {
+              setSelectedModel(defaultModel)
+            }
           }
         } else if (newCapability === "websearch") {
           // Auto-select Gemini 2.5 Flash for web search
@@ -749,33 +768,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           const data = await response.json()
           setAvailableModels(data.models)
 
-          // Set default model based on current mode
+          // Set default model if no model is currently selected and models are available
           if (data.models.length > 0 && !selectedModel) {
-            if (selectedCapability === "reasoning") {
-              // Default to Claude Sonnet 4 or first available
-              const defaultModel =
-                data.models.find(
-                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
-                ) || data.models[0]
-              setSelectedModel(defaultModel.labelName)
-              setReasoningModeModel(defaultModel.labelName)
-            } else if (selectedCapability === "websearch") {
-              const geminiModel = data.models.find(
-                (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
-              )
-              if (geminiModel) {
-                setSelectedModel(geminiModel.labelName)
-              }
-            } else if (selectedCapability === "deepResearch") {
-              setSelectedModel("GPT O3 Research")
-            } else {
-              // No capability selected - default to Claude Sonnet 4 or first available
-              const defaultModel =
-                data.models.find(
-                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
-                ) || data.models[0]
-              setSelectedModel(defaultModel.labelName)
-              setReasoningModeModel(defaultModel.labelName)
+            const defaultModel = getDefaultModel(data.models)
+            if (defaultModel) {
+              setSelectedModel(defaultModel)
+              setReasoningModeModel(defaultModel)
             }
           }
         } catch (error) {
@@ -786,7 +784,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       }
 
       fetchAvailableModels()
-    }, [selectedCapability])
+    }, []) // Remove selectedCapability dependency to avoid re-fetching models
 
     // File upload utility functions
     const showToast = createToastNotifier(toast)
@@ -2128,46 +2126,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       fetchResults(currentSearchTerm, nextPage, true)
     }
 
-    const handleAtMentionClick = () => {
-      const input = inputRef.current
-      if (!input) return
-
-      const textContentBeforeAt = input.textContent || ""
-
-      const textToAppend =
-        textContentBeforeAt.length === 0 ||
-        textContentBeforeAt.endsWith(" ") ||
-        textContentBeforeAt.endsWith("\n") ||
-        textContentBeforeAt.endsWith("\u00A0")
-          ? "@"
-          : " @"
-
-      const atTextNode = document.createTextNode(textToAppend)
-
-      input.appendChild(atTextNode)
-
-      const newTextContent = input.textContent || ""
-      setQuery(newTextContent)
-      setIsPlaceholderVisible(newTextContent.length === 0)
-
-      const newAtSymbolIndex =
-        textContentBeforeAt.length + (textToAppend === " @" ? 1 : 0)
-      setCaretPosition(input, newTextContent.length)
-
-      setActiveAtMentionIndex(newAtSymbolIndex)
-      setReferenceSearchTerm("")
-      setShowReferenceBox(true)
-      updateReferenceBoxPosition(newAtSymbolIndex)
-      setSearchMode("citations")
-      setGlobalResults([])
-      setGlobalError(null)
-      setPage(1)
-      setTotalCount(0)
-      setSelectedRefIndex(-1)
-
-      input.focus()
-    }
-
     useEffect(() => {
       if (
         showReferenceBox &&
@@ -2468,7 +2426,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
-                Ask anything across apps...
+                Ask a question or type @ to search your apps
               </div>
             )}
             <div
@@ -2924,7 +2882,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           )}
 
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-            <TooltipWrapper content="attachment">
+            <SmartTooltip content="attachment">
               <Attach
                 className={`${
                   selectedFiles.length >= MAX_ATTACHMENTS
@@ -2942,23 +2900,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
                 }
               />
-            </TooltipWrapper>
-
-            {/* Vertical Divider */}
-            {showAdvancedOptions && (
-              <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
-            )}
+            </SmartTooltip>
 
             {showAdvancedOptions && (
               <>
-                <TooltipWrapper content="find and attach specific document">
-                  <AtSign
-                    size={16}
-                    className={`text-[#464D53] dark:text-gray-400 cursor-pointer ${CLASS_NAMES.REFERENCE_TRIGGER}`}
-                    onClick={handleAtMentionClick}
-                  />
-                </TooltipWrapper>
-
                 {/* Capability Selector with Slider Animation */}
                 <div className="flex items-center gap-1 ml-2 relative bg-gray-100 dark:bg-slate-700 rounded-full px-1 py-0.5">
                   {/* Slider Background */}
@@ -2975,7 +2920,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   />
 
                   {/* Always show all three capability buttons */}
-                  <TooltipWrapper content="reasoning">
+                  <SmartTooltip content="Reasoning">
                     <button
                       onClick={() => handleCapabilityChange("reasoning")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2986,9 +2931,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Atom size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
 
-                  <TooltipWrapper content="websearch">
+                  <SmartTooltip content="Web Search">
                     <button
                       onClick={() => handleCapabilityChange("websearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2999,9 +2944,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Globe size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
 
-                  <TooltipWrapper content="deepresearch">
+                  <SmartTooltip content="Deep Thinking">
                     <button
                       onClick={() => handleCapabilityChange("deepResearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -3012,7 +2957,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Brain size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
                 </div>
               </>
             )}
@@ -3564,25 +3509,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       Filter Sources
                     </DropdownMenuLabel>
                     {selectedSourcesCount > 0 ? (
-                      <TooltipProvider delayDuration={100}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              onClick={handleClearAllSources}
-                              className="p-1 rounded-full hover:bg-[#EDF2F7] dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                              aria-label="Clear all selected sources"
-                            >
-                              <RotateCcw size={16} />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="bottom"
-                            className="bg-black text-white text-xs rounded-sm"
-                          >
-                            <p>Clear all</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <SmartTooltip content="Clear all" delayDuration={100}>
+                        <button
+                          onClick={handleClearAllSources}
+                          className="p-1 rounded-full hover:bg-[#EDF2F7] dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                          aria-label="Clear all selected sources"
+                        >
+                          <RotateCcw size={16} />
+                        </button>
+                      </SmartTooltip>
                     ) : (
                       <button
                         className="p-1 rounded-full text-transparent"
@@ -3630,7 +3565,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {showAdvancedOptions && (
+            {/* {showAdvancedOptions && (
               <button
                 onClick={(e) => {
                   e.stopPropagation()
@@ -3650,7 +3585,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   Agent
                 </span>
               </button>
-            )}
+            )} */}
 
             {/* Model Selection Dropdown */}
             {(showAdvancedOptions || hideButtons) && (

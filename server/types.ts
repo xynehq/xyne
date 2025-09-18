@@ -8,6 +8,7 @@ import {
   DriveEntity,
   SlackEntity,
 } from "@/shared/types"
+import { UserRole } from "@/shared/types"
 import type { PgTransaction } from "drizzle-orm/pg-core"
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import { JWT, type OAuth2Client } from "google-auth-library"
@@ -92,7 +93,7 @@ export type OAuthStartQuery = z.infer<typeof oauthStartQuerySchema>
 
 export const addServiceConnectionSchema = z.object({
   "service-key": z
-    .instanceof(File)
+    .any()
     .refine(
       (file) =>
         file.type === "application/json" || file.name?.endsWith(".json"),
@@ -125,7 +126,7 @@ export type ServiceAccountConnection = z.infer<
 
 export const updateServiceConnectionSchema = z.object({
   "service-key": z
-    .instanceof(File)
+    .any()
     .refine(
       (file) =>
         file.type === "application/json" || file.name?.endsWith(".json"),
@@ -472,6 +473,7 @@ export enum Subsystem {
   AI = "AI",
   Tuning = "Tuning",
   AgentApi = "AgentApi",
+  WorkflowApi = "WorkflowApi",
   Metric = "Metric",
   Slack = "Slack",
 }
@@ -555,3 +557,9 @@ export type loggerChildSchema = {
   responseStatus?: string
   operationType?: OperationType
 }
+export const UserRoleChangeSchema = z.object({
+  userId: z.string(),
+  newRole: z.nativeEnum(UserRole),
+})
+
+export type userRoleChange = z.infer<typeof UserRoleChangeSchema>

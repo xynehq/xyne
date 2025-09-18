@@ -28,7 +28,7 @@ export class FileProcessorService {
     fileName: string,
     vespaDocId: string,
     storagePath?: string,
-    extractImages: boolean = false,
+    extractImages: boolean = true,
     describeImages: boolean = false,
   ): Promise<ProcessingResult> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
@@ -78,7 +78,7 @@ export class FileProcessorService {
         // Process spreadsheet
         let workbook: XLSX.WorkBook
         if (!storagePath) {
-          workbook = XLSX.read(buffer, { type: 'buffer' })
+          workbook = XLSX.read(buffer, { type: "buffer" })
         } else {
           workbook = XLSX.readFile(storagePath)
         }

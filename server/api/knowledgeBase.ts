@@ -1,6 +1,9 @@
 import { createId } from "@paralleldrive/cuid2"
 import { mkdir, unlink, writeFile, readFile } from "node:fs/promises"
+import { createReadStream as createFileReadStream } from "node:fs"
 import { join, dirname, extname } from "node:path"
+import { stat } from "node:fs/promises"
+import { stream } from "hono/streaming"
 import { type SelectUser } from "@/db/schema"
 import { z } from "zod"
 import type { Context } from "hono"
@@ -31,13 +34,14 @@ import {
   generateFileVespaDocId,
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
+  getCollectionFilesVespaIds,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"
 import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
-import { insert, DeleteDocument } from "@/search/vespa"
+import { insert, DeleteDocument, GetDocument } from "@/search/vespa"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import crypto from "crypto"
 import { FileProcessorService } from "@/services/fileProcessor"
@@ -118,6 +122,8 @@ function getStoragePath(
     `${storageKey}_${fileName}`,
   )
 }
+
+
 
 // API Handlers
 
@@ -1558,7 +1564,7 @@ export const GetFilePreviewApi = async (c: Context) => {
     // For now, just return the storage path that can be used for preview
     // In a real implementation, this might return a signed URL or preview service URL
     return c.json({
-      previewUrl: `/api/v1/kb/${collectionId}/files/${itemId}/content`,
+      previewUrl: `/api/v1/cl/${collectionId}/files/${itemId}/content`,
       mimeType: collectionFile.mimeType,
       fileName: collectionFile.originalName,
     })
@@ -1572,6 +1578,67 @@ export const GetFilePreviewApi = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Failed to get file preview",
+    })
+  }
+}
+
+export const GetChunkContentApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const chunkIndex = parseInt(c.req.param("cId"))
+  const itemId = c.req.param("itemId")
+
+  try {
+    const collectionFile = await getCollectionFileByItemId(db, itemId)
+    if (!collectionFile) {
+      throw new HTTPException(404, { message: "File data not found" })
+    }
+
+    const vespaIds = await getCollectionFilesVespaIds([itemId], db)
+    if (vespaIds.length === 0) {
+      throw new HTTPException(404, { message: "Vespa document ID not found" })
+    }
+    if (!vespaIds[0].vespaDocId) {
+      throw new HTTPException(404, { message: "Vespa document ID is null" })
+    }
+
+    const resp = await GetDocument(KbItemsSchema, vespaIds[0].vespaDocId)
+    
+    if (!resp || !resp.fields) {
+      throw new HTTPException(404, { message: "Invalid Vespa document response" })
+    }
+    
+    if (resp.fields.sddocname && resp.fields.sddocname !== "kb_items") {
+      throw new HTTPException(404, { message: "Invalid document type" })
+    }
+    
+    if (!resp.fields.chunks_pos || !resp.fields.chunks) {
+      throw new HTTPException(404, { message: "Document missing chunk data" })
+    }
+    
+    const index = resp.fields.chunks_pos.findIndex((pos: number) => pos === chunkIndex)
+    if (index === -1) {
+      throw new HTTPException(404, { message: "Chunk index not found" })
+    }
+
+    // Get the chunk content from Vespa response
+    const chunkContent = resp.fields.chunks[index]
+    if (!chunkContent) {
+      throw new HTTPException(404, { message: "Chunk content not found" })
+    }
+
+    return c.json({
+      chunkContent: chunkContent,
+    })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to get chunk content: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to get chunk content",
     })
   }
 }
@@ -1598,7 +1665,7 @@ export const GetFileContentApi = async (c: Context) => {
     return new Response(new Uint8Array(fileContent), {
       headers: {
         "Content-Type": collectionFile.mimeType || "application/octet-stream",
-        "Content-Disposition": `inline; filename="${collectionFile.originalName}"`,
+        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(collectionFile.originalName || 'file')}`,
         "Cache-Control": "private, max-age=3600",
       },
     })
@@ -1612,6 +1679,245 @@ export const GetFileContentApi = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Failed to get file content",
+    })
+  }
+}
+
+// Download file (supports all file types with true streaming and range requests)
+export const DownloadFileApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const collectionId = c.req.param("clId")
+  const itemId = c.req.param("itemId")
+
+  // Get user from database
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+
+  const user = users[0]
+
+  try {
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
+    }
+
+    // Check access: owner can always access, others only if Collection is public
+    if (collection.ownerId !== user.id && collection.isPrivate) {
+      throw new HTTPException(403, {
+        message: "You don't have access to this Collection",
+      })
+    }
+
+    const item = await getCollectionItemById(db, itemId)
+    if (!item || item.type !== "file") {
+      throw new HTTPException(404, { message: "File not found" })
+    }
+
+    // Verify item belongs to this Collection by checking collectionId directly
+    if (item.collectionId !== collectionId) {
+      throw new HTTPException(404, {
+        message: "File not found in this knowledge base",
+      })
+    }
+
+    const collectionFile = await getCollectionFileByItemId(db, itemId)
+    if (!collectionFile) {
+      throw new HTTPException(404, { message: "File data not found" })
+    }
+
+    // Check if file exists on disk and get stats
+    let fileStats
+    try {
+      if (!collectionFile.storagePath) {
+        throw new HTTPException(404, { message: "File storage path not found" })
+      }
+      fileStats = await stat(collectionFile.storagePath)
+    } catch (statError) {
+      if ((statError as NodeJS.ErrnoException).code === "ENOENT") {
+        loggerWithChild({ email: userEmail }).error(
+          `File not found on disk: ${collectionFile.storagePath}`,
+        )
+        throw new HTTPException(404, {
+          message:
+            "File content not found on disk. The file may have been moved or deleted.",
+        })
+      }
+      throw statError
+    }
+    const fileSize = fileStats.size
+    const range = c.req.header("range")
+    
+    const storagePath = collectionFile.storagePath
+
+    if(!collectionFile.originalName){
+      throw new HTTPException(500, { message: "File original name is missing" })
+    }
+
+    // Filename sanitization helper functions for download functionality
+    function sanitizeFilename(name: string): string {
+    // Replace non-ASCII and problematic characters with '_'
+    return name.replace(/[^\x20-\x7E]|["\\]/g, "_")
+    }
+
+    // RFC 5987 encoding for filename*
+    function encodeRFC5987ValueChars(str: string): string {
+    return encodeURIComponent(str)
+    .replace(/['()]/g, escape)
+    .replace(/%(7C|60|5E)/g, unescape)
+   }
+
+    const safeFileName = sanitizeFilename(collectionFile.originalName)
+    const encodedFileName = encodeRFC5987ValueChars(collectionFile.originalName)
+
+    loggerWithChild({ email: userEmail }).info(
+      `Download request: ${collectionFile.originalName} (${fileSize} bytes) ${range ? `Range: ${range}` : "Full file"}`,
+    )
+
+    // Create streaming headers that trigger immediate download dialog
+    const baseHeaders = {
+      "Content-Type": "application/octet-stream", // Force binary download
+      "Content-Disposition": `attachment; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`,
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+      "X-Content-Type-Options": "nosniff",
+      "X-Download-Options": "noopen",
+      "X-Accel-Buffering": "no",
+      "Accept-Ranges": "bytes",
+    }
+
+    if (range) {
+      // Handle range requests
+      const parts = range.replace(/bytes=/, "").split("-")
+      const start = parseInt(parts[0], 10)
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
+      const chunkSize = end - start + 1
+
+      // Validate range
+      if (start >= fileSize || end >= fileSize || start > end) {
+        return new Response("Range Not Satisfiable", {
+          status: 416,
+          headers: {
+            "Content-Range": `bytes */${fileSize}`,
+          },
+        })
+      }
+
+      loggerWithChild({ email: userEmail }).info(
+        `Streaming range: ${start}-${end}/${fileSize} immediately`,
+      )
+
+      // Use Node.js streaming for more control over browser behavior
+      return stream(c, async (streamWriter) => {
+        // Set headers before streaming starts
+        c.header("Content-Range", `bytes ${start}-${end}/${fileSize}`)
+        c.header("Content-Length", chunkSize.toString())
+        Object.entries(baseHeaders).forEach(([key, value]) => {
+          c.header(key, value)
+        })
+        c.status(206)
+
+        // Create file stream
+        const readStream = createFileReadStream(storagePath, {
+          start,
+          end,
+          highWaterMark: 64 * 1024, // 64KB chunks
+        })
+
+        return new Promise<void>((resolve, reject) => {
+          readStream.on("data", async (chunk) => {
+            try {
+              await streamWriter.write(chunk)
+            } catch (error) {
+              readStream.destroy()
+              reject(error)
+            }
+          })
+
+          readStream.on("end", () => {
+            loggerWithChild({ email: userEmail }).info(
+              `Range download completed: ${collectionFile.originalName}`,
+            )
+            resolve()
+          })
+
+          readStream.on("error", (error) => {
+            loggerWithChild({ email: userEmail }).error(
+              error,
+              `Stream error: ${getErrorMessage(error)}`,
+            )
+            reject(error)
+          })
+        })
+      })
+    } else {
+      // Full file download with immediate header sending
+      loggerWithChild({ email: userEmail }).info(
+        `Streaming full file immediately: ${fileSize} bytes`,
+      )
+
+      return stream(c, async (streamWriter) => {
+        // Set headers before streaming starts - this should trigger download dialog immediately
+        c.header("Content-Length", fileSize.toString())
+        Object.entries(baseHeaders).forEach(([key, value]) => {
+          c.header(key, value)
+        })
+        c.status(200)
+
+        // Create file stream
+        const readStream = createFileReadStream(storagePath, {
+          highWaterMark: 64 * 1024, // 64KB chunks
+        })
+
+        return new Promise<void>((resolve, reject) => {
+          let bytesStreamed = 0
+
+          readStream.on("data", async (chunk) => {
+            try {
+              await streamWriter.write(chunk)
+              bytesStreamed += chunk.length
+
+              // Log progress for large files
+              if (bytesStreamed % (10 * 1024 * 1024) === 0) {
+                loggerWithChild({ email: userEmail }).debug(
+                  `Download progress: ${bytesStreamed}/${fileSize} bytes`,
+                )
+              }
+            } catch (error) {
+              readStream.destroy()
+              reject(error)
+            }
+          })
+
+          readStream.on("end", () => {
+            loggerWithChild({ email: userEmail }).info(
+              `Download completed: ${collectionFile.originalName} (${bytesStreamed} bytes)`,
+            )
+            resolve()
+          })
+
+          readStream.on("error", (error) => {
+            loggerWithChild({ email: userEmail }).error(
+              error,
+              `Stream error: ${getErrorMessage(error)}`,
+            )
+            reject(error)
+          })
+        })
+      })
+    }
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to download file: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to download file",
     })
   }
 }

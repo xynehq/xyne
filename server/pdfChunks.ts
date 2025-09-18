@@ -18,6 +18,7 @@ const seenHashDescriptions = new Map<string, string>()
 const MIN_IMAGE_DIM_PX = parseInt(process.env.MIN_IMAGE_DIM_PX || "150", 10)
 
 
+
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "pdfChunks",
 })
@@ -1374,11 +1375,11 @@ export async function extractTextAndImagesWithChunksFromPDF(
       describeImages,
     })
 
-    console.log("All text chunks", { text_chunks })
-    console.log("All text chunks", { text_chunks })
-    console.log("All text chunk positions", { text_chunk_pos })
-    console.log("All image chunks", { image_chunks })
-    console.log("All image chunk positions", { image_chunk_pos })
+    Logger.debug("All text chunks", { text_chunks })
+    Logger.debug("All text chunks", { text_chunks })
+    Logger.debug("All text chunk positions", { text_chunk_pos })
+    Logger.debug("All image chunks", { image_chunks })
+    Logger.debug("All image chunk positions", { image_chunk_pos })
     return {
       text_chunks,
       image_chunks,

@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   vespa:
-    image: xyne/vespa-gpu # Uses the custom GPU-enabled Vespa image
+    image: xyne/vespa-gpu:8.514 # Uses the custom GPU-enabled Vespa image
     runtime: nvidia
     deploy:
       resources:

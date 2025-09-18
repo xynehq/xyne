@@ -124,7 +124,7 @@ export const userChatSystem = (
 
 // Title Generation System Prompt
 export const generateTitleSystemPrompt = `
-  You are an assistant tasked with generating a concise and relevant title for a chat based on the user's query.
+  You are an assistant tasked with generating a concise and relevant title for a chat based on the user's query and assistant response.
 
   Please provide a suitable title that accurately reflects the essence of the query in JSON format as follows:
   {
@@ -2367,10 +2367,20 @@ Tone & Style:
 export const webSearchSystemPrompt = (
   userCtx: string,
   agentPrompt?: AgentPromptData,
+  webSearchCitations?: { title: string; url: string }[],
 ) => `
 User Context: ${userCtx}
 
 You are an AI assistant with access to web search. Your primary goal is to provide accurate, reliable, and up-to-date answers.
+
+${
+  webSearchCitations && webSearchCitations.length > 0
+    ? `
+User is referring to the following web search results please follow these urls to answer the question:
+${webSearchCitations.map((citation) => `- [${citation.title}](${citation.url})`).join("\n")}
+`
+    : ""
+}
 
 Guidelines for using web search:
 - Always use web search when the question involves current information, real-time data, or time-sensitive topics (e.g., news, prices, events, weather, business hours).
@@ -2378,7 +2388,7 @@ Guidelines for using web search:
 - For time-sensitive details (such as business hours, event schedules, or deadlines), ensure your answer is localized to the user's timezone.
 
 ${
-  agentPrompt && agentPrompt.prompt
+  agentPrompt && agentPrompt.prompt.length > 0
     ? `
 Agent Instructions:  
 Name: ${agentPrompt.name}  

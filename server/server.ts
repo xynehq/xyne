@@ -19,6 +19,10 @@ import {
   SearchSlackChannels,
   agentChatMessageSchema,
   chatTitleSchema,
+  GetDriveItem,
+  GetDriveItemsByDocIds,
+  HighlightApi,
+  highlightSchema,
 } from "@/api/search"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -38,6 +42,7 @@ import {
   deleteUserDataSchema,
   ingestMoreChannelSchema,
   startSlackIngestionSchema,
+  UserRoleChangeSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -70,6 +75,10 @@ import {
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
   GetWorkspaceApiKeys,
+  ListAllUsers,
+  UpdateUser,
+  HandlePerUserSlackSync,
+  HandlePerUserGoogleWorkSpaceSync,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -162,6 +171,42 @@ import {
   GetAgentApi,
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
+import {
+  CreateWorkflowTemplateApi,
+  CreateComplexWorkflowTemplateApi,
+  ExecuteTemplateApi,
+  ExecuteWorkflowWithInputApi,
+  GetWorkflowTemplateApi,
+  ListWorkflowTemplatesApi,
+  UpdateWorkflowTemplateApi,
+  CreateWorkflowExecutionApi,
+  GetWorkflowExecutionApi,
+  GetWorkflowExecutionStatusApi,
+  ListWorkflowExecutionsApi,
+  CreateWorkflowToolApi,
+  GetWorkflowToolApi,
+  ListWorkflowToolsApi,
+  UpdateWorkflowToolApi,
+  DeleteWorkflowToolApi,
+  AddStepToWorkflowApi,
+  DeleteWorkflowStepTemplateApi,
+  UpdateWorkflowStepExecutionApi,
+  CompleteWorkflowStepExecutionApi,
+  SubmitFormStepApi,
+  GetFormDefinitionApi,
+  ServeWorkflowFileApi,
+  GetGeminiModelEnumsApi,
+  GetVertexAIModelEnumsApi,
+  createWorkflowTemplateSchema,
+  createComplexWorkflowTemplateSchema,
+  updateWorkflowTemplateSchema,
+  createWorkflowExecutionSchema,
+  updateWorkflowExecutionSchema,
+  createWorkflowToolSchema,
+  updateWorkflowStepExecutionSchema,
+  formSubmissionSchema,
+  listWorkflowExecutionsQuerySchema,
+} from "@/api/workflow"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
   handleAttachmentUpload,
@@ -187,6 +232,8 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
+  DownloadFileApi,
+  GetChunkContentApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -201,7 +248,14 @@ import {
 const { JwtPayloadKey } = config
 import { updateMetricsFromThread } from "@/metrics/utils"
 
-import { agents, apiKeys, users, type PublicUserWorkspace } from "./db/schema"
+import {
+  agents,
+  apiKeys,
+  users,
+  type PublicUserWorkspace,
+  updateWorkflowToolSchema,
+  addStepToWorkflowSchema,
+} from "./db/schema"
 import { sendMailHelper } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
@@ -830,6 +884,8 @@ export const AppRoutes = app
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
+  .post("/search/driveitem", GetDriveItem)
+  .post("/search/driveitemsbydocids", GetDriveItemsByDocIds)
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(
@@ -839,6 +895,76 @@ export const AppRoutes = app
   )
   .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
   .get("/tuning/ws/:jobId", TuningWsRoute)
+
+  // Workflow Routes
+  .post(
+    "/workflow/templates",
+    zValidator("json", createWorkflowTemplateSchema),
+    CreateWorkflowTemplateApi,
+  )
+  .post(
+    "/workflow/templates/complex",
+    zValidator("json", createComplexWorkflowTemplateSchema),
+    CreateComplexWorkflowTemplateApi,
+  )
+  .get("/workflow/templates", ListWorkflowTemplatesApi)
+  .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
+  .put(
+    "/workflow/templates/:templateId",
+    zValidator("json", updateWorkflowTemplateSchema),
+    UpdateWorkflowTemplateApi,
+  )
+  .post("/workflow/templates/:templateId/execute", ExecuteTemplateApi)
+  .post(
+    "/workflow/templates/:templateId/execute-with-input",
+    ExecuteWorkflowWithInputApi,
+  )
+  .post(
+    "/workflow/templates/:templateId/steps",
+    zValidator("json", addStepToWorkflowSchema),
+    AddStepToWorkflowApi,
+  )
+  .post(
+    "/workflow/executions",
+    zValidator("json", createWorkflowExecutionSchema),
+    CreateWorkflowExecutionApi,
+  )
+  .get(
+    "/workflow/executions",
+    zValidator("query", listWorkflowExecutionsQuerySchema),
+    ListWorkflowExecutionsApi,
+  )
+  .get("/workflow/executions/:executionId", GetWorkflowExecutionApi)
+  .get(
+    "/workflow/executions/:executionId/status",
+    GetWorkflowExecutionStatusApi,
+  )
+  .post(
+    "/workflow/tools",
+    zValidator("json", createWorkflowToolSchema),
+    CreateWorkflowToolApi,
+  )
+  .get("/workflow/tools", ListWorkflowToolsApi)
+  .get("/workflow/tools/:toolId", GetWorkflowToolApi)
+  .put(
+    "/workflow/tools/:toolId",
+    zValidator("json", updateWorkflowToolSchema),
+    UpdateWorkflowToolApi,
+  )
+  .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
+  .put(
+    "/workflow/steps/:stepId",
+    zValidator("json", updateWorkflowStepExecutionSchema),
+    UpdateWorkflowStepExecutionApi,
+  )
+  .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
+  .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
+  .post("/workflow/steps/submit-form", SubmitFormStepApi)
+  .get("/workflow/files/:fileId", ServeWorkflowFileApi)
+  .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+  .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
+
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
   .get("/agent/generate-prompt", GeneratePromptApi)
@@ -876,6 +1002,9 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+  .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
+  .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
+  .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(
     "/oauth/create",
@@ -911,6 +1040,11 @@ export const AppRoutes = app
   // TODO: debug
   // for some reason the validation schema
   // is not making the keys mandatory
+  .get("/list_users", ListAllUsers)
+  .post("/change_role", zValidator("form", UserRoleChangeSchema), UpdateUser)
+  .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+  .post("syncSlackByMail", HandlePerUserSlackSync)
+  // create the provider + connector
   .post(
     "/oauth/create",
     zValidator("form", createOAuthProvider),
@@ -1239,102 +1373,6 @@ app.get(
   },
 )
 
-// Serving exact frontend routes and adding AuthRedirect wherever needed
-app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/chat", AuthRedirect, async (c, next) => {
-  if (c.req.query("shareToken")) {
-    const staticHandler = serveStatic({ path: "./dist/index.html" })
-    return await staticHandler(c, next)
-  }
-  return c.redirect("/")
-})
-app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
-app.get("/auth", serveStatic({ path: "./dist/index.html" }))
-app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
-app.get(
-  "/chat/:param",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/trace/:chatId/:messageId",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations/fileupload",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations/google",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations/slack",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations/mcp",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-// Catch-all for any other integration routes
-app.get(
-  "/integrations/*",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations/google",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations/slack",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations/mcp",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations/*",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
-app.get("/assets/*", serveStatic({ root: "./dist" }))
-app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get(
-  "/knowledgeManagement",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-
 // START of Health Check Endpoints
 // Comprehensive health check endpoint
 
@@ -1401,6 +1439,12 @@ app.get(
   "/health/vespa",
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
 )
+
+// Serving exact frontend routes and adding AuthRedirect wherever needed
+app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
+app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   if (isSlackEnabled()) {

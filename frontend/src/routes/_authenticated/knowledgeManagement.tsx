@@ -13,7 +13,7 @@ import {
   ChevronDown,
 } from "lucide-react"
 import { Sidebar } from "@/components/Sidebar"
-import { useState, useCallback, useEffect, memo } from "react"
+import { useState, useCallback, useEffect, memo, useRef, useMemo } from "react"
 import { Input } from "@/components/ui/input"
 import CollectionFileUpload, {
   SelectedFile as FileUploadSelectedFile,
@@ -48,9 +48,15 @@ import ReadmeViewer from "@/components/ReadmeViewer"
 import { DocumentChat } from "@/components/DocumentChat"
 import { authFetch } from "@/utils/authFetch"
 import { generateUUID } from "@/utils/chatUtils"
+import { useScopedFind } from "@/hooks/useScopedFind"
+import { PersistentMap } from "@/utils/chatUtils"
+import { DocumentOperationsProvider, useDocumentOperations } from "@/contexts/DocumentOperationsContext"
+import ExcelViewer from "@/components/ExcelViewer"
+import CsvViewer from "@/components/CsvViewer"
 
-// Module-level map to store documentId -> tempChatId mapping (frontend-generated UUIDs)
-const documentToTempChatMap = new Map<string, string>()
+// Persistent storage for documentId -> tempChatId mapping using sessionStorage
+const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
+const documentToTempChatMap = new PersistentMap(DOCUMENT_CHAT_MAP_KEY)
 
 export const Route = createFileRoute("/_authenticated/knowledgeManagement")({
   component: RouteComponent,
@@ -127,6 +133,167 @@ const DocumentViewerContainer = memo(
     }
     loadingDocument: boolean
   }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { documentOperationsRef } = useDocumentOperations();
+
+    const viewerElement = useMemo(() => {
+      if (!selectedDocument?.content) return null
+    
+      const name = selectedDocument.file.name.toLowerCase()
+    
+      if (name.endsWith(".pdf")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <PdfViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  { type: selectedDocument.content.type || "application/pdf" },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+              scale={1.2}
+              showNavigation
+              displayMode="continuous"
+              documentOperationsRef={documentOperationsRef}
+            />
+          </div>
+        )
+      }
+    
+      if (name.endsWith(".md")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <ReadmeViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  { type: selectedDocument.content.type || "text/markdown" },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+            />
+          </div>
+        )
+      }
+      if(name.endsWith(".xlsx") || name.endsWith(".xls") ){
+           return (
+             <div ref={containerRef} data-container-ref="true" className="h-full">
+               <ExcelViewer
+                 source={
+                   new File(
+                     [selectedDocument.content],
+                     selectedDocument.file.name,
+                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+                   )
+                 }
+                 className="h-full"
+                 style={{ height: "100%", overflow: "auto" }}
+               />
+             </div>
+           )
+      }
+
+      if(name.endsWith(".csv")){
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+               <CsvViewer
+                 source={
+                   new File(
+                     [selectedDocument.content],
+                     selectedDocument.file.name,
+                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+                   )
+                 }
+                 className="h-full"
+                 style={{ height: "100%", overflow: "auto" }}
+               />
+             </div>
+        )
+      }
+    
+      return (
+        <div ref={containerRef} data-container-ref="true" className="h-full p-6 overflow-auto">
+          <DocxViewer
+            source={
+              new File(
+                [selectedDocument.content],
+                selectedDocument.file.name,
+                {
+                  type:
+                    selectedDocument.content.type ||
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                },
+              )
+            }
+            className="h-full max-w-4xl mx-auto"
+            style={{ height: "100%" }}
+            options={{
+              renderHeaders: true,
+              renderFooters: true,
+              renderFootnotes: true,
+              renderEndnotes: true,
+              renderComments: false,
+              renderChanges: false,
+              breakPages: true,
+              ignoreLastRenderedPageBreak: true,
+              inWrapper: true,
+              ignoreWidth: false,
+              ignoreHeight: false,
+              ignoreFonts: false,
+            }}
+          />
+        </div>
+      )
+    }, [selectedDocument?.file.id, selectedDocument?.file.name, selectedDocument?.content])
+    
+    const {
+      highlightText,
+      clearHighlights,
+      scrollToMatch,
+    } = useScopedFind(containerRef);
+
+    // Expose the highlight functions via the document operations ref
+    useEffect(() => {
+      if (documentOperationsRef?.current) {
+        documentOperationsRef.current.highlightText = async (text: string) => {
+          if (!containerRef.current) {
+            const container = document.querySelector('[data-container-ref="true"]');
+            if (container) {
+              (containerRef as any).current = container;
+            } else {
+              return false;
+            }
+          }
+
+          try {
+            const success = await highlightText(text);
+            return success;
+          } catch (error) {
+            console.error('Error calling highlightText:', error);
+            return false;
+          }
+        };
+        
+        documentOperationsRef.current.clearHighlights = clearHighlights;
+        documentOperationsRef.current.scrollToMatch = scrollToMatch;
+      }
+    }, [documentOperationsRef, highlightText, clearHighlights, scrollToMatch]);
+
+    useEffect(() => {
+      clearHighlights();
+    }, [selectedDocument?.file.id, clearHighlights]);
+
+    useEffect(() => {
+      return () => {
+        clearHighlights();
+      };
+    }, [clearHighlights]);
+
     return (
       <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
         {loadingDocument && (
@@ -141,72 +308,7 @@ const DocumentViewerContainer = memo(
         )}
         {selectedDocument.content ? (
           <div className="h-full">
-            {selectedDocument.file.name.toLowerCase().endsWith(".pdf") ? (
-              <PdfViewer
-                key={selectedDocument.file.id}
-                source={
-                  new File(
-                    [selectedDocument.content],
-                    selectedDocument.file.name,
-                    {
-                      type: selectedDocument.content.type || "application/pdf",
-                    },
-                  )
-                }
-                className="h-full"
-                style={{ height: "100%", overflow: "auto" }}
-                scale={1.2}
-                showNavigation={true}
-                displayMode="continuous"
-              />
-            ) : selectedDocument.file.name.toLowerCase().endsWith(".md") ? (
-              <ReadmeViewer
-                source={
-                  new File(
-                    [selectedDocument.content],
-                    selectedDocument.file.name,
-                    {
-                      type: selectedDocument.content.type || "text/markdown",
-                    },
-                  )
-                }
-                className="h-full"
-                style={{ height: "100%", overflow: "auto" }}
-              />
-            ) : (
-              <div className="h-full p-6 overflow-auto">
-                <DocxViewer
-                  key={selectedDocument.file.id}
-                  source={
-                    new File(
-                      [selectedDocument.content],
-                      selectedDocument.file.name,
-                      {
-                        type:
-                          selectedDocument.content.type ||
-                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                      },
-                    )
-                  }
-                  className="h-full max-w-4xl mx-auto"
-                  style={{ height: "100%" }}
-                  options={{
-                    renderHeaders: true,
-                    renderFooters: true,
-                    renderFootnotes: true,
-                    renderEndnotes: true,
-                    renderComments: false,
-                    renderChanges: false,
-                    breakPages: true,
-                    ignoreLastRenderedPageBreak: true,
-                    inWrapper: true,
-                    ignoreWidth: false,
-                    ignoreHeight: false,
-                    ignoreFonts: false,
-                  }}
-                />
-              </div>
-            )}
+            {viewerElement}
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
@@ -233,9 +335,18 @@ const DocumentViewerContainer = memo(
 DocumentViewerContainer.displayName = "DocumentViewerContainer"
 
 function RouteComponent() {
+  return (
+    <DocumentOperationsProvider>
+      <KnowledgeManagementContent />
+    </DocumentOperationsProvider>
+  )
+}
+
+function KnowledgeManagementContent() {
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const { toast } = useToast()
+  const { documentOperationsRef } = useDocumentOperations()
   const [showNewCollection, setShowNewCollection] = useState(false)
   const [collectionName, setCollectionName] = useState("")
   const [collections, setCollections] = useState<Collection[]>([])
@@ -1054,7 +1165,9 @@ function RouteComponent() {
       file.type !== "file" ||
       (!fileName.endsWith(".docx") &&
         !fileName.endsWith(".pdf") &&
-        !fileName.endsWith(".md"))
+        !fileName.endsWith(".md") &&
+        !fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".xls")
+    )
     ) {
       showToast(
         "Preview Not Available",
@@ -1146,6 +1259,35 @@ function RouteComponent() {
     }
   }
 
+  const handleDownload = async (file: FileNode, collection: Collection) => {
+    if (file.type !== "file") return
+
+    try {
+      // Use hidden iframe approach to trigger download without opening new tab
+      // This preserves authentication cookies and lets the browser handle the download directly
+      const downloadUrl = `/api/v1/cl/${collection.id}/files/${file.id}/download`
+
+      // Create a hidden iframe to trigger the download
+      const iframe = document.createElement("iframe")
+      iframe.style.display = "none"
+      iframe.src = downloadUrl
+
+      document.body.appendChild(iframe)
+
+      // Clean up iframe after a short delay
+      setTimeout(() => {
+        if (iframe.parentNode) {
+          document.body.removeChild(iframe)
+        }
+      }, 1000)
+
+      showToast("Download Started", `"${file.name}" download started.`)
+    } catch (error) {
+      console.error("Error downloading file:", error)
+      showToast("Download Failed", "Failed to download file", true)
+    }
+  }
+
   // Chat management functions
   const handleChatCreated = useCallback(
     (chatId: string) => {
@@ -1193,8 +1335,49 @@ function RouteComponent() {
   }
 
   // Handle chunk index changes from DocumentChat
-  const handleChunkIndexChange = (newChunkIndex: number | null) => {
-    // setChunkIndex(newChunkIndex)
+  const handleChunkIndexChange = async (newChunkIndex: number | null, documentId: string) => {
+    if (!documentId) {
+      console.error('handleChunkIndexChange called without documentId');
+      return;
+    }
+    
+    if (newChunkIndex !== null && selectedDocument?.file.id === documentId) {
+      try {
+        const chunkContentResponse = await api.chunk[":cId"].files[":itemId"].content.$get({
+          param: { cId: newChunkIndex.toString(), itemId: documentId },
+        })
+        
+        if (!chunkContentResponse.ok) {
+          console.error('Failed to fetch chunk content:', chunkContentResponse.status);
+          showToast('Error', 'Failed to load chunk content', true);
+          return;
+        }
+        
+        const chunkContent = await chunkContentResponse.json()
+
+        // Ensure we are still on the same document before mutating UI
+        if (selectedDocument?.file.id !== documentId) {
+          return;
+        }
+        
+        if (chunkContent && chunkContent.chunkContent) {
+          if (documentOperationsRef?.current?.clearHighlights) {
+            documentOperationsRef.current.clearHighlights()
+          }
+          
+          if (documentOperationsRef?.current?.highlightText) {
+            try {
+              await documentOperationsRef.current.highlightText(chunkContent.chunkContent);
+            } catch (error) {
+              console.error('Error highlighting chunk text:', chunkContent.chunkContent, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in handleChunkIndexChange:', error);
+        showToast('Error', 'Failed to process chunk navigation', true);
+      }
+    }
   }
 
   return (
@@ -1634,6 +1817,9 @@ function RouteComponent() {
                           items={collection.items}
                           onFileClick={(file: FileNode) =>
                             handleFileClick(file, collection)
+                          }
+                          onDownload={(file: FileNode, path: string) =>
+                            handleDownload(file, collection)
                           }
                           onAddFiles={(node, path) => {
                             const collection = collections.find((c) =>
