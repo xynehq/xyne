@@ -50,6 +50,7 @@ export const createCitationLink =
             <TooltipTrigger asChild>
               <span
                 {...linkProps}
+                data-button-id="chat-citation"
                 className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-800 text-black-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150"
                 onClick={(e) => {
                   e.preventDefault()
@@ -144,6 +145,7 @@ export const createCitationLink =
       <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">
         {isNumericChild ? !citation?.title?.endsWith(".pdf") ? (
           <span
+            data-button-id="chat-citation"
             className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-900 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150 no-underline"
             style={{ textDecoration: "none" }}
           >

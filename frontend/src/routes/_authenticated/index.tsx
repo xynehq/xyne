@@ -307,6 +307,7 @@ const Index = () => {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
+                      data-button-id="tab-ask"
                       className={`flex items-center pr-[12px] rounded-[20px] ${
                         activeTab === Tabs.Ask
                           ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"
@@ -334,6 +335,7 @@ const Index = () => {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
+                      data-button-id="tab-search"
                       className={`flex items-center pr-[12px] rounded-[20px] ${
                         activeTab === Tabs.Search
                           ? "bg-[#EDF2F7] dark:bg-slate-700 text-[#33383D] dark:text-gray-100"

@@ -1246,6 +1246,7 @@ export const ChatPage = ({
             {isEditing && !isSharedChat ? (
               <input
                 ref={titleRef}
+                data-title-id="chat title"
                 className="flex-grow text-[#1C1D1F] dark:text-gray-100 bg-transparent text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap outline-none"
                 onInput={handleInput}
                 onKeyDown={handleKeyDown}
@@ -1254,7 +1255,10 @@ export const ChatPage = ({
               />
             ) : (
               <div className="flex items-center flex-grow">
-                <span className="text-[#1C1D1F] dark:text-gray-100 text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium">
+                <span 
+                  data-title-id="chat title"
+                  className="text-[#1C1D1F] dark:text-gray-100 text-[16px] font-normal overflow-hidden text-ellipsis whitespace-nowrap font-medium"
+                >
                   {isTitleUpdating ? streamingTitle : chatTitle}
                   {isTitleUpdating && (
                     <span className="inline-block w-0.5 h-4 bg-gray-400 dark:bg-gray-500 ml-1 animate-pulse" />
@@ -1270,6 +1274,7 @@ export const ChatPage = ({
               <>
                 {chatTitle && (
                   <Pencil
+                    data-button-id="edit-chat-title"
                     stroke="#4A4F59"
                     className="dark:stroke-gray-400 cursor-pointer"
                     size={18}
@@ -1278,6 +1283,7 @@ export const ChatPage = ({
                 )}
                 {chatId && (
                   <Share2
+                    data-button-id="share-chat"
                     stroke="#4A4F59"
                     className="dark:stroke-gray-400 ml-[20px] cursor-pointer hover:stroke-[#4A63E9]"
                     size={18}
@@ -1287,6 +1293,7 @@ export const ChatPage = ({
               </>
             )}
             <Bookmark
+              data-button-id="bookmark-chat"
               {...(bookmark ? { fill: "#4A4F59" } : { outline: "#4A4F59" })}
               className={`ml-[20px] cursor-pointer dark:stroke-gray-400 ${CLASS_NAMES.BOOKMARK_BUTTON}`}
               fill={
@@ -1297,6 +1304,7 @@ export const ChatPage = ({
               size={18}
             />
             <Ellipsis
+              data-button-id="chat-menu"
               stroke="#4A4F59"
               className="dark:stroke-gray-400 ml-[20px]"
               size={18}
@@ -1478,6 +1486,7 @@ const MessageCitationList = ({
           <Tooltip>
             <TooltipTrigger asChild>
               <img
+                data-button-id="expand-sources"
                 onClick={onToggleSources}
                 className="cursor-pointer"
                 src={Expand}
@@ -1553,6 +1562,7 @@ const Sources = ({
           SOURCES
         </span>
         <X
+        data-button-id="close sources sidebar"
           stroke="#9EAEBE"
           size={14}
           className="ml-auto cursor-pointer dark:stroke-gray-400"
@@ -2776,6 +2786,7 @@ export const ChatMessage = ({
                 )}
                 <div className="flex ml-[52px] mt-[12px] items-center">
                   <Copy
+                    data-button-id="copy-message"
                     size={16}
                     stroke={`${isCopied ? "#4F535C" : "#B2C3D4"}`}
                     className={`cursor-pointer`}
@@ -2801,6 +2812,7 @@ export const ChatMessage = ({
                   {messageId && (
                     <>
                       <ThumbsUp
+                        data-button-id="like-message"
                         size={16}
                         stroke={
                           feedbackStatus === MessageFeedback.Like
@@ -2815,6 +2827,7 @@ export const ChatMessage = ({
                         }
                       />
                       <ThumbsDown
+                        data-button-id="dislike-message"
                         size={16}
                         stroke={
                           feedbackStatus === MessageFeedback.Dislike
