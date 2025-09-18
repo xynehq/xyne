@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main 
+      - release_test_sim
+      - fix/release_file
 
 jobs:
   release:
