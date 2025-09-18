@@ -1035,18 +1035,7 @@ export const UploadFilesApi = async (c: Context) => {
         // Parse the file path to extract folder structure
         const pathParts = filePath.split("/").filter((part) => part.length > 0)
         const originalFileName = pathParts.pop() || file.name // Get the actual filename
-
-        // Validate file name
-        const invalidChars = /[\x00-\x1f\x7f<>:"|?*\\]/
-        if (invalidChars.test(originalFileName)) {
-          uploadResults.push({
-            success: false,
-            fileName: originalFileName,
-            parentId: targetParentId,
-            message: "Skipped: Invalid characters in filename",
-          })
-          continue
-        }
+       
 
         // Skip if the filename is a system file (in case it comes from path)
         if (
