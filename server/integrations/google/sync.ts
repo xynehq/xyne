@@ -1376,9 +1376,22 @@ export const handleGoogleServiceAccountChanges = async (
   Logger.info("handleGoogleServiceAccountChanges")
   const data = job.data
   const syncOnlyCurrentUser = job.data.syncOnlyCurrentUser || false
+  // for Drive and Contacts SyncJobs
   let syncJobs = await getAppSyncJobs(
     db,
     Apps.GoogleDrive,
+    AuthType.ServiceAccount,
+  )
+  // for Gmail SyncJobs
+  let gmailSyncJobs = await getAppSyncJobs(
+    db,
+    Apps.Gmail,
+    AuthType.ServiceAccount,
+  )
+  // For Calendar Events SyncJobs
+  let gCalEventSyncJobs = await getAppSyncJobs(
+    db,
+    Apps.GoogleCalendar,
     AuthType.ServiceAccount,
   )
   if (syncOnlyCurrentUser) {
@@ -1386,6 +1399,18 @@ export const handleGoogleServiceAccountChanges = async (
     syncJobs = await getAppSyncJobsByEmail(
       db,
       Apps.GoogleDrive,
+      AuthType.ServiceAccount,
+      data.email,
+    )
+    gmailSyncJobs = await getAppSyncJobsByEmail(
+      db,
+      Apps.Gmail,
+      AuthType.ServiceAccount,
+      data.email,
+    )
+    gCalEventSyncJobs = await getAppSyncJobsByEmail(
+      db,
+      Apps.GoogleCalendar,
       AuthType.ServiceAccount,
       data.email,
     )
@@ -1624,11 +1649,6 @@ export const handleGoogleServiceAccountChanges = async (
       })
     }
   }
-  const gmailSyncJobs = await getAppSyncJobs(
-    db,
-    Apps.Gmail,
-    AuthType.ServiceAccount,
-  )
   let stats = newStats()
   for (const syncJob of gmailSyncJobs) {
     try {
@@ -1715,12 +1735,6 @@ export const handleGoogleServiceAccountChanges = async (
     }
   }
 
-  // For Calendar Events Sync
-  const gCalEventSyncJobs = await getAppSyncJobs(
-    db,
-    Apps.GoogleCalendar,
-    AuthType.ServiceAccount,
-  )
   for (const syncJob of gCalEventSyncJobs) {
     try {
       const connector = await getConnector(db, syncJob.connectorId)
