@@ -829,20 +829,39 @@ export const cleanDocs = (text: string): string => {
 // TODO:
 // inform about the location
 // tell the IP of the user as well
+const getTimeZoneNames = (date = new Date(), locale = "en-US") => {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  // Safely extract the short and long names via formatToParts
+  const shortFmt = new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: "short" })
+  const longFmt  = new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: "long" })
+
+  const short = shortFmt.formatToParts(date).find(p => p.type === "timeZoneName")?.value
+  const long  = longFmt.formatToParts(date).find(p => p.type === "timeZoneName")?.value
+
+  // Fallbacks if something weird happens
+  return {
+    short: short ?? timeZone,           // e.g., "GMT+5:30"
+    long:  long  ?? timeZone,           // e.g., "India Standard Time"
+  }
+}
+
 export const userContext = ({
   user,
   workspace,
 }: PublicUserWorkspace): string => {
+  const locale = "en-US"
   const now = new Date()
   const currentDate = now.toLocaleDateString() // e.g., "11/10/2024"
   const currentTime = now.toLocaleTimeString() // e.g., "10:14:03 AM"
+  const { short: tzAbbrev, long: tzLong } = getTimeZoneNames(now, locale)
   return `My Name is ${user.name}
     Email: ${user.email}
     Company: ${workspace.name}
     Company domain: ${workspace.domain}
     Current Time: ${currentTime}
     Today is: ${currentDate}
-    Timezone: IST`
+    Timezone: ${tzAbbrev} (${tzLong})`
 }
 
 /**

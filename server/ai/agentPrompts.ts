@@ -608,7 +608,7 @@ If NO relevant items are found in Retrieved Context or context doesn't match que
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, set "answer" to null 
@@ -728,7 +728,7 @@ You must respond in valid JSON format with the following structure:
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, set "answer" to null
@@ -841,7 +841,7 @@ You must respond in valid JSON format with the following structure:
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, set "answer" to null
@@ -921,7 +921,7 @@ You must respond in valid JSON with:
 - Do NOT explain why information was not found — only return null in that case.
 - Keep citations natural and minimal (but present for each factual statement).
 - Normalize or lightly clean raw text if needed (fix casing, stray line breaks), but do not invent content.
-- Format dates relative to the user's timezone when dates appear in the file.
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
 # Error Handling
 If information is missing or unclear: Set "answer" to null`
