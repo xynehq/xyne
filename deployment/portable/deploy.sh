@@ -213,8 +213,8 @@ start_infrastructure() {
     else
         echo -e "${BLUE} Using CPU-only Vespa${NC}"
     fi
-    
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d
+
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build
     echo -e "${GREEN} Infrastructure services started${NC}"
 }
 
@@ -267,7 +267,7 @@ update_infrastructure() {
     echo -e "${YELLOW} Updating infrastructure services...${NC}"
     INFRA_COMPOSE=$(get_infrastructure_compose)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
     echo -e "${GREEN} Infrastructure services updated${NC}"
 }
 

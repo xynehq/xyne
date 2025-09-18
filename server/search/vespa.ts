@@ -93,19 +93,18 @@ export const searchVespa = async (
     Logger.error({ err: error, email }, "Error fetching Slack connector status")
   }
   try {
+    const authTypeForSyncJobs =
+      process.env.NODE_ENV !== "production"
+        ? AuthType.OAuth
+        : AuthType.ServiceAccount
     const [driveConnector, gmailConnector, calendarConnector] =
       await Promise.all([
-        getAppSyncJobsByEmail(
-          db,
-          Apps.GoogleDrive,
-          AuthType.ServiceAccount,
-          email,
-        ),
-        getAppSyncJobsByEmail(db, Apps.Gmail, AuthType.ServiceAccount, email),
+        getAppSyncJobsByEmail(db, Apps.GoogleDrive, authTypeForSyncJobs, email),
+        getAppSyncJobsByEmail(db, Apps.Gmail, authTypeForSyncJobs, email),
         getAppSyncJobsByEmail(
           db,
           Apps.GoogleCalendar,
-          AuthType.ServiceAccount,
+          authTypeForSyncJobs,
           email,
         ),
       ])

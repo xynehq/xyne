@@ -984,7 +984,6 @@ export const MessageWithToolsApi = async (c: Context) => {
         console.error("Failed to parse selectedModelConfig:", error)
       }
     }
-    
 
     // Convert friendly model label to actual model value
     let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
@@ -1116,7 +1115,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title,
+            title: "Untitled",
             attachments: [],
             ...(agentId ? { agentId: agentIdToStore as string } : {}),
           })
@@ -2941,7 +2940,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title,
+            title: "Untitled",
             attachments: [],
             agentId: agentIdToStore as string,
             via_apiKey,
@@ -3732,7 +3731,7 @@ export const AgentMessageApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title,
+            title: "Untitled",
             attachments: [],
             agentId: agentIdToStore as string,
             via_apiKey,
