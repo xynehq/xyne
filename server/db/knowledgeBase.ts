@@ -664,12 +664,12 @@ export const getAllFolderItems = async (
   trx: TxnOrClient,
 ) => {
   const res = []
-  let queue: any[] = []
+  let queue: string[] = []
   for (const id of parentIds) {
     queue.push(id)
   }
   while (queue.length > 0) {
-    const curr = queue.shift()
+    const curr = queue.shift()!
 
     const resp = await getParentItems(curr, trx)
     if (resp.length == 0) {
@@ -693,12 +693,12 @@ export const getAllFolderIds = async (
   trx: TxnOrClient,
 ) => {
   const res = []
-  let queue: any[] = []
+  let queue: string[] = []
   for (const id of parentIds) {
     queue.push(id)
   }
   while (queue.length > 0) {
-    const curr = queue.shift()
+    const curr = queue.shift()!
 
     const resp = await getParentItems(curr, trx)
     for (const item of resp) {
