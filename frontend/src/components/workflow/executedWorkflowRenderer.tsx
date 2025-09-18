@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect } from "react"
-import { Bot, Mail, Settings, X, FileTextIcon , FileText} from "lucide-react"
+import { Bot, Mail, Settings, X, FileTextIcon , FileText, Code} from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -219,11 +219,17 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
+            border: selected
+              ? isFailed
+                ? "2px solid #DC2626"
+                : isCompleted
+                  ? "2px solid #059669"
+                  : "2px solid #111827"
+              : isFailed
+                ? "2px solid #F87171"
+                : isCompleted
+                  ? "2px solid #34D399"
+                  : "2px solid #6B7280",
             background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
@@ -413,11 +419,17 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
+            border: selected
+              ? isFailed
+                ? "2px solid #DC2626"
+                : isCompleted
+                  ? "2px solid #059669"
+                  : "2px solid #111827"
+              : isFailed
+                ? "2px solid #F87171"
+                : isCompleted
+                  ? "2px solid #34D399"
+                  : "2px solid #6B7280",
             background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
@@ -527,11 +539,17 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
+            border: selected
+              ? isFailed
+                ? "2px solid #DC2626"
+                : isCompleted
+                  ? "2px solid #059669"
+                  : "2px solid #111827"
+              : isFailed
+                ? "2px solid #F87171"
+                : isCompleted
+                  ? "2px solid #34D399"
+                  : "2px solid #6B7280",
             background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
@@ -742,11 +760,17 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
+            border: selected
+              ? isFailed
+                ? "2px solid #DC2626"
+                : isCompleted
+                  ? "2px solid #059669"
+                  : "2px solid #111827"
+              : isFailed
+                ? "2px solid #F87171"
+                : isCompleted
+                  ? "2px solid #34D399"
+                  : "2px solid #6B7280",
             background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
@@ -841,6 +865,133 @@ const StepNode: React.FC<NodeProps> = ({
     )
   }
 
+  // Special rendering for script nodes and steps with script tools
+  const hasScriptTool = tools && tools.length > 0 && tools[0].type === "script"
+  if (step.type === "script" || hasScriptTool) {
+    // Check if any associated tool execution has failed
+    const hasFailedToolExecution =
+      tools && tools.some((tool) => (tool as any).status === "failed")
+    const isFailed = step.status === "failed" || hasFailedToolExecution
+
+    // Extract title and description from script tool data
+    const scriptTool = hasScriptTool ? tools[0] : null
+    const scriptData = (scriptTool as any)?.result || (scriptTool as any)?.config || {}
+    const language = scriptData?.language || (scriptTool as any)?.toolType || "script"
+    const scriptTitle = `${language.charAt(0).toUpperCase() + language.slice(1)} Script`
+    const scriptDescription = step.description || `Execute ${language} script with custom code`
+
+    return (
+      <>
+        <div
+          className="relative cursor-pointer hover:shadow-lg transition-shadow"
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            border: selected
+              ? isFailed
+                ? "2px solid #DC2626"
+                : isCompleted
+                  ? "2px solid #059669"
+                  : "2px solid #111827"
+              : isFailed
+                ? "2px solid #F87171"
+                : isCompleted
+                  ? "2px solid #34D399"
+                  : "2px solid #6B7280",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+            boxShadow: isFailed
+              ? "0 0 0 2px #FECACA"
+              : isCompleted
+                ? "0 0 0 2px #BBF7D0"
+                : "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Green code icon with background */}
+            <div
+              className="flex justify-center items-center flex-shrink-0"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+                background: "#F0FDF4",
+              }}
+            >
+              <Code width={16} height={16} color="#10B981" />
+            </div>
+
+            <h3
+              className="text-gray-800 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+                color: "#3B4145",
+              }}
+            >
+              {step.name || scriptTitle}
+              {/* Show execution status indicator */}
+              {(step as any).isExecution && isActive && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  Running
+                </span>
+              )}
+              {(step as any).isExecution &&
+                isFailed &&
+                step.status !== "failed" && (
+                  <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                    Tool Failed
+                  </span>
+                )}
+            </h3>
+          </div>
+
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 mb-3"></div>
+
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {scriptDescription}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 rounded-full border-2 border-white shadow-sm"></div>
+          </div>
+
+        </div>
+      </>
+    )
+  }
+
   // For executions, create a generic template-style node if no specific type matched
   const isExecution = (step as any).isExecution
   if (isExecution) {
@@ -857,11 +1008,17 @@ const StepNode: React.FC<NodeProps> = ({
             width: "320px",
             minHeight: "122px",
             borderRadius: "12px",
-            border: isFailed
-              ? "2px solid #EF4444"
-              : isCompleted
-                ? "2px solid #10B981"
-                : "2px solid #181B1D",
+            border: selected
+              ? isFailed
+                ? "2px solid #DC2626"
+                : isCompleted
+                  ? "2px solid #059669"
+                  : "2px solid #111827"
+              : isFailed
+                ? "2px solid #F87171"
+                : isCompleted
+                  ? "2px solid #34D399"
+                  : "2px solid #6B7280",
             background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
@@ -966,7 +1123,7 @@ const StepNode: React.FC<NodeProps> = ({
     }
 
     if (selected) {
-      return `${baseClasses} border-purple-600 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 text-purple-900 dark:text-purple-300 shadow-xl shadow-purple-500/15`
+      return `${baseClasses} border-purple-800 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/20 text-purple-900 dark:text-purple-300 shadow-xl shadow-purple-500/15`
     }
 
     return `${baseClasses} border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 shadow-md shadow-black/8 dark:shadow-black/20`
@@ -1351,7 +1508,35 @@ const ExecutionSidebar = ({
                       <div key={index} className="text-xs">
                         <div className="text-gray-900">
                           {(() => {
+                            // Check if current step is a script node - if so, show whole input
+                            if (step.type === "script" || (tools && tools.some((tool: any) => tool.type === "script"))) {
+                              // For script nodes, always show the complete input data
+                              return (
+                                <pre className="whitespace-pre-wrap">
+                                  {typeof output === "object"
+                                    ? JSON.stringify(output, null, 2)
+                                    : String(output)}
+                                </pre>
+                              )
+                            }
+
                             if (typeof output === "object" && output) {
+                              // Check for script tool output - show raw data
+                              if (output.toolType === "script" || output.type === "script") {
+                                return (
+                                  <div className="space-y-2">
+                                    <div>
+                                      <span className="font-medium text-gray-600">Script Output:</span>
+                                      <div className="mt-1 text-gray-900 whitespace-pre-wrap font-mono text-xs bg-gray-50 p-2 rounded border">
+                                        {typeof output === "object"
+                                          ? JSON.stringify(output, null, 2)
+                                          : String(output)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              }
+
                               // Check for email step response with model and aiOutput
                               if (output.model && output.aiOutput) {
                                 return (
@@ -1491,6 +1676,18 @@ const ExecutionSidebar = ({
                             Result
                           </h4>
                           {(() => {
+                            // Check if this is a script tool - always show "View Full"
+                            if (tool.type === "script") {
+                              return (
+                                <button
+                                  onClick={() => onResultClick?.(tool.result)}
+                                  className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                                >
+                                  View Full
+                                </button>
+                              )
+                            }
+
                             // Check if this is a successful email tool execution
                             const isEmailTool = tool.type === "email"
                             const isSuccess =
@@ -1527,6 +1724,12 @@ const ExecutionSidebar = ({
                         <div
                           className="text-xs text-gray-900 bg-gray-100 p-3 rounded max-h-32 overflow-y-auto border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors"
                           onClick={() => {
+                            // For script tools, always show full data
+                            if (tool.type === "script") {
+                              onResultClick?.(tool.result)
+                              return
+                            }
+
                             // Check if this is a successful email tool execution
                             const isEmailTool = tool.type === "email"
                             const isSuccess =
@@ -1572,6 +1775,17 @@ const ExecutionSidebar = ({
 
                             // Handle successful executions for any tool type
                             if (isSuccess) {
+                              // For script tools, show full data output
+                              if (tool.type === "script") {
+                                return (
+                                  <pre className="whitespace-pre-wrap text-green-700 font-mono text-xs">
+                                    {typeof tool.result === "object"
+                                      ? JSON.stringify(tool.result, null, 2)
+                                      : String(tool.result)}
+                                  </pre>
+                                )
+                              }
+
                               // For email tools, show custom message if available
                               if (isEmailTool) {
                                 const message = tool.result?.message
@@ -1584,7 +1798,7 @@ const ExecutionSidebar = ({
                                 }
                               }
 
-                              // For all successful tools, show generic success message
+                              // For all other successful tools, show generic success message
                               return (
                                 <div className="text-green-700">Success</div>
                               )
