@@ -92,9 +92,6 @@ export const createWorkflowStepTemplate = async (
     name: string
     description?: string
     type: StepType
-    parentStepId?: string
-    prevStepIds?: string[]
-    nextStepIds?: string[]
     toolIds?: string[]
     timeEstimate?: number
     metadata?: any
@@ -107,9 +104,6 @@ export const createWorkflowStepTemplate = async (
       name: data.name,
       description: data.description,
       type: data.type,
-      parentStepId: data.parentStepId,
-      prevStepIds: data.prevStepIds || [],
-      nextStepIds: data.nextStepIds || [],
       toolIds: data.toolIds || [],
       timeEstimate: data.timeEstimate || 0,
       metadata: data.metadata || {},
@@ -206,9 +200,6 @@ export const createWorkflowStepExecution = async (
     workflowStepTemplateId: string
     name: string
     type: StepType
-    parentStepId?: string
-    prevStepIds?: string[]
-    nextStepIds?: string[]
     toolExecIds?: string[]
     timeEstimate?: number
     metadata?: any
@@ -221,9 +212,6 @@ export const createWorkflowStepExecution = async (
       workflowStepTemplateId: data.workflowStepTemplateId,
       name: data.name,
       type: data.type,
-      parentStepId: data.parentStepId,
-      prevStepIds: data.prevStepIds || [],
-      nextStepIds: data.nextStepIds || [],
       toolExecIds: data.toolExecIds || [],
       timeEstimate: data.timeEstimate || 0,
       metadata: data.metadata || {},
@@ -270,12 +258,6 @@ export const updateWorkflowStepExecution = async (
   }
 
   // Ensure array fields are properly typed
-  if (data.prevStepIds) {
-    updateData.prevStepIds = Array.from(data.prevStepIds)
-  }
-  if (data.nextStepIds) {
-    updateData.nextStepIds = Array.from(data.nextStepIds)
-  }
   if (data.toolExecIds) {
     updateData.toolExecIds = Array.from(data.toolExecIds)
   }

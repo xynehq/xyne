@@ -273,9 +273,9 @@ function WorkflowComponent() {
       if (response.data && Array.isArray(response.data)) {
         // Convert API executions to UI format
         const convertedExecutions: WorkflowExecution[] = response.data.map((apiExecution) => ({
-          id: apiExecution.id,
+          id: String(apiExecution.id), // Convert number to string
           workflowName: apiExecution.name,
-          workflowId: apiExecution.id,
+          workflowId: String(apiExecution.id), // Convert number to string
           status: convertStatus(apiExecution.status),
           started: formatDate(apiExecution.createdAt),
           runTime: calculateRunTime(apiExecution.createdAt, apiExecution.completedAt)
@@ -305,6 +305,8 @@ function WorkflowComponent() {
         return 'Running'
       case 'failed':
         return 'Failed'
+      case 'draft':
+        return 'Failed' // Treat draft as failed for display purposes
       default:
         return 'Failed'
     }
@@ -414,111 +416,68 @@ function WorkflowComponent() {
       
       const executionData = await response.json()
 
-      if (executionData) {
-        // Extract the workflow structure from the execution response
-        let executionTemplate = null
-        
-        // Try different response structures
-        if (executionData.data) {
-          executionTemplate = executionData.data
-        } else if (executionData.workflow) {
-          executionTemplate = executionData.workflow
-        } else if (executionData.workflowTemplate) {
-          executionTemplate = executionData.workflowTemplate
-        } else {
-          executionTemplate = executionData
-        }
+      if (executionData && executionData.success && executionData.data) {
+        const execution = executionData.data
 
-        // Check if it has stepExecutions structure (for executions) or steps structure (for templates)
-        if (executionTemplate && (
-          (executionTemplate.stepExecutions && executionTemplate.stepExecutions.length > 0) ||
-          (executionTemplate.steps && executionTemplate.steps.length > 0)
-        )) {
-          setSelectedTemplate(executionTemplate)
-          setIsExecutionMode(true) // Mark as execution mode
+        // Check if we have stepExecutions (which we do according to the API response)
+        if (execution.stepExecutions && execution.stepExecutions.length > 0) {
+          // Convert stepExecutions to the expected format for the workflow builder
+          const convertedSteps = execution.stepExecutions.map((stepExec: any) => ({
+            id: String(stepExec.id), // Convert to string for frontend compatibility
+            workflowTemplateId: String(execution.workflowTemplateId),
+            name: stepExec.name,
+            description: stepExec.description || stepExec.name, // Use backend-provided description or fallback to name
+            type: stepExec.type,
+            status: stepExec.status, // Include execution status
+            parentStepId: stepExec.parentStepId ? String(stepExec.parentStepId) : null,
+            prevStepIds: stepExec.prevStepIds ? stepExec.prevStepIds.map((id: any) => String(id)) : [],
+            nextStepIds: stepExec.nextStepIds ? stepExec.nextStepIds.map((id: any) => String(id)) : [],
+            toolIds: stepExec.toolIds ? stepExec.toolIds.map((id: any) => String(id)) : [],
+            toolExecIds: stepExec.toolExecIds ? stepExec.toolExecIds.map((id: any) => String(id)) : [], // Add tool execution IDs
+            timeEstimate: stepExec.timeEstimate || 0,
+            metadata: {
+              ...stepExec.metadata,
+              executionStatus: stepExec.status,
+              completedAt: stepExec.completedAt,
+              completedBy: stepExec.completedBy
+            },
+            createdAt: stepExec.createdAt,
+            updatedAt: stepExec.updatedAt
+          }))
+
+          // Create a workflow structure compatible with the workflow builder
+          const executionWorkflow = {
+            id: String(execution.id),
+            name: execution.name,
+            description: execution.description,
+            version: '1.0',
+            status: execution.status,
+            config: {},
+            createdBy: String(execution.createdBy || ''),
+            rootWorkflowStepTemplateId: execution.rootWorkflowStepExeId ? String(execution.rootWorkflowStepExeId) : (convertedSteps[0]?.id || ''),
+            createdAt: execution.createdAt,
+            updatedAt: execution.updatedAt,
+            steps: convertedSteps,
+            stepExecutions: convertedSteps, // Also include as stepExecutions for execution mode
+            workflow_tools: [], // Tool information would come from toolExecutions if needed
+            toolExecutions: execution.toolExecutions || [],
+            // Execution-specific metadata
+            executionMetadata: {
+              completedAt: execution.completedAt,
+              workspaceId: execution.workspaceId,
+              rootWorkflowStepExeId: execution.rootWorkflowStepExeId
+            }
+          }
+
+          console.log('✅ Successfully converted execution data for frontend:', executionWorkflow)
+          setSelectedTemplate(executionWorkflow)
+          setIsExecutionMode(true)
           setViewMode("builder")
         } else {
-          // Try to create a workflow structure from execution data
-          // Check if execution has step_executions or similar
-          let steps = []
-          
-          if (executionTemplate?.step_executions) {
-            steps = executionTemplate.step_executions.map((stepExec: any, index: number) => ({
-              id: stepExec.id || `step-${index}`,
-              workflowTemplateId: executionTemplate.id,
-              name: stepExec.name || `Step ${index + 1}`,
-              description: stepExec.description || '',
-              type: stepExec.type || 'unknown',
-              parentStepId: null,
-              prevStepIds: [],
-              nextStepIds: [],
-              toolIds: [],
-              timeEstimate: 0,
-              metadata: stepExec.metadata || {},
-              createdAt: stepExec.createdAt || new Date().toISOString(),
-              updatedAt: stepExec.updatedAt || new Date().toISOString()
-            }))
-          } else if (executionTemplate?.workflow_steps) {
-            steps = executionTemplate.workflow_steps.map((step: any, index: number) => ({
-              id: step.id || `step-${index}`,
-              workflowTemplateId: executionTemplate.id,
-              name: step.name || `Step ${index + 1}`,
-              description: step.description || '',
-              type: step.type || 'unknown',
-              parentStepId: null,
-              prevStepIds: [],
-              nextStepIds: [],
-              toolIds: [],
-              timeEstimate: 0,
-              metadata: step.metadata || {},
-              createdAt: step.createdAt || new Date().toISOString(),
-              updatedAt: step.updatedAt || new Date().toISOString()
-            }))
-          } else {
-            // Create a single step from the execution itself
-            steps = [{
-              id: executionTemplate?.id || 'execution-step',
-              workflowTemplateId: executionTemplate?.id || 'unknown',
-              name: executionTemplate?.name || 'Workflow Execution',
-              description: executionTemplate?.description || 'Viewing workflow execution',
-              type: 'execution',
-              parentStepId: null,
-              prevStepIds: [],
-              nextStepIds: [],
-              toolIds: [],
-              timeEstimate: 0,
-              metadata: {
-                status: executionTemplate?.status
-              },
-              createdAt: executionTemplate?.createdAt || new Date().toISOString(),
-              updatedAt: executionTemplate?.updatedAt || new Date().toISOString()
-            }]
-          }
-          
-          if (steps.length > 0) {
-            const workflowFromExecution = {
-              id: executionTemplate?.id || 'execution-workflow',
-              name: executionTemplate?.name || 'Workflow Execution',
-              description: executionTemplate?.description || 'Viewing workflow execution',
-              version: '1.0',
-              status: executionTemplate?.status || 'unknown',
-              config: executionTemplate?.config || {},
-              createdBy: executionTemplate?.createdBy || '',
-              rootWorkflowStepTemplateId: steps[0]?.id || '',
-              createdAt: executionTemplate?.createdAt || new Date().toISOString(),
-              updatedAt: executionTemplate?.updatedAt || new Date().toISOString(),
-              steps: steps,
-              workflow_tools: executionTemplate?.workflow_tools || []
-            }
-            setSelectedTemplate(workflowFromExecution)
-            setIsExecutionMode(true)
-            setViewMode("builder")
-          } else {
-            console.error('❌ Could not create workflow structure from execution data')
-          }
+          console.error('❌ No stepExecutions found in execution data')
         }
       } else {
-        console.error('❌ No execution data found')
+        console.error('❌ Invalid execution data structure')
       }
     } catch (error) {
       console.error('❌ Failed to fetch execution:', error)

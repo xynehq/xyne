@@ -1,14 +1,13 @@
 import { sql } from "drizzle-orm"
 import {
-  uuid,
   pgTable,
   text,
   integer,
   timestamp,
   jsonb,
   pgEnum,
-  customType,
   varchar,
+  serial,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -18,37 +17,8 @@ import {
   ToolType,
 } from "@/types/workflowTypes"
 
-// Custom UUID array type for PostgreSQL
-export const uuidArray = customType<{
-  data: string[]
-  driverData: string[] | string
-}>({
-  dataType() {
-    return "uuid[]"
-  },
-  toDriver(value: string[]): string {
-    if (!value || value.length === 0) return "{}"
-    return `{${value.join(",")}}`
-  },
-  fromDriver(value: string[] | string): string[] {
-    if (!value) return []
-
-    // PostgreSQL driver might return an array directly or a string
-    if (Array.isArray(value)) {
-      return value
-    }
-
-    // If it's a string in PostgreSQL array format: {uuid1,uuid2,uuid3}
-    if (typeof value === "string") {
-      if (value === "{}") return []
-      // Remove surrounding braces and split by comma
-      const cleaned = value.replace(/^\{|\}$/g, "")
-      return cleaned.split(",").map(uuid => uuid.trim()).filter(Boolean)
-    }
-
-    return []
-  },
-})
+// Integer array type for PostgreSQL (using built-in support)
+// PostgreSQL integer[] is natively supported by Drizzle
 
 // New schema ENUMs to match database
 export const contentTypeEnum = pgEnum("content_type_enum", [
@@ -113,22 +83,22 @@ export const relationTypeEnum = pgEnum("relation_type_enum", [
 
 // Base tables for new schema
 export const workspace = pgTable("workspace", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
 })
 
 export const user = pgTable("user", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workspaceId: uuid("workspace_id").notNull(),
+  id: serial("id").primaryKey(),
+  workspaceId: integer("workspace_id").notNull(),
   email: varchar("email", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
 })
 
 // Service config table
 export const workflowServiceConfig = pgTable("workflow_service_config", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
-  activeWorkflowTemplateId: uuid("active_workflow_template_id"),
+  activeWorkflowTemplateId: integer("active_workflow_template_id"),
   category: varchar("category", { length: 100 }),
   subcategory: varchar("subcategory", { length: 100 }),
   selectionCriteria: jsonb("selection_criteria"),
@@ -140,9 +110,9 @@ export const workflowServiceConfig = pgTable("workflow_service_config", {
 
 // Updated workflow template
 export const workflowTemplate = pgTable("workflow_template", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workflowServiceConfigId: uuid("workflow_service_config_id"),
-  rootWorkflowStepTemplateId: uuid("root_workflow_step_template_id"),
+  id: serial("id").primaryKey(),
+  workflowServiceConfigId: integer("workflow_service_config_id"),
+  rootWorkflowStepTemplateId: integer("root_workflow_step_template_id"),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   version: varchar("version", { length: 50 }),
@@ -157,13 +127,13 @@ export const workflowTemplate = pgTable("workflow_template", {
 
 // Updated workflow step template
 export const workflowStepTemplate = pgTable("workflow_step_template", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workflowTemplateId: uuid("workflow_template_id").notNull(),
+  id: serial("id").primaryKey(),
+  workflowTemplateId: integer("workflow_template_id").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   type: stepTypeEnum("type").notNull(),
   status: stepStatusEnum("status").default('pending'),
-  toolIds: uuidArray("tool_ids").default([]),
+  toolIds: integer("tool_ids").array().default([]),
   timeEstimate: integer("time_estimate"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
@@ -172,9 +142,9 @@ export const workflowStepTemplate = pgTable("workflow_step_template", {
 
 // Connection tables for step relationships
 export const workflowStepTemplateConnection = pgTable("workflow_step_template_connection", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  fromStepId: uuid("from_step_id").notNull(),
-  toStepId: uuid("to_step_id").notNull(),
+  id: serial("id").primaryKey(),
+  fromStepId: integer("from_step_id").notNull(),
+  toStepId: integer("to_step_id").notNull(),
   relationType: relationTypeEnum("relation_type").notNull(),
   connectionConfig: jsonb("connection_config"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
@@ -182,32 +152,32 @@ export const workflowStepTemplateConnection = pgTable("workflow_step_template_co
 
 // Workflow tool templates and instances
 export const workflowToolTemplate = pgTable("workflow_tool_template", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: serial("id").primaryKey(),
   type: toolTypeEnum("type"),
   name: varchar("name", { length: 255 }),
   description: text("description"),
   data: jsonb("data"),
   defaultConfig: jsonb("default_config"),
-  workflowTemplateId: uuid("workflow_template_id"),
+  workflowTemplateId: integer("workflow_template_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
 })
 
 export const workflowTool = pgTable("workflow_tool", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: serial("id").primaryKey(),
   type: toolTypeEnum("type"),
   value: jsonb("value"),
   config: jsonb("config"),
-  workflowTemplateId: uuid("workflow_template_id"),
-  workflowId: uuid("workflow_id"),
-  workflowToolTemplateId: uuid("workflow_tool_template_id"),
+  workflowTemplateId: integer("workflow_template_id"),
+  workflowId: integer("workflow_id"),
+  workflowToolTemplateId: integer("workflow_tool_template_id"),
 })
 
 // Workflow instance tables
 export const workflow = pgTable("workflow", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workspaceId: uuid("workspace_id").notNull(),
-  workflowTemplateId: uuid("workflow_template_id"),
+  id: serial("id").primaryKey(),
+  workspaceId: integer("workspace_id").notNull(),
+  workflowTemplateId: integer("workflow_template_id"),
   status: serviceInstanceStatusEnum("status").default('pending'),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
@@ -215,14 +185,14 @@ export const workflow = pgTable("workflow", {
 })
 
 export const workflowStep = pgTable("workflow_step", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workflowTemplateId: uuid("workflow_template_id").notNull(),
-  workflowId: uuid("workflow_id"),
+  id: serial("id").primaryKey(),
+  workflowTemplateId: integer("workflow_template_id").notNull(),
+  workflowId: integer("workflow_id"),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   type: stepTypeEnum("type").notNull(),
   status: stepStatusEnum("status").default('pending'),
-  workflowToolIds: uuidArray("workflow_tool_ids"),
+  workflowToolIds: integer("workflow_tool_ids").array(),
   timeEstimate: integer("time_estimate"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
@@ -231,74 +201,74 @@ export const workflowStep = pgTable("workflow_step", {
 
 // Workflow execution tables (renamed)
 export const workflowExe = pgTable("workflow_exe", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  rootWorkflowStepExeId: uuid("root_workflow_step_exe_id"),
+  id: serial("id").primaryKey(),
+  rootWorkflowStepExeId: integer("root_workflow_step_exe_id"),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  workflowTemplateId: uuid("workflow_template_id").notNull(),
+  workflowTemplateId: integer("workflow_template_id").notNull(),
   status: workflowStatusEnum("status").default('draft'),
   metadata: jsonb("metadata"),
-  workspaceId: uuid("workspace_id").notNull(),
+  workspaceId: integer("workspace_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 })
 
 export const workflowStepExe = pgTable("workflow_step_exe", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workflowExeId: uuid("workflow_exe_id").notNull(),
-  workflowStepTemplateId: uuid("workflow_step_template_id"),
+  id: serial("id").primaryKey(),
+  workflowExeId: integer("workflow_exe_id").notNull(),
+  workflowStepTemplateId: integer("workflow_step_template_id"),
   name: varchar("name", { length: 255 }).notNull(),
   type: stepTypeEnum("type").notNull(),
   status: stepStatusEnum("status").default('pending'),
   metadata: jsonb("metadata"),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-  completedBy: uuid("completed_by"),
+  completedBy: integer("completed_by"),
   timeEstimate: integer("time_estimate"),
-  toolIds: uuidArray("tool_ids"),
+  toolIds: integer("tool_ids").array(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
 })
 
 export const workflowStepExeConnection = pgTable("workflow_step_exe_connection", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  fromStepId: uuid("from_step_id").notNull(),
-  toStepId: uuid("to_step_id").notNull(),
+  id: serial("id").primaryKey(),
+  fromStepId: integer("from_step_id").notNull(),
+  toStepId: integer("to_step_id").notNull(),
   relationType: relationTypeEnum("relation_type").notNull(),
   connectionConfig: jsonb("connection_config"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 })
 
 export const workflowToolExe = pgTable("workflow_tool_exec", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: serial("id").primaryKey(),
   result: jsonb("result"),
-  toolId: uuid("tool_id"),
+  toolId: integer("tool_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 })
 
 // Audit and history tables
 export const workflowEventLog = pgTable("workflow_event_log", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: serial("id").primaryKey(),
   entityType: varchar("entity_type", { length: 100 }).notNull(),
-  entityId: uuid("entity_id").notNull(),
+  entityId: integer("entity_id").notNull(),
   eventType: varchar("event_type", { length: 100 }).notNull(),
   eventData: jsonb("event_data"),
-  createdBy: uuid("created_by"),
+  createdBy: integer("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
-  workspaceId: uuid("workspace_id"),
+  workspaceId: integer("workspace_id"),
 })
 
 export const workflowHistory = pgTable("workflow_history", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  workflowExeId: uuid("workflow_exe_id"),
-  workflowStepExeId: uuid("workflow_step_exe_id"),
+  id: serial("id").primaryKey(),
+  workflowExeId: integer("workflow_exe_id"),
+  workflowStepExeId: integer("workflow_step_exe_id"),
   action: historyActionEnum("action").notNull(),
   oldData: jsonb("old_data"),
   newData: jsonb("new_data"),
-  createdBy: uuid("created_by"),
+  createdBy: integer("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
-  workspaceId: uuid("workspace_id"),
+  workspaceId: integer("workspace_id"),
 })
 
 // Schema exports for new structure
@@ -416,14 +386,11 @@ export const updateWorkflowToolSchema = createWorkflowToolSchema
   })
 
 export const createWorkflowStepTemplateSchema = z.object({
-  workflowTemplateId: z.string().uuid(),
+  workflowTemplateId: z.number().int(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   type: z.enum(Object.values(StepType) as [string, ...string[]]).default(StepType.AUTOMATED),
-  parentStepId: z.string().uuid().optional(),
-  prevStepIds: z.array(z.string().uuid()).default([]),
-  nextStepIds: z.array(z.string().uuid()).default([]),
-  toolIds: z.array(z.string().uuid()).default([]),
+  toolIds: z.array(z.number().int()).default([]),
   timeEstimate: z.number().int().min(0).default(0),
   metadata: z.record(z.string(), z.any()).optional(),
 })
@@ -498,7 +465,7 @@ export const createComplexWorkflowTemplateSchema = z.object({
 })
 
 export const createWorkflowExecutionSchema = z.object({
-  workflowTemplateId: z.string().uuid(),
+  workflowTemplateId: z.number().int(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
@@ -516,7 +483,7 @@ export const updateWorkflowStepExecutionSchema = z.object({
 })
 
 export const formSubmissionSchema = z.object({
-  stepId: z.string().uuid(),
+  stepId: z.string(),
   formData: z.record(z.string(), z.any()),
 })
 

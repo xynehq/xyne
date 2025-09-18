@@ -132,7 +132,7 @@ const StepNode: React.FC<NodeProps> = ({
 
   // Special rendering for AI Agent nodes and steps with ai_agent tools
   const hasAIAgentTool =
-    tools && tools.length > 0 && tools[0].type === "ai_agent"
+    tools && tools.some((tool) => tool.type === "ai_agent")
   if (step.type === "ai_agent" || hasAIAgentTool) {
     // Get config from step or tool
     const aiConfig =
@@ -318,7 +318,7 @@ const StepNode: React.FC<NodeProps> = ({
   }
 
   // Special rendering for Email nodes and steps with email tools
-  const hasEmailTool = tools && tools.length > 0 && tools[0].type === "email"
+  const hasEmailTool = tools && tools.some((tool) => tool.type === "email")
   if (step.type === "email" || hasEmailTool) {
     // Get config from step or tool
     const emailConfig =
@@ -513,7 +513,7 @@ const StepNode: React.FC<NodeProps> = ({
   }
 
   // Special rendering for form submission nodes and steps with form tools
-  const hasFormTool = tools && tools.length > 0 && tools[0].type === "form"
+  const hasFormTool = tools && tools.some((tool) => tool.type === "form")
   if (step.type === "form_submission" || hasFormTool) {
     // Check if any associated tool execution has failed
     const hasFailedToolExecution =
@@ -727,7 +727,7 @@ const StepNode: React.FC<NodeProps> = ({
 
   // Special rendering for python_script tools
   const hasPythonScriptTool =
-    tools && tools.length > 0 && tools[0].type === "python_script"
+    tools && tools.some((tool) => tool.type === "python_script")
   if (step.type === "python_script" || hasPythonScriptTool) {
     // Check if any associated tool execution has failed
     const hasFailedToolExecution =
@@ -1677,50 +1677,114 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Sort steps for top-to-bottom execution flow starting with root step
       const sortedSteps = (() => {
         if (!stepsData || stepsData.length === 0) return []
-        
+
+        console.log('=== Step Ordering Debug ===')
+        console.log('isExecution:', isExecution)
+        console.log('rootWorkflowStepExeId:', (selectedTemplate as any).rootWorkflowStepExeId)
+        console.log('stepsData:', stepsData.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          type: s.type,
+          nextStepIds: s.nextStepIds,
+          prevStepIds: s.prevStepIds
+        })))
+
         // For executions, find the root step using rootWorkflowStepExeId
         if (isExecution && (selectedTemplate as any).rootWorkflowStepExeId) {
           const rootStepExeId = (selectedTemplate as any).rootWorkflowStepExeId
           const rootStep = stepsData.find((step: any) => step.id === rootStepExeId)
-          
+
+          console.log('Found root step:', rootStep ? {
+            id: rootStep.id,
+            name: rootStep.name,
+            nextStepIds: rootStep.nextStepIds
+          } : 'null')
+
           if (rootStep) {
-            
+
             // Build execution order starting from root step
             const orderedSteps: any[] = []
             const visited = new Set<string>()
-            
+
             const addStepAndFollowing = (currentStep: any) => {
               if (visited.has(currentStep.id)) return
-              
+
+              console.log('Adding step to order:', currentStep.name, 'nextStepIds:', currentStep.nextStepIds)
+
               visited.add(currentStep.id)
               orderedSteps.push(currentStep)
-              
+
               // Add next steps in order
               if (currentStep.nextStepIds && currentStep.nextStepIds.length > 0) {
                 currentStep.nextStepIds.forEach((nextStepId: string) => {
-                  const nextStep = stepsData.find((s: any) => s.workflowStepTemplateId === nextStepId || s.id === nextStepId)
+                  const nextStep = stepsData.find((s: any) => s.id === nextStepId)
                   if (nextStep && !visited.has(nextStep.id)) {
                     addStepAndFollowing(nextStep)
                   }
                 })
               }
             }
-            
+
             addStepAndFollowing(rootStep)
-            
+
             // Add any remaining steps that weren't connected
             stepsData.forEach((step: any) => {
               if (!visited.has(step.id)) {
+                console.log('Adding unconnected step:', step.name)
                 orderedSteps.push(step)
               }
             })
-            
+
+            console.log('Final order:', orderedSteps.map(s => s.name))
             return orderedSteps
           }
         }
         
         // Fallback sorting for templates or when root step not found
+        console.log('Using fallback sorting')
         return [...stepsData].sort((a, b) => {
+          // Define step type priority based on actual tool types
+          const getTypePriority = (step: any) => {
+            // Get tool information for this step
+            let stepToolTypes: string[] = []
+
+            if (isExecution) {
+              // For executions, get tool types from toolExecutions
+              const stepToolExecs = selectedTemplate.toolExecutions?.filter((toolExec: any) =>
+                step.toolExecIds?.includes(toolExec.id),
+              ) || []
+              stepToolTypes = stepToolExecs.map((te: any) => te.toolType || te.type || 'unknown')
+            } else {
+              // For templates, get tool types from workflow_tools
+              const stepTools = selectedTemplate.workflow_tools?.filter((tool: any) =>
+                step.toolIds?.includes(tool.id),
+              ) || []
+              stepToolTypes = stepTools.map((t: any) => t.type)
+            }
+
+            console.log(`Step "${step.name}" has tool types:`, stepToolTypes)
+
+            // Priority based on tool types: form (1), ai_agent (2), email (3)
+            if (stepToolTypes.includes('form')) return 1
+            if (stepToolTypes.includes('ai_agent')) return 2
+            if (stepToolTypes.includes('email')) return 3
+
+            // Fallback to step type
+            const stepType = step.type
+            if (stepType === 'manual' || stepType === 'form_submission') return 1
+            if (stepType === 'automated') return 2
+
+            return 999
+          }
+
+          const priorityA = getTypePriority(a)
+          const priorityB = getTypePriority(b)
+          console.log(`Comparing "${a.name}" (priority ${priorityA}) vs "${b.name}" (priority ${priorityB})`)
+
+          if (priorityA !== priorityB) {
+            return priorityA - priorityB
+          }
+
           // First try to sort by step_order in metadata
           const orderA = a.metadata?.step_order ?? 999
           const orderB = b.metadata?.step_order ?? 999
@@ -1746,12 +1810,18 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         if (isExecution) {
           // For executions, get tool executions from toolExecIds
           const executionStep = step as any
+          console.log(`🔍 [${step.name}] Step ${step.id} toolExecIds:`, executionStep.toolExecIds)
+          console.log(`🔍 [${step.name}] Available toolExecutions:`, selectedTemplate.toolExecutions?.length || 0)
+          console.log(`🔍 [${step.name}] Sample toolExecution IDs:`, selectedTemplate.toolExecutions?.slice(0, 3).map((te: any) => ({ id: te.id, type: typeof te.id })) || [])
+
           toolExecutions =
-            selectedTemplate.toolExecutions?.filter((toolExec: any) =>
-              executionStep.toolExecIds?.includes(toolExec.id),
-            ) || []
+            selectedTemplate.toolExecutions?.filter((toolExec: any) => {
+              const toolExecId = String(toolExec.id)
+              const stepToolExecIds = executionStep.toolExecIds || []
+              return stepToolExecIds.includes(toolExecId) || stepToolExecIds.includes(toolExec.id)
+            }) || []
 
-
+          console.log(`🔍 [${step.name}] Filtered toolExecutions:`, toolExecutions.length, toolExecutions.map((te: any) => ({ id: te.id, toolType: te.toolType, type: te.type })))
 
           // Create tool info from executions
           stepTools = toolExecutions.map((toolExec: any) => ({
@@ -1763,6 +1833,47 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             result: toolExec.result,
           }))
 
+          // 🔧 FALLBACK: If no tool executions found via toolExecIds, try using toolIds with workflow_tools
+          if (stepTools.length === 0 && executionStep.toolIds?.length > 0) {
+            console.log(`⚠️ [${step.name}] No toolExecutions found via toolExecIds, trying fallback with toolIds:`, executionStep.toolIds)
+            const fallbackTools = selectedTemplate.workflow_tools?.filter((tool: any) => {
+              const toolId = String(tool.id)
+              const stepToolIds = executionStep.toolIds || []
+              return stepToolIds.includes(toolId) || stepToolIds.includes(tool.id)
+            }) || []
+
+            stepTools = fallbackTools.map((tool: any) => ({
+              id: tool.id,
+              type: tool.type,
+              config: tool.config || {},
+              toolExecutionId: null,
+              status: "fallback",
+              result: {},
+            }))
+            console.log(`🔧 [${step.name}] Using fallback tools:`, stepTools.map((t: any) => ({ id: t.id, type: t.type })))
+          }
+
+          // 🔧 ADDITIONAL FALLBACK: If still no tools, try to infer from step metadata
+          if (stepTools.length === 0 && step.metadata?.icon) {
+            console.log(`⚠️ [${step.name}] No tools found, inferring from metadata icon:`, step.metadata.icon)
+            const iconToType: Record<string, string> = {
+              '📁': 'form',
+              '🤖': 'ai_agent',
+              '📧': 'email',
+              '🐍': 'python_script'
+            }
+            const inferredType = iconToType[step.metadata.icon] || 'unknown'
+            stepTools = [{
+              id: `inferred-${step.id}`,
+              type: inferredType,
+              config: {},
+              toolExecutionId: null,
+              status: "inferred",
+              result: {},
+            }]
+            console.log(`🔧 [${step.name}] Using inferred tool type:`, inferredType)
+          }
+
         } else {
           // For templates, use workflow_tools
           const templateStep = step as any
@@ -1771,6 +1882,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               templateStep.toolIds?.includes(tool.id),
             ) || []
         }
+
+        console.log(`✅ [${step.name}] Final stepTools:`, stepTools.map((t: any) => ({ id: t.id, type: t.type })))
 
         // Execution workflows don't show plus buttons
         const hasNextFlag = false
@@ -1802,8 +1915,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 : step.id,
             },
             tools: stepTools,
-            isActive: isExecution && (step as any).status === "running",
-            isCompleted: isExecution && (step as any).status === "completed",
+            // Map backend status to frontend expectations
+            isActive: isExecution && (step as any).status === "pending",
+            isCompleted: isExecution && (step as any).status === "done",
             hasNext: hasNextFlag, // Show plus button on last step
           },
           draggable: true,
@@ -1815,18 +1929,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       if (stepsData && Array.isArray(stepsData)) {
         stepsData.forEach((step: any) => {
           step.nextStepIds?.forEach((nextStepId: any) => {
-            // For executions, we need to map template step IDs to execution step IDs
-            let targetStepId = nextStepId
-
-            if (isExecution) {
-              // Find the step execution that corresponds to this template step ID
-              const targetStepExecution = stepsData.find(
-                (s: any) => s.workflowStepTemplateId === nextStepId,
-              )
-              if (targetStepExecution) {
-                targetStepId = targetStepExecution.id
-              }
-            }
+            // nextStepId should already be the correct execution step ID from API
+            const targetStepId = nextStepId
 
             templateEdges.push({
               id: `${step.id}-${targetStepId}`,

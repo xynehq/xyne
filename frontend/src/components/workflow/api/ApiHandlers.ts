@@ -79,15 +79,15 @@ interface ApiTemplate {
 }
 
 interface ApiWorkflowExecution {
-  id: string
-  workflowTemplateId: string
+  id: number
+  workflowTemplateId: number
   name: string
   description: string
-  status: "completed" | "active" | "failed"
+  status: "completed" | "active" | "failed" | "draft"
   metadata: any
-  rootWorkflowStepExeId: string
-  createdBy: string
-  completedBy: string | null
+  rootWorkflowStepExeId: number | null
+  createdBy: number | null
+  completedBy: number | null
   createdAt: string
   updatedAt: string
   completedAt: string | null
