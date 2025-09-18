@@ -655,7 +655,7 @@ function KnowledgeManagementContent() {
                 isOpen:
                   collection.name.toLowerCase() ===
                   uploadingCollectionName.toLowerCase()
-                    ? true // Open the newly uploaded collection
+                    ? true
                     : (collection.items || []).length > 0,
                 lastUpdated: new Date(collection.updatedAt).toLocaleString(
                   "en-GB",
