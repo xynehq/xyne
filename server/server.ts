@@ -1510,6 +1510,13 @@ app.get("/health", async (c) => {
   }
 })
 
+app.get("/config", (c) => {
+  return c.json({
+    API_BASE_URL: config.apiBaseUrl,
+    WS_BASE_URL: config.wsBaseUrl,
+  });
+});
+
 // Postgres health check endpoint
 app.get(
   "/health/postgres",

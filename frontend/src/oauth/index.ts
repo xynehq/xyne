@@ -1,7 +1,7 @@
+import { loadConfig } from "@/config"
 import { Apps } from "shared/types"
 
-const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`
-const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/success`
+let successUrl = ``
 export class OAuthModal {
   // private authUrl: string;
   // private connectorId: string;
@@ -23,8 +23,15 @@ export class OAuthModal {
   }
 
   public startAuth(app: Apps) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
+        const config = await loadConfig()
+      if (!config) {
+        throw new Error("Failed to load config")
+      }
+
+      const authUrl = `${config.API_BASE_URL}/oauth/start`
+      successUrl = `${config.WS_BASE_URL}/oauth/success`
         //clientLog({currentApp: app}, 'Starting OAuth')
         this.logger.info({ currentApp: app }, "Starting OAuth")
         this.openAuthWindow(`${authUrl}?app=${app}`)
