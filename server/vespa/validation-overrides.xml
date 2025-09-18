@@ -2,4 +2,5 @@
   <allow until="2025-04-25">indexing-change</allow>
   <allow until='2025-04-25'>field-type-change</allow>
   <allow until='2025-04-25'>global-document-change</allow> 
+  <allow until='2025-08-25'>schema-removal</allow>
 </validation-overrides>
