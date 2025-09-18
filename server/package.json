@@ -2,7 +2,7 @@
   "name": "xyne",
   "module": "server/server.ts",
   "type": "module",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@commitlint/cli": "^19.8.1",
