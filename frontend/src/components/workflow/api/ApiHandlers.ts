@@ -1,6 +1,22 @@
 import { Flow, TemplateFlow } from "../Types"
 import { api } from "../../../api"
 
+// Credential types
+interface Credential {
+  id: string
+  name: string
+  type: "basic" | "bearer" | "api_key"
+  user?: string
+  password?: string
+  token?: string
+  apiKey?: string
+  allowedDomains?: string
+  isValid?: boolean
+  createdBy?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
 // API request/response types for workflow templates
 
 interface WorkflowTemplateResponse {
@@ -466,4 +482,128 @@ export const workflowStepsAPI = {
     // You may need to use updateStep to modify nextStepIds instead
     throw new Error("linkSteps endpoint not available in current API. Use updateStep to modify nextStepIds.")
   },
+}
+
+// Credentials API
+export const credentialsAPI = {
+  /**
+   * Fetch all credentials for the current user
+   */
+  async fetchAll(): Promise<Credential[]> {
+    try {
+      // Mock implementation - replace with actual API call when endpoint exists
+      const mockCredentials: Credential[] = []
+      
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 300))
+      return mockCredentials
+    } catch (error) {
+      console.error('Failed to fetch credentials:', error)
+      return []
+    }
+  },
+
+  /**
+   * Fetch credentials by type
+   */
+  async fetchByType(type: "basic" | "bearer" | "api_key"): Promise<Credential[]> {
+    const allCredentials = await this.fetchAll()
+    return allCredentials.filter(cred => cred.type === type)
+  },
+
+  /**
+   * Create a new credential
+   */
+  async create(credentialData: {
+    name: string
+    type: "basic" | "bearer" | "api_key"
+    user?: string
+    password?: string
+    token?: string
+    apiKey?: string
+    allowedDomains?: string
+  }): Promise<Credential> {
+    try {
+      // Mock implementation - replace with actual API call when endpoint exists
+      const newCredential: Credential = {
+        id: Date.now().toString(),
+        ...credentialData,
+        isValid: true,
+        createdBy: "current-user",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500))
+      return newCredential
+    } catch (error) {
+      console.error('Failed to create credential:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Update an existing credential
+   */
+  async update(credentialId: string, updates: Partial<Credential>): Promise<Credential> {
+    try {
+      // Mock implementation - replace with actual API call when endpoint exists
+      const allCredentials = await this.fetchAll()
+      const existingCredential = allCredentials.find(cred => cred.id === credentialId)
+      
+      if (!existingCredential) {
+        throw new Error(`Credential with ID ${credentialId} not found`)
+      }
+
+      const updatedCredential: Credential = {
+        ...existingCredential,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      }
+
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500))
+      return updatedCredential
+    } catch (error) {
+      console.error('Failed to update credential:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Delete a credential
+   */
+  async delete(credentialId: string): Promise<void> {
+    try {
+      // Mock implementation - replace with actual API call when endpoint exists
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 300))
+      console.log(`Credential ${credentialId} deleted`)
+    } catch (error) {
+      console.error('Failed to delete credential:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Test credential validity
+   */
+  async testCredential(credentialId: string): Promise<{ isValid: boolean; message?: string }> {
+    try {
+      // Mock implementation - replace with actual API call when endpoint exists
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Simulate some credentials being invalid
+      const isValid = credentialId !== "3" // Mock: credential with ID "3" is invalid
+      
+      return {
+        isValid,
+        message: isValid ? "Credential is valid" : "Credential authentication failed"
+      }
+    } catch (error) {
+      console.error('Failed to test credential:', error)
+      return { isValid: false, message: "Failed to test credential" }
+    }
+  }
 }

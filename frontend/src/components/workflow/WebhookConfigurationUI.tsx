@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react"
+import { Copy, Check } from "lucide-react"
 import { WebhookConfig } from "./Types"
 import { BackArrowIcon, CloseIcon } from "./WorkflowIcons"
+import { CredentialSelector } from "./CredentialSelector"
 
 interface WebhookConfigurationUIProps {
   isVisible: boolean
@@ -29,6 +31,7 @@ export default function WebhookConfigurationUI({
     httpMethod: "POST",
     path: "",
     authentication: "none",
+    selectedCredential: undefined,
     responseMode: "immediately",
     options: {},
     headers: {},
@@ -39,6 +42,7 @@ export default function WebhookConfigurationUI({
   const [newHeaderValue, setNewHeaderValue] = useState("")
   const [newParamKey, setNewParamKey] = useState("")
   const [newParamValue, setNewParamValue] = useState("")
+  const [copied, setCopied] = useState(false)
 
   // Initialize config from initialConfig or toolData
   useEffect(() => {
@@ -51,6 +55,7 @@ export default function WebhookConfigurationUI({
         httpMethod: data.httpMethod || "POST",
         path: data.path || "",
         authentication: data.authentication || "none",
+        selectedCredential: data.selectedCredential || undefined,
         responseMode: data.responseMode || "immediately",
         options: data.options || {},
         headers: data.headers || {},
@@ -64,6 +69,27 @@ export default function WebhookConfigurationUI({
     const baseUrl = window.location.origin
     const cleanPath = config.path.startsWith('/') ? config.path : `/${config.path}`
     return `${baseUrl}/webhook${cleanPath}`
+  }
+
+  // Copy webhook URL to clipboard
+  const copyWebhookUrl = async () => {
+    const url = config.path ? generateWebhookUrl() : `${window.location.origin}/webhook/your-path`
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000) // Reset after 2 seconds
+    } catch (err) {
+      console.error('Failed to copy URL:', err)
+      // Fallback for browsers that don't support clipboard API
+      const textArea = document.createElement('textarea')
+      textArea.value = url
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   const handleSave = () => {
@@ -128,6 +154,7 @@ export default function WebhookConfigurationUI({
     }))
   }
 
+
   return (
     <div
       className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden transition-all duration-300 ease-in-out z-50 ${
@@ -171,10 +198,23 @@ export default function WebhookConfigurationUI({
           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Webhook URL
           </label>
-          <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
-            <div className="text-sm text-gray-600 dark:text-gray-400 font-mono break-all">
-              {config.path ? generateWebhookUrl() : `${window.location.origin}/webhook/your-path`}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
+              <div className="text-sm text-gray-600 dark:text-gray-400 font-mono break-all">
+                {config.path ? generateWebhookUrl() : `${window.location.origin}/webhook/your-path`}
+              </div>
             </div>
+            <button
+              onClick={copyWebhookUrl}
+              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors border border-gray-300 dark:border-gray-600 flex-shrink-0"
+              title={copied ? "Copied!" : "Copy URL"}
+            >
+              {copied ? (
+                <Check className="w-4 h-4 text-green-600" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
+            </button>
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400">
             This URL will be generated automatically based on your path
@@ -223,15 +263,27 @@ export default function WebhookConfigurationUI({
           </label>
           <select
             value={config.authentication}
-            onChange={(e) => setConfig(prev => ({ ...prev, authentication: e.target.value as WebhookConfig['authentication'] }))}
+            onChange={(e) => setConfig(prev => ({ ...prev, authentication: e.target.value as WebhookConfig['authentication'], selectedCredential: undefined }))}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
           >
             <option value="none">None</option>
             <option value="basic">Basic Auth</option>
-            <option value="bearer">Bearer Token</option>
-            <option value="api_key">API Key</option>
           </select>
         </div>
+
+        {/* Credential Selector - Shows when authentication is not "none" */}
+        {config.authentication !== "none" && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Credential for {config.authentication === "basic" ? "Basic Auth" : config.authentication === "bearer" ? "Bearer Token" : "API Key"}
+            </label>
+            <CredentialSelector
+              authType={config.authentication as "basic" | "bearer" | "api_key"}
+              selectedCredentialId={config.selectedCredential}
+              onSelect={(credentialId) => setConfig(prev => ({ ...prev, selectedCredential: credentialId || undefined }))}
+            />
+          </div>
+        )}
 
         {/* Response Mode */}
         <div className="space-y-2">
@@ -244,8 +296,6 @@ export default function WebhookConfigurationUI({
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
           >
             <option value="immediately">Immediately</option>
-            <option value="wait_for_completion">Wait for completion</option>
-            <option value="custom">Custom</option>
           </select>
           <div className="text-xs text-gray-500 dark:text-gray-400">
             If you are sending back a response, add a "Content-Type" response header with the appropriate value to avoid unexpected behavior
