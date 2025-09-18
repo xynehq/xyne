@@ -68,6 +68,8 @@ import type {
 } from "@xyne/vespa-ts/types"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { chunkDocument } from "@/chunks"
+import { getAppSyncJobsByEmail } from "@/db/syncJob"
+import { getTracer } from "@/tracer"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -432,6 +434,9 @@ export const SearchApi = async (c: Context) => {
   )
   if (gc) {
     let isSlackConnected = false
+    let isDriveConnected = false
+    let isGmailConnected = false
+    let isCalendarConnected = false
     try {
       const connector = await getConnectorByAppAndEmailId(
         db,
@@ -447,12 +452,48 @@ export const SearchApi = async (c: Context) => {
         "Error fetching Slack connector",
       )
     }
+    try {
+      const authTypeForSyncJobs =
+        process.env.NODE_ENV !== "production"
+          ? AuthType.OAuth
+          : AuthType.ServiceAccount
+      const [driveConnector, gmailConnector, calendarConnector] =
+        await Promise.all([
+          getAppSyncJobsByEmail(
+            db,
+            Apps.GoogleDrive,
+            authTypeForSyncJobs,
+            email,
+          ),
+          getAppSyncJobsByEmail(db, Apps.Gmail, authTypeForSyncJobs, email),
+          getAppSyncJobsByEmail(
+            db,
+            Apps.GoogleCalendar,
+            authTypeForSyncJobs,
+            email,
+          ),
+        ])
+      isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
+      isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
+      isCalendarConnected = Boolean(
+        calendarConnector && calendarConnector.length > 0,
+      )
+    } catch (error) {
+      loggerWithChild({ email: email }).error(
+        error,
+        "Error fetching google sync Jobs",
+      )
+    }
+
     const tasks: Array<any> = [
       groupVespaSearch(
         decodedQuery,
         email,
         config.page,
         isSlackConnected,
+        isGmailConnected,
+        isCalendarConnected,
+        isDriveConnected,
         timestampRange,
       ),
       searchVespa(decodedQuery, email, app, entity, {
