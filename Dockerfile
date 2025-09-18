@@ -56,6 +56,21 @@ RUN apt-get update && apt-get install -y \
     && rm -rf vespa-cli_8.453.24_linux_amd64 vespa-cli_8.453.24_linux_amd64.tar.gz \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Install script execution languages
+RUN apt-get update -qq && \
+    apt-get install -y -qq python3 python3-pip nodejs npm r-base-core jq && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy and install language requirements
+COPY requirements.txt /usr/src/app/
+COPY global-packages.json /usr/src/app/
+COPY requirements.R /usr/src/app/
+
+# Install language packages
+RUN python3 -m pip install --break-system-packages -r /usr/src/app/requirements.txt
+RUN npm install -g $(cat /usr/src/app/global-packages.json | jq -r '.dependencies | keys[]')
+RUN Rscript /usr/src/app/requirements.R
+
 
 # Copy data restoration script and make it executable
 #COPY deployment/restore-data.sh /usr/src/app/deployment/restore-data.sh
