@@ -134,6 +134,7 @@ export const FollowUpQuestions: React.FC<FollowUpQuestionsProps> = ({
           {questions.map((question, index) => (
             <button
               key={index}
+              data-button-id={`followup-question-${index}`}
               onClick={() => onQuestionClick(question)}
               className="inline-flex items-center px-3 py-2 text-[15px] text-[#1C1D1F] dark:text-[#F1F3F4] bg-[#F5F9FC] dark:bg-[#2A2B2E] hover:bg-[#E5E7EB] dark:hover:bg-[#3A3B3E] rounded-lg transition-all duration-300 ease-out cursor-pointer font-medium text-left opacity-0 translate-y-2 hover:scale-[1.02] hover:shadow-sm animate-slide-in-up"
               style={{

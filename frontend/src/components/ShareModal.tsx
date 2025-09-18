@@ -258,6 +258,7 @@ export function ShareModal({
                                   {`.../${share.shareToken}`}
                                 </a>
                                 <Button
+                                  data-button-id="copy-table-share-link"
                                   variant="ghost"
                                   size="sm"
                                   className="h-6 w-6 p-0"
@@ -292,6 +293,7 @@ export function ShareModal({
                               <div className="flex items-center justify-center gap-1">
                                 <div className="relative group/icon">
                                   <Button
+                                    data-button-id="open-source-chat"
                                     variant="ghost"
                                     size="sm"
                                     className="h-6 w-6 p-0"
@@ -309,6 +311,7 @@ export function ShareModal({
                                   </span>
                                 </div>
                                 <Button
+                                  data-button-id="delete-share"
                                   variant="ghost"
                                   size="sm"
                                   className="h-6 w-6 p-0"
@@ -332,6 +335,7 @@ export function ShareModal({
 
             <div className="flex justify-between pt-2 border-t">
               <Button
+                data-button-id="back-to-share"
                 variant="outline"
                 onClick={() => {
                   setShowManageShares(false)
@@ -354,10 +358,15 @@ export function ShareModal({
               </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end gap-2 mt-2">
-              <Button variant="outline" onClick={() => setDeleteToken(null)}>
+              <Button 
+                data-button-id="cancel-delete"
+                variant="outline" 
+                onClick={() => setDeleteToken(null)}
+              >
                 Cancel
               </Button>
               <Button
+                data-button-id="confirm-delete"
                 onClick={() => deleteToken && handleDelete(deleteToken)}
                 className="bg-red-600 hover:bg-red-700"
               >
@@ -387,6 +396,7 @@ export function ShareModal({
             <div className="flex items-center space-x-2 mt-2">
               <Input readOnly value={shareLink} className="flex-1" />
               <Button
+                data-button-id="copy-share-link"
                 onClick={async () => {
                   await navigator.clipboard.writeText(shareLink)
                   toast({
@@ -402,6 +412,7 @@ export function ShareModal({
             </div>
             <div className="mt-2 space-y-1">
               <Button
+                data-button-id="update-share-link"
                 onClick={handleShare}
                 className="w-full"
                 disabled={isSharing}
@@ -416,6 +427,7 @@ export function ShareModal({
         ) : (
           <div className="mt-2">
             <Button
+              data-button-id="create-share-link"
               onClick={handleShare}
               className="w-full"
               disabled={isSharing || !chatId}
@@ -427,6 +439,7 @@ export function ShareModal({
 
         <div className="mt-2 pt-2 border-t">
           <Button
+            data-button-id="manage-links"
             variant="link"
             className="w-full"
             onClick={() => {
