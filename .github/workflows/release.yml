@@ -11,6 +11,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write    # so semantic-release can push commits + tags
+      issues: write
+      pull-requests: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
