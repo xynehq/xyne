@@ -200,6 +200,7 @@ import {
   runStream,
   generateRunId,
   generateTraceId,
+  getTextContent,
   type Agent as JAFAgent,
   type Tool as JAFTool,
   type Message as JAFMessage,
@@ -1993,7 +1994,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               case "assistant_message": {
                 const messageSpan = jafStreamingSpan.startSpan("assistant_message")
-                const content = evt.data.message.content || ""
+                const content = getTextContent(evt.data.message.content ?? "")
                 const hasToolCalls = Array.isArray(evt.data.message?.tool_calls) &&
                   (evt.data.message.tool_calls?.length ?? 0) > 0
 
@@ -2238,9 +2239,24 @@ export const MessageWithToolsApi = async (c: Context) => {
                       messageId: lastMessage.externalId,
                     }),
                   })
-                  const err = outcome?.error as JAFError | undefined
-                  const errTag = err?._tag || "run_error"
+                  let err: JAFError | undefined
+                  let errTag = "run_error"
                   let errMsg = "Model did not return a response."
+                  if (outcome?.status === "error") {
+                    err = outcome.error
+                    errTag = err?._tag || "run_error"
+                  } else if (outcome?.status === "interrupted") {
+                    const [firstInterruption] = outcome.interruptions ?? []
+                    errTag = firstInterruption?.type ?? "run_interrupted"
+                    if (firstInterruption?.type === "tool_approval") {
+                      const toolName = firstInterruption.toolCall?.function?.name ?? "tool"
+                      errMsg = `Awaiting approval to run tool ${toolName}.`
+                    } else if (errTag !== "run_interrupted") {
+                      errMsg = `Run interrupted: ${errTag}`
+                    } else {
+                      errMsg = "Agent run interrupted."
+                    }
+                  }
                   if (err) {
                     switch (err._tag) {
                       case "ModelBehaviorError":
@@ -2422,6 +2438,9 @@ export const MessageWithToolsApi = async (c: Context) => {
                   const errPayload = {
                     error: errTag,
                     message: errMsg,
+                    ...(outcome?.status === "interrupted"
+                      ? { interruptions: outcome.interruptions }
+                      : {}),
                   }
                   errorHandlingSpan.setAttribute("error_tag", errTag)
                   errorHandlingSpan.setAttribute("error_message", errMsg)
