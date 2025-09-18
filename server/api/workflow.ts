@@ -929,6 +929,7 @@ const executeAutomatedWorkflowSteps = async (
 
     let executionResults = currentResults
 
+    //todo : this is the normal for loop, we need to think about parallel execution of independent steps
     for (const nextStepTemplateId of nextStepTemplateIds) {
       const nextStep = stepExecutions.find(
         (s) => s.workflowStepTemplateId === nextStepTemplateId,
@@ -1230,6 +1231,7 @@ const executeWorkflowChain = async (
 
         if (nextStep && nextStep.type === StepType.AUTOMATED) {
           // Recursively execute next automated step
+          // workflow-TODO: consider parallel execution , this is only for sequential steps
           await executeWorkflowChain(
             executionId,
             nextStep.id,
