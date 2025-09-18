@@ -77,7 +77,7 @@ class clFdBackfillService {
       namespace = NAMESPACE,
       schema = "kb_items",
       continuation,
-      wantedDocumentCount = 10,
+      wantedDocumentCount = 200,
       fieldSet = `${schema}:*`,
       concurrency = 1,
       cluster = CLUSTER
@@ -285,7 +285,7 @@ class clFdBackfillService {
         const visitResult = await this.visit({
           schema: "kb_items",
           continuation,
-          wantedDocumentCount: 10 // Process 10 docs at once for testing continuation
+          wantedDocumentCount: 200 
         })
 
         if (visitResult.documents.length === 0) {
