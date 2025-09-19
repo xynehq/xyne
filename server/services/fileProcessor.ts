@@ -1,6 +1,8 @@
 import { getErrorMessage } from "@/utils"
 import { chunkDocument } from "@/chunks"
-import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
+// import { extractTextAndImagesWithChunksFromPDF } from "@/pdf
+
+import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import * as XLSX from "xlsx"
@@ -38,11 +40,9 @@ export class FileProcessorService {
     try {
       if (baseMimeType === "application/pdf") {
         // Process PDF
-        const result = await extractTextAndImagesWithChunksFromPDF(
+        const result = await extractTextAndImagesWithChunksFromPDFviaGemini(
           new Uint8Array(buffer),
           vespaDocId,
-          extractImages,
-          describeImages,
         )
         chunks = result.text_chunks
         chunks_pos = result.text_chunk_pos

@@ -19,7 +19,7 @@ import {
 import * as XLSX from "xlsx"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
-import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
+import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "google" })
 
@@ -49,10 +49,9 @@ const processPdfFile = async (
 ): Promise<string[]> => {
   try {
     // Handle non-spreadsheet files as before
-    const pdfResult = await extractTextAndImagesWithChunksFromPDF(
+    const pdfResult = await extractTextAndImagesWithChunksFromPDFviaGemini(
       pdfBuffer,
       attachmentId,
-      false, // Don't extract images for email attachments
     )
     return pdfResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
