@@ -17,7 +17,7 @@ import {
 import * as XLSX from "xlsx"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
-import { extractTextAndImagesWithChunksFromPDF } from "@/pdfChunks"
+import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { makeGraphApiCall, type MicrosoftGraphClient } from "./client"
 
 const Logger = getLogger(Subsystem.Integrations).child({
@@ -48,10 +48,9 @@ const processPdfFile = async (
   attachmentId: string,
 ): Promise<string[]> => {
   try {
-    const pdfResult = await extractTextAndImagesWithChunksFromPDF(
+    const pdfResult = await extractTextAndImagesWithChunksFromPDFviaGemini(
       pdfBuffer,
       attachmentId,
-      false, // Don't extract images for email attachments
     )
     return pdfResult.text_chunks.filter((v) => v.trim())
   } catch (error) {
