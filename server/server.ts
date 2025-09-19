@@ -1531,6 +1531,30 @@ app.get(
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
 )
 
+// Serving exact frontend routes and adding AuthRedirect wherever needed
+app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+
+// PDF.js worker files
+app.get("/pdfjs/pdf.worker.min.mjs", serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }))
+
+// PDF.js character maps
+app.get("/pdfjs/cmaps/*", serveStatic({ root: "./dist" }))
+
+// PDF.js standard fonts
+app.get("/pdfjs/standard_fonts/*", serveStatic({ root: "./dist" }))
+
+// PDF.js WASM files
+app.get("/pdfjs/wasm/*", serveStatic({ root: "./dist" }))
+
+// PDF.js annotation images
+app.get("/pdfjs/images/*", serveStatic({ root: "./dist" }))
+
+// PDF.js ICC color profiles
+app.get("/pdfjs/iccs/*", serveStatic({ root: "./dist" }))
+
+app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+
 export const init = async () => {
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
