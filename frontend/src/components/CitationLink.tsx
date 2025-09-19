@@ -43,7 +43,7 @@ export const createCitationLink =
           ? citations.find((c) => c.url === href)
           : undefined
 
-    if (citation && citation.clId && citation.itemId && !citation.title.endsWith(".pdf")) {
+    if (citation && citation.clId && citation.itemId && !(citation.title.endsWith(".pdf") && citation.chunkIndex !== undefined)) {
       return (
         <TooltipProvider delayDuration={200}>
           <Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen}>
@@ -142,7 +142,7 @@ export const createCitationLink =
 
     return (
       <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">
-        {isNumericChild ? !citation?.title?.endsWith(".pdf") ? (
+        {isNumericChild ? !(citation && citation.title?.endsWith(".pdf") && citation.chunkIndex !== undefined) ? (
           <span
             className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[6px] py-[2px] mx-[2px] bg-gray-200 hover:bg-gray-300 dark:bg-gray-900 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full text-[10px] font-mono font-medium cursor-pointer transition-colors duration-150 no-underline"
             style={{ textDecoration: "none" }}

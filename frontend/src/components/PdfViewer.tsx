@@ -429,6 +429,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     <div
       className={`simple-pdf-viewer ${className}`}
       style={{
+        position: "relative",
         display: "flex",
         flexDirection: "column",
         minHeight: "100%",
@@ -473,7 +474,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
       {/* Navigation Controls */}
       {!loading && !error && numPages && showNavigation && (
-        <div className="sticky top-0 bg-white dark:bg-gray-800 shadow-md z-20 p-4 border-b border-gray-200 dark:border-gray-700 w-full">
+        <div className="sticky top-0 bg-white dark:bg-[#1E1E1E] shadow-md z-20 p-4 border-b border-gray-200 dark:border-gray-700 w-full">
           <div className="flex items-center justify-center">
             <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg px-4 py-2 shadow-sm">
               {/* Previous Page Button */}
