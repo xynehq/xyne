@@ -29,10 +29,21 @@ jobs:
         working-directory: ./server
         run: bun install
 
+      # NEW STEP: Get GitHub App Token
+      - name: Get GitHub App Token
+        id: github-app-token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.XYNE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.XYNE_RELEASE_APP_SECRET }}
+          installation_retrieval_mode: "repository"
+          installation_retrieval_payload: ${{ github.repository }}
+
       - name: Run semantic-release
         working-directory: ./server
         env:
           HUSKY: 0
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CHANGED: Use GitHub App token instead of default GITHUB_TOKEN
+          GITHUB_TOKEN: ${{ steps.github-app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.github-app-token.outputs.token }}
         run: bunx semantic-release --no-ci
-
