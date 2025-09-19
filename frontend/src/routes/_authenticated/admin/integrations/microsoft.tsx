@@ -42,16 +42,17 @@ const submitOAuthForm = async (
   navigate: UseNavigateResult<string>,
   userRole: UserRole,
 ) => {
-  // Role-based API routing
-  const isAdmin =
-    userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+  // Map authType to isServiceAuth boolean
+  const isServiceAuth = value.authType === "appOnly"
 
-  const response = isAdmin
-    ? await api.admin.oauth.create.$post({
+  console.log(isServiceAuth)
+
+  const response = isServiceAuth
+    ? await api.admin.microsoft.service_account.$post({
         form: {
           clientId: value.clientId,
           clientSecret: value.clientSecret,
-          scopes: value.scopes,
+          tenantId: value.tenantId,
           app: Apps.MicrosoftDrive,
         },
       })
@@ -59,7 +60,7 @@ const submitOAuthForm = async (
         form: {
           clientId: value.clientId,
           clientSecret: value.clientSecret,
-          scopes: value.scopes,
+          scopes: [value.scopes, ""],
           app: Apps.MicrosoftDrive,
         },
       })
@@ -81,28 +82,51 @@ const submitOAuthForm = async (
 type OAuthFormData = {
   clientId: string
   clientSecret: string
-  scopes: string[]
+  scopes: string
+  tenantId: string
+  authType: "delegated" | "appOnly"
 }
 
 export const OAuthForm = ({
   onSuccess,
   userRole,
-}: { onSuccess: any; userRole: UserRole }) => {
+  setOAuthIntegrationStatus,
+}: {
+  onSuccess: any
+  userRole: UserRole
+  setOAuthIntegrationStatus: (status: OAuthIntegrationStatus) => void
+}) => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const form = useForm<OAuthFormData>({
     defaultValues: {
       clientId: "",
       clientSecret: "",
-      scopes: [],
+      tenantId: "",
+      scopes: "https://graph.microsoft.com/.default",
+      authType: "delegated",
     },
     onSubmit: async ({ value }) => {
       try {
         await submitOAuthForm(value, navigate, userRole)
-        toast({
-          title: "Microsoft OAuth integration added",
-          description: "Perform OAuth to add the data",
-        })
+
+        // Handle different flows based on authentication type
+        if (value.authType === "appOnly") {
+          // For app-only (service account), skip OAuth redirect and directly start connecting
+          toast({
+            title: "Microsoft service account integration created",
+            description: "Starting data ingestion...",
+          })
+          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
+        } else {
+          // For delegated, show OAuth message and wait for OAuth redirect
+          toast({
+            title: "Microsoft OAuth integration added",
+            description: "Perform OAuth to add the data",
+          })
+          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
+        }
+
         onSuccess()
       } catch (error) {
         toast({
@@ -172,26 +196,105 @@ export const OAuthForm = ({
       <Label htmlFor="scopes">scopes</Label>
       <form.Field
         name="scopes"
-        validators={{
-          onChange: ({ value }) => (!value ? "scopes are required" : undefined),
-        }}
         children={(field) => (
           <>
             <Input
               id="scopes"
               type="text"
               value={field.state.value}
-              onChange={(e) => field.handleChange(e.target.value.split(","))}
-              placeholder="Enter OAuth scopes"
+              disabled={true}
+              placeholder="https://graph.microsoft.com/.default"
+              className="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
             />
-            {field.state.meta.isTouched && field.state.meta.errors.length ? (
-              <p className="text-red-600 dark:text-red-400 text-sm">
-                {field.state.meta.errors.join(", ")}
-              </p>
-            ) : null}
           </>
         )}
       />
+
+      {/* Only show Authentication Type selection for Admin/SuperAdmin users */}
+      {(userRole === UserRole.Admin || userRole === UserRole.SuperAdmin) && (
+        <>
+          <Label className="mt-2">Authentication Type</Label>
+          <form.Field
+            name="authType"
+            children={(field) => (
+              <div className="flex items-center space-x-8 py-3 px-2">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="radio"
+                    id="delegated"
+                    name="authType"
+                    value="delegated"
+                    checked={field.state.value === "delegated"}
+                    onChange={(e) =>
+                      field.handleChange(
+                        e.target.value as "delegated" | "appOnly",
+                      )
+                    }
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="delegated" className="text-sm font-normal">
+                    Delegated
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="radio"
+                    id="appOnly"
+                    name="authType"
+                    value="appOnly"
+                    checked={field.state.value === "appOnly"}
+                    onChange={(e) =>
+                      field.handleChange(
+                        e.target.value as "delegated" | "appOnly",
+                      )
+                    }
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="appOnly" className="text-sm font-normal">
+                    App-only
+                  </Label>
+                </div>
+              </div>
+            )}
+          />
+
+          {/* Only show Tenant ID when App-only is selected */}
+          <form.Field
+            name="authType"
+            children={(authTypeField) =>
+              authTypeField.state.value === "appOnly" && (
+                <>
+                  <Label htmlFor="tenantId">Tenant ID</Label>
+                  <form.Field
+                    name="tenantId"
+                    validators={{
+                      onChange: ({ value }) =>
+                        !value ? "Tenant ID is required" : undefined,
+                    }}
+                    children={(field) => (
+                      <>
+                        <Input
+                          id="tenantId"
+                          type="text"
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          placeholder="Enter tenant ID"
+                        />
+                        {field.state.meta.isTouched &&
+                        field.state.meta.errors.length ? (
+                          <p className="text-red-600 dark:text-red-400 text-sm">
+                            {field.state.meta.errors.join(", ")}
+                          </p>
+                        ) : null}
+                      </>
+                    )}
+                  />
+                </>
+              )
+            }
+          />
+        </>
+      )}
 
       <Button type="submit">Create Integration</Button>
     </form>
@@ -342,10 +445,11 @@ export const MicrosoftOAuthTab = ({
   if (oauthIntegrationStatus === OAuthIntegrationStatus.Provider) {
     return (
       <OAuthForm
-        onSuccess={() =>
-          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
-        }
+        onSuccess={() => {
+          // This will be overridden by the form's own logic based on authType
+        }}
         userRole={userRole}
+        setOAuthIntegrationStatus={setOAuthIntegrationStatus}
       />
     )
   }
