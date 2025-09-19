@@ -446,13 +446,14 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
 // Execute workflow template with root step input
 export const ExecuteWorkflowWithInputApi = async (c: Context) => {
   try {
+    // Parse templateId from URL and get content type from header
     const templateId = parseInt(c.req.param("templateId"), 10)
     const contentType = c.req.header("content-type") || ""
 
-    // Extract workspace ID from JWT payload
+    // Extract workspace external ID from JWT payload for authorization
     const { workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
 
-    // Get integer workspace ID from external ID
+    // Retrieve the internal integer workspace ID from the external ID
     const workspace = await getWorkspaceByExternalId(db, workspaceExternalId)
     if (!workspace) {
       throw new HTTPException(404, { message: "Workspace not found" })
@@ -462,8 +463,10 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     let requestData: any = {}
     let hasFileUploads = false
 
-    // Handle both JSON and multipart form data
+    // WF FIX: Refactor request parsing logic into its own function, e.g., parseWorkflowInput(c: Context)
+    // Handle both JSON and multipart/form-data content types
     if (contentType.includes("multipart/form-data")) {
+      // For multipart, parse form data to handle file uploads and fields
       const formData = await c.req.formData()
       const entries: [string, FormDataEntryValue][] = []
       formData.forEach((value, key) => {
@@ -477,26 +480,28 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         } else if (typeof value === "string") {
           requestData.rootStepInput[key] = value
         } else if (value instanceof File) {
-          // We'll handle file uploads after validation
+          // Store file object for later processing after validation
           requestData.rootStepInput[key] = value
           hasFileUploads = true
         }
       }
     } else {
+      // For JSON, parse the request body directly
       requestData = await c.req.json()
     }
 
-    // Validate required fields
+    // Ensure that rootStepInput is provided in the request
     if (!requestData.rootStepInput) {
       throw new HTTPException(400, { message: "rootStepInput is required" })
     }
 
-    // Get template and validate
+    // Fetch the workflow template from the database
     const template = await db
       .select()
       .from(workflowTemplate)
       .where(eq(workflowTemplate.id, templateId))
 
+    // Validate that the template exists and has a configured root step
     if (!template || template.length === 0) {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
@@ -507,7 +512,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       })
     }
 
-    // Get root step template
+    // Fetch the root step template for validation and processing
     const rootStepTemplate = await db
       .select()
       .from(workflowStepTemplate)
@@ -521,7 +526,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     const rootStep = rootStepTemplate[0]
 
-    // Get root step tool for validation
+    // Fetch the tool associated with the root step for input validation
     let rootStepTool = null
     if (rootStep.toolIds && rootStep.toolIds.length > 0) {
       const toolResult = await db
@@ -534,22 +539,23 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       }
     }
 
-    // Validate input based on root step type
+    // WF FIX: Refactor input validation logic into its own function, e.g., validateRootStepInput(rootStep, rootStepTool, inputData, contentType)
+    // Validate the input based on the root step's type (MANUAL/FORM vs. AUTOMATED)
     if (rootStep.type === StepType.MANUAL && rootStepTool?.type === ToolType.FORM) {
-      // Validate form input
+      // For manual form steps, validate the submitted form data
       const formDefinition = (rootStepTool.config as any)?.value || rootStepTool.config as any
       const formFields = formDefinition?.fields || []
 
-      // Build validation schema
+      // Build a dynamic validation schema from the form definition
       const validationSchema = buildValidationSchema(formFields)
 
-      // Handle file uploads if present
+      // If the request is multipart, handle file and non-file fields separately
       if (contentType.includes("multipart/form-data")) {
-        // Validate non-file fields first
+        // First, validate only the non-file fields
         const nonFileData = { ...requestData.rootStepInput }
         const nonFileValidationSchema = { ...validationSchema }
 
-        // Remove file fields from initial validation
+        // Remove file fields from the initial validation schema
         for (const field of formFields) {
           if (field.type === "file") {
             delete nonFileValidationSchema[field.id]
@@ -566,18 +572,14 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           })
         }
 
-        // Handle file uploads with workflow file handler
+        // Temporarily store file objects for processing after the execution is created
         for (const field of formFields) {
           if (field.type === "file") {
             const file = requestData.rootStepInput[field.id]
 
             if (file instanceof File) {
               try {
-                const fileValidation =
-                  validationSchema[field.id]?.fileValidation
-
-                // We'll create the execution first, then handle file upload
-                // For now, store the file object for later processing
+                // Store the file object for later upload
                 requestData.rootStepInput[field.id] = file
               } catch (uploadError) {
                 Logger.error(
@@ -596,7 +598,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           }
         }
       } else {
-        // JSON validation (no files)
+        // For JSON requests, validate the entire form data at once
         const validationResult = validateFormData(
           requestData.rootStepInput,
           validationSchema,
@@ -608,7 +610,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         }
       }
     } else if (rootStep.type === StepType.AUTOMATED) {
-      // For automated steps, no input validation needed
+      // For automated steps, ensure no input data is provided
       if (Object.keys(requestData.rootStepInput).length > 0) {
         throw new HTTPException(400, {
           message: "Automated root steps should not have input data",
@@ -616,11 +618,13 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       }
     }
 
-    // Create workflow execution
+    // Create the main workflow execution record
     const [execution] = await db
       .insert(workflowExe)
       .values({
         workflowTemplateId: template[0].id,
+        // WF FIX: Using toLocaleDateString() can lead to duplicate names if the same workflow is run multiple times on the same day.
+        // Consider using a more unique timestamp, like toISOString(), to ensure uniqueness.
         name:
           requestData.name ||
           `${template[0].name} - ${new Date().toLocaleDateString()}`,
@@ -628,25 +632,27 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           requestData.description || `Execution of ${template[0].name}`,
         metadata: requestData.metadata || {},
         status: "active",
-        workspaceId: workspaceId, // Get from JWT context
-        rootWorkflowStepExeId: sql`NULL`, // Will be set later after step executions are created
+        workspaceId: workspaceId, // Associate with the user's workspace
+        rootWorkflowStepExeId: sql`NULL`, // To be updated after step executions are created
       })
       .returning()
 
-    // Get all step templates
+    // Fetch all step templates associated with the workflow
+    // WF FIX: Use proper name for variables, can we use workflowTemplateSteps
+    // Should we also change the table names to workflow_template_step etc
+    // That way the singular / plural variable names can be handled better
     const steps = await db
       .select()
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
 
-    // Create step executions for all template steps
+    // Create execution records for all steps in the template with a "pending" status
     const stepExecutionsData = steps.map((step) => ({
       workflowExeId: execution.id,
       workflowStepTemplateId: step.id,
       name: step.name,
       type: step.type,
       status: "pending" as const,
-      // Copy tool IDs from step template
       toolIds: step.toolIds || [],
       timeEstimate: step.timeEstimate,
       metadata: step.metadata,
@@ -657,11 +663,12 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .values(stepExecutionsData)
       .returning()
 
-    // Copy template connections to execution connections
+    // Replicate the template's step connections for this specific execution
     Logger.info(`📋 Creating execution connections based on template connections...`)
 
-    // Get all template connections for this workflow
     const stepIds = steps.map(s => s.id)
+    // WF FIX: Lets add workflowTemplateId to workflowStepTemplateConnection table
+    // and we can then query directly on workflowTemplateId itself
     const templateConnections = await db
       .select()
       .from(workflowStepTemplateConnection)
@@ -672,7 +679,11 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     Logger.info(`🔗 Found ${templateConnections.length} template connections to copy`)
 
-    // Create execution connections
+    // Create new connections in the execution connection table
+    // WF FIX: Refactor this loop.
+    // 1. Instead of awaiting in the loop, build an array of `executionConnectionsData`.
+    // 2. Perform a single bulk `db.insert().values()` after the loop.
+    // 3. Simultaneously, populate an in-memory `executionConnectionMap<number, number[]>` to map fromStepId to toStepId(s).
     for (const templateConnection of templateConnections) {
       const fromStepExecution = stepExecutions.find(se => se.workflowStepTemplateId === templateConnection.fromStepId)
       const toStepExecution = stepExecutions.find(se => se.workflowStepTemplateId === templateConnection.toStepId)
@@ -683,7 +694,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       }
     }
 
-    // Find root step execution
+    // Identify the root step execution based on the template's root step ID
     const rootStepExecution = stepExecutions.find(
       (se: any) =>
         se.workflowStepTemplateId === template[0].rootWorkflowStepTemplateId,
@@ -695,18 +706,18 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       })
     }
 
-    // Update workflow with root step execution ID
+    // Update the main workflow execution with the ID of the root step execution
     await db
       .update(workflowExe)
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExe.id, execution.id))
 
-    // Process file uploads and create tool execution
+    // Process file uploads and create a tool execution record for the root step
     let toolExecutionRecord = null
     let processedFormData = { ...requestData.rootStepInput }
 
     if (rootStepTool) {
-      // Handle file uploads if present
+      // If the request was multipart and the tool is a form, handle file uploads
       if (
         contentType.includes("multipart/form-data") &&
         rootStepTool.type === ToolType.FORM
@@ -714,7 +725,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         const formDefinition = (rootStepTool.config as any)?.value || rootStepTool.config as any
         const formFields = formDefinition?.fields || []
 
-        // Process file uploads
+        // Process and upload each file
         for (const field of formFields) {
           if (field.type === "file") {
             const file = requestData.rootStepInput[field.id]
@@ -731,6 +742,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                   fileValidation,
                 )
 
+                // Replace the file object with the upload result in the form data
                 processedFormData[field.id] = uploadedFile
                 Logger.info(
                   `File uploaded for field ${field.id}: ${uploadedFile.relativePath}`,
@@ -748,6 +760,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           }
         }
       }
+      // Create a tool execution record to log the form submission
       ;[toolExecutionRecord] = await db
         .insert(workflowToolExe)
         .values({
@@ -763,14 +776,13 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         .returning()
     }
 
-    // Mark root step as completed
+    // Mark the root step execution as "done"
     await db
       .update(workflowStepExe)
       .set({
         status: "done",
         completedBy: null,
         completedAt: new Date(),
-        // Tool execution IDs managed separately
         metadata: {
           ...(rootStepExecution.metadata || {}),
           formSubmission: {
@@ -783,11 +795,13 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       })
       .where(eq(workflowStepExe.id, rootStepExecution.id))
 
-    // Auto-execute next automated steps
+    // Prepare to trigger subsequent automated steps
+    // TODO: Optimize this to fetch only the tools relevant to the current workflowId
     const allTools = await db.select().from(workflowTool)
     const rootStepName = rootStepExecution.name || "Root Step"
     const currentResults: Record<string, any> = {}
 
+    // Store the results of the root step for subsequent steps to access
     currentResults[rootStepName] = {
       stepId: rootStepExecution.id,
       formSubmission: {
@@ -799,7 +813,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       toolExecution: toolExecutionRecord,
     }
 
-    // Return response immediately and execute automated steps in parallel
+    // Immediately return a response to the client while automated steps run in the background
     const responseData = {
       success: true,
       message:
@@ -818,25 +832,29 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       },
     }
 
-    // Execute next automated steps using connection tables
+    // Trigger the execution of the next automated steps in a non-blocking manner
     try {
-      // Get next step template IDs from connection table
       Logger.info(`🔄 Starting automated step execution for workflow ${execution.id}`)
       Logger.info(`📋 Root step execution: ${JSON.stringify(rootStepExecution)}`)
 
       if (!rootStepExecution.workflowStepTemplateId) {
         Logger.warn("❌ Root step execution has no template ID, skipping automated execution")
+        // WF FIX: Should we update workflow exe status before returning response
         return c.json(responseData)
       }
 
+      // Get the next step execution IDs from the connection table
       Logger.info(`🔍 Looking for next steps after root step execution ID: ${rootStepExecution.id}`)
+      // WF FIX: Replace this database call by using the in-memory `executionConnectionMap` created during the connection-building step.
+      // const nextStepExecutionIds = executionConnectionMap.get(rootStepExecution.id) || [];
       const nextStepExecutionIds = await getNextStepExecutions(rootStepExecution.id)
       Logger.info(`📝 Found next step execution IDs: ${JSON.stringify(nextStepExecutionIds)}`)
 
       if (nextStepExecutionIds.length > 0) {
         Logger.info(`✅ Found ${nextStepExecutionIds.length} next steps to execute`)
 
-        // Get all step executions for this workflow
+        // WF FIX: This is redundant. The `stepExecutions` object from the `.returning()` call earlier contains the same data.
+        // Pass the `stepExecutions` object directly to the background process instead of re-querying the database.
         const allStepExecutions = await db
           .select()
           .from(workflowStepExe)
@@ -845,7 +863,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         Logger.info(`📊 Total step executions: ${allStepExecutions.length}`)
         Logger.info(`🎯 Current results for background execution: ${JSON.stringify(currentResults)}`)
 
-        // Execute automated steps in background
+        // Use setImmediate to run the automated steps in the background
         Logger.info(`🚀 Starting background execution with setImmediate...`)
         setImmediate(async () => {
           try {
@@ -863,8 +881,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           }
         })
       } else {
+        // If there are no next steps, mark the workflow as completed
         Logger.info("❌ No next steps found, workflow execution complete")
-        // Mark workflow as completed since this is the last step
         await db
           .update(workflowExe)
           .set({
@@ -877,6 +895,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       Logger.error(stepError, "Failed to execute next steps")
     }
 
+    // Return the initial success response
     return c.json(responseData)
   } catch (error) {
     Logger.error(error, "Failed to execute workflow with input")
