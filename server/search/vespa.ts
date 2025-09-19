@@ -140,7 +140,7 @@ export const searchVespaAgent = async (
   options: Partial<VespaQueryConfig> = {},
 ) => {
   const driveIds = await extractDriveIds(options, email)
-  const collectionSelections = await extractCollectionVespaIds(options)
+  const processedCollectionSelections = await extractCollectionVespaIds(options)
   return await vespa.searchVespaAgent.bind(vespa)(
     query,
     email,
@@ -150,7 +150,7 @@ export const searchVespaAgent = async (
     {
       ...options,
       driveIds,
-      collectionSelections,
+      processedCollectionSelections,
       recencyDecayRate:
         options.recencyDecayRate || config.defaultRecencyDecayRate,
     },

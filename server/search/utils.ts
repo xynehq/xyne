@@ -5,6 +5,7 @@ import {
   DriveEntity,
   fileSchema,
   type VespaQueryConfig,
+  type CollectionVespaIds,
 } from "@xyne/vespa-ts/types"
 import { getFolderItems } from "./vespa"
 import { db } from "@/db/connector"
@@ -63,32 +64,21 @@ export async function extractDriveIds(
 
 export async function extractCollectionVespaIds(
   options: Partial<VespaQueryConfig>,
-): Promise<
-  Array<{
-    collectionIds?: string[]
-    collectionFolderIds?: string[]
-    collectionFileIds?: string[]
-  }>
-> {
+): Promise<CollectionVespaIds> {
   if (
     !options.collectionSelections ||
     options.collectionSelections.length === 0
   ) {
-    return []
+    return {}
   }
 
-  const updatedSelections = []
+  const result: CollectionVespaIds = {}
 
   for (const selection of options.collectionSelections) {
-    const updatedSelection: {
-      collectionIds?: string[]
-      collectionFolderIds?: string[]
-      collectionFileIds?: string[]
-    } = {}
-
-    // Handle collections - pass through as-is
+    // Handle collections - merge with existing
     if (selection.collectionIds) {
-      updatedSelection.collectionIds = [...selection.collectionIds]
+      if (!result.collectionIds) result.collectionIds = []
+      result.collectionIds.push(...selection.collectionIds)
     }
 
     // Handle folders - add original folders PLUS all their subfolders recursively
@@ -104,7 +94,9 @@ export async function extractCollectionVespaIds(
       if (allSubFolderIds.length > 0) {
         allFolderIds.push(...allSubFolderIds)
       }
-      updatedSelection.collectionFolderIds = allFolderIds
+      
+      if (!result.collectionFolderIds) result.collectionFolderIds = []
+      result.collectionFolderIds.push(...allFolderIds)
     }
 
     // Handle files - convert database IDs to Vespa document IDs
@@ -116,10 +108,11 @@ export async function extractCollectionVespaIds(
       const vespaDocIds = ids
         .filter((item: any) => item.vespaDocId !== null)
         .map((item: any) => item.vespaDocId!)
-      updatedSelection.collectionFileIds = vespaDocIds
+      
+      if (!result.collectionFileIds) result.collectionFileIds = []
+      result.collectionFileIds.push(...vespaDocIds)
     }
-
-    updatedSelections.push(updatedSelection)
   }
-  return updatedSelections
+  
+  return result
 }
