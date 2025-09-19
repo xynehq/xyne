@@ -168,7 +168,11 @@ export const getPublicChats = async (
   offset: number,
   timeRange?: { from?: Date; to?: Date },
 ): Promise<SelectPublicChat[]> => {
-  const conditions = [eq(chats.email, email), eq(chats.isBookmarked, false)]
+  const conditions = [
+    eq(chats.email, email),
+    eq(chats.isBookmarked, false),
+    eq(chats.documentChat, false),
+  ]
 
   if (timeRange?.from) {
     conditions.push(gte(chats.createdAt, timeRange.from))
