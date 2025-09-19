@@ -914,7 +914,7 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-      const uploadedResult=  await uploadFileBatch(
+      const uploadedResult = await uploadFileBatch(
           batchFiles,
           addingToCollection.id,
           targetFolder?.id,
