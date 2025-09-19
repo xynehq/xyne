@@ -5789,8 +5789,8 @@ export const MessageRetryApi = async (c: Context) => {
     const ctx = userContext(userAndWorkspace)
 
     // Extract sources from search parameters
-    const sources = c.req.query("selectedSources")
-    const isMsgWithSources = !!sources
+    const kbItems = c.req.query("selectedKbItems")
+    const isMsgWithKbItems = !!kbItems
 
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
@@ -5887,7 +5887,7 @@ export const MessageRetryApi = async (c: Context) => {
               threadIds,
               ImageAttachmentFileIds,
               undefined,
-              isMsgWithSources,
+              isMsgWithKbItems,
               modelId,
             )
             stream.writeSSE({
