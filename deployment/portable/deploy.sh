@@ -132,8 +132,8 @@ setup_environment() {
     
     # Create necessary directories with proper permissions
     echo " Creating data directories..."
-    mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,app-downloads,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data}
-    
+    mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,app-downloads,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data,vespa-models}
+
     # Create Vespa tmp directory
     mkdir -p "$DATA_DIR"/vespa-data/tmp
     

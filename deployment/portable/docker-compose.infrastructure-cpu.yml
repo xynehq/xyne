@@ -95,6 +95,8 @@ services:
         condition: service_healthy
     environment:
       - VESPA_CONFIGSERVERS=vespa
+    volumes:
+      - ${XYNE_DATA_DIR:-./data}/vespa-models:/app/vespa/models
     networks:
       - xyne
     restart: "no"

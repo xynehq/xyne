@@ -15,8 +15,9 @@ WORKDIR /app/vespa
 # Copy the vespa server code (relative to project root build context)
 COPY server/vespa .
 
-# Make the script executable while still root
-RUN chmod +x deploy-docker.sh
+# Make the script executable and ensure vespa user owns the directory
+RUN chmod +x deploy-docker.sh && \
+    chown -R vespa:vespa /app/vespa
 
 # Switch back to vespa user
 USER vespa
