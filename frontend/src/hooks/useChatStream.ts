@@ -257,6 +257,7 @@ export const startStream = async (
   preventNavigation?: boolean,
   setChatId?: (chatId: string) => void,
   selectedModel?: string,
+  selectedKbItems: string[] = [],
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -309,9 +310,9 @@ export const startStream = async (
     }
   }
 
-  // Add selectedSources parameter if provided
-  if (selectedSources && selectedSources.length > 0) {
-    url.searchParams.append("selectedSources", JSON.stringify(selectedSources))
+  // Add selectedKbItems parameter if provided
+  if (selectedKbItems && selectedKbItems.length > 0) {
+    url.searchParams.append("selectedKbItems", JSON.stringify(selectedKbItems))
   }
 
   if (modelConfig) {
@@ -750,6 +751,7 @@ export const useChatStream = (
       toolsList?: ToolsListItem[],
       metadata?: AttachmentMetadata[],
       selectedModel?: string,
+      selectedKbItems: string[] = [],
     ) => {
       const streamKey = currentStreamKey
 
@@ -767,6 +769,7 @@ export const useChatStream = (
         preventNavigation,
         setChatId,
         selectedModel,
+        selectedKbItems,
       )
 
       setStreamInfo(getStreamState(streamKey))
@@ -793,6 +796,7 @@ export const useChatStream = (
       attachmentFileIds?: string[],
       selectedModelConfig?: string | null,
       selectedSources: string[] = [],
+      selectedKbItems: string[] = [],
     ) => {
       if (!messageId) return
 
@@ -900,9 +904,9 @@ export const useChatStream = (
           attachmentFileIds.join(","),
         )
       }
-      // Add selectedSources parameter if provided
-      if (selectedSources && selectedSources.length > 0) {
-        url.searchParams.append("selectedSources", JSON.stringify(selectedSources))
+      // Add selectedKbItems parameter if provided
+      if (selectedKbItems && selectedKbItems.length > 0) {
+        url.searchParams.append("selectedKbItems", JSON.stringify(selectedKbItems))
       }
 
       let eventSource: EventSource
