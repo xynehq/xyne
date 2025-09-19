@@ -171,7 +171,7 @@ export const getPublicChats = async (
   const conditions = [
     eq(chats.email, email),
     eq(chats.isBookmarked, false),
-    eq(chats.documentChat, false),
+    eq(chats.kbChat, false),
   ]
 
   if (timeRange?.from) {

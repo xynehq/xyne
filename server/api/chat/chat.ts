@@ -4251,7 +4251,7 @@ export const MessageApi = async (c: Context) => {
             title: "Untitled",
             attachments: [],
             agentId: agentPromptValue,
-            documentChat: isMsgWithSources || false,
+            kbChat: isMsgWithSources || false,
           })
 
           const insertedMsg = await insertMessage(tx, {
