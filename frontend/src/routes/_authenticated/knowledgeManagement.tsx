@@ -481,29 +481,6 @@ function KnowledgeManagementContent() {
     return () => clearTimeout(timeout)
   }, [isUploading])
 
-  const showToast = useCallback(
-    (title: string, description: string, isError = false) => {
-      const { dismiss } = toast({
-        title,
-        description,
-        variant: isError ? "destructive" : "default",
-        duration: 2000,
-        action: (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.preventDefault()
-              dismiss()
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        ),
-      })
-    },
-    [toast],
-  )
 
   // Check for ongoing uploads on component mount
   useEffect(() => {
@@ -541,10 +518,10 @@ function KnowledgeManagementContent() {
               clearUploadState()
 
               // Show completion toast
-              showToast(
-                "Upload Complete",
-                `Upload of ${savedState.batchProgress.total} files to "${savedState.uploadingCollectionName}" completed while you were away.`,
-              )
+              toast.success({
+                title: "Upload Complete",
+                description: `Upload of ${savedState.batchProgress.total} files to "${savedState.uploadingCollectionName}" completed while you were away.`,
+              })
             }
           }
         } catch (error) {
@@ -566,7 +543,7 @@ function KnowledgeManagementContent() {
     }
 
     checkForOngoingUploads()
-  }, [showToast])
+  }, [toast])
 
   // Periodic check for upload completion while on the page
   useEffect(() => {
@@ -640,10 +617,10 @@ function KnowledgeManagementContent() {
 
             setCollections(updatedCollections)
 
-            showToast(
-              "Upload Complete",
-              `Successfully uploaded ${batchProgress.total} files to "${uploadingCollectionName}".`,
-            )
+            toast.success({
+              title: "Upload Complete",
+              description: `Successfully uploaded ${batchProgress.total} files to "${uploadingCollectionName}".`,
+            })
           }
         }
       } catch (error) {
@@ -655,7 +632,7 @@ function KnowledgeManagementContent() {
     const interval = setInterval(checkUploadProgress, 3000)
 
     return () => clearInterval(interval)
-  }, [isUploading, uploadingCollectionName, batchProgress.total, showToast])
+  }, [isUploading, uploadingCollectionName, batchProgress.total, toast])
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -702,19 +679,21 @@ function KnowledgeManagementContent() {
             ),
           )
         } else {
-          showToast("Error", "Failed to fetch knowledge bases.", true)
+          toast.error({
+            title: "Error",
+            description: "Failed to fetch knowledge bases.",
+          })
         }
       } catch (error) {
-        showToast(
-          "Error",
-          "An error occurred while fetching knowledge bases.",
-          true,
-        )
+        toast.error({
+          title: "Error",
+          description: "An error occurred while fetching knowledge bases.",
+        })
       }
     }
 
     fetchCollections()
-  }, [showToast, user?.email])
+  }, [toast, user?.email])
 
   const handleCloseModal = () => {
     setShowNewCollection(false)
@@ -727,7 +706,10 @@ function KnowledgeManagementContent() {
 
   const handleUpload = async () => {
     if (selectedFiles.length === 0) {
-      showToast("Upload Error", "Please select files to upload.", true)
+      toast.error({
+        title: "Upload Error",
+        description: "Please select files to upload.",
+      })
       return
     }
 
@@ -736,11 +718,10 @@ function KnowledgeManagementContent() {
         (c) => c.name.toLowerCase() === collectionName.trim().toLowerCase(),
       )
     ) {
-      showToast(
-        "Upload Error",
-        "Collection name already exists. Please choose a different name.",
-        true,
-      )
+      toast.error({
+        title: "Upload Error",
+        description: "Collection name already exists. Please choose a different name.",
+      })
       return
     }
 
@@ -833,17 +814,16 @@ function KnowledgeManagementContent() {
       })
 
       handleCloseModal()
-      showToast(
-        "Knowledge Base Created",
-        `Successfully created knowledge base "${collectionName.trim()}" with ${selectedFiles.length} files.`,
-      )
+      toast.success({
+        title: "Knowledge Base Created",
+        description: `Successfully created knowledge base "${collectionName.trim()}" with ${selectedFiles.length} files.`,
+      })
     } catch (error) {
       console.error("Upload failed:", error)
-      showToast(
-        "Upload Failed",
-        "Failed to create collection. Please try again.",
-        true,
-      )
+      toast.error({
+        title: "Upload Failed",
+        description: "Failed to create collection. Please try again.",
+      })
     } finally {
       setIsUploading(false)
       setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
@@ -883,7 +863,10 @@ function KnowledgeManagementContent() {
     if (!addingToCollection) return
 
     if (selectedFiles.length === 0) {
-      showToast("Upload Error", "Please select files to upload.", true)
+      toast.error({
+        title: "Upload Error",
+        description: "Please select files to upload.",
+      })
       return
     }
 
@@ -970,18 +953,17 @@ function KnowledgeManagementContent() {
         return Array.from(collectionsMap.values())
       })
 
-      showToast(
-        "Files Added",
-        `Successfully added ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
-      )
+      toast.success({
+        title: "Files Added",
+        description: `Successfully added ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
+      })
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
-      showToast(
-        "Add Files Failed",
-        "Failed to add files to collection. Please try again.",
-        true,
-      )
+      toast.error({
+        title: "Add Files Failed",
+        description: "Failed to add files to collection. Please try again.",
+      })
     } finally {
       setIsUploading(false)
       setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
@@ -1048,17 +1030,16 @@ function KnowledgeManagementContent() {
         }),
       )
 
-      showToast(
-        "Item Deleted",
-        `Successfully deleted "${deletingItem.node.name}".`,
-      )
+      toast.success({
+        title: "Item Deleted",
+        description: `Successfully deleted "${deletingItem.node.name}".`,
+      })
     } catch (error) {
       console.error("Delete failed:", error)
-      showToast(
-        "Delete Failed",
-        "Failed to delete item. Please try again.",
-        true,
-      )
+      toast.error({
+        title: "Delete Failed",
+        description: "Failed to delete item. Please try again.",
+      })
     } finally {
       setDeletingItem(null)
       setIsUploading(false)
@@ -1113,18 +1094,23 @@ function KnowledgeManagementContent() {
 
         setEditingCollection(null)
         setCollectionName("")
-        showToast("Collection Updated", "Successfully updated collection name.")
+        toast.success({
+          title: "Collection Updated",
+          description: "Successfully updated collection name.",
+        })
       } else {
         const errorText = await response.text()
-        showToast(
-          "Update Failed",
-          `Failed to update collection name: ${errorText}`,
-          true,
-        )
+        toast.error({
+          title: "Update Failed",
+          description: `Failed to update collection name: ${errorText}`,
+        })
       }
     } catch (error) {
       console.error("Update failed:", error)
-      showToast("Update Failed", "Failed to update collection name.", true)
+      toast.error({
+        title: "Update Failed",
+        description: "Failed to update collection name.",
+      })
     }
   }
 
@@ -1142,17 +1128,16 @@ function KnowledgeManagementContent() {
         prev.filter((c) => c.id !== deletingCollection.id),
       )
       setDeletingCollection(null)
-      showToast(
-        "Collection Deleted",
-        "Successfully deleted collection and all associated files.",
-      )
+      toast.success({
+        title: "Collection Deleted",
+        description: "Successfully deleted collection and all associated files.",
+      })
     } catch (error) {
       console.error("Delete failed:", error)
-      showToast(
-        "Delete Failed",
-        "Failed to delete collection. Please try again.",
-        true,
-      )
+      toast.error({
+        title: "Delete Failed",
+        description: "Failed to delete collection. Please try again.",
+      })
     } finally {
       setIsUploading(false)
     }
@@ -1169,11 +1154,10 @@ function KnowledgeManagementContent() {
         !fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".xls")
     )
     ) {
-      showToast(
-        "Preview Not Available",
-        "Preview is only available for .docx, .pdf, and .md files.",
-        false,
-      )
+      toast.warning({
+        title: "Preview Not Available",
+        description: "Preview is only available for .docx, .pdf, and .md files.",
+      })
       return
     }
 
@@ -1208,7 +1192,10 @@ function KnowledgeManagementContent() {
             // If both fail, use default message
           }
         }
-        showToast("Preview Not Available", errorMessage, false)
+        toast.warning({
+          title: "Preview Not Available",
+          description: errorMessage,
+        })
         return
       }
 
@@ -1240,7 +1227,10 @@ function KnowledgeManagementContent() {
           errorMessage = `${errorMessage}: ${contentResponse.statusText}`
         }
 
-        showToast("Document Error", errorMessage, true)
+        toast.error({
+          title: "Document Error",
+          description: errorMessage,
+        })
         throw new Error(errorMessage)
       }
 
@@ -1253,7 +1243,10 @@ function KnowledgeManagementContent() {
       })
     } catch (error) {
       console.error("Error loading document:", error)
-      showToast("Error", "Failed to load document", true)
+      toast.error({
+        title: "Error",
+        description: "Failed to load document",
+      })
     } finally {
       setLoadingDocument(false)
     }
@@ -1281,10 +1274,16 @@ function KnowledgeManagementContent() {
         }
       }, 1000)
 
-      showToast("Download Started", `"${file.name}" download started.`)
+      toast.success({
+        title: "Download Started",
+        description: `"${file.name}" download started.`,
+      })
     } catch (error) {
       console.error("Error downloading file:", error)
-      showToast("Download Failed", "Failed to download file", true)
+      toast.error({
+        title: "Download Failed",
+        description: "Failed to download file",
+      })
     }
   }
 
@@ -1349,7 +1348,10 @@ function KnowledgeManagementContent() {
         
         if (!chunkContentResponse.ok) {
           console.error('Failed to fetch chunk content:', chunkContentResponse.status);
-          showToast('Error', 'Failed to load chunk content', true);
+          toast.error({
+            title: 'Error',
+            description: 'Failed to load chunk content',
+          });
           return;
         }
         
@@ -1375,7 +1377,10 @@ function KnowledgeManagementContent() {
         }
       } catch (error) {
         console.error('Error in handleChunkIndexChange:', error);
-        showToast('Error', 'Failed to process chunk navigation', true);
+        toast.error({
+          title: 'Error',
+          description: 'Failed to process chunk navigation',
+        });
       }
     }
   }
@@ -1603,11 +1608,10 @@ function KnowledgeManagementContent() {
                                       `Failed to fetch folder contents for ${n.name}:`,
                                       error,
                                     )
-                                    showToast(
-                                      "Error",
-                                      `Failed to load folder contents`,
-                                      true,
-                                    )
+                                    toast.error({
+                                      title: "Error",
+                                      description: `Failed to load folder contents`,
+                                    })
                                   }
                                 }
                               } else if (n.children) {
@@ -1901,11 +1905,10 @@ function KnowledgeManagementContent() {
                                           `Failed to fetch folder contents for ${n.name}:`,
                                           error,
                                         )
-                                        showToast(
-                                          "Error",
-                                          `Failed to load folder contents`,
-                                          true,
-                                        )
+                                        toast.error({
+                                          title: "Error",
+                                          description: `Failed to load folder contents`,
+                                        })
                                       }
                                     } else if (!n.isOpen) {
                                       // Optionally clear children when closing

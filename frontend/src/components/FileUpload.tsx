@@ -8,7 +8,6 @@ import {
   generateFileId,
   createFileSelectionHandlers,
   validateAndDeduplicateFiles,
-  createToastNotifier,
   createImagePreview,
   cleanupPreviewUrls,
 } from "@/utils/fileUtils"
@@ -63,8 +62,6 @@ export default function FileUpload({
   }
 
   const isEditingExisting = !!initialDatasourceName
-
-  const showToast = createToastNotifier(toast)
 
   // Calculate FormData size estimation
   const estimateFormDataSize = (
@@ -204,15 +201,14 @@ export default function FileUpload({
           }
         } catch (error) {
           console.error(`Batch ${i + 1} failed:`, error)
-          showToast(
-            `Batch ${i + 1} Failed`,
-            `Error uploading batch ${i + 1} of ${batches.length}: ${
+          toast.error({
+            title: `Batch ${i + 1} Failed`,
+            description: `Error uploading batch ${i + 1} of ${batches.length}: ${
               typeof error === "object" && error && "message" in error
                 ? (error as { message: string }).message
                 : String(error)
             }`,
-            true,
-          )
+          })
         }
       }
 
@@ -226,17 +222,15 @@ export default function FileUpload({
                 failedFile.error ===
                 "Document already exists in this datasource."
               ) {
-                showToast(
-                  "File Skipped",
-                  `File "${failedFile.name}" already exists and was not re-uploaded.`,
-                  false,
-                )
+                toast.warning({
+                  title: "File Skipped",
+                  description: `File "${failedFile.name}" already exists and was not re-uploaded.`,
+                })
               } else {
-                showToast(
-                  "Upload Error",
-                  `Could not upload "${failedFile.name}": ${failedFile.error}`,
-                  true,
-                )
+                toast.error({
+                  title: "Upload Error",
+                  description: `Could not upload "${failedFile.name}": ${failedFile.error}`,
+                })
               }
             },
           )
@@ -248,7 +242,10 @@ export default function FileUpload({
               ? `Successfully uploaded ${totalProcessedFiles} files in ${batches.length} batches to datasource: ${datasourceName}`
               : `Successfully uploaded ${totalProcessedFiles} files to datasource: ${datasourceName}`
 
-          showToast("Upload Completed", message)
+          toast.success({
+            title: "Upload Completed",
+            description: message,
+          })
         }
 
         setSelectedFiles([])
@@ -260,15 +257,17 @@ export default function FileUpload({
           onUploadCompleted()
         }
       } else {
-        showToast("Upload Failed", "No files were successfully uploaded.", true)
+        toast.error({
+          title: "Upload Failed",
+          description: "No files were successfully uploaded.",
+        })
       }
     } catch (error) {
       console.error("Upload error:", error)
-      showToast(
-        "Upload Failed",
-        "An unexpected error occurred during upload. Please try again.",
-        true,
-      )
+      toast.error({
+        title: "Upload Failed",
+        description: "An unexpected error occurred during upload. Please try again.",
+      })
     } finally {
       setIsUploading(false)
       setBatchProgress({
@@ -279,7 +278,7 @@ export default function FileUpload({
     }
   }, [
     selectedFiles,
-    showToast,
+    toast,
     datasourceName,
     onDatasourceCreated,
     onUploadCompleted,
@@ -288,7 +287,7 @@ export default function FileUpload({
 
   const processFiles = useCallback(
     (files: FileList | File[]) => {
-      const validFiles = validateAndDeduplicateFiles(files, showToast)
+      const validFiles = validateAndDeduplicateFiles(files, toast)
       if (validFiles.length === 0) return
 
       // Create selected file objects from unique files
@@ -308,17 +307,16 @@ export default function FileUpload({
         // If we filtered any files due to existing names, notify the user
         const filteredCount = newFiles.length - filteredNewFiles.length
         if (filteredCount > 0) {
-          showToast(
-            "Files already selected",
-            `${filteredCount} file(s) were already selected and skipped.`,
-            false,
-          )
+          toast.warning({
+            title: "Files already selected",
+            description: `${filteredCount} file(s) were already selected and skipped.`,
+          })
         }
 
         return [...prev, ...filteredNewFiles]
       })
     },
-    [showToast],
+    [toast],
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -379,15 +377,14 @@ export default function FileUpload({
 
         // Show warning if any files were ignored due to size
         if (files.length === 0 && totalItems > 0) {
-          showToast(
-            "No valid files found",
-            "Files must be under 40MB. All oversized files were ignored.",
-            true,
-          )
+          toast.error({
+            title: "No valid files found",
+            description: "Files must be under 40MB. All oversized files were ignored.",
+          })
         }
       })
     },
-    [processFiles, showToast, isValidFile],
+    [processFiles, toast, isValidFile],
   )
 
   const handleFolderSelect = useCallback(() => {

@@ -71,7 +71,6 @@ import {
   createDragHandlers,
   createFileSelectionHandlers,
   validateAndDeduplicateFiles,
-  createToastNotifier,
   createImagePreview,
   cleanupPreviewUrls,
   getFileType,
@@ -787,21 +786,19 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, []) // Remove selectedCapability dependency to avoid re-fetching models
 
     // File upload utility functions
-    const showToast = createToastNotifier(toast)
 
     const processFiles = useCallback(
       (files: FileList | File[]) => {
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
-          showToast(
-            "Attachment limit reached",
-            `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-            true,
-          )
+          toast.error({
+            title: "Attachment limit reached",
+            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+          })
           return
         }
 
-        const validFiles = validateAndDeduplicateFiles(files, showToast)
+        const validFiles = validateAndDeduplicateFiles(files, toast)
         if (validFiles.length === 0) return
 
         // Check if adding these files would exceed the limit
@@ -809,11 +806,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         const filesToAdd = validFiles.slice(0, remainingSlots)
 
         if (filesToAdd.length < validFiles.length) {
-          showToast(
-            "Some files skipped",
-            `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
-            false,
-          )
+          toast.warning({
+            title: "Some files skipped",
+            description: `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
+          })
         }
 
         const newFiles: SelectedFile[] = filesToAdd.map((file) => ({
@@ -832,17 +828,16 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
           const filteredCount = newFiles.length - filteredNewFiles.length
           if (filteredCount > 0) {
-            showToast(
-              "Files already selected",
-              `${filteredCount} file(s) were already selected and skipped.`,
-              false,
-            )
+            toast.warning({
+              title: "Files already selected",
+              description: `${filteredCount} file(s) were already selected and skipped.`,
+            })
           }
 
           return [...prev, ...filteredNewFiles]
         })
       },
-      [showToast, selectedFiles.length],
+      [selectedFiles.length],
     )
 
     const uploadFiles = useCallback(
@@ -905,11 +900,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   : f,
               ),
             )
-            showToast(
-              "Upload failed",
-              `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
-              true,
-            )
+            toast.error({
+              title: "Upload failed",
+              description: `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
+            })
             return null
           }
         })
@@ -924,7 +918,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         setIsUploadingFiles(false)
         return uploadedMetadata
       },
-      [showToast],
+      [toast],
     )
 
     const getExtension = (file: File) => {
@@ -957,19 +951,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
         if (files.length > 0) {
-          // Check attachment limit before processing
-          if (selectedFiles.length >= MAX_ATTACHMENTS) {
-            showToast(
-              "Attachment limit reached",
-              `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-              true,
-            )
-            return
-          }
+                        // Check attachment limit before processing
+                        if (selectedFiles.length >= MAX_ATTACHMENTS) {
+                          toast.error({
+                            title: "Attachment limit reached",
+                            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+                          })
+                          return
+                        }
           processFiles(files)
         }
       },
-      [processFiles, selectedFiles.length, showToast],
+      [processFiles, selectedFiles.length],
     )
 
     // Effect to initialize and update persistedAgentId
@@ -2445,11 +2438,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     if (item.kind === "file") {
                       // Check attachment limit before processing
                       if (selectedFiles.length >= MAX_ATTACHMENTS) {
-                        showToast(
-                          "Attachment limit reached",
-                          `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-                          true,
-                        )
+                        toast.error({
+                          title: "Attachment limit reached",
+                          description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+                        })
                         return
                       }
 
@@ -2458,7 +2450,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         // Check if the file type is supported
                         const isValid = validateAndDeduplicateFiles(
                           [file],
-                          showToast,
+                          toast,
                         )
                         if (isValid.length > 0) {
                           // Process the pasted file
@@ -2468,18 +2460,16 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                             name: file.name,
                           })
 
-                          showToast(
-                            "File pasted",
-                            `${fileType} has been added to your message.`,
-                            false,
-                          )
+                          toast.success({
+                            title: "File pasted",
+                            description: `${fileType} has been added to your message.`,
+                          })
                           return // Exit early since we handled the file
                         } else {
-                          showToast(
-                            "Unsupported file type",
-                            "This file type is not supported for attachments.",
-                            true,
-                          )
+                          toast.error({
+                            title: "Unsupported file type",
+                            description: "This file type is not supported for attachments.",
+                          })
                           return
                         }
                       }
