@@ -129,38 +129,6 @@ export const validateAndDeduplicateFiles = (
   return Array.from(fileMap.values())
 }
 
-// Common toast notification creator
-export const createToastNotifier = (
-  toast: {
-    success: (options: { title: string; description: string; duration?: number }) => void;
-    error: (options: { title: string; description: string; duration?: number }) => void;
-    warning: (options: { title: string; description: string; duration?: number }) => void;
-  },
-) => {
-  return {
-    success: (title: string, description: string) => {
-      toast.success({
-        title,
-        description,
-        duration: 2000,
-      })
-    },
-    error: (title: string, description: string) => {
-      toast.error({
-        title,
-        description,
-        duration: 2000,
-      })
-    },
-    warning: (title: string, description: string) => {
-      toast.warning({
-        title,
-        description,
-        duration: 2000,
-      })
-    },
-  }
-}
 
 // build file tree
 export interface FileNode {
