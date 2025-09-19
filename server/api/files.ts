@@ -23,6 +23,7 @@ import type { AttachmentMetadata } from "@/shared/types"
 import { FileProcessorService } from "@/services/fileProcessor"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
+import { isDataSourceError } from "@/integrations/dataSource/errors"
 
 const { JwtPayloadKey } = config
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
@@ -139,9 +140,11 @@ export const handleFileUpload = async (c: Context) => {
         )
       } catch (error) {
         const errorMessage =
-          error instanceof Error
-            ? error.message
-            : "Unknown error during DataSource processing"
+          isDataSourceError(error)
+            ? error.userMessage
+            : error instanceof Error
+              ? error.message
+              : "Unknown error during DataSource processing"
         loggerWithChild({ email: email }).error(
           error,
           `Error processing file "${file.name}" for DataSource`,

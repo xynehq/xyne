@@ -3,54 +3,12 @@ import { VertexAI } from "@google-cloud/vertexai"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { PDFDocument } from "pdf-lib"
+import { FileSizeExceededError, PdfPageTooLargeError } from "@/integrations/dataSource/errors"
+import { CHUNKING_PROMPT } from "@/ai/prompts"
 
 const Logger = getLogger(Subsystem.AI).child({ module: "chunkPdfWithGemini" })
 
 // Splitting uses pdf-lib only; pdfjs not required here
-
-
-
-export const CHUNKING_PROMPT = `\
-OCR the provided PDF page(s) into clean Markdown with enriched table and image handling, then segment into coherent RAG-ready chunks.
-
-GLOBAL RULES:
-- Preserve text structure as Markdown (headings, paragraphs, lists, footnotes).
-- Keep reading order across pages; prefer natural section boundaries.
-- No hallucinations. If content is unreadable, write [illegible].
-- Do not surround output with triple backticks or any code fences.
-- Output ONLY a sequence of <chunk>...</chunk> blocks. No extra commentary.
-
-TABLES (including tables shown inside images):
-- Extract ALL tables completely; never summarize or omit cells.
-- Represent EVERY table as HTML: <table><thead><tr><th>…</th></tr></thead><tbody><tr><td>…</td></tr>…</tbody></table>.
-- Keep the entire table within a single chunk when possible.
-- If a table must be split across chunks due to limits:
-  - Split on complete rows only; never split a cell.
-  - Repeat the full header row (<thead>) at the start of the next chunk.
-  - Add "(table continues)" at the end of the first part and "(table continued)" at the start of the next part.
-
-IMAGES, FIGURES, CHARTS, DIAGRAMS:
-- Insert an inline marker at the exact location where the image appears:
-  - Begin a new paragraph starting with "Image:" and provide a rich, thorough description.
-  - Describe the scene, axes, legends, units, labels, key values, trends, colors, shapes, and any text in the image.
-- If the image contains tabular data, transcribe it immediately after the description as an HTML <table> (same structure as above).
-- For charts, add 1–2 sentences summarizing key insights after the description.
-
-CHUNKING:
-- Group content by semantic theme (e.g., subsection, self-contained explanation, contiguous table).
-- Target 250–512 words per chunk with a hard maximum of 1024 bytes (UTF-8).
-- If 250–512 words would exceed 1024 bytes, end early to respect the byte limit and continue in the next chunk.
-- Do not break sentences, list items, or table rows across chunks unless unavoidable due to the byte limit.
-- When continuing content in the next chunk, begin with a brief "(continued)" cue to retain context.
-- Maintain flow: image descriptions and any extracted tables must appear inline where the image occurs so readers know an image was present there.
-
-FORMATTING:
-- Surround each chunk with <chunk> ... </chunk> tags.
-- Inside chunks, use valid Markdown and HTML (<table> only).
-- Keep whitespace clean; avoid double spaces and stray line breaks.
-
-Begin now and emit only <chunk> blocks.
-`
 
 export type ChunkPdfOptions = {
   projectId?: string
@@ -92,9 +50,7 @@ async function findMaxFittingCount(
   let loCount = 1
   let loBytes = await saveRange(srcPdf, start, loCount)
   if (loBytes.length > maxBytes) {
-    throw new Error(
-      `Single page ${start + 1} exceeds ${(maxBytes / (1024 * 1024)).toFixed(1)} MB limit (${loBytes.length} bytes)`,
-    )
+    throw new PdfPageTooLargeError(start + 1, Math.floor(maxBytes / (1024 * 1024)), loBytes.length)
   }
 
   // 2) Exponential growth to find an overflow upper bound
@@ -303,9 +259,9 @@ export async function extractTextAndImagesWithChunksFromPDFviaGemini(
   }
 
   if (data.length > MAX_SUPPORTED_BYTES) {
-    throw new Error(
-      `Unsupported PDF size: ${(data.length / (1024 * 1024)).toFixed(2)} MB exceeds ${(MAX_SUPPORTED_BYTES / (1024 * 1024)).toFixed(0)} MB limit`,
-    )
+    const actualMB = data.length / (1024 * 1024)
+    const maxMB = MAX_SUPPORTED_BYTES / (1024 * 1024)
+    throw new FileSizeExceededError(maxMB, actualMB)
   }
 
   const text_chunks: string[] = []
