@@ -93,6 +93,8 @@ services:
     depends_on:
       vespa:
         condition: service_healthy
+    environment:
+      - VESPA_CONFIGSERVERS=vespa
     networks:
       - xyne
     restart: "no"
