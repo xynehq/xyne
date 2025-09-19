@@ -18,7 +18,6 @@ const seenHashDescriptions = new Map<string, string>()
 const MIN_IMAGE_DIM_PX = parseInt(process.env.MIN_IMAGE_DIM_PX || "150", 10)
 
 
-
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "pdfChunks",
 })
@@ -326,21 +325,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
     // Track overlap across pages to maintain continuity
     let pageOverlap = ""
 
-    // Track unique image fnId types across the entire document
-    const documentImageOperatorIds = new Set<number>()
-    const documentImageOperatorNames = new Map<number, string>()
-    
-    // Map fnId to operation name for better logging
-    const getOperatorName = (fnId: number): string => {
-      const opNames: { [key: number]: string } = {
-        [PDFJS.OPS.paintImageXObject]: 'paintImageXObject',
-        [PDFJS.OPS.paintImageXObjectRepeat]: 'paintImageXObjectRepeat', 
-        [PDFJS.OPS.paintInlineImageXObject]: 'paintInlineImageXObject',
-        [PDFJS.OPS.paintImageMaskXObject]: 'paintImageMaskXObject'
-      }
-      return opNames[fnId] || `unknownOp_${fnId}`
-    }
-
     // Overlap is now tracked page-to-page only
 
     Logger.info(`PDF has ${pdfDocument.numPages} pages`)
@@ -466,39 +450,9 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
         let imagesOnPage = 0
         let vectorOpsDetected = false
-        // Track unique image fnId types on this page
-        const imageOperatorIds = new Set<number>()
-        const imageOperatorNames = new Map<number, string>()
-        
-        // Map fnId to operation name for better logging
-        const getOperatorName = (fnId: number): string => {
-          const opNames: { [key: number]: string } = {
-            [PDFJS.OPS.paintImageXObject]: 'paintImageXObject',
-            [PDFJS.OPS.paintImageXObjectRepeat]: 'paintImageXObjectRepeat', 
-            [PDFJS.OPS.paintInlineImageXObject]: 'paintInlineImageXObject',
-            [PDFJS.OPS.paintImageMaskXObject]: 'paintImageMaskXObject'
-          }
-          return opNames[fnId] || `unknownOp_${fnId}`
-        }
-        
         for (let i = 0; i < opList.fnArray.length; i++) {
           const fnId = opList.fnArray[i]
           const args = opList.argsArray[i]
-
-          // Check if this is an image-related operator and track it
-          const isImageOp = 
-            fnId === PDFJS.OPS.paintImageXObject ||
-            fnId === PDFJS.OPS.paintImageXObjectRepeat ||
-            fnId === PDFJS.OPS.paintInlineImageXObject ||
-            fnId === PDFJS.OPS.paintImageMaskXObject
-          
-          if (isImageOp) {
-            imageOperatorIds.add(fnId)
-            imageOperatorNames.set(fnId, getOperatorName(fnId))
-            // Also track at document level
-            documentImageOperatorIds.add(fnId)
-            documentImageOperatorNames.set(fnId, getOperatorName(fnId))
-          }
 
           // Track vector drawing operators (paths, fills, form XObjects)
           const isVectorOp =
@@ -562,7 +516,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
             case extractImages ? PDFJS.OPS.paintImageXObjectRepeat : null:
             case extractImages ? PDFJS.OPS.paintInlineImageXObject : null:
             case extractImages ? PDFJS.OPS.paintImageMaskXObject : null: {
-              console.log("Image operator detected", {
+              Logger.debug("Image operator detected", {
                 pageNum,
                 extractImages,
                 operatorType: fnId,
@@ -578,17 +532,17 @@ export async function extractTextAndImagesWithChunksFromPDF(
                       typeof args[0].name === "string"
                     ? args[0].name
                     : args?.[0]
-              console.log("Processing image", { imageName })
+              Logger.debug("Processing image", { imageName })
               let imageDict: any | null = null
               let isInline = false
               // Inline image may directly carry data in args
-              console.log("Image operator details", {
+              Logger.debug("Image operator details", {
                 args: args.length,
                 fnId,
                 paintInlineImageXObject: PDFJS.OPS.paintInlineImageXObject,
               })
               if (fnId === PDFJS.OPS.paintInlineImageXObject) {
-                console.log("Detected inline image data in args")
+                Logger.debug("Detected inline image data in args")
                 const candidate = Array.isArray(args)
                   ? args.find(
                       (a: any) =>
@@ -622,19 +576,19 @@ export async function extractTextAndImagesWithChunksFromPDF(
 
               // If we cannot get the raw image object, skip this image
               if (!imageDict) {
-                console.log(
+                Logger.debug(
                   `No image object available for ${imageName} on page ${pageNum} — skipping`,
                 )
                 continue
               }
-              console.log("Resolved imageDict", {
+              Logger.debug("Resolved imageDict", {
                 hasImageDict: !!imageDict,
                 isInline,
               })
 
               // Ensure imageDict is valid before processing
               if (!imageDict || typeof imageDict !== "object") {
-                console.log(
+                Logger.debug(
                   "imageDict is null or invalid, skipping to crop fallback",
                 )
                 // This will fall through to the crop fallback logic below
@@ -652,7 +606,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     imageDict.bytes ??
                     (imageDict.imgData ? imageDict.imgData.data : undefined)
 
-                  console.log("Full image details", {
+                  Logger.debug("Full image details", {
                     imageName,
                     width,
                     height,
@@ -674,7 +628,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                   })
 
                   if (!width || !height || width <= 0 || height <= 0) {
-                    console.log("Skipped image with invalid dimensions", {
+                    Logger.debug("Skipped image with invalid dimensions", {
                       imageName,
                       width,
                       height,
@@ -687,7 +641,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     rawData.length >
                       DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024
                   ) {
-                    console.log("Skipped large image", {
+                    Logger.warn("Skipped large image", {
                       imageName,
                       actualSizeMB: (rawData.length / (1024 * 1024)).toFixed(2),
                       maxAllowedMB: DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB,
@@ -696,7 +650,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                   }
 
                   if (width < MIN_IMAGE_DIM_PX || height < MIN_IMAGE_DIM_PX) {
-                    console.log("Skipped small image", {
+                    Logger.debug("Skipped small image", {
                       imageName,
                       width,
                       height,
@@ -705,7 +659,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                     continue // Skip small images
                   }
 
-                  console.log(
+                  Logger.debug(
                     "Image passed all filters, proceeding with processing",
                     {
                       imageName,
@@ -772,7 +726,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                               description === "No description returned." ||
                               description === "Image is not worth describing."
                             ) {
-                              console.log(
+                              Logger.warn(
                                 `Skipping image with poor description: ${imageName} on page ${pageNum}`,
                               )
                               break
@@ -881,7 +835,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                               description === "No description returned." ||
                               description === "Image is not worth describing."
                             ) {
-                              console.log(
+                              Logger.warn(
                                 `Skipping image with poor description: ${imageName} on page ${pageNum}`,
                               )
                               break
@@ -1241,7 +1195,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
                             previousDescription: description,
                           },
                         )
-                        console.log(
+                        Logger.warn(
                           `Skipping image with poor description: ${imageName} on page ${pageNum}`,
                         )
                         continue
@@ -1308,23 +1262,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
               break
           }
         }
-        
-        // Console log unique image operator types found on this page
-        if (imageOperatorIds.size > 0) {
-          console.log(`\n=== IMAGE OPERATORS ON PAGE ${pageNum} ===`)
-          console.log(`Found ${imageOperatorIds.size} unique image operator type(s):`)
-          
-          Array.from(imageOperatorIds).forEach(fnId => {
-            const operatorName = imageOperatorNames.get(fnId) || `unknown_${fnId}`
-            console.log(`  - fnId: ${fnId} (${operatorName})`)
-          })
-          
-          console.log(`Total images processed on page ${pageNum}: ${imagesOnPage}`)
-        } else {
-          console.log(`\n=== PAGE ${pageNum} ===`)
-          console.log('No image operators found on this page')
-        }
-
         // End of page: process paragraphs
         const overlapText = processTextParagraphs(
           paragraphs,
@@ -1344,22 +1281,6 @@ export async function extractTextAndImagesWithChunksFromPDF(
         page.cleanup()
       }
     }
-
-    // Console log complete list of unique image operator types found in entire document
-    console.log(`\n=== COMPLETE DOCUMENT IMAGE OPERATORS SUMMARY ===`)
-    if (documentImageOperatorIds.size > 0) {
-      console.log(`Found ${documentImageOperatorIds.size} unique image operator type(s) across entire document:`)
-      
-      Array.from(documentImageOperatorIds).forEach(fnId => {
-        const operatorName = documentImageOperatorNames.get(fnId) || `unknown_${fnId}`
-        console.log(`  - fnId: ${fnId} (${operatorName})`)
-      })
-      
-      console.log(`Total unique image operators: ${documentImageOperatorIds.size}`)
-    } else {
-      console.log('No image operators found in the entire document')
-    }
-    console.log(`=== END DOCUMENT SUMMARY ===\n`)
 
     Logger.info(
       `PDF processing completed. Total text chunks: ${text_chunks.length}, Total image chunks: ${image_chunks.length}`,
@@ -1387,7 +1308,7 @@ export async function extractTextAndImagesWithChunksFromPDF(
       image_chunk_pos,
     }
   } finally {
-    console.log("Calling PDF document destroy")
+    Logger.debug("Calling PDF document destroy")
     await pdfDocument.destroy()
   }
 }
