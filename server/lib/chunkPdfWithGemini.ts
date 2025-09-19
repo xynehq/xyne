@@ -197,7 +197,7 @@ export async function extractSemanticChunksFromPdf(
   )
 
   // Call Vertex AI Gemini Flash
-  const response = await model.generateContent({
+  const result = await model.generateContent({
     contents: [
       {
         role: "user",
@@ -207,8 +207,8 @@ export async function extractSemanticChunksFromPdf(
   })
 
   // Parse and return raw text
-  const candidates = (response as any)?.response?.candidates || []
-  const parts = candidates[0]?.content?.parts || []
+  const candidates = result.response?.candidates ?? []
+  const parts = candidates[0]?.content?.parts ?? []
   const text = parts
     .filter((p: any) => typeof p?.text === "string")
     .map((p: any) => p.text as string)
