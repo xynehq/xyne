@@ -290,6 +290,7 @@ Given the user's question and the context (which includes indexed information), 
    - Only use the most recent information available.
    - If you are not sure, do not provide an answer, leave it empty
    - Include the indices of the supporting evidence in "usefulIndex" so in future iterations you will get that context
+   - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 2. **Search Refinement**:
    - If you cannot fully answer, suggest alternative search queries in "searchQueries"
    - Each query should focus on a different aspect of the information needed
@@ -438,7 +439,7 @@ Suggestions: [Related queries or clarifications if needed, avoiding any meeting 
 # Important Notes:
 - Always consider the user's role and permissions
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time only if the query explicitly requests temporal information
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content, but exclude event-related relationships unless explicitly requested
 - For RetrieveMetadata email queries, strictly adhere to the email listing format with no deviations, ensuring no meeting or event-related language is included
@@ -508,7 +509,7 @@ Return exactly 3 follow-up questions in a JSON array format:
 
 **CRITICAL:** Generate ONLY natural, conversational search questions that users would actually ask.
 
-Do not include explanatory text outside the JSON structure.`
+Do not include explanatory text outside the JSON structure. Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.`
 
 export const baselinePromptJson = (
   userContext: string,
@@ -1050,6 +1051,7 @@ export const SearchQueryToolContextPrompt = (
     ${isDebugMode ? `- "reasoning": "Your reasoning for the tool selection and arguments."` : ""}
     **Strategic Approach:**
     Your goal is to use tools strategically to build understanding progressively, always preferring discovery over assumption, and acknowledge limitations when they exist rather than attempting impossible operations.
+    Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
   `
 }
 
@@ -1443,6 +1445,7 @@ export const searchQueryPrompt = (
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     14. If query is a follow up query then "isFollowUp" must be true.
+    Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
@@ -1480,6 +1483,7 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
     7. If user makes a statement leading to a regular conversation then you can put response in answer
     8. You do not disclose about the JSON format, queryRewrite, all this is internal infromation that you do not disclose.
     9. You do not think on this stage for long, this is a decision node, you keep it minimal
+    Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
     Make sure you always comply with these steps and only produce the JSON output described.
     </answer>`
 }
@@ -1512,6 +1516,7 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
       - Maintain conversational flow while being precise
       - Keep processing details internal
       - Minimize analysis time as this is a decision point
+      - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
       Internal output structure:
       {
@@ -1620,7 +1625,8 @@ REMEMBER:
 - Your complete response must be ONLY a valid JSON object containing the single "answer" key.
 - DO NOT explain your reasoning or state what you're doing.
 - Format ALL emails found in the Retrieved Context - do not apply additional filtering.
-- Only return null if the Retrieved Context contains zero emails. 
+- Only return null if the Retrieved Context contains zero emails.
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone. 
 - If there is even one email, format and return them as specified.`
 
 // Temporal Direction Prompt
@@ -1924,7 +1930,7 @@ Example 1 - Events and Emails:
 3. If no items match after filtering, return exactly {"answer": null}
 4. If retrieved context doesn't contain the exact data requested, return exactly {"answer": null}
 5. If retrieved context doesn't match the query criteria, return exactly {"answer": null}
-6. Format timestamps in user's timezone
+6. Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 7. Never hallucinate data not in retrievedContext
 8. For completed meetings query, return only past events that have ended
 9. DO NOT provide alternative suggestions or general responses if context doesn't match
@@ -1949,6 +1955,7 @@ REMEMBER:
 - Return null if the Retrieved Context doesn't contain information that directly answers the query
 - DO NOT provide alternative suggestions or general responses
 - ONLY proceed if there are actual items in the Retrieved Context that exactly match the query criteria
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
 # FINAL VALIDATION CHECKPOINT
 Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
@@ -2016,6 +2023,7 @@ export const withToolQueryPrompt = (
     - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [0]) that corresponds to the source fragment.
     - **Do NOT** reject any query. Respond using the available context only.
     - **HONESTY OVER HELPFULNESS**: It's better to honestly say you don't have the right information than to provide incomplete or tangentially related results.
+    - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
     Be concise, accurate, and context-aware in all replies.
   `
@@ -2046,6 +2054,7 @@ export const synthesisContextPrompt = (
        - Use if the context contains no relevant information to answer the query.
 
   - Never fabricate or guess. Do not add information not present in the Context Fragments unless clearly marked as missing.
+  - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
   Context Fragments:
   ${synthesisContext}
@@ -2263,7 +2272,7 @@ Bad: "No clear meeting information found" (Use null instead)
 - Use calendar events as primary source when available
 - Cross-reference emails for additional context
 - Stay focused on temporal aspects while including key details
-- Use user's timezone for all times
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - When both email and calendar info exists, prioritize the most relevant based on query
 - For recurring meetings, focus on the specific occurrence relevant to the query
 - Do not give explanation outside the JSON format, do not explain why you didn't find something.
@@ -2342,6 +2351,7 @@ ${retrievedContext}
 - Format dates relative to current user time
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
 `
 
@@ -2414,4 +2424,5 @@ Without these connections, I can only provide general assistance and cannot acce
 - Project-specific data
 - Company knowledge bases
 
+Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`
