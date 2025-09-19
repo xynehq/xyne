@@ -43,8 +43,6 @@ export class FileProcessorService {
         const result = await extractTextAndImagesWithChunksFromPDFviaGemini(
           new Uint8Array(buffer),
           vespaDocId,
-          extractImages,
-          describeImages,
         )
         chunks = result.text_chunks
         chunks_pos = result.text_chunk_pos

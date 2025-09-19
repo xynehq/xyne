@@ -208,7 +208,7 @@ const processPdfContent = async (
   try {
     const docId = `dsf-${createId()}`
     const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
-      await extractTextAndImagesWithChunksFromPDFviaGemini(pdfBuffer, docId, true)
+      await extractTextAndImagesWithChunksFromPDFviaGemini(pdfBuffer, docId)
     if (text_chunks.length === 0 && image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",

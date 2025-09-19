@@ -2,8 +2,11 @@ import * as crypto from "crypto"
 import { VertexAI } from "@google-cloud/vertexai"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { PDFDocument } from "pdf-lib"
 
 const Logger = getLogger(Subsystem.AI).child({ module: "chunkPdfWithGemini" })
+
+// Splitting uses pdf-lib only; pdfjs not required here
 
 
 
@@ -58,13 +61,131 @@ export type ChunkPdfOptions = {
   temperature?: number
 }
 
-// 15 MB threshold for inlineData vs file_data
-const INLINE_MAX_BYTES = 17 * 1024 * 1024
+// Size limits for PDF processing
+const INLINE_MAX_BYTES = 17 * 1024 * 1024 // 17MB - split into chunks
+const MAX_SUPPORTED_BYTES = 100 * 1024 * 1024 // 100MB - hard limit
+
+// Save [startPageIdxInclusive .. startPageIdxInclusive+count-1] into a new PDF
+async function saveRange(
+  srcPdf: PDFDocument,
+  startPageIdxInclusive: number,
+  count: number,
+): Promise<Uint8Array> {
+  const newPdf = await PDFDocument.create()
+  const indices: number[] = []
+  for (let i = 0; i < count; i++) indices.push(startPageIdxInclusive + i)
+  const copied = await newPdf.copyPages(srcPdf, indices)
+  for (const p of copied) newPdf.addPage(p)
+  return await newPdf.save()
+}
+
+// Find the largest `count` pages starting at `start` that fit under `maxBytes`.
+// Returns { count, bytes }. Uses exponential growth + binary search.
+// Complexity: ~O(log remainingPages) saves.
+async function findMaxFittingCount(
+  srcPdf: PDFDocument,
+  start: number,
+  remainingPages: number,
+  maxBytes: number,
+): Promise<{ count: number; bytes: Uint8Array }> {
+  // 1) At least one page must fit, or we error (single-page too large)
+  let loCount = 1
+  let loBytes = await saveRange(srcPdf, start, loCount)
+  if (loBytes.length > maxBytes) {
+    throw new Error(
+      `Single page ${start + 1} exceeds ${(maxBytes / (1024 * 1024)).toFixed(1)} MB limit (${loBytes.length} bytes)`,
+    )
+  }
+
+  // 2) Exponential growth to find an overflow upper bound
+  let hiCount = loCount
+  let hiBytes: Uint8Array | null = null
+  while (hiCount < remainingPages) {
+    // Double, but cap by remaining pages
+    const next = Math.min(hiCount * 2, remainingPages)
+    const tryBytes = await saveRange(srcPdf, start, next)
+    if (tryBytes.length <= maxBytes) {
+      // Still under → move low up
+      loCount = next
+      loBytes = tryBytes
+      hiCount = next
+      if (next === remainingPages) {
+        // Everything fits, done
+        return { count: loCount, bytes: loBytes }
+      }
+    } else {
+      // Overflow found; set high bound and break
+      hiCount = next
+      hiBytes = tryBytes // record overflow marker
+      break
+    }
+  }
+
+  // If we never overflowed (all pages fit via loop), return lo
+  if (!hiBytes && loCount === remainingPages) {
+    return { count: loCount, bytes: loBytes }
+  }
+
+  // 3) Binary search between (loCount, hiCount-1)
+  let left = loCount + 1
+  let right = hiCount - 1
+  let bestCount = loCount
+  let bestBytes = loBytes
+
+  while (left <= right) {
+    const mid = (left + right) >> 1
+    const bytes = await saveRange(srcPdf, start, mid)
+    if (bytes.length <= maxBytes) {
+      bestCount = mid
+      bestBytes = bytes
+      left = mid + 1
+    } else {
+      right = mid - 1
+    }
+  }
+
+  return { count: bestCount, bytes: bestBytes }
+}
+
+// Public splitter: O(k log n) saves for k chunks total
+export async function splitPdfIntoInlineSizedChunks(
+  data: Uint8Array,
+  maxBytes: number,
+  logger?: { info: Function; warn: Function },
+): Promise<Uint8Array[]> {
+  const srcPdf = await PDFDocument.load(data)
+  const totalPages = srcPdf.getPageCount()
+
+  const chunks: Uint8Array[] = []
+  let start = 0
+
+  while (start < totalPages) {
+    const remaining = totalPages - start
+    const { count, bytes } = await findMaxFittingCount(srcPdf, start, remaining, maxBytes)
+
+    if (logger) {
+     console.log(
+        {
+          startPage: start + 1,
+          endPage: start + count,
+          pagesInChunk: count,
+          subSizeBytes: bytes.length,
+          maxBytes,
+        },
+        "Prepared sub-PDF chunk",
+      )
+    }
+
+    chunks.push(bytes)
+    start += count
+  }
+  return chunks
+}
 
 /**
  * Extract semantic chunks from a PDF using Gemini Flash on Vertex AI.
- * - If the file size < 15MB, sends the PDF as inlineData (base64-encoded)
- * - If the file size >= 15MB, requires a GCS URI (or uploaded File API URI) and uses file_data
+ * - If the data passed to this function is < 17MB, it is sent as inlineData (base64-encoded).
+ * - Callers should split larger PDFs into sub-PDFs <= 17MB and call this per part.
  */
 export async function extractSemanticChunksFromPdf(
   pdfData: Uint8Array,
@@ -98,46 +219,22 @@ export async function extractSemanticChunksFromPdf(
     generationConfig: { maxOutputTokens, temperature },
   })
 
-  // Build message parts
+  // Build message parts - always inlineData (callers split before calling)
   const messageParts: any[] = [{ text: CHUNKING_PROMPT }]
+  const pdfBase64 = Buffer.from(pdfData).toString("base64")
+  messageParts.push({
+    inlineData: {
+      mimeType: "application/pdf",
+      data: pdfBase64,
+    },
+  })
 
-  if (dataSize < INLINE_MAX_BYTES) {
-    // Use inlineData for smaller PDFs
-    const pdfBase64 = Buffer.from(pdfData).toString("base64")
-    messageParts.push({
-      inlineData: {
-        mimeType: "application/pdf",
-        data: pdfBase64,
-      },
-    })
-  } else {
-    // For large PDFs, require a GCS URI (or a File API URI)
-    const fileUri = opts.gcsUri || process.env.PDF_GCS_URI
-    if (!fileUri) {
-      throw new Error(
-        "PDF >= 15MB. Provide a GCS URI via options.gcsUri or env PDF_GCS_URI, or upload via Vertex AI File API and supply its URI.",
-      )
-    }
-    // Use file_data for large files
-    messageParts.push({
-      // Include both camelCase and snake_case to accommodate library variations
-      fileData: {
-        mimeType: "application/pdf",
-        fileUri,
-      },
-      file_data: {
-        mime_type: "application/pdf",
-        file_uri: fileUri,
-      },
-    })
-  }
-
-  Logger.info(
+  Logger.debug(
     {
       model: modelId,
       projectId,
       location,
-      mode: dataSize < INLINE_MAX_BYTES ? "inlineData" : "file_data",
+      mode: "inlineData",
       sizeBytes: dataSize,
     },
     "Sending PDF to Gemini Flash via Vertex AI",
@@ -193,10 +290,7 @@ export function parseGeminiChunkBlocks(raw: string): string[] {
  */
 export async function extractTextAndImagesWithChunksFromPDFviaGemini(
   data: Uint8Array,
-  docid: string = crypto.randomUUID(),
-  _extractImages: boolean = false,
-  _describeImages: boolean = false,
-  _includeImageMarkersInText: boolean = true,
+  docid: string = crypto.randomUUID(), // will be used to parse images if we extract it later
   opts: Partial<ChunkPdfOptions> = {},
 ): Promise<{
   text_chunks: string[]
@@ -204,30 +298,47 @@ export async function extractTextAndImagesWithChunksFromPDFviaGemini(
   text_chunk_pos: number[]
   image_chunk_pos: number[]
 }> {
-  // Ask Gemini to chunk this PDF directly with the data
-  const raw = await extractSemanticChunksFromPdf(data, opts)
+  if (!data || data.length === 0) {
+    return { text_chunks: [], image_chunks: [], text_chunk_pos: [], image_chunk_pos: [] }
+  }
 
-  // Parse <chunk> blocks
-  const chunks = parseGeminiChunkBlocks(raw)
+  if (data.length > MAX_SUPPORTED_BYTES) {
+    throw new Error(
+      `Unsupported PDF size: ${(data.length / (1024 * 1024)).toFixed(2)} MB exceeds ${(MAX_SUPPORTED_BYTES / (1024 * 1024)).toFixed(0)} MB limit`,
+    )
+  }
 
-  // Build positions with global sequence semantics
   const text_chunks: string[] = []
   const text_chunk_pos: number[] = []
   let globalSeq = 0
-  for (const c of chunks) {
-    text_chunks.push(c)
-    text_chunk_pos.push(globalSeq)
-    globalSeq++
+
+  if (data.length <= INLINE_MAX_BYTES) {
+    // Single call path
+    Logger.info("Sending single PDF to Gemini , no splitting needed")
+    const raw = await extractSemanticChunksFromPdf(data, opts as ChunkPdfOptions)
+    const chunks = parseGeminiChunkBlocks(raw)
+    for (const c of chunks) {
+      text_chunks.push(c)
+      text_chunk_pos.push(globalSeq++)
+    }
+  } else {
+    // Split into page-based sub-PDFs that are each <= 17MB
+    const subPdfs = await splitPdfIntoInlineSizedChunks(data, INLINE_MAX_BYTES, Logger)
+    for (let i = 0; i < subPdfs.length; i++) {
+      const part = subPdfs[i]
+      Logger.info({ index: i + 1, bytes: part.length }, "Sending sub-PDF to Gemini")
+      const raw = await extractSemanticChunksFromPdf(part, opts as ChunkPdfOptions)
+      const chunks = parseGeminiChunkBlocks(raw)
+      for (const c of chunks) {
+        text_chunks.push(c)
+        text_chunk_pos.push(globalSeq++)
+      }
+    }
   }
 
-  // As requested: image arrays are always empty
+  // As requested: image arrays are always empty/unified
   const image_chunks: string[] = []
   const image_chunk_pos: number[] = []
 
-  return {
-    text_chunks,
-    image_chunks,
-    text_chunk_pos,
-    image_chunk_pos,
-  }
+  return { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos }
 }

@@ -51,7 +51,6 @@ const processPdfFile = async (
     const pdfResult = await extractTextAndImagesWithChunksFromPDFviaGemini(
       pdfBuffer,
       attachmentId,
-      false, // Don't extract images for email attachments
     )
     return pdfResult.text_chunks.filter((v) => v.trim())
   } catch (error) {

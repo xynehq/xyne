@@ -5,6 +5,7 @@ import path from "path"
 import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 
 type EnvMap = Record<string, string>
+const DEFAULT_TEST_PDF = ""
 
 async function loadEnvFile(envPath: string): Promise<EnvMap> {
   try {
@@ -39,12 +40,7 @@ function resolvePdfPath(args: string[], envs: EnvMap): string {
   // Priority: CLI arg -> TEST_PDF_PATH -> PDF_PATH
   const cli = args[0]
   const fromEnv = envs["TEST_PDF_PATH"] || envs["PDF_PATH"] || process.env.TEST_PDF_PATH || process.env.PDF_PATH
-  const p = cli || fromEnv
-  if (!p) {
-    throw new Error(
-      "Provide a PDF path via CLI (bun run server/scripts/testGeminiFromProcessFile.ts <pdfPath>) or set TEST_PDF_PATH/PDF_PATH in server/.env",
-    )
-  }
+  const p = cli || fromEnv || DEFAULT_TEST_PDF
   return path.resolve(p)
 }
 
@@ -71,15 +67,11 @@ async function main() {
 
   // Simulate processFile -> extractTextAndImagesWithChunksFromPDFviaGemini call
   const vespaDocId = "test-docid-gemini"
-  const extractImages = false
-  const describeImages = false
 
   console.log("\nCalling Gemini-backed extractor...")
   const result = await extractTextAndImagesWithChunksFromPDFviaGemini(
     new Uint8Array(buffer),
     vespaDocId,
-    extractImages,
-    describeImages,
   )
 
   // Map to FileProcessorService result naming for clarity
