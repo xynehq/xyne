@@ -901,7 +901,7 @@ function KnowledgeManagementContent() {
 
     try {
       // Upload files in batches
-      let successfullyUploadedFiles=0;
+      let successfullyUploadedFiles = 0;
       const batches = createBatches(selectedFiles, addingToCollection.name)
       setBatchProgress((prev: typeof batchProgress) => ({
         ...prev,
