@@ -266,7 +266,11 @@ update_app() {
 update_infrastructure() {
     echo -e "${YELLOW} Updating infrastructure services...${NC}"
     INFRA_COMPOSE=$(get_infrastructure_compose)
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull
+
+    # Pull images that are available in registries (ignore failures for custom builds)
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull || echo -e "${YELLOW}Some images require building (this is normal for custom images)${NC}"
+
+    # Build and start all services (--build will handle custom images)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
     echo -e "${GREEN} Infrastructure services updated${NC}"
 }
