@@ -60,6 +60,7 @@ services:
     runtime: nvidia
     volumes:
       - ${XYNE_DATA_DIR:-./data}/vespa-data:/opt/vespa/var
+      - ../../server/vespa:/app/vespa
     networks:
       - xyne
     ulimits:
@@ -92,6 +93,22 @@ services:
       - VESPA_LOG_LEVEL=info
       - VESPA_LOG_FILE_SIZE=50M
       - VESPA_LOG_FILE_COUNT=5
+
+  vespa-deploy:
+    build:
+      context: ../..
+      dockerfile: deployment/portable/vespa-deploy/Dockerfile
+    container_name: vespa-deploy
+    depends_on:
+      vespa:
+        condition: service_healthy
+    environment:
+      - VESPA_CONFIGSERVERS=vespa
+    volumes:
+      - ${XYNE_DATA_DIR:-./data}/vespa-models:/app/vespa/models
+    networks:
+      - xyne
+    restart: "no"
 
   xyne-db:
     image: postgres:15-alpine
