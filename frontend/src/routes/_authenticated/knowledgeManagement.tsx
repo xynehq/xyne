@@ -919,7 +919,7 @@ function KnowledgeManagementContent() {
           addingToCollection.id,
           targetFolder?.id,
         )
-        successfullyUploadedFiles=successfullyUploadedFiles+ uploadedResult.summary.successful;
+        successfullyUploadedFiles += uploadedResult.summary.successful;
         
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
