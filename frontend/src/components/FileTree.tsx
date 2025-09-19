@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronDown,
   Plus,
+  Download,
   Trash2,
 } from "lucide-react"
 import {
@@ -56,6 +57,7 @@ interface FileTreeProps {
   onDelete: (node: FileNode, path: string) => void
   onToggle: (node: FileNode) => void
   onFileClick: (node: FileNode) => void
+  onDownload?: (node: FileNode, path: string) => void
 }
 
 const FileTree = ({
@@ -64,6 +66,7 @@ const FileTree = ({
   onDelete,
   onToggle,
   onFileClick,
+  onDownload,
 }: FileTreeProps) => {
   return (
     <div className="mt-2">
@@ -75,6 +78,7 @@ const FileTree = ({
           onDelete={onDelete}
           onToggle={onToggle}
           onFileClick={onFileClick}
+          onDownload={onDownload}
         />
       ))}
     </div>
@@ -89,6 +93,7 @@ const FileNodeComponent = ({
   onDelete,
   onToggle,
   onFileClick,
+  onDownload,
 }: {
   node: FileNode
   level?: number
@@ -97,6 +102,7 @@ const FileNodeComponent = ({
   onDelete: (node: FileNode, path: string) => void
   onToggle: (node: FileNode) => void
   onFileClick: (node: FileNode) => void
+  onDownload?: (node: FileNode, path: string) => void
 }) => {
   const [isHovered, setIsHovered] = useState(false)
 
@@ -153,13 +159,30 @@ const FileNodeComponent = ({
                 <Plus
                   size={16}
                   className="cursor-pointer"
-                  onClick={() => onAddFiles(node, currentPath)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onAddFiles(node, currentPath)
+                  }}
+                />
+              )}
+              {node.type === "file" && onDownload && (
+                <Download
+                  size={16}
+                  className="cursor-pointer text-gray-700 dark:text-gray-200 flex-shrink-0"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onDownload(node, currentPath)
+                  }}
                 />
               )}
               <Trash2
                 size={16}
                 className="cursor-pointer"
-                onClick={() => onDelete(node, currentPath)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete(node, currentPath)
+                }}
               />
             </div>
           )}
@@ -214,6 +237,7 @@ const FileNodeComponent = ({
               onDelete={onDelete}
               onToggle={onToggle}
               onFileClick={onFileClick}
+              onDownload={onDownload}
             />
           ))}
         </div>

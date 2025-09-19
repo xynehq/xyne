@@ -2,6 +2,8 @@ import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
+import { handleAttachmentUpload } from "./files"
+import { type AttachmentMetadata } from "shared/types"
 
 const Logger = getLogger(Subsystem.WorkflowApi)
 
@@ -17,6 +19,27 @@ export interface WorkflowFileUpload {
   fileExtension: string
   workflowExecutionId: string
   workflowStepId: string
+  attachmentId?: string
+  attachmentMetadata?: AttachmentMetadata
+}
+  export interface WorkflowFileData {
+    originalFileName: string
+    fileName: string
+    fileSize: number
+    mimetype: string
+    uploadedAt: string
+    uploadedBy: string
+    fileExtension: string
+    workflowExecutionId: string
+    workflowStepId: string
+    attachmentId?: string
+    attachmentMetadata?: AttachmentMetadata
+  }
+
+export interface AttachmentUploadResponse {
+  success: boolean
+  attachments: AttachmentMetadata[]
+  message: string
 }
 
 export interface FileValidationRule {
@@ -295,6 +318,7 @@ export async function handleWorkflowFileUpload(
   }
 }
 
+
 /**
  * Get MIME type from file extension
  */
@@ -381,3 +405,4 @@ function parseFileSize(sizeStr: string): number {
 
   return Math.floor(size * (units[unit] || 1))
 }
+

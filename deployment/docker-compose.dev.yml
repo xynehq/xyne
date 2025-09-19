@@ -23,11 +23,17 @@ services:
     container_name: xyne-prometheus
     user: "65534:65534"
     volumes:
-      - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
+      - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-template.yml
     ports:
     - "9090:9090"
+    environment:
+      - METRICS_PORT=${METRICS_PORT:-3001}
     command:
-      - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
+      - sh
+      - -c
+      - |
+        envsubst < /etc/prometheus/prometheus-template.yml > /etc/prometheus/prometheus.yml
+        exec prometheus --config.file=/etc/prometheus/prometheus.yml
     restart: always
     networks:
       - xyne

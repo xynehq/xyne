@@ -400,7 +400,10 @@ export const ChatPage = ({
   const [streamingTitle, setStreamingTitle] = useState<string>("")
 
   // Smooth title streaming function - animates from left to right
-  const updateTitleWithAnimation = (newTitle: string) => {
+  const updateTitleWithAnimation = useCallback((newTitle: string) => {
+    setChatTitle((prevTitle) => {
+      return newTitle
+    })
     setIsTitleUpdating(true)
     setStreamingTitle("")
 
@@ -413,12 +416,11 @@ export const ChatPage = ({
         currentIndex++
       } else {
         clearInterval(streamInterval)
-        setChatTitle(newTitle)
         setIsTitleUpdating(false)
         setStreamingTitle("")
       }
     }, 50) // 50ms per character for smooth streaming effect
-  }
+  }, [])
 
   // Create a current streaming response for compatibility with existing UI,
   // merging the real stream IDs once available
@@ -473,6 +475,7 @@ export const ChatPage = ({
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(
     null,
   )
+  const [cameFromSources, setCameFromSources] = useState(false)
 
   // Compute disableRetry flag for retry buttons
   const disableRetry = isStreaming || retryIsStreaming || isSharedChat
@@ -679,8 +682,10 @@ export const ChatPage = ({
     if (!hasHandledQueryParam.current || isWithChatId) {
       // Data will be loaded via useChatHistory hook
     }
+    if (!chatTitle) {
+      setChatTitle(isWithChatId ? data?.chat?.title || null : null)
+    }
 
-    setChatTitle(isWithChatId ? data?.chat?.title || null : null)
     setBookmark(isWithChatId ? !!data?.chat?.isBookmarked || false : false)
 
     // Populate feedbackMap from loaded messages
@@ -758,9 +763,9 @@ export const ChatPage = ({
   useEffect(() => {
     const shouldUpdateTitle =
       chatId &&
-      !chatTitle &&
+      chatTitle === "Untitled" &&
       !isStreaming &&
-      messages.length === 2 && // At least user + assistant message
+      messages.length >= 2 &&
       messages[0]?.messageRole === "user"
 
     if (shouldUpdateTitle && !isSharedChat) {
@@ -804,7 +809,7 @@ export const ChatPage = ({
           // Fail silently - this is a background operation
         })
     }
-  }, [chatId, chatTitle, isStreaming, messages, isSharedChat, queryClient])
+  }, [chatId, isStreaming, isSharedChat, queryClient])
 
   const handleSend = async (
     messageToSend: string,
@@ -1059,7 +1064,7 @@ export const ChatPage = ({
   }
 
   // Handler for citation clicks - moved before conditional returns
-  const handleCitationClick = useCallback((citation: Citation) => {
+  const handleCitationClick = useCallback((citation: Citation, fromSources: boolean = false) => {
     if (!citation || !citation.clId || !citation.itemId) {
       // For citations without clId or itemId, open as regular link
       if (citation.url) {
@@ -1069,17 +1074,33 @@ export const ChatPage = ({
     }
     setSelectedCitation(citation)
     setIsCitationPreviewOpen(true)
-    // Close sources panel when opening citation preview
+    setCameFromSources(fromSources)
+    // Only close sources panel when opening citation preview, but preserve state for back navigation
     setShowSources(false)
-    setCurrentCitations([])
-    setCurrentMessageId(null)
+    if (!fromSources) {
+      // Clear sources state when coming from inline citations
+      setCurrentCitations([])
+      setCurrentMessageId(null)
+    }
   }, [])
 
   // Memoized callback for closing citation preview - moved before conditional returns
   const handleCloseCitationPreview = useCallback(() => {
     setIsCitationPreviewOpen(false)
     setSelectedCitation(null)
+    setCameFromSources(false)
   }, [])
+
+  // Handler for back to sources navigation
+  const handleBackToSources = useCallback(() => {
+    if (currentCitations.length > 0 && currentMessageId) {
+      // Re-open the sources panel with the previous state
+      setShowSources(true)
+      setIsCitationPreviewOpen(false)
+      setSelectedCitation(null)
+      setCameFromSources(false)
+    }
+  }, [currentCitations, currentMessageId])
 
   const scrollToBottom = () => {
     const container = messagesContainerRef.current
@@ -1400,6 +1421,8 @@ export const ChatPage = ({
         citation={selectedCitation}
         isOpen={isCitationPreviewOpen}
         onClose={handleCloseCitationPreview}
+        showBackButton={cameFromSources}
+        onBackToSources={handleBackToSources}
       />
     </div>
   )
@@ -1473,7 +1496,7 @@ const CitationList = ({
   onCitationClick,
 }: {
   citations: Citation[]
-  onCitationClick?: (citation: Citation) => void
+  onCitationClick?: (citation: Citation, fromSources?: boolean) => void
 }) => {
   return (
     <ul className={`mt-2`}>
@@ -1483,7 +1506,7 @@ const CitationList = ({
           className="border-[#E6EBF5] dark:border-gray-700 border-[1px] rounded-[10px] mt-[12px] w-[85%] cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
           onClick={(e) => {
             e.preventDefault()
-            onCitationClick?.(citation)
+            onCitationClick?.(citation, true)
           }}
         >
           <div className="flex pl-[12px] pt-[12px]">
@@ -1519,7 +1542,7 @@ const Sources = ({
   showSources: boolean
   citations: Citation[]
   closeSources: () => void
-  onCitationClick?: (citation: Citation) => void
+  onCitationClick?: (citation: Citation, fromSources?: boolean) => void
 }) => {
   return showSources ? (
     <div

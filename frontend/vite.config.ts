@@ -36,10 +36,61 @@ export default defineConfig(({ mode }) => {
       svgr(),
       viteStaticCopy({
         targets: [
+          // PDF.js worker - modern version
           {
             src: "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
-            dest: "",
-            rename: "pdf.worker.min.js",
+            dest: "pdfjs",
+          },
+          // PDF.js worker - legacy version for Bun compatibility
+          {
+            src: "node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+            dest: "pdfjs/legacy",
+          },
+          // Character maps for text rendering
+          {
+            src: "node_modules/pdfjs-dist/cmaps/*",
+            dest: "pdfjs/cmaps",
+          },
+          // Standard fonts
+          {
+            src: "node_modules/pdfjs-dist/standard_fonts/*",
+            dest: "pdfjs/standard_fonts",
+          },
+          // WASM files for JPEG2000 and color profiles
+          {
+            src: "node_modules/pdfjs-dist/wasm/openjpeg.wasm",
+            dest: "pdfjs/wasm",
+          },
+          {
+            src: "node_modules/pdfjs-dist/wasm/qcms_bg.wasm",
+            dest: "pdfjs/wasm",
+          },
+          {
+            src: "node_modules/pdfjs-dist/wasm/openjpeg_nowasm_fallback.js",
+            dest: "pdfjs/wasm",
+          },
+          // Annotation icons for PDF.js (both modern and legacy)
+          {
+            src: "node_modules/pdfjs-dist/web/images/*",
+            dest: "pdfjs/images",
+          },
+          {
+            src: "node_modules/pdfjs-dist/legacy/web/images/*",
+            dest: "pdfjs/legacy/images",
+          },
+          // ICC color profiles for accurate color rendering
+          {
+            src: "node_modules/pdfjs-dist/iccs/*",
+            dest: "pdfjs/iccs",
+          },
+          // PDF viewer CSS for proper styling
+          {
+            src: "node_modules/pdfjs-dist/web/pdf_viewer.css",
+            dest: "pdfjs",
+          },
+          {
+            src: "node_modules/pdfjs-dist/legacy/web/pdf_viewer.css",
+            dest: "pdfjs/legacy",
           },
         ],
       }),
