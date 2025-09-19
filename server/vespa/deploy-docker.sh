@@ -1,6 +1,6 @@
+#!/bin/sh
 ## FOR DOCKER ENV
 
-#!/bin/sh
 set -e
 
 mkdir -p models
