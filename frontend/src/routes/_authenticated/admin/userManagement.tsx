@@ -537,42 +537,77 @@ function UsersListPage({
     }
   }, [])
 
-  let filteredUsers = users.filter((user) => {
-    const searchLower = searchTerm.toLowerCase()
-    return (
-      user.name?.toLowerCase().includes(searchLower) ||
-      user.email.toLowerCase().includes(searchLower)
-    )
-  })
-
-  let filteredIngestedUsers = ingestedUsers.filter((user) => {
-    const searchLower = searchTerm.toLowerCase()
-    return user.email.toLowerCase().includes(searchLower)
-  })
-
-  // Sort by selected sync app and date type
-  if (sortField) {
-    const app = sortFieldToApp[sortField]
-    filteredUsers = [...filteredUsers].sort((a, b) => {
-      const aDate = a.syncJobs?.[app]?.[sortDateType]
-        ? new Date(a.syncJobs?.[app]?.[sortDateType]!).getTime()
-        : 0
-      const bDate = b.syncJobs?.[app]?.[sortDateType]
-        ? new Date(b.syncJobs?.[app]?.[sortDateType]!).getTime()
-        : 0
-      return sortDirection === "asc" ? aDate - bDate : bDate - aDate
+  // Generic function to filter and sort user arrays
+  const filterAndSortUsers = <
+    T extends {
+      email: string
+      name?: string
+      syncJobs?: Record<
+        Apps,
+        { lastSyncDate: Date | null; createdAt: Date | null } | null
+      >
+    },
+  >(
+    userArray: T[],
+    searchTerm: string,
+    sortField?: string,
+    sortDateType?: string,
+    sortDirection?: string,
+  ): T[] => {
+    // Filter users based on search term
+    let filtered = userArray.filter((user) => {
+      const searchLower = searchTerm.toLowerCase()
+      return (
+        user.name?.toLowerCase().includes(searchLower) ||
+        user.email.toLowerCase().includes(searchLower)
+      )
     })
 
-    filteredIngestedUsers = [...filteredIngestedUsers].sort((a, b) => {
-      const aDate = a.syncJobs?.[app]?.[sortDateType]
-        ? new Date(a.syncJobs?.[app]?.[sortDateType]!).getTime()
-        : 0
-      const bDate = b.syncJobs?.[app]?.[sortDateType]
-        ? new Date(b.syncJobs?.[app]?.[sortDateType]!).getTime()
-        : 0
-      return sortDirection === "asc" ? aDate - bDate : bDate - aDate
-    })
+    // Sort by selected sync app and date type
+    if (sortField && sortDateType && sortDirection) {
+      const app = sortFieldToApp[sortField as keyof typeof sortFieldToApp]
+      if (app) {
+        filtered = [...filtered].sort((a, b) => {
+          const aDate = a.syncJobs?.[app]?.[
+            sortDateType as "lastSyncDate" | "createdAt"
+          ]
+            ? new Date(
+                a.syncJobs?.[app]?.[
+                  sortDateType as "lastSyncDate" | "createdAt"
+                ]!,
+              ).getTime()
+            : 0
+          const bDate = b.syncJobs?.[app]?.[
+            sortDateType as "lastSyncDate" | "createdAt"
+          ]
+            ? new Date(
+                b.syncJobs?.[app]?.[
+                  sortDateType as "lastSyncDate" | "createdAt"
+                ]!,
+              ).getTime()
+            : 0
+          return sortDirection === "asc" ? aDate - bDate : bDate - aDate
+        })
+      }
+    }
+
+    return filtered
   }
+
+  const filteredUsers = filterAndSortUsers(
+    users,
+    searchTerm,
+    sortField,
+    sortDateType,
+    sortDirection,
+  )
+  const filteredIngestedUsers = filterAndSortUsers(
+    ingestedUsers,
+    searchTerm,
+    sortField,
+    sortDateType,
+    sortDirection,
+  )
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     try {
@@ -672,13 +707,6 @@ function UsersListPage({
 
       if (!res.ok) {
         throw new Error("Failed to trigger Slack sync")
-      }
-
-      // Re-fetch data for current active tab
-      if (activeTab === "loggedIn") {
-        await fetchLoggedInUsers()
-      } else if (activeTab === "ingested") {
-        await fetchIngestedUsers()
       }
 
       showToast("Slack sync has been successfully triggered.", "success")
