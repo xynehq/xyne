@@ -21,4 +21,6 @@ RUN chmod +x deploy-docker.sh
 # Switch back to vespa user
 USER vespa
 
+# Override the default entrypoint to run our script directly
+ENTRYPOINT []
 CMD ["./deploy-docker.sh"]
