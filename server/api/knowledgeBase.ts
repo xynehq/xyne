@@ -49,6 +49,7 @@ import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
+import { storage } from "googleapis/build/src/apis/storage"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
@@ -142,6 +143,7 @@ export const CreateCollectionApi = async (c: Context) => {
   const user = users[0]
 
   try {
+    
     const rawData = await c.req.json()
     loggerWithChild({ email: userEmail }).info(
       `Creating Collection with raw data: ${JSON.stringify(rawData)}`,
@@ -1016,7 +1018,7 @@ export const UploadFilesApi = async (c: Context) => {
         )
         continue
       }
-
+      let storagePath=""
       try {
         // Validate file size
         if (file.size > MAX_FILE_SIZE) {
@@ -1175,11 +1177,11 @@ export const UploadFilesApi = async (c: Context) => {
         }
 
         // Generate unique identifiers
-        const storageKey = generateStorageKey()
+        let storageKey = generateStorageKey()
         const vespaDocId = generateFileVespaDocId()
 
         // Calculate storage path
-        const storagePath = getStoragePath(
+        storagePath = getStoragePath(
           user.workspaceExternalId,
           collectionId,
           storageKey,
@@ -1191,7 +1193,7 @@ export const UploadFilesApi = async (c: Context) => {
 
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
-
+        
         // Process file using the service
         const processingResult = await FileProcessorService.processFile(
           buffer,
@@ -1231,6 +1233,7 @@ export const UploadFilesApi = async (c: Context) => {
             user.email,
           )
 
+
           // Create Vespa document within the same transaction
           const vespaDoc = {
             docId: vespaDocId,
@@ -1238,8 +1241,8 @@ export const UploadFilesApi = async (c: Context) => {
             itemId: createdItem.id,
             fileName:
               targetPath === "/"
-                ? collection.name + targetPath + filePath
-                : collection.name + targetPath + fileName,
+                ? collection?.name + targetPath + filePath
+                : collection?.name + targetPath + fileName,
             app: Apps.KnowledgeBase as const,
             entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
             description: "", // Default description for uploaded files
@@ -1263,7 +1266,7 @@ export const UploadFilesApi = async (c: Context) => {
             createdAt: Date.now(),
             updatedAt: Date.now(),
           }
-
+          
           await insert(vespaDoc, KbItemsSchema)
           return createdItem
         })
@@ -1292,7 +1295,16 @@ export const UploadFilesApi = async (c: Context) => {
           parentId: targetParentId,
           message: `Failed to upload file: ${errMsg}`,
         })
-
+        if(storagePath){
+          try{
+            await unlink(storagePath);
+          }
+          catch(err){
+            console.log(`Failed to clean up storage file at ${storagePath}: ${getErrorMessage(err)}`);
+          }
+          
+        }
+        
         loggerWithChild({ email: userEmail }).error(
           error,
           `Failed to upload file ${file.name}: ${errMsg}`,

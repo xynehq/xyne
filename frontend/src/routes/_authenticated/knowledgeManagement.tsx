@@ -773,7 +773,7 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-        await uploadFileBatch(batchFiles, cl.id)
+       await uploadFileBatch(batchFiles, cl.id)
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -789,7 +789,7 @@ function KnowledgeManagementContent() {
         param: { id: cl.id },
       })
       const items = await itemsResponse.json()
-
+      
       const newCollection: Collection = {
         id: updatedCl.id,
         name: updatedCl.name,
@@ -901,6 +901,7 @@ function KnowledgeManagementContent() {
 
     try {
       // Upload files in batches
+      let successfullyUploadedFiles=0;
       const batches = createBatches(selectedFiles, addingToCollection.name)
       setBatchProgress((prev: typeof batchProgress) => ({
         ...prev,
@@ -913,16 +914,19 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-        await uploadFileBatch(
+      const uploadedResult=  await uploadFileBatch(
           batchFiles,
           addingToCollection.id,
           targetFolder?.id,
         )
+        successfullyUploadedFiles=successfullyUploadedFiles+ uploadedResult.summary.successful;
+        
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
         }))
       }
+      
 
       // Refresh the collection by fetching updated data from backend
       const clResponse = await api.cl[":id"].$get({
@@ -969,10 +973,14 @@ function KnowledgeManagementContent() {
 
         return Array.from(collectionsMap.values())
       })
-
-      showToast(
+      successfullyUploadedFiles? showToast(
         "Files Added",
-        `Successfully added ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
+        `Successfully added ${successfullyUploadedFiles} out of ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
+      ):
+      showToast(
+        "Add Files Failed",
+        "Failed to add files to collection. Please try again.",
+        true,
       )
       handleCloseModal()
     } catch (error) {
