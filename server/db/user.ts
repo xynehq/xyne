@@ -232,6 +232,7 @@ export const getUserById = async (
 // then we will get the last_ran_on and the user data to frontend
 export const getAllLoggedInUsers = async (
   trx: TxnOrClient,
+  workspaceId: string,
 ): Promise<UserWithSyncJobs[]> => {
   const usersWithSyncJobs = await trx
     .select({
@@ -255,6 +256,7 @@ export const getAllLoggedInUsers = async (
       `.as("slackConnectorStatus"),
     })
     .from(users)
+    .where(eq(users.workspaceExternalId, workspaceId))
     .leftJoin(syncJobs, eq(users.email, syncJobs.email))
     .leftJoin(connectors, eq(users.id, connectors.userId))
     .groupBy(users.id, users.email, syncJobs.app)
@@ -322,6 +324,7 @@ export const getAllLoggedInUsers = async (
 
 export const getAllIngestedUsers = async (
   trx: TxnOrClient,
+  workspaceId: string,
 ): Promise<NonUsersWithSyncJobs[]> => {
   // Get all sync jobs for emails that don't have corresponding users
   const ingestedUsersWithSyncJobs = await trx
@@ -333,6 +336,7 @@ export const getAllIngestedUsers = async (
       connectorStatus: sql<string | null>`NULL`.as("connectorStatus"), // No connectors for non-users
     })
     .from(syncJobs)
+    .where(eq(syncJobs.workspaceExternalId, workspaceId))
     .groupBy(syncJobs.email, syncJobs.app)
     .execute()
 

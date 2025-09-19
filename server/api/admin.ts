@@ -1879,7 +1879,9 @@ export const GetWorkspaceApiKeys = async (c: Context) => {
 
 export const ListAllLoggedInUsers = async (c: Context) => {
   try {
-    const users = await getAllLoggedInUsers(db)
+    const { workspaceId } = c.get(JwtPayloadKey)
+
+    const users = await getAllLoggedInUsers(db, workspaceId)
     return c.json({
       success: true,
       data: users,
@@ -1897,7 +1899,8 @@ export const ListAllLoggedInUsers = async (c: Context) => {
 }
 export const ListAllIngestedUsers = async (c: Context) => {
   try {
-    const users = await getAllIngestedUsers(db)
+    const { workspaceId } = c.get(JwtPayloadKey)
+    const users = await getAllIngestedUsers(db, workspaceId)
     return c.json({
       success: true,
       data: users,
