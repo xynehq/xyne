@@ -124,8 +124,6 @@ function getStoragePath(
   )
 }
 
-
-
 // API Handlers
 
 // Create a new Collection
@@ -143,7 +141,6 @@ export const CreateCollectionApi = async (c: Context) => {
   const user = users[0]
 
   try {
-    
     const rawData = await c.req.json()
     loggerWithChild({ email: userEmail }).info(
       `Creating Collection with raw data: ${JSON.stringify(rawData)}`,
@@ -248,7 +245,7 @@ export const ListCollectionsApi = async (c: Context) => {
     const collections = showOnlyOwn
       ? await getCollectionsByOwner(db, user.id)
       : await getAccessibleCollections(db, user.id)
-    
+
     // If includeItems is requested, fetch items for each collection
     if (includeItems) {
       const collectionsWithItems = await Promise.all(
@@ -261,8 +258,12 @@ export const ListCollectionsApi = async (c: Context) => {
                 items: [], // Return empty items array for inaccessible collections
               }
             }
-            
-            const items = await getCollectionItemsByParent(db, collection.id, null)
+
+            const items = await getCollectionItemsByParent(
+              db,
+              collection.id,
+              null,
+            )
             return {
               ...collection,
               items,
@@ -277,12 +278,12 @@ export const ListCollectionsApi = async (c: Context) => {
               items: [], // Return empty items array on error
             }
           }
-        })
+        }),
       )
-      
+
       return c.json(collectionsWithItems)
     }
-    
+
     return c.json(collections)
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -1018,7 +1019,7 @@ export const UploadFilesApi = async (c: Context) => {
         )
         continue
       }
-      let storagePath=""
+      let storagePath = ""
       try {
         // Validate file size
         if (file.size > MAX_FILE_SIZE) {
@@ -1193,7 +1194,7 @@ export const UploadFilesApi = async (c: Context) => {
 
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
-        
+
         // Process file using the service
         const processingResult = await FileProcessorService.processFile(
           buffer,
@@ -1233,7 +1234,6 @@ export const UploadFilesApi = async (c: Context) => {
             user.email,
           )
 
-
           // Create Vespa document within the same transaction
           const vespaDoc = {
             docId: vespaDocId,
@@ -1266,7 +1266,7 @@ export const UploadFilesApi = async (c: Context) => {
             createdAt: Date.now(),
             updatedAt: Date.now(),
           }
-          
+
           await insert(vespaDoc, KbItemsSchema)
           return createdItem
         })
@@ -1295,16 +1295,18 @@ export const UploadFilesApi = async (c: Context) => {
           parentId: targetParentId,
           message: `Failed to upload file: ${errMsg}`,
         })
-        if(storagePath){
-          try{
-            await unlink(storagePath);
+        if (storagePath) {
+          try {
+            await unlink(storagePath)
+          } catch (err) {
+           loggerWithChild({ email: userEmail,  }).error(
+            error,
+              `Failed to clean up storage file`
+            );
+
           }
-          catch(err){
-            console.log(`Failed to clean up storage file at ${storagePath}: ${getErrorMessage(err)}`);
-          }
-          
         }
-        
+
         loggerWithChild({ email: userEmail }).error(
           error,
           `Failed to upload file ${file.name}: ${errMsg}`,
@@ -1614,20 +1616,24 @@ export const GetChunkContentApi = async (c: Context) => {
     }
 
     const resp = await GetDocument(KbItemsSchema, vespaIds[0].vespaDocId)
-    
+
     if (!resp || !resp.fields) {
-      throw new HTTPException(404, { message: "Invalid Vespa document response" })
+      throw new HTTPException(404, {
+        message: "Invalid Vespa document response",
+      })
     }
-    
+
     if (resp.fields.sddocname && resp.fields.sddocname !== "kb_items") {
       throw new HTTPException(404, { message: "Invalid document type" })
     }
-    
+
     if (!resp.fields.chunks_pos || !resp.fields.chunks) {
       throw new HTTPException(404, { message: "Document missing chunk data" })
     }
-    
-    const index = resp.fields.chunks_pos.findIndex((pos: number) => pos === chunkIndex)
+
+    const index = resp.fields.chunks_pos.findIndex(
+      (pos: number) => pos === chunkIndex,
+    )
     if (index === -1) {
       throw new HTTPException(404, { message: "Chunk index not found" })
     }
@@ -1677,7 +1683,7 @@ export const GetFileContentApi = async (c: Context) => {
     return new Response(new Uint8Array(fileContent), {
       headers: {
         "Content-Type": collectionFile.mimeType || "application/octet-stream",
-        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(collectionFile.originalName || 'file')}`,
+        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(collectionFile.originalName || "file")}`,
         "Cache-Control": "private, max-age=3600",
       },
     })
@@ -1760,25 +1766,25 @@ export const DownloadFileApi = async (c: Context) => {
     }
     const fileSize = fileStats.size
     const range = c.req.header("range")
-    
+
     const storagePath = collectionFile.storagePath
 
-    if(!collectionFile.originalName){
+    if (!collectionFile.originalName) {
       throw new HTTPException(500, { message: "File original name is missing" })
     }
 
     // Filename sanitization helper functions for download functionality
     function sanitizeFilename(name: string): string {
-    // Replace non-ASCII and problematic characters with '_'
-    return name.replace(/[^\x20-\x7E]|["\\]/g, "_")
+      // Replace non-ASCII and problematic characters with '_'
+      return name.replace(/[^\x20-\x7E]|["\\]/g, "_")
     }
 
     // RFC 5987 encoding for filename*
     function encodeRFC5987ValueChars(str: string): string {
-    return encodeURIComponent(str)
-    .replace(/['()]/g, escape)
-    .replace(/%(7C|60|5E)/g, unescape)
-   }
+      return encodeURIComponent(str)
+        .replace(/['()]/g, escape)
+        .replace(/%(7C|60|5E)/g, unescape)
+    }
 
     const safeFileName = sanitizeFilename(collectionFile.originalName)
     const encodedFileName = encodeRFC5987ValueChars(collectionFile.originalName)
