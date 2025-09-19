@@ -15,7 +15,7 @@ export const isBun = true
  */
 export function getPdfWorkerSrc(): string {
   // Always use legacy worker for Bun compatibility
-  return "/pdfjs/legacy/pdf.worker.min.mjs"
+  return "/pdfjs/pdf.worker.min.mjs"
 }
 
 // Create a stable default options object

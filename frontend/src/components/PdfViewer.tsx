@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/TextLayer.css"
 import "react-pdf/dist/Page/AnnotationLayer.css"
-import "pdfjs-dist/web/pdf_viewer.css"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { getPdfWorkerSrc, getPdfDocumentOptions } from "@/utils/pdfBunCompat"
 import { DocumentOperations } from "@/contexts/DocumentOperationsContext"
+import { PDFPageProxy } from "pdfjs-dist/types/src/display/api"
 
 // Set up the worker and WASM directory with Bun compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerSrc()
@@ -13,7 +13,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerSrc()
 
 interface PdfViewerProps {
   /** Either a URL or File object */
-  source: string | File
+  source: string | File | Blob | ArrayBuffer | Uint8Array
   /** Document ID for stable component key */
   docId?: string
   /** Additional CSS class names */
@@ -66,18 +66,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   
   // Get size function for virtualizer
   const getSize = useCallback((index: number) => {
-      return sizesRef.current.get(index + 1) ?? DEFAULT_HEIGHT
-    }, [])
-    
-    // Setup virtualizer for continuous mode
-    const rowVirtualizer = useVirtualizer({
-        count: numPages || 0,
-        getScrollElement: () => containerRef.current,
-        estimateSize: getSize,
-        overscan: 6, // Render 6 pages above and below viewport
-        enabled: displayMode === "continuous" && !!numPages,
-    })
-    const virtualItems = rowVirtualizer.getVirtualItems();
+    return sizesRef.current.get(index + 1) ?? DEFAULT_HEIGHT
+  }, [])
+  
+  // Setup virtualizer for continuous mode
+  const rowVirtualizer = useVirtualizer({
+    count: numPages || 0,
+    getScrollElement: () => containerRef.current,
+    estimateSize: getSize,
+    overscan: 6, // Render 6 pages above and below viewport
+    enabled: displayMode === "continuous" && !!numPages,
+  })
+  const virtualItems = rowVirtualizer.getVirtualItems();
 
   // Improved scroll detection for continuous mode
   useEffect(() => {
@@ -232,21 +232,20 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const validInitialPage = Math.min(initialPage, numPages)
     setPageNumber(validInitialPage)
     setCurrentVisiblePage(validInitialPage)
+    if (displayMode === "continuous" && validInitialPage > 1) {
+      rowVirtualizer.scrollToIndex(validInitialPage - 1, { align: "start" })
+    }
   }
 
   // Handle page load success to get page dimensions
   const onPageLoadSuccess = useCallback(
-    (page: { width: number; height: number; originalWidth?: number; originalHeight?: number }) => {
-      if (!page || pageDimensions) return // Only get dimensions from first page
-      const { width, height } = page.originalWidth && page.originalHeight
-        ? { width: page.originalWidth, height: page.originalHeight }
-        : { width: page.width, height: page.height }
-
+    (page: PDFPageProxy) => {
+      if (!page || pageDimensions) return
+      const vp = page.getViewport({ scale: 1 })
+      const width = vp.width
+      const height = vp.height
       setPageDimensions({ width, height })
-
-      // Calculate and set optimal scale
-      const optimalScale = calculateOptimalScale(width, height)
-      setScale(optimalScale)
+      setScale(calculateOptimalScale(width, height))
     },
     [pageDimensions, calculateOptimalScale],
   )
@@ -414,6 +413,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     return `${baseKey}-retry-${retryCount}`
   }, [docId, source, retryCount])
 
+  // Reset state when the document changes
+  useEffect(() => {
+    setNumPages(null)
+    setPageNumber(initialPage)
+    setCurrentVisiblePage(initialPage)
+    setError(null)
+    setLoading(true)
+    setPageDimensions(null)
+    sizesRef.current.clear()
+    rowVirtualizer.measure()
+  }, [documentKey, initialPage, rowVirtualizer])
+
   return (
     <div
       className={`simple-pdf-viewer ${className}`}
@@ -516,7 +527,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       setPageInput(null)
                     }
                   }}
-                  className="w-16 px-2 py-1 text-sm text-center bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-16 px-2 py-1 text-sm text-center bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   of {numPages}
@@ -551,7 +562,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         >
           <Document
             key={documentKey}
-            file={stableSource}
+            file={stableSource as any}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             options={documentOptions}
@@ -626,9 +637,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       }}
                     >
                       <div className="relative flex justify-center">
-                        <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-sm z-10">
-                          Page {pageNum}
-                        </div>
                         <Page
                           key={`pdf-page-${pageNum}-${documentKey}`}
                           pageNumber={pageNum}

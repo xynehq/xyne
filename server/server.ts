@@ -1445,7 +1445,6 @@ app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 
 // PDF.js worker files
 app.get("/pdfjs/pdf.worker.min.mjs", serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }))
-app.get("/pdfjs/legacy/pdf.worker.min.mjs", serveStatic({ path: "./dist/pdfjs/legacy/pdf.worker.min.mjs" }))
 
 // PDF.js character maps
 app.get("/pdfjs/cmaps/*", serveStatic({ root: "./dist" }))
@@ -1458,18 +1457,9 @@ app.get("/pdfjs/wasm/*", serveStatic({ root: "./dist" }))
 
 // PDF.js annotation images
 app.get("/pdfjs/images/*", serveStatic({ root: "./dist" }))
-app.get("/pdfjs/legacy/images/*", serveStatic({ root: "./dist" }))
 
 // PDF.js ICC color profiles
 app.get("/pdfjs/iccs/*", serveStatic({ root: "./dist" }))
-
-// PDF.js CSS files
-app.get("/pdfjs/pdf_viewer.css", serveStatic({ path: "./dist/pdfjs/pdf_viewer.css" }))
-app.get("/pdfjs/legacy/pdf_viewer.css", serveStatic({ path: "./dist/pdfjs/legacy/pdf_viewer.css" }))
-
-// React-PDF CSS files
-app.get("/react-pdf/dist/Page/TextLayer.css", serveStatic({ path: "./dist/react-pdf/dist/Page/TextLayer.css" }))
-app.get("/react-pdf/dist/Page/AnnotationLayer.css", serveStatic({ path: "./dist/react-pdf/dist/Page/AnnotationLayer.css" }))
 
 app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
