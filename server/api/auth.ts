@@ -14,17 +14,19 @@ export const GetUserWorkspaceInfo = async (c: Context) => {
   // Check for timezone in query parameters
   const timeZone = c.req.query("timeZone")
 
-  // Update user timezone if provided
-  if (timeZone) {
-    try {
-      await updateUserTimezone(db, email, timeZone)
-    } catch (error) {
-      console.warn("Failed to update user timezone:", error)
-    }
-  }
-
   const userAndWorkspace: PublicUserWorkspace =
     await getPublicUserAndWorkspaceByEmail(db, workspaceId, email)
+
+  if (userAndWorkspace.user && userAndWorkspace.workspace) {
+    // Update user timezone if provided
+    if (timeZone) {
+      try {
+        await updateUserTimezone(db, email, timeZone)
+      } catch (error) {
+        console.warn("Failed to update user timezone:", error)
+      }
+    }
+  }
   return c.json({
     ...userAndWorkspace,
     agentWhiteList: true,
