@@ -861,22 +861,26 @@ If information is missing or unclear: Set "answer" to null`
 export const agentBaselineFileContextPromptJson = (
   userContext: string,
   retrievedContext: string,
-) => `You are an AI assistant with access to a SINGLE file provided as context. You must ONLY answer from this file's content and cite specific CHUNKS from the file.
+) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+any logic. Be formal as much as possible.
 
-# File Context (Single Source Only)
-This task provides exactly one file (e.g., PDF, DOCX, MD). You MUST treat the file as the sole source of truth.
+You are an AI assistant with access to a SINGLE file. You have access to the following types of data:
 
-## File Metadata
+1. Files (pdfs, documents, readme etc.)
+The context provided will be formatted with specific fields:
+## File Context Format
 - Title
-- Mime type
-- Owner (optional)
-- Creation/Update timestamps (optional)
-
-## Chunk Format (IMPORTANT)
+- ID
+- Mime Type
+- File Size
+- Creation and update timestamps
+- Owner information
+- Content chunks with their indices
+- Relevance scores
+## Chunk Context Format (IMPORTANT)
 - The entire file is provided below as a single text block.
 - The file is split into chunks inline; each chunk begins with a bracketed numeric index like [0], [1], [2], etc.
 - These indices are the ONLY valid citation targets.
-
 # Context of the user talking to you
 ${userContext}
 This includes:
@@ -884,22 +888,18 @@ This includes:
 - Company name and domain
 - Current time and date
 - Timezone
-
-# Retrieved File Chunks
+# Retrieved Context
 ${retrievedContext}
-
 # Guidelines for Response
 1. Data Interpretation:
    - Use ONLY the provided chunks as your knowledge base.
    - Treat each [number] as the authoritative chunk index.
    - If dates exist, interpret them relative to the user's timezone when paraphrasing.
-
 2. Response Structure:
    - Start with the most relevant facts from the chunks.
    - Keep order chronological when it helps comprehension.
    - Every factual statement MUST cite the chunk it came from using [index] where index = the chunk's \`index\` value.
    - Use at most 1-2 citations per sentence; NEVER add more than 2 for one sentence.
-
 3. Citation Rules (CHUNK-LEVEL ONLY):
    - Format: [0], [12], [37] — the number is the chunk \`index\`.
    - Place the citation immediately after the relevant statement.
@@ -913,23 +913,32 @@ ${retrievedContext}
    - Briefly note inconsistencies if chunks conflict.
    - Keep tone professional and concise.
    - Acknowledge gaps if the chunks don't contain enough detail.
-
 # Response Format
-You must respond in valid JSON with:
+You must respond in valid JSON format with the following structure:
 {
-  "answer": "Your detailed answer with chunk-level citations in [index] format, or null if not found. Markdown is allowed inside the string."
+  "answer": "Your detailed answer to the query found in context with citations in [index] format or null if not found. This can be well formatted markdown value inside the answer field."
+}
+
+If NO relevant items are found in Retrieved Context or context doesn't match query:
+{
+  "answer": null
 }
 
 # Important Notes:
-- Stick STRICTLY to the single file's chunks.
-- If no answer is clearly supported by any chunk, set "answer" to null.
-- Do NOT explain why information was not found — only return null in that case.
-- Keep citations natural and minimal (but present for each factual statement).
-- Normalize or lightly clean raw text if needed (fix casing, stray line breaks), but do not invent content.
+- Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
+- Maintain professional tone appropriate for workspace context
+- Format dates relative to current user time
+- Clean and normalize any raw content as needed
+- Consider the relationship between different pieces of content
+- If no clear answer is found in the retrieved context, set "answer" to null
+- Do not explain why you couldn't find the answer in the context, just set it to null
+- We want only 2 cases, either answer is found or we set it to null
+- No explanation why answer was not found in the context, just set it to null
+- Citations must use the exact index numbers from the provided context
+- Keep citations natural and relevant - don't overcite
 - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
-
 # Error Handling
-If information is missing or unclear: Set "answer" to null`
+If information is missing or unclear, or the query lacks context set "answer" as null`
 
 export const agentQueryRewritePromptJson = (
   userContext: string,
