@@ -10,15 +10,15 @@ RUN dnf -y install curl unzip
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:$PATH"
 
-# Switch back to vespa user
-USER vespa
-
 WORKDIR /app/vespa
 
 # Copy the vespa server code (relative to project root build context)
 COPY server/vespa .
 
-# Make the script executable
+# Make the script executable while still root
 RUN chmod +x deploy-docker.sh
+
+# Switch back to vespa user
+USER vespa
 
 CMD ["./deploy-docker.sh"]
