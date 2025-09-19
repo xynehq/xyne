@@ -117,7 +117,12 @@ export default function LoginForm() {
 
 export const Route = createFileRoute("/auth")({
   beforeLoad: async () => {
-    const res = await api.me.$get()
+    // Get user timezone
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+    const res = await api.me.$get({
+      query: { timeZone },
+    })
     if (res.ok) {
       // TODO: to type this response
       const userWorkspace = await res.json()
