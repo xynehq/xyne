@@ -4193,12 +4193,12 @@ export const MessageApi = async (c: Context) => {
     rootSpan.setAttribute("message", message)
 
     // Extract sources from search parameters
-    const sources = c.req.query("selectedSources")
-    const isMsgWithSources = !!sources
+    const kbItems = c.req.query("selectedKbItems")
+    const isMsgWithKbItems = !!kbItems
     let fileIds: string[] = []
-    if (sources) {
+    if (kbItems) {
       try {
-        const resp = await getCollectionFilesVespaIds(JSON.parse(sources), db)
+        const resp = await getCollectionFilesVespaIds(JSON.parse(kbItems), db)
         fileIds = resp
           .map((file) => file.vespaDocId || "")
           .filter((id) => id !== "")
@@ -4251,7 +4251,7 @@ export const MessageApi = async (c: Context) => {
             title: "Untitled",
             attachments: [],
             agentId: agentPromptValue,
-            kbChat: isMsgWithSources || false,
+            isKbChat: isMsgWithKbItems || false,
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -4433,7 +4433,7 @@ export const MessageApi = async (c: Context) => {
               threadIds,
               imageAttachmentFileIds,
               agentPromptValue,
-              isMsgWithSources,
+              isMsgWithKbItems,
               actualModelId || config.defaultBestModel,
             )
             stream.writeSSE({
