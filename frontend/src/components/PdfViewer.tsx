@@ -3,6 +3,7 @@ import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/TextLayer.css"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import "pdfjs-dist/web/pdf_viewer.css"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { getPdfWorkerSrc, getPdfDocumentOptions } from "@/utils/pdfBunCompat"
 import { DocumentOperations } from "@/contexts/DocumentOperationsContext"
 
@@ -29,8 +30,6 @@ interface PdfViewerProps {
   displayMode?: "paginated" | "continuous"
   /** Show page navigation controls */
   showNavigation?: boolean
-  /** Enable zoom controls */
-  enableZoom?: boolean
   /** Ref to expose document operations */
   documentOperationsRef?: React.RefObject<DocumentOperations>
 }
@@ -45,13 +44,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   scale: initialScale = 1.2,
   displayMode = "continuous",
   showNavigation = true,
-  enableZoom = true,
   documentOperationsRef,
 }) => {
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageNumber, setPageNumber] = useState<number>(initialPage)
-  const [currentVisiblePage, setCurrentVisiblePage] =
-    useState<number>(initialPage)
+  const [currentVisiblePage, setCurrentVisiblePage] = useState<number>(initialPage)
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [scale, setScale] = useState<number>(initialScale)
@@ -62,23 +59,156 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   } | null>(null)
   const [retryCount, setRetryCount] = useState<number>(0)
   const containerRef = useRef<HTMLDivElement>(null)
-  const observerRef = useRef<IntersectionObserver | null>(null)
+  
+  // Cache per-page measured heights for accurate scroll math
+  const sizesRef = useRef<Map<number, number>>(new Map())
+  const DEFAULT_HEIGHT = 900 // Safe estimate until measured
+  
+  // Get size function for virtualizer
+  const getSize = useCallback((index: number) => {
+      return sizesRef.current.get(index + 1) ?? DEFAULT_HEIGHT
+    }, [])
+    
+    // Setup virtualizer for continuous mode
+    const rowVirtualizer = useVirtualizer({
+        count: numPages || 0,
+        getScrollElement: () => containerRef.current,
+        estimateSize: getSize,
+        overscan: 6, // Render 6 pages above and below viewport
+        enabled: displayMode === "continuous" && !!numPages,
+    })
+    const virtualItems = rowVirtualizer.getVirtualItems();
 
-  // Calculate optimal scale based on page dimensions and container size
+  // Improved scroll detection for continuous mode
+  useEffect(() => {
+    if (displayMode !== "continuous") return;
+    if (!virtualItems || virtualItems.length === 0) return;
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const containerTop = containerRect.top;
+    const containerHeight = containerRect.height;
+    const viewportCenter = containerTop + containerHeight / 2;
+
+    let mostVisiblePage = 1;
+    let maxVisibleArea = 0;
+
+    // Check each rendered page to find which one has the most visible area
+    for (const item of virtualItems) {
+      const pageNum = item.index + 1;
+      
+      // Find the page element
+      const pageElement = container.querySelector(`[data-index="${item.index}"]`);
+      if (!pageElement) continue;
+
+      const pageRect = pageElement.getBoundingClientRect();
+      const pageTop = pageRect.top;
+      const pageBottom = pageRect.bottom;
+
+      // Calculate visible area of this page
+      const visibleTop = Math.max(pageTop, containerTop);
+      const visibleBottom = Math.min(pageBottom, containerTop + containerHeight);
+      const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+      const visibleArea = visibleHeight * pageRect.width;
+
+      // Also consider if the page center is in viewport (for better UX)
+      const pageCenter = pageTop + pageRect.height / 2;
+      const distanceFromViewportCenter = Math.abs(pageCenter - viewportCenter);
+      
+      // Combine visible area with center proximity for better page detection
+      const score = visibleArea - (distanceFromViewportCenter * 0.1);
+
+      if (score > maxVisibleArea) {
+        maxVisibleArea = score;
+        mostVisiblePage = pageNum;
+      }
+    }
+
+    setCurrentVisiblePage(prev => (prev === mostVisiblePage ? prev : mostVisiblePage));
+    
+  }, [displayMode, virtualItems]);
+
+  // Add scroll listener for more responsive page detection
+  useEffect(() => {
+    if (displayMode !== "continuous") return;
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    let scrollTimeout: NodeJS.Timeout;
+
+    const handleScroll = () => {
+      // Debounce scroll events for performance
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        if (!virtualItems || virtualItems.length === 0) return;
+
+        const containerRect = container.getBoundingClientRect();
+        const containerTop = containerRect.top;
+        const containerHeight = containerRect.height;
+        const viewportCenter = containerTop + containerHeight / 2;
+
+        let mostVisiblePage = 1;
+        let maxVisibleArea = 0;
+
+        for (const item of virtualItems) {
+          const pageNum = item.index + 1;
+          
+          const pageElement = container.querySelector(`[data-index="${item.index}"]`);
+          if (!pageElement) continue;
+
+          const pageRect = pageElement.getBoundingClientRect();
+          const pageTop = pageRect.top;
+          const pageBottom = pageRect.bottom;
+
+          const visibleTop = Math.max(pageTop, containerTop);
+          const visibleBottom = Math.min(pageBottom, containerTop + containerHeight);
+          const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+          const visibleArea = visibleHeight * pageRect.width;
+
+          const pageCenter = pageTop + pageRect.height / 2;
+          const distanceFromViewportCenter = Math.abs(pageCenter - viewportCenter);
+          
+          const score = visibleArea - (distanceFromViewportCenter * 0.1);
+
+          if (score > maxVisibleArea) {
+            maxVisibleArea = score;
+            mostVisiblePage = pageNum;
+          }
+        }
+
+        setCurrentVisiblePage(prev => (prev === mostVisiblePage ? prev : mostVisiblePage));
+      }, 50); // 50ms debounce
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, [displayMode, virtualItems]);
+
+  // Tell the virtualizer when a page's final height is known
+  const onPageRender = useCallback((pageNum: number, heightPx: number) => {
+    const prev = sizesRef.current.get(pageNum)
+    if (prev !== heightPx) {
+      sizesRef.current.set(pageNum, heightPx)
+      // Force virtualizer to re-measure by invalidating the size cache
+      rowVirtualizer.measure()
+    }
+  }, [rowVirtualizer])
+
+  // Calculate optimal scale based on page dimensions and container size - FIT TO WIDTH
   const calculateOptimalScale = useCallback(
     (pageWidth: number, pageHeight: number) => {
       if (!containerRef.current) return initialScale
 
       const container = containerRef.current
       const containerWidth = container.clientWidth - 32 // Account for padding
-      const containerHeight = container.clientHeight - 32 // Account for padding
 
-      // Calculate scale to fit width and height
+      // Calculate scale to fit width only (not height)
       const scaleToFitWidth = containerWidth / pageWidth
-      const scaleToFitHeight = containerHeight / pageHeight
-
-      // Use the smaller scale to ensure the page fits completely
-      const fitScale = Math.min(scaleToFitWidth, scaleToFitHeight)
 
       // Apply some constraints
       const minScale = 0.5
@@ -86,11 +216,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
       // For very large pages (like PPT slides), use a more conservative scale
       if (pageWidth > 1000 || pageHeight > 1000) {
-        return Math.max(minScale, Math.min(fitScale * 0.8, maxScale))
+        return Math.max(minScale, Math.min(scaleToFitWidth * 0.8, maxScale))
       }
 
-      // For standard A4-like pages, use the calculated fit scale
-      return Math.max(minScale, Math.min(fitScale, maxScale))
+      // For standard pages, use the calculated fit-to-width scale
+      return Math.max(minScale, Math.min(scaleToFitWidth, maxScale))
     },
     [initialScale],
   )
@@ -107,17 +237,16 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   // Handle page load success to get page dimensions
   const onPageLoadSuccess = useCallback(
     (page: { width: number; height: number; originalWidth?: number; originalHeight?: number }) => {
-      if (page && !pageDimensions) {
-        const { width, height } = page.originalWidth && page.originalHeight
-          ? { width: page.originalWidth, height: page.originalHeight }
-          : { width: page.width, height: page.height }
+      if (!page || pageDimensions) return // Only get dimensions from first page
+      const { width, height } = page.originalWidth && page.originalHeight
+        ? { width: page.originalWidth, height: page.originalHeight }
+        : { width: page.width, height: page.height }
 
-        setPageDimensions({ width, height })
+      setPageDimensions({ width, height })
 
-        // Calculate and set optimal scale
-        const optimalScale = calculateOptimalScale(width, height)
-        setScale(optimalScale)
-      }
+      // Calculate and set optimal scale
+      const optimalScale = calculateOptimalScale(width, height)
+      setScale(optimalScale)
     },
     [pageDimensions, calculateOptimalScale],
   )
@@ -146,159 +275,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
     setLoading(false)
   }
-
-  // Debounced page update to prevent flickering
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const currentVisiblePageRef = useRef(currentVisiblePage)
-
-  // Keep ref in sync with state
-  useEffect(() => {
-    currentVisiblePageRef.current = currentVisiblePage
-  }, [currentVisiblePage])
-
-  const debouncedSetCurrentPage = useCallback((newPage: number) => {
-    if (newPage === currentVisiblePageRef.current) return
-
-    // Clear any pending update
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current)
-    }
-
-    // Debounce the actual update
-    updateTimeoutRef.current = setTimeout(() => {
-      setCurrentVisiblePage(newPage)
-    }, 100) // 100ms debounce
-  }, []) // No dependencies to keep it stable
-
-  // Setup IntersectionObserver for page tracking in continuous mode
-  useEffect(() => {
-    if (!numPages || displayMode !== "continuous" || !containerRef.current)
-      return
-
-    // Cleanup previous observer
-    if (observerRef.current) {
-      observerRef.current.disconnect()
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Find the page with the highest intersection ratio
-        let mostVisiblePage = currentVisiblePage
-        let maxRatio = 0
-
-        entries.forEach((entry) => {
-          const pageAttr = entry.target.getAttribute("data-page-num") || "0"
-          const pageNum = parseInt(pageAttr)
-
-          if (entry.isIntersecting && pageNum > 0) {
-            // Use intersection ratio to determine the most visible page
-            if (entry.intersectionRatio > maxRatio) {
-              maxRatio = entry.intersectionRatio
-              mostVisiblePage = pageNum
-            }
-          }
-        })
-
-        // Only update if we found a more visible page with significant visibility
-        if (mostVisiblePage !== currentVisiblePage && maxRatio > 0.3) {
-          debouncedSetCurrentPage(mostVisiblePage)
-        }
-      },
-      {
-        root: containerRef.current,
-        rootMargin: "-20% 0px -20% 0px", // Only trigger when page is significantly visible
-        threshold: [0, 0.1, 0.3, 0.5, 0.7, 1.0],
-      },
-    )
-
-    observerRef.current = observer
-
-    // Observe pages after they're rendered
-    const observePages = () => {
-      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        const pageElement = document.querySelector(
-          `[data-page-num="${pageNum}"]`,
-        )
-        if (pageElement) {
-          observer.observe(pageElement)
-        }
-      }
-    }
-
-    // Small delay to ensure DOM is ready
-    setTimeout(observePages, 100)
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect()
-      }
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current)
-      }
-    }
-  }, [numPages, displayMode])
-
-  // Add scroll event listener for better page tracking (only as fallback)
-  useEffect(() => {
-    if (displayMode !== "continuous" || !containerRef.current) return
-
-    let scrollTimeout: NodeJS.Timeout | null = null
-
-    const handleScroll = () => {
-      // Clear previous timeout
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout)
-      }
-
-      // Debounce scroll handling
-      scrollTimeout = setTimeout(() => {
-        if (!containerRef.current || !numPages) return
-
-        const container = containerRef.current
-        const containerRect = container.getBoundingClientRect()
-        const containerCenter = containerRect.top + containerRect.height / 2
-
-        let closestPage = 1
-        let minDistance = Infinity
-
-        // Find the page closest to the center of the viewport
-        for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-          const pageElement = document.querySelector(
-            `[data-page-num="${pageNum}"]`,
-          )
-          if (pageElement) {
-            const pageRect = pageElement.getBoundingClientRect()
-            const pageCenter = pageRect.top + pageRect.height / 2
-            const distance = Math.abs(pageCenter - containerCenter)
-
-            if (distance < minDistance) {
-              minDistance = distance
-              closestPage = pageNum
-            }
-          }
-        }
-
-        // Only update if the closest page is different and significantly visible
-        // Use a higher threshold to avoid conflicts with IntersectionObserver
-        if (
-          closestPage !== currentVisiblePage &&
-          minDistance < containerRect.height / 3
-        ) {
-          debouncedSetCurrentPage(closestPage)
-        }
-      }, 150) // Longer debounce for scroll events
-    }
-
-    const container = containerRef.current
-    container.addEventListener("scroll", handleScroll, { passive: true })
-
-    return () => {
-      container.removeEventListener("scroll", handleScroll)
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout)
-      }
-    }
-  }, [displayMode, numPages])
 
   // Handle window resize to recalculate optimal scale
   useEffect(() => {
@@ -345,40 +321,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     if (displayMode === "paginated") {
       setPageNumber(page)
     } else {
-      // Clear any pending updates to prevent conflicts
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current)
-        updateTimeoutRef.current = null
-      }
-
-      // Scroll to page in continuous mode
-      const pageElement = document.querySelector(`[data-page-num="${page}"]`)
-      if (pageElement && containerRef.current) {
-        // Temporarily disable intersection observer to prevent conflicts
-        if (observerRef.current) {
-          observerRef.current.disconnect()
-        }
-
-        pageElement.scrollIntoView({ behavior: "smooth", block: "start" })
-        setCurrentVisiblePage(page)
-
-        // Re-enable intersection observer after a delay
-        setTimeout(() => {
-          if (observerRef.current && containerRef.current) {
-            // Re-observe all pages
-            for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-              const element = document.querySelector(
-                `[data-page-num="${pageNum}"]`,
-              )
-              if (element) {
-                observerRef.current.observe(element)
-              }
-            }
-          }
-        }, 500)
-      }
+      // Use virtualizer's scrollToIndex for navigation (instant for dynamic sizing)
+      const index = page - 1 // Convert to 0-indexed
+      rowVirtualizer.scrollToIndex(index, { align: "start" })
+      setCurrentVisiblePage(page)
     }
-  }, [numPages, displayMode])
+  }, [numPages, displayMode, rowVirtualizer])
 
   const commitPageInput = useCallback(() => {
     if (pageInput === null) return
@@ -394,58 +342,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
   }, [pageInput, numPages, goToPage])
 
-  // Zoom controls
-  const zoomIn = () => {
-    setScale((prev) => Math.min(prev * 1.2, 3.0))
-  }
-
-  const zoomOut = () => {
-    setScale((prev) => Math.max(prev / 1.2, 0.5))
-  }
-
-  const resetZoom = () => {
-    setScale(initialScale)
-  }
-
-  const fitToWidth = () => {
-    if (pageDimensions && containerRef.current) {
-      const container = containerRef.current
-      const containerWidth = container.clientWidth - 32 // Account for padding
-      const fitScale = containerWidth / pageDimensions.width
-      setScale(Math.max(0.5, Math.min(fitScale, 2.0)))
-    }
-  }
-
-  const fitToPage = () => {
-    if (pageDimensions && containerRef.current) {
-      const container = containerRef.current
-      const containerWidth = container.clientWidth - 32
-      const containerHeight = container.clientHeight - 32
-
-      const scaleToFitWidth = containerWidth / pageDimensions.width
-      const scaleToFitHeight = containerHeight / pageDimensions.height
-      const fitScale = Math.min(scaleToFitWidth, scaleToFitHeight)
-
-      setScale(Math.max(0.5, Math.min(fitScale, 2.0)))
-    }
-  }
-
-  // Render all pages for highlighting (for documentOperationsRef)
-  const renderAllPagesForHighlighting = useCallback(async () => {
-    if (!numPages || displayMode !== "continuous") return
-
-    // In continuous mode, all pages are already rendered lazily
-    // This function is mainly for compatibility with the existing interface
-    console.log("All pages rendered for highlighting")
-  }, [numPages, displayMode])
-
-  useEffect(() => {
-    if (documentOperationsRef?.current) {
-      documentOperationsRef.current.renderAllPagesForHighlighting =
-        renderAllPagesForHighlighting
-    }
-  }, [documentOperationsRef, renderAllPagesForHighlighting])
-
   const currentPageForDisplay =
     displayMode === "continuous" ? currentVisiblePage : pageNumber
 
@@ -454,8 +350,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const options = getPdfDocumentOptions({
       enableXfa: true,
     })
-
-    // Freeze the object to prevent any modifications
     return Object.freeze(options)
   }, [])
 
@@ -480,7 +374,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
       // If source is a Blob, convert to ArrayBuffer
       if (source instanceof Blob) {
-        // Return the blob as-is, PDF.js can handle it
         return source
       }
 
@@ -496,37 +389,28 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const documentKey = useMemo(() => {
     let baseKey = ""
     
-    // If docId is provided, use it as the primary key (most stable)
     if (docId) {
       baseKey = `doc-${docId}`
     } else if (!source) {
       baseKey = "no-source"
     } else if (typeof source === "string") {
-      // For URLs, use the URL as the key
       baseKey = `url-${source}`
     } else if (source instanceof File) {
-      // For files, use name and size
       baseKey = `file-${source.name}-${source.size}`
     } else {
-      // Use type assertion to avoid TypeScript narrowing issues
       const sourceAny = source as any
       
       if (sourceAny instanceof ArrayBuffer) {
-        // For ArrayBuffers, use size
         baseKey = `buffer-${sourceAny.byteLength}`
       } else if (sourceAny instanceof Uint8Array) {
-        // For Uint8Arrays, use length
         baseKey = `uint8-${sourceAny.length}`
       } else if (sourceAny instanceof Blob) {
-        // For Blobs, use size and type
         baseKey = `blob-${sourceAny.size}-${sourceAny.type}`
       } else {
-        // Fallback for any other type
         baseKey = `unknown-${Date.now()}`
       }
     }
     
-    // Include retry count to force remount on retry
     return `${baseKey}-retry-${retryCount}`
   }, [docId, source, retryCount])
 
@@ -579,7 +463,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* Navigation Controls */}
       {!loading && !error && numPages && showNavigation && (
         <div className="sticky top-0 bg-white dark:bg-gray-800 shadow-md z-20 p-4 border-b border-gray-200 dark:border-gray-700 w-full">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-center">
             <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg px-4 py-2 shadow-sm">
               {/* Previous Page Button */}
               <button
@@ -652,57 +536,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 <span className="text-lg">›</span>
               </button>
             </div>
-
-            {/* Zoom Controls */}
-            {enableZoom && (
-              <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg px-4 py-2 shadow-sm">
-                <button
-                  onClick={zoomOut}
-                  className="flex items-center gap-1 px-2 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                  title="Zoom out"
-                >
-                  <span className="text-lg">−</span>
-                </button>
-
-                <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-2"></div>
-
-                <button
-                  onClick={resetZoom}
-                  className="px-2 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                  title="Reset zoom"
-                >
-                  {Math.round(scale * 100)}%
-                </button>
-
-                <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-2"></div>
-
-                <button
-                  onClick={zoomIn}
-                  className="flex items-center gap-1 px-2 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                  title="Zoom in"
-                >
-                  <span className="text-lg">+</span>
-                </button>
-
-                <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-2"></div>
-
-                <button
-                  onClick={fitToWidth}
-                  className="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                  title="Fit to width"
-                >
-                  Fit Width
-                </button>
-
-                <button
-                  onClick={fitToPage}
-                  className="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                  title="Fit to page"
-                >
-                  Fit Page
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -744,7 +577,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             }
             className={
               displayMode === "continuous"
-                ? "flex flex-col items-center gap-4"
+                ? "w-full"
                 : "flex justify-center"
             }
           >
@@ -774,50 +607,74 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 className="shadow-lg"
               />
             ) : (
-              // Continuous view - all pages
-              Array.from({ length: numPages || 0 }, (_, index) => {
-                const pageNum = index + 1
-                return (
-                  <div
-                    key={`page_${pageNum}`}
-                    data-page-num={pageNum}
-                    className="relative"
-                  >
-                    <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-sm z-10">
-                      Page {pageNum}
+              // Continuous view - virtualized rendering
+              <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }} className="flex justify-center">
+                {rowVirtualizer.getVirtualItems().map((vi) => {
+                  const pageNum = vi.index + 1
+                  return (
+                    <div
+                      key={vi.key}
+                      ref={rowVirtualizer.measureElement}
+                      data-index={vi.index}
+                      style={{
+                        position: "absolute",
+                        top: vi.start,
+                        left: 0,
+                        width: "100%",
+                        padding: "8px 0",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <div className="relative flex justify-center">
+                        <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-sm z-10">
+                          Page {pageNum}
+                        </div>
+                        <Page
+                          key={`pdf-page-${pageNum}-${documentKey}`}
+                          pageNumber={pageNum}
+                          scale={scale}
+                          renderTextLayer
+                          renderAnnotationLayer
+                          onLoadSuccess={(page) => {
+                            // Get page dimensions from first page
+                            if (pageNum === 1) {
+                              onPageLoadSuccess(page)
+                            }
+                            
+                            // Measure and cache the page height
+                            const viewport = page.getViewport({ scale })
+                            const heightPx = viewport.height + 16 // Add gap
+                            onPageRender(pageNum, heightPx)
+                          }}
+                          loading={
+                            <div className="flex items-center justify-center p-8 min-h-[600px]">
+                              <div className="text-center">
+                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                                <p className="text-sm text-gray-500">
+                                  Loading page {pageNum}...
+                                </p>
+                              </div>
+                            </div>
+                          }
+                          error={
+                            <div className="flex items-center justify-center p-8 min-h-[600px]">
+                              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                                <p className="text-red-800 dark:text-red-200 font-semibold">
+                                  Failed to load page {pageNum}
+                                </p>
+                              </div>
+                            </div>
+                          }
+                          className="shadow-lg"
+                        />
+                        <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-sm z-10 pointer-events-none">
+                          Page {pageNum}
+                        </div>
+                      </div>
                     </div>
-                    <Page
-                      pageNumber={pageNum}
-                      scale={scale}
-                      renderTextLayer
-                      renderAnnotationLayer
-                      onLoadSuccess={
-                        pageNum === 1 ? onPageLoadSuccess : undefined
-                      }
-                      loading={
-                        <div className="flex items-center justify-center p-8 min-h-[600px]">
-                          <div className="text-center">
-                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                            <p className="text-sm text-gray-500">
-                              Loading page {pageNum}...
-                            </p>
-                          </div>
-                        </div>
-                      }
-                      error={
-                        <div className="flex items-center justify-center p-8 min-h-[600px]">
-                          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                            <p className="text-red-800 dark:text-red-200 font-semibold">
-                              Failed to load page {pageNum}
-                            </p>
-                          </div>
-                        </div>
-                      }
-                      className="shadow-lg"
-                    />
-                  </div>
-                )
-              })
+                  )
+                })}
+              </div>
             )}
           </Document>
         </div>
