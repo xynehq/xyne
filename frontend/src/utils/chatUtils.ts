@@ -12,7 +12,7 @@ export const cleanCitationsFromResponse = (text: string): string => {
   return text
     .replace(textToCitationIndex, '')
     .replace(textToImageCitationIndex, '')
-    .replace(/\s+/g, ' ')
+    .replace(/[ \t]+/g, ' ')
     .trim()
 }
 
