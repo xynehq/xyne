@@ -268,6 +268,10 @@ update_infrastructure() {
     echo -e "${YELLOW} Updating infrastructure services...${NC}"
     INFRA_COMPOSE=$(get_infrastructure_compose)
 
+    # Setup environment and permissions first
+    setup_environment
+    setup_permissions
+
     # Pull images that are available in registries (ignore failures for custom builds)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull || echo -e "${YELLOW}Some images require building (this is normal for custom images)${NC}"
 
