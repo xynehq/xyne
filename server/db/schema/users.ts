@@ -49,6 +49,7 @@ export const users = pgTable(
     lastLogin: timestamp("last_login", { withTimezone: true }),
     role: userRoleEnum("role").notNull().default(UserRole.User),
     refreshToken: encryptedText(refreshTokenEncryption)("refreshToken"),
+    timeZone: text("time_zone").notNull().default("Asia/Kolkata"),
   },
   (table) => ({
     emailUniqueIndex: uniqueIndex("email_unique_index").on(
