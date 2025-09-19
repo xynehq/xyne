@@ -39,7 +39,6 @@ services:
       - NODE_ENV=production
       - DATABASE_HOST=xyne-db
       - VESPA_HOST=vespa
-      - HOST=http://localhost
     volumes:
       # Application data volumes
       - ${XYNE_DATA_DIR:-./data}/app-uploads:/usr/src/app/server/storage

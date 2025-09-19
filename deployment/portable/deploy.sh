@@ -132,8 +132,8 @@ setup_environment() {
     
     # Create necessary directories with proper permissions
     echo " Creating data directories..."
-    mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,app-downloads,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data}
-    
+    mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,app-downloads,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data,vespa-models}
+
     # Create Vespa tmp directory
     mkdir -p "$DATA_DIR"/vespa-data/tmp
     
@@ -179,14 +179,15 @@ setup_environment() {
 
 setup_permissions() {
     echo -e "${YELLOW} Setting directory permissions using Docker containers...${NC}"
-    
+
     # Set UID and GID to 1000 to avoid permission issues
     USER_UID="1000"
     USER_GID="1000"
-    
+
     # Use busybox containers to set permissions without requiring sudo
     docker run --rm -v "$(pwd)/$DATA_DIR/postgres-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/vespa-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    docker run --rm -v "$(pwd)/$DATA_DIR/vespa-models:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/app-uploads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/app-logs:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/app-assets:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
@@ -194,12 +195,12 @@ setup_permissions() {
     docker run --rm -v "$(pwd)/$DATA_DIR/app-downloads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/grafana-storage:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/ollama-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    
+
     # Initialize prometheus and loki directories with correct permissions
     docker run --rm -v "$(pwd)/$DATA_DIR/prometheus-data:/data" busybox sh -c 'mkdir -p /data && chown -R 65534:65534 /data' 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/loki-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/promtail-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
-    
+
     echo -e "${GREEN} Permissions configured${NC}"
 }
 
@@ -266,7 +267,15 @@ update_app() {
 update_infrastructure() {
     echo -e "${YELLOW} Updating infrastructure services...${NC}"
     INFRA_COMPOSE=$(get_infrastructure_compose)
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull
+
+    # Setup environment and permissions first
+    setup_environment
+    setup_permissions
+
+    # Pull images that are available in registries (ignore failures for custom builds)
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull || echo -e "${YELLOW}Some images require building (this is normal for custom images)${NC}"
+
+    # Build and start all services (--build will handle custom images)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
     echo -e "${GREEN} Infrastructure services updated${NC}"
 }
