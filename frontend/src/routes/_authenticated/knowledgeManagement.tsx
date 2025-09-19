@@ -152,6 +152,7 @@ const DocumentViewerContainer = memo(
                   { type: selectedDocument.content.type || "application/pdf" },
                 )
               }
+              docId={selectedDocument.file.id}
               className="h-full"
               style={{ height: "100%", overflow: "auto" }}
               scale={1.2}

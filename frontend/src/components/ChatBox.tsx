@@ -2433,7 +2433,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
-                Ask a question or type @ to search your apps
+                Ask a question {hideButtons ? "" : "or type @ to search your apps"}
               </div>
             )}
             <div
