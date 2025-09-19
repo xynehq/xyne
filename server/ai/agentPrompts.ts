@@ -56,6 +56,8 @@ Prioritize selecting only the chunks that contain relevant information for answe
 
 Use these metadata fields to determine relevance. Avoid selecting chunks that appear unrelated, repetitive, or without valuable context.
 
+Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
+
 Return only the JSON structure with the specified fields in a valid and parsable format, without any explanations or additional text.`
 
 export const agentMetadataAnalysisSystemPrompt = `You are an assistant tasked with analyzing metadata about context chunks to identify which chunks are most relevant to the user's query.
@@ -64,6 +66,7 @@ Your task:
 - Review the metadata provided for each chunk.
 - Decide if the user's query can be answered with the available information.
 - If there is recent information on the topic, include it just in case it could add useful context.
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
 Return a JSON structure with:
   - **canBeAnswered**: Boolean indicating if the query can likely be answered.
@@ -103,6 +106,7 @@ Notes:
 - If the user mentions another employee or internal person, set "category" to "InternalPerson".
 - If the user mentions someone outside the company, set "category" to "ExternalPerson".
 - If no person is mentioned or the query is about other topics, set "category" to "Other".
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Extract any names or emails mentioned in the user query, and include them in the respective lists.`
 
 const agentUserChatSystemPromptConstant = // Renamed to avoid conflict if it was a global constant elsewhere
@@ -478,6 +482,7 @@ Suggestions: [Related queries or clarifications if needed, avoiding any meeting 
 - Always consider the user's role and permissions
 - Maintain professional tone appropriate for workspace context
 - Format dates relative to current user time only if the query explicitly requests temporal information
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content, but exclude event-related relationships unless explicitly requested
 - For RetrieveMetadata email queries, strictly adhere to the email listing format with no deviations, ensuring no meeting or event-related language is included
@@ -1022,6 +1027,7 @@ Return ONLY a JSON object with the summary:
 - Make it reassuring and show progress
 - Don't mention specific step types or internal processes
 - Focus on user value and what was accomplished
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
 Generate a summary that shows the user that meaningful work was done in the background.`
 
@@ -1091,6 +1097,7 @@ Return ONLY a JSON object with the summary:
 - Make it human-readable and reassuring
 - Don't mention internal process details
 - Focus on user value, not system operations
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
 Generate a summary that would make sense to a non-technical user watching the agent work.`
 
@@ -1415,6 +1422,7 @@ export const agentSearchQueryPrompt = (
 
     10. "answer" must always be null.
     11. If query is a follow up query then "isFollowUp" must be true.
+    Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
@@ -1652,7 +1660,7 @@ export const agentSearchAgentPrompt = (
     this is the context of the agent, it is very important to follow this.
     9. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     10. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
-    Make sure you always comply with these steps and only produce the JSON output described.
+    Make sure you always comply with these steps and only produce the JSON output described. Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
     `
 }
 
@@ -1692,6 +1700,7 @@ export const agentSearchQueryReasoningPrompt = (
     7. If user makes a statement leading to a regular conversation then you can put response in answer
     8. You do not disclose about the JSON format, queryRewrite, all this is internal infromation that you do not disclose.
     9. You do not think on this stage for long, this is a decision node, you keep it minimal
+    Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
     Make sure you always comply with these steps and only produce the JSON output described.
     </answer>`
 }
@@ -1726,6 +1735,7 @@ export const agentSearchQueryReasoningPromptV2 = (
       - Maintain conversational flow while being precise
       - Keep processing details internal
       - Minimize analysis time as this is a decision point
+      - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
       Internal output structure:
       {
@@ -1857,6 +1867,7 @@ this is the context of the agent, it is very important to follow this.
 - Your complete response must be ONLY a valid JSON object containing the single "answer" key.
 - DO NOT explain your reasoning or state what you're doing.
 - Return null if the Retrieved Context doesn't contain information that directly answers the query.
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - DO NOT provide alternative suggestions or general responses.`
 
 // Temporal Direction Prompt
@@ -2194,6 +2205,7 @@ REMEMBER:
 - Return null if the Retrieved Context doesn't contain information that directly answers the query.
 - DO NOT provide alternative suggestions or general responses.
 - ONLY proceed if there are actual items in the Retrieved Context that exactly match the query criteria.
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
 # FINAL VALIDATION CHECKPOINT
 Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
