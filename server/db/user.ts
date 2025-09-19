@@ -51,6 +51,18 @@ interface UserWithSyncJobs {
     }
   >
 }
+interface NonUsersWithSyncJobs {
+  id: number
+  email: string
+  syncJobs: Record<
+    Apps,
+    {
+      lastSyncDate: Date | null
+      createdAt: Date | null
+      connectorStatus?: string | null
+    }
+  >
+}
 
 export const getPublicUserAndWorkspaceByEmail = async (
   trx: TxnOrClient,
@@ -218,7 +230,7 @@ export const getUserById = async (
 // based on user email will perform the join on tables users and sync_jobs which will have same email
 // then for each user we can have max 4 row 1 is for slack other is for google-drive , gmail, google-calendar
 // then we will get the last_ran_on and the user data to frontend
-export const getAllUsers = async (
+export const getAllLoggedInUsers = async (
   trx: TxnOrClient,
 ): Promise<UserWithSyncJobs[]> => {
   const usersWithSyncJobs = await trx
@@ -306,6 +318,63 @@ export const getAllUsers = async (
 
   const result = Array.from(usersMap.values())
   return result
+}
+
+export const getAllIngestedUsers = async (
+  trx: TxnOrClient,
+): Promise<NonUsersWithSyncJobs[]> => {
+  // Get all sync jobs for emails that don't have corresponding users
+  const ingestedUsersWithSyncJobs = await trx
+    .select({
+      email: syncJobs.email,
+      syncApp: syncJobs.app,
+      lastSyncDate: sql<Date>`max(${syncJobs.lastRanOn})`.as("lastSyncDate"),
+      syncCreatedAt: sql<Date>`max(${syncJobs.createdAt})`.as("syncCreatedAt"),
+      connectorStatus: sql<string | null>`NULL`.as("connectorStatus"), // No connectors for non-users
+    })
+    .from(syncJobs)
+    .groupBy(syncJobs.email, syncJobs.app)
+    .execute()
+
+  // Process ingested users with sync jobs
+  const ingestedUsersMap = new Map<string, NonUsersWithSyncJobs>()
+  let ingestedUserIdCounter = 1 // Temporary ID for ingested users
+
+  for (const row of ingestedUsersWithSyncJobs) {
+    const userEmail = row.email
+    if (!ingestedUsersMap.has(userEmail)) {
+      const ingestedUserEntry: NonUsersWithSyncJobs = {
+        id: ingestedUserIdCounter++, // Assign temporary ID
+        email: row.email,
+        syncJobs: {} as Record<
+          Apps,
+          {
+            lastSyncDate: Date | null
+            createdAt: Date | null
+            connectorStatus?: string | null
+          }
+        >,
+      }
+      Object.values(Apps).forEach((app) => {
+        ingestedUserEntry.syncJobs[app] = {
+          lastSyncDate: null,
+          createdAt: null,
+        }
+      })
+      ingestedUsersMap.set(userEmail, ingestedUserEntry)
+    }
+
+    const ingestedUserEntry = ingestedUsersMap.get(userEmail)!
+    if (row.syncApp && Object.values(Apps).includes(row.syncApp as Apps)) {
+      ingestedUserEntry.syncJobs[row.syncApp as Apps] = {
+        lastSyncDate: row.lastSyncDate,
+        createdAt: row.syncCreatedAt,
+        connectorStatus: row.connectorStatus,
+      }
+    }
+  }
+
+  return Array.from(ingestedUsersMap.values())
 }
 
 export const updateUser = async (

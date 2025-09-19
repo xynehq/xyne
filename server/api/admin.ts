@@ -4,8 +4,9 @@ import { db } from "@/db/client"
 import {
   getUserAndWorkspaceByEmail,
   getUserByEmail,
-  getAllUsers,
   updateUser,
+  getAllLoggedInUsers,
+  getAllIngestedUsers,
 } from "@/db/user"
 import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -1876,9 +1877,27 @@ export const GetWorkspaceApiKeys = async (c: Context) => {
   }
 }
 
-export const ListAllUsers = async (c: Context) => {
+export const ListAllLoggedInUsers = async (c: Context) => {
   try {
-    const users = await getAllUsers(db)
+    const users = await getAllLoggedInUsers(db)
+    return c.json({
+      success: true,
+      data: users,
+      message: `Successfully fetched the users`,
+    })
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        message: `Failed to fetch the users : ${getErrorMessage(error)}`,
+      },
+      500,
+    )
+  }
+}
+export const ListAllIngestedUsers = async (c: Context) => {
+  try {
+    const users = await getAllIngestedUsers(db)
     return c.json({
       success: true,
       data: users,
