@@ -32,9 +32,33 @@ jobs:
 
 
       - name: Run semantic-release
+        id: semantic
         working-directory: ./server
         env:
           HUSKY: 0
           GITHUB_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
           GH_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
         run: bunx semantic-release --no-ci
+
+      - name: Extract release version
+        id: get_version
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: echo "version=${{ steps.semantic.outputs.new_release_version }}" >> $GITHUB_OUTPUT
+
+      - name: Log in to Docker Hub
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          # Adjust if your Dockerfile is inside ./server
+          context: ../../
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/xynehq/xyne:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/xynehq/xyne:${{ steps.get_version.outputs.version }}
