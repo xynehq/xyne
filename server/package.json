@@ -30,6 +30,7 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
+    "migrate:kb": "bun run scripts/backfillclFd.ts",
     "dev": "bun run --watch server.ts",
     "dev:sync": "bun run --watch sync-server.ts",
     "build": "bunx --bun vite build",
@@ -64,7 +65,7 @@
     "@slack/web-api": "^7.8.0",
     "@types/jszip": "^3.4.1",
     "@types/node": "^24.3.0",
-    "@xyne/vespa-ts": "^1.0.5",
+    "@xyne/vespa-ts": "^1.0.6",
     "@xynehq/jaf": "^0.1.4",
     "arctic": "^3.3.0",
     "async-mutex": "^0.5.0",

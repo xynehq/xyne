@@ -197,6 +197,7 @@ export const CreateCollectionApi = async (c: Context) => {
         fileSize: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        clFd: null,
       }
 
       await insert(vespaDoc, KbItemsSchema)
@@ -685,6 +686,7 @@ export const CreateFolderApi = async (c: Context) => {
         fileSize: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        clFd: validatedData.parentId || null,
       }
 
       await insert(vespaDoc, KbItemsSchema)
@@ -853,6 +855,7 @@ async function ensureFolderPath(
         fileSize: 0,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        clFd: parentId,
       }
 
       await insert(vespaDoc, KbItemsSchema)
@@ -1253,6 +1256,7 @@ export const UploadFilesApi = async (c: Context) => {
             fileSize: file.size,
             createdAt: Date.now(),
             updatedAt: Date.now(),
+            clFd: targetParentId,
           }
 
           await insert(vespaDoc, KbItemsSchema)

@@ -17,6 +17,12 @@ schema kb_items {
       attribute: fast-search
       # Database item ID linking to kb_items table
     }
+    
+    field clFd type string {
+      indexing: attribute | summary
+      attribute: fast-search
+      # Parent folder ID for hierarchical queries (clfd-xxx)
+    }
     # knowledge-base
     field app type string {
       indexing: attribute | summary
@@ -114,9 +120,9 @@ schema kb_items {
     match { gram gram-size: 3 }
   }
 
-  fieldset default      { fields:  description, chunks, image_chunks, fileName, entity, createdBy }
+  fieldset default      { fields:  description, chunks, image_chunks, fileName, entity, createdBy, clFd }
   fieldset autocomplete { fields:  fileName }
-  fieldset search       { fields:  description, chunks, image_chunks, fileName, entity }
+  fieldset search       { fields:  description, chunks, image_chunks, fileName, entity, clFd }
 
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
