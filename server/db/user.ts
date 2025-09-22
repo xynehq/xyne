@@ -400,6 +400,49 @@ export const updateUser = async (
   return { success: true, message: "User role updated successfully" }
 }
 
+export const updateUserTimezone = async (
+  trx: TxnOrClient,
+  email: string,
+  timeZone: string,
+) => {
+  try {
+    // Validate input parameters
+    if (!email?.trim()) {
+      throw new HTTPException(400, { message: "Email is required" })
+    }
+    if (!timeZone?.trim()) {
+      throw new HTTPException(400, { message: "TimeZone is required" })
+    }
+
+    const result = await trx
+      .update(users)
+      .set({
+        timeZone,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.email, email))
+      .returning({ id: users.id, email: users.email, timeZone: users.timeZone })
+
+    if (!result || result.length === 0) {
+      throw new HTTPException(400, { message: "User not found" })
+    }
+
+    return {
+      success: true,
+      message: "User timezone updated successfully",
+      user: result[0],
+    }
+  } catch (error) {
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    throw new HTTPException(500, {
+      message: "Failed to update user timezone",
+      cause: error instanceof Error ? error.message : "Unknown error",
+    })
+  }
+}
+
 export async function createUserApiKey({
   db,
   userId,
