@@ -206,7 +206,7 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFA
   return tools
 }
 
-export function buildToolsOverview(tools: Tool<unknown, unknown>[]): string {
+export function buildToolsOverview<A = unknown, Ctx = unknown>(tools: Tool<A, Ctx>[]): string {
   if (!tools || tools.length === 0) return "No tools available."
   return tools
     .map((t, idx) => `  ${idx + 1}. ${t.schema.name}: ${t.schema.description}`)
