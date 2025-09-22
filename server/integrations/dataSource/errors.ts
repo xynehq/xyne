@@ -26,6 +26,16 @@ export class FileSizeExceededError extends FileValidationError {
   }
 }
 
+// Specific PDF validation error when a single page exceeds client-side processing limits
+export class PdfPageTooLargeError extends FileValidationError {
+  constructor(pageNumber: number, maxSizeMB: number, actualBytes: number) {
+    const actualMB = actualBytes / (1024 * 1024)
+    const message = `PDF page ${pageNumber} size ${actualMB.toFixed(2)}MB exceeds maximum allowed per-page limit of ${maxSizeMB}MB`
+    const userMessage = `One page in the PDF is too large (${actualMB.toFixed(2)}MB). Please compress or split the PDF so each page is under ${maxSizeMB}MB.`
+    super(message, userMessage)
+  }
+}
+
 export class UnsupportedFileTypeError extends FileValidationError {
   constructor(mimeType: string, supportedTypes: string[]) {
     const message = `Unsupported file type: ${mimeType}`

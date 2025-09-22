@@ -19,6 +19,8 @@ import {
   SearchSlackChannels,
   agentChatMessageSchema,
   chatTitleSchema,
+  GetDriveItem,
+  GetDriveItemsByDocIds,
   HighlightApi,
   highlightSchema,
 } from "@/api/search"
@@ -40,6 +42,7 @@ import {
   deleteUserDataSchema,
   ingestMoreChannelSchema,
   startSlackIngestionSchema,
+  UserRoleChangeSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -71,6 +74,11 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
+  UpdateUser,
+  HandlePerUserSlackSync,
+  HandlePerUserGoogleWorkSpaceSync,
+  ListAllLoggedInUsers,
+  ListAllIngestedUsers,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -193,6 +201,7 @@ import {
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
+  GetVertexAIModelEnumsApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -228,6 +237,7 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
+  DownloadFileApi,
   GetChunkContentApi,
 } from "@/api/knowledgeBase"
 import {
@@ -880,6 +890,8 @@ export const AppRoutes = app
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
+  .post("/search/driveitem", GetDriveItem)
+  .post("/search/driveitemsbydocids", GetDriveItemsByDocIds)
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(
@@ -957,6 +969,7 @@ export const AppRoutes = app
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+  .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
@@ -995,6 +1008,7 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+  .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
   .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
   .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
@@ -1032,6 +1046,12 @@ export const AppRoutes = app
   // TODO: debug
   // for some reason the validation schema
   // is not making the keys mandatory
+  .get("/list_loggedIn_users", ListAllLoggedInUsers)
+  .get("/list_ingested_users", ListAllIngestedUsers)
+  .post("/change_role", zValidator("form", UserRoleChangeSchema), UpdateUser)
+  .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+  .post("syncSlackByMail", HandlePerUserSlackSync)
+  // create the provider + connector
   .post(
     "/oauth/create",
     zValidator("form", createOAuthProvider),
@@ -1559,6 +1579,30 @@ app.get(
   "/health/vespa",
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
 )
+
+// Serving exact frontend routes and adding AuthRedirect wherever needed
+app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+
+// PDF.js worker files
+app.get("/pdfjs/pdf.worker.min.mjs", serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }))
+
+// PDF.js character maps
+app.get("/pdfjs/cmaps/*", serveStatic({ root: "./dist" }))
+
+// PDF.js standard fonts
+app.get("/pdfjs/standard_fonts/*", serveStatic({ root: "./dist" }))
+
+// PDF.js WASM files
+app.get("/pdfjs/wasm/*", serveStatic({ root: "./dist" }))
+
+// PDF.js annotation images
+app.get("/pdfjs/images/*", serveStatic({ root: "./dist" }))
+
+// PDF.js ICC color profiles
+app.get("/pdfjs/iccs/*", serveStatic({ root: "./dist" }))
+
+app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   if (isSlackEnabled()) {

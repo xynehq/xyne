@@ -26,7 +26,7 @@ import React, {
   import { EnhancedReasoning } from "@/components/EnhancedReasoning"
   import { AttachmentGallery } from "@/components/AttachmentGallery"
   import { jsonToHtmlMessage } from "@/routes/_authenticated/chat"
-  import { processMessage } from "@/utils/chatUtils"
+  import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
   import { ToolsListItem } from "@/types"
   import {
     ImageCitationComponent,
@@ -316,7 +316,7 @@ import React, {
                       onMouseDown={() => setIsCopied(true)}
                       onMouseUp={() => setIsCopied(false)}
                       onClick={() =>
-                        navigator.clipboard.writeText(processMessage(message, citationMap, citationUrls))
+                        navigator.clipboard.writeText(cleanCitationsFromResponse(message))
                       }
                     />
                     <img

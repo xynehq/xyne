@@ -144,8 +144,6 @@ function WorkflowComponent() {
     try {
       setLoading(true)
       const workflows = await userWorkflowsAPI.fetchWorkflows()
-      
-      console.log('Workflows API Response:', workflows)
       if (Array.isArray(workflows.data)) {
         const filteredWorkflows = workflows.data
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first (creation date)
@@ -170,19 +168,6 @@ function WorkflowComponent() {
       const templates = await userWorkflowsAPI.fetchWorkflows()
       
       if (Array.isArray(templates.data)) {
-        console.log('Templates API Response:', templates.data)
-
-        
-        // Convert WorkflowTemplate to Template interface for modal
-        // const convertedTemplates: Template[] = templates.data.map((workflowTemplate) => ({
-        //   id: workflowTemplate.id,
-        //   name: workflowTemplate.name,
-        //   description: workflowTemplate.description,
-        //   icon: getTemplateIcon(workflowTemplate),
-        //   iconBgColor: getTemplateIconBgColor(workflowTemplate),
-        //   isPlaceholder: false
-        // }))
-
 
         const convertedTemplates: Template[] = templates.data
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first (creation date)
@@ -284,8 +269,6 @@ function WorkflowComponent() {
       }
       
       const response = await workflowExecutionsAPI.fetchAll(payload)
-      
-      console.log('Executions API Response:', response)
       
       if (response.data && Array.isArray(response.data)) {
         // Convert API executions to UI format
@@ -401,14 +384,10 @@ function WorkflowComponent() {
   const handleViewWorkflow = async (templateId: string, editable: boolean = false) => {
     try {
       setIsLoadingTemplate(true)
-      console.log('Fetching template by ID:', templateId, 'Editable:', editable)
-      
       const response = await userWorkflowsAPI.fetchTemplateById(templateId)
-      console.log('🔍 Raw template response:', response)
-      
+
       // Check if response has a data property that needs to be extracted
       const template = (response as any).data || response
-      console.log('📋 Template data to use:', template)
       
       setSelectedTemplate(template)
       setIsExecutionMode(false)
@@ -425,7 +404,6 @@ function WorkflowComponent() {
   const handleViewExecution = async (executionId: string) => {
     try {
       setIsLoadingTemplate(true)
-      console.log('🔄 Fetching execution by ID:', executionId)
       
       // Use Hono client for the execution endpoint
       const response = await api.workflow.executions[executionId].$get()
@@ -435,12 +413,7 @@ function WorkflowComponent() {
       }
       
       const executionData = await response.json()
-      console.log('🔍 Raw execution response:', executionData)
-      
-      // Extract the execution workflow data for the builder
-      // The response should contain the workflow structure
-      console.log('📋 Execution data to use:', executionData)
-      
+
       if (executionData) {
         // Extract the workflow structure from the execution response
         let executionTemplate = null
@@ -455,18 +428,7 @@ function WorkflowComponent() {
         } else {
           executionTemplate = executionData
         }
-        
-        console.log('🏗️ Extracted execution template:', executionTemplate)
-        console.log('🔍 Template structure check:', {
-          hasSteps: !!executionTemplate?.steps,
-          hasStepExecutions: !!executionTemplate?.stepExecutions,
-          stepsCount: executionTemplate?.steps?.length || 0,
-          stepExecutionsCount: executionTemplate?.stepExecutions?.length || 0,
-          hasId: !!executionTemplate?.id,
-          hasName: !!executionTemplate?.name,
-          keys: Object.keys(executionTemplate || {})
-        })
-        
+
         // Check if it has stepExecutions structure (for executions) or steps structure (for templates)
         if (executionTemplate && (
           (executionTemplate.stepExecutions && executionTemplate.stepExecutions.length > 0) ||
@@ -475,11 +437,7 @@ function WorkflowComponent() {
           setSelectedTemplate(executionTemplate)
           setIsExecutionMode(true) // Mark as execution mode
           setViewMode("builder")
-          console.log('✅ Successfully set execution template for builder')
         } else {
-          console.log('❌ Execution data does not have valid stepExecutions or steps structure, trying to create workflow from execution data')
-          console.log('Available execution data:', executionTemplate)
-          
           // Try to create a workflow structure from execution data
           // Check if execution has step_executions or similar
           let steps = []
@@ -537,8 +495,6 @@ function WorkflowComponent() {
             }]
           }
           
-          console.log('🔧 Created steps from execution:', steps)
-          
           if (steps.length > 0) {
             const workflowFromExecution = {
               id: executionTemplate?.id || 'execution-workflow',
@@ -554,12 +510,9 @@ function WorkflowComponent() {
               steps: steps,
               workflow_tools: executionTemplate?.workflow_tools || []
             }
-            
-            console.log('🏗️ Final workflow structure:', workflowFromExecution)
             setSelectedTemplate(workflowFromExecution)
             setIsExecutionMode(true)
             setViewMode("builder")
-            console.log('✅ Successfully created and set workflow from execution data')
           } else {
             console.error('❌ Could not create workflow structure from execution data')
           }
@@ -971,7 +924,6 @@ function WorkflowComponent() {
                     fetchExecutions(1, size, dateFilter, debouncedSearchTerm);
                   }}
                   onRowClick={(execution) => {
-                    console.log('Clicked execution:', execution);
                     handleViewExecution(execution.id);
                   }}
                 />
@@ -1003,6 +955,7 @@ function WorkflowComponent() {
                     setIsExecutionMode(false)
                     setIsBuilderMode(true) // Reset to builder mode
                   }}
+                  onRefreshWorkflows={fetchWorkflows}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
                   isEditableMode={selectedTemplate === null}
@@ -1023,8 +976,7 @@ function WorkflowComponent() {
         loading={templatesLoading}
         error={templatesError}
         onSelectTemplate={(template) => {
-          console.log('Selected template:', template);
-          handleViewWorkflow(template.id, true); // true = editable mode
+          handleViewWorkflow(template.id, true);
         }}
       />
     </div>
