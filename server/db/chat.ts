@@ -5,6 +5,7 @@ import {
   selectChatSchema,
   selectMessageSchema,
   selectPublicChatSchema,
+  ChatType,
   type InsertChat,
   type InsertMessage,
   type SelectChat,
@@ -167,8 +168,13 @@ export const getPublicChats = async (
   pageSize: number,
   offset: number,
   timeRange?: { from?: Date; to?: Date },
+  chatType: ChatType = ChatType.Default,
 ): Promise<SelectPublicChat[]> => {
-  const conditions = [eq(chats.email, email), eq(chats.isBookmarked, false)]
+  const conditions = [
+    eq(chats.email, email),
+    eq(chats.isBookmarked, false),
+    eq(chats.chatType, chatType),
+  ]
 
   if (timeRange?.from) {
     conditions.push(gte(chats.createdAt, timeRange.from))

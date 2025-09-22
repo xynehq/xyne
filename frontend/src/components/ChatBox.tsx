@@ -2678,13 +2678,17 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   if (e.defaultPrevented) return
                 }
 
-                if (
-                  e.key === "Enter" &&
-                  !e.shiftKey &&
-                  query.trim().length > 0
-                ) {
-                  e.preventDefault()
-                  handleSendMessage()
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault() // Always prevent default for Enter (unless Shift+Enter)
+                  
+                  if (
+                    query.trim().length > 0 &&
+                    !isStreaming &&
+                    !retryIsStreaming &&
+                    !isUploadingFiles
+                  ) {
+                    handleSendMessage()
+                  }
                 }
               }}
               style={{
