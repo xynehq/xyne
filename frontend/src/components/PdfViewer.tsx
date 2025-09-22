@@ -4,7 +4,8 @@ import "react-pdf/dist/Page/TextLayer.css"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { getPdfWorkerSrc, getPdfDocumentOptions } from "@/utils/pdfBunCompat"
-import { DocumentOperations } from "@/contexts/DocumentOperationsContext"
+import type { DocumentOperations } from "@/contexts/DocumentOperationsContext"
+import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api'
 
 // Set up the worker and WASM directory with Bun compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerSrc()
@@ -31,6 +32,8 @@ const MemoizedPage = memo(({
     error={error}
     className="shadow-lg"
   />
+), (prev, next) => (
+   prev.pageNumber === next.pageNumber && prev.scale === next.scale
 ))
 
 interface PdfViewerProps {
@@ -84,7 +87,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   
   // Height map: precomputed heights for all pages at current scale
   const [heightMap, setHeightMap] = useState<number[]>([])
-  const [pdfDocument, setPdfDocument] = useState<any>(null)
+  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
   
   // Create a simple, readable key for the Document component
   const documentKey = useMemo(() => {
@@ -116,20 +119,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   }, [docId, source, retryCount])
   
   // Precompute height map from PDF metadata (two-pass layout)
-  const computeHeightMap = useCallback(async (doc: any, currentScale: number) => {
-    if (!doc || !numPages) return []
-    
-    const heights: number[] = []
-    for (let i = 1; i <= numPages; i++) {
-      try {
-        const page = await doc.getPage(i)
-        const viewport = page.getViewport({ scale: currentScale })
-        heights.push(viewport.height)
-      } catch (error) {
-        console.warn(`Failed to get page ${i} dimensions:`, error)
-        heights.push(900) // fallback height
-      }
-    }
+  const computeHeightMap = useCallback(async (doc: PDFDocumentProxy, currentScale: number) => {
+   if (!doc) return []
+    const pages: number = doc.numPages ?? 0
+    const heights: number[] = await Promise.all(
+      Array.from({ length: pages }, async (_, idx) => {
+        try {
+          const page = await doc.getPage(idx + 1)
+          const vp = page.getViewport({ scale: currentScale })
+          return vp.height
+        } catch (error) {
+          console.warn(`Failed to get page ${idx + 1} dimensions:`, error)
+          return Math.round(792 * scale)
+        }
+      }),
+    )
     return heights
   }, [numPages])
   
@@ -169,6 +173,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
 
     el.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
     return () => el.removeEventListener('scroll', onScroll)
   }, [displayMode, rowVirtualizer])
 
@@ -199,7 +204,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     [initialScale],
   )
 
-  const onDocumentLoadSuccess = useCallback(async (pdfDoc: any) => {
+  const onDocumentLoadSuccess = useCallback(async (pdfDoc: PDFDocumentProxy) => {
     const { numPages } = pdfDoc
     setNumPages(numPages)
     setPdfDocument(pdfDoc)
@@ -210,7 +215,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     try {
       const firstPage = await pdfDoc.getPage(1)
       const vp = firstPage.getViewport({ scale: 1 })
-      const optimalScale = calculateOptimalScale(vp.width, vp.height)
+      const width = vp.width
+      const height = vp.height
+      
+      // Set page dimensions for window resize calculations
+      setPageDimensions({ width, height })
+      
+      const optimalScale = calculateOptimalScale(width, height)
       setScale(optimalScale)
       finalScale = optimalScale
     } catch (error) {
@@ -238,13 +249,24 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   function onDocumentLoadError(error: Error) {
     console.error("PDF load error:", error)
-    console.error("Error details:", {
-      message: error.message,
-      stack: error.stack,
-      source: source,
-      sourceType: source ? typeof source : "null",
-      sourceConstructor: source ? source.constructor.name : "null",
-    })
+    const srcMeta =
+    typeof source === "string"
+      ? { urlPrefix: source.slice(0, 256) }
+      : source instanceof File
+      ? { file: { name: source.name, size: source.size, type: source.type } }
+      : source instanceof Blob
+      ? { blob: { size: source.size, type: source.type } }
+      : source instanceof ArrayBuffer
+      ? { arrayBuffer: { byteLength: source.byteLength } }
+      : source instanceof Uint8Array
+      ? { uint8Array: { length: source.length } }
+      : { kind: source ? typeof source : "null" }
+
+  console.error("Error details:", {
+    message: error.message,
+    stack: error.stack,
+    source: srcMeta,
+  })
 
     // Handle specific ArrayBuffer errors
     if (
@@ -277,20 +299,25 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => window.removeEventListener("resize", handleResize)
   }, [pageDimensions, calculateOptimalScale])
 
+  // Track if we're in the initial load cycle to prevent redundant computation
+  const isInitialLoadRef = useRef(true)
+  
   // Recompute height map when scale changes (synchronous)
   useEffect(() => {
     if (displayMode === "continuous" && pdfDocument && numPages) {
-      // Skip recomputation if this is the initial scale calculation from document load
-      if (scale === initialScale) return
+      // Skip recomputation during initial load - it's already computed in onDocumentLoadSuccess
+      if (isInitialLoadRef.current) {
+        isInitialLoadRef.current = false
+        return
+      }
       
       const recomputeHeights = async () => {
         const newHeights = await computeHeightMap(pdfDocument, scale)
         setHeightMap(newHeights)
-        // No need to call measure() - the virtualizer will use the new height map
       }
       recomputeHeights()
     }
-  }, [scale, displayMode, pdfDocument, numPages, computeHeightMap, initialScale])
+  }, [scale, displayMode, pdfDocument, numPages, computeHeightMap])
 
   // Navigation handlers
   const goToPreviousPage = () => {
@@ -372,7 +399,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         return copy
       }
 
-      // If source is a Blob, convert to ArrayBuffer
+      // If source is a Blob, pass through (react-pdf supports Blob inputs)
       if (source instanceof Blob) {
         return source
       }
@@ -612,9 +639,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       <div className="relative flex justify-center">
                         <div 
                           style={{ 
-                            height: heightMap[vi.index] || 900,
+                            height: getEstimatedHeight(vi.index),
                             position: 'relative',
-                            containIntrinsicSize: `auto ${heightMap[vi.index] || 900}px`,
+                            containIntrinsicSize: `auto ${getEstimatedHeight(vi.index)}px`,
                             contentVisibility: 'auto'
                           }}
                         >
