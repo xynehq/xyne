@@ -1,3 +1,5 @@
+import { authFetch } from "./utils/authFetch"
+
 let configPromise: Promise<{
   API_BASE_URL: string
   WS_BASE_URL: string
@@ -6,7 +8,7 @@ export function loadConfig() {
   if (!configPromise) {
     configPromise = (async () => {
       try {
-        const res = await fetch("/config")
+        const res = await authFetch("/config")
         if (!res.ok) {
           throw new Error(`Failed to fetch config: ${res.statusText}`)
         }
