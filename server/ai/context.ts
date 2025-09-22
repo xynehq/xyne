@@ -842,7 +842,7 @@ export const userContext = ({
     Company domain: ${workspace.domain}
     Current Time: ${currentTime}
     Today is: ${currentDate}
-    Timezone: IST`
+    Timezone: ${user.timeZone || "IST"}`
 }
 
 /**
