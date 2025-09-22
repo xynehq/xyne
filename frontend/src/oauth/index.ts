@@ -1,7 +1,6 @@
 import { loadConfig } from "@/config"
 import { Apps } from "shared/types"
 
-let successUrl = ``
 export class OAuthModal {
   // private authUrl: string;
   // private connectorId: string;
@@ -11,6 +10,7 @@ export class OAuthModal {
   private intervalId: number | null = null
   private completed = false // Flag to prevent multiple resolve/reject calls
   private logger = console
+  private successUrl: string = ""
 
   constructor(
     // connectorId: string;
@@ -26,12 +26,12 @@ export class OAuthModal {
     return new Promise(async (resolve, reject) => {
       try {
         const config = await loadConfig()
-      if (!config) {
-        throw new Error("Failed to load config")
-      }
+        if (!config) {
+          throw new Error("Failed to load config")
+        }
 
-      const authUrl = `${config.API_BASE_URL}/oauth/start`
-      successUrl = `${config.WS_BASE_URL}/oauth/success`
+        const authUrl = `${config.API_BASE_URL}/oauth/start`
+        this.successUrl = `${config.WS_BASE_URL}/oauth/success`
         //clientLog({currentApp: app}, 'Starting OAuth')
         this.logger.info({ currentApp: app }, "Starting OAuth")
         this.openAuthWindow(`${authUrl}?app=${app}`)
@@ -108,7 +108,7 @@ export class OAuthModal {
       }
 
       // 3. If we can read the URL, check if it’s the success URL
-      if (currentUrl && currentUrl === successUrl) {
+      if (currentUrl && currentUrl === this.successUrl) {
         // When the popup window reaches the success URL, stop monitoring
         window.clearInterval(this.intervalId!)
         this.intervalId = null
