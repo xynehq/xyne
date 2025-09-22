@@ -129,16 +129,6 @@ const Skeleton = ({ className = "" }: { className?: string }) => (
   />
 )
 
-// Add a simple toast function at the top of the file
-const showToast = (message: string, type: "success" | "error" = "success") => {
-  // Simple browser notification or console log for now
-  toast({
-    title: type === "success" ? "Success" : "Error",
-    description: `${message}`,
-    variant: type === "error" ? "destructive" : "default",
-  })
-  // You can replace this with your existing notification system
-}
 
 export const Route = createFileRoute("/_authenticated/admin/userManagement")({
   beforeLoad: ({ context }) => {
@@ -619,19 +609,24 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to update role")
       }
-
-      // Re-fetch data for current active tab
-      if (activeTab === "loggedIn") {
+       if (activeTab === "loggedIn") {
         await fetchLoggedInUsers()
       } else if (activeTab === "ingested") {
         await fetchIngestedUsers()
       }
+      
 
-      showToast("User role has been successfully updated.", "success")
+      toast.success({
+        title: "Success",
+        description: "User role has been successfully updated.",
+      })
       setUserToConfirmRoleChange(null)
     } catch (error) {
       console.error("Error updating role:", error)
-      showToast("Failed to update user role.", "error")
+      toast.error({
+        title: "Error",
+        description: "Failed to update user role.",
+      })
     } finally {
       setIsUpdating(false)
     }
@@ -654,10 +649,10 @@ function UsersListPage({
       !user.syncJobs?.[Apps.GoogleDrive] &&
       !user.syncJobs?.[Apps.GoogleCalendar]
     ) {
-      showToast(
-        `Please set up the Google integration for ${user.name || user.email}.`,
-        "error",
-      )
+      toast.error({
+        title: "Error",
+        description: `Please set up the Google integration for ${user.name || user.email}.`,
+      })
       return
     }
 
@@ -678,13 +673,16 @@ function UsersListPage({
         await fetchIngestedUsers()
       }
 
-      showToast(
-        "Google Workspace sync has been successfully triggered.",
-        "success",
-      )
+      toast.success({
+        title: "Success",
+        description: "Google Workspace sync has been successfully triggered.",
+      })
     } catch (error) {
       console.error("Error triggering sync:", error)
-      showToast("Failed to trigger Google Workspace sync.", "error")
+      toast.error({
+        title: "Error",
+        description: "Failed to trigger Google Workspace sync.",
+      })
     } finally {
       setSyncingUser(null)
     }
@@ -692,10 +690,10 @@ function UsersListPage({
 
   const handleSlackSync = async (user: User) => {
     if (!user.syncJobs?.[Apps.Slack]) {
-      showToast(
-        `Please set up the Slack integration for ${user.name || user.email}.`,
-        "error",
-      )
+      toast.error({
+        title: "Error",
+        description: `Please set up the Slack integration for ${user.name || user.email}.`,
+      })
       return
     }
 
@@ -708,11 +706,17 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to trigger Slack sync")
       }
-
-      showToast("Slack sync has been successfully triggered.", "success")
+ 
+      toast.success({
+        title: "Success",
+        description: "Slack sync has been successfully triggered.",
+      })
     } catch (error) {
       console.error("Error triggering Slack sync:", error)
-      showToast("Failed to trigger Slack sync.", "error")
+      toast.error({
+        title: "Error",
+        description: "Failed to trigger Slack sync.",
+      })
     } finally {
       setSyncingSlackUser(null)
     }
