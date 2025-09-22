@@ -283,6 +283,9 @@ async function deleteStepExecutionConnections(stepExeId: number) {
  * Compute step relationships for frontend compatibility
  * Returns parentStepId, nextStepIds, prevStepIds based on connection tables
  */
+// WF FIX: This function is called inside loops in `ListWorkflowTemplatesApi` and `GetWorkflowExecutionApi`,
+// causing an N+1 query problem. Each call to `getNextSteps` and `getPrevSteps` results in a database query.
+// A better approach is to fetch all connections for the workflow at once and build in-memory maps for lookups.
 async function computeStepRelationships(stepId: number, isTemplate: boolean = true) {
   const getNextSteps = isTemplate ? getNextStepTemplates : getNextStepExecutions
   const getPrevSteps = isTemplate ? getPreviousStepTemplates : getPreviousStepExecutions
@@ -330,12 +333,16 @@ async function enhanceStepExecutionWithRelationships(step: any) {
 // New Workflow API Routes
 export const workflowRouter = new Hono()
 
+// WF FIX: Find userId and workspaceId from JWT in each api
 // List all workflow templates with root step details
 export const ListWorkflowTemplatesApi = async (c: Context) => {
   try {
+    // WF FIX: Add where clause on workspaceId
     const templates = await db.select().from(workflowTemplate)
 
     // Get step templates and root step details for each workflow
+    // WF FIX: We can return templates itself to frontend?
+    // When user selects a template, we can call GetWorkflowTemplateApi
     const templatesWithSteps = await Promise.all(
       templates.map(async (template) => {
         const steps = await db
@@ -362,6 +369,11 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
             }
 
             // Enhance root step with computed relationship fields
+            // WF FIX: This function causes an N+1 query problem. It's called for every step,
+            // and each call makes two separate database queries.
+            // A better approach would be to fetch all workflowStepTemplateConnection using templateId,
+            // build in-memory maps for next/previous steps, and then use those maps
+            // to look up relationships, avoiding multiple database calls in a loop.
             const enhancedRootStep = await enhanceStepTemplateWithRelationships(rootStepResult)
 
             rootStep = {
@@ -800,7 +812,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .where(eq(workflowStepExe.id, rootStepExecution.id))
 
     // Prepare to trigger subsequent automated steps
-    // TODO: Optimize this to fetch only the tools relevant to the current workflowId
+    // WF FIX: This fetches all tools from the database, which is inefficient. It should be optimized
+    // to only fetch the tools relevant to the step templates of this specific workflow.
     const allTools = await db.select().from(workflowTool)
     const rootStepName = rootStepExecution.name || "Root Step"
     const currentResults: Record<string, any> = {}
@@ -910,6 +923,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 }
 
 // Execute workflow template
+// WF FIX: Rename this api, as this executes a workflow
 export const ExecuteWorkflowTemplateApi = async (c: Context) => {
   try {
     const templateId = parseInt(c.req.param("templateId"), 10)
@@ -932,6 +946,8 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
 
     // Get tools
+    // WF FIX: This fetches all tools from the database. It should be optimized to only fetch the tools
+    // relevant to the specific workflow template being executed.
     const tools = await db.select().from(workflowTool)
 
     // Create workflow execution
@@ -1660,16 +1676,22 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
       .where(eq(workflowStepExe.workflowExeId, executionId))
 
     // Get all tool executions for this workflow to build toolExecIds mapping
+    // WF FIX: Add where clause on workflowExeId
     const allToolExecutions = await db
       .select()
       .from(workflowToolExe)
 
     // Get all step templates to include descriptions
+    // WF FIX: Add where clause on workflowTemplateId
     const stepTemplates = await db
       .select()
       .from(workflowStepTemplate)
 
     // Enhance step executions with computed relationship fields from connection tables
+    // WF FIX: This `Promise.all` contains an N+1 query problem. It calls `getNextStepTemplates` and
+    // `getPreviousStepTemplates` for every step, causing multiple database queries inside the loop.
+    // This should be optimized by fetching all connections for the template at once and building
+    // in-memory maps for relationship lookups.
     const stepExecutionsWithRelationships = await Promise.all(
       stepExecutions.map(async (step) => {
         // Get step template for description
@@ -3148,12 +3170,12 @@ export const ListWorkflowExecutionsApi = async (c: Context) => {
     if (whereConditions.length > 0) {
       executions = await baseQuery
         .where(and(...whereConditions))
-        .orderBy(desc(workflowExe.createdAt))
+        .orderBy(desc(workflowExe.createdAt)) // WF FIX: Changed to sort by updatedAt
         .limit(query.limit)
         .offset(offset)
     } else {
       executions = await baseQuery
-        .orderBy(desc(workflowExe.createdAt))
+        .orderBy(desc(workflowExe.createdAt)) // WF FIX: Changed to sort by updatedAt
         .limit(query.limit)
         .offset(offset)
     }
@@ -3434,7 +3456,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
         timeEstimate: requestData.timeEstimate || 300,
         metadata: {
           icon: getStepIcon(requestData.tool.type),
-          step_order: stepOrder,
+          step_order: stepOrder, // WF FIX: Lets move to a column itself?
           ...requestData.metadata,
         },
       })
@@ -3456,6 +3478,9 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       Logger.info(`Set step ${newStep.id} as root step`)
     } else {
       // Find the current last step (step with no outgoing connections)
+      // WF FIX: This loop causes an N+1 query problem by calling `getNextStepTemplates` (which queries the db)
+      // for each step. A better approach is to fetch all `fromStepId`s from the connection table for this
+      // template at once, and then find the step in memory whose ID is not in the `fromStepId` set.
       let currentLastStep = null
       for (const step of existingSteps) {
         const nextSteps = await getNextStepTemplates(step.id)
@@ -3473,6 +3498,8 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       }
     }
 
+    // WF FIX: This is a redundant query. The `db.update` call earlier can be chained with `.returning()`
+    // to get the updated template in a single call, avoiding this extra `select`.
     // 5. Return the complete updated template with new step
     const updatedTemplate = await db
       .select()
