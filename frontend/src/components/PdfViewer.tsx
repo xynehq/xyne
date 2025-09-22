@@ -1,15 +1,37 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react"
 import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/TextLayer.css"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { getPdfWorkerSrc, getPdfDocumentOptions } from "@/utils/pdfBunCompat"
 import { DocumentOperations } from "@/contexts/DocumentOperationsContext"
-import { PDFPageProxy } from "pdfjs-dist/types/src/display/api"
 
 // Set up the worker and WASM directory with Bun compatibility
 pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerSrc()
 ;(globalThis as any).pdfjsWasmDir = `/pdfjs/wasm/`
+
+// Memoized Page component to prevent unnecessary re-renders
+const MemoizedPage = memo(({ 
+  pageNumber, 
+  scale, 
+  loading, 
+  error 
+}: {
+  pageNumber: number
+  scale: number
+  loading: React.ReactNode
+  error: React.ReactNode
+}) => (
+  <Page
+    pageNumber={pageNumber}
+    scale={scale}
+    renderTextLayer
+    renderAnnotationLayer
+    loading={loading}
+    error={error}
+    className="shadow-lg"
+  />
+))
 
 interface PdfViewerProps {
   /** Either a URL or File object */
@@ -60,144 +82,96 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [retryCount, setRetryCount] = useState<number>(0)
   const containerRef = useRef<HTMLDivElement>(null)
   
-  // Cache per-page measured heights for accurate scroll math
-  const sizesRef = useRef<Map<number, number>>(new Map())
-  const DEFAULT_HEIGHT = 900 // Safe estimate until measured
+  // Height map: precomputed heights for all pages at current scale
+  const [heightMap, setHeightMap] = useState<number[]>([])
+  const [pdfDocument, setPdfDocument] = useState<any>(null)
   
-  // Get size function for virtualizer
-  const getSize = useCallback((index: number) => {
-    return sizesRef.current.get(index + 1) ?? DEFAULT_HEIGHT
-  }, [])
+  // Create a simple, readable key for the Document component
+  const documentKey = useMemo(() => {
+    let baseKey = ""
+    
+    if (docId) {
+      baseKey = `doc-${docId}`
+    } else if (!source) {
+      baseKey = "no-source"
+    } else if (typeof source === "string") {
+      baseKey = `url-${source}`
+    } else if (source instanceof File) {
+      baseKey = `file-${source.name}-${source.size}`
+    } else {
+      const sourceAny = source as any
+      
+      if (sourceAny instanceof ArrayBuffer) {
+        baseKey = `buffer-${sourceAny.byteLength}`
+      } else if (sourceAny instanceof Uint8Array) {
+        baseKey = `uint8-${sourceAny.length}`
+      } else if (sourceAny instanceof Blob) {
+        baseKey = `blob-${sourceAny.size}-${sourceAny.type}`
+      } else {
+        baseKey = `unknown-${Date.now()}`
+      }
+    }
+    
+    return `${baseKey}-retry-${retryCount}`
+  }, [docId, source, retryCount])
+  
+  // Precompute height map from PDF metadata (two-pass layout)
+  const computeHeightMap = useCallback(async (doc: any, currentScale: number) => {
+    if (!doc || !numPages) return []
+    
+    const heights: number[] = []
+    for (let i = 1; i <= numPages; i++) {
+      try {
+        const page = await doc.getPage(i)
+        const viewport = page.getViewport({ scale: currentScale })
+        heights.push(viewport.height)
+      } catch (error) {
+        console.warn(`Failed to get page ${i} dimensions:`, error)
+        heights.push(900) // fallback height
+      }
+    }
+    return heights
+  }, [numPages])
+  
+  // Get precomputed height for virtualizer
+  const getEstimatedHeight = useCallback((index: number) => {
+    return heightMap[index] ?? Math.round(792 * scale)
+  }, [heightMap, scale])
   
   // Setup virtualizer for continuous mode
   const rowVirtualizer = useVirtualizer({
     count: numPages || 0,
     getScrollElement: () => containerRef.current,
-    estimateSize: getSize,
-    overscan: 6, // Render 6 pages above and below viewport
+    estimateSize: getEstimatedHeight,
+    overscan: 6,
     enabled: displayMode === "continuous" && !!numPages,
   })
-  const virtualItems = rowVirtualizer.getVirtualItems();
 
-  // Improved scroll detection for continuous mode
+  // Compute current page using virtualizer state (no DOM queries)
   useEffect(() => {
-    if (displayMode !== "continuous") return;
-    if (!virtualItems || virtualItems.length === 0) return;
-    if (!containerRef.current) return;
+    if (displayMode !== "continuous" || !containerRef.current) return
+    const el = containerRef.current
 
-    const container = containerRef.current;
-    const containerRect = container.getBoundingClientRect();
-    const containerTop = containerRect.top;
-    const containerHeight = containerRect.height;
-    const viewportCenter = containerTop + containerHeight / 2;
+    const onScroll = () => {
+      const viewportCenter = el.scrollTop + el.clientHeight / 2
+      const items = rowVirtualizer.getVirtualItems()
+      if (!items.length) return
 
-    let mostVisiblePage = 1;
-    let maxVisibleArea = 0;
-
-    // Check each rendered page to find which one has the most visible area
-    for (const item of virtualItems) {
-      const pageNum = item.index + 1;
-      
-      // Find the page element
-      const pageElement = container.querySelector(`[data-index="${item.index}"]`);
-      if (!pageElement) continue;
-
-      const pageRect = pageElement.getBoundingClientRect();
-      const pageTop = pageRect.top;
-      const pageBottom = pageRect.bottom;
-
-      // Calculate visible area of this page
-      const visibleTop = Math.max(pageTop, containerTop);
-      const visibleBottom = Math.min(pageBottom, containerTop + containerHeight);
-      const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-      const visibleArea = visibleHeight * pageRect.width;
-
-      // Also consider if the page center is in viewport (for better UX)
-      const pageCenter = pageTop + pageRect.height / 2;
-      const distanceFromViewportCenter = Math.abs(pageCenter - viewportCenter);
-      
-      // Combine visible area with center proximity for better page detection
-      const score = visibleArea - (distanceFromViewportCenter * 0.1);
-
-      if (score > maxVisibleArea) {
-        maxVisibleArea = score;
-        mostVisiblePage = pageNum;
+      let best = items[0]
+      let bestDist = Infinity
+      for (const it of items) {
+        const center = it.start + it.size / 2
+        const dist = Math.abs(center - viewportCenter)
+        if (dist < bestDist) { bestDist = dist; best = it }
       }
+      const page = best.index + 1
+      setCurrentVisiblePage(prev => prev === page ? prev : page)
     }
 
-    setCurrentVisiblePage(prev => (prev === mostVisiblePage ? prev : mostVisiblePage));
-    
-  }, [displayMode, virtualItems]);
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [displayMode, rowVirtualizer])
 
-  // Add scroll listener for more responsive page detection
-  useEffect(() => {
-    if (displayMode !== "continuous") return;
-    if (!containerRef.current) return;
-
-    const container = containerRef.current;
-    let scrollTimeout: NodeJS.Timeout;
-
-    const handleScroll = () => {
-      // Debounce scroll events for performance
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        if (!virtualItems || virtualItems.length === 0) return;
-
-        const containerRect = container.getBoundingClientRect();
-        const containerTop = containerRect.top;
-        const containerHeight = containerRect.height;
-        const viewportCenter = containerTop + containerHeight / 2;
-
-        let mostVisiblePage = 1;
-        let maxVisibleArea = 0;
-
-        for (const item of virtualItems) {
-          const pageNum = item.index + 1;
-          
-          const pageElement = container.querySelector(`[data-index="${item.index}"]`);
-          if (!pageElement) continue;
-
-          const pageRect = pageElement.getBoundingClientRect();
-          const pageTop = pageRect.top;
-          const pageBottom = pageRect.bottom;
-
-          const visibleTop = Math.max(pageTop, containerTop);
-          const visibleBottom = Math.min(pageBottom, containerTop + containerHeight);
-          const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-          const visibleArea = visibleHeight * pageRect.width;
-
-          const pageCenter = pageTop + pageRect.height / 2;
-          const distanceFromViewportCenter = Math.abs(pageCenter - viewportCenter);
-          
-          const score = visibleArea - (distanceFromViewportCenter * 0.1);
-
-          if (score > maxVisibleArea) {
-            maxVisibleArea = score;
-            mostVisiblePage = pageNum;
-          }
-        }
-
-        setCurrentVisiblePage(prev => (prev === mostVisiblePage ? prev : mostVisiblePage));
-      }, 50); // 50ms debounce
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      clearTimeout(scrollTimeout);
-    };
-  }, [displayMode, virtualItems]);
-
-  // Tell the virtualizer when a page's final height is known
-  const onPageRender = useCallback((pageNum: number, heightPx: number) => {
-    const prev = sizesRef.current.get(pageNum)
-    if (prev !== heightPx) {
-      sizesRef.current.set(pageNum, heightPx)
-      // Force virtualizer to re-measure by invalidating the size cache
-      rowVirtualizer.measure()
-    }
-  }, [rowVirtualizer])
 
   // Calculate optimal scale based on page dimensions and container size - FIT TO WIDTH
   const calculateOptimalScale = useCallback(
@@ -225,30 +199,42 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     [initialScale],
   )
 
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+  const onDocumentLoadSuccess = useCallback(async (pdfDoc: any) => {
+    const { numPages } = pdfDoc
     setNumPages(numPages)
-    setLoading(false)
+    setPdfDocument(pdfDoc)
     setError(null)
+    
+    // Get first page to calculate optimal scale BEFORE computing height map
+    let finalScale = scale
+    try {
+      const firstPage = await pdfDoc.getPage(1)
+      const vp = firstPage.getViewport({ scale: 1 })
+      const optimalScale = calculateOptimalScale(vp.width, vp.height)
+      setScale(optimalScale)
+      finalScale = optimalScale
+    } catch (error) {
+      console.warn("Failed to get first page for scale calculation:", error)
+    }
+    
+    // Compute height map with the final scale
+    const heights = await computeHeightMap(pdfDoc, finalScale)
+    setHeightMap(heights)
+    
+    // Only set loading to false after height map is computed
+    setLoading(false)
     const validInitialPage = Math.min(initialPage, numPages)
     setPageNumber(validInitialPage)
     setCurrentVisiblePage(validInitialPage)
+    
     if (displayMode === "continuous" && validInitialPage > 1) {
-      rowVirtualizer.scrollToIndex(validInitialPage - 1, { align: "start" })
+      // Wait for height map to be set before scrolling
+      setTimeout(() => {
+        rowVirtualizer.scrollToIndex(validInitialPage - 1, { align: "start" })
+      }, 0)
     }
-  }
+  }, [computeHeightMap, scale, initialPage, displayMode, rowVirtualizer, calculateOptimalScale])
 
-  // Handle page load success to get page dimensions
-  const onPageLoadSuccess = useCallback(
-    (page: PDFPageProxy) => {
-      if (!page || pageDimensions) return
-      const vp = page.getViewport({ scale: 1 })
-      const width = vp.width
-      const height = vp.height
-      setPageDimensions({ width, height })
-      setScale(calculateOptimalScale(width, height))
-    },
-    [pageDimensions, calculateOptimalScale],
-  )
 
   function onDocumentLoadError(error: Error) {
     console.error("PDF load error:", error)
@@ -290,6 +276,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [pageDimensions, calculateOptimalScale])
+
+  // Recompute height map when scale changes (synchronous)
+  useEffect(() => {
+    if (displayMode === "continuous" && pdfDocument && numPages) {
+      // Skip recomputation if this is the initial scale calculation from document load
+      if (scale === initialScale) return
+      
+      const recomputeHeights = async () => {
+        const newHeights = await computeHeightMap(pdfDocument, scale)
+        setHeightMap(newHeights)
+        // No need to call measure() - the virtualizer will use the new height map
+      }
+      recomputeHeights()
+    }
+  }, [scale, displayMode, pdfDocument, numPages, computeHeightMap, initialScale])
 
   // Navigation handlers
   const goToPreviousPage = () => {
@@ -384,35 +385,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
   }, [source])
 
-  // Create a simple, readable key for the Document component
-  const documentKey = useMemo(() => {
-    let baseKey = ""
-    
-    if (docId) {
-      baseKey = `doc-${docId}`
-    } else if (!source) {
-      baseKey = "no-source"
-    } else if (typeof source === "string") {
-      baseKey = `url-${source}`
-    } else if (source instanceof File) {
-      baseKey = `file-${source.name}-${source.size}`
-    } else {
-      const sourceAny = source as any
-      
-      if (sourceAny instanceof ArrayBuffer) {
-        baseKey = `buffer-${sourceAny.byteLength}`
-      } else if (sourceAny instanceof Uint8Array) {
-        baseKey = `uint8-${sourceAny.length}`
-      } else if (sourceAny instanceof Blob) {
-        baseKey = `blob-${sourceAny.size}-${sourceAny.type}`
-      } else {
-        baseKey = `unknown-${Date.now()}`
-      }
-    }
-    
-    return `${baseKey}-retry-${retryCount}`
-  }, [docId, source, retryCount])
-
   // Reset state when the document changes
   useEffect(() => {
     setNumPages(null)
@@ -421,9 +393,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     setError(null)
     setLoading(true)
     setPageDimensions(null)
-    sizesRef.current.clear()
-    rowVirtualizer.measure()
-  }, [documentKey, initialPage, rowVirtualizer])
+    setHeightMap([])
+    setPdfDocument(null)
+  }, [documentKey, initialPage])
+
 
   return (
     <div
@@ -601,7 +574,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 scale={scale}
                 renderTextLayer
                 renderAnnotationLayer
-                onLoadSuccess={onPageLoadSuccess}
                 loading={
                   <div className="flex items-center justify-center p-8">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -638,44 +610,38 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       }}
                     >
                       <div className="relative flex justify-center">
-                        <Page
-                          key={`pdf-page-${pageNum}-${documentKey}`}
-                          pageNumber={pageNum}
-                          scale={scale}
-                          renderTextLayer
-                          renderAnnotationLayer
-                          onLoadSuccess={(page) => {
-                            // Get page dimensions from first page
-                            if (pageNum === 1) {
-                              onPageLoadSuccess(page)
-                            }
-                            
-                            // Measure and cache the page height
-                            const viewport = page.getViewport({ scale })
-                            const heightPx = viewport.height + 16 // Add gap
-                            onPageRender(pageNum, heightPx)
+                        <div 
+                          style={{ 
+                            height: heightMap[vi.index] || 900,
+                            position: 'relative',
+                            containIntrinsicSize: `auto ${heightMap[vi.index] || 900}px`,
+                            contentVisibility: 'auto'
                           }}
-                          loading={
-                            <div className="flex items-center justify-center p-8 min-h-[600px]">
-                              <div className="text-center">
-                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                                <p className="text-sm text-gray-500">
-                                  Loading page {pageNum}...
-                                </p>
+                        >
+                          <MemoizedPage
+                            pageNumber={pageNum}
+                            scale={scale}
+                            loading={
+                              <div className="flex items-center justify-center h-full">
+                                <div className="text-center">
+                                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                                  <p className="text-sm text-gray-500">
+                                    Loading page {pageNum}...
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          }
-                          error={
-                            <div className="flex items-center justify-center p-8 min-h-[600px]">
-                              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                                <p className="text-red-800 dark:text-red-200 font-semibold">
-                                  Failed to load page {pageNum}
-                                </p>
+                            }
+                            error={
+                              <div className="flex items-center justify-center h-full">
+                                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                                  <p className="text-red-800 dark:text-red-200 font-semibold">
+                                    Failed to load page {pageNum}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          }
-                          className="shadow-lg"
-                        />
+                            }
+                          />
+                        </div>
                         <div className="absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-sm z-10 pointer-events-none">
                           Page {pageNum}
                         </div>
