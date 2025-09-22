@@ -863,14 +863,19 @@ function KnowledgeManagementContent() {
       
       // Create detailed success message based on actual upload results
       let description = `Successfully created knowledge base "${collectionName.trim()}"`
+      const details = []
       if (totalSuccessful > 0) {
-        description += ` with ${totalSuccessful} file${totalSuccessful !== 1 ? 's' : ''}`
+        details.push(`${totalSuccessful} file${totalSuccessful !== 1 ? 's' : ''} uploaded`)
       }
       if (totalSkipped > 0) {
-        description += `, ${totalSkipped} duplicate${totalSkipped !== 1 ? 's' : ''} skipped`
+        details.push(`${totalSkipped} duplicate${totalSkipped !== 1 ? 's' : ''} skipped`)
       }
       if (totalFailed > 0) {
-        description += `, ${totalFailed} failed`
+        details.push(`${totalFailed} failed`)
+      }
+
+      if (details.length > 0) {
+        description += `: ${details.join(', ')}`
       }
       description += "."
       
@@ -1045,6 +1050,11 @@ function KnowledgeManagementContent() {
         toast.success({
           title: "Files Added",
           description,
+        })
+      } else if (totalFailed > 0) {
+        toast.error({
+          title: "Add Files Failed",
+          description: `${totalFailed} file${totalFailed !== 1 ? 's' : ''} failed to upload. Please try again.`,
         })
       } else {
         toast.error({
