@@ -49,7 +49,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className }) => {
             className={`px-3 py-1 border rounded ${
               idx === activeSheet
                 ? "bg-blue-500 text-white"
-                : "bg-gray-100 hover:bg-gray-200"
+                : "bg-background text-foreground "
             }`}
           >
             {sheet.name}
