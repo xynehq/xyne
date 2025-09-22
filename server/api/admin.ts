@@ -8,7 +8,7 @@ import {
   getAllLoggedInUsers,
   getAllIngestedUsers,
 } from "@/db/user"
-import { getWorkspaceByExternalId } from "@/db/workspace" // Added import
+import { getWorkspaceByDomain, getWorkspaceByExternalId } from "@/db/workspace" // Added import
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import {
   SSEClientTransport,
@@ -1948,9 +1948,28 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
     Logger.info("HandlePerUserSync called")
     const form = await c.req.parseBody()
     const validatedData = syncByMailSchema.parse(form)
-    const targetUser = await getUserByEmail(db, validatedData.email)
-    if (!targetUser || !targetUser.length) {
-      throw new HTTPException(404, { message: "User not found" })
+    // const targetUser = await getUserByEmail(db, validatedData.email)
+    // if (!targetUser || !targetUser.length) {
+    //   throw new HTTPException(404, { message: "User not found" })
+    // }
+    const atIndex = validatedData.email.indexOf("@")
+
+    if (atIndex === -1) {
+      throw new Error("Invalid email format: missing @ symbol")
+    }
+
+    // Extract domain using string slicing
+    const domain = validatedData.email.slice(atIndex + 1)
+
+    if (domain.length === 0) {
+      throw new Error("Invalid email format: empty domain")
+    }
+
+    const workspace = await getWorkspaceByDomain(domain)
+    if (!workspace) {
+      throw new HTTPException(404, {
+        message: "Workspace not found for domain",
+      })
     }
 
     const jobData = {
@@ -1970,7 +1989,7 @@ export const HandlePerUserGoogleWorkSpaceSync = async (c: Context) => {
       message: "Google Workspace sync initiated successfully",
     })
   } catch (error) {
-    Logger.error(`Failed to sync googleWorkspace: ${getErrorMessage(error)}`)
+    Logger.error(`Failed to sync googleWorkspace : ${getErrorMessage(error)}`)
     return c.json(
       {
         success: false,
@@ -1986,10 +2005,26 @@ export const HandlePerUserSlackSync = async (c: Context) => {
     Logger.info("HandlePerUserSlackSync called")
     const form = await c.req.parseBody()
     const validatedData = syncByMailSchema.parse(form)
-    const targetUser = await getUserByEmail(db, validatedData.email)
-    if (!targetUser || !targetUser.length) {
-      throw new HTTPException(404, { message: "User not found" })
+    // const targetUser = await getUserByEmail(db, validatedData.email)
+    // if (!targetUser || !targetUser.length) {
+    //   throw new HTTPException(404, { message: "User not found" })
+    // }
+
+    const atIndex = validatedData.email.indexOf("@")
+    // Extract domain using string slicing
+    const domain = validatedData.email.slice(atIndex + 1)
+
+    if (domain.length === 0) {
+      throw new Error("Invalid email format: empty domain")
     }
+
+    const workspace = await getWorkspaceByDomain(domain)
+    if (!workspace) {
+      throw new HTTPException(404, {
+        message: "Workspace not found for domain",
+      })
+    }
+
     const jobData = {
       email: validatedData.email,
       syncOnlyCurrentUser: true,

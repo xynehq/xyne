@@ -129,7 +129,6 @@ const Skeleton = ({ className = "" }: { className?: string }) => (
   />
 )
 
-
 export const Route = createFileRoute("/_authenticated/admin/userManagement")({
   beforeLoad: ({ context }) => {
     if (
@@ -305,7 +304,9 @@ function UsersListPage({
     "loggedIn",
   )
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const [selectedUser, setSelectedUser] = useState<User | IngestedUsers | null>(
+    null,
+  )
   const [userToConfirmRoleChange, setUserToConfirmRoleChange] = useState<{
     user: User
     newRole: UserRole
@@ -609,12 +610,11 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to update role")
       }
-       if (activeTab === "loggedIn") {
+      if (activeTab === "loggedIn") {
         await fetchLoggedInUsers()
       } else if (activeTab === "ingested") {
         await fetchIngestedUsers()
       }
-      
 
       toast.success({
         title: "Success",
@@ -706,7 +706,7 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to trigger Slack sync")
       }
- 
+
       toast.success({
         title: "Success",
         description: "Slack sync has been successfully triggered.",
@@ -1385,6 +1385,7 @@ function UsersListPage({
                                 Slack
                               </div>
                             </TableHead>
+                            <TableHead className="w-12 py-4 px-6"></TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1502,6 +1503,57 @@ function UsersListPage({
                                     </span>
                                   )}
                                 </div>
+                              </TableCell>
+
+                              <TableCell className="py-4 px-6">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="w-56 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                                  >
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        setSelectedUser(user as any)
+                                      }
+                                    >
+                                      View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() => handleSync(user as any)}
+                                      disabled={syncingUser === user.email}
+                                    >
+                                      {syncingUser === user.email ? (
+                                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <RefreshCw className="mr-2 h-4 w-4" />
+                                      )}
+                                      Sync Google Workspace
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleSlackSync(user as any)
+                                      }
+                                      disabled={syncingSlackUser === user.email}
+                                    >
+                                      {syncingSlackUser === user.email ? (
+                                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <MessageSquare className="mr-2 h-4 w-4" />
+                                      )}
+                                      Sync Slack
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -1630,7 +1682,7 @@ function UsersListPage({
                     <Avatar className="h-16 w-16">
                       <AvatarImage
                         src={
-                          selectedUser.photoLink
+                          "photoLink" in selectedUser && selectedUser.photoLink
                             ? `/api/v1/proxy/${encodeURIComponent(selectedUser.photoLink)}`
                             : undefined
                         }
@@ -1639,46 +1691,55 @@ function UsersListPage({
                         }}
                       />
                       <AvatarFallback className="text-lg bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
-                        {selectedUser.name?.[0]?.toUpperCase() ||
+                        {("name" in selectedUser &&
+                          selectedUser.name?.[0]?.toUpperCase()) ||
                           selectedUser.email[0].toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                        {selectedUser.name || selectedUser.email}
+                        {("name" in selectedUser && selectedUser.name) ||
+                          selectedUser.email}
                       </h3>
                       <p className="text-gray-500 dark:text-gray-400">
                         {selectedUser.email}
                       </p>
-                      <Badge
-                        variant={getRoleBadgeVariant(selectedUser.role)}
-                        className="mt-1"
-                      >
-                        {selectedUser.role}
-                      </Badge>
+                      {"role" in selectedUser && (
+                        <Badge
+                          variant={getRoleBadgeVariant(selectedUser.role)}
+                          className="mt-1"
+                        >
+                          {selectedUser.role}
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">
-                        Account Created
-                      </h4>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(selectedUser.createdAt).toLocaleDateString(
-                          "en-US",
-                          {
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                          },
-                        )}
-                      </p>
-                    </div>
+                    {"createdAt" in selectedUser && (
+                      <div>
+                        <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">
+                          Account Created
+                        </h4>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {new Date(selectedUser.createdAt).toLocaleDateString(
+                            "en-US",
+                            {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            },
+                          )}
+                        </p>
+                      </div>
+                    )}
 
                     <div>
                       <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">
-                        User ID
+                        {"id" in selectedUser &&
+                        typeof selectedUser.id === "string"
+                          ? "User ID"
+                          : "ID"}
                       </h4>
                       <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">
                         {selectedUser.id}
