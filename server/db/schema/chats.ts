@@ -22,6 +22,18 @@ export const platformEnum = pgEnum(
   Object.values(Platform) as [string, ...string[]],
 )
 
+// Chat type enum for better scalability
+export enum ChatType {
+  Default  = "default",
+  KbChat = "kb_chat",
+}
+
+const chatType = "chat_type"
+export const chatTypeEnum = pgEnum(
+  chatType,
+  Object.values(ChatType) as [string, ...string[]],
+)
+
 export const chats = pgTable(
   "chats",
   {
@@ -50,6 +62,7 @@ export const chats = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     platform: platformEnum(platform).notNull().default(Platform.Web),
     via_apiKey: boolean("via_apiKey").notNull().default(false),
+    chatType: chatTypeEnum(chatType).notNull().default(ChatType.Default),
   },
   (table) => ({
     isBookmarkedIndex: index("is_bookmarked_index").on(table.isBookmarked),

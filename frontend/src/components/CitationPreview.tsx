@@ -8,6 +8,8 @@ import { api } from "@/api"
 import { authFetch } from "@/utils/authFetch"
 import ExcelViewer from "./ExcelViewer"
 import CsvViewer from "./CsvViewer"
+import { DocumentOperationsProvider } from "@/contexts/DocumentOperationsContext"
+import TxtViewer from "./TxtViewer"
 
 interface CitationPreviewProps {
   citation: Citation | null
@@ -22,7 +24,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
     const [documentContent, setDocumentContent] = useState<Blob | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
-
+    
     useEffect(() => {
       if (!citation || !isOpen) {
         setDocumentContent(null)
@@ -79,7 +81,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
 
       loadDocument()
     }, [citation, isOpen])
-
+  
     const getFileExtension = (filename: string): string => {
       return filename.toLowerCase().split(".").pop() || ""
     }
@@ -94,20 +96,20 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
       const file = new File([documentContent], fileName, {
         type: documentContent.type || getDefaultMimeType(extension),
       })
-      console.log("extnesion for the file",extension)
-
+      
       switch (extension) {
         case "pdf":
           return (
-            <PdfViewer
-              key={citation.docId}
-              source={file}
-              className="h-full"
-              style={{ height: "100%", overflow: "auto" }}
-              scale={1.0}
-              showNavigation={true}
-              displayMode="continuous"
-            />
+  <DocumentOperationsProvider>
+    <PdfViewer 
+    key={citation.docId} 
+    source={file} 
+    className="h-full" 
+    style={{ height: "100%", overflow: "auto" }} 
+    scale={1.0} 
+    showNavigation={true} 
+    displayMode="continuous" />            
+</DocumentOperationsProvider>
           )
         case "md":
         case "markdown":
@@ -147,6 +149,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
               />
             )
             case "csv":
+            case "tsv":
               return(
                 <CsvViewer
                   key={citation.docId}
@@ -155,7 +158,18 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
                   style={{ overflow: "visible" }}
                 />
               )
-          
+              case "txt":
+              case "text":
+                return(
+                  <TxtViewer
+                    key={citation.docId}
+                    source={file}
+                    className="h-full"
+                    style={{ overflow: "visible" }}
+                  />
+                )
+              
+
         default:
           // For other file types, try to display as text or show a generic message
           return (
