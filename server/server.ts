@@ -896,6 +896,7 @@ export const AppRoutes = app
   .get("/tuning/ws/:jobId", TuningWsRoute)
 
   // Workflow Routes
+  // Not used in workflow frontend ??
   .post(
     "/workflow/templates",
     zValidator("json", createWorkflowTemplateSchema),
@@ -908,6 +909,7 @@ export const AppRoutes = app
   )
   .get("/workflow/templates", ListWorkflowTemplatesApi)
   .get("/workflow/templates/:templateId", GetWorkflowTemplateApi)
+  // Not used in workflow frontend ??
   .put(
     "/workflow/templates/:templateId",
     zValidator("json", updateWorkflowTemplateSchema),
@@ -923,6 +925,7 @@ export const AppRoutes = app
     zValidator("json", addStepToWorkflowSchema),
     AddStepToWorkflowApi,
   )
+  // Not used in workflow frontend ??
   .post(
     "/workflow/executions",
     zValidator("json", createWorkflowExecutionSchema),
@@ -943,14 +946,20 @@ export const AppRoutes = app
     zValidator("json", createWorkflowToolSchema),
     CreateWorkflowToolApi,
   )
+  // Not used in workflow frontend ??
   .get("/workflow/tools", ListWorkflowToolsApi)
+  .get("/workflow/tools", ListWorkflowToolsApi)
+  // Not used in workflow frontend ??
   .get("/workflow/tools/:toolId", GetWorkflowToolApi)
   .put(
     "/workflow/tools/:toolId",
     zValidator("json", updateWorkflowToolSchema),
     UpdateWorkflowToolApi,
   )
+  // Not used in workflow frontend ??
   .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  // Not used in workflow frontend ??
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
@@ -958,10 +967,19 @@ export const AppRoutes = app
     UpdateWorkflowStepExecutionApi,
   )
   .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
+  // Not used in workflow frontend ??
   .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
+  .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
+  // Not used in workflow frontend ??
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
+  .post("/workflow/steps/submit-form", SubmitFormStepApi)
+  // Not used in workflow frontend ??
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
+  .get("/workflow/files/:fileId", ServeWorkflowFileApi)
+  // Not used in workflow frontend ??
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+  .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
+  // Not used in workflow frontend ??
   .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
 
   // Agent Routes

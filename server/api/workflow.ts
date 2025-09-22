@@ -444,6 +444,10 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
 }
 
 // Execute workflow template with root step input
+// WF FIX: The execution flow is complex and could be simplified.
+// ExecuteWorkflowWithInputApi -> executeAutomatedWorkflowStepsById -> executeWorkflowChain (which is recursive).
+// This is redundant. The recursion in `executeWorkflowChain` should be sufficient,
+// and the intermediate `executeAutomatedWorkflowStepsById` function could be removed.
 export const ExecuteWorkflowWithInputApi = async (c: Context) => {
   try {
     // Parse templateId from URL and get content type from header
@@ -1769,6 +1773,7 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
   }
 }
 
+// Not used in workflow frontend ??
 // Form submission with file upload integration
 export const SubmitWorkflowFormApi = async (c: Context) => {
   try {
@@ -2715,6 +2720,7 @@ const executeWorkflowTool = async (
   }
 }
 
+// Not used in workflow frontend ??
 // List workflow tools
 export const ListWorkflowToolsApi = async (c: Context) => {
   try {
@@ -2734,11 +2740,15 @@ export const ListWorkflowToolsApi = async (c: Context) => {
 
 // Additional API functions required by server.ts
 
+// Not used in workflow frontend ??
 // Create workflow template
 export const CreateWorkflowTemplateApi = async (c: Context) => {
   try {
     const requestData = await c.req.json()
 
+    // WF FIX: This is a temporary shortcut. Ideally, the API should accept a category and subcategory,
+    // query for that specific service config, and create it if it doesn't exist.
+    // The current implementation just grabs the first available config.
     // Check if a default workflow service config exists, create one if needed
     let defaultServiceConfig = await db
       .select()
@@ -2790,6 +2800,9 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
   try {
     const requestData = await c.req.json()
 
+    // WF FIX: This is a temporary shortcut. Ideally, the API should accept a category and subcategory,
+    // query for that specific service config, and create it if it doesn't exist.
+    // The current implementation just grabs the first available config.
     // Check if a default workflow service config exists, create one if needed
     let defaultServiceConfig = await db
       .select()
@@ -2877,6 +2890,8 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         }
       }
       
+      // WF FIX: This should probably be inserting into workflowToolTemplate, but the schema seems to be in flux.
+      // Sticking with workflowTool for now to match the existing pattern.
       const [createdTool] = await db
         .insert(workflowTool)
         .values({
@@ -3023,6 +3038,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 // Execute template (alias for ExecuteWorkflowTemplateApi)
 export const ExecuteTemplateApi = ExecuteWorkflowTemplateApi
 
+// Not used in workflow frontend ??
 // Update workflow template
 export const UpdateWorkflowTemplateApi = async (c: Context) => {
   try {
@@ -3053,6 +3069,7 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
   }
 }
 
+// Not used in workflow frontend ??
 // Create workflow execution
 export const CreateWorkflowExecutionApi = async (c: Context) => {
   try {
@@ -3214,6 +3231,7 @@ export const CreateWorkflowToolApi = async (c: Context) => {
   }
 }
 
+// Not used in workflow frontend ??
 // Update workflow tool
 export const UpdateWorkflowToolApi = async (c: Context) => {
   try {
@@ -3300,6 +3318,7 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
   }
 }
 
+// Not used in workflow frontend ??
 // Get single workflow tool
 export const GetWorkflowToolApi = async (c: Context) => {
   try {
@@ -3328,6 +3347,7 @@ export const GetWorkflowToolApi = async (c: Context) => {
   }
 }
 
+// Not used in workflow frontend ??
 // Delete workflow tool
 export const DeleteWorkflowToolApi = async (c: Context) => {
   try {
@@ -3498,6 +3518,7 @@ function getStepIcon(toolType: string): string {
   return iconMap[toolType] || "⚙️"
 }
 
+// Not used in workflow frontend ??
 // Delete workflow step template API
 export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
   try {
@@ -3721,9 +3742,11 @@ export const CompleteWorkflowStepExecutionApi = async (c: Context) => {
   }
 }
 
+// Not used in workflow frontend ??
 // Submit form step (alias for SubmitWorkflowFormApi)
 export const SubmitFormStepApi = SubmitWorkflowFormApi
 
+// Not used in workflow frontend ??
 // Get form definition
 export const GetFormDefinitionApi = async (c: Context) => {
   try {
@@ -3786,6 +3809,7 @@ export const GetFormDefinitionApi = async (c: Context) => {
   }
 }
 
+// Not used in workflow frontend ??
 // Get VertexAI model enum names for workflow tools (replaces GetGeminiModelEnumsApi)
 export const GetVertexAIModelEnumsApi = async (c: Context) => {
   try {
@@ -3832,12 +3856,14 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
   }
 }
 
+// Not used in workflow frontend ??
 // Legacy endpoint - kept for backward compatibility but redirects to VertexAI
 export const GetGeminiModelEnumsApi = async (c: Context) => {
   Logger.warn("GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead")
   return GetVertexAIModelEnumsApi(c)
 }
 
+// Not used in workflow frontend ??
 // Serve workflow file
 export const ServeWorkflowFileApi = async (c: Context) => {
   try {
