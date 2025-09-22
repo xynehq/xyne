@@ -1424,7 +1424,9 @@ function KnowledgeManagementContent() {
             {/* Top section - File tree and Document viewer */}
             <div className="flex flex-1 h-full overflow-hidden">
               {/* Center pane - Document viewer (scrollable) */}
-              <div className="flex-1 flex flex-col bg-white h-full overflow-hidden min-w-0 max-w-[calc(100vw-652px)]">
+              <div
+                className={`flex-1 flex flex-col bg-white h-full overflow-hidden min-w-0 ${isChatHidden ? "" : "max-w-[calc(100vw-652px)]"}`}
+              >
                 {/* Document header (sticky) */}
                 <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
                   <div className="flex items-center gap-4">
