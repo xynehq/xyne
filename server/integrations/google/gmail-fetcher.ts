@@ -1,3 +1,4 @@
+// -- This file fetches emails and their attachments from Gmail using the Gmail API. --
 import { google, gmail_v1 } from 'googleapis';
 import { JWT } from 'google-auth-library';
 import { v4 as uuidv4 } from 'uuid';
