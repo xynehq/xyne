@@ -664,12 +664,9 @@ export const getAllFolderItems = async (
   trx: TxnOrClient,
 ) => {
   const res = []
-  let queue: any[] = []
-  for (const id of parentIds) {
-    queue.push(id)
-  }
+  let queue = [...parentIds];
   while (queue.length > 0) {
-    const curr = queue.shift()
+    const curr = queue.shift()!
 
     const resp = await getParentItems(curr, trx)
     if (resp.length == 0) {
@@ -681,6 +678,27 @@ export const getAllFolderItems = async (
         queue.push(item.id)
       } else if (item.type == "file") {
         res.push(item.id)
+      }
+    }
+  }
+  return res
+}
+
+// Get all folder IDs recursively (not files) - for parentId queries
+export const getAllFolderIds = async (
+  parentIds: string[],
+  trx: TxnOrClient,
+) => {
+  const res = []
+  let queue = [...parentIds];
+  while (queue.length > 0) {
+    const curr = queue.shift()!
+
+    const resp = await getParentItems(curr, trx)
+    for (const item of resp) {
+      if (item.type == "folder") {
+        res.push(item.id) 
+        queue.push(item.id) 
       }
     }
   }
