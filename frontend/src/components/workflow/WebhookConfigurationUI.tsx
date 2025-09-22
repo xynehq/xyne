@@ -3,6 +3,7 @@ import { Copy, Check, X } from "lucide-react"
 import { WebhookConfig } from "./Types"
 import { BackArrowIcon } from "./WorkflowIcons"
 import Dropdown from "@/components/ui/dropdown"
+import { CredentialSelector } from "./CredentialSelector"
 
 interface WebhookConfigurationUIProps {
   isVisible: boolean
@@ -31,6 +32,7 @@ export default function WebhookConfigurationUI({
     httpMethod: "POST",
     path: "",
     authentication: "none",
+    selectedCredential: undefined,
     responseMode: "immediately",
     options: {},
     headers: {},
@@ -54,6 +56,7 @@ export default function WebhookConfigurationUI({
         httpMethod: data.httpMethod || "POST",
         path: data.path || "",
         authentication: data.authentication || "none",
+        selectedCredential: data.selectedCredential || undefined,
         responseMode: data.responseMode || "immediately",
         options: data.options || {},
         headers: data.headers || {},
@@ -67,6 +70,27 @@ export default function WebhookConfigurationUI({
     const baseUrl = window.location.origin
     const cleanPath = config.path.startsWith('/') ? config.path : `/${config.path}`
     return `${baseUrl}/webhook${cleanPath}`
+  }
+
+  // Copy webhook URL to clipboard
+  const copyWebhookUrl = async () => {
+    const url = config.path ? generateWebhookUrl() : `${window.location.origin}/webhook/your-path`
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000) // Reset after 2 seconds
+    } catch (err) {
+      console.error('Failed to copy URL:', err)
+      // Fallback for browsers that don't support clipboard API
+      const textArea = document.createElement('textarea')
+      textArea.value = url
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   const handleSave = () => {
@@ -106,27 +130,6 @@ export default function WebhookConfigurationUI({
         Object.entries(prev.headers || {}).filter(([k]) => k !== key)
       )
     }))
-  }
-
-    // Copy webhook URL to clipboard
-  const copyWebhookUrl = async () => {
-    const url = config.path ? generateWebhookUrl() : `${window.location.origin}/webhook/your-path`
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000) // Reset after 2 seconds
-    } catch (err) {
-      console.error('Failed to copy URL:', err)
-      // Fallback for browsers that don't support clipboard API
-      const textArea = document.createElement('textarea')
-      textArea.value = url
-      document.body.appendChild(textArea)
-      textArea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textArea)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
   }
 
   const addQueryParam = () => {
@@ -218,7 +221,7 @@ export default function WebhookConfigurationUI({
         </button>
       </div>
 
-      {/* Panel Content */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 dark:bg-gray-900 flex flex-col">
         <div className="space-y-4 flex-1">
           {/* Webhook URL Display */}
@@ -282,7 +285,7 @@ export default function WebhookConfigurationUI({
               value={config.path}
               onChange={(e) => setConfig(prev => ({ ...prev, path: e.target.value }))}
               placeholder="e.g., /my-webhook"
-              className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             />
             <div className="text-xs text-gray-500 dark:text-gray-400">
               The path where your webhook will be accessible. Use a unique identifier.
@@ -297,9 +300,7 @@ export default function WebhookConfigurationUI({
             <Dropdown
               options={[
                 { value: "none", label: "None" },
-                { value: "basic", label: "Basic Auth" },
-                { value: "bearer", label: "Bearer Token" },
-                { value: "api_key", label: "API Key" }
+                { value: "basic", label: "Basic Auth" }
               ]}
               value={config.authentication}
               onSelect={(value) => setConfig(prev => ({ ...prev, authentication: value as WebhookConfig['authentication'], selectedCredential: undefined }))}
@@ -309,6 +310,20 @@ export default function WebhookConfigurationUI({
             />
           </div>
 
+          {/* Credential Selector - Shows when authentication is not "none" */}
+          {config.authentication !== "none" && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
+                Credential for {config.authentication === "basic" ? "Basic Auth" : config.authentication === "bearer" ? "Bearer Token" : "API Key"}
+              </label>
+              <CredentialSelector
+                authType={config.authentication as "basic" | "bearer" | "api_key"}
+                selectedCredentialId={config.selectedCredential}
+                onSelect={(credentialId) => setConfig(prev => ({ ...prev, selectedCredential: credentialId || undefined }))}
+              />
+            </div>
+          )}
+
           {/* Response Mode */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
@@ -316,9 +331,7 @@ export default function WebhookConfigurationUI({
             </label>
             <Dropdown
               options={[
-                { value: "immediately", label: "Immediately" },
-                { value: "wait_for_completion", label: "Wait for Completion" },
-                { value: "custom", label: "Custom" }
+                { value: "immediately", label: "Immediately" }
               ]}
               value={config.responseMode}
               onSelect={(value) => setConfig(prev => ({ ...prev, responseMode: value as WebhookConfig['responseMode'] }))}
