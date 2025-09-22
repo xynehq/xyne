@@ -41,7 +41,9 @@ import {
   MCPConnectorMode,
   MCPClientConfig,
   Subsystem,
-  updateToolsStatusSchema, // Added for tool status updates
+  updateToolsStatusSchema,
+  type microsoftService,
+  type MicrosoftServiceAccount, // Added for tool status updates
 } from "@/types"
 import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
@@ -60,8 +62,8 @@ import {
   Slack,
   MicrosoftEntraId,
 } from "arctic"
-import type { SelectOAuthProvider, SelectUser } from "@/db/schema"
-import { users, chats, messages, agents } from "@/db/schema" // Add database schema imports
+import type { SelectConnector, SelectOAuthProvider, SelectUser } from "@/db/schema"
+import { users, chats, messages, agents, selectConnectorSchema } from "@/db/schema" // Add database schema imports
 import {
   getErrorMessage,
   IsGoogleApp,
@@ -97,6 +99,12 @@ import {
 import { deleteUserDataSchema, type DeleteUserDataPayload } from "@/types"
 import { clearUserSyncJob } from "@/db/syncJob"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
+import { todo } from "node:test"
+import { ClientSecretCredential } from "@azure/identity"
+import { Client as GraphClient } from "@microsoft/microsoft-graph-client"
+import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client"
+import { handleMicrosoftServiceAccountIngestion } from "@/integrations/microsoft"
+import { CustomMicrosoftAuthProvider } from "@/integrations/microsoft/utils"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -419,6 +427,101 @@ export const CreateOAuthProvider = async (c: Context) => {
       message: "Connection and Provider created",
     })
   })
+}
+
+export const AddServiceConnectionMicrosoft = async (c: Context) => {
+  const { sub, workspaceId } = c.get(JwtPayloadKey)
+  loggerWithChild({ email: sub }).info("AddServiceConnectionMicrosoft")
+  const email = sub
+  const userRes = await getUserByEmail(db, email)
+  if (!userRes || !userRes.length) {
+    throw new NoUserFound({})
+  }
+  const [user] = userRes
+  // @ts-ignore
+  const form: microsoftService = c.req.valid("form")
+
+  let { clientId, clientSecret, tenantId } = form
+  let scopes = ["https://graph.microsoft.com/.default"]
+  const app = Apps.MicrosoftDrive
+
+  if (!clientId || !clientSecret || !tenantId) {
+    throw new HTTPException(400, {
+      message: "Client ID, Client Secret, and Tenant ID are required",
+    })
+  }
+
+  try {
+    const authProvider = new CustomMicrosoftAuthProvider(
+      tenantId,
+      clientId,
+      clientSecret,
+    )
+
+    const accessToken = await authProvider.getAccessTokenWithExpiry()
+    const expiresAt = new Date(accessToken.expiresOnTimestamp)
+
+    const credentialsData: MicrosoftServiceAccount = {
+      tenantId,
+      clientId,
+      clientSecret,
+      scopes,
+      access_token: accessToken.token,
+      expires_at: expiresAt.toISOString(),
+    }
+
+
+    const res = await insertConnector(
+      db,
+      user.workspaceId,
+      user.id,
+      user.workspaceExternalId,
+      `${app}-${ConnectorType.SaaS}-${AuthType.ServiceAccount}`,
+      ConnectorType.SaaS,
+      AuthType.ServiceAccount,
+      app,
+      {},
+      JSON.stringify(credentialsData), // Store the validated credentials
+      email, // Use current user's email as subject email
+      null,
+      null,
+      ConnectorStatus.Connected, // Set as connected since we validated the connection
+    )
+
+    const connector = selectConnectorSchema.parse(res)
+
+    if (!connector) {
+      throw new ConnectorNotCreated({})
+    }
+    handleMicrosoftServiceAccountIngestion(email, connector)
+
+    loggerWithChild({ email: sub }).info(
+      `Microsoft service account connector created with ID: ${connector.externalId}`,
+    )
+
+    return c.json({
+      success: true,
+      message: "connection created and job enqueued",
+      id: connector.externalId,
+      expiresAt: expiresAt.toISOString(),
+    })
+  } catch (error) {
+    const errMessage = getErrorMessage(error)
+    loggerWithChild({ email: email }).error(
+      error,
+      `${new AddServiceConnectionError({
+        cause: error as Error,
+      })} \n : ${errMessage} : ${(error as Error).stack}`,
+    )
+
+    if (error instanceof HTTPException) {
+      throw error
+    }
+
+    throw new HTTPException(500, {
+      message: "Error creating Microsoft service account connection",
+    })
+  }
 }
 
 export const AddServiceConnection = async (c: Context) => {

@@ -254,7 +254,8 @@ export const IsMicrosoftApp = (app: Apps) => {
   return (
     app === Apps.MicrosoftDrive ||
     app === Apps.MicrosoftOutlook ||
-    app === Apps.MicrosoftCalendar
+    app === Apps.MicrosoftCalendar ||
+    app === Apps.MicrosoftSharepoint
   )
 }
 

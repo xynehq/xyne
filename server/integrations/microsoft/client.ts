@@ -22,7 +22,7 @@ class CustomAuthProvider implements AuthenticationProvider {
 export interface MicrosoftGraphClient {
   client: Client
   accessToken: string
-  refreshToken: string
+  refreshToken?: string
   clientId: string
   clientSecret: string
   betaClient: Client
@@ -30,7 +30,7 @@ export interface MicrosoftGraphClient {
   // Helper methods to get updated tokens after refresh
   getCurrentTokens(): {
     accessToken: string
-    refreshToken: string
+    refreshToken?: string
     expiresAt?: Date
   }
 }
@@ -38,9 +38,9 @@ export interface MicrosoftGraphClient {
 // Create Microsoft Graph client similar to Google's pattern
 export const createMicrosoftGraphClient = (
   accessToken: string,
-  refreshToken: string,
   clientId: string,
   clientSecret: string,
+  refreshToken?: string,
   tokenExpiresAt?: Date,
 ): MicrosoftGraphClient => {
   const authProvider = new CustomAuthProvider(accessToken)
@@ -162,14 +162,17 @@ export const makePagedGraphApiCall = async (
 
 // Download file from Microsoft Graph
 export async function downloadFileFromGraph(
-  graphClient: Client,
+  graphClient: MicrosoftGraphClient,
   fileId: string,
+  driveId?: string,
 ): Promise<Buffer> {
   try {
-    const response = await graphClient
-      .api(`/me/drive/items/${fileId}/content`)
-      .get()
+    let endpoint: string
 
+    if (driveId) endpoint = `drives/${driveId}/items/${fileId}/content`
+    else endpoint = `me/drive/items/${fileId}/content`
+
+    const response = await makeGraphApiCall(graphClient, endpoint)
     return await streamToBuffer(response)
   } catch (error) {
     throw new Error(`Failed to download file ${fileId}: ${error}`)

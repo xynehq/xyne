@@ -40,6 +40,7 @@ import {
   deleteUserDataSchema,
   ingestMoreChannelSchema,
   startSlackIngestionSchema,
+  microsoftServiceSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -72,6 +73,7 @@ import {
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
   GetWorkspaceApiKeys,
+  AddServiceConnectionMicrosoft,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -782,7 +784,11 @@ export const AppRoutes = app
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
-  .post("/chat/generateTitle", zValidator("json", chatTitleSchema), GenerateChatTitleApi)
+  .post(
+    "/chat/generateTitle",
+    zValidator("json", chatTitleSchema),
+    GenerateChatTitleApi,
+  )
   .post(
     "/chat/bookmark",
     zValidator("json", chatBookmarkSchema),
@@ -905,13 +911,9 @@ export const AppRoutes = app
   )
   .post("/workflow/templates/:templateId/execute", ExecuteTemplateApi)
   .post(
-    "/workflow/templates/:templateId/execute-with-input",
-    ExecuteWorkflowWithInputApi,
-  )
-  .post(
-    "/workflow/templates/:templateId/steps",
-    zValidator("json", addStepToWorkflowSchema),
-    AddStepToWorkflowApi,
+    "/oauth/create",
+    zValidator("form", createOAuthProvider),
+    CreateOAuthProvider,
   )
   .post(
     "/workflow/executions",
@@ -1031,6 +1033,11 @@ export const AppRoutes = app
     "/oauth/create",
     zValidator("form", createOAuthProvider),
     CreateOAuthProvider,
+  )
+  .post(
+    "/microsoft/service_account",
+    zValidator("form", microsoftServiceSchema),
+    AddServiceConnectionMicrosoft,
   )
   .post(
     "/slack/ingest_more_channel",

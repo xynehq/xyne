@@ -169,11 +169,7 @@ export const getOneDriveDelta = async (
     let nextDeltaTokenUrl: string | null = null
 
     while (endpoint) {
-      const response = await retryWithBackoff(
-        () => makeGraphApiCall(graphClient, endpoint),
-        `Fetching OneDrive delta changes`,
-        Apps.MicrosoftDrive,
-      )
+      const response = await makeGraphApiCall(graphClient, endpoint)
       if (Array.isArray(response.value)) {
         changes.push(...response.value)
       }
@@ -289,7 +285,7 @@ const extractOneDriveFileContent = async (
       try {
         Logger.info(`Processing DOCX file: ${file.name}`)
         const fileBuffer = await downloadFileFromGraph(
-          graphClient.client,
+          graphClient,
           file.id,
         )
         const docxResult = await extractTextAndImagesWithChunksFromDocx(
@@ -309,7 +305,7 @@ const extractOneDriveFileContent = async (
       try {
         Logger.info(`Processing XLSX file: ${file.name}`)
         const fileBuffer = await downloadFileFromGraph(
-          graphClient.client,
+          graphClient,
           file.id,
         )
         const sheetsData = await processSpreadsheetFileWithSheetInfo(
@@ -377,7 +373,7 @@ const extractPDFContent = async (
 
   try {
     // Download the PDF file
-    const fileBuffer = await downloadFileFromGraph(graphClient.client, file.id)
+    const fileBuffer = await downloadFileFromGraph(graphClient, file.id)
     await fs.writeFile(tempFilePath, new Uint8Array(fileBuffer))
 
     // Extract text using PDFLoader
@@ -1171,9 +1167,9 @@ export const handleMicrosoftOAuthChanges = async (
       // Create Microsoft Graph client
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
-        oauthTokens.refresh_token,
         MICROSOFT_CLIENT_ID,
         MICROSOFT_CLIENT_SECRET,
+        oauthTokens.refresh_token,
       )
 
       let config: MicrosoftDriveChangeToken =
