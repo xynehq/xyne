@@ -330,7 +330,7 @@ const DocumentViewerContainer = memo(
     }, [clearHighlights])
 
     return (
-      <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
+      <div className="h-full bg-white dark:bg-[#1E1E1E] relative overflow-auto">
         {loadingDocument && (
           <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
@@ -342,7 +342,7 @@ const DocumentViewerContainer = memo(
           </div>
         )}
         {selectedDocument.content ? (
-          <div className="h-full">{viewerElement}</div>
+          <div className="h-full min-w-fit">{viewerElement}</div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500 dark:text-gray-400">
@@ -513,7 +513,6 @@ function KnowledgeManagementContent() {
 
     return () => clearTimeout(timeout)
   }, [isUploading])
-
 
   // Check for ongoing uploads on component mount
   useEffect(() => {
@@ -755,7 +754,8 @@ function KnowledgeManagementContent() {
     ) {
       toast.error({
         title: "Upload Error",
-        description: "Collection name already exists. Please choose a different name.",
+        description:
+          "Collection name already exists. Please choose a different name.",
       })
       return
     }
@@ -789,7 +789,7 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-       await uploadFileBatch(batchFiles, cl.id)
+        await uploadFileBatch(batchFiles, cl.id)
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -805,7 +805,7 @@ function KnowledgeManagementContent() {
         param: { id: cl.id },
       })
       const items = await itemsResponse.json()
-      
+
       const newCollection: Collection = {
         id: updatedCl.id,
         name: updatedCl.name,
@@ -918,7 +918,7 @@ function KnowledgeManagementContent() {
 
     try {
       // Upload files in batches
-      let successfullyUploadedFiles = 0;
+      let successfullyUploadedFiles = 0
       const batches = createBatches(selectedFiles, addingToCollection.name)
       setBatchProgress((prev: typeof batchProgress) => ({
         ...prev,
@@ -931,19 +931,18 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-      const uploadedResult = await uploadFileBatch(
+        const uploadedResult = await uploadFileBatch(
           batchFiles,
           addingToCollection.id,
           targetFolder?.id,
         )
-        successfullyUploadedFiles += uploadedResult.summary.successful;
-        
+        successfullyUploadedFiles += uploadedResult.summary.successful
+
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
         }))
       }
-      
 
       // Refresh the collection by fetching updated data from backend
       const clResponse = await api.cl[":id"].$get({
@@ -990,15 +989,15 @@ function KnowledgeManagementContent() {
 
         return Array.from(collectionsMap.values())
       })
-    successfullyUploadedFiles?
-      toast.success({
-        title: "Files Added",
-        description: `Successfully added ${successfullyUploadedFiles} out of ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
-      }):
-      toast.error({
-        title: "Add Files Failed",
-        description: "Failed to add files to collection. Please try again.",
-      })
+      successfullyUploadedFiles
+        ? toast.success({
+            title: "Files Added",
+            description: `Successfully added ${successfullyUploadedFiles} out of ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
+          })
+        : toast.error({
+            title: "Add Files Failed",
+            description: "Failed to add files to collection. Please try again.",
+          })
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
@@ -1172,7 +1171,8 @@ function KnowledgeManagementContent() {
       setDeletingCollection(null)
       toast.success({
         title: "Collection Deleted",
-        description: "Successfully deleted collection and all associated files.",
+        description:
+          "Successfully deleted collection and all associated files.",
       })
     } catch (error) {
       console.error("Delete failed:", error)
@@ -1202,7 +1202,8 @@ function KnowledgeManagementContent() {
     ) {
       toast.warning({
         title: "Preview Not Available",
-        description: "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls,.txt,.tsv and .md files.",
+        description:
+          "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls,.txt,.tsv and .md files.",
       })
       return
     }
@@ -1398,12 +1399,15 @@ function KnowledgeManagementContent() {
         })
 
         if (!chunkContentResponse.ok) {
-          console.error('Failed to fetch chunk content:', chunkContentResponse.status);
+          console.error(
+            "Failed to fetch chunk content:",
+            chunkContentResponse.status,
+          )
           toast.error({
-            title: 'Error',
-            description: 'Failed to load chunk content',
-          });
-          return;
+            title: "Error",
+            description: "Failed to load chunk content",
+          })
+          return
         }
 
         const chunkContent = await chunkContentResponse.json()
@@ -1433,11 +1437,11 @@ function KnowledgeManagementContent() {
           }
         }
       } catch (error) {
-        console.error('Error in handleChunkIndexChange:', error);
+        console.error("Error in handleChunkIndexChange:", error)
         toast.error({
-          title: 'Error',
-          description: 'Failed to process chunk navigation',
-        });
+          title: "Error",
+          description: "Failed to process chunk navigation",
+        })
       }
     }
   }
@@ -1456,7 +1460,10 @@ function KnowledgeManagementContent() {
             {/* Top section - File tree and Document viewer */}
             <div className="flex flex-1 h-full overflow-hidden">
               {/* Center pane - Document viewer (scrollable) */}
-              <div className="flex-1 flex flex-col bg-white h-full">
+              <div
+                className="flex-1 flex flex-col bg-white h-full overflow-hidden min-w-0"
+                style={{ maxWidth: "calc(100vw - 652px)" }}
+              >
                 {/* Document header (sticky) */}
                 <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
                   <div className="flex items-center gap-4">
@@ -1498,7 +1505,7 @@ function KnowledgeManagementContent() {
                 </div>
 
                 {/* Document content (scrollable) */}
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-auto">
                   <DocumentViewerContainer
                     selectedDocument={selectedDocument}
                     loadingDocument={loadingDocument}
@@ -1506,9 +1513,9 @@ function KnowledgeManagementContent() {
                 </div>
               </div>
 
-              {/* Right pane - Chat component (sticky) or overlay toggle */}
+              {/* Right pane - Chat component (fixed width, no scroll) */}
               {!isChatHidden ? (
-                <div className="flex flex-col bg-white dark:bg-[#1E1E1E] sticky top-0 border-l border-gray-200 dark:border-gray-700 w-[40%]">
+                <div className="w-[600px] min-w-[600px] max-w-[600px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1E1E1E] border-l border-gray-200 dark:border-gray-700 h-full">
                   <DocumentChat
                     key={currentInitialChatId}
                     user={user}
