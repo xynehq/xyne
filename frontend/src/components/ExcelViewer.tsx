@@ -35,12 +35,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className }) => {
           for (let col = range.s.c; col <= range.e.c; col++) {
             const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
             const cell = worksheet[cellAddress];
-            if (cell && cell.t === "d") {
-              // Already a Date object from SheetJS
-              rowData.push((cell.v as Date).toLocaleDateString());
-            } else {
-              rowData.push(cell?.v ?? "");
-            }
+            rowData.push(cell ? XLSX.utils.format_cell(cell) : "");
           }
           sheetData.push(rowData);
         }
@@ -90,7 +85,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className }) => {
                   key={j}
                   className="border border-gray-300 px-2 py-1 text-sm"
                 >
-                  {cell || ""}
+                  {cell?.toString() ?? ""}
                 </td>
               ))}
             </tr>
