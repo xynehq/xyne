@@ -8,6 +8,7 @@ let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
+let oauthRedirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI || `${host}/oauth/callback`
 let postOauthRedirect = "/"
 
 // Vespa configuration constants
@@ -20,6 +21,7 @@ if (process.env.NODE_ENV === "production") {
   port = 80
   host = process.env.HOST!
   redirectUri = process.env.GOOGLE_PROD_REDIRECT_URI!
+  oauthRedirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI || `${host}/oauth/callback`
 }
 // Adding this since in dev mode the vite FE is hosted on localhost:5173,
 // but server does auth using localhost:3000, so we need to manually redirect to the correct address post oauth
@@ -178,6 +180,7 @@ export default {
   VertexRegion,
   aiProviderBaseUrl,
   redirectUri,
+  oauthRedirectUri,
   postOauthRedirect,
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute

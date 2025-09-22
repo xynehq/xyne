@@ -105,7 +105,7 @@ export const OAuthCallback = async (c: Context) => {
       const google = new Google(
         clientId as string,
         clientSecret as string,
-        `${config.host}/oauth/callback`,
+        config.oauthRedirectUri,
       )
       const oauthTokens = await google.validateAuthorizationCode(
         code,
@@ -118,7 +118,7 @@ export const OAuthCallback = async (c: Context) => {
         "common",
         clientId as string,
         clientSecret as string,
-        `${config.host}/oauth/callback`,
+        config.oauthRedirectUri,
       )
       const oauthTokens = await microsoft.validateAuthorizationCode(
         code,

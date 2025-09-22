@@ -257,7 +257,7 @@ const getAuthorizationUrl = async (
     const google = new Google(
       clientId as string,
       clientSecret as string,
-      `${config.host}/oauth/callback`,
+      config.oauthRedirectUri,
     )
     loggerWithChild({ email: sub }).info(`code verifier  ${codeVerifier}`)
 
@@ -280,7 +280,7 @@ const getAuthorizationUrl = async (
       "common",
       clientId as string,
       clientSecret as string,
-      `${config.host}/oauth/callback`,
+      config.oauthRedirectUri,
     )
 
     // adding some data to state

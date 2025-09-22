@@ -880,7 +880,7 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
     const oauth2Client = new google.auth.OAuth2({
       clientId: googleProvider.clientId!,
       clientSecret: googleProvider.clientSecret as string,
-      redirectUri: `${config.host}/oauth/callback`,
+      redirectUri: config.oauthRedirectUri,
     })
 
     const tracker = new Tracker(Apps.GoogleDrive, AuthType.OAuth)

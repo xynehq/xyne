@@ -230,7 +230,7 @@ export const getOAuthConnectorWithCredentials = async (
       const google = new Google(
         googleProvider.clientId!,
         googleProvider.clientSecret as string,
-        `${config.host}/oauth/callback`,
+        config.oauthRedirectUri,
       )
       const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
       const refreshedTokens = await google.refreshAccessToken(
@@ -264,7 +264,7 @@ export const getOAuthConnectorWithCredentials = async (
         "common",
         microsoftProvider.clientId!,
         microsoftProvider.clientSecret as string,
-        `${config.host}/oauth/callback`,
+        config.oauthRedirectUri,
       )
       const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
       const refreshedTokens = await microsoft.refreshAccessToken(
