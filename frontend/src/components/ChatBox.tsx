@@ -2466,10 +2466,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           })
                           return // Exit early since we handled the file
                         } else {
-                          toast.error({
-                            title: "Unsupported file type",
-                            description: "This file type is not supported for attachments.",
-                          })
                           return
                         }
                       }
