@@ -783,13 +783,25 @@ function KnowledgeManagementContent() {
         totalBatches: batches.length,
       }))
 
+      let totalSuccessful = 0
+      let totalSkipped = 0
+      let totalFailed = 0
+
       for (let i = 0; i < batches.length; i++) {
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-       await uploadFileBatch(batchFiles, cl.id)
+        const uploadResult = await uploadFileBatch(batchFiles, cl.id)
+        
+        // Accumulate results from each batch
+        if (uploadResult.summary) {
+          totalSuccessful += uploadResult.summary.successful || 0
+          totalSkipped += uploadResult.summary.skipped || 0
+          totalFailed += uploadResult.summary.failed || 0
+        }
+        
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -848,9 +860,23 @@ function KnowledgeManagementContent() {
       })
 
       handleCloseModal()
+      
+      // Create detailed success message based on actual upload results
+      let description = `Successfully created knowledge base "${collectionName.trim()}"`
+      if (totalSuccessful > 0) {
+        description += ` with ${totalSuccessful} file${totalSuccessful !== 1 ? 's' : ''}`
+      }
+      if (totalSkipped > 0) {
+        description += `, ${totalSkipped} duplicate${totalSkipped !== 1 ? 's' : ''} skipped`
+      }
+      if (totalFailed > 0) {
+        description += `, ${totalFailed} failed`
+      }
+      description += "."
+      
       toast.success({
         title: "Knowledge Base Created",
-        description: `Successfully created knowledge base "${collectionName.trim()}" with ${selectedFiles.length} files.`,
+        description,
       })
     } catch (error) {
       console.error("Upload failed:", error)
@@ -918,7 +944,10 @@ function KnowledgeManagementContent() {
 
     try {
       // Upload files in batches
-      let successfullyUploadedFiles = 0;
+      let totalSuccessful = 0
+      let totalSkipped = 0
+      let totalFailed = 0
+      
       const batches = createBatches(selectedFiles, addingToCollection.name)
       setBatchProgress((prev: typeof batchProgress) => ({
         ...prev,
@@ -931,12 +960,18 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-      const uploadedResult = await uploadFileBatch(
+        const uploadedResult = await uploadFileBatch(
           batchFiles,
           addingToCollection.id,
           targetFolder?.id,
         )
-        successfullyUploadedFiles += uploadedResult.summary.successful;
+        
+        // Accumulate results from each batch
+        if (uploadedResult.summary) {
+          totalSuccessful += uploadedResult.summary.successful || 0
+          totalSkipped += uploadedResult.summary.skipped || 0
+          totalFailed += uploadedResult.summary.failed || 0
+        }
         
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
@@ -990,15 +1025,33 @@ function KnowledgeManagementContent() {
 
         return Array.from(collectionsMap.values())
       })
-    successfullyUploadedFiles?
-      toast.success({
-        title: "Files Added",
-        description: `Successfully added ${successfullyUploadedFiles} out of ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
-      }):
-      toast.error({
-        title: "Add Files Failed",
-        description: "Failed to add files to collection. Please try again.",
-      })
+      // Create detailed success message based on actual upload results
+      if (totalSuccessful > 0 || totalSkipped > 0) {
+        let description = `Successfully processed files for collection "${addingToCollection.name}": `
+        const parts = []
+        
+        if (totalSuccessful > 0) {
+          parts.push(`${totalSuccessful} uploaded`)
+        }
+        if (totalSkipped > 0) {
+          parts.push(`${totalSkipped} duplicate${totalSkipped !== 1 ? 's' : ''} skipped`)
+        }
+        if (totalFailed > 0) {
+          parts.push(`${totalFailed} failed`)
+        }
+        
+        description += parts.join(', ') + '.'
+        
+        toast.success({
+          title: "Files Added",
+          description,
+        })
+      } else {
+        toast.error({
+          title: "Add Files Failed", 
+          description: "Failed to add files to collection. Please try again.",
+        })
+      }
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
