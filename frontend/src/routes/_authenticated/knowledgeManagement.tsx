@@ -330,7 +330,7 @@ const DocumentViewerContainer = memo(
     }, [clearHighlights])
 
     return (
-      <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
+      <div className="h-full bg-white dark:bg-[#1E1E1E] relative overflow-auto">
         {loadingDocument && (
           <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
@@ -342,7 +342,7 @@ const DocumentViewerContainer = memo(
           </div>
         )}
         {selectedDocument.content ? (
-          <div className="h-full">{viewerElement}</div>
+          <div className="h-full min-w-fit">{viewerElement}</div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500 dark:text-gray-400">
@@ -824,7 +824,7 @@ function KnowledgeManagementContent() {
         param: { id: cl.id },
       })
       const items = await itemsResponse.json()
-      
+
       const newCollection: Collection = {
         id: updatedCl.id,
         name: updatedCl.name,
@@ -960,7 +960,6 @@ function KnowledgeManagementContent() {
           current: prev.current + batchFiles.length,
         }))
       }
-      
 
       // Refresh the collection by fetching updated data from backend
       const clResponse = await api.cl[":id"].$get({
@@ -1425,7 +1424,7 @@ function KnowledgeManagementContent() {
             {/* Top section - File tree and Document viewer */}
             <div className="flex flex-1 h-full overflow-hidden">
               {/* Center pane - Document viewer (scrollable) */}
-              <div className="flex-1 flex flex-col bg-white h-full">
+              <div className="flex-1 flex flex-col bg-white h-full overflow-hidden min-w-0 max-w-[calc(100vw-652px)]">
                 {/* Document header (sticky) */}
                 <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
                   <div className="flex items-center gap-4">
@@ -1467,7 +1466,7 @@ function KnowledgeManagementContent() {
                 </div>
 
                 {/* Document content (scrollable) */}
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-auto">
                   <DocumentViewerContainer
                     selectedDocument={selectedDocument}
                     loadingDocument={loadingDocument}
@@ -1475,9 +1474,9 @@ function KnowledgeManagementContent() {
                 </div>
               </div>
 
-              {/* Right pane - Chat component (sticky) or overlay toggle */}
+              {/* Right pane - Chat component (fixed width, no scroll) */}
               {!isChatHidden ? (
-                <div className="flex flex-col bg-white dark:bg-[#1E1E1E] sticky top-0 border-l border-gray-200 dark:border-gray-700 w-[40%]">
+                <div className="w-[600px] min-w-[600px] max-w-[600px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1E1E1E] border-l border-gray-200 dark:border-gray-700 h-full">
                   <DocumentChat
                     key={currentInitialChatId}
                     user={user}
