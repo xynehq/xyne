@@ -20,6 +20,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
 import { Apps, type UserRole } from "@/shared/types"
+import crypto from "crypto"
 
 // Define an interface for the shape of data after processing and before Zod parsing
 interface ProcessedUser
@@ -64,7 +65,6 @@ interface NonUsersWithSyncJobs {
     }
   >
 }
-import crypto from "crypto"
 
 export const getPublicUserAndWorkspaceByEmail = async (
   trx: TxnOrClient,
