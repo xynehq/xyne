@@ -40,8 +40,8 @@ export const collections = pgTable(
   },
   (table) => ({
     // Ensure unique names per owner (excluding soft-deleted items)
-    uniqueWorkspaceName: uniqueIndex(
-      "unique_workspace_collection_name_not_deleted",
+    uniqueOwnerName: uniqueIndex(
+      "unique_owner_collection_name_not_deleted",
     )
       .on(table.ownerId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
