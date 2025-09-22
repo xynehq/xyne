@@ -31,7 +31,7 @@ export class OAuthModal {
         }
 
         const authUrl = `${config.API_BASE_URL}/oauth/start`
-        this.successUrl = `${config.WS_BASE_URL}/oauth/success`
+        this.successUrl = `${config.API_BASE_URL}/oauth/success`
         //clientLog({currentApp: app}, 'Starting OAuth')
         this.logger.info({ currentApp: app }, "Starting OAuth")
         this.openAuthWindow(`${authUrl}?app=${app}`)
