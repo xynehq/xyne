@@ -50,9 +50,13 @@ import { authFetch } from "@/utils/authFetch"
 import { generateUUID } from "@/utils/chatUtils"
 import { useScopedFind } from "@/hooks/useScopedFind"
 import { PersistentMap } from "@/utils/chatUtils"
-import { DocumentOperationsProvider, useDocumentOperations } from "@/contexts/DocumentOperationsContext"
+import {
+  DocumentOperationsProvider,
+  useDocumentOperations,
+} from "@/contexts/DocumentOperationsContext"
 import ExcelViewer from "@/components/ExcelViewer"
 import CsvViewer from "@/components/CsvViewer"
+import TxtViewer from "@/components/TxtViewer"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -133,14 +137,14 @@ const DocumentViewerContainer = memo(
     }
     loadingDocument: boolean
   }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const { documentOperationsRef } = useDocumentOperations();
+    const containerRef = useRef<HTMLDivElement>(null)
+    const { documentOperationsRef } = useDocumentOperations()
 
     const viewerElement = useMemo(() => {
       if (!selectedDocument?.content) return null
-    
+
       const name = selectedDocument.file.name.toLowerCase()
-    
+
       if (name.endsWith(".pdf")) {
         return (
           <div ref={containerRef} data-container-ref="true" className="h-full">
@@ -152,6 +156,7 @@ const DocumentViewerContainer = memo(
                   { type: selectedDocument.content.type || "application/pdf" },
                 )
               }
+              docId={selectedDocument.file.id}
               className="h-full"
               style={{ height: "100%", overflow: "auto" }}
               scale={1.2}
@@ -162,7 +167,7 @@ const DocumentViewerContainer = memo(
           </div>
         )
       }
-    
+
       if (name.endsWith(".md")) {
         return (
           <div ref={containerRef} data-container-ref="true" className="h-full">
@@ -180,55 +185,82 @@ const DocumentViewerContainer = memo(
           </div>
         )
       }
-      if(name.endsWith(".xlsx") || name.endsWith(".xls") ){
-           return (
-             <div ref={containerRef} data-container-ref="true" className="h-full">
-               <ExcelViewer
-                 source={
-                   new File(
-                     [selectedDocument.content],
-                     selectedDocument.file.name,
-                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-                   )
-                 }
-                 className="h-full"
-                 style={{ height: "100%", overflow: "auto" }}
-               />
-             </div>
-           )
-      }
-
-      if(name.endsWith(".csv")){
+      if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
         return (
           <div ref={containerRef} data-container-ref="true" className="h-full">
-               <CsvViewer
-                 source={
-                   new File(
-                     [selectedDocument.content],
-                     selectedDocument.file.name,
-                     { type: selectedDocument.content.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-                   )
-                 }
-                 className="h-full"
-                 style={{ height: "100%", overflow: "auto" }}
-               />
-             </div>
+            <ExcelViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  {
+                    type:
+                      selectedDocument.content.type ||
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+            />
+          </div>
         )
       }
-    
+
+      if (name.endsWith(".csv") || name.endsWith(".tsv")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <CsvViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  {
+                    type:
+                      selectedDocument.content.type ||
+                      (name.endsWith(".tsv")
+                        ? "text/tab-separated-values"
+                        : "text/csv"),
+                  },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+            />
+          </div>
+        )
+      }
+      if (name.endsWith(".txt") || name.endsWith(".text")) {
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <TxtViewer
+              source={
+                new File(
+                  [selectedDocument.content],
+                  selectedDocument.file.name,
+                  { type: selectedDocument.content.type || "text/plain" },
+                )
+              }
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+            />
+          </div>
+        )
+      }
+
       return (
-        <div ref={containerRef} data-container-ref="true" className="h-full p-6 overflow-auto">
+        <div
+          ref={containerRef}
+          data-container-ref="true"
+          className="h-full p-6 overflow-auto"
+        >
           <DocxViewer
             source={
-              new File(
-                [selectedDocument.content],
-                selectedDocument.file.name,
-                {
-                  type:
-                    selectedDocument.content.type ||
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                },
-              )
+              new File([selectedDocument.content], selectedDocument.file.name, {
+                type:
+                  selectedDocument.content.type ||
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              })
             }
             className="h-full max-w-4xl mx-auto"
             style={{ height: "100%" }}
@@ -249,50 +281,53 @@ const DocumentViewerContainer = memo(
           />
         </div>
       )
-    }, [selectedDocument?.file.id, selectedDocument?.file.name, selectedDocument?.content])
-    
-    const {
-      highlightText,
-      clearHighlights,
-      scrollToMatch,
-    } = useScopedFind(containerRef);
+    }, [
+      selectedDocument?.file.id,
+      selectedDocument?.file.name,
+      selectedDocument?.content,
+    ])
+
+    const { highlightText, clearHighlights, scrollToMatch } =
+      useScopedFind(containerRef)
 
     // Expose the highlight functions via the document operations ref
     useEffect(() => {
       if (documentOperationsRef?.current) {
         documentOperationsRef.current.highlightText = async (text: string) => {
           if (!containerRef.current) {
-            const container = document.querySelector('[data-container-ref="true"]');
+            const container = document.querySelector(
+              '[data-container-ref="true"]',
+            )
             if (container) {
-              (containerRef as any).current = container;
+              ;(containerRef as any).current = container
             } else {
-              return false;
+              return false
             }
           }
 
           try {
-            const success = await highlightText(text);
-            return success;
+            const success = await highlightText(text)
+            return success
           } catch (error) {
-            console.error('Error calling highlightText:', error);
-            return false;
+            console.error("Error calling highlightText:", error)
+            return false
           }
-        };
-        
-        documentOperationsRef.current.clearHighlights = clearHighlights;
-        documentOperationsRef.current.scrollToMatch = scrollToMatch;
+        }
+
+        documentOperationsRef.current.clearHighlights = clearHighlights
+        documentOperationsRef.current.scrollToMatch = scrollToMatch
       }
-    }, [documentOperationsRef, highlightText, clearHighlights, scrollToMatch]);
+    }, [documentOperationsRef, highlightText, clearHighlights, scrollToMatch])
 
     useEffect(() => {
-      clearHighlights();
-    }, [selectedDocument?.file.id, clearHighlights]);
+      clearHighlights()
+    }, [selectedDocument?.file.id, clearHighlights])
 
     useEffect(() => {
       return () => {
-        clearHighlights();
-      };
-    }, [clearHighlights]);
+        clearHighlights()
+      }
+    }, [clearHighlights])
 
     return (
       <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
@@ -307,9 +342,7 @@ const DocumentViewerContainer = memo(
           </div>
         )}
         {selectedDocument.content ? (
-          <div className="h-full">
-            {viewerElement}
-          </div>
+          <div className="h-full">{viewerElement}</div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500 dark:text-gray-400">
@@ -596,9 +629,11 @@ function KnowledgeManagementContent() {
                       item.lastUpdatedByEmail || user?.email || "Unknown",
                   })),
                 ),
-                isOpen: collection.name.toLowerCase() === uploadingCollectionName.toLowerCase() 
-                  ? true // Open the newly uploaded collection
-                  : (collection.items || []).length > 0,
+                isOpen:
+                  collection.name.toLowerCase() ===
+                  uploadingCollectionName.toLowerCase()
+                    ? true
+                    : (collection.items || []).length > 0,
                 lastUpdated: new Date(collection.updatedAt).toLocaleString(
                   "en-GB",
                   {
@@ -754,7 +789,7 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-        await uploadFileBatch(batchFiles, cl.id)
+       await uploadFileBatch(batchFiles, cl.id)
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -770,7 +805,7 @@ function KnowledgeManagementContent() {
         param: { id: cl.id },
       })
       const items = await itemsResponse.json()
-
+      
       const newCollection: Collection = {
         id: updatedCl.id,
         name: updatedCl.name,
@@ -791,8 +826,7 @@ function KnowledgeManagementContent() {
             totalFileCount: item.totalFileCount,
             updatedAt: item.updatedAt,
             id: item.id,
-            updatedBy:
-              item.lastUpdatedByEmail || user?.email || "Unknown",
+            updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
           })),
         ),
         isOpen: true,
@@ -884,6 +918,7 @@ function KnowledgeManagementContent() {
 
     try {
       // Upload files in batches
+      let successfullyUploadedFiles = 0;
       const batches = createBatches(selectedFiles, addingToCollection.name)
       setBatchProgress((prev: typeof batchProgress) => ({
         ...prev,
@@ -896,16 +931,19 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-        await uploadFileBatch(
+      const uploadedResult = await uploadFileBatch(
           batchFiles,
           addingToCollection.id,
           targetFolder?.id,
         )
+        successfullyUploadedFiles += uploadedResult.summary.successful;
+        
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
         }))
       }
+      
 
       // Refresh the collection by fetching updated data from backend
       const clResponse = await api.cl[":id"].$get({
@@ -952,10 +990,14 @@ function KnowledgeManagementContent() {
 
         return Array.from(collectionsMap.values())
       })
-
+    successfullyUploadedFiles?
       toast.success({
         title: "Files Added",
-        description: `Successfully added ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
+        description: `Successfully added ${successfullyUploadedFiles} out of ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
+      }):
+      toast.error({
+        title: "Add Files Failed",
+        description: "Failed to add files to collection. Please try again.",
       })
       handleCloseModal()
     } catch (error) {
@@ -1151,12 +1193,16 @@ function KnowledgeManagementContent() {
       (!fileName.endsWith(".docx") &&
         !fileName.endsWith(".pdf") &&
         !fileName.endsWith(".md") &&
-        !fileName.endsWith(".csv") && !fileName.endsWith(".xlsx") && !fileName.endsWith(".xls")
-    )
+        !fileName.endsWith(".csv") &&
+        !fileName.endsWith(".xlsx") &&
+        !fileName.endsWith(".xls") &&
+        !fileName.endsWith(".text") &&
+        !fileName.endsWith(".txt") &&
+        !fileName.endsWith(".tsv"))
     ) {
       toast.warning({
         title: "Preview Not Available",
-        description: "Preview is only available for .docx, .pdf, and .md files.",
+        description: "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls,.txt,.tsv and .md files.",
       })
       return
     }
@@ -1334,18 +1380,23 @@ function KnowledgeManagementContent() {
   }
 
   // Handle chunk index changes from DocumentChat
-  const handleChunkIndexChange = async (newChunkIndex: number | null, documentId: string) => {
+  const handleChunkIndexChange = async (
+    newChunkIndex: number | null,
+    documentId: string,
+  ) => {
     if (!documentId) {
-      console.error('handleChunkIndexChange called without documentId');
-      return;
+      console.error("handleChunkIndexChange called without documentId")
+      return
     }
-    
+
     if (newChunkIndex !== null && selectedDocument?.file.id === documentId) {
       try {
-        const chunkContentResponse = await api.chunk[":cId"].files[":itemId"].content.$get({
+        const chunkContentResponse = await api.chunk[":cId"].files[
+          ":itemId"
+        ].content.$get({
           param: { cId: newChunkIndex.toString(), itemId: documentId },
         })
-        
+
         if (!chunkContentResponse.ok) {
           console.error('Failed to fetch chunk content:', chunkContentResponse.status);
           toast.error({
@@ -1354,24 +1405,30 @@ function KnowledgeManagementContent() {
           });
           return;
         }
-        
+
         const chunkContent = await chunkContentResponse.json()
 
         // Ensure we are still on the same document before mutating UI
         if (selectedDocument?.file.id !== documentId) {
-          return;
+          return
         }
-        
+
         if (chunkContent && chunkContent.chunkContent) {
           if (documentOperationsRef?.current?.clearHighlights) {
             documentOperationsRef.current.clearHighlights()
           }
-          
+
           if (documentOperationsRef?.current?.highlightText) {
             try {
-              await documentOperationsRef.current.highlightText(chunkContent.chunkContent);
+              await documentOperationsRef.current.highlightText(
+                chunkContent.chunkContent,
+              )
             } catch (error) {
-              console.error('Error highlighting chunk text:', chunkContent.chunkContent, error);
+              console.error(
+                "Error highlighting chunk text:",
+                chunkContent.chunkContent,
+                error,
+              )
             }
           }
         }

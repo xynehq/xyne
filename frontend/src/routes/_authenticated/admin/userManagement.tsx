@@ -169,6 +169,18 @@ interface User {
     } | null
   >
 }
+interface IngestedUsers {
+  id: number
+  email: string
+  syncJobs?: Record<
+    Apps,
+    {
+      lastSyncDate: Date | null
+      createdAt: Date | null
+      connectorStatus?: string
+    } | null
+  >
+}
 
 interface UsersListPageProps {
   user: PublicUser
@@ -285,9 +297,14 @@ function UsersListPage({
   const {} = useTheme()
 
   const [users, setUsers] = useState<User[]>([])
+  const [ingestedUsers, setIngestedUsers] = useState<IngestedUsers[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
+  const [activeTab, setActiveTab] = useState<"loggedIn" | "ingested">(
+    "loggedIn",
+  )
+  const [isTransitioning, setIsTransitioning] = useState(false)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [userToConfirmRoleChange, setUserToConfirmRoleChange] = useState<{
     user: User
@@ -365,57 +382,126 @@ function UsersListPage({
     slackSync: Apps.Slack,
   }
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        setLoading(true)
-        const res = await api.admin.list_users.$get()
+  // Function to fetch logged in users
+  const fetchLoggedInUsers = async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-        if (!res.ok) {
-          const errorData = await res.json()
-          throw new Error(errorData.message || "Failed to fetch users")
-        }
+      const res = await api.admin.list_loggedIn_users.$get()
 
-        const data = await res.json()
-        // Map syncJobs to expected structure
-        if (data && data.data && Array.isArray(data.data)) {
-          setUsers(
-            data.data.map((user: any) => ({
-              ...user,
-              syncJobs: Object.fromEntries(
-                Object.entries(user.syncJobs || {}).map(([app, value]) => [
-                  app,
-                  value === null
-                    ? { lastSyncDate: null, createdAt: null }
-                    : typeof value === "object" && Object.keys(value).length > 0
-                      ? value // already in correct format
-                      : {
-                          lastSyncDate:
-                            typeof value === "string" ||
-                            typeof value === "number"
-                              ? new Date(value)
-                              : null,
-                          createdAt: null,
-                        },
-                ]),
-              ),
-            })),
-          )
-        } else {
-          throw new Error("Unexpected API response format")
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "An unknown error occurred",
-        )
-        console.error("Error fetching users:", err)
-      } finally {
-        setLoading(false)
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.message || "Failed to fetch users")
       }
+
+      const data = await res.json()
+      // Map syncJobs to expected structure
+      if (data && data.data && Array.isArray(data.data)) {
+        setUsers(
+          data.data.map((user: any) => ({
+            ...user,
+            syncJobs: Object.fromEntries(
+              Object.entries(user.syncJobs || {}).map(([app, value]) => [
+                app,
+                value === null
+                  ? { lastSyncDate: null, createdAt: null }
+                  : typeof value === "object" && Object.keys(value).length > 0
+                    ? value // already in correct format
+                    : {
+                        lastSyncDate:
+                          typeof value === "string" || typeof value === "number"
+                            ? new Date(value)
+                            : null,
+                        createdAt: null,
+                      },
+              ]),
+            ),
+          })),
+        )
+      } else {
+        throw new Error("Unexpected API response format")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unknown error occurred")
+      console.error("Error fetching logged in users:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Function to fetch ingested users
+  const fetchIngestedUsers = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const ingestedRes = await api.admin.list_ingested_users.$get()
+
+      if (!ingestedRes.ok) {
+        const errorData = await ingestedRes.json()
+        throw new Error(errorData.message || "Failed to fetch ingested users")
+      }
+
+      const ingestedData = await ingestedRes.json()
+      if (
+        ingestedData &&
+        ingestedData.data &&
+        Array.isArray(ingestedData.data)
+      ) {
+        setIngestedUsers(
+          ingestedData.data.map((user: any) => ({
+            ...user,
+            syncJobs: Object.fromEntries(
+              Object.entries(user.syncJobs || {}).map(([app, value]) => [
+                app,
+                value === null
+                  ? { lastSyncDate: null, createdAt: null }
+                  : typeof value === "object" && Object.keys(value).length > 0
+                    ? value // already in correct format
+                    : {
+                        lastSyncDate:
+                          typeof value === "string" || typeof value === "number"
+                            ? new Date(value)
+                            : null,
+                        createdAt: null,
+                      },
+              ]),
+            ),
+          })),
+        )
+      } else {
+        setIngestedUsers([])
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unknown error occurred")
+      console.error("Error fetching ingested users:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Effect to fetch data based on activeTab changes with smooth transition
+  useEffect(() => {
+    const handleTabChange = async () => {
+      setIsTransitioning(true)
+
+      // Transition delay for smooth animation
+      await new Promise((resolve) => setTimeout(resolve, 150))
+
+      if (activeTab === "loggedIn") {
+        await fetchLoggedInUsers()
+      } else if (activeTab === "ingested") {
+        await fetchIngestedUsers()
+      }
+
+      // Small delay before showing content
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      setIsTransitioning(false)
     }
 
-    fetchUsers()
-  }, [])
+    handleTabChange()
+  }, [activeTab])
 
   // Robust fix: actively monitor and reset pointer-events on body if set to 'none'
   useEffect(() => {
@@ -441,27 +527,77 @@ function UsersListPage({
     }
   }, [])
 
-  let filteredUsers = users.filter((user) => {
-    const searchLower = searchTerm.toLowerCase()
-    return (
-      user.name?.toLowerCase().includes(searchLower) ||
-      user.email.toLowerCase().includes(searchLower)
-    )
-  })
-
-  // Sort by selected sync app and date type
-  if (sortField) {
-    const app = sortFieldToApp[sortField]
-    filteredUsers = [...filteredUsers].sort((a, b) => {
-      const aDate = a.syncJobs?.[app]?.[sortDateType]
-        ? new Date(a.syncJobs?.[app]?.[sortDateType]!).getTime()
-        : 0
-      const bDate = b.syncJobs?.[app]?.[sortDateType]
-        ? new Date(b.syncJobs?.[app]?.[sortDateType]!).getTime()
-        : 0
-      return sortDirection === "asc" ? aDate - bDate : bDate - aDate
+  // Generic function to filter and sort user arrays
+  const filterAndSortUsers = <
+    T extends {
+      email: string
+      name?: string
+      syncJobs?: Record<
+        Apps,
+        { lastSyncDate: Date | null; createdAt: Date | null } | null
+      >
+    },
+  >(
+    userArray: T[],
+    searchTerm: string,
+    sortField?: string,
+    sortDateType?: string,
+    sortDirection?: string,
+  ): T[] => {
+    // Filter users based on search term
+    let filtered = userArray.filter((user) => {
+      const searchLower = searchTerm.toLowerCase()
+      return (
+        user.name?.toLowerCase().includes(searchLower) ||
+        user.email.toLowerCase().includes(searchLower)
+      )
     })
+
+    // Sort by selected sync app and date type
+    if (sortField && sortDateType && sortDirection) {
+      const app = sortFieldToApp[sortField as keyof typeof sortFieldToApp]
+      if (app) {
+        filtered = [...filtered].sort((a, b) => {
+          const aDate = a.syncJobs?.[app]?.[
+            sortDateType as "lastSyncDate" | "createdAt"
+          ]
+            ? new Date(
+                a.syncJobs?.[app]?.[
+                  sortDateType as "lastSyncDate" | "createdAt"
+                ]!,
+              ).getTime()
+            : 0
+          const bDate = b.syncJobs?.[app]?.[
+            sortDateType as "lastSyncDate" | "createdAt"
+          ]
+            ? new Date(
+                b.syncJobs?.[app]?.[
+                  sortDateType as "lastSyncDate" | "createdAt"
+                ]!,
+              ).getTime()
+            : 0
+          return sortDirection === "asc" ? aDate - bDate : bDate - aDate
+        })
+      }
+    }
+
+    return filtered
   }
+
+  const filteredUsers = filterAndSortUsers(
+    users,
+    searchTerm,
+    sortField,
+    sortDateType,
+    sortDirection,
+  )
+  const filteredIngestedUsers = filterAndSortUsers(
+    ingestedUsers,
+    searchTerm,
+    sortField,
+    sortDateType,
+    sortDirection,
+  )
 
   const handleRoleChange = async (userId: string, newRole: UserRole) => {
     try {
@@ -473,20 +609,12 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to update role")
       }
-
-      const usersRes = await api.admin.list_users.$get()
-      if (!usersRes.ok) {
-        throw new Error("Failed to re-fetch users after update")
+       if (activeTab === "loggedIn") {
+        await fetchLoggedInUsers()
+      } else if (activeTab === "ingested") {
+        await fetchIngestedUsers()
       }
-
-      const updatedUsersData = await usersRes.json()
-      if (
-        updatedUsersData &&
-        updatedUsersData.data &&
-        Array.isArray(updatedUsersData.data)
-      ) {
-        setUsers(updatedUsersData.data)
-      }
+      
 
       toast.success({
         title: "Success",
@@ -538,18 +666,11 @@ function UsersListPage({
         throw new Error("Failed to trigger sync")
       }
 
-      const usersRes = await api.admin.list_users.$get()
-      if (!usersRes.ok) {
-        throw new Error("Failed to re-fetch users after sync")
-      }
-
-      const updatedUsersData = await usersRes.json()
-      if (
-        updatedUsersData &&
-        updatedUsersData.data &&
-        Array.isArray(updatedUsersData.data)
-      ) {
-        setUsers(updatedUsersData.data)
+      // Re-fetch data for current active tab
+      if (activeTab === "loggedIn") {
+        await fetchLoggedInUsers()
+      } else if (activeTab === "ingested") {
+        await fetchIngestedUsers()
       }
 
       toast.success({
@@ -585,21 +706,7 @@ function UsersListPage({
       if (!res.ok) {
         throw new Error("Failed to trigger Slack sync")
       }
-
-      const usersRes = await api.admin.list_users.$get()
-      if (!usersRes.ok) {
-        throw new Error("Failed to re-fetch users after sync")
-      }
-
-      const updatedUsersData = await usersRes.json()
-      if (
-        updatedUsersData &&
-        updatedUsersData.data &&
-        Array.isArray(updatedUsersData.data)
-      ) {
-        setUsers(updatedUsersData.data)
-      }
-
+ 
       toast.success({
         title: "Success",
         description: "Slack sync has been successfully triggered.",
@@ -623,49 +730,6 @@ function UsersListPage({
           role={currentUser?.role}
           isAgentMode={agentWhiteList}
         />
-        <div className="flex-grow ml-[52px] p-8">
-          <div className="space-y-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <Skeleton className="h-8 w-48" />
-                <Skeleton className="h-4 w-64 mt-2" />
-              </div>
-            </div>
-            <div className="grid grid-cols-4 gap-6">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Card
-                  key={i}
-                  className="bg-white dark:bg-gray-800 border-0 shadow-sm"
-                >
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Skeleton className="h-4 w-20 mb-2" />
-                        <Skeleton className="h-8 w-8" />
-                      </div>
-                      <Skeleton className="h-6 w-6 rounded-full" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-            <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
-              <CardContent className="p-6">
-                <div className="space-y-4">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex items-center space-x-4">
-                      <Skeleton className="h-10 w-10 rounded-full" />
-                      <div className="space-y-2 flex-1">
-                        <Skeleton className="h-4 w-48" />
-                        <Skeleton className="h-3 w-32" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
       </div>
     )
   }
@@ -718,614 +782,919 @@ function UsersListPage({
             </p>
           </div>
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-4 gap-6">
-            <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      Total Users
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
-                      {totalUsers}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <Users className="h-6 w-6 text-gray-600 dark:text-gray-400" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      Super Admins
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
-                      {superAdmins}
-                    </p>
-                  </div>
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      Admins
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
-                      {admins}
-                    </p>
-                  </div>
-                  <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      Regular Users
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
-                      {regularUsers}
-                    </p>
-                  </div>
-                  <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
-                </div>
-              </CardContent>
-            </Card>
+          {/* Tab Navigation */}
+          <div className="border-b border-gray-200 dark:border-gray-700">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setActiveTab("loggedIn")}
+                disabled={isTransitioning}
+                className={`py-2 px-1 border-b-2 font-medium text-sm transition-all duration-200 ease-in-out ${
+                  activeTab === "loggedIn"
+                    ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
+                } ${isTransitioning ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                {/* Logged In Users ({users.length}) */}
+                Logged In Users
+              </button>
+              <button
+                onClick={() => setActiveTab("ingested")}
+                disabled={isTransitioning}
+                className={`py-2 px-1 border-b-2 font-medium text-sm transition-all duration-200 ease-in-out ${
+                  activeTab === "ingested"
+                    ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
+                } ${isTransitioning ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                {/* Ingested Users ({ingestedUsers.length}) */}
+                Ingested Users
+              </button>
+            </nav>
           </div>
 
-          {/* Users Section */}
+          {/* Stats Cards */}
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Users
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  A list of all users in your workspace with their sync status
-                </p>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <Input
-                    placeholder="Search users..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 w-64 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 min-w-[200px]"
-                    >
-                      {getCurrentSortLabel()}
-                      <ChevronDown className="ml-2 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-64 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+            {isTransitioning ? (
+              // Skeleton for stats cards
+              <div className="grid grid-cols-4 gap-6">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Card
+                    key={i}
+                    className="bg-white dark:bg-gray-800 border-0 shadow-sm"
                   >
-                    <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400 font-semibold">
-                      Sort by Date Type
-                    </div>
-                    {dateTypeOptions.map((dateOpt) => (
-                      <DropdownMenuItem
-                        key={dateOpt.value}
-                        onClick={() =>
-                          setSortDateType(dateOpt.value as typeof sortDateType)
-                        }
-                        className="flex items-center gap-2"
-                      >
-                        {dateOpt.label}
-                        {sortDateType === dateOpt.value && (
-                          <div className="ml-auto w-2 h-2 bg-blue-500 rounded-full" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400 font-semibold">
-                      Sort by App
-                    </div>
-                    {syncSortOptions.map((opt) => (
-                      <DropdownMenuItem
-                        key={opt.value}
-                        onClick={() => {
-                          if (sortField === opt.value) {
-                            setSortDirection((d) =>
-                              d === "asc" ? "desc" : "asc",
-                            )
-                          } else {
-                            setSortField(opt.value as typeof sortField)
-                            setSortDirection("desc")
-                          }
-                        }}
-                        className="flex items-center gap-2"
-                      >
-                        {opt.icon}
-                        {opt.label}
-                        {sortField === opt.value &&
-                          (sortDirection === "asc" ? (
-                            <ChevronUp className="ml-auto h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="ml-auto h-4 w-4" />
-                          ))}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-20" />
+                          <Skeleton className="h-8 w-12" />
+                        </div>
+                        <Skeleton className="h-6 w-6 rounded-full" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-            </div>
+            ) : (
+              <div
+                className="transition-all duration-300 ease-out"
+                style={{
+                  transitionProperty: "opacity, transform",
+                  transitionDuration: "300ms",
+                  transitionTimingFunction:
+                    "cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                }}
+              >
+                {activeTab === "loggedIn" ? (
+                  <div className="grid grid-cols-4 gap-6">
+                    <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                              Total Users
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
+                              {totalUsers}
+                            </p>
+                          </div>
+                          <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                            <Users className="h-6 w-6 text-gray-600 dark:text-gray-400" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
 
-            {/* Users Table */}
-            <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
-              <div className="overflow-hidden">
-                {filteredUsers.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Users className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-                      {searchTerm ? "No users found" : "No users yet"}
-                    </h3>
-                    <p className="mt-2 text-gray-500 dark:text-gray-400">
-                      {searchTerm
-                        ? "Try adjusting your search terms"
-                        : "Get started by adding your first user"}
-                    </p>
+                    <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                              Super Admins
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
+                              {superAdmins}
+                            </p>
+                          </div>
+                          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                              Admins
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
+                              {admins}
+                            </p>
+                          </div>
+                          <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                              Regular Users
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
+                              {regularUsers}
+                            </p>
+                          </div>
+                          <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-gray-200 dark:border-gray-700 hover:bg-transparent">
-                        <TableHead className="text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
-                          User
-                        </TableHead>
-                        <TableHead className="text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
-                          Role
-                        </TableHead>
-                        <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
-                          <div className="flex items-center justify-center gap-2">
-                            <Mail className="h-4 w-4" />
-                            Gmail
+                  <div className="grid grid-cols-4 gap-6">
+                    <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                              Total Ingested Users
+                            </p>
+                            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
+                              {ingestedUsers.length}
+                            </p>
                           </div>
-                        </TableHead>
-                        <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
-                          <div className="flex items-center justify-center gap-2">
-                            <HardDrive className="h-4 w-4" />
-                            Drive
+                          <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                            <Users className="h-6 w-6 text-gray-600 dark:text-gray-400" />
                           </div>
-                        </TableHead>
-                        <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
-                          <div className="flex items-center justify-center gap-2">
-                            <Calendar className="h-4 w-4" />
-                            Calendar
-                          </div>
-                        </TableHead>
-                        <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
-                          <div className="flex items-center justify-center gap-2">
-                            <MessageSquare className="h-4 w-4" />
-                            Slack
-                          </div>
-                        </TableHead>
-                        <TableHead className="w-12 py-4 px-6"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredUsers.map((user) => (
-                        <TableRow
-                          key={user.id}
-                          className="border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                        >
-                          <TableCell className="py-4 px-6">
-                            <div className="flex items-center space-x-3">
-                              <Avatar className="h-10 w-10">
-                                <AvatarImage
-                                  src={
-                                    user.photoLink
-                                      ? `/api/v1/proxy/${encodeURIComponent(user.photoLink)}`
-                                      : undefined
-                                  }
-                                  alt={user.name || user.email}
-                                  onError={(e) => {
-                                    ;(
-                                      e.target as HTMLImageElement
-                                    ).style.display = "none"
-                                  }}
-                                />
-                                <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">
-                                  {user.name?.[0]?.toUpperCase() ||
-                                    user.email[0].toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                  {user.name || user.email}
-                                </p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                                  {user.email}
-                                </p>
-                              </div>
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="py-4 px-6">
-                            {currentUser.role === UserRole.SuperAdmin &&
-                            currentUser.email !== user.email ? (
-                              <div className="relative inline-block">
-                                <select
-                                  value={user.role}
-                                  onChange={(e) =>
-                                    handleRoleSelectChange(
-                                      user,
-                                      e.target.value as UserRole,
-                                    )
-                                  }
-                                  disabled={isUpdating}
-                                  className="appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed min-w-[110px] font-medium"
-                                >
-                                  {Object.values(UserRole).map((role) => (
-                                    <option key={role} value={role}>
-                                      {role}
-                                    </option>
-                                  ))}
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                                  <ChevronDown className="h-4 w-4 text-gray-400" />
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-black dark:bg-white text-white dark:text-black">
-                                {user.role}
-                              </span>
-                            )}
-                          </TableCell>
-
-                          <TableCell className="text-center py-4 px-6">
-                            <div className="flex flex-col items-center space-y-1">
-                              <span
-                                className={`text-sm font-medium ${getSyncStatusColor(
-                                  user.syncJobs?.[Apps.Gmail]?.lastSyncDate,
-                                )}`}
-                              >
-                                {formatSyncDate(
-                                  user.syncJobs?.[Apps.Gmail]?.lastSyncDate,
-                                )}
-                              </span>
-                              {user.syncJobs?.[Apps.Gmail]?.createdAt && (
-                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                  Created:{" "}
-                                  {new Date(
-                                    user.syncJobs[Apps.Gmail].createdAt,
-                                  ).toLocaleDateString()}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="text-center py-4 px-6">
-                            <div className="flex flex-col items-center space-y-1">
-                              <span
-                                className={`text-sm font-medium ${getSyncStatusColor(
-                                  user.syncJobs?.[Apps.GoogleDrive]
-                                    ?.lastSyncDate,
-                                )}`}
-                              >
-                                {formatSyncDate(
-                                  user.syncJobs?.[Apps.GoogleDrive]
-                                    ?.lastSyncDate,
-                                )}
-                              </span>
-                              {user.syncJobs?.[Apps.GoogleDrive]?.createdAt && (
-                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                  Created:{" "}
-                                  {new Date(
-                                    user.syncJobs[Apps.GoogleDrive].createdAt,
-                                  ).toLocaleDateString()}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="text-center py-4 px-6">
-                            <div className="flex flex-col items-center space-y-1">
-                              <span
-                                className={`text-sm font-medium ${getSyncStatusColor(
-                                  user.syncJobs?.[Apps.GoogleCalendar]
-                                    ?.lastSyncDate,
-                                )}`}
-                              >
-                                {formatSyncDate(
-                                  user.syncJobs?.[Apps.GoogleCalendar]
-                                    ?.lastSyncDate,
-                                )}
-                              </span>
-                              {user.syncJobs?.[Apps.GoogleCalendar]
-                                ?.createdAt && (
-                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                  Created:{" "}
-                                  {new Date(
-                                    user.syncJobs[Apps.GoogleCalendar]
-                                      .createdAt,
-                                  ).toLocaleDateString()}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="text-center py-4 px-6">
-                            <div className="flex flex-col items-center space-y-1">
-                              <span
-                                className={`text-sm font-medium ${getSyncStatusColor(
-                                  user.syncJobs?.[Apps.Slack]?.lastSyncDate,
-                                )}`}
-                              >
-                                {formatSyncDate(
-                                  user.syncJobs?.[Apps.Slack]?.lastSyncDate,
-                                )}
-                              </span>
-                              {user.syncJobs?.[Apps.Slack]?.createdAt && (
-                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                  Created:{" "}
-                                  {new Date(
-                                    user.syncJobs[Apps.Slack].createdAt,
-                                  ).toLocaleDateString()}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="py-4 px-6">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="w-56 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-                              >
-                                <DropdownMenuItem
-                                  onClick={() => setSelectedUser(user)}
-                                >
-                                  View Details
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() => handleSync(user)}
-                                  disabled={syncingUser === user.email}
-                                >
-                                  {syncingUser === user.email ? (
-                                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                  )}
-                                  Sync Google Workspace
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => handleSlackSync(user)}
-                                  disabled={syncingSlackUser === user.email}
-                                >
-                                  {syncingSlackUser === user.email ? (
-                                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <MessageSquare className="mr-2 h-4 w-4" />
-                                  )}
-                                  Sync Slack
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </div>
-            </Card>
-          </div>
-        </div>
-
-        <Dialog
-          open={!!userToConfirmRoleChange}
-          onOpenChange={() => setUserToConfirmRoleChange(null)}
-        >
-          <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-gray-900 dark:text-gray-100">
-                Confirm Role Change
-              </DialogTitle>
-              <DialogDescription className="text-gray-600 dark:text-gray-400">
-                Are you sure you want to change this user's role? This action
-                cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-
-            {userToConfirmRoleChange && (
-              <div className="py-4">
-                <div className="flex items-center space-x-3 mb-4">
-                  <Avatar>
-                    <AvatarImage
-                      src={
-                        userToConfirmRoleChange.user.photoLink
-                          ? `/api/v1/proxy/${encodeURIComponent(userToConfirmRoleChange.user.photoLink)}`
-                          : undefined
-                      }
-                      onError={(e) => {
-                        ;(e.target as HTMLImageElement).style.display = "none"
-                      }}
-                    />
-                    <AvatarFallback className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
-                      {userToConfirmRoleChange.user.name?.[0]?.toUpperCase() ||
-                        userToConfirmRoleChange.user.email[0].toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <div className="font-medium text-gray-900 dark:text-gray-100">
-                      {userToConfirmRoleChange.user.name ||
-                        userToConfirmRoleChange.user.email}
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {userToConfirmRoleChange.user.email}
-                    </div>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
-                </div>
-
-                <div className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300">
-                  <span>Role will change from</span>
-                  <Badge
-                    variant={getRoleBadgeVariant(
-                      userToConfirmRoleChange.user.role,
-                    )}
-                  >
-                    {userToConfirmRoleChange.user.role}
-                  </Badge>
-                  <span>to</span>
-                  <Badge
-                    variant={getRoleBadgeVariant(
-                      userToConfirmRoleChange.newRole,
-                    )}
-                  >
-                    {userToConfirmRoleChange.newRole}
-                  </Badge>
-                </div>
+                )}
               </div>
             )}
 
-            <DialogFooter className="gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setUserToConfirmRoleChange(null)}
-                className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() =>
-                  handleRoleChange(
-                    userToConfirmRoleChange!.user.id,
-                    userToConfirmRoleChange!.newRole,
-                  )
-                }
-                disabled={isUpdating}
-                className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white"
-              >
-                {isUpdating ? "Changing..." : "Confirm Change"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={!!selectedUser}
-          onOpenChange={(open) => {
-            if (!open) {
-              setSelectedUser(null)
-              setSelectDropdownOpen(null)
-            }
-          }}
-        >
-          <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="text-gray-900 dark:text-gray-100">
-                User Details
-              </DialogTitle>
-              <DialogDescription>
-                Detailed information about the selected user and their sync
-                status.
-              </DialogDescription>
-            </DialogHeader>
-
-            {selectedUser && (
+            {/* Users Section */}
+            {isTransitioning ? (
+              // Skeleton for users section
               <div className="space-y-6">
-                <div className="flex items-center space-x-4">
-                  <Avatar className="h-16 w-16">
-                    <AvatarImage
-                      src={
-                        selectedUser.photoLink
-                          ? `/api/v1/proxy/${encodeURIComponent(selectedUser.photoLink)}`
-                          : undefined
-                      }
-                      onError={(e) => {
-                        ;(e.target as HTMLImageElement).style.display = "none"
-                      }}
-                    />
-                    <AvatarFallback className="text-lg bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
-                      {selectedUser.name?.[0]?.toUpperCase() ||
-                        selectedUser.email[0].toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                      {selectedUser.name || selectedUser.email}
-                    </h3>
-                    <p className="text-gray-500 dark:text-gray-400">
-                      {selectedUser.email}
+                    <Skeleton className="h-6 w-16 mb-2" />
+                    <Skeleton className="h-4 w-72" />
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Skeleton className="h-10 w-64" />
+                    <Skeleton className="h-10 w-48" />
+                  </div>
+                </div>
+
+                <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
+                  <CardContent className="p-0">
+                    <div className="space-y-4 p-6">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className="flex items-center space-x-4">
+                          <Skeleton className="h-10 w-10 rounded-full" />
+                          <div className="space-y-2 flex-1">
+                            <Skeleton className="h-4 w-48" />
+                            <Skeleton className="h-3 w-32" />
+                          </div>
+                          <Skeleton className="h-6 w-16" />
+                          <Skeleton className="h-4 w-12" />
+                          <Skeleton className="h-4 w-12" />
+                          <Skeleton className="h-4 w-12" />
+                          <Skeleton className="h-4 w-12" />
+                          <Skeleton className="h-8 w-8" />
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="space-y-6 transition-all duration-300 ease-out">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      Users
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      A list of all users in your workspace with their sync
+                      status
                     </p>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <Input
+                        placeholder="Search users..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 w-64 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 min-w-[200px]"
+                        >
+                          {getCurrentSortLabel()}
+                          <ChevronDown className="ml-2 h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="w-64 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                      >
+                        <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400 font-semibold">
+                          Sort by Date Type
+                        </div>
+                        {dateTypeOptions.map((dateOpt) => (
+                          <DropdownMenuItem
+                            key={dateOpt.value}
+                            onClick={() =>
+                              setSortDateType(
+                                dateOpt.value as typeof sortDateType,
+                              )
+                            }
+                            className="flex items-center gap-2"
+                          >
+                            {dateOpt.label}
+                            {sortDateType === dateOpt.value && (
+                              <div className="ml-auto w-2 h-2 bg-blue-500 rounded-full" />
+                            )}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400 font-semibold">
+                          Sort by App
+                        </div>
+                        {syncSortOptions.map((opt) => (
+                          <DropdownMenuItem
+                            key={opt.value}
+                            onClick={() => {
+                              if (sortField === opt.value) {
+                                setSortDirection((d) =>
+                                  d === "asc" ? "desc" : "asc",
+                                )
+                              } else {
+                                setSortField(opt.value as typeof sortField)
+                                setSortDirection("desc")
+                              }
+                            }}
+                            className="flex items-center gap-2"
+                          >
+                            {opt.icon}
+                            {opt.label}
+                            {sortField === opt.value &&
+                              (sortDirection === "asc" ? (
+                                <ChevronUp className="ml-auto h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="ml-auto h-4 w-4" />
+                              ))}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+
+                {/* Users Table */}
+                <Card className="bg-white dark:bg-gray-800 border-0 shadow-sm">
+                  <div className="overflow-hidden">
+                    {activeTab === "loggedIn" ? (
+                      // Logged In Users Table
+                      filteredUsers.length === 0 ? (
+                        <div className="text-center py-12">
+                          <Users className="mx-auto h-12 w-12 text-gray-400" />
+                          <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            {searchTerm ? "No users found" : "No users yet"}
+                          </h3>
+                          <p className="mt-2 text-gray-500 dark:text-gray-400">
+                            {searchTerm
+                              ? "Try adjusting your search terms"
+                              : "Get started by adding your first user"}
+                          </p>
+                        </div>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-gray-200 dark:border-gray-700 hover:bg-transparent">
+                              <TableHead className="text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                                User
+                              </TableHead>
+                              <TableHead className="text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                                Role
+                              </TableHead>
+                              <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                                <div className="flex items-center justify-center gap-2">
+                                  <Mail className="h-4 w-4" />
+                                  Gmail
+                                </div>
+                              </TableHead>
+                              <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                                <div className="flex items-center justify-center gap-2">
+                                  <HardDrive className="h-4 w-4" />
+                                  Drive
+                                </div>
+                              </TableHead>
+                              <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                                <div className="flex items-center justify-center gap-2">
+                                  <Calendar className="h-4 w-4" />
+                                  Calendar
+                                </div>
+                              </TableHead>
+                              <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                                <div className="flex items-center justify-center gap-2">
+                                  <MessageSquare className="h-4 w-4" />
+                                  Slack
+                                </div>
+                              </TableHead>
+                              <TableHead className="w-12 py-4 px-6"></TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredUsers.map((user) => (
+                              <TableRow
+                                key={user.id}
+                                className="border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                              >
+                                <TableCell className="py-4 px-6">
+                                  <div className="flex items-center space-x-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarImage
+                                        src={
+                                          user.photoLink
+                                            ? `/api/v1/proxy/${encodeURIComponent(user.photoLink)}`
+                                            : undefined
+                                        }
+                                        alt={user.name || user.email}
+                                        onError={(e) => {
+                                          ;(
+                                            e.target as HTMLImageElement
+                                          ).style.display = "none"
+                                        }}
+                                      />
+                                      <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">
+                                        {user.name?.[0]?.toUpperCase() ||
+                                          user.email[0].toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                        {user.name || user.email}
+                                      </p>
+                                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                        {user.email}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </TableCell>
+
+                                <TableCell className="py-4 px-6">
+                                  {currentUser.role === UserRole.SuperAdmin &&
+                                  currentUser.email !== user.email ? (
+                                    <div className="relative inline-block">
+                                      <select
+                                        value={user.role}
+                                        onChange={(e) =>
+                                          handleRoleSelectChange(
+                                            user,
+                                            e.target.value as UserRole,
+                                          )
+                                        }
+                                        disabled={isUpdating}
+                                        className="appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed min-w-[110px] font-medium"
+                                      >
+                                        {Object.values(UserRole).map((role) => (
+                                          <option key={role} value={role}>
+                                            {role}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                                        <ChevronDown className="h-4 w-4 text-gray-400" />
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-black dark:bg-white text-white dark:text-black">
+                                      {user.role}
+                                    </span>
+                                  )}
+                                </TableCell>
+
+                                <TableCell className="text-center py-4 px-6">
+                                  <div className="flex flex-col items-center space-y-1">
+                                    <span
+                                      className={`text-sm font-medium ${getSyncStatusColor(
+                                        user.syncJobs?.[Apps.Gmail]
+                                          ?.lastSyncDate,
+                                      )}`}
+                                    >
+                                      {formatSyncDate(
+                                        user.syncJobs?.[Apps.Gmail]
+                                          ?.lastSyncDate,
+                                      )}
+                                    </span>
+                                    {user.syncJobs?.[Apps.Gmail]?.createdAt && (
+                                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                                        Created:{" "}
+                                        {new Date(
+                                          user.syncJobs[Apps.Gmail].createdAt,
+                                        ).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                <TableCell className="text-center py-4 px-6">
+                                  <div className="flex flex-col items-center space-y-1">
+                                    <span
+                                      className={`text-sm font-medium ${getSyncStatusColor(
+                                        user.syncJobs?.[Apps.GoogleDrive]
+                                          ?.lastSyncDate,
+                                      )}`}
+                                    >
+                                      {formatSyncDate(
+                                        user.syncJobs?.[Apps.GoogleDrive]
+                                          ?.lastSyncDate,
+                                      )}
+                                    </span>
+                                    {user.syncJobs?.[Apps.GoogleDrive]
+                                      ?.createdAt && (
+                                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                                        Created:{" "}
+                                        {new Date(
+                                          user.syncJobs[Apps.GoogleDrive]
+                                            .createdAt,
+                                        ).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                <TableCell className="text-center py-4 px-6">
+                                  <div className="flex flex-col items-center space-y-1">
+                                    <span
+                                      className={`text-sm font-medium ${getSyncStatusColor(
+                                        user.syncJobs?.[Apps.GoogleCalendar]
+                                          ?.lastSyncDate,
+                                      )}`}
+                                    >
+                                      {formatSyncDate(
+                                        user.syncJobs?.[Apps.GoogleCalendar]
+                                          ?.lastSyncDate,
+                                      )}
+                                    </span>
+                                    {user.syncJobs?.[Apps.GoogleCalendar]
+                                      ?.createdAt && (
+                                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                                        Created:{" "}
+                                        {new Date(
+                                          user.syncJobs[Apps.GoogleCalendar]
+                                            .createdAt,
+                                        ).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                <TableCell className="text-center py-4 px-6">
+                                  <div className="flex flex-col items-center space-y-1">
+                                    <span
+                                      className={`text-sm font-medium ${getSyncStatusColor(
+                                        user.syncJobs?.[Apps.Slack]
+                                          ?.lastSyncDate,
+                                      )}`}
+                                    >
+                                      {formatSyncDate(
+                                        user.syncJobs?.[Apps.Slack]
+                                          ?.lastSyncDate,
+                                      )}
+                                    </span>
+                                    {user.syncJobs?.[Apps.Slack]?.createdAt && (
+                                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                                        Created:{" "}
+                                        {new Date(
+                                          user.syncJobs[Apps.Slack].createdAt,
+                                        ).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                <TableCell className="py-4 px-6">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                      >
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent
+                                      align="end"
+                                      className="w-56 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                                    >
+                                      <DropdownMenuItem
+                                        onClick={() => setSelectedUser(user)}
+                                      >
+                                        View Details
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        onClick={() => handleSync(user)}
+                                        disabled={syncingUser === user.email}
+                                      >
+                                        {syncingUser === user.email ? (
+                                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <RefreshCw className="mr-2 h-4 w-4" />
+                                        )}
+                                        Sync Google Workspace
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => handleSlackSync(user)}
+                                        disabled={
+                                          syncingSlackUser === user.email
+                                        }
+                                      >
+                                        {syncingSlackUser === user.email ? (
+                                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <MessageSquare className="mr-2 h-4 w-4" />
+                                        )}
+                                        Sync Slack
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )
+                    ) : // Ingested Users Table
+                    filteredIngestedUsers.length === 0 ? (
+                      <div className="text-center py-12">
+                        <Users className="mx-auto h-12 w-12 text-gray-400" />
+                        <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                          {searchTerm
+                            ? "No ingested users found"
+                            : "No ingested users yet"}
+                        </h3>
+                        <p className="mt-2 text-gray-500 dark:text-gray-400">
+                          {searchTerm
+                            ? "Try adjusting your search terms"
+                            : "Ingested users will appear here when available"}
+                        </p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-gray-200 dark:border-gray-700 hover:bg-transparent">
+                            <TableHead className="text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                              Email
+                            </TableHead>
+                            <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                              <div className="flex items-center justify-center gap-2">
+                                <Mail className="h-4 w-4" />
+                                Gmail
+                              </div>
+                            </TableHead>
+                            <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                              <div className="flex items-center justify-center gap-2">
+                                <HardDrive className="h-4 w-4" />
+                                Drive
+                              </div>
+                            </TableHead>
+                            <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                              <div className="flex items-center justify-center gap-2">
+                                <Calendar className="h-4 w-4" />
+                                Calendar
+                              </div>
+                            </TableHead>
+                            <TableHead className="text-center text-gray-500 dark:text-gray-400 font-medium py-4 px-6">
+                              <div className="flex items-center justify-center gap-2">
+                                <MessageSquare className="h-4 w-4" />
+                                Slack
+                              </div>
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredIngestedUsers.map((user) => (
+                            <TableRow
+                              key={user.id}
+                              className="border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                            >
+                              <TableCell className="py-4 px-6">
+                                <div className="flex items-center space-x-3">
+                                  <Avatar className="h-10 w-10">
+                                    <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">
+                                      {user.email[0].toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                      {user.email}
+                                    </p>
+                                  </div>
+                                </div>
+                              </TableCell>
+
+                              <TableCell className="text-center py-4 px-6">
+                                <div className="flex flex-col items-center space-y-1">
+                                  <span
+                                    className={`text-sm font-medium ${getSyncStatusColor(
+                                      user.syncJobs?.[Apps.Gmail]?.lastSyncDate,
+                                    )}`}
+                                  >
+                                    {formatSyncDate(
+                                      user.syncJobs?.[Apps.Gmail]?.lastSyncDate,
+                                    )}
+                                  </span>
+                                  {user.syncJobs?.[Apps.Gmail]?.createdAt && (
+                                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                                      Created:{" "}
+                                      {new Date(
+                                        user.syncJobs[Apps.Gmail].createdAt,
+                                      ).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+
+                              <TableCell className="text-center py-4 px-6">
+                                <div className="flex flex-col items-center space-y-1">
+                                  <span
+                                    className={`text-sm font-medium ${getSyncStatusColor(
+                                      user.syncJobs?.[Apps.GoogleDrive]
+                                        ?.lastSyncDate,
+                                    )}`}
+                                  >
+                                    {formatSyncDate(
+                                      user.syncJobs?.[Apps.GoogleDrive]
+                                        ?.lastSyncDate,
+                                    )}
+                                  </span>
+                                  {user.syncJobs?.[Apps.GoogleDrive]
+                                    ?.createdAt && (
+                                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                                      Created:{" "}
+                                      {new Date(
+                                        user.syncJobs[Apps.GoogleDrive]
+                                          .createdAt,
+                                      ).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+
+                              <TableCell className="text-center py-4 px-6">
+                                <div className="flex flex-col items-center space-y-1">
+                                  <span
+                                    className={`text-sm font-medium ${getSyncStatusColor(
+                                      user.syncJobs?.[Apps.GoogleCalendar]
+                                        ?.lastSyncDate,
+                                    )}`}
+                                  >
+                                    {formatSyncDate(
+                                      user.syncJobs?.[Apps.GoogleCalendar]
+                                        ?.lastSyncDate,
+                                    )}
+                                  </span>
+                                  {user.syncJobs?.[Apps.GoogleCalendar]
+                                    ?.createdAt && (
+                                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                                      Created:{" "}
+                                      {new Date(
+                                        user.syncJobs[Apps.GoogleCalendar]
+                                          .createdAt,
+                                      ).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+
+                              <TableCell className="text-center py-4 px-6">
+                                <div className="flex flex-col items-center space-y-1">
+                                  <span
+                                    className={`text-sm font-medium ${getSyncStatusColor(
+                                      user.syncJobs?.[Apps.Slack]?.lastSyncDate,
+                                    )}`}
+                                  >
+                                    {formatSyncDate(
+                                      user.syncJobs?.[Apps.Slack]?.lastSyncDate,
+                                    )}
+                                  </span>
+                                  {user.syncJobs?.[Apps.Slack]?.createdAt && (
+                                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                                      Created:{" "}
+                                      {new Date(
+                                        user.syncJobs[Apps.Slack].createdAt,
+                                      ).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            )}
+          </div>
+
+          <Dialog
+            open={!!userToConfirmRoleChange}
+            onOpenChange={() => setUserToConfirmRoleChange(null)}
+          >
+            <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-gray-900 dark:text-gray-100">
+                  Confirm Role Change
+                </DialogTitle>
+                <DialogDescription className="text-gray-600 dark:text-gray-400">
+                  Are you sure you want to change this user's role? This action
+                  cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+
+              {userToConfirmRoleChange && (
+                <div className="py-4">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <Avatar>
+                      <AvatarImage
+                        src={
+                          userToConfirmRoleChange.user.photoLink
+                            ? `/api/v1/proxy/${encodeURIComponent(userToConfirmRoleChange.user.photoLink)}`
+                            : undefined
+                        }
+                        onError={(e) => {
+                          ;(e.target as HTMLImageElement).style.display = "none"
+                        }}
+                      />
+                      <AvatarFallback className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
+                        {userToConfirmRoleChange.user.name?.[0]?.toUpperCase() ||
+                          userToConfirmRoleChange.user.email[0].toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">
+                        {userToConfirmRoleChange.user.name ||
+                          userToConfirmRoleChange.user.email}
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        {userToConfirmRoleChange.user.email}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300">
+                    <span>Role will change from</span>
                     <Badge
-                      variant={getRoleBadgeVariant(selectedUser.role)}
-                      className="mt-1"
+                      variant={getRoleBadgeVariant(
+                        userToConfirmRoleChange.user.role,
+                      )}
                     >
-                      {selectedUser.role}
+                      {userToConfirmRoleChange.user.role}
+                    </Badge>
+                    <span>to</span>
+                    <Badge
+                      variant={getRoleBadgeVariant(
+                        userToConfirmRoleChange.newRole,
+                      )}
+                    >
+                      {userToConfirmRoleChange.newRole}
                     </Badge>
                   </div>
                 </div>
+              )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">
-                      Account Created
-                    </h4>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {new Date(selectedUser.createdAt).toLocaleDateString(
-                        "en-US",
-                        {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        },
-                      )}
-                    </p>
+              <DialogFooter className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setUserToConfirmRoleChange(null)}
+                  className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() =>
+                    handleRoleChange(
+                      userToConfirmRoleChange!.user.id,
+                      userToConfirmRoleChange!.newRole,
+                    )
+                  }
+                  disabled={isUpdating}
+                  className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white"
+                >
+                  {isUpdating ? "Changing..." : "Confirm Change"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={!!selectedUser}
+            onOpenChange={(open) => {
+              if (!open) {
+                setSelectedUser(null)
+                setSelectDropdownOpen(null)
+              }
+            }}
+          >
+            <DialogContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="text-gray-900 dark:text-gray-100">
+                  User Details
+                </DialogTitle>
+                <DialogDescription>
+                  Detailed information about the selected user and their sync
+                  status.
+                </DialogDescription>
+              </DialogHeader>
+
+              {selectedUser && (
+                <div className="space-y-6">
+                  <div className="flex items-center space-x-4">
+                    <Avatar className="h-16 w-16">
+                      <AvatarImage
+                        src={
+                          selectedUser.photoLink
+                            ? `/api/v1/proxy/${encodeURIComponent(selectedUser.photoLink)}`
+                            : undefined
+                        }
+                        onError={(e) => {
+                          ;(e.target as HTMLImageElement).style.display = "none"
+                        }}
+                      />
+                      <AvatarFallback className="text-lg bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
+                        {selectedUser.name?.[0]?.toUpperCase() ||
+                          selectedUser.email[0].toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        {selectedUser.name || selectedUser.email}
+                      </h3>
+                      <p className="text-gray-500 dark:text-gray-400">
+                        {selectedUser.email}
+                      </p>
+                      <Badge
+                        variant={getRoleBadgeVariant(selectedUser.role)}
+                        className="mt-1"
+                      >
+                        {selectedUser.role}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">
+                        Account Created
+                      </h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {new Date(selectedUser.createdAt).toLocaleDateString(
+                          "en-US",
+                          {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          },
+                        )}
+                      </p>
+                    </div>
+
+                    <div>
+                      <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">
+                        User ID
+                      </h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+                        {selectedUser.id}
+                      </p>
+                    </div>
                   </div>
 
                   <div>
-                    <h4 className="font-medium mb-2 text-gray-900 dark:text-gray-100">
-                      User ID
+                    <h4 className="font-medium mb-3 text-gray-900 dark:text-gray-100">
+                      Sync Status
                     </h4>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">
-                      {selectedUser.id}
-                    </p>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium mb-3 text-gray-900 dark:text-gray-100">
-                    Sync Status
-                  </h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    {Object.entries(Apps).map(([key, app]) => (
-                      <div
-                        key={key}
-                        className={`
+                    <div className="grid grid-cols-2 gap-3">
+                      {Object.entries(Apps).map(([key, app]) => (
+                        <div
+                          key={key}
+                          className={`
                           flex flex-col p-3 rounded-lg
                           border
                           ${
@@ -1335,58 +1704,59 @@ function UsersListPage({
                           }
                           min-h-[70px]
                         `}
-                      >
-                        <div className="flex items-center space-x-2">
-                          {app === Apps.Gmail && (
-                            <Mail className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                          )}
-                          {app === Apps.GoogleDrive && (
-                            <HardDrive className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                          )}
-                          {app === Apps.GoogleCalendar && (
-                            <Calendar className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                          )}
-                          {app === Apps.Slack && (
-                            <MessageSquare className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                          )}
-                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {app}
-                          </span>
-                        </div>
-                        <span
-                          className={`text-sm ${getSyncStatusColor(selectedUser.syncJobs?.[app]?.lastSyncDate)}`}
                         >
-                          {formatSyncDate(
-                            selectedUser.syncJobs?.[app]?.lastSyncDate,
-                          )}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {selectedUser.syncJobs?.[app]?.createdAt
-                            ? formatCreatedAt(
-                                selectedUser.syncJobs?.[app]?.createdAt,
-                              )
-                            : ""}
-                        </span>
-                        {app === Apps.Slack &&
-                          selectedUser.syncJobs?.[app]?.connectorStatus && (
-                            <span
-                              className={`text-xs block ${getConnectorStatusColor(
-                                selectedUser.syncJobs?.[app]?.connectorStatus,
-                              )}`}
-                            >
-                              {formatConnectorStatus(
-                                selectedUser.syncJobs?.[app]?.connectorStatus,
-                              )}
+                          <div className="flex items-center space-x-2">
+                            {app === Apps.Gmail && (
+                              <Mail className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                            )}
+                            {app === Apps.GoogleDrive && (
+                              <HardDrive className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                            )}
+                            {app === Apps.GoogleCalendar && (
+                              <Calendar className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                            )}
+                            {app === Apps.Slack && (
+                              <MessageSquare className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                            )}
+                            <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                              {app}
                             </span>
-                          )}
-                      </div>
-                    ))}
+                          </div>
+                          <span
+                            className={`text-sm ${getSyncStatusColor(selectedUser.syncJobs?.[app]?.lastSyncDate)}`}
+                          >
+                            {formatSyncDate(
+                              selectedUser.syncJobs?.[app]?.lastSyncDate,
+                            )}
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {selectedUser.syncJobs?.[app]?.createdAt
+                              ? formatCreatedAt(
+                                  selectedUser.syncJobs?.[app]?.createdAt,
+                                )
+                              : ""}
+                          </span>
+                          {app === Apps.Slack &&
+                            selectedUser.syncJobs?.[app]?.connectorStatus && (
+                              <span
+                                className={`text-xs block ${getConnectorStatusColor(
+                                  selectedUser.syncJobs?.[app]?.connectorStatus,
+                                )}`}
+                              >
+                                {formatConnectorStatus(
+                                  selectedUser.syncJobs?.[app]?.connectorStatus,
+                                )}
+                              </span>
+                            )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+              )}
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
     </div>
   )

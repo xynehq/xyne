@@ -2415,3 +2415,4 @@ Without these connections, I can only provide general assistance and cannot acce
 - Company knowledge bases
 
 I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`
+

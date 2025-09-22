@@ -6,6 +6,16 @@ export const generateUUID = () => crypto.randomUUID()
 export const textToCitationIndex = /\[(\d+)\]/g
 export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
 
+// Function to clean citation numbers from response text
+export const cleanCitationsFromResponse = (text: string): string => {
+  // Clean both types of citations and trim any extra whitespace
+  return text
+    .replace(textToCitationIndex, '')
+    .replace(textToImageCitationIndex, '')
+    .replace(/[ \t]+/g, ' ')
+    .trim()
+}
+
 export const processMessage = (text: string, citationMap: Record<number, number> | undefined, citationUrls: string[]) => {
     text = splitGroupedCitationsWithSpaces(text)
     text = text.replace(

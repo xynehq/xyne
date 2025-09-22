@@ -5,11 +5,13 @@ import {
   DriveEntity,
   fileSchema,
   type VespaQueryConfig,
+  type CollectionVespaIds,
 } from "@xyne/vespa-ts/types"
 import { getFolderItems } from "./vespa"
 import { db } from "@/db/connector"
 import {
   getAllFolderItems,
+  getAllFolderIds,
   getCollectionFilesVespaIds,
 } from "@/db/knowledgeBase"
 
@@ -62,46 +64,55 @@ export async function extractDriveIds(
 
 export async function extractCollectionVespaIds(
   options: Partial<VespaQueryConfig>,
-): Promise<string[]> {
-  const collectionIds: string[] = []
-  const collectionFolderIds: string[] = []
-  const collectionFileIds: string[] = []
-
-  if (options.collectionSelections) {
-    for (const selection of options.collectionSelections) {
-      if (selection.collectionIds) {
-        collectionIds.push(...selection.collectionIds)
-      }
-      if (selection.collectionFolderIds) {
-        collectionFolderIds.push(...selection.collectionFolderIds)
-      }
-      if (selection.collectionFileIds) {
-        collectionFileIds.push(...selection.collectionFileIds)
-      }
-    }
+): Promise<CollectionVespaIds> {
+  if (
+    !options.collectionSelections ||
+    options.collectionSelections.length === 0
+  ) {
+    return {}
   }
 
-  let clVespaIds: string[] = []
-  // Handle specific folders - need to get file IDs (less efficient but necessary)
-  if (collectionFolderIds.length > 0) {
-    const clFileIds = await getAllFolderItems(collectionFolderIds, db)
-    if (clFileIds.length > 0) {
-      const ids = await getCollectionFilesVespaIds(clFileIds, db)
-      const clIds = ids
+  const result: CollectionVespaIds = {}
+
+  for (const selection of options.collectionSelections) {
+    // Handle collections - merge with existing
+    if (selection.collectionIds) {
+      if (!result.collectionIds) result.collectionIds = []
+      result.collectionIds.push(...selection.collectionIds)
+    }
+
+    // Handle folders - add original folders PLUS all their subfolders recursively
+    if (
+      selection.collectionFolderIds &&
+      selection.collectionFolderIds.length > 0
+    ) {
+      const allFolderIds = [...selection.collectionFolderIds]
+      const allSubFolderIds = await getAllFolderIds(
+        selection.collectionFolderIds,
+        db,
+      )
+      if (allSubFolderIds.length > 0) {
+        allFolderIds.push(...allSubFolderIds)
+      }
+      
+      if (!result.collectionFolderIds) result.collectionFolderIds = []
+      result.collectionFolderIds.push(...allFolderIds)
+    }
+
+    // Handle files - convert database IDs to Vespa document IDs
+    if (selection.collectionFileIds && selection.collectionFileIds.length > 0) {
+      const ids = await getCollectionFilesVespaIds(
+        selection.collectionFileIds,
+        db,
+      )
+      const vespaDocIds = ids
         .filter((item: any) => item.vespaDocId !== null)
         .map((item: any) => item.vespaDocId!)
-      clVespaIds.push(...clIds)
+      
+      if (!result.collectionFileIds) result.collectionFileIds = []
+      result.collectionFileIds.push(...vespaDocIds)
     }
   }
-
-  // Handle specific files - use file IDs directly (most efficient for individual files)
-  if (collectionFileIds.length > 0) {
-    const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
-    const clfIds = ids
-      .filter((item: any) => item.vespaDocId !== null)
-      .map((item: any) => item.vespaDocId!)
-    clVespaIds.push(...clfIds)
-  }
   
-  return clVespaIds
+  return result
 }
