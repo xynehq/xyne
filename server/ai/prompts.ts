@@ -1231,6 +1231,7 @@ export const searchQueryPrompt = (
       a. ${QueryType.SearchWithoutFilters}
       b. ${QueryType.SearchWithFilters}  
       c. ${QueryType.GetItems}
+      d. ${QueryType.AggregatorQuery}
 
     ### CLASSIFICATION RULES - FIXED AND SOLID
     
@@ -1315,6 +1316,41 @@ export const searchQueryPrompt = (
           }
         }
 
+    4. **${QueryType.AggregatorQuery}**:
+    - The user is asking for specific information derived from items, not just a raw list.
+    - The request typically includes special keywords that imply filtering, aggregating, deduplicating, extracting fields, counting, or summarizing across items.
+    - Classify as AggregatorQuery when:
+      - Both <app> or <entity> are present (same requirement as GetItems), and
+      - The user includes specific keywords / intent such as:
+        - People-/field-focused extraction: names, emails, titles, owners, attendees, managers, requestors
+        - Aggregation/summarization: count, how many, unique, distinct, top, most, least, sum, average
+        - Set constraints: who joined, who applied, who I met, who reported, which teams, by department
+        - Return-shape hints: list the names, give me the emails, show unique titles
+      - The user intent is to compute or extract a specific field or metric (e.g., “names of people who joined”, “count of emails”), not to display the full items.
+    - Do not classify as AggregatorQuery if the user merely wants a list of items without these special keywords (that is GetItems).
+    - The result should be an extracted/aggregated answer (e.g., a list of names, a count, grouped summaries), not the raw items.
+    - Example Queries:
+      - “Can you give me the names of the people who joined Xyne in the last 6 months?”
+      - “Give me the list of people who applied for referrals to me.”
+      - “All the people who I have meetings with in the last 3 months.”
+      - “How many Google Docs were created in August?”
+      - “Show unique senders from my emails this week.”
+      - “List the teams of people who joined in the past quarter.”
+      - “Top 5 attendees I met on calendar in the last month.”
+      - “Give me the email addresses of candidates who applied via Greenhouse in July.”
+       - **JSON Structure**:
+        {
+          "type": "${QueryType.AggregatorQuery}",
+          "filters": {
+            "apps": ["<app1>", "<app2>"] or ["<single_app>"],
+            "entities": ["<entity1>", "<entity2>"] or ["<single_entity>"],
+            "count": "<number of items to list>",
+            "startTime": "<start time in ${config.llmTimeFormat}, if applicable>",
+            "endTime": "<end time in ${config.llmTimeFormat}, if applicable>"
+            "sortDirection": <boolean or null>,
+            "filterQuery": "<search keywords for content search>"
+          }
+        }
     ---
 
     #### Enum Values for Valid Inputs
@@ -1323,6 +1359,7 @@ export const searchQueryPrompt = (
     - ${QueryType.SearchWithoutFilters}  
     - ${QueryType.GetItems}    
     - ${QueryType.SearchWithFilters}  
+    - ${QueryType.AggregatorQuery}  
 
     app (Valid Apps - can be arrays):  
     - ${Apps.GoogleDrive} 
@@ -1415,7 +1452,7 @@ export const searchQueryPrompt = (
          "queryRewrite": "<string or null>",
          "temporalDirection": "next" | "prev" | null,
          "isFollowUp": "<boolean>",
-         "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} >",
+         "type": "<${QueryType.SearchWithoutFilters} | ${QueryType.SearchWithFilters}  | ${QueryType.GetItems} | ${QueryType.AggregatorQuery}>",
          "filterQuery": "<string or null>",
          "filters": {
            "apps": ["<app1>", "<app2>"] or ["<single_app>"] or null,

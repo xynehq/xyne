@@ -268,6 +268,7 @@ export enum QueryType {
   SearchWithoutFilters = "SearchWithoutFilters",
   GetItems = "GetItems",
   SearchWithFilters = "SearchWithFilters",
+  AggregatorQuery = "AggregatorQuery",
 }
 
 export type Cost = {

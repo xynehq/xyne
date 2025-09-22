@@ -3012,6 +3012,8 @@ async function* generateMetadataQueryAnswer(
   const count = classification.filters.count
   const direction = classification.direction as string
   const isGenericItemFetch = classification.type === QueryType.GetItems
+  // todo change this
+  const isAggregatorQuery = classification.type === QueryType.AggregatorQuery
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
   const isValidAppOrEntity =
@@ -3646,6 +3648,176 @@ async function* generateMetadataQueryAnswer(
         return answer
       }
     }
+  } else if (isAggregatorQuery) {
+    const pageSizeForAggregatorQuery = 40
+    const maxIterationsForAggregatorQuery = 10
+    // Specific metadata retrieval
+    span?.setAttribute("Search_Type", QueryType.AggregatorQuery)
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
+    )
+    span?.setAttribute("modelId", defaultBestModel)
+    loggerWithChild({ email: email }).info(
+      `Search Type : ${QueryType.AggregatorQuery}`,
+    )
+
+    const { filterQuery } = classification
+    const query = filterQuery
+    const rankProfile =
+      sortDirection === "desc"
+        ? SearchModes.GlobalSorted
+        : SearchModes.NativeRank
+
+    let resolvedIntent = {} as Intent
+    if (intent && Object.keys(intent).length > 0) {
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      loggerWithChild({ email: email }).info(
+        `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
+    const searchOptions = {
+      limit: pageSizeForAggregatorQuery,
+      alpha: userAlpha,
+      rankProfile,
+      timestampRange:
+        timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
+    }
+
+    // MaxIterations should be 10
+    // On every iteration, make an LLM call asking it if query the user asked can be satisfied
+    // with the documents that has been retrieved now with current retrieved results
+    // Till it starts giving that every result is non relevant, don't stop the iteration
+    // Once it says all results are non relevant, then we can confirm it has retrieved
+    // all relevant documents and now there are no more to retrieve, basically it has answered completely
+
+    // LLM will give indexes of relevant documents that can be answered
+    // Use those indexes and check what are the documents that we sent on that index
+    // Get that documents and store those documentIds that these are valid and relevant documents
+    for (
+      let iteration = 0;
+      iteration < maxIterationsForAggregatorQuery;
+      iteration++
+    ) {
+      const iterationSpan = span?.startSpan(`search_iteration_${iteration}`)
+      loggerWithChild({ email: email }).info(
+        `Search ${QueryType.AggregatorQuery} Iteration - ${iteration} : ${rankProfile}`,
+      )
+
+      let searchResults: VespaSearchResponse
+      if (!agentPrompt) {
+        searchResults = await searchVespa(
+          query,
+          email,
+          apps ?? null,
+          entities ?? null,
+          {
+            ...searchOptions,
+            limit: pageSize + pageSize * iteration,
+            offset: pageSize * iteration,
+          },
+        )
+      } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+        searchResults = await searchVespaAgent(
+          query,
+          email,
+          apps ?? null,
+          entities ?? null,
+          agentAppEnums,
+          {
+            ...searchOptions,
+            offset: pageSize * iteration,
+            limit: pageSize + pageSize * iteration,
+            dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
+            selectedItem: selectedItem,
+          },
+        )
+      }
+
+      // Expand email threads in the results
+      searchResults.root.children = await expandEmailThreadsInResults(
+        searchResults.root.children || [],
+        email,
+        iterationSpan,
+      )
+
+      items = searchResults.root.children || []
+
+      // todo Ask LLM here
+      // map the chunk
+
+      loggerWithChild({ email: email }).info(`Rank Profile : ${rankProfile}`)
+
+      iterationSpan?.setAttribute("offset", pageSize * iteration)
+      iterationSpan?.setAttribute("rank_profile", rankProfile)
+
+      iterationSpan?.setAttribute(
+        `iteration - ${iteration} retrieved documents length`,
+        items.length,
+      )
+      iterationSpan?.setAttribute(
+        `iteration-${iteration} retrieved documents id's`,
+        JSON.stringify(
+          items.map((v: VespaSearchResult) => (v.fields as any).docId),
+        ),
+      )
+      iterationSpan?.setAttribute(`context`, buildContext(items, 20))
+      iterationSpan?.end()
+
+      loggerWithChild({ email: email }).info(
+        `Number of documents for ${QueryType.SearchWithFilters} = ${items.length}`,
+      )
+      if (!items.length) {
+        loggerWithChild({ email: email }).info(
+          `No documents found on iteration ${iteration}${
+            hasValidTimeRange
+              ? " within time range."
+              : " falling back to iterative RAG"
+          }`,
+        )
+        iterationSpan?.end()
+        yield { text: METADATA_FALLBACK_TO_RAG }
+        return
+      }
+
+      const answer = yield* processResultsForMetadata(
+        items,
+        input,
+        userCtx,
+        apps,
+        entities,
+        undefined,
+        userRequestsReasoning,
+        span,
+        email,
+        agentPrompt,
+        modelId,
+      )
+
+      if (answer == null) {
+        iterationSpan?.setAttribute("answer", null)
+        if (iteration == maxIterations - 1) {
+          iterationSpan?.end()
+          yield { text: METADATA_FALLBACK_TO_RAG }
+          return
+        } else {
+          loggerWithChild({ email: email }).info(
+            `no answer found for iteration - ${iteration}`,
+          )
+          continue
+        }
+      } else {
+        iterationSpan?.end()
+        return answer
+      }
+    }
   } else {
     // None of the conditions matched
     yield { text: METADATA_FALLBACK_TO_RAG }
@@ -3756,11 +3928,12 @@ export async function* UnderstandMessageAndAnswer(
   const isGenericItemFetch = classification.type === QueryType.GetItems
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
+  const isAggregatorQuery = classification.type === QueryType.AggregatorQuery
   const isFilteredSearchSortedByRecency =
     classification.filterQuery &&
     classification.filters.sortDirection === "desc"
 
-  if (isGenericItemFetch || isFilteredItemSearch) {
+  if (isGenericItemFetch || isFilteredItemSearch || isAggregatorQuery) {
     loggerWithChild({ email: email }).info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
@@ -5095,6 +5268,10 @@ export const MessageApi = async (c: Context) => {
                 intent: intent || {},
               },
             } as QueryRouterLLMResponse
+
+            console.log("classification")
+            console.log(classification)
+            console.log("classification")
 
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")
