@@ -27,6 +27,7 @@ import {
   Maximize2,
   Minimize2,
   Share2,
+  ArrowDown,
 } from "lucide-react"
 import {
   useEffect,
@@ -139,7 +140,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CitationPreview } from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
-import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
+import { processMessage } from "@/utils/chatUtils"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -448,6 +449,7 @@ export const ChatPage = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const chatBoxRef = useRef<ChatBoxRef>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
+  const isAutoScrollingRef = useRef(false)
   const [dots, setDots] = useState("")
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
@@ -840,6 +842,21 @@ export const ChatPage = ({
       }
     })
 
+    // Immediately scroll to bottom with ChatGPT-like behavior for new message
+    setTimeout(() => {
+      const container = messagesContainerRef.current
+      if (container) {
+        // Reset scroll state and scroll to bottom immediately for new query
+        isAutoScrollingRef.current = true
+        container.scrollTop = container.scrollHeight
+        // Small delay to ensure DOM is updated
+        requestAnimationFrame(() => {
+          isAutoScrollingRef.current = false
+          setUserHasScrolled(false)
+        })
+      }
+    }, 0)
+
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
 
@@ -1064,25 +1081,28 @@ export const ChatPage = ({
   }
 
   // Handler for citation clicks - moved before conditional returns
-  const handleCitationClick = useCallback((citation: Citation, fromSources: boolean = false) => {
-    if (!citation || !citation.clId || !citation.itemId) {
-      // For citations without clId or itemId, open as regular link
-      if (citation.url) {
-        window.open(citation.url, "_blank", "noopener,noreferrer")
+  const handleCitationClick = useCallback(
+    (citation: Citation, fromSources: boolean = false) => {
+      if (!citation || !citation.clId || !citation.itemId) {
+        // For citations without clId or itemId, open as regular link
+        if (citation.url) {
+          window.open(citation.url, "_blank", "noopener,noreferrer")
+        }
+        return
       }
-      return
-    }
-    setSelectedCitation(citation)
-    setIsCitationPreviewOpen(true)
-    setCameFromSources(fromSources)
-    // Only close sources panel when opening citation preview, but preserve state for back navigation
-    setShowSources(false)
-    if (!fromSources) {
-      // Clear sources state when coming from inline citations
-      setCurrentCitations([])
-      setCurrentMessageId(null)
-    }
-  }, [])
+      setSelectedCitation(citation)
+      setIsCitationPreviewOpen(true)
+      setCameFromSources(fromSources)
+      // Only close sources panel when opening citation preview, but preserve state for back navigation
+      setShowSources(false)
+      if (!fromSources) {
+        // Clear sources state when coming from inline citations
+        setCurrentCitations([])
+        setCurrentMessageId(null)
+      }
+    },
+    [],
+  )
 
   // Memoized callback for closing citation preview - moved before conditional returns
   const handleCloseCitationPreview = useCallback(() => {
@@ -1104,23 +1124,94 @@ export const ChatPage = ({
 
   const scrollToBottom = () => {
     const container = messagesContainerRef.current
-    if (!container || userHasScrolled) return
+    if (!container) return
 
-    // For virtualized messages, we need to scroll to the bottom differently
-    // Use the container's scrollTop instead of virtualizer when possible
-    container.scrollTop = container.scrollHeight
+    // Set flag to indicate we're auto-scrolling
+    isAutoScrollingRef.current = true
 
-    // Also reset userHasScrolled since we're programmatically scrolling
+    // Check if we need to scroll significantly
+    const currentScrollTop = container.scrollTop
+    const targetScrollTop = container.scrollHeight - container.clientHeight
+    const scrollDistance = targetScrollTop - currentScrollTop
+
+    // If already at bottom or close to it, just jump to bottom instantly
+    if (Math.abs(scrollDistance) < 100) {
+      container.scrollTop = targetScrollTop
+      isAutoScrollingRef.current = false
+      setUserHasScrolled(false)
+      return
+    }
+
+    // For button clicks with significant scroll distance, use smooth animated scrolling like ChatGPT
+    const startPosition = currentScrollTop
+    const distance = scrollDistance
+    const duration = Math.min(1200, Math.max(500, Math.abs(distance) * 0.7)) // Slower duration based on distance
+
+    let startTime: number | null = null
+
+    const animateScroll = (currentTime: number) => {
+      if (startTime === null) startTime = currentTime
+      const timeElapsed = currentTime - startTime
+      const progress = Math.min(timeElapsed / duration, 1)
+
+      // Easing function for smooth deceleration (ease-out-cubic)
+      const easeOutCubic = 1 - Math.pow(1 - progress, 3)
+
+      container.scrollTop = startPosition + distance * easeOutCubic
+
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll)
+      } else {
+        // Animation complete, reset flag
+        isAutoScrollingRef.current = false
+      }
+    }
+
+    requestAnimationFrame(animateScroll)
+
+    // Reset userHasScrolled since we're programmatically scrolling
     setUserHasScrolled(false)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
-    if (!container || userHasScrolled) return
+    if (!container || userHasScrolled || isAutoScrollingRef.current) return
 
-    // For virtualized content, ensure we scroll to actual bottom
-    container.scrollTop = container.scrollHeight
-  }, [messages, partial, userHasScrolled]) // Added userHasScrolled to dependencies
+    // Only auto-scroll if we're close to the bottom (within 100px)
+    // This prevents the effect from interfering with manual scrolling
+    const isNearBottom =
+      container.scrollTop >=
+      container.scrollHeight - container.clientHeight - 100
+
+    if (isNearBottom) {
+      // For streaming responses, use smoother scrolling
+      if (isStreaming || retryIsStreaming) {
+        // During streaming, scroll immediately but smoothly
+        const targetScrollTop = container.scrollHeight - container.clientHeight
+        const currentScrollTop = container.scrollTop
+        const diff = targetScrollTop - currentScrollTop
+
+        // If the difference is small, scroll instantly
+        if (Math.abs(diff) < 50) {
+          container.scrollTop = targetScrollTop
+        } else {
+          // Smooth scroll for larger differences
+          isAutoScrollingRef.current = true
+          container.scrollTo({
+            top: targetScrollTop,
+            behavior: "smooth",
+          })
+          // Reset the flag after a short delay
+          setTimeout(() => {
+            isAutoScrollingRef.current = false
+          }, 300)
+        }
+      } else {
+        // For non-streaming content, scroll instantly
+        container.scrollTop = container.scrollHeight
+      }
+    }
+  }, [messages, partial, userHasScrolled, isStreaming, retryIsStreaming]) // Added streaming states to dependencies
 
   if ((data?.error || historyLoading) && !isSharedChat) {
     return (
@@ -1341,6 +1432,7 @@ export const ChatPage = ({
                 setIsCitationPreviewOpen={setIsCitationPreviewOpen}
                 setSelectedCitation={setSelectedCitation}
                 chatBoxRef={chatBoxRef}
+                isAutoScrollingRef={isAutoScrollingRef}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -1354,6 +1446,23 @@ export const ChatPage = ({
                   />
                 </div>
               )}
+
+              {/* Scroll to Bottom Button */}
+              {userHasScrolled && !isSharedChat && (
+                <div className="fixed bottom-32 right-1/2 transform translate-x-1/2 z-30">
+                  <button
+                    onClick={scrollToBottom}
+                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full p-2 shadow-lg hover:shadow-xl transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    title="Scroll to bottom"
+                  >
+                    <ArrowDown
+                      size={18}
+                      className="text-gray-600 dark:text-gray-300"
+                    />
+                  </button>
+                </div>
+              )}
+
               {!isSharedChat && (
                 <div
                   className={`sticky bottom-0 w-full flex ${isCitationPreviewOpen ? "px-3" : "justify-center"} bg-white dark:bg-[#1E1E1E] pt-2`}
@@ -2235,6 +2344,7 @@ interface VirtualizedMessagesProps {
   setIsCitationPreviewOpen: (open: boolean) => void
   setSelectedCitation: (citation: Citation | null) => void
   chatBoxRef: React.RefObject<ChatBoxRef>
+  isAutoScrollingRef: React.MutableRefObject<boolean>
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -2274,6 +2384,7 @@ const VirtualizedMessages = React.forwardRef<
       setIsCitationPreviewOpen,
       setSelectedCitation,
       chatBoxRef,
+      isAutoScrollingRef,
     },
     ref,
   ) => {
@@ -2344,21 +2455,28 @@ const VirtualizedMessages = React.forwardRef<
     // Detect user scrolling - improved logic to prevent conflicts
     const handleScroll = useCallback(
       (e: React.UIEvent<HTMLDivElement>) => {
+        // Skip if we're in the middle of auto-scrolling
+        if (isAutoScrollingRef.current) return
+
         const element = e.currentTarget
         const scrollTop = element.scrollTop
         const scrollHeight = element.scrollHeight
         const clientHeight = element.clientHeight
 
         // Calculate if we're at the bottom with a reasonable threshold
-        const isAtBottom = scrollTop >= scrollHeight - clientHeight - 50
+        const isAtBottom = scrollTop >= scrollHeight - clientHeight - 30
 
-        // Update user scroll state based on position
+        // More responsive scroll detection without timeout
         if (isAtBottom) {
           // User is at bottom, allow auto-scroll
           setUserHasScrolled(false)
-        } else if (scrollTop < lastScrollTop.current) {
-          // User scrolled up, disable auto-scroll
-          setUserHasScrolled(true)
+        } else {
+          // User scrolled away from bottom, disable auto-scroll
+          // Only set to true if user actively scrolled up (not just programmatic scrolling)
+          const scrolledUp = scrollTop < lastScrollTop.current - 5 // 5px threshold for noise
+          if (scrolledUp) {
+            setUserHasScrolled(true)
+          }
         }
 
         lastScrollTop.current = scrollTop
@@ -2550,7 +2668,6 @@ const VirtualizedMessages = React.forwardRef<
                           chatBoxRef.current?.sendMessage(question)
                         }}
                         isStreaming={isStreaming || retryIsStreaming}
-                        onQuestionsLoaded={scrollToBottom}
                       />
                     )}
                   </Fragment>
@@ -2782,7 +2899,9 @@ export const ChatMessage = ({
                     onMouseDown={() => setIsCopied(true)}
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
-                      navigator.clipboard.writeText(cleanCitationsFromResponse(message))
+                      navigator.clipboard.writeText(
+                        processMessage(message, citationMap, citationUrls),
+                      )
                     }
                   />
                   {/* Retry button temporarily hidden */}
