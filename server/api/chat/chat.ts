@@ -58,6 +58,7 @@ import {
   selectPublicMessagesSchema,
   selectMessageSchema,
   sharedChats,
+  ChatType,
   type SelectChat,
   type SelectMessage,
 } from "@/db/schema"
@@ -4251,7 +4252,7 @@ export const MessageApi = async (c: Context) => {
             title: "Untitled",
             attachments: [],
             agentId: agentPromptValue,
-            isKbChat: isMsgWithKbItems || false,
+            chatType: isMsgWithKbItems ? ChatType.KbChat : ChatType.Default,
           })
 
           const insertedMsg = await insertMessage(tx, {
