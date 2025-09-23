@@ -27,7 +27,18 @@ const KB_STORAGE_ROOT = path.join(process.cwd(), "storage", "kb_files");
 const Logger = getLogger(Subsystem.Integrations).child({
     module: "rbi-automation",
 })
-  class RBICircularDownloader {
+class RBICircularDownloader {
+
+    private downloadedCircularIds = new Set<string>();
+
+    // Add method to check duplicates
+    private isAlreadyDownloaded(circularId: string): boolean {
+        return this.downloadedCircularIds.has(circularId);
+    }
+
+    private markAsDownloaded(circularId: string): void {
+        this.downloadedCircularIds.add(circularId);
+    }
     private browser: Browser | null = null;
     private page: Page | null = null;
 
@@ -120,7 +131,7 @@ const Logger = getLogger(Subsystem.Integrations).child({
 
         console.log(`📅 Looking for "All Months" link for year ${RBI_CONFIG.TARGET_YEAR}...`);
 
-        // Strategy: Look for "All Months" link after year expansion
+        // Strategy: Look for "All Months" link 
         const allMonthsSelectors = [
             `#${RBI_CONFIG.TARGET_YEAR}0`,                        // ID pattern: 20250 for 2025
             `a[id="${RBI_CONFIG.TARGET_YEAR}0"]`,                 // More specific ID selector
@@ -164,68 +175,66 @@ const Logger = getLogger(Subsystem.Integrations).child({
             throw new Error(`Failed to click "All Months": ${error}`);
         }
     }
-
-    async findAndClickFirstCircular(): Promise<void> {
+    async getAllCircularsFromTable(): Promise<Array<{ href: string, text: string, id: string }>> {
         if (!this.page) throw new Error('Page not initialized');
 
-        console.log('🔍 Looking for circular table and first circular link...');
+        console.log('🔍 Getting ALL circular links from the "All Months" table...');
 
         // Wait for table to be fully loaded
         await this.page.waitForSelector('table.tablebg', { timeout: 10000 });
         console.log('✅ Found circular table');
 
-        // Multiple strategies to find the first circular link
-        const circularSelectors = [
-            // Strategy 1: First link with class "link2" (most specific)
-            'a.link2:first-of-type',
+        // Get ALL circular links from the table (not just first one)
+        const circularLinks = await this.page.$$eval(
+            'table.tablebg a.link2[href*="Id="]', // All circular detail links
+            (elements) => elements.map((el, index) => ({
+                href: el.getAttribute('href') || '',
+                text: el.textContent?.trim().substring(0, 80) + '...' || `Circular ${index + 1}`,
+                id: el.getAttribute('href')?.match(/Id=(\d+)/)?.[1] || `${index + 1}`
+            }))
+        );
 
-            // Strategy 2: First link in table that contains "Id=" (the circular detail links)
-            'table a[href*="Id="]:first-of-type',
+        console.log(`✅ Found ${circularLinks.length} total circulars in "All Months" table`);
 
-            // Strategy 3: First link in the second row, first column (skip header row)
-            'table.tablebg tr:nth-child(3) td:first-child a',
+        // Log first few for verification
+        circularLinks.slice(0, 3).forEach((circular, index) => {
+            console.log(`  ${index + 1}. ${circular.text} (ID: ${circular.id})`);
+        });
 
-            // Strategy 4: XPath for first circular link
-            'xpath=//table[@class="tablebg"]//tr[3]//a[contains(@href, "Id=")]'
-        ];
-
-        let circularElement = null;
-        for (const selector of circularSelectors) {
-            try {
-                console.log(`  🔍 Trying selector: ${selector}`);
-                circularElement = await this.page.waitForSelector(selector, { timeout: 5000 });
-
-                if (circularElement) {
-                    console.log(`✅ Found first circular link with: ${selector}`);
-                    break;
-                }
-            } catch (error) {
-                console.log(`  ❌ Selector failed: ${selector}`);
-                continue;
-            }
+        if (circularLinks.length > 3) {
+            console.log(`  ... and ${circularLinks.length - 3} more circulars`);
         }
 
-        if (!circularElement) {
-            throw new Error('No circular links found in table');
-        }
+        return circularLinks;
+    }
+
+    async navigateToCircular(circular: { href: string, text: string, id: string }): Promise<void> {
+        if (!this.page) throw new Error('Page not initialized');
+
+        console.log(`🔗 Navigating to circular: ${circular.text}`);
 
         try {
-            // Get the href and circular text for logging
-            const href = await circularElement.getAttribute('href');
-            const circularText = await circularElement.textContent();
-            console.log(`🔗 Found circular: ${circularText?.substring(0, 50)}...`);
-            console.log(`🔗 Link URL: ${href}`);
+            // Convert relative URL to absolute URL if needed
+            const fullUrl = circular.href.startsWith('http')
+                ? circular.href
+                : `https://rbi.org.in/Scripts/${circular.href}`;
 
-            await circularElement.click();
-            console.log('✅ Clicked first circular link');
+            console.log(`🔗 Full URL: ${fullUrl}`);
 
-            // Wait for the detail page to load
-            await this.page.waitForLoadState('networkidle', { timeout: RBI_CONFIG.TIMEOUT });
+            // Navigate to the circular detail page
+            await this.page.goto(fullUrl, {
+                waitUntil: 'networkidle',
+                timeout: RBI_CONFIG.TIMEOUT
+            });
+
+            console.log('✅ Loaded circular detail page');
 
         } catch (error) {
-            throw new Error(`Failed to click circular link: ${error}`);
+            throw new Error(`Failed to navigate to circular: ${error}`);
         }
     }
+
+
 
     async downloadPDF(): Promise<{ downloadPath: string }> {
         if (!this.page) throw new Error('Page not initialized');
@@ -546,24 +555,72 @@ const Logger = getLogger(Subsystem.Integrations).child({
         }
     }
 
-    async testCompleteFlow(): Promise<string> {
+    async testCompleteFlow(): Promise<string[]> {
         try {
             // Hardcode user details (or make them parameters)
             const userEmail = 'aman.asrani@juspay.in';
             const workspaceId = 1;
+            const downloadedFiles: string[] = [];
+            let successCount = 0;
+            let errorCount = 0;
 
             await this.initialize();
+
+            // Add this type guard right after initialize()
+            if (!this.page) throw new Error('Page not initialized after browser setup');
             await this.navigateToHomePage();
             await this.clickYearLink();
             await this.clickAllMonths();
-            await this.findAndClickFirstCircular();
-            const { downloadPath } = await this.downloadPDF();
 
-            // Pass user details to processing method
-            await this.processAndIngestPDF(downloadPath, userEmail, workspaceId);
+            // NEW: Get ALL circulars from the "All Months" table
+            const allCirculars = await this.getAllCircularsFromTable();
+            console.log(`\n🎯 Starting to download ${allCirculars.length} circulars...`);
 
-            console.log('🎉 Complete automation successful!');
-            return downloadPath;
+            // NEW: Loop through each circular
+            for (let i = 0; i < allCirculars.length; i++) {
+                const circular = allCirculars[i];
+                console.log(`\n📄 Processing ${i + 1}/${allCirculars.length}: ${circular.text}`);
+
+                try {
+                    // Skip if already downloaded (optional optimization)
+                    if (this.isAlreadyDownloaded(circular.id)) {
+                        console.log(`⏭️ Skipping already processed circular ID: ${circular.id}`);
+                        continue;
+                    }
+
+                    // Navigate to circular detail page
+                    await this.navigateToCircular(circular);
+
+                    // Download PDF from detail page
+                    const { downloadPath } = await this.downloadPDF();
+
+                    // Process and ingest into Knowledge Base
+                    await this.processAndIngestPDF(downloadPath, userEmail, workspaceId);
+
+                    // Mark as successful
+                    downloadedFiles.push(downloadPath);
+                    this.markAsDownloaded(circular.id);
+                    successCount++;
+
+                    console.log(`✅ Successfully processed ${i + 1}/${allCirculars.length}: ${downloadPath}`);
+
+                } catch (circularError) {
+                    errorCount++;
+                    console.error(`❌ Failed to process circular ${i + 1}/${allCirculars.length} (${circular.text}):`, circularError);
+
+                    // Continue with next circular instead of failing completely
+                    console.log(`⏭️ Continuing with next circular...`);
+                }
+
+                // Small delay between circulars to be respectful to the server
+                await this.page.waitForTimeout(2000);
+            }
+
+            console.log(`\n🎉 COMPLETE! Downloaded ${successCount} PDFs successfully`);
+            console.log(`📊 Success: ${successCount}, Errors: ${errorCount}, Total: ${allCirculars.length}`);
+            console.log(`📁 All PDFs are now searchable in your "RBI Circulars" Knowledge Base collection!`);
+
+            return downloadedFiles;
 
         } catch (error) {
             console.error('❌ Automation failed:', error);
@@ -572,6 +629,7 @@ const Logger = getLogger(Subsystem.Integrations).child({
             await this.cleanup();
         }
     }
+
 }
 
 export async function testCompleteFlow(): Promise<void> {

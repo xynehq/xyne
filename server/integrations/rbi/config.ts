@@ -6,5 +6,5 @@
     TIMEOUT: 30000,
     DOWNLOAD_TIMEOUT: 60000,
     HEADLESS: false,
-    USE_SYSTEM_CHROME: true, // Add this line
+    USE_SYSTEM_CHROME: true, 
   } as const;
