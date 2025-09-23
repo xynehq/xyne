@@ -18,7 +18,7 @@ import { Sidebar } from "@/components/Sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useEffect, useState } from "react"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
-import { wsClient } from "@/api"
+import { getWSClient } from "@/api"
 import OAuthTab from "@/components/OAuthTab"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
@@ -78,35 +78,56 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     }
   }, [data, isPending])
 
-  useEffect(() => {
-    let socket: WebSocket | null = null
-    if (!isPending && data && data.length > 0) {
-      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
-      if (oauthConnector) {
-        socket = wsClient.ws.$ws({
-          query: { id: oauthConnector.id },
-        })
-        socket?.addEventListener("open", () => {
-          logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
-        })
-        socket?.addEventListener("message", (e) => {
-          const data = JSON.parse(e.data)
-          const statusJson = JSON.parse(data.message)
-          setUserStats(statusJson.userStats ?? {})
-          setUpdateStatus(data.message)
-        })
-        socket?.addEventListener("close", (e) => {
-          logger.info("OAuth WebSocket closed")
-          if (e.reason === "Job finished") {
-            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
-          }
-        })
+useEffect(() => {
+  let isMounted = true
+  let socket: WebSocket | null = null
+
+  async function initOAuthSocket() {
+    try {
+      const wsClient = await getWSClient()
+      if (!isMounted) return
+
+      if (!isPending && data && data.length > 0) {
+        const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+        if (oauthConnector) {
+          socket = wsClient.ws.$ws({ query: { id: oauthConnector.id } })
+
+          socket?.addEventListener("open", () => {
+            logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
+          })
+
+          socket?.addEventListener("message", (e) => {
+            const data = JSON.parse(e.data)
+            const statusJson = JSON.parse(data.message)
+            setUserStats(statusJson.userStats ?? {})
+            setUpdateStatus(data.message)
+          })
+
+          socket?.addEventListener("close", (e) => {
+            logger.info("OAuth WebSocket closed")
+            if (e.reason === "Job finished") {
+              setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+            }
+          })
+
+          socket?.addEventListener("error", (err) => {
+            console.error("OAuth WebSocket error:", err)
+          })
+        }
       }
+    } catch (err) {
+      console.error("Failed to initialize OAuth WebSocket:", err)
     }
-    return () => {
+  }
+
+  initOAuthSocket()
+
+  return () => {
+    isMounted = false
       socket?.close()
-    }
-  }, [data, isPending])
+  }
+}, [data, isPending])
+
 
   useEffect(() => {
     if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting) {

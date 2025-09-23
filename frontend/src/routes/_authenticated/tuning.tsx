@@ -1,6 +1,6 @@
 import { Sidebar } from "@/components/Sidebar"
 import { Button } from "@/components/ui/button"
-import { api, wsClient } from "@/api"
+import { api, getWSClient } from "@/api"
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
@@ -90,11 +90,16 @@ export default function TuningPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Added eslint-disable for toast dependency
 
-  useEffect(() => {
-    // Only establish WebSocket connection if we have a jobId and it's running
+useEffect(() => {
+  let isMounted = true
+
+  async function initTuningWebSocket() {
     if (jobId && jobStatus === "running" && !socketRef.current) {
       console.log(`Attempting to open WebSocket for job ID: ${jobId}`)
-      // Corrected: Target the specific tuning WebSocket endpoint
+      try {
+        const wsClient = await getWSClient()
+        if (!isMounted) return // Only prevent creating client if unmounted
+
       const socket = wsClient.api.v1.tuning.ws[":jobId"].$ws({
         param: { jobId: jobId }, // Pass jobId as path parameter
         // query: { context: "tuning" }, // Query params might still be useful if needed
@@ -177,17 +182,27 @@ export default function TuningPage() {
         socketRef.current = null
       })
 
-      socket.addEventListener("error", (error: Event) => {
-        console.error(`Tuning WebSocket error for job ${jobId}:`, error)
+        socket.addEventListener("error", (error: Event) => {
+          console.error(`Tuning WebSocket error for job ${jobId}:`, error)
+          setJobStatus("error")
+          setJobMessage("WebSocket connection error during evaluation.")
+          toast({ title: "WebSocket connection error.", variant: "destructive" })
+          socketRef.current = null
+        })
+      } catch (err) {
+        console.error("Failed to initialize WebSocket:", err)
         setJobStatus("error")
-        setJobMessage("WebSocket connection error during evaluation.")
-        toast({ title: "WebSocket connection error.", variant: "destructive" })
+        setJobMessage("Failed to initialize WebSocket connection.")
+        toast({ title: "Failed to initialize WebSocket.", variant: "destructive" })
         socketRef.current = null
-      })
+      }
     }
+  }
 
-    // Cleanup function
+  initTuningWebSocket()
+
     return () => {
+      isMounted = false
       if (
         socketRef.current &&
         socketRef.current.readyState === WebSocket.OPEN

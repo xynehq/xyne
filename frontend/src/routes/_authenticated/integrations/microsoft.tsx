@@ -17,7 +17,7 @@ import { Sidebar } from "@/components/Sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useEffect, useState } from "react"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
-import { wsClient } from "@/api"
+import { getWSClient } from "@/api"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
 import { Connectors, OAuthIntegrationStatus } from "@/types"
@@ -78,39 +78,61 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     }
   }, [data, isPending])
 
-  useEffect(() => {
-    let socket: WebSocket | null = null
-    if (!isPending && data && data.length > 0) {
-      const oauthConnector = data.find(
-        (c) => c.app === Apps.MicrosoftDrive && c.authType === AuthType.OAuth,
-      )
-      if (oauthConnector) {
-        socket = wsClient.ws.$ws({
-          query: { id: oauthConnector.id },
-        })
-        socket?.addEventListener("open", () => {
-          logger.info(
-            `Microsoft OAuth WebSocket opened for ${oauthConnector.id}`,
-          )
-        })
-        socket?.addEventListener("message", (e) => {
-          const data = JSON.parse(e.data)
-          const statusJson = JSON.parse(data.message)
-          setUserStats(statusJson.userStats ?? {})
-          setUpdateStatus(data.message)
-        })
-        socket?.addEventListener("close", (e) => {
-          logger.info("Microsoft OAuth WebSocket closed")
-          if (e.reason === "Job finished") {
-            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
-          }
-        })
+useEffect(() => {
+  let socket: WebSocket | null = null
+
+  async function init() {
+    try {
+      const wsClient = await getWSClient()
+
+      if (!isPending && data && data.length > 0) {
+        const oauthConnector = data.find(
+          (c) => c.app === Apps.MicrosoftDrive && c.authType === AuthType.OAuth,
+        )
+
+        if (oauthConnector) {
+          socket = wsClient.ws.$ws({ query: { id: oauthConnector.id } })
+
+          socket?.addEventListener("open", () => {
+            logger.info(`Microsoft OAuth WebSocket opened for ${oauthConnector.id}`)
+          })
+
+          socket?.addEventListener("message", (e) => {
+            const data = JSON.parse(e.data)
+            const statusJson = JSON.parse(data.message)
+            setUserStats(statusJson.userStats ?? {})
+            setUpdateStatus(data.message)
+          })
+
+          socket?.addEventListener("close", (e) => {
+            logger.info("Microsoft OAuth WebSocket closed")
+            if (e.reason === "Job finished") {
+              setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+            }
+          })
+
+          socket?.addEventListener("error", (err) => {
+            logger.error("Microsoft OAuth WebSocket error", err)
+          })
+        }
       }
+    } catch (err) {
+      console.error("Failed to initialize Microsoft OAuth WebSocket:", err)
     }
-    return () => {
-      socket?.close()
+  }
+
+  init()
+
+  return () => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close(1000, "Client disconnected")
     }
-  }, [data, isPending])
+    socket = null
+  }
+}, [data, isPending])
+
+
+
 
   useEffect(() => {
     if (oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnecting) {
