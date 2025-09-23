@@ -43,6 +43,7 @@ import { OpenAIProvider } from "./provider/openai"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import config from "@/config"
+import { getDateForAI } from "@/utils/index"
 const Logger = getLogger(Subsystem.Eval)
 const { defaultFastModel } = config
 const modelId = defaultFastModel || Models.Claude_3_5_Haiku
@@ -505,6 +506,7 @@ function simplifySearchResults(
 const endToEndFlow = async (
   message: string,
   userCtx: string,
+  dateForAI: string,
   messages: Message[],
 ) => {
   const ctx = userCtx
@@ -513,6 +515,7 @@ const endToEndFlow = async (
   const searchOrAnswerIterator = generateSearchQueryOrAnswerFromConversation(
     message,
     ctx,
+    dateForAI,
     {
       modelId,
       stream: true,
@@ -589,6 +592,7 @@ const endToEndFlow = async (
     const iterator = UnderstandMessageAndAnswer(
       email,
       ctx,
+      dateForAI,
       message,
       classification,
       messages,
@@ -639,8 +643,9 @@ const endToEndFactual = async () => {
           email,
         )
         const ctx = userContext(userAndWorkspace)
+        const dateForAI = getDateForAI({userTimeZone: userAndWorkspace.user.timeZone || "Asia/Kolkata"})
 
-        const answer = await endToEndFlow(input, ctx, messages || [])
+        const answer = await endToEndFlow(input, ctx, dateForAI,messages || [])
 
         // For demo purposes, assuming cost of 0.001 per response
         return {
