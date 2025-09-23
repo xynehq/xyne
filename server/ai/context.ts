@@ -708,16 +708,6 @@ export const answerContextMap = (
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === mailSchema) {
-    const mailContext = constructMailContext(
-      searchResult.fields,
-      searchResult.relevance,
-      userMetadata.userTimezone,
-      maxSummaryChunks,
-      isSelectedFiles,
-    )
-    console.log("mailContext")
-    console.log(mailContext)
-    console.log("mailContext")
     return constructMailContext(
       searchResult.fields,
       searchResult.relevance,
