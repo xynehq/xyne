@@ -37,6 +37,7 @@ import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import { QueryType } from "@/ai/types"
 import { Apps } from "@xyne/vespa-ts/types"
 import { getTracer } from "@/tracer"
+import { getDateForAI } from "@/utils/index"
 
 const Logger = getLogger(Subsystem.Slack)
 
@@ -641,6 +642,7 @@ const handleAgentSearchCommand = async (
         dbUser.email,
       )
       const ctx = userContext(userAndWorkspace)
+      const dateForAI = getDateForAI({ userTimeZone: userAndWorkspace.user.timeZone || "Asia/Kolkata" })
 
       const agentConfig = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -674,7 +676,7 @@ const handleAgentSearchCommand = async (
       const limitedMessages: any[] = []
 
       const searchOrAnswerIterator =
-        generateSearchQueryOrAnswerFromConversation(query, ctx, {
+        generateSearchQueryOrAnswerFromConversation(query, ctx, dateForAI,{
           modelId: config.defaultBestModel,
           stream: true,
           json: true,
@@ -775,6 +777,7 @@ const handleAgentSearchCommand = async (
         const iterator = UnderstandMessageAndAnswer(
           dbUser.email,
           ctx,
+          dateForAI,
           searchQuery,
           classification as any,
           limitedMessages,

@@ -31,7 +31,6 @@ import {
   getSortedScoredChunks,
   getSortedScoredImageChunks,
 } from "@xyne/vespa-ts/mappers"
-import { getDateForAI } from "@/utils/index"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -293,6 +292,7 @@ vespa relevance score: ${relevance}`
 const constructEventContext = (
   fields: VespaEventSearch,
   relevance: number,
+  dateForAI: string,
 ): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}
@@ -301,7 +301,7 @@ Description: ${fields.description ? fields.description.substring(0, 50) : ""}
 Base URL: ${fields.baseUrl ? fields.baseUrl : "No base URL"}
 Status: ${fields.status ? fields.status : "Status unknown"}
 Location: ${fields.location ? fields.location : "No location specified"}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated: ${getRelativeTime(fields.updatedAt)}` : ""}
-Today's Date: ${getDateForAI()}
+Today's Date: ${dateForAI}
 ${
   typeof fields.startTime === "number" && isFinite(fields.startTime)
     ? `\nStart Time: ${
@@ -624,6 +624,7 @@ ${content ? `Content: ${content}` : ""}
 type AiMetadataContext = string
 export const answerMetadataContextMap = (
   searchResult: VespaSearchResults,
+  dateForAI: string,
 ): AiMetadataContext => {
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileMetadataContext(
@@ -646,7 +647,7 @@ export const answerMetadataContextMap = (
       searchResult.relevance,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance)
+    return constructEventContext(searchResult.fields, searchResult.relevance, dateForAI)
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -685,6 +686,7 @@ export const answerContextMap = (
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
   isMsgWithSources?: boolean,
+  dateForAI?: string,
 ): AiContext => {
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileContext(
@@ -703,7 +705,7 @@ export const answerContextMap = (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance)
+    return constructEventContext(searchResult.fields, searchResult.relevance, dateForAI || new Date().toISOString())
   } else if (searchResult.fields.sddocname === mailAttachmentSchema) {
     return constructMailAttachmentContext(
       searchResult.fields,
@@ -834,15 +836,20 @@ export const userContext = ({
   workspace,
 }: PublicUserWorkspace): string => {
   const now = new Date()
-  const currentDate = now.toLocaleDateString() // e.g., "11/10/2024"
-  const currentTime = now.toLocaleTimeString() // e.g., "10:14:03 AM"
+  const userTimeZone = user?.timeZone || "Asia/Kolkata"
+  const currentDate = now.toLocaleDateString("en-US", {
+    timeZone: userTimeZone,
+  }) // e.g., "11/10/2024"
+  const currentTime = now.toLocaleTimeString("en-US", {
+    timeZone: userTimeZone,
+  }) // e.g., "10:14:03 AM"
   return `My Name is ${user.name}
     Email: ${user.email}
     Company: ${workspace.name}
     Company domain: ${workspace.domain}
     Current Time: ${currentTime}
     Today is: ${currentDate}
-    Timezone: IST`
+    Timezone: ${userTimeZone}`
 }
 
 /**

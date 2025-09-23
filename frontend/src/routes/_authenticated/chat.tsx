@@ -139,7 +139,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CitationPreview } from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
-import { processMessage } from "@/utils/chatUtils"
+import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -2782,9 +2782,7 @@ export const ChatMessage = ({
                     onMouseDown={() => setIsCopied(true)}
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
-                      navigator.clipboard.writeText(
-                        processMessage(message, citationMap, citationUrls),
-                      )
+                      navigator.clipboard.writeText(cleanCitationsFromResponse(message))
                     }
                   />
                   {/* Retry button temporarily hidden */}

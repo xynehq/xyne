@@ -75,10 +75,11 @@ import {
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
   GetWorkspaceApiKeys,
-  ListAllUsers,
   UpdateUser,
   HandlePerUserSlackSync,
   HandlePerUserGoogleWorkSpaceSync,
+  ListAllLoggedInUsers,
+  ListAllIngestedUsers,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -1040,7 +1041,8 @@ export const AppRoutes = app
   // TODO: debug
   // for some reason the validation schema
   // is not making the keys mandatory
-  .get("/list_users", ListAllUsers)
+  .get("/list_loggedIn_users", ListAllLoggedInUsers)
+  .get("/list_ingested_users", ListAllIngestedUsers)
   .post("/change_role", zValidator("form", UserRoleChangeSchema), UpdateUser)
   .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
   .post("syncSlackByMail", HandlePerUserSlackSync)

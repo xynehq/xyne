@@ -17,12 +17,30 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className }) => {
       const arrayBuffer = e.target?.result;
       if (!arrayBuffer) return;
 
-      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const workbook = XLSX.read(arrayBuffer, { 
+        type: "array",
+        cellDates: true,   // dates come back as JS Date objects
+        cellNF: true       // keep the original number format in cell.z
+      });
 
       const parsedSheets = workbook.SheetNames.map((sheetName) => {
         const worksheet = workbook.Sheets[sheetName];
-        const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        return { name: sheetName, data: sheetData as any[][] };
+        // Get the range of the worksheet to preserve empty cells
+        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+        const sheetData: any[][] = [];
+        
+        // Initialize the array with the correct dimensions
+        for (let row = range.s.r; row <= range.e.r; row++) {
+          const rowData: any[] = [];
+          for (let col = range.s.c; col <= range.e.c; col++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+            const cell = worksheet[cellAddress];
+            rowData.push(cell ? XLSX.utils.format_cell(cell) : "");
+          }
+          sheetData.push(rowData);
+        }
+        
+        return { name: sheetName, data: sheetData };
       });
 
       setSheets(parsedSheets);
@@ -49,7 +67,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className }) => {
             className={`px-3 py-1 border rounded ${
               idx === activeSheet
                 ? "bg-blue-500 text-white"
-                : "bg-gray-100 hover:bg-gray-200"
+                : "bg-background text-foreground "
             }`}
           >
             {sheet.name}
@@ -67,7 +85,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className }) => {
                   key={j}
                   className="border border-gray-300 px-2 py-1 text-sm"
                 >
-                  {cell !== undefined && cell !== null ? cell.toString() : ""}
+                  {cell?.toString() ?? ""}
                 </td>
               ))}
             </tr>
