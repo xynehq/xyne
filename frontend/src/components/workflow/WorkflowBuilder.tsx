@@ -1237,10 +1237,10 @@ const Header = ({
           <button
             onClick={onSaveChanges}
             disabled={isSaveDisabled}
-            className={`px-6 py-2 text-sm font-medium rounded-full transition-colors ${
+            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
               isSaveDisabled
-                ? "bg-gray-400 dark:bg-gray-600 text-gray-600 dark:text-gray-400 cursor-not-allowed"
-                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white"
+                ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
             }`}
           >
             Save Changes
@@ -1913,13 +1913,18 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [])
 
   // Helper function to create a hash of the current workflow state
+  // Excludes position coordinates and UI state to prevent save button activation on node drag or UI interactions
   const createWorkflowHash = () => {
     const workflowState = {
       nodes: nodes.map(node => ({
         id: node.id,
         type: node.type,
-        position: node.position,
-        data: node.data
+        // Exclude position from hash calculation
+        data: {
+          step: node.data?.step,
+          tools: node.data?.tools,
+          // Exclude UI state properties like hasNext, isActive, isCompleted, anyNodeSelected
+        }
       })),
       edges: edges.map(edge => ({
         id: edge.id,
@@ -2119,13 +2124,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     if (nodes.length > 0 || edges.length > 0) {
       const currentHash = createWorkflowHash()
       
-      if (lastSavedHash === "") {
-        // First time with nodes/edges, mark as changed
+      // Check if we have a valid trigger node (not just the trigger selector)
+      const hasValidTrigger = nodes.some(node => {
+        const nodeData = node.data as any
+        return nodeData?.step?.type && 
+               nodeData.step.type !== "trigger_selector" && 
+               (nodeData.step.type === "form_submission" || 
+                nodeData.step.type === "manual" || 
+                nodeData.step.type === "schedule" ||
+                nodeData.step.type === "app_event")
+      })
+      
+      if (lastSavedHash === "" && hasValidTrigger) {
+        // First time with nodes/edges and valid trigger, mark as changed
         setHasWorkflowChanged(true)
         setIsWorkflowSaved(false)
-      } else if (currentHash !== lastSavedHash) {
-        // Workflow has changed since last save
+      } else if (currentHash !== lastSavedHash && hasValidTrigger) {
+        // Workflow has changed since last save and has valid trigger
         setHasWorkflowChanged(true)
+        setIsWorkflowSaved(false)
+      } else if (!hasValidTrigger) {
+        // No valid trigger yet, keep disabled
+        setHasWorkflowChanged(false)
         setIsWorkflowSaved(false)
       } else {
         // Workflow matches last saved state
@@ -3377,11 +3397,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       
       // Show success snackbar
       showSnackbarMessage("Workflow saved successfully! You can now execute it.", 'success')
-      
-      // Automatically open the execution modal after a short delay to let user see the success message
-      setTimeout(() => {
-        setShowExecutionModal(true)
-      }, 1500)
 
     } catch (error) {
       console.error("Failed to save workflow:", error)
@@ -3402,7 +3417,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         onWorkflowNameChange={handleWorkflowNameChange}
         isEditable={builder}
         onSaveChanges={handleSaveChanges}
-        isSaveDisabled={isWorkflowSaved && !hasWorkflowChanged}
+        isSaveDisabled={!hasWorkflowChanged || (isWorkflowSaved && !hasWorkflowChanged)}
         hasUnsavedChanges={builder && hasWorkflowChanged}
         onConfirmRefresh={handleConfirmRefresh}
       />
@@ -3491,7 +3506,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                   }}
                   zoomLevel={zoomLevel}
                   onZoomChange={handleZoomChange}
-                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector)}
+                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector) || (builder && !isWorkflowSaved)}
                 />
               </Panel>
             )}
