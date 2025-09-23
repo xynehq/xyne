@@ -75,6 +75,7 @@ import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { chunkDocument } from "@/chunks"
 import { getAppSyncJobsByEmail } from "@/db/syncJob"
 import { getTracer } from "@/tracer"
+import { getDateForAI } from "@/utils/index"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
 
 const { JwtPayloadKey, maxTokenBeforeMetadataCleanup, defaultFastModel } =
@@ -578,6 +579,7 @@ export const AnswerApi = async (c: Context) => {
   const costArr: number[] = []
 
   const ctx = userContext(userAndWorkspace)
+  const dateForAI = getDateForAI({userTimeZone: userAndWorkspace.user.timeZone || "Asia/Kolkata"})
   const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${query}`
   // could be called parallely if not for userAndWorkspace
   let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
@@ -651,7 +653,7 @@ export const AnswerApi = async (c: Context) => {
   const metadataContext = results.root.children
     .map((v, i) =>
       cleanContext(
-        `Index ${i} \n ${answerMetadataContextMap(v as VespaSearchResults)}`,
+        `Index ${i} \n ${answerMetadataContextMap(v as VespaSearchResults, dateForAI)}`,
       ),
     )
     .join("\n\n")

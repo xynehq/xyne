@@ -207,6 +207,7 @@ import {
   processOpenAICitations,
   processWebSearchCitations,
 } from "./deepsearch"
+import { getDateForAI } from "@/utils/index"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -1197,6 +1198,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   messages: Message[],
   email: string,
   userCtx: string,
+  dateForAI: string,
   alpha: number = 0.5,
   pageSize: number = 10,
   maxPageNumber: number = 3,
@@ -1694,6 +1696,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const iterator = baselineRAGJsonStream(
           query,
           userCtx,
+          dateForAI,
           initialContext,
           // pageNumber,
           // maxPageNumber,
@@ -1887,7 +1890,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     const ragSpan = pageSpan?.startSpan("baseline_rag")
 
-    const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
+    const iterator = baselineRAGJsonStream(input, userCtx, dateForAI, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
@@ -1932,6 +1935,7 @@ async function* generateAnswerFromGivenContext(
   input: string,
   email: string,
   userCtx: string,
+  dateForAI: string,
   alpha: number = 0.5,
   fileIds: string[],
   userRequestsReasoning: boolean,
@@ -2177,6 +2181,7 @@ async function* generateAnswerFromGivenContext(
   const iterator = baselineRAGJsonStream(
     builtUserQuery,
     userCtx,
+    dateForAI,
     initialContext,
     {
       stream: true,
@@ -2268,6 +2273,7 @@ async function* generateAnswerFromGivenContext(
     const iterator = baselineRAGJsonStream(
       builtUserQuery,
       userCtx,
+      dateForAI,
       initialContext,
       {
         stream: true,
@@ -2437,6 +2443,7 @@ async function* generatePointQueryTimeExpansion(
   classification: QueryRouterLLMResponse,
   email: string,
   userCtx: string,
+  dateForAI: string,
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
@@ -2852,7 +2859,7 @@ async function* generatePointQueryTimeExpansion(
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
     loggerWithChild({ email: email }).info("Using meetingPromptJsonStream")
-    const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
+    const iterator = meetingPromptJsonStream(input, userCtx, dateForAI, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
@@ -2939,6 +2946,7 @@ async function* processResultsForMetadata(
   items: VespaSearchResult[],
   input: string,
   userCtx: string,
+  dateForAI: string,
   app: Apps[] | null,
   entity: any,
   chunksCount: number | undefined,
@@ -2975,10 +2983,10 @@ async function* processResultsForMetadata(
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app?.length == 1 && app[0] === Apps.Gmail) {
     loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
+    iterator = mailPromptJsonStream(input, userCtx, dateForAI, context, streamOptions)
   } else {
     loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(input, userCtx, context, streamOptions)
+    iterator = baselineRAGJsonStream(input, userCtx, dateForAI, context, streamOptions)
   }
 
   return yield* processIterator(
@@ -2994,6 +3002,7 @@ async function* generateMetadataQueryAnswer(
   messages: Message[],
   email: string,
   userCtx: string,
+  dateForAI: string,
   userAlpha: number = 0.5,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
@@ -3311,6 +3320,7 @@ async function* generateMetadataQueryAnswer(
         items,
         input,
         userCtx,
+        dateForAI,
         apps,
         entities,
         undefined,
@@ -3483,6 +3493,7 @@ async function* generateMetadataQueryAnswer(
       items,
       input,
       userCtx,
+      dateForAI,
       apps,
       entities,
       maxSummaryCount,
@@ -3621,6 +3632,7 @@ async function* generateMetadataQueryAnswer(
         items,
         input,
         userCtx,
+        dateForAI,
         apps,
         entities,
         undefined,
@@ -3733,6 +3745,7 @@ const fallbackText = (classification: QueryRouterLLMResponse): string => {
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
+  dateForAI: string,
   message: string,
   classification: QueryRouterLLMResponse,
   messages: Message[],
@@ -3778,6 +3791,7 @@ export async function* UnderstandMessageAndAnswer(
       messages,
       email,
       userCtx,
+      dateForAI,
       alpha,
       count,
       maxDefaultSummary,
@@ -3828,6 +3842,7 @@ export async function* UnderstandMessageAndAnswer(
       classification,
       email,
       userCtx,
+      dateForAI,
       alpha,
       chatPageSize,
       maxDefaultSummary,
@@ -3847,6 +3862,7 @@ export async function* UnderstandMessageAndAnswer(
       messages,
       email,
       userCtx,
+      dateForAI,
       alpha,
       chatPageSize,
       3,
@@ -3862,6 +3878,7 @@ export async function* UnderstandMessageAndAnswer(
 export async function* UnderstandMessageAndAnswerForGivenContext(
   email: string,
   userCtx: string,
+  dateForAI: string,
   message: string,
   alpha: number,
   fileIds: string[],
@@ -3894,6 +3911,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     message,
     email,
     userCtx,
+    dateForAI,
     alpha,
     fileIds,
     userRequestsReasoning,
@@ -4235,6 +4253,7 @@ export const MessageApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const dateForAI = getDateForAI({ userTimeZone: user.timeZone })
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -4426,6 +4445,7 @@ export const MessageApi = async (c: Context) => {
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
+              dateForAI,
               message,
               0.5,
               fileIds,
@@ -4770,6 +4790,7 @@ export const MessageApi = async (c: Context) => {
                 generateSearchQueryOrAnswerFromConversation(
                   message,
                   ctx,
+                  dateForAI,
                   {
                     modelId: actualModelId
                       ? (actualModelId as Models)
@@ -5164,6 +5185,7 @@ export const MessageApi = async (c: Context) => {
                   iterator = UnderstandMessageAndAnswerForGivenContext(
                     email,
                     ctx,
+                    dateForAI,
                     message,
                     0.5,
                     parsedMessage.data.fileIds as string[],
@@ -5189,6 +5211,7 @@ export const MessageApi = async (c: Context) => {
                 iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,
+                  dateForAI,
                   message,
                   classification,
                   llmFormattedMessages,
@@ -5788,6 +5811,7 @@ export const MessageRetryApi = async (c: Context) => {
     )
     const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
+    const dateForAI = getDateForAI({userTimeZone: user?.timeZone})
 
     // Extract sources from search parameters
     const kbItems = c.req.query("selectedKbItems")
@@ -5880,6 +5904,7 @@ export const MessageRetryApi = async (c: Context) => {
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
+              dateForAI,
               message,
               0.5,
               fileIds,
@@ -6215,6 +6240,7 @@ export const MessageRetryApi = async (c: Context) => {
               generateSearchQueryOrAnswerFromConversation(
                 message,
                 ctx,
+                dateForAI,
                 {
                   modelId: modelId
                     ? (modelId as Models)
@@ -6399,6 +6425,7 @@ export const MessageRetryApi = async (c: Context) => {
               const iterator = UnderstandMessageAndAnswer(
                 email,
                 ctx,
+                dateForAI,
                 message,
                 classification,
                 convWithNoErrMsg,

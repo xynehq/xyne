@@ -1,4 +1,3 @@
-import { getDateForAI } from "@/utils/index"
 import { QueryType } from "./types"
 import {
   Apps,
@@ -294,6 +293,7 @@ Provide the rewritten queries in JSON format as follows:
 // Optimized Prompt
 export const agentOptimizedPrompt = (
   ctx: string,
+  dateForAI: string,
   agentPromptData: AgentPromptData,
 ) => `
 You are a permission aware retrieval-augmented generation (RAG) system and a work assistant.
@@ -308,7 +308,7 @@ You are a permission aware retrieval-augmented generation (RAG) system and a wor
 ${agentPromptData.sources.length > 0 ? agentPromptData.sources.map((source) => `- ${typeof source === "string" ? source : JSON.stringify(source)}`).join("\\n") : "No specific sources provided by agent."}
     This is the context of the agent, it is very important to follow this. You MUST prioritize and filter information based on the # Agent Sources provided. If sources are listed, your response should strictly align with the content and type of these sources. If no specific sources are listed under # Agent Sources, proceed with the general context.
     **User Context**: ${ctx}
-    **Today's date is: ${getDateForAI()}**
+    **Today's date is: ${dateForAI}**
 Given the user's question and the context (which includes indexed information), your tasks are:
 1. **Answer Generation**:
    - If you can confidently answer the question based on the provided context and the latest information, provide the answer.
@@ -501,7 +501,8 @@ export const agentBaselinePromptJson = (
   userContext: string,
   retrievedContext: string,
   agentPromptData: AgentPromptData,
-) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+  dateForAI: string,
+) => `The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible. 
 
 # Context of the agent {priority}
@@ -860,8 +861,9 @@ If information is missing or unclear: Set "answer" to null`
 
 export const agentBaselineFileContextPromptJson = (
   userContext: string,
+  dateForAI: string,
   retrievedContext: string,
-) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+) => `The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible.
 
 You are an AI assistant with access to a SINGLE file. You have access to the following types of data:
@@ -1114,11 +1116,12 @@ Generate a summary that would make sense to a non-technical user watching the ag
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const agentSearchQueryPrompt = (
   userContext: string,
+  dateForAI: string,
   agentPromptData: AgentPromptData,
 ): string => {
   return `
     You are an AI router and classifier for an Enterprise Search and AI Agent.
-    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
+    The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
     ${
       agentPromptData.prompt.length
@@ -1438,9 +1441,10 @@ export const agentSearchQueryPrompt = (
 export const agentSearchAgentPrompt = (
   userContext: string,
   agentPromptData: AgentPromptData,
+  dateForAI: string,
 ): string => {
   return `
-  The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
+  The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
     # Context of the agent {priority}
     Name: ${agentPromptData.name}
@@ -1764,7 +1768,8 @@ export const agentEmailPromptJson = (
   userContext: string,
   retrievedContext: string,
   agentPromptData: AgentPromptData,
-) => `The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+  dateForAI: string,
+) => `The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible. 
 
 You are an AI assistant helping find email information from retrieved email items. You have access to:
@@ -1885,7 +1890,8 @@ export const agentTemporalDirectionJsonPrompt = (
   userContext: string,
   retrievedContext: string,
   agentPromptData: AgentPromptData,
-) => `Current date: ${getDateForAI()}. 
+  dateForAI: string,
+) => `Current date: ${dateForAI}. 
 
 # Your Role
 You process temporal queries for workspace data (calendar events, emails, files, user profiles). Apply strict temporal logic to ensure accuracy.
@@ -1948,10 +1954,10 @@ Examples of INVALID responses:
 
 ## Temporal Processing
 1. Extract timestamps from all items
-2. Current date for comparison: ${getDateForAI()}
+2. Current date for comparison: ${dateForAI}
 3. Apply strict filtering:
-   - FUTURE intent: INCLUDE ONLY items where timestamp >= ${getDateForAI()}
-   - PAST intent: INCLUDE ONLY items where timestamp < ${getDateForAI()}
+   - FUTURE intent: INCLUDE ONLY items where timestamp >= ${dateForAI}
+   - PAST intent: INCLUDE ONLY items where timestamp < ${dateForAI}
    - PRESENT intent: Include today's items
    - ALL intent: Apply explicit constraints or default to ±6 months
 4. For recurring events:
