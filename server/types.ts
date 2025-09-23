@@ -458,7 +458,7 @@ export type GoogleServiceAccount = {
   private_key: string
 }
 
-export type MicrosoftServiceAccount = {
+export type MicrosoftServiceCredentials = {
   tenantId: string
   clientId: string
   clientSecret: string

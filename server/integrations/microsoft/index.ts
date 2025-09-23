@@ -1,7 +1,7 @@
 import {
   Subsystem,
   SyncCron,
-  type MicrosoftServiceAccount,
+  type MicrosoftServiceCredentials,
   type OAuthCredentials,
   type SaaSJob,
   type SaaSOAuthJob,
@@ -825,7 +825,7 @@ export const handleMicrosoftServiceAccountIngestion = async (
   const tracker = new Tracker(Apps.MicrosoftSharepoint, AuthType.ServiceAccount)
 
   try {
-    const credentials: MicrosoftServiceAccount = JSON.parse(
+    const credentials: MicrosoftServiceCredentials = JSON.parse(
       connector.credentials as string,
     )
 
@@ -848,7 +848,7 @@ export const handleMicrosoftServiceAccountIngestion = async (
 
     //Discover all SharePoint sites
     let sites = await discoverSharePointSites(graphClient, email!)
-    // sites = sites.filter((d) => d.name === "VISA_SIN" || d.name === "Visa + Juspay B2B" || d.name === "test site 1")
+    sites = sites.filter((d) => d.name === "VISA_SIN" || d.name === "Visa + Juspay B2B" || d.name === "test site 1")
 
     //For each site, discover all drives
     const siteDrives = await discoverSiteDrives(graphClient, sites, email!)

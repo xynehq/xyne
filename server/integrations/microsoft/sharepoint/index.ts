@@ -118,7 +118,7 @@ export const processSiteDrives = async (
   client: MicrosoftGraphClient,
   siteDrives: Array<Drive>,
   userEmail: string,
-  tracker: Tracker,
+  tracker?: Tracker,
 ): Promise<Record<string, string>> => {
   try {
     loggerWithChild({ email: userEmail }).info(
@@ -186,7 +186,7 @@ export const processSiteDrives = async (
                   }
 
                   await insertWithRetry(fileToBeIngested, fileSchema)
-                  tracker.updateUserStats(userEmail, StatType.Drive, 1)
+                  tracker?.updateUserStats(userEmail, StatType.Drive, 1)
                   driveFileCount++
                   totalFiles++
 
@@ -217,7 +217,7 @@ export const processSiteDrives = async (
 
         // Store the delta token for this drive
         if (deltaToken && siteDrive.id) {
-          driveTokens[siteDrive.id] = deltaToken
+          driveTokens[`${siteDrive.sharePointIds?.siteId}::${siteDrive.id}`] = deltaToken
 
           loggerWithChild({ email: userEmail }).info(
             `Stored delta token for drive ${siteDrive.name} (${siteDrive.id}): processed ${driveFileCount} files`,

@@ -1,11 +1,12 @@
 import {
   Subsystem,
   SyncCron,
+  type MicrosoftServiceCredentials,
   type OAuthCredentials,
   type SyncConfig,
 } from "@/types"
 import PgBoss from "pg-boss"
-import { getOAuthConnectorWithCredentials } from "@/db/connector"
+import { getMicrosoftAuthConnectorWithCredentials, getOAuthConnectorWithCredentials } from "@/db/connector"
 import {
   DeleteDocument,
   getDocumentOrNull,
@@ -55,8 +56,10 @@ import {
 } from "./index"
 import { MAX_ONEDRIVE_FILE_SIZE, skipMailExistCheck } from "./config"
 import {
+  getFilePermissions,
   MicrosoftMimeType,
   microsoftMimeTypeMap,
+  processFileContent,
   type OneDriveFile,
 } from "./utils"
 import { chunkDocument } from "@/chunks"
@@ -74,6 +77,8 @@ import {
   getDocumentOrSpreadsheet,
 } from "../google/sync"
 import { DriveMime } from "../google/utils"
+import { unknown } from "zod"
+import { discoverSharePointSites, discoverSiteDrives, processSiteDrives } from "./sharepoint"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "microsoft-sync",
@@ -120,6 +125,12 @@ type MicrosoftOutlookChangeToken = {
 type MicrosoftCalendarChangeToken = {
   type: "microsoftCalendarDeltaToken"
   calendarDeltaToken: string
+  lastSyncedAt: Date
+}
+
+type MicrosoftSharepointChangeToken = {
+  type: "microsoftSharepointDeltaTokens"
+  deltaTokens: Record<string, string>,
   lastSyncedAt: Date
 }
 
@@ -1141,6 +1152,274 @@ const syncMicrosoftContacts = async (
   return stats
 }
 
+const updateSharepointDeltaTokens = async(
+  graphClient: MicrosoftGraphClient,
+  deltaTokens: Record<string, string>,
+  email: string,
+) => {
+  let sites = await discoverSharePointSites(graphClient,email)
+  sites = sites.filter((d) => d.name === "VISA_SIN" || d.name === "Visa + Juspay B2B" || d.name === "test site 1")
+  let drives = await discoverSiteDrives(graphClient,sites,email)
+
+  const driveSet = new Set(
+    drives.map(
+      drive => `${drive.sharePointIds?.siteId}::${drive.id}`
+    )
+  );
+
+  let removed: string[] = [];
+
+  //Filters out newly added drives
+  drives = drives.filter(
+    drive => drive.id && !(`${drive.sharePointIds?.siteId}::${drive.id}` in deltaTokens)
+  )
+
+  //Filters out deleted drives
+  for (const key in deltaTokens) {
+    if (!(key in driveSet)) {
+      removed.push(key)
+      delete deltaTokens[key]
+    }
+  }
+
+  //perform initial ingestion of new drives
+  const updatedDeltaTokens= await processSiteDrives(graphClient,drives,email)
+
+  for(const [key,value] of Object.entries(updatedDeltaTokens))
+    deltaTokens[key] = value 
+
+  return { removed, updatedDeltaTokens }
+}
+
+const handleSharepointChanges = async(
+  graphClient: MicrosoftGraphClient,
+  deltaTokens: Record<string, string>,
+  email: string,
+): Promise<{
+  stats: ChangeStats,
+  changesExist: boolean,
+  newDeltaTokens: Record<string, string>
+}> => {
+  const stats = newStats()
+  let changesExist = false
+
+  // For tracking newly added or removed drives
+  const { removed, updatedDeltaTokens } = await updateSharepointDeltaTokens(
+    graphClient,
+    deltaTokens,
+    email,
+  )
+
+  if (removed.length > 0) {
+    stats.summary += `Removed ${removed.length} SharePoint drives: ${removed.join(", ")}\n`
+    changesExist = true
+  }
+
+  if (Object.keys(updatedDeltaTokens).length > 0) {
+    stats.summary += `Discovered ${Object.keys(updatedDeltaTokens).length} new SharePoint drives\n`
+    changesExist = true
+  }
+
+  // Process delta changes for each existing drive
+  for (const [driveKey, deltaToken] of Object.entries(deltaTokens)) {
+    try {
+      // Skip newly added drives (they were already processed in updateSharepointDeltaTokens)
+      if (driveKey in updatedDeltaTokens) {
+        continue
+      }
+
+      loggerWithChild({ email }).info(`Processing delta changes for drive: ${driveKey}`)
+
+      // Extract siteId and driveId from the composite key
+      const [siteId, driveId] = driveKey.split("::")
+      if (!siteId || !driveId) {
+        Logger.warn(`Invalid drive key format: ${driveKey}`)
+        continue
+      }
+
+      const { driveStats, newDeltaToken } = await processSharePointDriveDeltaChanges(
+        graphClient,
+        siteId,
+        driveId,
+        deltaToken,
+        email
+      )
+      deltaTokens[driveKey] = newDeltaToken
+
+      // Merge drive stats into overall stats
+      stats.added += driveStats.added
+      stats.updated += driveStats.updated
+      stats.removed += driveStats.removed
+      stats.summary += driveStats.summary
+
+      if (driveStats.added > 0 || driveStats.updated > 0 || driveStats.removed > 0) {
+        changesExist = true
+      }
+
+      loggerWithChild({ email }).info(
+        `Processed drive ${driveKey}: ${driveStats.added} added, ${driveStats.updated} updated, ${driveStats.removed} removed`
+      )
+
+    } catch (error) {
+      Logger.error(error, `Error processing SharePoint drive ${driveKey}: ${error}`)
+      stats.summary += `Error processing drive ${driveKey}: ${getErrorMessage(error)}\n`
+    }
+  }
+
+  return { stats, changesExist, newDeltaTokens: deltaTokens }
+}
+
+// Process delta changes for a specific SharePoint drive
+const processSharePointDriveDeltaChanges = async (
+  graphClient: MicrosoftGraphClient,
+  siteId: string,
+  driveId: string,
+  deltaToken: string,
+  email: string
+): Promise<{driveStats: ChangeStats, newDeltaToken: string} > => {
+  const stats = newStats()
+  let newDeltaToken: string = "";
+
+  try {
+    // Use delta token to get changes for this specific drive
+    let nextLink: string | undefined = deltaToken.startsWith('http') ? deltaToken : 
+      `/sites/${siteId}/drives/${driveId}/root/delta?token=${deltaToken}`
+
+    loggerWithChild({ email }).info(`Fetching delta changes from: ${nextLink.substring(0, 100)}...`)
+
+    while (nextLink) {
+      const response = await makeGraphApiCall(graphClient, nextLink)
+
+      if (response.value && Array.isArray(response.value)) {
+        for (const item of response.value) {
+          try {
+            if (item.deleted || item["@removed"]) {
+              // Handle deleted files
+              await handleSharePointFileDelete(item.id, email, stats)
+            } else if (item.file) {
+              // Handle added/updated files (skip folders)
+              await handleSharePointFileChange(graphClient, item, siteId, driveId, email, stats)
+            }
+          } catch (itemError) {
+            Logger.error(itemError, `Error processing SharePoint item ${item.id}: ${itemError}`)
+          }
+        }
+      }
+
+      // Check for pagination
+      if (response["@odata.nextLink"]) {
+        nextLink = response["@odata.nextLink"]
+      } else if (response["@odata.deltaLink"]) {
+        // Update the delta token for this drive
+        newDeltaToken = response["@odata.deltaLink"] 
+        nextLink = undefined
+      } else {
+        nextLink = undefined
+      }
+    }
+
+  } catch (error) {
+    Logger.error(error, `Error processing delta changes for drive ${driveId} in site ${siteId}`)
+    throw error
+  }
+
+  return {
+    driveStats: stats,
+    newDeltaToken
+  }
+}
+
+// Handle SharePoint file deletion
+const handleSharePointFileDelete = async (
+  fileId: string,
+  email: string,
+  stats: ChangeStats
+): Promise<void> => {
+  try {
+    const existingDoc = await getDocumentOrNull(fileSchema, fileId)
+    if (existingDoc) {
+      const permissions = (existingDoc.fields as VespaFileWithDrivePermission)?.permissions ?? []
+      
+      if (permissions.length === 1 && permissions[0] === email) {
+        // Remove the document entirely if this user is the only one with access
+        await DeleteDocument(fileId, fileSchema)
+        stats.removed += 1
+        stats.summary += `Deleted SharePoint file ${fileId}\n`
+      } else if (permissions.length > 1) {
+        // Remove user's permission from the document
+        const newPermissions = permissions.filter(p => p !== email)
+        await UpdateDocumentPermissions(fileSchema, fileId, newPermissions)
+        stats.updated += 1
+        stats.summary += `Removed user permission for SharePoint file ${fileId}\n`
+      }
+    }
+  } catch (error) {
+    Logger.error(error, `Error deleting SharePoint file ${fileId}: ${error}`)
+  }
+}
+
+// Handle SharePoint file addition/update
+const handleSharePointFileChange = async (
+  graphClient: MicrosoftGraphClient,
+  item: any,
+  siteId: string,
+  driveId: string,
+  email: string,
+  stats: ChangeStats
+): Promise<void> => {
+  try {
+    const fileId = item.id
+    const existingDoc = await getDocumentOrNull(fileSchema, fileId)
+    
+    // Get file permissions
+    const permissions: string[] = await getFilePermissions(graphClient, fileId, driveId)
+
+    // Process file content
+    const chunks = await processFileContent(graphClient, item, email)
+
+    // Create Vespa file object
+    const vespaFile = {
+      title: item.name ?? "",
+      url: item.webUrl ?? "",
+      app: Apps.MicrosoftSharepoint,
+      docId: fileId,
+      parentId: item.parentReference?.id ?? null,
+      owner: item.createdBy?.user?.displayName ?? email,
+      photoLink: "",
+      ownerEmail: email,
+      entity: DriveEntity.Misc,
+      chunks,
+      permissions,
+      mimeType: item.file?.mimeType ?? "application/octet-stream",
+      metadata: JSON.stringify({
+        size: item.size,
+        downloadUrl: item["@microsoft.graph.downloadUrl"],
+        siteId: siteId,
+        driveId: driveId,
+        parentId: item.parentReference?.id ?? "",
+        parentPath: item.parentReference?.path ?? "/",
+        eTag: item.eTag ?? "",
+      }),
+      createdAt: new Date(item.createdDateTime).getTime(),
+      updatedAt: new Date(item.lastModifiedDateTime).getTime(),
+    }
+
+    // Insert into Vespa
+    await insertWithRetry(vespaFile, fileSchema)
+
+    if (existingDoc) {
+      stats.updated += 1
+      stats.summary += `Updated SharePoint file ${fileId}\n`
+    } else {
+      stats.added += 1
+      stats.summary += `Added SharePoint file ${fileId}\n`
+    }
+
+  } catch (error) {
+    Logger.error(error, `Error processing SharePoint file ${item.id}: ${error}`)
+  }
+}
+
 // Main Microsoft OAuth changes handler
 export const handleMicrosoftOAuthChanges = async (
   boss: PgBoss,
@@ -1496,6 +1775,106 @@ export const handleMicrosoftOAuthChanges = async (
         app: Apps.MicrosoftCalendar,
         status: SyncJobStatus.Failed,
         config: newConfig,
+        type: SyncCron.ChangeToken,
+        lastRanOn: new Date(),
+      })
+    }
+  }
+}
+
+export async function handleMicrosoftServiceAccountChanges(
+  boss: PgBoss,
+  job: PgBoss.Job<any>,
+) {
+  Logger.info("handleMicrosoftServiceAccountChanges")
+  const data = job.data
+  const syncJobs = await getAppSyncJobs(db, Apps.MicrosoftSharepoint, AuthType.ServiceAccount)
+
+  for (const syncJob of syncJobs) {
+    let stats = newStats()
+    try {
+      const connector = await getMicrosoftAuthConnectorWithCredentials(
+        db,
+        syncJob.connectorId,
+      )
+      
+      const authTokens = connector.credentials as MicrosoftServiceCredentials
+      const graphClient = createMicrosoftGraphClient(
+        authTokens.access_token,
+        authTokens.clientId,
+        authTokens.clientSecret,
+        undefined,
+        authTokens.tenantId,
+      )
+
+      let config: MicrosoftSharepointChangeToken =
+        syncJob.config as MicrosoftSharepointChangeToken 
+
+      const { stats: changeStats, changesExist, newDeltaTokens } = await handleSharepointChanges(
+        graphClient,
+        config.deltaTokens,
+        syncJob.email
+      )
+
+      if (changesExist) {
+        const newConfig: MicrosoftSharepointChangeToken = {
+          type: "microsoftSharepointDeltaTokens",
+          deltaTokens: newDeltaTokens,
+          lastSyncedAt: new Date(),
+        }
+
+        // Update sync job and create sync history
+        await db.transaction(async (trx) => {
+          await updateSyncJob(trx, syncJob.id, {
+            config: newConfig,
+            lastRanOn: new Date(),
+            status: SyncJobStatus.Successful,
+          })
+
+          await insertSyncHistory(trx, {
+            workspaceId: syncJob.workspaceId,
+            workspaceExternalId: syncJob.workspaceExternalId,
+            dataAdded: changeStats.added,
+            dataDeleted: changeStats.removed,
+            dataUpdated: changeStats.updated,
+            authType: AuthType.ServiceAccount,
+            summary: { description: changeStats.summary },
+            errorMessage: "",
+            app: Apps.MicrosoftSharepoint,
+            status: SyncJobStatus.Successful,
+            config: {
+              ...newConfig,
+              lastSyncedAt: newConfig.lastSyncedAt.toISOString(),
+            },
+            type: SyncCron.ChangeToken,
+            lastRanOn: new Date(),
+          })
+        })
+
+        Logger.info(`SharePoint changes synced: ${JSON.stringify(changeStats)}`)
+      } else {
+        Logger.info("No SharePoint changes to sync")
+      }
+    } catch (error) {
+      const errorMessage = getErrorMessage(error)
+      Logger.error(
+        error,
+        `SharePoint sync failed: ${errorMessage}`,
+      )
+      
+      // Insert failed sync history
+      await insertSyncHistory(db, {
+        workspaceId: syncJob.workspaceId,
+        workspaceExternalId: syncJob.workspaceExternalId,
+        dataAdded: stats.added,
+        dataDeleted: stats.removed,
+        dataUpdated: stats.updated,
+        authType: AuthType.ServiceAccount,
+        summary: { description: stats.summary },
+        errorMessage,
+        app: Apps.MicrosoftSharepoint,
+        status: SyncJobStatus.Failed,
+        config: syncJob.config,
         type: SyncCron.ChangeToken,
         lastRanOn: new Date(),
       })

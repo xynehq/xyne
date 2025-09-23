@@ -43,7 +43,7 @@ import {
   Subsystem,
   updateToolsStatusSchema,
   type microsoftService,
-  type MicrosoftServiceAccount, // Added for tool status updates
+  type MicrosoftServiceCredentials, // Added for tool status updates
 } from "@/types"
 import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
@@ -471,7 +471,7 @@ export const AddServiceConnectionMicrosoft = async (c: Context) => {
     const accessToken = await authProvider.getAccessTokenWithExpiry()
     const expiresAt = new Date(accessToken.expiresOnTimestamp)
 
-    const credentialsData: MicrosoftServiceAccount = {
+    const credentialsData: MicrosoftServiceCredentials = {
       tenantId,
       clientId,
       clientSecret,
