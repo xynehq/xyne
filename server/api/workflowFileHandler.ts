@@ -373,7 +373,7 @@ function parseFileSize(sizeStr: string): number {
 
   const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)$/i)
   if (!match) {
-    return 40 * 1024 * 1024 // Default 10MB
+    return 40 * 1024 * 1024 // Default 40MB
   }
 
   const size = parseFloat(match[1])
