@@ -827,68 +827,65 @@ export const HighlightApi = async (c: Context) => {
     };
 
     const findAllMatches = (haystack: string, needle: string) => {
+      // Respect case sensitivity option from outer scope
       let hay = caseSensitive ? haystack : haystack.toLowerCase();
-      const ned = caseSensitive ? needle : needle.toLowerCase();
-      
-      if (ned.length > hay.length || ned.length < 3) return [];
-      
-      let matches: Array<{ index: number, similarity: number, length: number }> = [];
-      let bestMatch = { index: -1, similarity: 0, length: 0 };
+      const pat = caseSensitive ? needle : needle.toLowerCase();
 
-      const MAX_HAYSTACK_LENGTH = 500000;
-      
-      if (hay.length > MAX_HAYSTACK_LENGTH) {
-        console.warn(`Haystack too long (${hay.length}), truncating to ${MAX_HAYSTACK_LENGTH}`);
-        hay = hay.substring(0, MAX_HAYSTACK_LENGTH);
-      }
-      
-      const windowSizes = [ned.length, ned.length + 20, ned.length + 40, ned.length + 60];
-      
-      for (const windowSize of windowSizes) {
-        for (let i = 0; i <= hay.length - windowSize; i++) {
-          const window = hay.substring(i, i + windowSize);
-          
-          // Calculate similarity using character overlap with whitespace tolerance
-          let charMatches = 0;
-          let hayPos = 0;
-          let nedPos = 0;
-          
-          while (hayPos < window.length && nedPos < ned.length) {
-            const hayChar = window[hayPos];
-            const nedChar = ned[nedPos];
-            
-            if (hayChar === nedChar) {
-              charMatches++;
-              hayPos++;
-              nedPos++;
-            } else if (/\s/.test(hayChar)) {
-              hayPos++;
-            } else if (/\s/.test(nedChar)) {
-              nedPos++;
-            } else {
-              hayPos++;
-              nedPos++;
-            }
-          }
-          
-          // Calculate similarity based on matched characters vs total characters
-          const totalChars = Math.max(ned.length, window.length);
-          const similarity = charMatches / totalChars;
-          
-          if (similarity >= matchThreshold) {
-            if(similarity > bestMatch.similarity) {
-              bestMatch = { index: i, similarity, length: windowSize };
-              matches = [bestMatch];
-            }
-            else if(similarity === bestMatch.similarity) {
-              matches.push({ index: i, similarity, length: windowSize });
-            }
+      if (pat.length > hay.length || pat.length < 3) return [];
+
+      // --- KMP helpers ---
+      const buildLPS = (p: string): number[] => {
+        const lps = new Array(p.length).fill(0);
+        let len = 0; // length of the previous longest prefix suffix
+        let i = 1;
+        while (i < p.length) {
+          if (p[i] === p[len]) {
+            len++;
+            lps[i] = len;
+            i++;
+          } else if (len !== 0) {
+            len = lps[len - 1];
+          } else {
+            lps[i] = 0;
+            i++;
           }
         }
-      }
-      
-      // Sort by similarity (descending) and return all matches above threshold
-      return matches.sort((a, b) => b.similarity - a.similarity);
+        return lps;
+      };
+
+      const kmpSearch = (text: string, pattern: string): number[] => {
+        const res: number[] = [];
+        if (pattern.length === 0) return res;
+
+        const lps = buildLPS(pattern);
+        let i = 0; // index for text
+        let j = 0; // index for pattern
+
+        while (i < text.length) {
+          if (text[i] === pattern[j]) {
+            i++;
+            j++;
+            if (j === pattern.length) {
+              res.push(i - j);
+              j = lps[j - 1]; // continue searching for next matches
+            }
+          } else if (j !== 0) {
+            j = lps[j - 1];
+          } else {
+            i++;
+          }
+        }
+        return res;
+      };
+
+      const indices = kmpSearch(hay, pat);
+
+      // Adapt to the expected return structure used by downstream logic
+      return indices.map((idx) => ({
+        index: idx,
+        similarity: 1, // exact match
+        length: pat.length,
+      })).sort((a, b) => b.similarity - a.similarity);
     };
 
     // Best span algorithm implementation
