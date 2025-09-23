@@ -816,7 +816,7 @@ async function getAllOneDriveFiles(
 
 export const handleMicrosoftServiceAccountIngestion = async (
   email: string,
-  connector: SelectConnector 
+  connector: SelectConnector,
 ) => {
   const jobId = uuidv4()
   loggerWithChild({ email: email! }).info(
@@ -1078,7 +1078,6 @@ export const handleMicrosoftOAuthIngestion = async (data: SaaSOAuthJob) => {
     })
   }
 }
-
 
 if (process.env.NODE_ENV !== "production") {
   const init = () => {

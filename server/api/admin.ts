@@ -62,8 +62,18 @@ import {
   Slack,
   MicrosoftEntraId,
 } from "arctic"
-import type { SelectConnector, SelectOAuthProvider, SelectUser } from "@/db/schema"
-import { users, chats, messages, agents, selectConnectorSchema } from "@/db/schema" // Add database schema imports
+import type {
+  SelectConnector,
+  SelectOAuthProvider,
+  SelectUser,
+} from "@/db/schema"
+import {
+  users,
+  chats,
+  messages,
+  agents,
+  selectConnectorSchema,
+} from "@/db/schema" // Add database schema imports
 import {
   getErrorMessage,
   IsGoogleApp,
@@ -104,7 +114,7 @@ import { ClientSecretCredential } from "@azure/identity"
 import { Client as GraphClient } from "@microsoft/microsoft-graph-client"
 import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client"
 import { handleMicrosoftServiceAccountIngestion } from "@/integrations/microsoft"
-import { CustomMicrosoftAuthProvider } from "@/integrations/microsoft/utils"
+import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -452,7 +462,7 @@ export const AddServiceConnectionMicrosoft = async (c: Context) => {
   }
 
   try {
-    const authProvider = new CustomMicrosoftAuthProvider(
+    const authProvider = new CustomServiceAuthProvider(
       tenantId,
       clientId,
       clientSecret,
@@ -469,7 +479,6 @@ export const AddServiceConnectionMicrosoft = async (c: Context) => {
       access_token: accessToken.token,
       expires_at: expiresAt.toISOString(),
     }
-
 
     const res = await insertConnector(
       db,

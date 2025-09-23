@@ -5,10 +5,27 @@ import fs from "node:fs/promises"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { stopwords as englishStopwords } from "@orama/stopwords/english"
-import { Apps } from "@xyne/vespa-ts/types"
-import type { OAuth2Client } from "google-auth-library"
+import { OAuth2Client } from "google-auth-library"
+import { Apps } from "./shared/types"
 import crypto from "node:crypto"
 import type { QueryRouterResponse, TemporalClassifier } from "@/ai/types"
+import { AuthType } from "./shared/types"
+import { todo } from "node:test"
+import {
+  Client,
+  CustomAuthenticationProvider,
+} from "@microsoft/microsoft-graph-client"
+import { OAuthClientInformationFullSchema } from "@modelcontextprotocol/sdk/shared/auth.js"
+import {
+  updateMicrosoftGraphClient,
+  type MicrosoftClient,
+  type MicrosoftGraphClient,
+} from "./integrations/microsoft/client"
+import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
+import { CustomServiceAuthProvider } from "./integrations/microsoft/utils"
+import { scopes } from "./integrations/microsoft/config"
+import { MicrosoftEntraId } from "arctic"
+import config from "./config"
 
 const Logger = getLogger(Subsystem.Utils)
 
@@ -134,7 +151,7 @@ export const retryWithBackoff = async <T>(
   context: string,
   app: Apps,
   retries = 0,
-  googleOauth2Client?: OAuth2Client,
+  authClient?: OAuth2Client | MicrosoftGraphClient,
 ): Promise<T> => {
   try {
     return await fn() // Attempt the function
@@ -180,19 +197,58 @@ export const retryWithBackoff = async <T>(
         )}ms (Attempt ${retries + 1}/${MAX_RETRIES})`,
       )
       await delay(waitTime)
-      return retryWithBackoff(fn, context, app, retries + 1, googleOauth2Client) // Retry recursively
-    } else if (error.code === 401 && retries < MAX_RETRIES) {
-      if (IsGoogleApp(app)) {
-        Logger.info(`401 encountered, refreshing OAuth access token...`)
-        const { credentials } = await googleOauth2Client?.refreshAccessToken()!
-        googleOauth2Client?.setCredentials(credentials)
-        return retryWithBackoff(
-          fn,
-          context,
-          app,
-          retries + 1,
-          googleOauth2Client,
+      return retryWithBackoff(fn, context, app, retries + 1, authClient) // Retry recursively
+    } else if (
+      authClient &&
+      (error.code === 401 || error.code === "InvalidAuthenticationToken") &&
+      retries < MAX_RETRIES
+    ) {
+      if (authClient instanceof OAuth2Client) {
+        if (!IsGoogleApp(app)) {
+          throw new Error("Provided AppType is not google")
+        }
+        Logger.info(
+          `401 encountered with google api, refreshing OAuth access token...`,
         )
+        const { credentials } = await authClient?.refreshAccessToken()!
+        authClient.setCredentials(credentials)
+        return retryWithBackoff(fn, context, app, retries + 1, authClient)
+      } else if (IsMicrosoftApp(app)) {
+        if (authClient.refreshToken) {
+          // OAuth/Delegated authentication
+          const microsoft = new MicrosoftEntraId(
+            "common",
+            authClient.clientId,
+            authClient.clientSecret,
+            `${config.host}/oauth/callback`,
+          )
+
+          const refreshedTokens = await microsoft.refreshAccessToken(
+            authClient.refreshToken,
+            scopes,
+          )
+          updateMicrosoftGraphClient(
+            authClient,
+            refreshedTokens.accessToken(),
+            refreshedTokens.refreshToken(),
+          )
+        } else if (authClient.tenantId) {
+          // Service/app-only authentication
+          const authProvider = new CustomServiceAuthProvider(
+            authClient.tenantId,
+            authClient.clientId,
+            authClient.clientSecret,
+          )
+          updateMicrosoftGraphClient(
+            authClient,
+            await authProvider.getAccessToken(),
+          )
+        } else {
+          throw new Error(
+            "Not enough credentials provided for getting access token after expiry",
+          )
+        }
+        return retryWithBackoff(fn, context, app, retries + 1, authClient)
       } else {
         throw new Error("401 error for unsupported app")
       }

@@ -96,7 +96,7 @@ export const MimeMapForContent: Record<string, boolean> = {
 }
 
 // Custom authentication provider for Microsoft Graph using ClientSecretCredential
-export class CustomMicrosoftAuthProvider implements AuthenticationProvider {
+export class CustomServiceAuthProvider implements AuthenticationProvider {
   private credential: ClientSecretCredential
 
   constructor(tenantId: string, clientId: string, clientSecret: string) {
