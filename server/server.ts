@@ -432,40 +432,41 @@ export const WsApp = app.get(
   }),
 )
 
-const MobileWebSocketAuthMiddleware = async (c: Context, next: any) => {
-  // First try cookie-based auth (for web)
-  try {
-    const cookieToken =
-      getCookie(c, "access_token") || getCookie(c, "accessToken")
-    if (cookieToken) {
-      const decoded = await verify(cookieToken, accessTokenSecret)
-      c.set(JwtPayloadKey, decoded)
-      return await next()
-    }
-  } catch (error) {
-    // Cookie auth failed, try query parameter (for mobile)
-  }
+// const MobileWebSocketAuthMiddleware = async (c: Context, next: any) => {
+//   // First try cookie-based auth (for web)
+//   try {
+//     const cookieToken =
+//       getCookie(c, "access_token") || getCookie(c, "accessToken")
+//     if (cookieToken) {
+//       const decoded = await verify(cookieToken, accessTokenSecret)
+//       c.set(JwtPayloadKey, decoded)
+//       return await next()
+//     }
+//   } catch (error) {
+//     // Cookie auth failed, try query parameter (for mobile)
+//   }
 
-  // Try query parameter auth (for mobile)
-  const queryToken = c.req.query("token")
-  if (!queryToken) {
-    return c.text("Unauthorized: No token provided", 401)
-  }
+//   // Try query parameter auth (for mobile)
+//   const queryToken = c.req.query("token")
+//   if (!queryToken) {
+//     return c.text("Unauthorized: No token provided", 401)
+//   }
 
-  try {
-    const decoded = await verify(queryToken, accessTokenSecret)
-    c.set(JwtPayloadKey, decoded)
-    await next()
-  } catch (error) {
-    Logger.error("WebSocket authentication failed:", error)
-    return c.text("Unauthorized: Invalid token", 401)
-  }
-}
+//   try {
+//     const decoded = await verify(queryToken, accessTokenSecret)
+//     c.set(JwtPayloadKey, decoded)
+//     await next()
+//   } catch (error) {
+//     Logger.error("WebSocket authentication failed:", error)
+//     return c.text("Unauthorized: Invalid token", 401)
+//   }
+// }
 
 // WebSocket endpoint for call notifications
 export const CallNotificationWs = app.get(
   "/ws/calls",
-  MobileWebSocketAuthMiddleware,
+  // MobileWebSocketAuthMiddleware,
+  AuthMiddleware,
   upgradeWebSocket((c) => {
     const payload = c.get(JwtPayloadKey)
     const userEmail = payload.sub

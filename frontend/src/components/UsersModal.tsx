@@ -34,7 +34,7 @@ export default function UsersModal({ onClose }: UsersModalProps) {
           id: data.user.id,
           name: data.user.name,
           email: data.user.email,
-          photoLink: data.user.photoLink
+          photoLink: data.user.photoLink,
         })
       }
     } catch (error) {
@@ -54,7 +54,10 @@ export default function UsersModal({ onClose }: UsersModalProps) {
         setUsers(usersList)
         setFilteredUsers(usersList)
       } else {
-        console.error("Failed to fetch users - response not ok:", response.status)
+        console.error(
+          "Failed to fetch users - response not ok:",
+          response.status,
+        )
         setUsers([])
         setFilteredUsers([])
         toast({
@@ -86,7 +89,7 @@ export default function UsersModal({ onClose }: UsersModalProps) {
 
     try {
       const response = await api.workspace.users.search.$get({
-        query: { q: query }
+        query: { q: query },
       })
       if (response.ok) {
         const data = await response.json()
@@ -96,17 +99,28 @@ export default function UsersModal({ onClose }: UsersModalProps) {
       console.error("Failed to search users:", error)
       // Fallback to local filtering
       const usersList = users || []
-      setFilteredUsers(usersList.filter(user => 
-        user.name?.toLowerCase().includes(query.toLowerCase()) ||
-        user.email?.toLowerCase().includes(query.toLowerCase())
-      ))
+      setFilteredUsers(
+        usersList.filter(
+          (user) =>
+            user.name?.toLowerCase().includes(query.toLowerCase()) ||
+            user.email?.toLowerCase().includes(query.toLowerCase()),
+        ),
+      )
     }
   }
 
   // Initiate a call
-  const initiateCall = async (targetUserId: string, callType: "video" | "audio" = "video") => {
-    console.log("Initiating call with targetUserId:", targetUserId, "callType:", callType)
-    
+  const initiateCall = async (
+    targetUserId: string,
+    callType: "video" | "audio" = "video",
+  ) => {
+    console.log(
+      "Initiating call with targetUserId:",
+      targetUserId,
+      "callType:",
+      callType,
+    )
+
     if (!targetUserId) {
       toast({
         title: "Error",
@@ -118,52 +132,35 @@ export default function UsersModal({ onClose }: UsersModalProps) {
 
     try {
       const response = await api.calls.initiate.$post({
-        json: { targetUserId, callType }
+        json: { targetUserId, callType },
       })
-      
+
       if (response.ok) {
         const data = await response.json()
-        
+
         // Generate both call links
         const callerLink = `${window.location.origin}/call?room=${data.roomName}&token=${data.callerToken}&type=${callType}`
         const targetLink = `${window.location.origin}/call?room=${data.roomName}&token=${data.targetToken}&type=${callType}`
-        
-        // Show notification status in toast
-        const notificationStatus = data.notificationSent 
-          ? `✅ Real-time notification sent to ${data.target.name}!`
-          : `⚠️ ${data.target.name} is offline - share the link manually`
-        
-        // Show a detailed toast with both links
+
+        // Show simple notification status
+        const notificationStatus = data.notificationSent
+          ? `Real-time notification sent to ${data.target.name}!`
+          : `${data.target.name} is offline - you can share the link from the call interface.`
+
+        // Show a simple toast
         toast({
-          title: "Call Initiated!",
-          description: (
-            <div className="space-y-2">
-              <p>Room created for {data.target.name}</p>
-              <p className="text-sm font-medium text-blue-600">{notificationStatus}</p>
-              <div className="text-xs space-y-1">
-                <p className="font-medium">Your call link (auto-opening):</p>
-                <p className="bg-gray-100 p-1 rounded text-xs break-all">{callerLink}</p>
-                <p className="font-medium">Share this link with {data.target.name}:</p>
-                <p className="bg-blue-100 p-1 rounded text-xs break-all">{targetLink}</p>
-              </div>
-              <button 
-                onClick={() => navigator.clipboard.writeText(targetLink)}
-                className="text-xs bg-blue-500 text-white px-2 py-1 rounded"
-              >
-                Copy Target Link
-              </button>
-            </div>
-          ),
-          duration: 15000, // Show for 15 seconds
+          title: "Call Started!",
+          description: notificationStatus,
+          duration: 3000,
         })
-        
+
         // Open the caller's window
         const callWindow = window.open(
           callerLink,
           "call-window-caller",
-          "width=800,height=600,resizable=yes,scrollbars=no,status=no,location=no,toolbar=no,menubar=no"
+          "width=800,height=600,resizable=yes,scrollbars=no,status=no,location=no,toolbar=no,menubar=no",
         )
-        
+
         if (!callWindow) {
           toast({
             title: "Popup Blocked",
@@ -171,28 +168,28 @@ export default function UsersModal({ onClose }: UsersModalProps) {
             variant: "destructive",
           })
         }
-        
-        // Also log the links to console for easy access
+
+        // Log the links to console for debugging
         console.log("=== CALL INITIATED ===")
         console.log("Caller Link:", callerLink)
         console.log("Target Link (share this):", targetLink)
         console.log("Room Name:", data.roomName)
         console.log("=====================")
-        
+
         // For testing: open both windows (comment out in production)
-        if (process.env.NODE_ENV === 'development') {
+        if (process.env.NODE_ENV === "development") {
           setTimeout(() => {
             const targetWindow = window.open(
               targetLink,
               "call-window-target",
-              "width=800,height=600,resizable=yes,scrollbars=no,status=no,location=no,toolbar=no,menubar=no"
+              "width=800,height=600,resizable=yes,scrollbars=no,status=no,location=no,toolbar=no,menubar=no",
             )
             if (targetWindow) {
               console.log("Opened target window for testing")
             }
           }, 2000) // Open target window 2 seconds after caller window
         }
-        
+
         onClose()
       } else {
         try {
@@ -200,7 +197,10 @@ export default function UsersModal({ onClose }: UsersModalProps) {
           console.error("API Error:", errorData)
           toast({
             title: "Call Failed",
-            description: errorData.message || errorData.error?.message || "Failed to initiate call",
+            description:
+              errorData.message ||
+              errorData.error?.message ||
+              "Failed to initiate call",
             variant: "destructive",
           })
         } catch (parseError) {
@@ -243,7 +243,7 @@ export default function UsersModal({ onClose }: UsersModalProps) {
     <div
       className={cn(
         "fixed left-[52px] top-4 bottom-4 w-80 bg-white dark:bg-[#1E1E1E] border border-[#D7E0E9] dark:border-gray-700 rounded-lg shadow-lg z-30 flex flex-col",
-        CLASS_NAMES.HISTORY_MODAL_CONTAINER // Reuse the same class name for consistent styling
+        CLASS_NAMES.HISTORY_MODAL_CONTAINER, // Reuse the same class name for consistent styling
       )}
     >
       {/* Header */}
@@ -262,7 +262,10 @@ export default function UsersModal({ onClose }: UsersModalProps) {
       {/* Search */}
       <div className="p-4 border-b border-[#D7E0E9] dark:border-gray-700">
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+          />
           <Input
             placeholder="Search users..."
             value={searchQuery}
@@ -321,9 +324,7 @@ export default function UsersModal({ onClose }: UsersModalProps) {
                 {/* Call Buttons */}
                 <div className="flex-shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   {currentUser && currentUser.email === user.email ? (
-                    <div className="text-xs text-gray-500 px-2 py-1">
-                      You
-                    </div>
+                    <div className="text-xs text-gray-500 px-2 py-1">You</div>
                   ) : (
                     <div className="flex space-x-1">
                       <button
