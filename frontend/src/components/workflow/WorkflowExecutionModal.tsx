@@ -37,8 +37,6 @@ export function WorkflowExecutionModal({
   workflowName,
   workflowDescription,
   templateId,
-  workflowTemplate,
-  workflowData,
   onViewExecution,
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -271,38 +269,11 @@ export function WorkflowExecutionModal({
     setIsProcessing(true)
     
     try {
-      // If workflowData is provided, create template first, then execute
-      if (workflowData && !templateId) {
-        console.log("Creating workflow template and executing...")
-        
-        // Create the workflow template via complex.post API
-        const createResponse = await api.workflow.templates.complex.$post({
-          json: workflowData,
-        })
-
-        if (!createResponse.ok) {
-          const errorText = await createResponse.text()
-          throw new Error(`Failed to create workflow template: ${createResponse.status} ${createResponse.statusText}. ${errorText.substring(0, 200)}`)
-        }
-
-        const createResult = await createResponse.json()
-        console.log("✅ Workflow template created successfully:", createResult)
-
-        if (!createResult.success || !createResult.data) {
-          throw new Error("Failed to create workflow template: Invalid response format")
-        }
-
-        // Extract the created template ID
-        const createdTemplateId = createResult.data.id
-        console.log("📋 Created template ID:", createdTemplateId)
-
-        // Now execute with the created template
-        await executeWorkflow(selectedFile, createdTemplateId)
-      } else if (templateId) {
-        // Use existing template ID
+      // Only execute with existing template ID
+      if (templateId) {
         await executeWorkflow(selectedFile, templateId)
       } else {
-        throw new Error("No template ID or workflow data provided for execution")
+        throw new Error("No template ID provided for execution. Please save the workflow first.")
       }
     } catch (error) {
       console.error("Execution error:", error)
@@ -692,17 +663,25 @@ export function WorkflowExecutionModal({
             {/* Action Button */}
             <div className="px-8 pb-8">
               <div className="flex justify-end">
-                <Button
-                  onClick={handleStartExecution}
-                  disabled={!selectedFile}
-                  className={`px-6 py-2 rounded-full font-medium transition-all ${
-                    selectedFile
-                      ? "bg-black hover:bg-gray-800 text-white"
-                      : "bg-gray-400 cursor-not-allowed text-gray-600"
-                  }`}
-                >
-                  Start Execution
-                </Button>
+                <div className="relative group">
+                  <Button
+                    onClick={handleStartExecution}
+                    disabled={!selectedFile || !templateId}
+                    className={`px-6 py-2 rounded-full font-medium transition-all ${
+                      selectedFile && templateId
+                        ? "bg-black hover:bg-gray-800 text-white"
+                        : "bg-gray-400 cursor-not-allowed text-gray-600"
+                    }`}
+                  >
+                    Start Execution
+                  </Button>
+                  {!templateId && (
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+                      template not saved Please save template
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </>
