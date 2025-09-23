@@ -156,6 +156,8 @@ import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
+import Snackbar from "../ui/Snackbar"
+import ConfirmationPopup from "../ui/ConfirmationPopup"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -1125,6 +1127,10 @@ const Header = ({
   selectedTemplate,
   onWorkflowNameChange,
   isEditable = true,
+  onSaveChanges,
+  isSaveDisabled = false,
+  hasUnsavedChanges = false,
+  onConfirmRefresh,
 }: { 
   onBackToWorkflows?: () => void; 
   onRefreshWorkflows?: () => void;
@@ -1132,6 +1138,10 @@ const Header = ({
   selectedTemplate?: WorkflowTemplate | null;
   onWorkflowNameChange?: (newName: string) => void;
   isEditable?: boolean;
+  onSaveChanges?: () => void;
+  isSaveDisabled?: boolean;
+  hasUnsavedChanges?: boolean;
+  onConfirmRefresh?: (callback: () => void) => void;
 }) => {
   const [isEditing, setIsEditing] = useState(false)
   const [editingName, setEditingName] = useState("")
@@ -1174,14 +1184,23 @@ const Header = ({
   }, [isEditing])
 
   return (
-    <div className="flex items-center justify-start px-6 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px]">
+    <div className="flex items-center justify-between px-6 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px]">
       {/* Breadcrumb */}
       <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
         <span
           className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
           onClick={() => {
-            onBackToWorkflows?.()
-            onRefreshWorkflows?.()
+            const handleRefresh = () => {
+              onBackToWorkflows?.()
+              onRefreshWorkflows?.()
+            }
+            
+            // Check if we're in editable mode with unsaved changes
+            if (isEditable && hasUnsavedChanges && onConfirmRefresh) {
+              onConfirmRefresh(handleRefresh)
+            } else {
+              handleRefresh()
+            }
           }}
         >
           Workflow
@@ -1214,6 +1233,21 @@ const Header = ({
           )}
         </span>
       </div>
+
+      {/* Save Changes Button - only show in builder mode (create from blank) */}
+      {onSaveChanges && isEditable && (
+          <button
+            onClick={onSaveChanges}
+            disabled={isSaveDisabled}
+            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
+              isSaveDisabled
+                ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
+            }`}
+          >
+            Save Changes
+          </button>
+      )}
     </div>
   )
 }
@@ -1847,6 +1881,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
   // Workflow name state
   const [currentWorkflowName, setCurrentWorkflowName] = useState<string>("")
+  // Snackbar state
+  const [snackbarMessage, setSnackbarMessage] = useState<string>("")
+  const [snackbarType, setSnackbarType] = useState<'success' | 'error' | 'warning' | 'info'>('info')
+  const [showSnackbar, setShowSnackbar] = useState(false)
+  // Save Changes button state
+  const [isWorkflowSaved, setIsWorkflowSaved] = useState(false)
+  const [hasWorkflowChanged, setHasWorkflowChanged] = useState(false)
+  const [lastSavedHash, setLastSavedHash] = useState<string>("")
+  // Confirmation popup state
+  const [showConfirmationPopup, setShowConfirmationPopup] = useState(false)
+  const [pendingRefreshCallback, setPendingRefreshCallback] = useState<(() => void) | null>(null)
 
   // Empty initial state
   const initialNodes: Node[] = []
@@ -1862,6 +1907,37 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     return tools && tools.length > 0 ? tools[0]?.id : undefined
   }, [nodes])
   
+  // Helper function to show snackbar messages
+  const showSnackbarMessage = useCallback((message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+    setSnackbarMessage(message)
+    setSnackbarType(type)
+    setShowSnackbar(true)
+  }, [])
+
+  // Helper function to create a hash of the current workflow state
+  // Excludes position coordinates and UI state to prevent save button activation on node drag or UI interactions
+  const createWorkflowHash = () => {
+    const workflowState = {
+      nodes: nodes.map(node => ({
+        id: node.id,
+        type: node.type,
+        // Exclude position from hash calculation
+        data: {
+          step: node.data?.step,
+          tools: node.data?.tools,
+          // Exclude UI state properties like hasNext, isActive, isCompleted, anyNodeSelected
+        }
+      })),
+      edges: edges.map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: edge.type
+      }))
+    }
+    return JSON.stringify(workflowState)
+  }
+
   // Helper function to get workflow name consistently across components
   const getWorkflowName = useCallback(() => {
     // If user has set a custom name, use it
@@ -2062,11 +2138,56 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         setCurrentWorkflowName(templateToUse.name)
       }
 
+      // Reset save state when loading a template (existing workflow)
+      setIsWorkflowSaved(true) // Template is already saved
+      setHasWorkflowChanged(false) // No changes yet
+      const initialHash = createWorkflowHash()
+      setLastSavedHash(initialHash)
+
       setTimeout(() => {
         fitView({ padding: 0.2 })
       }, 50)
     }
   }, [selectedTemplate, localSelectedTemplate, setNodes, setEdges, fitView, currentWorkflowName, setCurrentWorkflowName])
+
+  // Monitor workflow changes to enable/disable Save Changes button
+  useEffect(() => {
+    if (nodes.length > 0 || edges.length > 0) {
+      const currentHash = createWorkflowHash()
+      
+      // Check if we have a valid trigger node (not just the trigger selector)
+      const hasValidTrigger = nodes.some(node => {
+        const nodeData = node.data as any
+        return nodeData?.step?.type && 
+               nodeData.step.type !== "trigger_selector" && 
+               (nodeData.step.type === "form_submission" || 
+                nodeData.step.type === "manual" || 
+                nodeData.step.type === "schedule" ||
+                nodeData.step.type === "app_event")
+      })
+      
+      if (lastSavedHash === "" && hasValidTrigger) {
+        // First time with nodes/edges and valid trigger, mark as changed
+        setHasWorkflowChanged(true)
+        setIsWorkflowSaved(false)
+      } else if (currentHash !== lastSavedHash && hasValidTrigger) {
+        // Workflow has changed since last save and has valid trigger
+        setHasWorkflowChanged(true)
+        setIsWorkflowSaved(false)
+      } else if (!hasValidTrigger) {
+        // No valid trigger yet, keep disabled
+        setHasWorkflowChanged(false)
+        setIsWorkflowSaved(false)
+      } else {
+        // Workflow matches last saved state
+        setHasWorkflowChanged(false)
+      }
+    } else {
+      // No nodes/edges, reset state
+      setHasWorkflowChanged(false)
+      setIsWorkflowSaved(false)
+    }
+  }, [nodes, edges, lastSavedHash])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -2580,71 +2701,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         throw new Error("Cannot execute workflow: No workflow steps defined. Please add at least one step to your workflow.")
       }
 
-      // Create the workflow state payload that will be sent to the complex template API
-      // Use the centralized name resolution function to ensure consistency
-      const derivedName = getWorkflowName()
+      // Check if we already have a saved template
+      const currentTemplate = createdTemplate || selectedTemplate
       
-      const workflowData = {
-        name: derivedName,
-        description: selectedTemplate?.description || "Workflow created from builder",
-        version: "1.0.0",
-        config: {
-          ai_model: "gemini-1.5-pro",
-          max_file_size: "40MB",
-          auto_execution: false,
-          schema_version: "1.0",
-          allowed_file_types: ["pdf", "docx", "txt", "jpg", "png"],
-          supports_file_upload: true,
-        },
-        nodes: nodes.map(node => ({
-          id: node.id,
-          type: node.type,
-          position: node.position,
-          data: {
-            step: node.data?.step,
-            tools: node.data?.tools,
-            isActive: node.data?.isActive,
-            isCompleted: node.data?.isCompleted,
-            hasNext: node.data?.hasNext,
-          }
-        })),
-        edges: edges.map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          type: edge.type,
-          sourceHandle: edge.sourceHandle,
-          targetHandle: edge.targetHandle,
-          style: edge.style,
-          markerEnd: edge.markerEnd,
-        })),
-        metadata: {
-          nodeCount: nodes.length,
-          edgeCount: edges.length,
-          createdAt: new Date().toISOString(),
-          workflowType: templateWorkflow ? 'template-based' : 'user-created'
-        }
+      if (currentTemplate && currentTemplate.id && currentTemplate.id !== 'pending-creation') {
+        // We have a valid saved template, open the execution modal directly
+        setShowExecutionModal(true)
+        return
       }
 
-      // Store the workflow data for the execution modal
-      setCreatedTemplate({
-        id: 'pending-creation', // Temporary ID to indicate pending creation
-        name: workflowData.name,
-        description: workflowData.description,
-        version: workflowData.version,
-        status: 'draft',
-        config: workflowData.config,
-        createdBy: 'current-user',
-        rootWorkflowStepTemplateId: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        workflowData: workflowData // Store the complete workflow data for template creation
-      } as any)
-      
-      // Open the WorkflowExecutionModal with the workflow data
-      setShowExecutionModal(true)
+      // If no saved template exists, show snackbar message instead of throwing error
+      showSnackbarMessage(
+        "Cannot execute workflow: No saved template found. Please save the workflow first using the 'Save Changes' button.",
+        'warning'
+      )
     }
-  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName])
+  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName, showSnackbarMessage])
 
   const handleTriggerClick = useCallback(
     (triggerId: string) => {
@@ -3212,6 +3284,157 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     // or make an API call to save the name change
   }, [currentWorkflowName])
 
+  // Handler for refresh confirmation
+  const handleConfirmRefresh = useCallback((callback: () => void) => {
+    setPendingRefreshCallback(() => callback)
+    setShowConfirmationPopup(true)
+  }, [])
+
+  // Handler for beforeunload event (browser refresh/close)
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Only show warning if in builder mode with unsaved changes
+      if (builder && hasWorkflowChanged) {
+        event.preventDefault()
+        event.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
+        return 'You have unsaved changes. Are you sure you want to leave?'
+      }
+    }
+
+    // Handler for keyboard refresh events (Cmd+R, Cmd+Shift+R)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Cmd+R or Cmd+Shift+R (Mac) or Ctrl+R, Ctrl+Shift+R (Windows/Linux)
+      const isRefreshKey = event.key === 'r' || event.key === 'R'
+      const isModifierPressed = event.metaKey || event.ctrlKey // Cmd on Mac, Ctrl on Windows/Linux
+      
+      if (isRefreshKey && isModifierPressed && builder && hasWorkflowChanged) {
+        // Prevent the default refresh behavior
+        event.preventDefault()
+        event.stopPropagation()
+        
+        // Show our custom confirmation popup
+        handleConfirmRefresh(() => {
+          // If user confirms, perform the refresh
+          window.location.reload()
+        })
+      }
+    }
+
+    // Add event listeners
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('keydown', handleKeyDown, true) // Use capture phase for better control
+
+    // Cleanup event listeners
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('keydown', handleKeyDown, true)
+    }
+  }, [builder, hasWorkflowChanged, handleConfirmRefresh])
+
+  // Handler for save changes button
+  const handleSaveChanges = useCallback(async () => {
+    try {
+      // Check if we have nodes to create a workflow
+      if (nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.step?.type === "trigger_selector")) {
+        throw new Error("Cannot save workflow: No workflow steps defined. Please add at least one step to your workflow.")
+      }
+
+      // Create the workflow state payload that will be sent to the complex template API
+      // Use the centralized name resolution function to ensure consistency
+      const derivedName = getWorkflowName()
+      
+      const workflowData = {
+        name: derivedName,
+        description: selectedTemplate?.description || "Workflow created from builder",
+        version: "1.0.0",
+        config: {
+          ai_model: "gemini-1.5-pro",
+          max_file_size: "10MB",
+          auto_execution: false,
+          schema_version: "1.0",
+          allowed_file_types: ["pdf", "docx", "txt", "jpg", "png"],
+          supports_file_upload: true,
+        },
+        nodes: nodes.map(node => ({
+          id: node.id,
+          type: node.type,
+          position: node.position,
+          data: {
+            step: node.data?.step,
+            tools: node.data?.tools,
+            isActive: node.data?.isActive,
+            isCompleted: node.data?.isCompleted,
+            hasNext: node.data?.hasNext,
+          }
+        })),
+        edges: edges.map(edge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: edge.type,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle,
+          style: edge.style,
+          markerEnd: edge.markerEnd,
+        })),
+        metadata: {
+          nodeCount: nodes.length,
+          edgeCount: edges.length,
+          createdAt: new Date().toISOString(),
+          workflowType: templateWorkflow ? 'template-based' : 'user-created'
+        }
+      }
+
+      // Create the workflow template via complex.post API
+      const createResponse = await api.workflow.templates.complex.$post({
+        json: workflowData,
+      })
+
+      if (!createResponse.ok) {
+        const errorText = await createResponse.text()
+        throw new Error(`Failed to create workflow template: ${createResponse.status} ${createResponse.statusText}. ${errorText.substring(0, 200)}`)
+      }
+
+      const createResult = await createResponse.json()
+
+      if (!createResult.success || !createResult.data) {
+        throw new Error("Failed to create workflow template: Invalid response format")
+      }
+
+      // Extract the created template ID
+      const createdTemplateId = createResult.data.id
+
+      // Update the created template state for future use
+      const newCreatedTemplate = {
+        id: createdTemplateId,
+        name: workflowData.name,
+        description: workflowData.description,
+        version: workflowData.version,
+        status: 'active',
+        config: workflowData.config,
+        createdBy: 'current-user',
+        rootWorkflowStepTemplateId: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any
+      
+      setCreatedTemplate(newCreatedTemplate)
+      
+      // Mark workflow as saved and update hash
+      const currentHash = createWorkflowHash()
+      setLastSavedHash(currentHash)
+      setIsWorkflowSaved(true)
+      setHasWorkflowChanged(false)
+      
+      // Show success snackbar
+      showSnackbarMessage("Workflow saved successfully! You can now execute it.", 'success')
+
+    } catch (error) {
+      console.error("Failed to save workflow:", error)
+      showSnackbarMessage(`Failed to save workflow: ${error instanceof Error ? error.message : "Unknown error"}`, 'error')
+    }
+  }, [nodes, edges, templateWorkflow, selectedTemplate, getWorkflowName, setCreatedTemplate, showSnackbarMessage])
+
   // Use the centralized workflow name function for display consistency
 
   return (
@@ -3224,6 +3447,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         selectedTemplate={selectedTemplate}
         onWorkflowNameChange={handleWorkflowNameChange}
         isEditable={builder}
+        onSaveChanges={handleSaveChanges}
+        isSaveDisabled={!hasWorkflowChanged || (isWorkflowSaved && !hasWorkflowChanged)}
+        hasUnsavedChanges={builder && hasWorkflowChanged}
+        onConfirmRefresh={handleConfirmRefresh}
       />
 
       {/* Main content area */}
@@ -3305,13 +3532,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       await executeWorkflow()
                     } catch (error) {
                       console.error("Failed to execute workflow:", error)
-                      // You could add user notification here if needed
-                      alert(`Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`)
+                      showSnackbarMessage(`Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`, 'error')
                     }
                   }}
                   zoomLevel={zoomLevel}
                   onZoomChange={handleZoomChange}
-                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector)}
+                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector) || (builder && !isWorkflowSaved)}
                 />
               </Panel>
             )}
@@ -3580,21 +3806,25 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       />
 
       {/* Workflow Execution Modal */}
-      {showExecutionModal && (createdTemplate || selectedTemplate) && (
-        <WorkflowExecutionModal
-          isOpen={showExecutionModal}
-          onClose={() => {
-            setShowExecutionModal(false)
-            setCreatedTemplate(null) // Clear created template when modal closes
-          }}
-          workflowName={(createdTemplate || selectedTemplate)?.name || "Custom Workflow"}
-          workflowDescription={(createdTemplate || selectedTemplate)?.description || "User-created workflow"}
-          templateId={(createdTemplate || selectedTemplate)?.id !== 'pending-creation' ? (createdTemplate || selectedTemplate)?.id : undefined}
-          workflowTemplate={(createdTemplate || selectedTemplate)?.id !== 'pending-creation' ? (createdTemplate || selectedTemplate) || undefined : undefined}
-          workflowData={(createdTemplate as any)?.workflowData}
-          onViewExecution={onViewExecution}
-        />
-      )}
+      {showExecutionModal && (createdTemplate || selectedTemplate) && (() => {
+        const template = createdTemplate || selectedTemplate
+        const templateId = template?.id !== 'pending-creation' ? template?.id : undefined
+        
+        return (
+          <WorkflowExecutionModal
+            isOpen={showExecutionModal}
+            onClose={() => {
+              setShowExecutionModal(false)
+              // Keep createdTemplate state so it can be reused for future executions
+            }}
+            workflowName={template?.name || "Custom Workflow"}
+            workflowDescription={template?.description || "User-created workflow"}
+            templateId={templateId}
+            workflowTemplate={templateId ? template || undefined : undefined}
+            onViewExecution={onViewExecution}
+          />
+        )
+      })()}
 
       {/* Template Selection Modal */}
       <TemplateSelectionModal
@@ -3613,6 +3843,36 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         loading={templatesLoading}
         error={templatesError}
         onSelectTemplate={handleTemplateSelect}
+      />
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        message={snackbarMessage}
+        type={snackbarType}
+        isVisible={showSnackbar}
+        onClose={() => setShowSnackbar(false)}
+        duration={5000}
+        position="top-center"
+      />
+
+      {/* Confirmation Popup for unsaved changes */}
+      <ConfirmationPopup
+        isVisible={showConfirmationPopup}
+        title="Hold on — you have unsaved work"
+        message="Refreshing now will discard your edits permanently"
+        confirmText="Refresh"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setShowConfirmationPopup(false)
+          if (pendingRefreshCallback) {
+            pendingRefreshCallback()
+            setPendingRefreshCallback(null)
+          }
+        }}
+        onCancel={() => {
+          setShowConfirmationPopup(false)
+          setPendingRefreshCallback(null)
+        }}
       />
     </div>
   )
