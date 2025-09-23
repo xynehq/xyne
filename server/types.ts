@@ -563,3 +563,10 @@ export const UserRoleChangeSchema = z.object({
 })
 
 export type userRoleChange = z.infer<typeof UserRoleChangeSchema>
+
+export const UserMetadata = z.object({
+  userTimezone: z.string(),
+  dateForAI: z.string(),
+})
+
+export type UserMetadataType = z.infer<typeof UserMetadata>

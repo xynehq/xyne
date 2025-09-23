@@ -29,7 +29,7 @@ const {
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
-import { MessageRole, Subsystem } from "@/types"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
 
@@ -1127,7 +1127,7 @@ const indexToCitation = (text: string): string => {
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
-  dateForAI: string,
+  userMetadata: UserMetadataType,
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
@@ -1148,7 +1148,7 @@ export const baselineRAGJsonStream = (
     if (isMsgWithSources) {
       params.systemPrompt = agentBaselineFileContextPromptJson(
         userCtx,
-        dateForAI,
+        userMetadata.dateForAI,
         retrievedCtx,
       )
     } else if (!isAgentPromptEmpty(params.agentPrompt)) {
@@ -1185,13 +1185,13 @@ export const baselineRAGJsonStream = (
         userCtx,
         indexToCitation(retrievedCtx),
         parseAgentPrompt(params.agentPrompt),
-        dateForAI,
+        userMetadata.dateForAI,
       )
     } else {
       params.systemPrompt = baselinePromptJson(
         userCtx,
         indexToCitation(retrievedCtx),
-        dateForAI,
+        userMetadata.dateForAI,
       )
     }
   }
@@ -1527,7 +1527,7 @@ export async function generateToolSelectionOutput(
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
-  dateForAI: string,
+  userMetadata: UserMetadataType,
   params: ModelParams,
   toolContext?: string,
   previousClassification?: QueryRouterLLMResponse | null,
@@ -1545,13 +1545,13 @@ export function generateSearchQueryOrAnswerFromConversation(
   } else if (!isAgentPromptEmpty(params.agentPrompt)) {
     params.systemPrompt = agentSearchQueryPrompt(
       userContext,
-      dateForAI,
+      userMetadata.dateForAI,
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
     params.systemPrompt = searchQueryPrompt(
       userContext,
-      dateForAI,
+      userMetadata.dateForAI,
       previousClassification,
       chainBreakClassifications,
     )

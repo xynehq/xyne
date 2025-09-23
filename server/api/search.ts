@@ -52,7 +52,7 @@ import { AnswerSSEvents, AuthType, ConnectorStatus } from "@/shared/types"
 import { agentPromptPayloadSchema } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { Subsystem } from "@/types"
+import { Subsystem, type UserMetadataType } from "@/types"
 import { getPublicUserAndWorkspaceByEmail, getUserByEmail } from "@/db/user"
 import { db } from "@/db/client"
 import type { PublicUserWorkspace } from "@/db/schema"
@@ -579,7 +579,9 @@ export const AnswerApi = async (c: Context) => {
   const costArr: number[] = []
 
   const ctx = userContext(userAndWorkspace)
-  const dateForAI = getDateForAI({userTimeZone: userAndWorkspace.user.timeZone || "Asia/Kolkata"})
+  const userTimezone = userAndWorkspace.user?.timeZone || "Asia/Kolkata"
+  const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+  const userMetadata: UserMetadataType = {userTimezone, dateForAI}
   const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${query}`
   // could be called parallely if not for userAndWorkspace
   let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
@@ -592,7 +594,7 @@ export const AnswerApi = async (c: Context) => {
   }
   const initialContext = cleanContext(
     results.root.children
-      .map((v) => answerContextMap(v as VespaSearchResults))
+      .map((v) => answerContextMap(v as VespaSearchResults, userMetadata))
       .join("\n"),
   )
 
@@ -653,7 +655,7 @@ export const AnswerApi = async (c: Context) => {
   const metadataContext = results.root.children
     .map((v, i) =>
       cleanContext(
-        `Index ${i} \n ${answerMetadataContextMap(v as VespaSearchResults, dateForAI)}`,
+        `Index ${i} \n ${answerMetadataContextMap(v as VespaSearchResults, userMetadata.dateForAI, userMetadata.userTimezone)}`,
       ),
     )
     .join("\n\n")
@@ -672,7 +674,7 @@ export const AnswerApi = async (c: Context) => {
   const finalContext = cleanContext(
     results.root.children
       .filter((v, i) => output?.contextualChunks.includes(i))
-      .map((v) => answerContextMap(v as VespaSearchResults))
+      .map((v) => answerContextMap(v as VespaSearchResults, userMetadata))
       .join("\n"),
   )
 

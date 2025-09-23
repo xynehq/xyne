@@ -92,6 +92,7 @@ import {
   Subsystem,
   MCPClientConfig,
   MCPClientStdioConfig,
+  type UserMetadataType,
 } from "@/types"
 import {
   delay,
@@ -567,9 +568,10 @@ const checkAndYieldCitationsForAgent = async function* (
 const vespaResultToMinimalAgentFragment = (
   child: VespaSearchResult,
   idx: number,
+  userMetadata: UserMetadataType,
 ): MinimalAgentFragment => ({
   id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
-  content: answerContextMap(child as VespaSearchResults, 0, true),
+  content: answerContextMap(child as VespaSearchResults, userMetadata, 0, true),
   source: searchToCitation(child as VespaSearchResults),
   confidence: 1.0,
 })
@@ -1078,7 +1080,9 @@ export const MessageWithToolsApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
-    const dateForAI = getDateForAI({ userTimeZone: user?.timeZone || "Asia/Kolkata" })
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
     initSpan.end()
 
@@ -1719,6 +1723,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 async (v, i) => {
                   let content = answerContextMap(
                     v as VespaSearchResults,
+                    userMetadata,
                     0,
                     true,
                   )
@@ -1780,27 +1785,27 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               planningContext = cleanContext(resolvedContexts?.join("\n"))
               if (chatContexts.length > 0) {
-                planningContext += "\n" + buildContext(chatContexts, 10)
+                planningContext += "\n" + buildContext(chatContexts, 10, userMetadata)
               }
               if (threadContexts.length > 0) {
-                planningContext += "\n" + buildContext(threadContexts, 10)
+                planningContext += "\n" + buildContext(threadContexts, 10, userMetadata)
               }
 
               gatheredFragments = results.root.children.map(
                 (child: VespaSearchResult, idx) =>
-                  vespaResultToMinimalAgentFragment(child, idx),
+                  vespaResultToMinimalAgentFragment(child, idx, userMetadata),
               )
               if (chatContexts.length > 0) {
                 gatheredFragments.push(
                   ...chatContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx),
+                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
                   ),
                 )
               }
               if (threadContexts.length > 0) {
                 gatheredFragments.push(
                   ...threadContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx),
+                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
                   ),
                 )
               }
@@ -2939,7 +2944,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
-    const dateForAI = getDateForAI({userTimeZone: user?.timeZone || "Asia/Kolkata"})
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3087,7 +3094,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             if (allChunks?.root?.children) {
               const startIndex = 0
               fragments = allChunks.root.children.map((child, idx) =>
-                vespaResultToMinimalAgentFragment(child, idx),
+                vespaResultToMinimalAgentFragment(child, idx, userMetadata),
               )
               context = answerContextMapFromFragments(
                 fragments,
@@ -3355,7 +3362,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
           if (allChunks?.root?.children) {
             fragments = allChunks.root.children.map((child, idx) =>
-              vespaResultToMinimalAgentFragment(child, idx),
+              vespaResultToMinimalAgentFragment(child, idx, userMetadata),
             )
             context = answerContextMapFromFragments(
               fragments,
@@ -3733,7 +3740,9 @@ export const AgentMessageApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
-    const dateForAI = getDateForAI({userTimeZone: user.timeZone || "Asia/Kolkata"})
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3925,7 +3934,7 @@ export const AgentMessageApi = async (c: Context) => {
               const iterator = UnderstandMessageAndAnswerForGivenContext(
                 email,
                 ctx,
-                dateForAI,
+                userMetadata,
                 message,
                 0.5,
                 fileIds,
@@ -4239,7 +4248,7 @@ export const AgentMessageApi = async (c: Context) => {
                   generateSearchQueryOrAnswerFromConversation(
                     message,
                     ctx,
-                    dateForAI,
+                    userMetadata,
                     {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
@@ -4467,7 +4476,7 @@ export const AgentMessageApi = async (c: Context) => {
                 const iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,
-                  dateForAI,
+                  userMetadata,
                   message,
                   classification,
                   limitedMessages,
@@ -4921,7 +4930,7 @@ export const AgentMessageApi = async (c: Context) => {
           const iterator = UnderstandMessageAndAnswerForGivenContext(
             email,
             ctx,
-            dateForAI,
+            userMetadata,
             message,
             0.5,
             fileIds,

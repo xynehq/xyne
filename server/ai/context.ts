@@ -31,6 +31,7 @@ import {
   getSortedScoredChunks,
   getSortedScoredImageChunks,
 } from "@xyne/vespa-ts/mappers"
+import type { UserMetadataType } from "@/types"
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -56,6 +57,7 @@ Tool Description: ${description}
 const constructFileContext = (
   fields: VespaFileSearch,
   relevance: number,
+  userTimezone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
@@ -101,7 +103,7 @@ const constructFileContext = (
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
-Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString()})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString()})` : ""}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.parentId ? `parent FolderId: ${fields.parentId}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
@@ -128,6 +130,7 @@ vespa relevance score: ${relevance}`
 const constructMailContext = (
   fields: VespaMailSearch,
   relevance: number,
+  userTimezone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
@@ -167,7 +170,7 @@ const constructMailContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString()})` : ""}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
@@ -181,6 +184,7 @@ vespa relevance score: ${relevance}`
 const constructSlackMessageContext = (
   fields: VespaChatMessageSearch,
   relevance: number,
+  userTimezone: string,
 ): string => {
   let channelCtx = ``
   if (fields.isIm && fields.permissions) {
@@ -198,7 +202,7 @@ const constructSlackMessageContext = (
     Username: ${fields.username}
     Message: ${fields.text}
     ${fields.threadId ? "it's a message thread" : ""}
-    ${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString()})` : ""}
+    ${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
 }
@@ -206,6 +210,7 @@ const constructSlackMessageContext = (
 const constructSlackChannelContext = (
   fields: VespaChatContainerSearch,
   relevance: number,
+  userTimezone: string,
 ): string => {
   let channelCtx = ``
   if (fields.isIm) {
@@ -229,7 +234,7 @@ ${
   typeof fields.createdAt === "number" && isFinite(fields.createdAt)
     ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(
         fields.createdAt,
-      ).toLocaleString()})`
+      ).toLocaleString("en-US", {timeZone: userTimezone})})`
     : ""
 }
 vespa relevance score: ${relevance}`
@@ -238,6 +243,7 @@ vespa relevance score: ${relevance}`
 const constructMailAttachmentContext = (
   fields: VespaMailAttachmentSearch,
   relevance: number,
+  userTimeZone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
@@ -280,7 +286,7 @@ const constructMailAttachmentContext = (
 Entity: ${fields.entity}
 ${
   typeof fields.timestamp === "number" && isFinite(fields.timestamp)
-    ? `\nSent: ${getRelativeTime(fields.timestamp)} (${new Date(fields.timestamp).toLocaleString()})`
+    ? `\nSent: ${getRelativeTime(fields.timestamp)} (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userTimeZone})})`
     : ""
 }
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
@@ -293,6 +299,7 @@ const constructEventContext = (
   fields: VespaEventSearch,
   relevance: number,
   dateForAI: string,
+  userTimeZone: string,
 ): string => {
   return `App: ${fields.app}
 Entity: ${fields.entity}
@@ -307,7 +314,7 @@ ${
     ? `\nStart Time: ${
         !fields.defaultStartTime
           ? new Date(fields.startTime).toUTCString() +
-            `(${new Date(fields.startTime).toLocaleString()})`
+            `(${new Date(fields.startTime).toLocaleString("en-US", {timeZone: userTimeZone})})`
           : `No start time specified but date is ${new Date(fields.startTime)}`
       }`
     : ""
@@ -317,7 +324,7 @@ ${
     ? `\nEnd Time: ${
         !fields.defaultStartTime
           ? new Date(fields.endTime).toUTCString() +
-            `(${new Date(fields.endTime).toLocaleString()})`
+            `(${new Date(fields.endTime).toLocaleString("en-US", {timeZone: userTimeZone})})`
           : `No end time specified but date is ${new Date(fields.endTime)}`
       }`
     : ""
@@ -460,6 +467,7 @@ ${fields.chunks_summary && fields.chunks_summary.length ? `${pc.green("Content")
 const constructDataSourceFileContext = (
   fields: VespaDataSourceFileSearch,
   relevance: number,
+  userTimeZone: string,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
 ): string => {
@@ -543,12 +551,12 @@ const constructDataSourceFileContext = (
   ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}
   ${
     typeof fields.createdAt === "number" && isFinite(fields.createdAt)
-      ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString()})`
+      ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimeZone})})`
       : ""
   }
   ${
     typeof fields.updatedAt === "number" && isFinite(fields.updatedAt)
-      ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString()})`
+      ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", {timeZone: userTimeZone})})`
       : ""
   }
   ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
@@ -625,6 +633,7 @@ type AiMetadataContext = string
 export const answerMetadataContextMap = (
   searchResult: VespaSearchResults,
   dateForAI: string,
+  userTimeZone: string,
 ): AiMetadataContext => {
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileMetadataContext(
@@ -647,7 +656,7 @@ export const answerMetadataContextMap = (
       searchResult.relevance,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance, dateForAI)
+    return constructEventContext(searchResult.fields, searchResult.relevance, dateForAI, userTimeZone)
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -683,33 +692,46 @@ export const answerColoredContextMap = (
 type AiContext = string
 export const answerContextMap = (
   searchResult: VespaSearchResults,
+  userMetadata: UserMetadataType,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
   isMsgWithSources?: boolean,
-  dateForAI?: string,
 ): AiContext => {
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileContext(
       searchResult.fields,
       searchResult.relevance,
+      userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === userSchema) {
     return constructUserContext(searchResult.fields, searchResult.relevance)
   } else if (searchResult.fields.sddocname === mailSchema) {
+    const mailContext = constructMailContext(
+      searchResult.fields,
+      searchResult.relevance,
+      userMetadata.userTimezone,
+      maxSummaryChunks,
+      isSelectedFiles,
+    )
+    console.log("mailContext")
+    console.log(mailContext)
+    console.log("mailContext")
     return constructMailContext(
       searchResult.fields,
       searchResult.relevance,
+      userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance, dateForAI || new Date().toISOString())
+    return constructEventContext(searchResult.fields, searchResult.relevance, userMetadata.dateForAI, userMetadata.userTimezone)
   } else if (searchResult.fields.sddocname === mailAttachmentSchema) {
     return constructMailAttachmentContext(
       searchResult.fields,
       searchResult.relevance,
+      userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
     )
@@ -717,16 +739,19 @@ export const answerContextMap = (
     return constructSlackMessageContext(
       searchResult.fields,
       searchResult.relevance,
+      userMetadata.userTimezone,
     )
   } else if (searchResult.fields.sddocname === chatContainerSchema) {
     return constructSlackChannelContext(
       searchResult.fields,
       searchResult.relevance,
+      userMetadata.userTimezone,
     )
   } else if (searchResult.fields.sddocname === dataSourceFileSchema) {
     return constructDataSourceFileContext(
       searchResult.fields as VespaDataSourceFileSearch,
       searchResult.relevance,
+      userMetadata.userTimezone,
       maxSummaryChunks,
       isSelectedFiles,
     )
