@@ -1375,6 +1375,103 @@ app.get(
   },
 )
 
+// Serving exact frontend routes and adding AuthRedirect wherever needed
+app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/chat", AuthRedirect, async (c, next) => {
+  if (c.req.query("shareToken")) {
+    const staticHandler = serveStatic({ path: "./dist/index.html" })
+    return await staticHandler(c, next)
+  }
+  return c.redirect("/")
+})
+app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
+app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+app.get("/workflow", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
+app.get(
+  "/chat/:param",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/trace/:chatId/:messageId",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/fileupload",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/google",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/slack",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/integrations/mcp",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+// Catch-all for any other integration routes
+app.get(
+  "/integrations/*",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/google",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/slack",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/mcp",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get(
+  "/admin/integrations/*",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
+app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
+app.get(
+  "/knowledgeManagement",
+  AuthRedirect,
+  serveStatic({ path: "./dist/index.html" }),
+)
+
 // START of Health Check Endpoints
 // Comprehensive health check endpoint
 

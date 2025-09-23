@@ -330,7 +330,7 @@ const DocumentViewerContainer = memo(
     }, [clearHighlights])
 
     return (
-      <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
+      <div className="h-full bg-white dark:bg-[#1E1E1E] relative overflow-auto">
         {loadingDocument && (
           <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
@@ -342,7 +342,7 @@ const DocumentViewerContainer = memo(
           </div>
         )}
         {selectedDocument.content ? (
-          <div className="h-full">{viewerElement}</div>
+          <div className="h-full min-w-fit">{viewerElement}</div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500 dark:text-gray-400">
@@ -601,96 +601,7 @@ function KnowledgeManagementContent() {
     checkForOngoingUploads()
   }, [showToast])
 
-  // Periodic check for upload completion while on the page
-  useEffect(() => {
-    if (!isUploading || !uploadingCollectionName) return
-
-    const checkUploadProgress = async () => {
-      try {
-        const response = await api.cl.$get({
-          query: { includeItems: "true" },
-        })
-        if (response.ok) {
-          const data = await response.json()
-          const existingCollection = data.find(
-            (collection: CollectionType) =>
-              collection.name.toLowerCase() ===
-              uploadingCollectionName.toLowerCase(),
-          )
-
-          if (
-            existingCollection &&
-            existingCollection.totalItems >= batchProgress.total
-          ) {
-            // Upload is complete, clear the state
-            setIsUploading(false)
-            setBatchProgress({
-              total: 0,
-              current: 0,
-              batch: 0,
-              totalBatches: 0,
-            })
-            setUploadingCollectionName("")
-            clearUploadState()
-
-            // Refresh collections to show the new one
-
-            const updatedCollections = data.map(
-              (collection: CollectionType & { items?: CollectionItem[] }) => ({
-                id: collection.id,
-                name: collection.name,
-                description: collection.description,
-                files: collection.totalItems || 0,
-                items: buildFileTree(
-                  (collection.items || []).map((item: CollectionItem) => ({
-                    name: item.name,
-                    type: item.type as "file" | "folder",
-                    totalFileCount: item.totalFileCount,
-                    updatedAt: item.updatedAt,
-                    id: item.id,
-                    updatedBy:
-                      item.lastUpdatedByEmail || user?.email || "Unknown",
-                  })),
-                ),
-                isOpen:
-                  collection.name.toLowerCase() ===
-                  uploadingCollectionName.toLowerCase()
-                    ? true
-                    : (collection.items || []).length > 0,
-                lastUpdated: new Date(collection.updatedAt).toLocaleString(
-                  "en-GB",
-                  {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  },
-                ),
-                updatedBy: collection.lastUpdatedByEmail || "Unknown",
-                totalCount: collection.totalItems,
-                isPrivate: collection.isPrivate,
-              }),
-            )
-
-            setCollections(updatedCollections)
-
-            showToast(
-              "Upload Complete",
-              `Successfully uploaded ${batchProgress.total} files to "${uploadingCollectionName}".`,
-            )
-          }
-        }
-      } catch (error) {
-        console.error("Error checking upload progress:", error)
-      }
-    }
-
-    // Check every 3 seconds while upload is active
-    const interval = setInterval(checkUploadProgress, 3000)
-
-    return () => clearInterval(interval)
-  }, [isUploading, uploadingCollectionName, batchProgress.total, showToast])
+ 
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -1454,7 +1365,9 @@ function KnowledgeManagementContent() {
             {/* Top section - File tree and Document viewer */}
             <div className="flex flex-1 h-full overflow-hidden">
               {/* Center pane - Document viewer (scrollable) */}
-              <div className="flex-1 flex flex-col bg-white h-full">
+              <div
+                className={`flex-1 flex flex-col bg-white h-full overflow-hidden min-w-0 ${isChatHidden ? "" : "max-w-[calc(100vw-652px)]"}`}
+              >
                 {/* Document header (sticky) */}
                 <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
                   <div className="flex items-center gap-4">
@@ -1496,7 +1409,7 @@ function KnowledgeManagementContent() {
                 </div>
 
                 {/* Document content (scrollable) */}
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-auto">
                   <DocumentViewerContainer
                     selectedDocument={selectedDocument}
                     loadingDocument={loadingDocument}
@@ -1504,9 +1417,9 @@ function KnowledgeManagementContent() {
                 </div>
               </div>
 
-              {/* Right pane - Chat component (sticky) or overlay toggle */}
+              {/* Right pane - Chat component (fixed width, no scroll) */}
               {!isChatHidden ? (
-                <div className="flex flex-col bg-white dark:bg-[#1E1E1E] sticky top-0 border-l border-gray-200 dark:border-gray-700 w-[40%]">
+                <div className="w-[600px] min-w-[600px] max-w-[600px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1E1E1E] border-l border-gray-200 dark:border-gray-700 h-full">
                   <DocumentChat
                     key={currentInitialChatId}
                     user={user}
