@@ -219,6 +219,7 @@ import {
 } from "@/api/chat/jaf-adapter"
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
+import { getDateForAI } from "@/utils/index"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -240,6 +241,7 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 const generateStepSummary = async (
   step: AgentReasoningStep,
   userQuery: string,
+  dateForAI: string,
   contextInfo?: string,
   modelId?: string,
 ): Promise<string> => {
@@ -260,7 +262,7 @@ const generateStepSummary = async (
 
     // Use a fast model for summary generation
     const summarySpan = span.startSpan("synthesis_call")
-    const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
+    const summary = await generateSynthesisBasedOnToolOutput(prompt,dateForAI, "", "", {
       modelId: (modelId as Models) || defaultFastModel,
       stream: false,
       json: true,
@@ -575,6 +577,7 @@ const vespaResultToMinimalAgentFragment = (
 async function* getToolContinuationIterator(
   message: string,
   userCtx: string,
+  dateForAI: string,
   toolsPrompt: string,
   toolOutput: string,
   results: MinimalAgentFragment[],
@@ -615,6 +618,7 @@ async function* getToolContinuationIterator(
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
+    dateForAI,
     {
       modelId: (modelId as Models) || defaultBestModel,
       stream: true,
@@ -718,6 +722,7 @@ type SynthesisResponse = {
 
 async function performSynthesis(
   ctx: any,
+  dateForAI: string,
   message: string,
   planningContext: string,
   gatheredFragments: MinimalAgentFragment[],
@@ -755,6 +760,7 @@ async function performSynthesis(
     const synthesisSpan = span.startSpan("synthesis_llm_call")
     const synthesisResponse = await generateSynthesisBasedOnToolOutput(
       ctx,
+      dateForAI,
       message,
       planningContext,
       {
@@ -1072,6 +1078,7 @@ export const MessageWithToolsApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const dateForAI = getDateForAI({ userTimeZone: user?.timeZone || "Asia/Kolkata" })
     let chat: SelectChat
     initSpan.end()
 
@@ -1299,6 +1306,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const aiGeneratedSummary = await generateStepSummary(
           reasoningStep,
           userQuery,
+          dateForAI,
           undefined,
           actualModelId || undefined,
         )
@@ -1360,6 +1368,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Use the selected model or fallback to fast model for summary generation
           const summaryResult = await generateSynthesisBasedOnToolOutput(
             prompt,
+            dateForAI,
             "",
             "",
             {
@@ -1797,6 +1806,7 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               const parseSynthesisOutput = await performSynthesis(
                 ctx,
+                dateForAI,
                 message,
                 planningContext,
                 gatheredFragments,
@@ -2685,6 +2695,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 async function* nonRagIterator(
   message: string,
   userCtx: string,
+  dateForAI: string,
   context: string,
   results: MinimalAgentFragment[],
   agentPrompt?: string,
@@ -2702,6 +2713,7 @@ async function* nonRagIterator(
   const ragOffIterator = baselineRAGOffJsonStream(
     message,
     userCtx,
+    dateForAI,
     context,
     {
       modelId: (modelId as Models) || defaultBestModel,
@@ -2927,6 +2939,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const dateForAI = getDateForAI({userTimeZone: user?.timeZone || "Asia/Kolkata"})
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3103,6 +3116,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const ragOffIterator = nonRagIterator(
             message,
             ctx,
+            dateForAI,
             context,
             fragments,
             agentPromptForLLM,
@@ -3420,6 +3434,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const ragOffIterator = nonRagIterator(
           message,
           ctx,
+          dateForAI,
           context,
           fragments,
           agentPromptForLLM,
@@ -3718,6 +3733,7 @@ export const AgentMessageApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const dateForAI = getDateForAI({userTimeZone: user.timeZone || "Asia/Kolkata"})
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3909,6 +3925,7 @@ export const AgentMessageApi = async (c: Context) => {
               const iterator = UnderstandMessageAndAnswerForGivenContext(
                 email,
                 ctx,
+                dateForAI,
                 message,
                 0.5,
                 fileIds,
@@ -4222,6 +4239,7 @@ export const AgentMessageApi = async (c: Context) => {
                   generateSearchQueryOrAnswerFromConversation(
                     message,
                     ctx,
+                    dateForAI,
                     {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
@@ -4449,6 +4467,7 @@ export const AgentMessageApi = async (c: Context) => {
                 const iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,
+                  dateForAI,
                   message,
                   classification,
                   limitedMessages,
@@ -4902,6 +4921,7 @@ export const AgentMessageApi = async (c: Context) => {
           const iterator = UnderstandMessageAndAnswerForGivenContext(
             email,
             ctx,
+            dateForAI,
             message,
             0.5,
             fileIds,

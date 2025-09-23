@@ -1,4 +1,3 @@
-import { getDateForAI } from "@/utils/index"
 import {
   QueryType,
   type QueryRouterLLMResponse,
@@ -278,12 +277,12 @@ Provide the rewritten queries in JSON format as follows:
 `
 
 // Optimized Prompt
-export const optimizedPrompt = (ctx: string) => `
+export const optimizedPrompt = (ctx: string, dateForAI: string) => `
 You are a permission aware retrieval-augmented generation (RAG) system and a work assistant.
 Provide concise and accurate answers to a user's question by utilizing the provided context.
 Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
 **User Context**: ${ctx}
-**Today's date is: ${getDateForAI()}**
+**Today's date is: ${dateForAI}**
 Given the user's question and the context (which includes indexed information), your tasks are:
 1. **Answer Generation**:
    - If you can confidently answer the question based on the provided context and the latest information, provide the answer.
@@ -514,9 +513,10 @@ Do not include explanatory text outside the JSON structure. Ensure that any ment
 export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
+  dateForAI: string,
 ) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure.
 
-The current date for your information is ${getDateForAI()}.
+The current date for your information is ${dateForAI}.
 
 You are an AI assistant with access to internal workspace data. You have access to the following types of data:
 
@@ -896,6 +896,7 @@ export const SearchQueryToolContextPrompt = (
   userContext: string,
   toolContext: string,
   agentScratchpad: string,
+  dateForAI: string,
   agentContext?: AgentPromptData,
   pastActs?: string,
   customTools?: {
@@ -930,7 +931,7 @@ export const SearchQueryToolContextPrompt = (
   }
 
   return `
-    The current date is: ${getDateForAI()}
+    The current date is: ${dateForAI}
     
     ${
       agentContext?.prompt?.length
@@ -1059,11 +1060,12 @@ export const SearchQueryToolContextPrompt = (
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (
   userContext: string,
+  dateForAI: string,
   previousClassification?: QueryRouterLLMResponse | null,
   chainBreakClassifications?: ChainBreakClassifications | null,
 ): string => {
   return `
-    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
+    The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
     You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
@@ -1535,8 +1537,9 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
 export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
+  dateForAI: string,
 ) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure.
-The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible. 
 
 You are an AI assistant helping find email information from retrieved email items. You have access to:
@@ -1634,7 +1637,8 @@ REMEMBER:
 export const temporalDirectionJsonPrompt = (
   userContext: string,
   retrievedContext: string,
-) => `Current date: ${getDateForAI()}. 
+  dateForAI: string,
+) => `Current date: ${dateForAI}. 
 
 # Your Role
 You process temporal queries for workspace data (calendar events, emails, files, user profiles). Apply strict temporal logic to ensure accuracy.
@@ -1688,10 +1692,10 @@ Examples of INVALID responses:
 
 ## Temporal Processing
 1. Extract timestamps from all items
-2. Current date for comparison: ${getDateForAI()}
+2. Current date for comparison: ${dateForAI}
 3. Apply strict filtering:
-   - FUTURE intent: INCLUDE ONLY items where timestamp >= ${getDateForAI()}
-   - PAST intent: INCLUDE ONLY items where timestamp < ${getDateForAI()}
+   - FUTURE intent: INCLUDE ONLY items where timestamp >= ${dateForAI}
+   - PAST intent: INCLUDE ONLY items where timestamp < ${dateForAI}
    - PRESENT intent: Include today's items
    - ALL intent: Apply explicit constraints or default to ±6 months
 4. For recurring events:
@@ -1965,11 +1969,12 @@ export const withToolQueryPrompt = (
   userContext: string,
   toolContext: string,
   toolOutput: string,
+  dateForAI: string,
   agentContext?: AgentPromptData,
   fallbackReasoning?: string,
 ): string => {
   return `
-  Current date: ${getDateForAI()}.
+  Current date: ${dateForAI}.
 
     ${
       agentContext?.prompt.length
@@ -2033,10 +2038,11 @@ export const synthesisContextPrompt = (
   userCtx: string,
   query: string,
   synthesisContext: string,
+  dateForAI: string,
 ) => {
   return `You are a helpful AI assistant.
   User Context: ${userCtx}
-  Current date for comparison: ${getDateForAI()}
+  Current date for comparison: ${dateForAI}
 
   Instruction:
   - Analyze the provided "Context Fragments" to answer the current user-query.
@@ -2190,6 +2196,7 @@ To get the results you're looking for, you might want to:
 export const meetingPromptJson = (
   userContext: string,
   retrievedContext: string,
+  dateForAI: string,
 ) => `You are an AI assistant helping find meeting information from both calendar events and emails. You have access to:
 
 Calendar Events containing:
@@ -2281,12 +2288,13 @@ Bad: "No clear meeting information found" (Use null instead)
 export const ragOffPromptJson = (
   userContext: string,
   retrievedContext: string,
+  dateForAI: string,
   agentPromptData?: AgentPromptData,
 ) => `
 You are an AI assistant with access to some data given as context. You should only answer from that given context. You can be given the following types of data:
 Files (documents, spreadsheets, etc.)
 
-The current date for your information is ${getDateForAI()}.
+The current date for your information is ${dateForAI}.
 
 The context provided will be formatted with specific fields for each type:
 ## File Context Format
