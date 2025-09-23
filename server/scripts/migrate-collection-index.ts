@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { drizzle } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
-import config from "@/config"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 
@@ -13,9 +12,9 @@ import { Subsystem } from "@/types"
  * - owner_id + name (new)
  *
  * Usage:
- *   bun run migrations/scripts/migrate-collection-index.ts migrate
- *   bun run migrations/scripts/migrate-collection-index.ts rollback
- *   bun run migrations/scripts/migrate-collection-index.ts status
+ *   bun run scripts/migrate-collection-index.ts migrate
+ *   bun run scripts/migrate-collection-index.ts rollback
+ *   bun run scripts/migrate-collection-index.ts status
  */
 
 const Logger = getLogger(Subsystem.Db).child({ module: "migration" })
@@ -37,7 +36,7 @@ class CollectionIndexMigration {
   private db: ReturnType<typeof drizzle>
 
   constructor() {
-    const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
+    const url = process.env.DATABASE_URL!
     this.client = postgres(url, {
       idle_timeout: 0,
       max: 1, // Single connection for migration
