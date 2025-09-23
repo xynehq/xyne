@@ -41,7 +41,7 @@ import { UnderstandMessageAndAnswer } from "@/api/chat/chat"
 import { getTracer } from "@/tracer"
 import { OpenAIProvider } from "./provider/openai"
 import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import { Subsystem, type UserMetadataType } from "@/types"
 import config from "@/config"
 import { getDateForAI } from "@/utils/index"
 const Logger = getLogger(Subsystem.Eval)
@@ -506,7 +506,7 @@ function simplifySearchResults(
 const endToEndFlow = async (
   message: string,
   userCtx: string,
-  dateForAI: string,
+  userMetadata: UserMetadataType,
   messages: Message[],
 ) => {
   const ctx = userCtx
@@ -515,7 +515,7 @@ const endToEndFlow = async (
   const searchOrAnswerIterator = generateSearchQueryOrAnswerFromConversation(
     message,
     ctx,
-    dateForAI,
+    userMetadata,
     {
       modelId,
       stream: true,
@@ -592,7 +592,7 @@ const endToEndFlow = async (
     const iterator = UnderstandMessageAndAnswer(
       email,
       ctx,
-      dateForAI,
+      userMetadata,
       message,
       classification,
       messages,
@@ -643,9 +643,11 @@ const endToEndFactual = async () => {
           email,
         )
         const ctx = userContext(userAndWorkspace)
-        const dateForAI = getDateForAI({userTimeZone: userAndWorkspace.user.timeZone || "Asia/Kolkata"})
+        const userTimezone = userAndWorkspace?.user?.timeZone || "Asia/Kolkata"
+        const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+        const userMetadata: UserMetadataType = {userTimezone, dateForAI}
 
-        const answer = await endToEndFlow(input, ctx, dateForAI,messages || [])
+        const answer = await endToEndFlow(input, ctx, userMetadata,messages || [])
 
         // For demo purposes, assuming cost of 0.001 per response
         return {
