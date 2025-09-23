@@ -8,7 +8,7 @@ import { Models, type ConverseResponse } from "@/ai/types"
 import { getLogger } from "@/logger"
 import { getErrorMessage } from "@/utils"
 import type { Message, ConversationRole } from "@aws-sdk/client-bedrock-runtime"
-import { Subsystem, MessageRole } from "@/types"
+import { Subsystem, MessageRole, type UserMetadataType } from "@/types"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { GetDocumentsByDocIds } from "@/search/vespa" // Retrieve non-image attachments from Vespa
 import { answerContextMap, cleanContext } from "@/ai/context" // Transform Vespa results to text
@@ -17,6 +17,7 @@ import { getTracer, type Span } from "@/tracer"
 import { createAgentSchema } from "@/api/agent"
 import type { CreateAgentPayload } from "@/api/agent"
 import { insertAgent } from "@/db/agent" 
+import { getDateForAI } from "@/utils/index"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -109,6 +110,9 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
 
 
     const { user, workspace } = userAndWorkspace
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
 
     Logger.info(`Fetching agent details for ${agentId}...`)
@@ -167,6 +171,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
 
             const content = await answerContextMap(
               v as z.infer<typeof VespaSearchResultsSchema>,
+              userMetadata,
               0,    // maxSummaryChunks (0 = include all chunks)
               true, // isSelectedFiles
             )

@@ -1847,7 +1847,7 @@ const executeWorkflowTool = async (
     <div class="content">
         <div class="header">
             <h2>🤖 Workflow Results</h2>
-            <p>Generated on: ${new Date().toLocaleString()}</p>
+            <p>Generated on: ${new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"})}</p>
         </div>
         <div class="body-content">
             ${emailBody.replace(/\n/g, "<br>")}
