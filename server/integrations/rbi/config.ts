@@ -5,7 +5,6 @@
     DOWNLOADS_FOLDER: './downloads/rbi-circulars',
     TIMEOUT: 30000,
     DOWNLOAD_TIMEOUT: 60000,
-    HEADLESS: false, // Set to true for production
+    HEADLESS: false,
+    USE_SYSTEM_CHROME: true, // Add this line
   } as const;
-
-  export type RBIConfigType = typeof RBI_CONFIG;

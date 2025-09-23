@@ -1,17 +1,33 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import { RBI_CONFIG } from './config';
+import * as crypto from 'crypto';
+import { RBI_CONFIG } from './config.js';
 
 import { FileProcessorService } from '@/services/fileProcessor';
 import { insert } from '@/search/vespa';
-import { KbItemsSchema } from '@xyne/vespa-ts';
-import { Apps, KnowledgeBaseEntity } from '@xyne/vespa-ts';
-// import { getBaseMimeType } from '../dataSource/config';
+import { KbItemsSchema } from '@xyne/vespa-ts/types';
+import { Apps, KnowledgeBaseEntity } from '@xyne/vespa-ts/types';
 import { v4 as uuidv4 } from 'uuid';
+import { getUserByEmail } from '@/db/user';
+import { getLogger } from "@/logger"
+import { Subsystem } from '@/logger';
+import {
+    createCollection,
+    createFileItem,
+    getCollectionsByOwner,
+    generateFileVespaDocId,
+    generateStorageKey,
+    generateCollectionVespaDocId,
+} from '@/db/knowledgeBase';
+import { db } from '@/db/client';
 
-
-class RBICircularDownloader {
+// Knowledge Base storage path
+const KB_STORAGE_ROOT = path.join(process.cwd(), "storage", "kb_files");
+const Logger = getLogger(Subsystem.Integrations).child({
+    module: "rbi-automation",
+})
+  class RBICircularDownloader {
     private browser: Browser | null = null;
     private page: Page | null = null;
 
@@ -21,7 +37,7 @@ class RBICircularDownloader {
         // Launch browser with configuration
         this.browser = await chromium.launch({
             headless: RBI_CONFIG.HEADLESS,
-            channel: true ? 'chrome' : undefined,
+            channel: RBI_CONFIG.USE_SYSTEM_CHROME ? 'chrome' : undefined,
         });
 
         // Create new page/tab
@@ -29,6 +45,7 @@ class RBICircularDownloader {
 
         console.log('✅ Browser initialized successfully');
     }
+
     async navigateToHomePage(): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
@@ -49,6 +66,7 @@ class RBICircularDownloader {
             throw new Error(`Failed to load RBI homepage: ${error}`);
         }
     }
+
     async clickYearLink(): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
@@ -96,6 +114,7 @@ class RBICircularDownloader {
             throw new Error(`Failed to click year ${RBI_CONFIG.TARGET_YEAR}: ${error}`);
         }
     }
+
     async clickAllMonths(): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
@@ -145,6 +164,7 @@ class RBICircularDownloader {
             throw new Error(`Failed to click "All Months": ${error}`);
         }
     }
+
     async findAndClickFirstCircular(): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
@@ -206,6 +226,7 @@ class RBICircularDownloader {
             throw new Error(`Failed to click circular link: ${error}`);
         }
     }
+
     async downloadPDF(): Promise<{ downloadPath: string }> {
         if (!this.page) throw new Error('Page not initialized');
 
@@ -312,82 +333,211 @@ class RBICircularDownloader {
             throw new Error(`Failed to download PDF: ${error}`);
         }
     }
-    async processAndIngestPDF(downloadPath: string): Promise<void> {
-    console.log('🔄 Processing PDF for Vespa ingestion...');
-    const metadata = {
-      source: 'RBI',
-      circularNumber: 'Auto-downloaded',
-      department: 'Reserve Bank of India',
-      subject: 'RBI Circular Document',
-      dateOfIssue: new Date().toISOString().split('T')[0],
-      meantFor: 'All Regulated Entities',
-    };
 
-    try {
-      // STEP 1: Read the downloaded PDF
-      const pdfBuffer = await fs.readFile(downloadPath);
-      const stats = await fs.stat(downloadPath);
+    async createOrGetRBICollection(userEmail: string, workspaceId: number): Promise<string> {
+        console.log('📁 Setting up RBI Circulars collection...');
 
-      // STEP 2: Generate unique document ID
-      const rbiDocId = `rbi_${uuidv4()}`;
-      const fileName = path.basename(downloadPath);
+        try {
+            // Get user
+            const users = await getUserByEmail(db, userEmail);
+            if (!users || users.length === 0) {
+                throw new Error(`User not found: ${userEmail}`);
+            }
+            const user = users[0];
 
-      console.log(`📝 Processing: ${fileName} (${(stats.size / 1024).toFixed(2)} KB)`);
+            // Check if RBI collection exists
+            const collections = await getCollectionsByOwner(db, user.id);
+            const rbiCollection = collections.find(c => c.name === 'RBI Circulars');
 
-      // STEP 3: Extract text chunks using your existing service
-      console.log('⚙️ Extracting text and chunks from PDF...');
-      const processingResult = await FileProcessorService.processFile(
-        pdfBuffer,
-        'application/pdf',
-        fileName,
-        rbiDocId,
-        undefined,  // No storage path needed
-        true,       // Extract images
-        false       // Don't describe images
-      );
+            if (rbiCollection) {
+                console.log(`✅ Found existing RBI collection: ${rbiCollection.id}`);
+                return rbiCollection.id;
+            }
 
-      console.log(`✅ Extracted ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`);
+            // Create new RBI collection
+            const newCollection = await db.transaction(async (tx) => {
+                const vespaDocId = generateCollectionVespaDocId()
+                const collection = await createCollection(tx, {
+                    name: 'RBI Circulars',
+                    description: 'Automated collection of RBI circular documents',
+                    workspaceId,
+                    ownerId: user.id,
+                    isPrivate: false,
+                    lastUpdatedById: user.id,
+                    lastUpdatedByEmail: userEmail,
+                    metadata: { source: 'rbi-automation', vespaDocId: vespaDocId }
+                });
 
-      // STEP 4: Create Vespa document structure
-      const vespaDoc = {
-        docId: rbiDocId,
-        clId: 'rbi-circular',
-        itemId: rbiDocId,
-        fileName: fileName,
-        app: Apps.KnowledgeBase as const,
-        entity: KnowledgeBaseEntity.Attachment,
-        description: metadata.subject || 'RBI Circular',
-        storagePath: downloadPath,
-        chunks: processingResult.chunks,
-        chunks_pos: processingResult.chunks_pos,
-        image_chunks: processingResult.image_chunks || [],
-        image_chunks_pos: processingResult.image_chunks_pos || [],
-        metadata: JSON.stringify({
-          ...metadata,  // Spread all the metadata we extracted
-          chunksCount: processingResult.chunks.length,
-          imageChunksCount: processingResult.image_chunks.length,
-          processingMethod: 'FileProcessorService',
-        }),
-        createdBy: 'rbi-automation',
-        duration: 0,
-        mimeType: 'application/pdf',
-        fileSize: stats.size,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
+                // Add to Vespa for search
+                const vespaDoc = {
+                    docId: vespaDocId,
+                    clId: collection.id,
+                    itemId: collection.id,
+                    fileName: 'RBI Circulars',
+                    app: Apps.KnowledgeBase as const,
+                    entity: KnowledgeBaseEntity.Collection,
+                    description: 'Automated RBI circular collection',
+                    storagePath: "",
+                    chunks: [],
+                    chunks_pos: [],
+                    image_chunks: [],
+                    image_chunks_pos: [],
+                    metadata: JSON.stringify({ source: 'rbi-automation', vespaDocId: vespaDocId }),
+                    createdBy: userEmail,
+                    duration: 0,
+                    mimeType: 'application/pdf',
+                    fileSize: 0,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                };
 
-      // STEP 5: Insert into Vespa database
-      console.log('💾 Inserting document into Vespa knowledge base...');
-      await insert(vespaDoc, KbItemsSchema);
+                await insert(vespaDoc, KbItemsSchema);
+                return collection;
+            });
 
-      console.log(`✅ Successfully ingested RBI circular!`);
-      console.log(`📊 Document ID: ${rbiDocId}`);
-      console.log(`🔍 Now searchable in knowledge base`);
+            console.log(`✅ Created RBI collection: ${newCollection.id}`);
+            return newCollection.id;
 
-    } catch (error) {
-      throw new Error(`Failed to process and ingest PDF: ${error}`);
+        } catch (error) {
+            throw new Error(`Failed to create RBI collection: ${error}`);
+        }
     }
-  }
+
+    async processAndIngestPDF(downloadPath: string, userEmail: string, workspaceId: number): Promise<void> {
+        console.log('🔄 Processing PDF for complete Knowledge Base ingestion...');
+
+        try {
+            // STEP 1: Get user and RBI collection
+            const users = await getUserByEmail(db, userEmail);
+            // logger.info('Users fetched', { users });
+            console.log(`👤 Fetched user for ingestion: ${userEmail} and ${users.length} found`);
+            if (!users || users.length === 0) {
+                throw new Error(`User not found: ${userEmail}`);
+            }
+            const user = users[0];
+            console.log(`👤 User ID: ${user.id}, Email: ${user.email}`);
+
+            // Get or create RBI collection
+            const collectionId = await this.createOrGetRBICollection(userEmail, workspaceId);
+
+            // STEP 2: Read and process the PDF
+            const pdfBuffer = await fs.readFile(downloadPath);
+            const stats = await fs.stat(downloadPath);
+            const fileName = path.basename(downloadPath);
+
+            // Generate unique IDs
+            const vespaDocId = generateFileVespaDocId();
+            const storageKey = generateStorageKey();
+
+            console.log(`📝 Processing: ${fileName} (${(stats.size / 1024).toFixed(2)} KB)`);
+
+            // STEP 3: Process PDF into chunks
+            console.log('⚙️ Extracting text and chunks from PDF...');
+            const processingResult = await FileProcessorService.processFile(
+                pdfBuffer,
+                'application/pdf',
+                fileName,
+                vespaDocId,
+                undefined,  // No storage path needed for processing
+                true,       // Extract images
+                false       // Don't describe images
+            );
+
+            console.log(`✅ Extracted ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`);
+
+            // STEP 4: Create proper storage path (following your app's pattern)
+            const year = new Date().getFullYear();
+            const month = String(new Date().getMonth() + 1).padStart(2, '0');
+            const storagePath = path.join(
+                KB_STORAGE_ROOT,
+                user.workspaceExternalId,
+                collectionId,
+                year.toString(),
+                month,
+                `${storageKey}_${fileName}`
+            );
+
+            // Ensure directory exists and copy file
+            await fs.mkdir(path.dirname(storagePath), { recursive: true });
+            await fs.copyFile(downloadPath, storagePath);
+
+            console.log(`📁 File copied from downloads to KB storage: ${storagePath}`);
+
+            // STEP 5: Database transaction - Create both collection item AND Vespa document
+            await db.transaction(async (tx) => {
+                // Create collection item (PostgreSQL record) - CORRECT FUNCTION SIGNATURE
+                const collectionItem = await createFileItem(
+                    tx,                    // transaction
+                    collectionId,          // collectionId
+                    null,                  // parentId (root level)
+                    fileName,              // name
+                    vespaDocId,           // vespaDocId
+                    fileName,              // originalName
+                    storagePath,          // storagePath
+                    storageKey,           // storageKey
+                    'application/pdf',    // mimeType
+                    stats.size,           // fileSize
+                    crypto.createHash('sha256').update(pdfBuffer).digest('hex'), // checksum
+                    {                     // metadata
+                        source: 'rbi-automation',
+                        originalUrl: this.page?.url() || '',
+                        downloadedAt: Date.now(),
+                    },
+                    user.id,              // userId
+                    userEmail             // userEmail
+                );
+
+                console.log(`✅ Created collection item: ${collectionItem.id}`);
+
+                // Create Vespa document (searchable content)
+                const vespaDoc = {
+                    docId: vespaDocId,
+                    clId: collectionId,
+                    itemId: collectionItem.id,  // Use the actual collection item ID
+                    fileName: fileName,
+                    app: Apps.KnowledgeBase as const,
+                    entity: KnowledgeBaseEntity.File,
+                    description: 'RBI Circular Document',
+                    storagePath: storagePath,
+                    chunks: processingResult.chunks,
+                    chunks_pos: processingResult.chunks_pos,
+                    image_chunks: processingResult.image_chunks || [],
+                    image_chunks_pos: processingResult.image_chunks_pos || [],
+                    metadata: JSON.stringify({
+                        source: 'rbi-automation',
+                        circularNumber: 'Auto-downloaded',
+                        department: 'Reserve Bank of India',
+                        subject: 'RBI Circular Document',
+                        dateOfIssue: new Date().toISOString().split('T')[0],
+                        originalUrl: this.page?.url() || '',
+                        downloadedAt: Date.now(),
+                        chunksCount: processingResult.chunks.length,
+                        imageChunksCount: processingResult.image_chunks.length,
+                        processingMethod: 'FileProcessorService',
+                    }),
+                    createdBy: userEmail,
+                    duration: 0,
+                    mimeType: 'application/pdf',
+                    fileSize: stats.size,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                };
+
+                await insert(vespaDoc, KbItemsSchema);
+                console.log(`✅ Created Vespa document: ${vespaDocId}`);
+            });
+
+            console.log(`🎉 SUCCESS: RBI PDF fully integrated into Knowledge Base!`);
+            console.log(`📊 Collection: RBI Circulars`);
+            console.log(`📄 File: ${fileName}`);
+            console.log(`💾 Stored: ${storagePath}`);
+            console.log(`🔍 Now searchable and visible in UI`);
+
+        } catch (error) {
+            throw new Error(`Failed to process and ingest PDF: ${error}`);
+        }
+    }
+
     async cleanup(): Promise<void> {
         console.log('🧹 Cleaning up...');
         if (this.browser) {
@@ -395,15 +545,23 @@ class RBICircularDownloader {
             console.log('✅ Browser closed');
         }
     }
+
     async testCompleteFlow(): Promise<string> {
         try {
+            // Hardcode user details (or make them parameters)
+            const userEmail = 'aman.asrani@juspay.in';
+            const workspaceId = 1;
+
             await this.initialize();
             await this.navigateToHomePage();
             await this.clickYearLink();
             await this.clickAllMonths();
             await this.findAndClickFirstCircular();
             const { downloadPath } = await this.downloadPDF();
-            await this.processAndIngestPDF(downloadPath);
+
+            // Pass user details to processing method
+            await this.processAndIngestPDF(downloadPath, userEmail, workspaceId);
+
             console.log('🎉 Complete automation successful!');
             return downloadPath;
 
@@ -420,16 +578,15 @@ export async function testCompleteFlow(): Promise<void> {
     const downloader = new RBICircularDownloader();
     try {
         const downloadPath = await downloader.testCompleteFlow();
-        console.log(`\n🎯 SUCCESS: PDF downloaded to ${downloadPath}`);
+        console.log(`\n🎯 SUCCESS: RBI circular is now searchable in your AI knowledge base!`);
+        console.log(`📁 Local copy: ${downloadPath}`);
     } catch (error) {
         console.error('\n💥 FAILED:', error);
         process.exit(1);
     }
 }
 
-
 // Run test if this file is executed directly
 if (require.main === module) {
-    // testStep2().catch(console.error);
     testCompleteFlow().catch(console.error);
 }
