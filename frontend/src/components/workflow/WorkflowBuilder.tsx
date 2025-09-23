@@ -2559,7 +2559,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         version: "1.0.0",
         config: {
           ai_model: "gemini-1.5-pro",
-          max_file_size: "10MB",
+          max_file_size: "40MB",
           auto_execution: false,
           schema_version: "1.0",
           allowed_file_types: ["pdf", "docx", "txt", "jpg", "png"],

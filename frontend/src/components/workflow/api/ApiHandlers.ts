@@ -352,7 +352,7 @@ export const workflowExecutionsAPI = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: "Network error" }))
-      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      throw new Error(errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`)
     }
 
     const responseData = await response.json()
