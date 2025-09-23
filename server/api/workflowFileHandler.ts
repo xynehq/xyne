@@ -349,7 +349,7 @@ export function buildValidationSchema(formFields: any[]): FormValidationSchema {
     if (field.type === "file") {
       validation.fileValidation = {
         allowedTypes: field.fileTypes || [],
-        maxSize: parseFileSize(field.maxSize || "10MB"),
+        maxSize: parseFileSize(field.maxSize || "40MB"),
         required: field.required || false,
       }
     }
@@ -373,7 +373,7 @@ function parseFileSize(sizeStr: string): number {
 
   const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)$/i)
   if (!match) {
-    return 10 * 1024 * 1024 // Default 10MB
+    return 40 * 1024 * 1024 // Default 10MB
   }
 
   const size = parseFloat(match[1])

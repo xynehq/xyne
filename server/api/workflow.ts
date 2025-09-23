@@ -453,21 +453,34 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                   uploadError,
                   `File upload failed for field ${field.id}`,
                 )
-                throw new HTTPException(400, {
-                  message: `File upload failed for ${field.id}: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`,
-                })
+
+                // Store error info for later processing
+                processedFormData._uploadError = {
+                  field: field.id,
+                  error: uploadError instanceof Error ? uploadError.message : String(uploadError),
+                  failed: true
+                }
               }
             }
           }
         }
       }
+      // Check if there was an upload error
+      const hasUploadError = processedFormData._uploadError?.failed
+      const toolStatus = hasUploadError ? ToolExecutionStatus.FAILED : ToolExecutionStatus.COMPLETED
+      const stepStatus = hasUploadError ? WorkflowStatus.FAILED : WorkflowStatus.COMPLETED
+
       ;[toolExecutionRecord] = await db
         .insert(toolExecution)
         .values({
           workflowToolId: rootStepTool.id,
           workflowExecutionId: execution.id,
-          status: ToolExecutionStatus.COMPLETED,
-          result: {
+          status: toolStatus,
+          result: hasUploadError ? {
+            error: processedFormData._uploadError.error,
+            failedAt: new Date().toISOString(),
+            failedBy: "api",
+          } : {
             formData: processedFormData,
             submittedAt: new Date().toISOString(),
             submittedBy: "api",
@@ -477,17 +490,21 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           completedAt: new Date(),
         })
         .returning()
-    }
+    
 
-    // Mark root step as completed
+    // Mark root step as completed or failed
     await db
       .update(workflowStepExecution)
       .set({
-        status: WorkflowStatus.COMPLETED,
+        status: stepStatus,
         completedBy: "api",
         completedAt: new Date(),
         toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
-        metadata: {
+        metadata: hasUploadError ? {
+          ...(rootStepExecution.metadata || {}),
+          failureReason: `File upload failed for ${processedFormData._uploadError.field}`,
+          error: processedFormData._uploadError.error,
+        } : {
           ...(rootStepExecution.metadata || {}),
           formSubmission: {
             formData: processedFormData,
@@ -499,6 +516,24 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       })
       .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
+    // Mark entire workflow as failed if upload failed
+    if (hasUploadError) {
+      await db
+        .update(workflowExecution)
+        .set({
+          status: WorkflowStatus.FAILED,
+          completedBy: "api",
+          completedAt: new Date(),
+        })
+        .where(eq(workflowExecution.id, execution.id))
+
+      // Now return the error after all database updates are complete
+      return c.json({
+        success: false,
+        error: processedFormData._uploadError.error,
+      }, 400)
+    }
+    }
     // Auto-execute next automated steps
     const allTools = await db.select().from(workflowTool)
     const rootStepName = rootStepExecution.name || "Root Step"
