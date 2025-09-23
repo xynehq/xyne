@@ -1139,7 +1139,8 @@ const Header = ({
 
   const currentName = workflowName || selectedTemplate?.name || "Untitled Workflow"
 
-  const handleDoubleClick = () => {
+  const handleClick = () => {
+    if (!isEditable) return
     setEditingName(currentName)
     setIsEditing(true)
   }
@@ -1195,17 +1196,18 @@ const Header = ({
               onChange={(e) => setEditingName(e.target.value)}
               onBlur={handleSave}
               onKeyDown={handleKeyDown}
-              className="bg-transparent border-b border-blue-500 dark:border-blue-400 outline-none text-[#3B4145] dark:text-gray-300 text-sm font-medium min-w-[120px] max-w-[300px]"
-              style={{ width: `${Math.max(120, editingName.length * 8)}px` }}
+              className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-0 outline-none focus:border-black dark:focus:border-white text-[#3B4145] dark:text-gray-300 text-sm font-medium w-60 h-6"
+              placeholder="Enter workflow name"
+              autoFocus
             />
           ) : (
             <span 
               className={isEditable 
-                ? "cursor-pointer hover:text-[#1a1d20] dark:hover:text-gray-100 transition-colors"
+                ? "cursor-pointer hover:text-[#1a1d20] dark:hover:text-gray-100 transition-colors px-2 py-1 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
                 : "text-[#3B4145] dark:text-gray-300"
               }
-              onDoubleClick={isEditable ? handleDoubleClick : undefined}
-              title={isEditable ? "Double-click to edit workflow name" : undefined}
+              onClick={isEditable ? handleClick : undefined}
+              title={isEditable ? "Click to edit workflow name" : undefined}
             >
               {currentName}
             </span>
@@ -1881,6 +1883,35 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     return "Untitled Workflow"
   }, [currentWorkflowName, selectedTemplate?.name, selectedTemplate, nodes.length])
   const { fitView, zoomTo, getViewport } = useReactFlow()
+
+  // Smart fit view to show entire workflow with proper padding
+  const smartFitWorkflow = useCallback(() => {
+    setTimeout(() => {
+      // Use fitView to show the entire workflow with extra bottom padding for + button
+      fitView({
+        padding: {
+          top: 0.1,    // 10% padding at top
+          right: 0.15, // 15% padding on sides
+          bottom: 0.5, // 50% padding at bottom to ensure + button is fully visible
+          left: 0.15   // 15% padding on sides
+        },
+        includeHiddenNodes: false,
+        minZoom: 0.4, // Balanced minimum zoom for better workflow visibility
+        maxZoom: 1.2, // Maximum zoom level to keep nodes readable
+        duration: 600, // Smooth animation
+      })
+    }, 150) // Small delay to ensure the node is fully rendered
+  }, [fitView])
+
+  // Watch for nodes changes and smart fit the entire workflow
+  const previousNodeCount = useRef(0)
+  useEffect(() => {
+    if (nodes.length > previousNodeCount.current && nodes.length > 1) {
+      // Smart fit the entire workflow to keep everything visible
+      smartFitWorkflow()
+    }
+    previousNodeCount.current = nodes.length
+  }, [nodes, smartFitWorkflow])
 
   // Create nodes and edges from selectedTemplate or localSelectedTemplate
   useEffect(() => {
