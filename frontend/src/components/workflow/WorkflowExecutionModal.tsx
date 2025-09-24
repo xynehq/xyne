@@ -10,23 +10,10 @@ import { WorkflowExecutionModalProps } from "./Types"
 const SUPPORTED_FILE_TYPES = {
   // Text files
   "text/plain": "text",
-  "text/csv": "text",
-  // Images
-  "image/jpeg": "image",
-  "image/jpg": "image",
-  "image/png": "image",
-  "image/gif": "image",
-  "image/webp": "image",
   // Documents
   "application/pdf": "PDF",
   "application/msword": "Word",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    "Word",
-  "application/vnd.ms-excel": "Excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
-  "application/vnd.ms-powerpoint": "PowerPoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-    "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
 }
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024 // 40MB
@@ -151,7 +138,7 @@ export function WorkflowExecutionModal({
 
     // Check file type
     if (!SUPPORTED_FILE_TYPES[file.type as keyof typeof SUPPORTED_FILE_TYPES]) {
-      return `Unsupported file type: ${file.type}. Supported formats include text, image, CSV, PDF, Word, Excel, and PowerPoint files.`
+      return `Unsupported file type: ${file.type}. Supported formats include text, PDF, and Word files.`
     }
 
     return null
@@ -604,8 +591,7 @@ export function WorkflowExecutionModal({
 
                     {/* Supported formats */}
                     <p className="text-gray-500 dark:text-gray-500 text-sm text-center leading-relaxed">
-                      Supported formats include text, image, CSV, PDF, Word,
-                      Excel, and PowerPoint files
+                      Supported formats include text, PDF, and Word files
                       <br />
                       (max 40MB per file).
                     </p>
@@ -618,7 +604,7 @@ export function WorkflowExecutionModal({
                 type="file"
                 onChange={handleFileSelect}
                 className="hidden"
-                accept=".txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                accept=".txt,.pdf,.doc,.docx"
               />
 
               {/* Error Display */}
