@@ -3719,6 +3719,10 @@ export const AgentMessageApi = async (c: Context) => {
       ids = await getRecordBypath(path, db)
       if (ids != null) {
         isValidPath = Boolean(true)
+      } else {
+        throw new HTTPException(400, {
+          message: `The given path:${path} is not a valid path of collection's folder or file`,
+        })
       }
     }
     const isMsgWithContext = isMessageWithContext(message)
@@ -3950,7 +3954,7 @@ export const AgentMessageApi = async (c: Context) => {
                 imageAttachmentFileIds,
                 agentPromptForLLM,
                 fileIds.length > 0,
-                "",
+                undefined,
                 Boolean(isValidPath),
                 folderIds,
               )
