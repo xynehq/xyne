@@ -115,12 +115,10 @@ export const highlightSchema = z.object({
   documentContent: z.string().min(1),
   options: z.object({
     caseSensitive: z.boolean().default(false),
-    fuzzyMatching: z.boolean().default(true),
     errorTolerance: z.number().min(0).max(10).default(2),
     maxPatternLength: z.number().min(1).max(128).default(32),
   }).default({
     caseSensitive: false,
-    fuzzyMatching: true,
     errorTolerance: 2,
     maxPatternLength: 32,
   }),
@@ -902,7 +900,6 @@ export const HighlightApi = async (c: Context) => {
 
     const {
       caseSensitive,
-      fuzzyMatching = true,
       errorTolerance = 2,
       maxPatternLength = 32
     } = options;
@@ -1023,73 +1020,41 @@ export const HighlightApi = async (c: Context) => {
       // Quick length guard
       if (rawNeedleFull.length < 3 || rawNeedleFull.length > rawHayFull.length) return [];
 
-      if (fuzzyMatching) {
-        
-        // Use fuzzy matching with Bitap algorithm on normalized text
-        const matches = fuzzyMatcher.findAllMatches(rawHayFull, rawNeedleFull);
-        
-        // Filter matches by minimum similarity threshold and map back to original indices
-        const minSimilarity = 0.85;
-        const allMatches = matches
-          .filter(match => {
-            const passes = match.similarity >= minSimilarity;
-            return passes;
-          })
-          .map(match => {
-            const originalIndex = indexMap[match.index];
-            return {
-              index: originalIndex, // Map back to original text indices
-              similarity: match.similarity,
-              length: match.length
-            };
-          });
-        
-        // Check if we have any matches
-        if (allMatches.length === 0) {
-          return [];
-        }
-        
-        // Find the best similarity score
-        const bestSimilarity = Math.max(...allMatches.map(match => match.similarity));
-        
-        // Return only matches with the best similarity score
-        const bestMatches = allMatches.filter(match => match.similarity === bestSimilarity);
-        
-        return bestMatches;
-      } else {
-        // Fallback to exact matching with KMP for comparison
-        const buildLPS = (p: string): number[] => {
-          const lps = new Array(p.length).fill(0);
-          let len = 0;
-          for (let i = 1; i < p.length; ) {
-            if (p[i] === p[len]) { lps[i++] = ++len; }
-            else if (len !== 0) { len = lps[len - 1]; }
-            else { lps[i++] = 0; }
-          }
-          return lps;
-        };
-        
-        const kmpSearch = (text: string, pattern: string): number[] => {
-          const res: number[] = [];
-          if (!pattern.length || pattern.length > text.length) return res;
-          const lps = buildLPS(pattern);
-          let i = 0, j = 0;
-          while (i < text.length) {
-            if (text[i] === pattern[j]) {
-              i++; j++;
-              if (j === pattern.length) { res.push(i - j); j = lps[j - 1]; }
-            } else if (j !== 0) j = lps[j - 1];
-            else i++;
-          }
-          return res;
-        };
-
-
-        if (rawNeedleFull.length > rawHayFull.length) return [];
-
-        const idxs = kmpSearch(rawHayFull, rawNeedleFull);
-        return idxs.map((idx) => ({ index: indexMap[idx], similarity: 1, length: rawNeedleFull.length }));
+      // Use fuzzy matching with Bitap algorithm on normalized text
+      const matches = fuzzyMatcher.findAllMatches(rawHayFull, rawNeedleFull);
+      
+      // Filter matches by minimum similarity threshold and map back to original indices
+      const minSimilarity = 0.85;
+      const allMatches = matches
+        .filter(match => {
+          const passes = match.similarity >= minSimilarity;
+          return passes;
+        })
+        .map(match => {
+          const startOrig = indexMap[match.index];
+          const endNormIdx = match.index + match.length - 1;
+          const endOrigIdx = indexMap[Math.min(endNormIdx, indexMap.length - 1)];
+          const endExclusive = endOrigIdx !== undefined ? endOrigIdx + 1 : startOrig + match.length;
+          return {
+            index: startOrig,
+            similarity: match.similarity,
+            length: Math.max(0, endExclusive - startOrig),
+          };
+        });
+      
+      // Check if we have any matches
+      if (allMatches.length === 0) {
+        return [];
       }
+      
+      // Find the best similarity score
+      const bestSimilarity = Math.max(...allMatches.map(match => match.similarity));
+      
+      // Return only matches with the best similarity score
+      const bestMatches = allMatches.filter(match => match.similarity === bestSimilarity);
+      
+      return bestMatches;
+      
     };
 
     // Best span algorithm implementation
