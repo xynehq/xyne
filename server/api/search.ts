@@ -112,15 +112,17 @@ export const chatRenameSchema = z.object({
 
 export const highlightSchema = z.object({
   chunkText: z.string().min(1).max(10_000),
-  documentContent: z.string().min(1).max(1_000_000),
+  documentContent: z.string().min(1),
   options: z.object({
-    matchThreshold: z.number().min(0).max(1).default(0.15),
-    maxChunkLength: z.number().min(10).max(1000).default(200),
     caseSensitive: z.boolean().default(false),
+    fuzzyMatching: z.boolean().default(true),
+    errorTolerance: z.number().min(0).max(10).default(2),
+    maxPatternLength: z.number().min(1).max(128).default(32),
   }).default({
-    matchThreshold: 0.15,
-    maxChunkLength: 200,
     caseSensitive: false,
+    fuzzyMatching: true,
+    errorTolerance: 2,
+    maxPatternLength: 32,
   }),
 })
 
@@ -776,6 +778,118 @@ export const GetDriveItemsByDocIds = async (c: Context) => {
     })
   }
 }
+
+// Fuzzy matching implementation using k-errors Bitap algorithm with BigInt
+class FuzzyMatcher {
+  private maxPatternLength: number;
+  private errorTolerance: number;
+
+  constructor(maxPatternLength: number = 128, errorTolerance: number = 5) {
+    this.maxPatternLength = maxPatternLength;
+    this.errorTolerance = errorTolerance;
+  }
+
+  // Create alphabet for Bitap algorithm using BigInt
+  private createAlphabet(pattern: string): Map<string, bigint> {
+    const alphabet = new Map<string, bigint>();
+    const patternLength = Math.min(pattern.length, this.maxPatternLength);
+    
+    for (let i = 0; i < patternLength; i++) {
+      const char = pattern[i];
+      if (!alphabet.has(char)) {
+        alphabet.set(char, 0n);
+      }
+      // Set bit j for pattern position j (LSB = position 0, MSB = last char)
+      alphabet.set(char, alphabet.get(char)! | (1n << BigInt(i)));
+    }
+    
+    return alphabet;
+  }
+
+  // k-errors Bitap algorithm using BigInt for proper bit manipulation
+  private matchBitapKErrors(text: string, pattern: string): Array<{index: number, editDistance: number}> {
+    const patternLength = Math.min(pattern.length, this.maxPatternLength);
+    
+    if (patternLength === 0) return [];
+    
+    // Create alphabet for Bitap - each character maps to a BigInt bitmask
+    const alphabet = this.createAlphabet(pattern);
+    const matchMask = 1n << BigInt(patternLength - 1); // marks alignment where full pattern matched
+    
+    // Initialize state vectors R[0..k] as BigInt
+    const R: bigint[] = new Array(this.errorTolerance + 1);
+    for (let d = 0; d <= this.errorTolerance; d++) {
+      R[d] = ~0n; // all 1s in two's complement
+    }
+    
+    const matches: Array<{index: number, editDistance: number}> = [];
+    
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const charMask = alphabet.get(char) || 0n;
+      
+      // Update R[0] for exact matches
+      let oldRd1 = R[0];
+      R[0] = ((R[0] << 1n) | 1n) & charMask;
+      
+      // Update R[d] for each error level d = 1..k
+      for (let d = 1; d <= this.errorTolerance; d++) {
+        const temp = R[d];
+        R[d] = (((R[d] << 1n) | 1n) & charMask) | // match or substitution
+               (oldRd1 << 1n) |                    // insertion
+               oldRd1;                             // deletion
+        oldRd1 = temp;
+      }
+      
+      // Check for matches at position i
+      for (let d = 0; d <= this.errorTolerance; d++) {
+        if ((R[d] & matchMask) !== 0n) {
+          const startIndex = i - patternLength + 1;
+          matches.push({
+            index: startIndex,
+            editDistance: d
+          });
+          break; // Find the smallest d (best match) for this position
+        }
+      }
+    }
+    
+    return matches;
+  }
+
+
+  // Find all fuzzy matches in text using k-errors Bitap algorithm
+  public findAllMatches(text: string, pattern: string): Array<{index: number, similarity: number, length: number}> {
+    const matches: Array<{index: number, similarity: number, length: number}> = [];
+    
+    if (pattern.length > this.maxPatternLength) {
+      pattern = pattern.slice(0, this.maxPatternLength);
+    }
+    
+    const patternLength = pattern.length;
+    
+    // Use k-errors Bitap algorithm to find all matches
+    const bitapMatches = this.matchBitapKErrors(text, pattern);
+
+    // Convert to our format with stable similarity calculation
+    for (const match of bitapMatches) {
+      if (match.index >= 0) {
+        const matchedText = text.slice(match.index, match.index + patternLength);
+        // Use edit distance for stable similarity: similarity = 1 - (d / m)
+        const similarity = Math.max(0, 1 - (match.editDistance / patternLength));
+        
+        matches.push({
+          index: match.index,
+          similarity,
+          length: patternLength
+        });
+      }
+    }
+    
+    return matches;
+  }
+}
+
 export const HighlightApi = async (c: Context) => {
   try {
     const { chunkText, documentContent, options = {} } = await c.req.json();
@@ -787,9 +901,10 @@ export const HighlightApi = async (c: Context) => {
     }
 
     const {
-      matchThreshold,
-      maxChunkLength,
-      caseSensitive
+      caseSensitive,
+      fuzzyMatching = true,
+      errorTolerance = 2,
+      maxPatternLength = 32
     } = options;
 
     // Normalize text for matching
@@ -804,88 +919,177 @@ export const HighlightApi = async (c: Context) => {
         .trim();
     };
 
-    // Process each line from the chunk
-    const processLine = (line: string) => {
-      const trimmed = line.trim();
-      if (trimmed.length === 0) return null;
+    // Text normalization function with index mapping
+    const normalizeTextWithMap = (s: string) => {
+      const map: number[] = [];
+      const out: string[] = [];
+      let i = 0;
       
-      const limitedLine = trimmed.slice(0, maxChunkLength);
-      
-      if (limitedLine.length > maxChunkLength * 0.75) {
-        const words = limitedLine.split(/\s+/);
-        if (words.length > 10) {
-          const startIdx = Math.floor(words.length * 0.2);
-          const endIdx = Math.floor(words.length * 0.8);
-          const middleSection = words.slice(startIdx, endIdx).join(' ');
-          if (middleSection.length > 20 && middleSection.length < maxChunkLength) {
-            return normalizeText(middleSection);
+      while (i < s.length) {
+        const ch = s[i];
+        
+        // Handle whitespace sequences
+        if (/\s/.test(ch)) {
+          let j = i + 1;
+          while (j < s.length && /\s/.test(s[j])) j++;
+          
+          // Only add a single space if we have content before it
+          if (out.length > 0) { 
+            out.push(" "); 
+            map.push(i); 
           }
+          i = j;
+        } 
+        // Handle list bullets and markdown headers
+        else if (ch === '-' || ch === '*' || ch === '•') {
+          // Check if this is a list bullet followed by whitespace
+          let j = i + 1;
+          while (j < s.length && /\s/.test(s[j])) j++;
+          if (j > i + 1) {
+            // Skip the bullet and whitespace
+            i = j;
+            continue;
+          }
+          // Not a list bullet, treat as normal character
+          out.push(ch);
+          map.push(i);
+          i++;
+        }
+        // Handle markdown headers (#)
+        else if (ch === '#') {
+          let j = i + 1;
+          while (j < s.length && s[j] === '#') j++;
+          // Check if this is at start of line and followed by whitespace
+          if (i === 0 || s[i-1] === '\n') {
+            while (j < s.length && /\s/.test(s[j])) j++;
+            // Skip the header markers and whitespace
+            i = j;
+            continue;
+          }
+          // Not a header, treat as normal character
+          out.push(ch);
+          map.push(i);
+          i++;
+        }
+        // Handle tabs
+        else if (ch === '\t') {
+          out.push(' ');
+          map.push(i);
+          i++;
+        }
+        // Handle empty lines with whitespace
+        else if (ch === '\n') {
+          let j = i + 1;
+          while (j < s.length && /\s/.test(s[j])) j++;
+          if (j < s.length && s[j] === '\n') {
+            // This is an empty line with whitespace, skip it
+            i = j;
+            continue;
+          }
+          // Normal newline
+          out.push(ch);
+          map.push(i);
+          i++;
+        }
+        // Normal character
+        else {
+          out.push(ch);
+          map.push(i);
+          i++;
         }
       }
       
-      return normalizeText(limitedLine);
+      // Remove leading and trailing spaces
+      if (out.length && out[0] === " ") { 
+        out.shift(); 
+        map.shift(); 
+      }
+      if (out.length && out[out.length - 1] === " ") { 
+        out.pop(); 
+        map.pop(); 
+      }
+      
+      return { norm: out.join(""), map };
     };
 
-    const findAllMatches = (haystack: string, needle: string) => {
-      // Respect case sensitivity option from outer scope
-      let hay = caseSensitive ? haystack : haystack.toLowerCase();
-      const pat = caseSensitive ? needle : needle.toLowerCase();
+    // Initialize fuzzy matcher
+    const fuzzyMatcher = new FuzzyMatcher(maxPatternLength, errorTolerance);
+    
+    const findAllMatches = (haystack: string, needle: string, indexMap: number[]) => {
+      // === Case handling ===
+      const rawHayFull = caseSensitive ? haystack : haystack.toLowerCase();
+      const rawNeedleFull = caseSensitive ? needle : needle.toLowerCase();
 
-      if (pat.length > hay.length || pat.length < 3) return [];
+      // Quick length guard
+      if (rawNeedleFull.length < 3 || rawNeedleFull.length > rawHayFull.length) return [];
 
-      // --- KMP helpers ---
-      const buildLPS = (p: string): number[] => {
-        const lps = new Array(p.length).fill(0);
-        let len = 0; // length of the previous longest prefix suffix
-        let i = 1;
-        while (i < p.length) {
-          if (p[i] === p[len]) {
-            len++;
-            lps[i] = len;
-            i++;
-          } else if (len !== 0) {
-            len = lps[len - 1];
-          } else {
-            lps[i] = 0;
-            i++;
-          }
+      if (fuzzyMatching) {
+        
+        // Use fuzzy matching with Bitap algorithm on normalized text
+        const matches = fuzzyMatcher.findAllMatches(rawHayFull, rawNeedleFull);
+        
+        // Filter matches by minimum similarity threshold and map back to original indices
+        const minSimilarity = 0.85;
+        const allMatches = matches
+          .filter(match => {
+            const passes = match.similarity >= minSimilarity;
+            return passes;
+          })
+          .map(match => {
+            const originalIndex = indexMap[match.index];
+            return {
+              index: originalIndex, // Map back to original text indices
+              similarity: match.similarity,
+              length: match.length
+            };
+          });
+        
+        // Check if we have any matches
+        if (allMatches.length === 0) {
+          return [];
         }
-        return lps;
-      };
-
-      const kmpSearch = (text: string, pattern: string): number[] => {
-        const res: number[] = [];
-        if (pattern.length === 0) return res;
-
-        const lps = buildLPS(pattern);
-        let i = 0; // index for text
-        let j = 0; // index for pattern
-
-        while (i < text.length) {
-          if (text[i] === pattern[j]) {
-            i++;
-            j++;
-            if (j === pattern.length) {
-              res.push(i - j);
-              j = lps[j - 1]; // continue searching for next matches
-            }
-          } else if (j !== 0) {
-            j = lps[j - 1];
-          } else {
-            i++;
+        
+        // Find the best similarity score
+        const bestSimilarity = Math.max(...allMatches.map(match => match.similarity));
+        
+        // Return only matches with the best similarity score
+        const bestMatches = allMatches.filter(match => match.similarity === bestSimilarity);
+        
+        return bestMatches;
+      } else {
+        // Fallback to exact matching with KMP for comparison
+        const buildLPS = (p: string): number[] => {
+          const lps = new Array(p.length).fill(0);
+          let len = 0;
+          for (let i = 1; i < p.length; ) {
+            if (p[i] === p[len]) { lps[i++] = ++len; }
+            else if (len !== 0) { len = lps[len - 1]; }
+            else { lps[i++] = 0; }
           }
-        }
-        return res;
-      };
+          return lps;
+        };
+        
+        const kmpSearch = (text: string, pattern: string): number[] => {
+          const res: number[] = [];
+          if (!pattern.length || pattern.length > text.length) return res;
+          const lps = buildLPS(pattern);
+          let i = 0, j = 0;
+          while (i < text.length) {
+            if (text[i] === pattern[j]) {
+              i++; j++;
+              if (j === pattern.length) { res.push(i - j); j = lps[j - 1]; }
+            } else if (j !== 0) j = lps[j - 1];
+            else i++;
+          }
+          return res;
+        };
 
-      const indices = kmpSearch(hay, pat);
 
-      // Adapt to the expected return structure used by downstream logic
-      return indices.map((idx) => ({
-        index: idx,
-        similarity: 1, // exact match
-        length: pat.length,
-      })).sort((a, b) => b.similarity - a.similarity);
+        if (rawNeedleFull.length > rawHayFull.length) return [];
+
+        const idxs = kmpSearch(rawHayFull, rawNeedleFull);
+        return idxs.map((idx) => ({ index: indexMap[idx], similarity: 1, length: rawNeedleFull.length }));
+      }
     };
 
     // Best span algorithm implementation
@@ -932,13 +1136,55 @@ export const HighlightApi = async (c: Context) => {
       if (bestL === null || bestR === null) return null;
       return { bestL, bestR };
     };
+
+    // Function to merge close matches
+    const mergeCloseMatches = (matches: Array<{
+      startIndex: number;
+      endIndex: number;
+      similarity: number;
+      length: number;
+    }>) => {
+      if (matches.length === 0) return matches;
+      
+      // Sort matches by start index
+      const sortedMatches = [...matches].sort((a, b) => a.startIndex - b.startIndex);
+      const merged: Array<{
+        startIndex: number;
+        endIndex: number;
+        similarity: number;
+        length: number;
+      }> = [];
+      
+      let currentMatch = { ...sortedMatches[0] };
+      
+      for (let i = 1; i < sortedMatches.length; i++) {
+        const nextMatch = sortedMatches[i];
+        const gap = nextMatch.startIndex - currentMatch.endIndex;
+        
+        // Merge if matches are close (within 10 characters or overlapping)
+        if (gap <= 256) {
+          // Extend the current match to include the next one
+          currentMatch.endIndex = Math.max(currentMatch.endIndex, nextMatch.endIndex);
+          // Use the higher similarity
+          currentMatch.similarity = Math.max(currentMatch.similarity, nextMatch.similarity);
+          currentMatch.length = Math.max(currentMatch.length, nextMatch.length);
+        } else {
+          // Add current match and start a new one
+          merged.push({ ...currentMatch });
+          currentMatch = { ...nextMatch };
+        }
+      }
+      
+      // Add the last match
+      merged.push(currentMatch);
+      
+      return merged;
+    };
     
     const lines = chunkText.split('\n');
-    const processedLines: string[] = [];
     const allMatchesPerLine: Array<{
       matches: Array<{ index: number, similarity: number, length: number }>;
       originalLine: string;
-      processedLine: string;
     }> = [];
     
     // Performance guard: limit number of lines processed
@@ -949,33 +1195,20 @@ export const HighlightApi = async (c: Context) => {
       console.warn(`Too many lines (${lines.length}), processing only first ${MAX_LINES_PROCESSED}`);
     }
     
-    // Collect all matches for each line
     for (const line of linesToProcess) {
-      const processedLine = processLine(line);
-      if (processedLine) {
-        processedLines.push(processedLine);
-        const matches = findAllMatches(documentContent, processedLine);
+      if (line) {
+        const { norm: normalizedContent, map: indexMap } = normalizeTextWithMap(documentContent);
+        const normalizedLine = normalizeText(line);
+        const matches = findAllMatches(normalizedContent, normalizedLine, indexMap);
         
         if (matches.length > 0) {
           allMatchesPerLine.push({
             matches,
             originalLine: line.trim(),
-            processedLine: processedLine
           });
         }
       }
     }
-
-    // Apply best span algorithm to find optimal clusters
-    const finalMatches: Array<{
-      startIndex: number;
-      endIndex: number;
-      length: number;
-      similarity: number;
-      highlightedText: string;
-      originalLine: string;
-      processedLine: string;
-    }> = [];
 
     if (allMatchesPerLine.length > 0) {
       // Extract all match indices for each line
@@ -987,6 +1220,13 @@ export const HighlightApi = async (c: Context) => {
       const bestSpan = findBestSpan(indexLists);
       
       if (bestSpan) {
+        // Apply best span algorithm to find optimal clusters
+        const finalMatches: Array<{
+          startIndex: number;
+          endIndex: number;
+          similarity: number;
+        }> = [];
+
         // Create matches for the best span by choosing, for each line, the match
         // inside [bestL, bestR] with the highest similarity.
         const windowMid = (bestSpan.bestL + bestSpan.bestR) / 2;
@@ -1009,11 +1249,7 @@ export const HighlightApi = async (c: Context) => {
             finalMatches.push({
               startIndex: selectedMatch.index,
               endIndex: selectedMatch.index + selectedMatch.length,
-              length: selectedMatch.length,
               similarity: selectedMatch.similarity,
-              highlightedText: documentContent.substring(selectedMatch.index, selectedMatch.index + selectedMatch.length),
-              originalLine: lineData.originalLine,
-              processedLine: lineData.processedLine
             });
             continue;
           }
@@ -1028,101 +1264,25 @@ export const HighlightApi = async (c: Context) => {
           finalMatches.push({
             startIndex: selectedMatch.index,
             endIndex: selectedMatch.index + selectedMatch.length,
-            length: selectedMatch.length,
             similarity: selectedMatch.similarity,
-            highlightedText: documentContent.substring(selectedMatch.index, selectedMatch.index + selectedMatch.length),
-            originalLine: lineData.originalLine,
-            processedLine: lineData.processedLine
+          });
+        }
+
+        if (finalMatches.length > 0) {
+          // Merge close matches
+          const mergedMatches = mergeCloseMatches(finalMatches.map(match => ({ ...match, length: match.endIndex - match.startIndex })));
+          
+          return c.json({
+            success: true,
+            matches: mergedMatches
           });
         }
       }
     }
 
-    // Sort matches by start index
-    finalMatches.sort((a, b) => a.startIndex - b.startIndex);
-
-    // Merge overlapping matches
-    const filteredMatches: Array<{
-      startIndex: number;
-      endIndex: number;
-      length: number;
-      similarity: number;
-      highlightedText: string;
-      originalLine: string;
-      processedLine: string;
-    }> = [];
-    
-    for (let i = 0; i < finalMatches.length; i++) {
-      const current = finalMatches[i];
-      let merged = false;
-      
-      for (let j = 0; j < filteredMatches.length; j++) {
-        const existing = filteredMatches[j];
-        
-        if (
-          (current.startIndex >= existing.startIndex && current.startIndex < existing.endIndex) ||
-          (current.endIndex > existing.startIndex && current.endIndex <= existing.endIndex) ||
-          (current.startIndex <= existing.startIndex && current.endIndex >= existing.endIndex)
-        ) {
-          const combinedStartIndex = Math.min(existing.startIndex, current.startIndex);
-          const combinedEndIndex = Math.max(existing.endIndex, current.endIndex);
-          const combinedLength = combinedEndIndex - combinedStartIndex;
-          const combinedSimilarity = Math.max(existing.similarity, current.similarity);
-          const combinedHighlightedText = documentContent.substring(combinedStartIndex, combinedEndIndex);
-          
-          const combinedOriginalLines: string = [existing.originalLine, current.originalLine]
-            .filter((line, index, arr) => arr.indexOf(line) === index)
-            .join(' | ');
-          
-          const combinedProcessedLines: string = [existing.processedLine, current.processedLine]
-            .filter((line, index, arr) => arr.indexOf(line) === index)
-            .join(' | ');
-          
-          filteredMatches[j] = {
-            startIndex: combinedStartIndex,
-            endIndex: combinedEndIndex,
-            length: combinedLength,
-            similarity: combinedSimilarity,
-            highlightedText: combinedHighlightedText,
-            originalLine: combinedOriginalLines,
-            processedLine: combinedProcessedLines
-          };
-          
-          merged = true;
-          break;
-        }
-      }
-      
-      if (!merged) {
-        filteredMatches.push(current);
-      }
-    }
-
-    if (filteredMatches.length === 0) {
-      return c.json({ 
-        success: false, 
-        message: "No suitable matches found for any lines",
-        debug: { 
-          processedLines,
-          totalLines: lines.length,
-          documentLength: documentContent.length,
-          matchThreshold,
-          maxChunkLength
-        }
-      });
-    }
-
-    return c.json({
-      success: true,
-      matches: filteredMatches,
-      totalMatches: filteredMatches.length,
-      debug: {
-        processedLines,
-        totalLines: lines.length,
-        documentLength: documentContent.length,
-        matchThreshold,
-        maxChunkLength
-      }
+    return c.json({ 
+      success: false, 
+      message: "No suitable matches found for any lines",
     });
 
   } catch (error) {

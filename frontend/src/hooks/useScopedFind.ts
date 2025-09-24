@@ -6,10 +6,11 @@ type Options = {
   caseSensitive?: boolean;
   highlightClass?: string;
   activeClass?: string;
-  matchThreshold?: number;    // 0.0 = exact match, 1.0 = very loose (default: 0.3)
-  maxChunkLength?: number;    // Maximum chunk length to process (default: 500)
   debug?: boolean;            // Enable debug logging
   documentId?: string;        // Document ID for caching
+  fuzzyMatching?: boolean;   // Enable fuzzy matching
+  errorTolerance?: number;   // Error tolerance for fuzzy matching (0-10)
+  maxPatternLength?: number; // Maximum pattern length for fuzzy matching
 };
 
 type HighlightMatch = {
@@ -40,23 +41,25 @@ type HighlightCache = {
   [key: string]: CacheEntry;
 };
 
+// Cache duration constant - defined at module scope to prevent re-declaration on each render
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 export function useScopedFind(
   containerRef: React.RefObject<HTMLElement>,
   opts: Options = {}
 ) {
   const { documentOperationsRef } = useDocumentOperations();
   const { 
-    caseSensitive = false,
+    caseSensitive = true,
     highlightClass = "bg-yellow-200/60 dark:bg-yellow-200/40 rounded-sm px-0.5 py-px", 
-    matchThreshold = 0.3,
-    maxChunkLength = 500,
     debug = false,
     documentId,
+    errorTolerance = 5,
+    maxPatternLength = 128,
   } = opts;
 
   // Cache for API responses
   const cacheRef = useRef<HighlightCache>({});
-  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   const [matches, setMatches] = useState<HTMLElement[]>([]);
   const [index, setIndex] = useState(0);
@@ -83,7 +86,7 @@ export function useScopedFind(
         delete cache[key];
       }
     });
-  }, [CACHE_DURATION]);
+  }, []);
 
   // Extract text content from the container
   const extractContainerText = useCallback((container: HTMLElement): string => {
@@ -298,9 +301,9 @@ export function useScopedFind(
               chunkText: text,
               documentContent: containerText,
               options: {
-                matchThreshold,
-                maxChunkLength,
-                caseSensitive
+                caseSensitive,
+                errorTolerance,
+                maxPatternLength
               }
             }
           });
@@ -310,8 +313,6 @@ export function useScopedFind(
           }
 
           result = await response.json();
-
-          console.log('Backend response:', result);
           
           // Only cache successful responses
           if (result.success) {
@@ -377,7 +378,7 @@ export function useScopedFind(
         setIsLoading(false);
       }
     },
-    [clearHighlights, containerRef, extractContainerText, createHighlightMarks, matchThreshold, maxChunkLength, caseSensitive, debug, documentId, generateCacheKey, cleanExpiredCache]
+    [clearHighlights, containerRef, extractContainerText, createHighlightMarks, caseSensitive, debug, documentId, generateCacheKey, cleanExpiredCache, errorTolerance, maxPatternLength]
   );
 
   const scrollToMatch = useCallback(
@@ -429,7 +430,7 @@ export function useScopedFind(
     }, CACHE_DURATION / 2); // Clean every 2.5 minutes
 
     return () => clearInterval(interval);
-  }, [cleanExpiredCache, CACHE_DURATION]);
+  }, [cleanExpiredCache]);
 
   return {
     highlightText,
