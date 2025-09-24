@@ -2029,7 +2029,6 @@ export const GetVespaDataForKBDoc = async (c: Context) => {
     const rawData = await c.req.json()
     const validatedData = deleteDocumentSchema.parse(rawData)
     const { docId, schema: rawSchema } = validatedData
-    console.log(rawData, validatedData)
     const validSchemas = [KbItemsSchema]
     if (!validSchemas.includes(rawSchema)) {
       throw new HTTPException(400, {
@@ -2057,16 +2056,7 @@ export const GetVespaDataForKBDoc = async (c: Context) => {
     const fields = documentData.fields as Record<string, any>
     let ownerEmail: string
 
-    if (schema === KbItemsSchema) {
-      ownerEmail = fields.createdBy as string
-    } else {
-      loggerWithChild({ email: userEmail }).error(
-        `Only Knowledge Base document can be accessed by Accessed`,
-      )
-      throw new HTTPException(400, {
-        message: "Unsupported schema type for data access.",
-      })
-    }
+    ownerEmail = fields.createdBy as string
 
     if (!ownerEmail) {
       loggerWithChild({ email: userEmail }).error(
@@ -2087,7 +2077,7 @@ export const GetVespaDataForKBDoc = async (c: Context) => {
       })
     }
     loggerWithChild({ email: userEmail }).info(
-      `User ${userEmail} authorized to delete document ${docId} (schema: ${schema}) owned by ${ownerEmail}.`,
+      `User ${userEmail} authorized to access document ${docId} (schema: ${schema}) owned by ${ownerEmail}.`,
     )
     return c.json(
       {
