@@ -833,6 +833,7 @@ export const handleMicrosoftServiceAccountIngestion = async (
       credentials.access_token,
       credentials.clientId,
       credentials.clientSecret,
+      credentials.tenantId,
     )
 
     const interval = setInterval(() => {
@@ -848,13 +849,12 @@ export const handleMicrosoftServiceAccountIngestion = async (
 
     //Discover all SharePoint sites
     let sites = await discoverSharePointSites(graphClient, email!)
-    sites = sites.filter((d) => d.name === "VISA_SIN" || d.name === "Visa + Juspay B2B" || d.name === "test site 1")
 
     //For each site, discover all drives
     const siteDrives = await discoverSiteDrives(graphClient, sites, email!)
 
     // Step 3: Process each drive and collect delta tokens
-    const driveTokens = await processSiteDrives(
+    const deltaLinks = await processSiteDrives(
       graphClient,
       siteDrives,
       email!,
@@ -883,7 +883,7 @@ export const handleMicrosoftServiceAccountIngestion = async (
         connectorId: connector!.id,
         authType: AuthType.ServiceAccount,
         config: {
-          deltaTokens: driveTokens, // Store all drive delta tokens as a record
+          deltaLinks, // Store all drive delta Links as a record
           type: "microsoftSharepointDeltaTokens",
           lastSyncedAt: new Date().toISOString(),
         },

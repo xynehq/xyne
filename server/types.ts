@@ -383,7 +383,7 @@ const MicrosoftCalendarDeltaTokenSchema = z.object({
 })
 const MicrosoftSharepointDeltaTokenSchema = z.object({
   type: z.literal("microsoftSharepointDeltaTokens"),
-  deltaTokens: z.record(z.string(), z.string()).optional(),
+  deltaLinks: z.record(z.string(), z.string()).optional(),
   lastSyncedAt: z.coerce.date(),
 })
 

@@ -1556,6 +1556,10 @@ internalMetricRouter.get("/metrics", async (c) => {
   }
 })
 
+initQueue().catch((error) => {
+  throw new InitialisationError({ cause: error })
+})
+
 init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })

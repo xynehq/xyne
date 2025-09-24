@@ -190,10 +190,7 @@ export const getOAuthConnectorWithCredentials = async (
     .where(
       and(
         eq(connectors.id, connectorId),
-        eq(
-          connectors.authType,
-          AuthType.OAuth,
-        ),
+        eq(connectors.authType, AuthType.OAuth),
       ),
     )
     .limit(1)
@@ -255,47 +252,46 @@ export const getOAuthConnectorWithCredentials = async (
       })
       Logger.info(`Connector successfully updated: ${updatedConnector.id}`)
     } else if (IsMicrosoftApp(oauthRes.app)) {
-        // we will need the provider now to refresh the token
-        const providers: SelectOAuthProvider[] =
-          await getOAuthProviderByConnectorId(trx, connectorId)
+      // we will need the provider now to refresh the token
+      const providers: SelectOAuthProvider[] =
+        await getOAuthProviderByConnectorId(trx, connectorId)
 
-        if (!providers.length) {
-          Logger.error(
-            "Could not fetch provider while refreshing Microsoft Token",
-          )
-          throw new FetchProviderFailed({
-            message:
-              "Could not fetch provider while refreshing Microsoft Token",
-          })
-        }
-        const [microsoftProvider] = providers
-        const microsoft = new MicrosoftEntraId(
-          "common",
-          microsoftProvider.clientId!,
-          microsoftProvider.clientSecret as string,
-          `${config.host}/oauth/callback`,
+      if (!providers.length) {
+        Logger.error(
+          "Could not fetch provider while refreshing Microsoft Token",
         )
-        const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
-        const refreshedTokens = await microsoft.refreshAccessToken(
-          tokens.refresh_token,
-          scopes,
-        )
-        // update the token values
-        tokens.access_token = refreshedTokens.accessToken()
-        tokens.accessTokenExpiresAt = new Date(
-          refreshedTokens.accessTokenExpiresAt(),
-        )
-        // Update refresh token if a new one is provided
-        if (refreshedTokens.refreshToken()) {
-          tokens.refresh_token = refreshedTokens.refreshToken()
-        }
-        ;(oauthRes.oauthCredentials as OAuthCredentials).data = tokens
-        const updatedConnector = await updateConnector(trx, oauthRes.id, {
-          oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
+        throw new FetchProviderFailed({
+          message: "Could not fetch provider while refreshing Microsoft Token",
         })
-        Logger.info(
-          `Microsoft connector successfully updated: ${updatedConnector.id}`,
-        )
+      }
+      const [microsoftProvider] = providers
+      const microsoft = new MicrosoftEntraId(
+        "common",
+        microsoftProvider.clientId!,
+        microsoftProvider.clientSecret as string,
+        `${config.host}/oauth/callback`,
+      )
+      const tokens = (oauthRes.oauthCredentials as OAuthCredentials).data
+      const refreshedTokens = await microsoft.refreshAccessToken(
+        tokens.refresh_token,
+        scopes,
+      )
+      // update the token values
+      tokens.access_token = refreshedTokens.accessToken()
+      tokens.accessTokenExpiresAt = new Date(
+        refreshedTokens.accessTokenExpiresAt(),
+      )
+      // Update refresh token if a new one is provided
+      if (refreshedTokens.refreshToken()) {
+        tokens.refresh_token = refreshedTokens.refreshToken()
+      }
+      ;(oauthRes.oauthCredentials as OAuthCredentials).data = tokens
+      const updatedConnector = await updateConnector(trx, oauthRes.id, {
+        oauthCredentials: JSON.stringify(oauthRes.oauthCredentials),
+      })
+      Logger.info(
+        `Microsoft connector successfully updated: ${updatedConnector.id}`,
+      )
     } else {
       Logger.error(
         `Token has to refresh but ${oauthRes.app} app not yet supported`,
@@ -318,7 +314,7 @@ export const getMicrosoftAuthConnectorWithCredentials = async (
     .where(
       and(
         eq(connectors.id, connectorId),
-        eq(connectors.authType,AuthType.ServiceAccount),
+        eq(connectors.authType, AuthType.ServiceAccount),
       ),
     )
     .limit(1)
@@ -329,24 +325,17 @@ export const getMicrosoftAuthConnectorWithCredentials = async (
     })
   }
 
-  const authRes: SelectConnector = selectConnectorSchema.parse(res[0])
+  let authRes: SelectConnector = selectConnectorSchema.parse(res[0])
 
   if (!authRes.credentials) {
     throw new MissingOauthConnectorCredentialsError({})
   }
   // parse the string
-  authRes.credentials= JSON.parse(authRes.credentials as string)
   const credentails: MicrosoftServiceCredentials = JSON.parse(
     authRes.credentials as string,
   )
-  
-  if (
-    IsExpired(
-      authRes.app,
-      new Date(credentails.expires_at),
-      5 * 60
-    )
-  ) {
+
+  if (IsExpired(authRes.app, new Date(credentails.expires_at), 5 * 60)) {
     // token is expired. We should get new tokens
     // update it in place
     if (IsMicrosoftApp(authRes.app)) {
@@ -357,17 +346,15 @@ export const getMicrosoftAuthConnectorWithCredentials = async (
       )
 
       const accessToken = await authProvider.getAccessTokenWithExpiry()
-      ;(authRes.credentials as MicrosoftServiceCredentials).access_token =
-        accessToken.token
-      ;(authRes.credentials as MicrosoftServiceCredentials).expires_at =
-        new Date(accessToken.expiresOnTimestamp).toISOString()
+      credentails.access_token = accessToken.token
+      credentails.expires_at = new Date(
+        accessToken.expiresOnTimestamp,
+      ).toISOString()
 
-      const updatedConnector = await updateConnector(trx, authRes.id, {
+      authRes = await updateConnector(trx, authRes.id, {
         credentials: JSON.stringify(authRes.credentials),
       })
-      Logger.info(
-        `Microsoft connector successfully updated: ${updatedConnector.id}`,
-      )
+      Logger.info(`Microsoft connector successfully updated: ${authRes.id}`)
     } else {
       Logger.error(
         `Token has to refresh but ${authRes.app} app not yet supported`,

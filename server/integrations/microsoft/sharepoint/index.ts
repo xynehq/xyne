@@ -36,10 +36,6 @@ export const discoverSharePointSites = async (
       nextLink = response["@odata.nextLink"]
     }
 
-    loggerWithChild({ email: userEmail }).info(
-      `Discovered ${sites.length} SharePoint sites: ${sites.map((s) => s.name).join(", ")}`,
-    )
-
     return sites
   } catch (error) {
     loggerWithChild({ email: userEmail }).error(
@@ -81,7 +77,7 @@ export const discoverSiteDrives = async (
               siteDrives.push(drive as Drive)
 
               loggerWithChild({ email: userEmail }).info(
-                `Added drive to sync: ${drive.name} (${drive.id}) from site ${site.name}`,
+                `Found Drive: ${drive.name} (${drive.id}) from site ${site.name}`,
               )
             } catch (error) {
               loggerWithChild({ email: userEmail }).warn(
@@ -125,7 +121,7 @@ export const processSiteDrives = async (
       `Processing ${siteDrives.length} drives for initial sync and delta token collection`,
     )
 
-    const driveTokens: Record<string, string> = {}
+    const deltaLinks: Record<string, string> = {}
 
     let totalFiles = 0
 
@@ -135,12 +131,12 @@ export const processSiteDrives = async (
           `Processing drive: ${siteDrive.name} from site: ${siteDrive.name}`,
         )
 
-        let deltaToken = ""
+        let deltaLink = ""
         let driveFileCount = 0
 
         // Use delta API for initial sync to get all files and the delta token
         let nextLink: string | undefined =
-          `/sites/${siteDrive.sharePointIds?.siteId}/drives/${siteDrive.id}/root/delta?$select=id,name,size,createdDateTime,lastModifiedDateTime,webUrl,file,folder,parentReference,createdBy,lastModifiedBy,@microsoft.graph.downloadUrl`
+          `/sites/${siteDrive.sharePointIds?.siteId}/drives/${siteDrive.id}/root/delta?$select=id,name,size,createdDateTime,lastModifiedDateTime,webUrl,file,folder,parentReference,createdBy,lastModifiedBy,@microsoft.graph.downloadUrl,deleted`
 
         while (nextLink) {
           const response = await makeGraphApiCall(client, nextLink)
@@ -210,14 +206,15 @@ export const processSiteDrives = async (
             nextLink = response["@odata.nextLink"]
           } else {
             // Final response should contain delta token
-            deltaToken = response["@odata.deltaLink"] || ""
+            deltaLink = response["@odata.deltaLink"] || ""
             nextLink = undefined
           }
         }
 
         // Store the delta token for this drive
-        if (deltaToken && siteDrive.id) {
-          driveTokens[`${siteDrive.sharePointIds?.siteId}::${siteDrive.id}`] = deltaToken
+        if (deltaLinks && siteDrive.id) {
+          deltaLinks[`${siteDrive.sharePointIds?.siteId}::${siteDrive.id}`] =
+            deltaLink
 
           loggerWithChild({ email: userEmail }).info(
             `Stored delta token for drive ${siteDrive.name} (${siteDrive.id}): processed ${driveFileCount} files`,
@@ -236,10 +233,10 @@ export const processSiteDrives = async (
     }
 
     loggerWithChild({ email: userEmail }).info(
-      `Completed processing ${siteDrives.length} drives. Total files processed: ${totalFiles}. Delta tokens collected for ${Object.keys(driveTokens).length} drives.`,
+      `Completed processing ${siteDrives.length} drives. Total files processed: ${totalFiles}. Delta tokens collected for ${Object.keys(deltaLinks).length} drives.`,
     )
 
-    return driveTokens
+    return deltaLinks
   } catch (error) {
     loggerWithChild({ email: userEmail }).error(
       error,
