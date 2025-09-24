@@ -30,6 +30,7 @@ import { DeleteDocument } from "@/search/vespa"
 import type { VespaSchema } from "@xyne/vespa-ts/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
+import { isDataSourceError } from "@/integrations/dataSource/errors"
 import {
   removeAppIntegrationFromAllAgents,
   getAgentsByDataSourceId,
@@ -197,6 +198,10 @@ export async function handleSingleFileUploadToDataSource(
         flag,
       },
     )
+    if (isDataSourceError(error)) {
+      // Preserve DataSourceError so UI can display error.userMessage
+      throw error
+    }
     if (
       error instanceof Error &&
       (error.message.includes("already exists") ||

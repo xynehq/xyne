@@ -23,11 +23,18 @@ services:
     container_name: xyne-prometheus
     user: "65534:65534"
     volumes:
-      - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-selfhosted.yml
+      - ./prometheus-selfhosted.yml:/etc/prometheus/prometheus-template.yml
+      - ./prometheus/data:/prometheus
     ports:
     - "9090:9090"
+    environment:
+      - METRICS_PORT=${METRICS_PORT:-3001}
     command:
-      - "--config.file=/etc/prometheus/prometheus-selfhosted.yml"
+      - sh
+      - -c
+      - |
+        envsubst < /etc/prometheus/prometheus-template.yml > /etc/prometheus/prometheus.yml
+        exec prometheus --config.file=/etc/prometheus/prometheus.yml
     restart: always
     networks:
       - xyne
@@ -40,7 +47,7 @@ services:
     user: "472:472"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/grafana-storage:/var/lib/grafana 
+      - ./grafana/data:/var/lib/grafana
     ports:
       - "3002:3000"
     restart: always
@@ -50,11 +57,20 @@ services:
       - POSTGRES_PASSWORD=xyne
 
   vespa:
-    image: vespaengine/vespa
+    image: vespaengine/vespa:8.503.27
     container_name: vespa
     hostname: vespa-container
     # sudo chown -R 1000:1000 ./server/vespa-data
     user: "1000:1000" # Run as vespa user
+    deploy:
+      resources:
+        limits:
+          memory: 220G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all  # or "all" for all GPUs
+              capabilities: [gpu]
     ports:
       - "8080:8080"
       - "19071:19071"
@@ -72,8 +88,26 @@ services:
         max-size: "50m"
         max-file: "6"
     environment:
-      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx16g -XX:+UseG1GC -XX:G1HeapRegionSize=32M
-      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx8g -XX:+UseG1GC
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+      - VESPA_CONFIGSERVER_JVMARGS=-Xms2g -Xmx4g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
+      - VESPA_CONFIGPROXY_JVMARGS=-Xms1g -Xmx2g -XX:+UseG1GC
+
+
+      # Main query container
+      - VESPA_CONTAINER_JVMARGS=-Xms6g -Xmx8g -XX:+UseG1GC
+      - VESPA_CONTAINER_MY_CONTAINER_JVMARGS=-Xms4g -Xmx6g -XX:+UseG1GC
+
+      # Storage and search nodes
+      - VESPA_CONTENT_JVMARGS=-Xms10g -Xmx14g -XX:+UseG1GC
+      - VESPA_SEARCHNODE_JVMARGS=-Xms4g -Xmx6g -XX:+UseG1GC
+
+      # Support components (right-sized)
+      - VESPA_LOGSERVER_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
+      - VESPA_LOGS_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
+      - VESPA_CLUSTER_CONTROLLER_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
+      - VESPA_METRICS_JVMARGS=-Xms256m -Xmx512m -XX:+UseG1GC
 
   xyne-db:
     image: postgres

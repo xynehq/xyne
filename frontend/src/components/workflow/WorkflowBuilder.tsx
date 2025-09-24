@@ -1120,12 +1120,14 @@ const StepNode: React.FC<NodeProps> = ({
 // Header component
 const Header = ({
   onBackToWorkflows,
+  onRefreshWorkflows,
   workflowName,
   selectedTemplate,
   onWorkflowNameChange,
   isEditable = true,
 }: { 
   onBackToWorkflows?: () => void; 
+  onRefreshWorkflows?: () => void;
   workflowName?: string;
   selectedTemplate?: WorkflowTemplate | null;
   onWorkflowNameChange?: (newName: string) => void;
@@ -1176,7 +1178,10 @@ const Header = ({
       <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
         <span
           className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
-          onClick={onBackToWorkflows}
+          onClick={() => {
+            onBackToWorkflows?.()
+            onRefreshWorkflows?.()
+          }}
         >
           Workflow
         </span>
@@ -1774,6 +1779,7 @@ interface WorkflowBuilderProps {
   onStepClick?: (step: Step) => void
   user?: UserDetail
   onBackToWorkflows?: () => void
+  onRefreshWorkflows?: () => void
   selectedTemplate?: WorkflowTemplate | null
   isLoadingTemplate?: boolean
   isEditableMode?: boolean
@@ -1785,6 +1791,7 @@ interface WorkflowBuilderProps {
 const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   onStepClick,
   onBackToWorkflows,
+  onRefreshWorkflows,
   selectedTemplate,
   isLoadingTemplate,
   isEditableMode,
@@ -3181,6 +3188,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       {/* Header */}
       <Header
         onBackToWorkflows={onBackToWorkflows}
+        onRefreshWorkflows={onRefreshWorkflows}
         workflowName={getWorkflowName()}
         selectedTemplate={selectedTemplate}
         onWorkflowNameChange={handleWorkflowNameChange}

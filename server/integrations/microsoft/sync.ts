@@ -84,16 +84,9 @@ const validateMicrosoftCredentials = () => {
   const clientId = process.env.MICROSOFT_CLIENT_ID
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET
 
-  if (!clientId) {
-    throw new Error(
-      "MICROSOFT_CLIENT_ID environment variable is required but not set",
-    )
-  }
-
-  if (!clientSecret) {
-    throw new Error(
-      "MICROSOFT_CLIENT_SECRET environment variable is required but not set",
-    )
+  if (!clientId || !clientSecret) {
+    Logger.warn("Microsoft integration disabled: MICROSOFT_CLIENT_ID and/or MICROSOFT_CLIENT_SECRET environment variables not set")
+    return { clientId: null, clientSecret: null }
   }
 
   return { clientId, clientSecret }
@@ -1150,6 +1143,12 @@ export const handleMicrosoftOAuthChanges = async (
   boss: PgBoss,
   job: PgBoss.Job<any>,
 ) => {
+  // Skip if Microsoft credentials are not configured
+  if (!MICROSOFT_CLIENT_ID || !MICROSOFT_CLIENT_SECRET) {
+    Logger.warn("Skipping Microsoft sync job - Microsoft integration not configured")
+    return
+  }
+
   const data = job.data
   loggerWithChild({ email: data.email ?? "" }).info(
     "handleMicrosoftOAuthChanges",

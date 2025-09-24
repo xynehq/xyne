@@ -57,12 +57,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { SmartTooltip } from "@/components/ui/smart-tooltip"
 import { getIcon } from "@/lib/common"
 import { CLASS_NAMES, SELECTORS } from "../lib/constants"
 import { DriveEntity } from "shared/types"
@@ -76,7 +71,6 @@ import {
   createDragHandlers,
   createFileSelectionHandlers,
   validateAndDeduplicateFiles,
-  createToastNotifier,
   createImagePreview,
   cleanupPreviewUrls,
   getFileType,
@@ -319,31 +313,45 @@ const setCaretPosition = (element: Node, position: number) => {
   }
 }
 
-// Reusable tooltip wrapper component
-const TooltipWrapper: React.FC<{
-  children: React.ReactElement
-  content: string
-  delayDuration?: number
-}> = ({ children, content, delayDuration = 500 }) => (
-  <TooltipProvider delayDuration={delayDuration}>
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent
-        className="!bg-gray-900 dark:!bg-gray-800 !text-white !border-0 !px-3 !py-2 !text-xs !rounded-lg !shadow-lg !overflow-visible relative"
-        sideOffset={12}
-      >
-        <div className="relative">
-          <p className="!text-white !m-0">{content}</p>
-          <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-800" />
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-)
-
 export interface ChatBoxRef {
   sendMessage: (message: string) => void
   getCurrentModelConfig: () => string | null
+}
+
+// Utility functions for robust localStorage handling of selected model
+const getSelectedModelFromStorage = (): string => {
+  try {
+    return localStorage.getItem("selectedModel") || ""
+  } catch (error) {
+    console.warn("Failed to get selectedModel from localStorage:", error)
+    return ""
+  }
+}
+
+const setSelectedModelInStorage = (modelName: string): void => {
+  try {
+    if (modelName) {
+      localStorage.setItem("selectedModel", modelName)
+    } else {
+      localStorage.removeItem("selectedModel")
+    }
+  } catch (error) {
+    console.warn("Failed to set selectedModel in localStorage:", error)
+  }
+}
+
+const getDefaultModel = (availableModels: ModelConfiguration[]): string => {
+  if (!availableModels || availableModels.length === 0) {
+    return ""
+  }
+
+  // Try to find Claude Sonnet 4 as default, otherwise use first available
+  const defaultModel =
+    availableModels.find(
+      (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
+    ) || availableModels[0]
+
+  return defaultModel.labelName
 }
 
 export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
@@ -544,24 +552,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     })
 
     const [selectedModel, setSelectedModel] = useState<string>(() => {
-      // Initialize based on current mode and localStorage
-      try {
-        const savedCapability = localStorage.getItem("selectedCapability") as
-          | "reasoning"
-          | "websearch"
-          | "deepResearch"
-          | null
-        if (savedCapability === "reasoning") {
-          return localStorage.getItem("reasoningModeModel") || ""
-        } else if (savedCapability === "websearch") {
-          return "Gemini 2.5 Flash" // Auto-select for web search
-        } else if (savedCapability === "deepResearch") {
-          return "GPT O3 Research" // Auto-select for deep research
-        }
-        return localStorage.getItem("reasoningModeModel") || ""
-      } catch {
-        return ""
-      }
+      // Simple localStorage-based initialization
+      return getSelectedModelFromStorage()
     })
 
     const [isModelsLoading, setIsModelsLoading] = useState(false)
@@ -649,17 +641,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
     const SELECTED_MCP_CONNECTOR_ID_KEY = "selectedMcpConnectorId"
 
-    // Effect to persist reasoning mode model selection
+    // Effect to persist selected model to localStorage
     useEffect(() => {
-      if (selectedCapability === "reasoning" && selectedModel) {
-        try {
-          localStorage.setItem("reasoningModeModel", selectedModel)
+      if (selectedModel) {
+        setSelectedModelInStorage(selectedModel)
+        // Also update reasoningModeModel for backward compatibility
+        if (selectedCapability === "reasoning") {
           setReasoningModeModel(selectedModel)
-        } catch (error) {
-          console.warn(
-            "Failed to save reasoning mode model to localStorage:",
-            error,
-          )
         }
       }
     }, [selectedModel, selectedCapability])
@@ -676,6 +664,37 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         console.warn("Failed to save capability to localStorage:", error)
       }
     }, [selectedCapability])
+
+    // Effect to validate and set model when availableModels loads
+    useEffect(() => {
+      if (availableModels.length > 0) {
+        const savedModel = getSelectedModelFromStorage()
+
+        if (savedModel) {
+          // Check if saved model is still available
+          const isModelAvailable = allModelsWithO3.some(
+            (m) => m.labelName === savedModel,
+          )
+
+          if (isModelAvailable && savedModel !== selectedModel) {
+            // Restore saved model if it's available and different from current
+            setSelectedModel(savedModel)
+          } else if (!isModelAvailable && !selectedModel) {
+            // Saved model no longer available and no current selection, use default
+            const defaultModel = getDefaultModel(availableModels)
+            if (defaultModel) {
+              setSelectedModel(defaultModel)
+            }
+          }
+        } else if (!selectedModel) {
+          // No saved model and no current selection, use default
+          const defaultModel = getDefaultModel(availableModels)
+          if (defaultModel) {
+            setSelectedModel(defaultModel)
+          }
+        }
+      }
+    }, [availableModels, allModelsWithO3])
 
     // Effect to trigger animation when model changes
     useEffect(() => {
@@ -695,15 +714,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         if (newCapability === selectedCapability) {
           // Clicking the same capability toggles it off (deselects)
           setSelectedCapability(null)
-          // When deselected, restore reasoning mode model or default
-          if (reasoningModeModel) {
-            setSelectedModel(reasoningModeModel)
-          } else if (availableModels.length > 0) {
-            const defaultModel =
-              availableModels.find(
-                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
-              ) || availableModels[0]
-            setSelectedModel(defaultModel.labelName)
+          // When deselected, restore default model
+          const defaultModel = getDefaultModel(availableModels)
+          if (defaultModel) {
+            setSelectedModel(defaultModel)
           }
           return
         }
@@ -711,9 +725,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         setSelectedCapability(newCapability)
 
         if (newCapability === "reasoning") {
-          // Switch to reasoning mode - restore previous reasoning model or default
+          // Switch to reasoning mode - restore previous reasoning model or use current model
           const storedReasoningModel =
-            reasoningModeModel || localStorage.getItem("reasoningModeModel")
+            reasoningModeModel || getSelectedModelFromStorage()
           if (
             storedReasoningModel &&
             availableModels.find(
@@ -721,13 +735,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             )
           ) {
             setSelectedModel(storedReasoningModel)
-          } else if (availableModels.length > 0) {
-            // Default to Claude Sonnet 4 or first available model
-            const defaultModel =
-              availableModels.find(
-                (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
-              ) || availableModels[0]
-            setSelectedModel(defaultModel.labelName)
+          } else {
+            // Use default model if no valid stored model
+            const defaultModel = getDefaultModel(availableModels)
+            if (defaultModel) {
+              setSelectedModel(defaultModel)
+            }
           }
         } else if (newCapability === "websearch") {
           // Auto-select Gemini 2.5 Flash for web search
@@ -754,33 +767,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           const data = await response.json()
           setAvailableModels(data.models)
 
-          // Set default model based on current mode
+          // Set default model if no model is currently selected and models are available
           if (data.models.length > 0 && !selectedModel) {
-            if (selectedCapability === "reasoning") {
-              // Default to Claude Sonnet 4 or first available
-              const defaultModel =
-                data.models.find(
-                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
-                ) || data.models[0]
-              setSelectedModel(defaultModel.labelName)
-              setReasoningModeModel(defaultModel.labelName)
-            } else if (selectedCapability === "websearch") {
-              const geminiModel = data.models.find(
-                (m: ModelConfiguration) => m.labelName === "Gemini 2.5 Flash",
-              )
-              if (geminiModel) {
-                setSelectedModel(geminiModel.labelName)
-              }
-            } else if (selectedCapability === "deepResearch") {
-              setSelectedModel("GPT O3 Research")
-            } else {
-              // No capability selected - default to Claude Sonnet 4 or first available
-              const defaultModel =
-                data.models.find(
-                  (m: ModelConfiguration) => m.labelName === "Claude Sonnet 4",
-                ) || data.models[0]
-              setSelectedModel(defaultModel.labelName)
-              setReasoningModeModel(defaultModel.labelName)
+            const defaultModel = getDefaultModel(data.models)
+            if (defaultModel) {
+              setSelectedModel(defaultModel)
+              setReasoningModeModel(defaultModel)
             }
           }
         } catch (error) {
@@ -791,24 +783,22 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       }
 
       fetchAvailableModels()
-    }, [selectedCapability])
+    }, []) // Remove selectedCapability dependency to avoid re-fetching models
 
     // File upload utility functions
-    const showToast = createToastNotifier(toast)
 
     const processFiles = useCallback(
       (files: FileList | File[]) => {
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
-          showToast(
-            "Attachment limit reached",
-            `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-            true,
-          )
+          toast.error({
+            title: "Attachment limit reached",
+            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+          })
           return
         }
 
-        const validFiles = validateAndDeduplicateFiles(files, showToast)
+        const validFiles = validateAndDeduplicateFiles(files, toast)
         if (validFiles.length === 0) return
 
         // Check if adding these files would exceed the limit
@@ -816,11 +806,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         const filesToAdd = validFiles.slice(0, remainingSlots)
 
         if (filesToAdd.length < validFiles.length) {
-          showToast(
-            "Some files skipped",
-            `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
-            false,
-          )
+          toast.warning({
+            title: "Some files skipped",
+            description: `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
+          })
         }
 
         const newFiles: SelectedFile[] = filesToAdd.map((file) => ({
@@ -839,17 +828,16 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
           const filteredCount = newFiles.length - filteredNewFiles.length
           if (filteredCount > 0) {
-            showToast(
-              "Files already selected",
-              `${filteredCount} file(s) were already selected and skipped.`,
-              false,
-            )
+            toast.warning({
+              title: "Files already selected",
+              description: `${filteredCount} file(s) were already selected and skipped.`,
+            })
           }
 
           return [...prev, ...filteredNewFiles]
         })
       },
-      [showToast, selectedFiles.length],
+      [selectedFiles.length],
     )
 
     const uploadFiles = useCallback(
@@ -912,11 +900,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   : f,
               ),
             )
-            showToast(
-              "Upload failed",
-              `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
-              true,
-            )
+            toast.error({
+              title: "Upload failed",
+              description: `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
+            })
             return null
           }
         })
@@ -931,7 +918,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         setIsUploadingFiles(false)
         return uploadedMetadata
       },
-      [showToast],
+      [toast],
     )
 
     const getExtension = (file: File) => {
@@ -964,19 +951,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
         if (files.length > 0) {
-          // Check attachment limit before processing
-          if (selectedFiles.length >= MAX_ATTACHMENTS) {
-            showToast(
-              "Attachment limit reached",
-              `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-              true,
-            )
-            return
-          }
+                        // Check attachment limit before processing
+                        if (selectedFiles.length >= MAX_ATTACHMENTS) {
+                          toast.error({
+                            title: "Attachment limit reached",
+                            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+                          })
+                          return
+                        }
           processFiles(files)
         }
       },
-      [processFiles, selectedFiles.length, showToast],
+      [processFiles, selectedFiles.length],
     )
 
     // Effect to initialize and update persistedAgentId
@@ -2433,7 +2419,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
-                Ask a question or type @ to search your apps
+                Ask a question {hideButtons ? "" : "or type @ to search your apps"}
               </div>
             )}
             <div
@@ -2452,11 +2438,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     if (item.kind === "file") {
                       // Check attachment limit before processing
                       if (selectedFiles.length >= MAX_ATTACHMENTS) {
-                        showToast(
-                          "Attachment limit reached",
-                          `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-                          true,
-                        )
+                        toast.error({
+                          title: "Attachment limit reached",
+                          description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+                        })
                         return
                       }
 
@@ -2465,7 +2450,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         // Check if the file type is supported
                         const isValid = validateAndDeduplicateFiles(
                           [file],
-                          showToast,
+                          toast,
                         )
                         if (isValid.length > 0) {
                           // Process the pasted file
@@ -2475,18 +2460,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                             name: file.name,
                           })
 
-                          showToast(
-                            "File pasted",
-                            `${fileType} has been added to your message.`,
-                            false,
-                          )
+                          toast.success({
+                            title: "File pasted",
+                            description: `${fileType} has been added to your message.`,
+                          })
                           return // Exit early since we handled the file
                         } else {
-                          showToast(
-                            "Unsupported file type",
-                            "This file type is not supported for attachments.",
-                            true,
-                          )
                           return
                         }
                       }
@@ -2699,13 +2678,17 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   if (e.defaultPrevented) return
                 }
 
-                if (
-                  e.key === "Enter" &&
-                  !e.shiftKey &&
-                  query.trim().length > 0
-                ) {
-                  e.preventDefault()
-                  handleSendMessage()
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault() // Always prevent default for Enter (unless Shift+Enter)
+                  
+                  if (
+                    query.trim().length > 0 &&
+                    !isStreaming &&
+                    !retryIsStreaming &&
+                    !isUploadingFiles
+                  ) {
+                    handleSendMessage()
+                  }
                 }
               }}
               style={{
@@ -2889,7 +2872,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           )}
 
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-            <TooltipWrapper content="attachment">
+            <SmartTooltip content="attachment">
               <Attach
                 className={`${
                   selectedFiles.length >= MAX_ATTACHMENTS
@@ -2907,7 +2890,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
                 }
               />
-            </TooltipWrapper>
+            </SmartTooltip>
 
             {showAdvancedOptions && (
               <>
@@ -2927,7 +2910,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   />
 
                   {/* Always show all three capability buttons */}
-                  <TooltipWrapper content="Reasoning">
+                  <SmartTooltip content="Reasoning">
                     <button
                       onClick={() => handleCapabilityChange("reasoning")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2938,9 +2921,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Atom size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
 
-                  <TooltipWrapper content="Web Search">
+                  <SmartTooltip content="Web Search">
                     <button
                       onClick={() => handleCapabilityChange("websearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2951,9 +2934,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Globe size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
 
-                  <TooltipWrapper content="Deep Thinking">
+                  <SmartTooltip content="Deep Thinking">
                     <button
                       onClick={() => handleCapabilityChange("deepResearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
@@ -2964,7 +2947,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     >
                       <Brain size={14} />
                     </button>
-                  </TooltipWrapper>
+                  </SmartTooltip>
                 </div>
               </>
             )}
@@ -3516,7 +3499,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       Filter Sources
                     </DropdownMenuLabel>
                     {selectedSourcesCount > 0 ? (
-                      <TooltipWrapper content="Clear all" delayDuration={100}>
+                      <SmartTooltip content="Clear all" delayDuration={100}>
                         <button
                           onClick={handleClearAllSources}
                           className="p-1 rounded-full hover:bg-[#EDF2F7] dark:hover:bg-slate-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
@@ -3524,7 +3507,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         >
                           <RotateCcw size={16} />
                         </button>
-                      </TooltipWrapper>
+                      </SmartTooltip>
                     ) : (
                       <button
                         className="p-1 rounded-full text-transparent"
