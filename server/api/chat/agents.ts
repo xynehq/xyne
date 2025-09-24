@@ -3714,8 +3714,12 @@ export const AgentMessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     let ids
+    let isValidPath: boolean = false
     if (path) {
       ids = await getRecordBypath(path, db)
+      if (ids != null) {
+        isValidPath = Boolean(true)
+      }
     }
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
@@ -3724,8 +3728,10 @@ export const AgentMessageApi = async (c: Context) => {
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
+            collectionFolderIds: [],
           }
     let fileIds = extractedInfo?.fileIds
+    let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
@@ -3943,6 +3949,10 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 imageAttachmentFileIds,
                 agentPromptForLLM,
+                fileIds.length > 0,
+                "",
+                Boolean(isValidPath),
+                folderIds,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,

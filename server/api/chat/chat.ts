@@ -101,6 +101,7 @@ import {
   SearchEmailThreads,
   SearchVespaThreads,
   DeleteDocument,
+  searchCollectionRAG,
 } from "@/search/vespa"
 import {
   Apps,
@@ -1951,6 +1952,8 @@ async function* generateAnswerFromGivenContext(
   attachmentFileIds?: string[],
   isMsgWithSources?: boolean,
   modelId?: string,
+  isValidPath?: boolean,
+  folderIds?: string[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2002,8 +2005,16 @@ async function* generateAnswerFromGivenContext(
   let previousResultsLength = 0
   const combinedSearchResponse: VespaSearchResult[] = []
 
-  if (fileIds.length > 0) {
-    const results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+  if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
+    let results
+    if (isValidPath) {
+      if (folderIds?.length) {
+        results = await searchCollectionRAG(messageText, undefined, folderIds)
+      } else
+        results = await searchCollectionRAG(messageText, fileIds, undefined)
+    } else {
+      results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+    }
     if (results.root.children) {
       combinedSearchResponse.push(...results.root.children)
     }
@@ -3903,6 +3914,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   agentPrompt?: string,
   isMsgWithSources?: boolean,
   modelId?: string,
+  isValidPath?: boolean,
+  folderIds?: string[],
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3935,6 +3948,8 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     attachmentFileIds,
     isMsgWithSources,
     modelId,
+    isValidPath,
+    folderIds,
   )
 }
 
