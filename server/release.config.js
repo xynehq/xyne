@@ -1,6 +1,6 @@
 // release.config.js
 export default {
-  branches: ["main", "release_test", 'fix_release'], // release from main and release_test branches
+  branches: ["main", "release_test"], // release from main and release_test branches
 
   plugins: [
     "@semantic-release/commit-analyzer", // decides bump (major/minor/patch)
