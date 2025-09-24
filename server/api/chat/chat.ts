@@ -2987,6 +2987,62 @@ async function* processResultsForMetadata(
   )
 }
 
+async function* processResultsForAggregatorQuery(
+  items: VespaSearchResult[],
+  input: string,
+  userCtx: string,
+  app: Apps[] | null,
+  entity: any,
+  chunksCount: number | undefined,
+  userRequestsReasoning?: boolean,
+  span?: Span,
+  email?: string,
+  agentContext?: string,
+  modelId?: string,
+) {
+  if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
+    chunksCount = config.maxGoogleDriveSummary
+    loggerWithChild({ email: email ?? "" }).info(
+      `Google Drive, Chunk size: ${chunksCount}`,
+    )
+    span?.setAttribute("Google Drive, chunk_size", chunksCount)
+  }
+
+  // todo keep it 20??
+  chunksCount = 20
+  span?.setAttribute(
+    "Document chunk size",
+    `full_context maxed to ${chunksCount}`,
+  )
+  const context = buildContext(items, chunksCount)
+  const { imageFileNames } = extractImageFileNames(context, items)
+  const streamOptions = {
+    stream: true,
+    modelId: modelId ? (modelId as Models) : defaultBestModel,
+    reasoning: config.isReasoning && userRequestsReasoning,
+    imageFileNames,
+    agentPrompt: agentContext,
+  }
+
+  let iterator: AsyncIterableIterator<ConverseResponse>
+  if (app?.length == 1 && app[0] === Apps.Gmail) {
+    loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
+    iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
+  } else {
+    loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
+    iterator = baselineRAGJsonStream(input, userCtx, context, streamOptions)
+  }
+
+  return yield* processIterator(
+    iterator,
+    items,
+    0,
+    config.isReasoning && userRequestsReasoning,
+  )
+}
+
+const getAllFinalItems = () => {}
+
 async function* generateMetadataQueryAnswer(
   input: string,
   messages: Message[],
@@ -3699,6 +3755,7 @@ async function* generateMetadataQueryAnswer(
     // LLM will give indexes of relevant documents that can be answered
     // Use those indexes and check what are the documents that we sent on that index
     // Get that documents and store those documentIds that these are valid and relevant documents
+    let finalItemIds: string[] = []
     for (
       let iteration = 0;
       iteration < maxIterationsForAggregatorQuery;
@@ -3718,8 +3775,10 @@ async function* generateMetadataQueryAnswer(
           entities ?? null,
           {
             ...searchOptions,
-            limit: pageSize + pageSize * iteration,
-            offset: pageSize * iteration,
+            limit:
+              pageSizeForAggregatorQuery +
+              pageSizeForAggregatorQuery * iteration,
+            offset: pageSizeForAggregatorQuery * iteration,
           },
         )
       } else {
@@ -3732,8 +3791,10 @@ async function* generateMetadataQueryAnswer(
           agentAppEnums,
           {
             ...searchOptions,
-            offset: pageSize * iteration,
-            limit: pageSize + pageSize * iteration,
+            offset: pageSizeForAggregatorQuery * iteration,
+            limit:
+              pageSizeForAggregatorQuery +
+              pageSizeForAggregatorQuery * iteration,
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             selectedItem: selectedItem,
@@ -3749,9 +3810,6 @@ async function* generateMetadataQueryAnswer(
       )
 
       items = searchResults.root.children || []
-
-      // todo Ask LLM here
-      // map the chunk
 
       loggerWithChild({ email: email }).info(`Rank Profile : ${rankProfile}`)
 
@@ -3787,7 +3845,7 @@ async function* generateMetadataQueryAnswer(
         return
       }
 
-      const answer = yield* processResultsForMetadata(
+      const itemIds = yield* processResultsForAggregatorQuery(
         items,
         input,
         userCtx,
@@ -3800,23 +3858,29 @@ async function* generateMetadataQueryAnswer(
         agentPrompt,
         modelId,
       )
+      finalItemIds.push(...itemIds)
+    }
 
-      if (answer == null) {
-        iterationSpan?.setAttribute("answer", null)
-        if (iteration == maxIterations - 1) {
-          iterationSpan?.end()
-          yield { text: METADATA_FALLBACK_TO_RAG }
-          return
-        } else {
-          loggerWithChild({ email: email }).info(
-            `no answer found for iteration - ${iteration}`,
-          )
-          continue
-        }
-      } else {
-        iterationSpan?.end()
-        return answer
-      }
+    const allFinalItems = getAllFinalItems(finalItemIds)
+    const answer = yield* processResultsForMetadata(
+      allFinalItems,
+      input,
+      userCtx,
+      apps,
+      entities,
+      undefined,
+      userRequestsReasoning,
+      span,
+      email,
+      agentPrompt,
+      modelId,
+    )
+
+    if (answer == null) {
+      yield { text: METADATA_FALLBACK_TO_RAG }
+      return
+    } else {
+      return answer
     }
   } else {
     // None of the conditions matched
