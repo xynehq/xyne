@@ -5,7 +5,6 @@ on:
     branches:
       - main 
       - release_test
-      - fix_release
 
 jobs:
   release:
