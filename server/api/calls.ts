@@ -110,7 +110,7 @@ export const InitiateCallApi = async (c: Context) => {
     // Create room in LiveKit
     await roomService.createRoom({
       name: roomName,
-      maxParticipants: 10, // Allow more participants for group calls
+      maxParticipants: 30, // Allow more participants for group calls
       emptyTimeout: 300, // Room closes after 5 minutes if empty
     })
 

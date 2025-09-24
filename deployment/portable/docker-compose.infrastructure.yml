@@ -175,6 +175,21 @@ services:
     networks:
       - xyne
 
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "devkey: devsecret"
+    networks:
+      - xyne
+
   promtail:
     image: grafana/promtail:3.4.1
     container_name: promtail
