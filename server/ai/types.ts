@@ -418,6 +418,15 @@ export const GetItems = z
   })
   .merge(TemporalClassifierSchema)
 
+export const AggregatorQuery = z
+  .object({
+    type: z.literal(QueryType.AggregatorQuery),
+    isFollowUp: z.boolean().optional(),
+    filters: FiltersSchema,
+    filterQuery: z.string().nullable(),
+  })
+  .merge(TemporalClassifierSchema)
+
 export const SearchWithFilters = z
   .object({
     type: z.literal(QueryType.SearchWithFilters),
@@ -438,6 +447,7 @@ export const QueryRouterResponseSchema = z.discriminatedUnion("type", [
     .merge(TemporalClassifierSchema),
   SearchWithFilters,
   GetItems,
+  AggregatorQuery,
 ])
 
 export type QueryRouterLLMResponse = z.infer<typeof QueryRouterResponseSchema>

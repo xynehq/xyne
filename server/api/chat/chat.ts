@@ -3015,6 +3015,7 @@ async function* processResultsForAggregatorQuery(
   items: VespaSearchResult[],
   input: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   app: Apps[] | null,
   entity: any,
   chunksCount: number | undefined,
@@ -3038,7 +3039,7 @@ async function* processResultsForAggregatorQuery(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
   )
-  const context = buildContext(items, chunksCount)
+  const context = buildContext(items, chunksCount, userMetadata)
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
@@ -3051,10 +3052,10 @@ async function* processResultsForAggregatorQuery(
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app?.length == 1 && app[0] === Apps.Gmail) {
     loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
+    iterator = mailPromptJsonStream(input, userCtx, userMetadata.dateForAI, context, streamOptions)
   } else {
     loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(input, userCtx, context, streamOptions)
+    iterator = baselineRAGJsonStream(input, userCtx, userMetadata, context, streamOptions)
   }
 
   return yield* processIterator(
@@ -3747,7 +3748,7 @@ async function* generateMetadataQueryAnswer(
     )
 
     const { filterQuery } = classification
-    const query = filterQuery
+    const query = filterQuery!
     const rankProfile =
       sortDirection === "desc"
         ? SearchModes.GlobalSorted
@@ -3758,7 +3759,7 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3854,7 +3855,7 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
-      iterationSpan?.setAttribute(`context`, buildContext(items, 20))
+      iterationSpan?.setAttribute(`context`, buildContext(items, 20, userMetadata))
       iterationSpan?.end()
 
       loggerWithChild({ email: email }).info(
@@ -3877,6 +3878,7 @@ async function* generateMetadataQueryAnswer(
         items,
         input,
         userCtx,
+        userMetadata,
         apps,
         entities,
         undefined,
