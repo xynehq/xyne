@@ -861,7 +861,7 @@ const StepNode: React.FC<NodeProps> = ({
                     if (fields.length > 0) {
                       const fieldDescriptions = fields.map((field: any) => {
                         if (field.type === "file") {
-                          return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                          return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
                         } else if (field.type === "email") {
                           return `Enter ${field.name || "email address"}`
                         } else if (field.type === "text") {
@@ -883,7 +883,7 @@ const StepNode: React.FC<NodeProps> = ({
                     if (fields.length > 0) {
                       const fieldDescriptions = fields.map((field: any) => {
                         if (field.type === "file") {
-                          return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                          return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
                         } else if (field.type === "email") {
                           return `Enter ${field.name || "email address"}`
                         } else if (field.type === "text") {
@@ -906,7 +906,7 @@ const StepNode: React.FC<NodeProps> = ({
                     // Show field details when only fields are configured
                     const fieldDescriptions = fields.map((field: any) => {
                       if (field.type === "file") {
-                        return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                        return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
                       } else if (field.type === "email") {
                         return `Enter ${field.name || "email address"}`
                       } else if (field.type === "text") {
@@ -930,7 +930,7 @@ const StepNode: React.FC<NodeProps> = ({
                 }
 
                 // Fallback content when no configuration
-                return "Upload a file in formats such as PDF, DOCX, or JPG."
+                return "Upload a file in formats such as text, PDF, or Word."
               })()}
             </p>
           </div>
@@ -1980,13 +1980,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [fitView])
 
   // Watch for nodes changes and smart fit the entire workflow
-  const previousNodeCount = useRef(0)
+  const previousRealNodeCount = useRef(0)
   useEffect(() => {
-    if (nodes.length > previousNodeCount.current && nodes.length > 1) {
-      // Smart fit the entire workflow to keep everything visible
+    // Check if we have real workflow nodes (exclude trigger selector placeholder)
+    const realNodes = nodes.filter(node => {
+      const nodeData = node.data as any
+      return nodeData?.step?.type !== "trigger_selector" && !nodeData?.isTriggerSelector
+    })
+    
+    if (realNodes.length > previousRealNodeCount.current && realNodes.length > 0) {
+      // Smart fit the entire workflow to keep everything visible for real nodes
       smartFitWorkflow()
     }
-    previousNodeCount.current = nodes.length
+    previousRealNodeCount.current = realNodes.length
   }, [nodes, smartFitWorkflow])
 
   // Create nodes and edges from selectedTemplate or localSelectedTemplate
@@ -2929,17 +2935,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )
       }
 
-      // Reset zoom to 100% after saving configuration
+      // Reset zoom and auto-fit workflow after saving configuration
       setZoomLevel(100)
       setTimeout(() => {
-        zoomTo(1)
+        smartFitWorkflow()
       }, 50)
 
       setShowAIAgentConfigUI(false)
       setSelectedAgentNodeId(null)
       setSelectedNodeForNext(null)
     },
-    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, zoomTo],
+    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
   )
 
   const handleEmailConfigBack = useCallback(() => {
@@ -3100,17 +3106,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )
       }
 
-      // Reset zoom to 100% after saving configuration
+      // Reset zoom and auto-fit workflow after saving configuration
       setZoomLevel(100)
       setTimeout(() => {
-        zoomTo(1)
+        smartFitWorkflow()
       }, 50)
 
       setShowEmailConfigUI(false)
       setSelectedEmailNodeId(null)
       setSelectedNodeForNext(null)
     },
-    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, zoomTo],
+    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
   )
 
   const handleOnFormSubmissionBack = useCallback(() => {
@@ -3223,10 +3229,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setZoomLevel(100)
 
       setTimeout(() => {
-        zoomTo(1)
+        smartFitWorkflow()
       }, 50)
     },
-    [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges],
+    [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges],
   )
 
   const handleResultClick = useCallback((result: any) => {
@@ -3352,7 +3358,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           max_file_size: "10MB",
           auto_execution: false,
           schema_version: "1.0",
-          allowed_file_types: ["pdf", "docx", "txt", "jpg", "png"],
+          allowed_file_types: ["pdf", "docx", "txt"],
           supports_file_upload: true,
         },
         nodes: nodes.map(node => ({
