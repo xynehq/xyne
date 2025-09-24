@@ -5,6 +5,7 @@ import {
   Plug,
   Plus,
   History,
+  User,
   Sun,
   Moon,
   LogOut,
@@ -293,7 +294,28 @@ export const Sidebar = ({
               <Tip side="right" info="Collections" />
             </Tooltip>
           </Link>
-
+          {/* User Management - Admin only */}
+          {role === UserRole.SuperAdmin && (
+            <Link
+              to="/admin/userManagement"
+              className={cn(
+                "flex w-8 h-8 items-center justify-center hover:bg-[#D8DFE680] dark:hover:bg-gray-700 rounded-md mt-[10px]",
+                location.pathname.includes("/admin/userManagement") &&
+                  "bg-[#D8DFE680] dark:bg-gray-700",
+              )}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <User
+                    stroke="#384049"
+                    size={18}
+                    className="dark:stroke-[#F1F3F4]"
+                  />
+                </TooltipTrigger>
+                <Tip side="right" info="User Management" />
+              </Tooltip>
+            </Link>
+          )}
           <Link
             to="/dashboard"
             className={cn(

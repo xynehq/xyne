@@ -84,7 +84,10 @@ export const createFileSelectionHandlers = (
 // Common file validation and deduplication logic
 export const validateAndDeduplicateFiles = (
   files: FileList | File[],
-  showToast: (title: string, description: string, isError?: boolean) => void,
+  toast: {
+    error: (options: { title: string; description: string }) => void;
+    warning: (options: { title: string; description: string }) => void;
+  },
 ) => {
   const fileArray = Array.from(files).filter(
     (file) => !file.name.startsWith("."),
@@ -94,11 +97,10 @@ export const validateAndDeduplicateFiles = (
   const invalidFiles = fileArray.length - validFiles.length
 
   if (invalidFiles > 0) {
-    showToast(
-      "Invalid file(s)",
-      `${invalidFiles} file(s) ignored. Files must be under 40MB, images under 5MB and of supported types.`,
-      true,
-    )
+    toast.error({
+      title: "Invalid file(s)",
+      description: `${invalidFiles} file(s) ignored. Files must be under 40MB, images under 5MB and of supported types.`,
+    })
   }
 
   if (validFiles.length === 0) return []
@@ -118,34 +120,15 @@ export const validateAndDeduplicateFiles = (
 
   // Notify about duplicates if any were found
   if (duplicateCount > 0) {
-    showToast(
-      "Duplicate files",
-      `${duplicateCount} duplicate file(s) were ignored.`,
-      false,
-    )
+    toast.warning({
+      title: "Duplicate files",
+      description: `${duplicateCount} duplicate file(s) were ignored.`,
+    })
   }
 
   return Array.from(fileMap.values())
 }
 
-// Common toast notification creator
-export const createToastNotifier = (
-  toast: (options: {
-    title: string
-    description: string
-    variant?: "default" | "destructive"
-    duration?: number
-  }) => void,
-) => {
-  return (title: string, description: string, isError = false) => {
-    toast({
-      title,
-      description,
-      variant: isError ? "destructive" : "default",
-      duration: 2000,
-    })
-  }
-}
 
 // build file tree
 export interface FileNode {

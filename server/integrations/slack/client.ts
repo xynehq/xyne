@@ -4,7 +4,7 @@ import type { View } from "@slack/types"
 import { db } from "@/db/client"
 import { getUserByEmail } from "@/db/user"
 import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import { Subsystem, type UserMetadataType } from "@/types"
 import { SearchApi } from "@/api/search"
 import config from "@/config"
 import {
@@ -37,6 +37,7 @@ import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import { QueryType } from "@/ai/types"
 import { Apps } from "@xyne/vespa-ts/types"
 import { getTracer } from "@/tracer"
+import { getDateForAI } from "@/utils/index"
 
 const Logger = getLogger(Subsystem.Slack)
 
@@ -641,6 +642,9 @@ const handleAgentSearchCommand = async (
         dbUser.email,
       )
       const ctx = userContext(userAndWorkspace)
+      const userTimezone = userAndWorkspace?.user?.timeZone || "Asia/Kolkata"
+      const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+      const userMetadata: UserMetadataType = {userTimezone, dateForAI}
 
       const agentConfig = await getAgentByExternalIdWithPermissionCheck(
         db,
@@ -674,7 +678,7 @@ const handleAgentSearchCommand = async (
       const limitedMessages: any[] = []
 
       const searchOrAnswerIterator =
-        generateSearchQueryOrAnswerFromConversation(query, ctx, {
+        generateSearchQueryOrAnswerFromConversation(query, ctx, userMetadata,{
           modelId: config.defaultBestModel,
           stream: true,
           json: true,
@@ -775,6 +779,7 @@ const handleAgentSearchCommand = async (
         const iterator = UnderstandMessageAndAnswer(
           dbUser.email,
           ctx,
+          userMetadata,
           searchQuery,
           classification as any,
           limitedMessages,

@@ -1,0 +1,4 @@
+#!/bin/sh
+
+cd server || exit 1
+bunx commitlint --edit "$1" || exit 1

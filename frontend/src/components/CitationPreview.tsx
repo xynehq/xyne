@@ -1,24 +1,30 @@
 import React, { useEffect, useState } from "react"
-import { X, FileText, ExternalLink } from "lucide-react"
+import { X, FileText, ExternalLink, ArrowLeft } from "lucide-react"
 import { Citation } from "shared/types"
 import PdfViewer from "./PdfViewer"
 import DocxViewer from "./DocxViewer"
 import ReadmeViewer from "./ReadmeViewer"
 import { api } from "@/api"
 import { authFetch } from "@/utils/authFetch"
+import ExcelViewer from "./ExcelViewer"
+import CsvViewer from "./CsvViewer"
+import { DocumentOperationsProvider } from "@/contexts/DocumentOperationsContext"
+import TxtViewer from "./TxtViewer"
 
 interface CitationPreviewProps {
   citation: Citation | null
   isOpen: boolean
   onClose: () => void
+  onBackToSources?: () => void
+  showBackButton?: boolean
 }
 
 export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
-  ({ citation, isOpen, onClose }) => {
+  ({ citation, isOpen, onClose, onBackToSources, showBackButton = false }) => {
     const [documentContent, setDocumentContent] = useState<Blob | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
-
+    
     useEffect(() => {
       if (!citation || !isOpen) {
         setDocumentContent(null)
@@ -75,7 +81,7 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
 
       loadDocument()
     }, [citation, isOpen])
-
+  
     const getFileExtension = (filename: string): string => {
       return filename.toLowerCase().split(".").pop() || ""
     }
@@ -90,19 +96,20 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
       const file = new File([documentContent], fileName, {
         type: documentContent.type || getDefaultMimeType(extension),
       })
-
+      
       switch (extension) {
         case "pdf":
           return (
-            <PdfViewer
-              key={citation.docId}
-              source={file}
-              className="h-full"
-              style={{ height: "100%", overflow: "auto" }}
-              scale={1.0}
-              showNavigation={true}
-              displayMode="continuous"
-            />
+  <DocumentOperationsProvider>
+    <PdfViewer 
+    key={citation.docId} 
+    source={file} 
+    className="h-full" 
+    style={{ height: "100%", overflow: "auto" }} 
+    scale={1.0} 
+    showNavigation={true} 
+    displayMode="continuous" />            
+</DocumentOperationsProvider>
           )
         case "md":
         case "markdown":
@@ -130,6 +137,39 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
               }}
             />
           )
+          case "xlsx":
+          case "xls":
+            return(
+              <ExcelViewer
+                key={citation.docId}
+                source={file}
+                className="h-full"
+                style={{ overflow: "visible" }}
+                
+              />
+            )
+            case "csv":
+            case "tsv":
+              return(
+                <CsvViewer
+                  key={citation.docId}
+                  source={file}
+                  className="h-full"
+                  style={{ overflow: "visible" }}
+                />
+              )
+              case "txt":
+              case "text":
+                return(
+                  <TxtViewer
+                    key={citation.docId}
+                    source={file}
+                    className="h-full"
+                    style={{ overflow: "visible" }}
+                  />
+                )
+              
+
         default:
           // For other file types, try to display as text or show a generic message
           return (
@@ -178,20 +218,31 @@ export const CitationPreview: React.FC<CitationPreviewProps> = React.memo(
       <div className="fixed top-0 right-0 bottom-0 w-[47.5%] border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1E1E1E] flex flex-col z-50 shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
-              {citation.title.split("/").pop() || "Document Preview"}
-            </h3>
-            {citation?.app && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Source:{" "}
-                {citation.title.replace(/\/[^/]*$/, "") || "Unknown Source"}
-              </p>
+          <div className="flex items-center flex-1 min-w-0">
+            {showBackButton && onBackToSources && (
+              <button
+                onClick={onBackToSources}
+                className="mr-4 p-2 text-gray-600 dark:text-gray-300 transition-colors rounded-md"
+              >
+                <ArrowLeft size={20} />
+              </button>
             )}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                {citation.title.split("/").pop() || "Document Preview"}
+              </h3>
+              {citation?.app && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Source:{" "}
+                  {citation.title.replace(/\/[^/]*$/, "") || "Unknown Source"}
+                </p>
+              )}
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="ml-4 p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+            className="ml-4 p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+            title="Close preview"
           >
             <X size={20} />
           </button>

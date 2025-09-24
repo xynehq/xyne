@@ -49,6 +49,7 @@ import {
   getChatMessagesWithAuth,
   getMessageCountsByChats,
   getMessageFeedbackStats,
+  getAllMessages,
 } from "@/db/message"
 import { eq, and } from "drizzle-orm"
 import { nanoid } from "nanoid"
@@ -57,6 +58,7 @@ import {
   selectPublicMessagesSchema,
   selectMessageSchema,
   sharedChats,
+  ChatType,
   type SelectChat,
   type SelectMessage,
 } from "@/db/schema"
@@ -68,7 +70,7 @@ import {
   type MessageReqType,
   DEFAULT_TEST_AGENT_ID,
 } from "@/shared/types"
-import { MessageRole, Subsystem } from "@/types"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import {
   delay,
   getErrorMessage,
@@ -205,6 +207,8 @@ import {
   processOpenAICitations,
   processWebSearchCitations,
 } from "./deepsearch"
+import { getDateForAI } from "@/utils/index"
+import type { User } from "@microsoft/microsoft-graph-types"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -213,6 +217,7 @@ export async function resolveNamesToEmails(
   intent: Intent,
   email: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   span?: Span,
 ): Promise<any> {
   const resolveSpan = span?.startSpan("resolve_names_to_emails")
@@ -287,7 +292,7 @@ export async function resolveNamesToEmails(
         const fields = result.fields as VespaMail
         const contextLine = `
         [Index ${index}]: 
-        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString()})
+        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userMetadata.userTimezone})})
         Subject: ${fields.subject || "Unknown"}
         From: <${fields.from}>
         To: <${fields.to}>
@@ -1175,6 +1180,7 @@ export const replaceDocIdwithUserDocId = async (
 export function buildContext(
   results: VespaSearchResult[],
   maxSummaryCount: number | undefined,
+  userMetadata: UserMetadataType,
   startIndex: number = 0,
 ): string {
   return cleanContext(
@@ -1183,6 +1189,7 @@ export function buildContext(
         (v, i) =>
           `Index ${i + startIndex} \n ${answerContextMap(
             v as VespaSearchResults,
+            userMetadata,
             maxSummaryCount,
           )}`,
       )
@@ -1195,6 +1202,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   messages: Message[],
   email: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   alpha: number = 0.5,
   pageSize: number = 10,
   maxPageNumber: number = 3,
@@ -1544,6 +1552,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const initialContext = buildContext(
         results?.root?.children,
         maxSummaryCount,
+        userMetadata
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -1672,7 +1681,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(totalResults, maxSummaryCount)
+        const initialContext = buildContext(totalResults, maxSummaryCount, userMetadata)
 
         const { imageFileNames } = extractImageFileNames(
           initialContext,
@@ -1692,6 +1701,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const iterator = baselineRAGJsonStream(
           query,
           userCtx,
+          userMetadata,
           initialContext,
           // pageNumber,
           // maxPageNumber,
@@ -1862,6 +1872,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     const initialContext = buildContext(
       results?.root?.children,
       maxSummaryCount,
+      userMetadata,
       startIndex,
     )
 
@@ -1885,7 +1896,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     const ragSpan = pageSpan?.startSpan("baseline_rag")
 
-    const iterator = baselineRAGJsonStream(input, userCtx, initialContext, {
+    const iterator = baselineRAGJsonStream(input, userCtx, userMetadata, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
@@ -1930,6 +1941,7 @@ async function* generateAnswerFromGivenContext(
   input: string,
   email: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   alpha: number = 0.5,
   fileIds: string[],
   userRequestsReasoning: boolean,
@@ -2104,6 +2116,7 @@ async function* generateAnswerFromGivenContext(
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
     let content = answerContextMap(
       v as VespaSearchResults,
+      userMetadata,
       0,
       true,
       isMsgWithSources,
@@ -2175,6 +2188,7 @@ async function* generateAnswerFromGivenContext(
   const iterator = baselineRAGJsonStream(
     builtUserQuery,
     userCtx,
+    userMetadata,
     initialContext,
     {
       stream: true,
@@ -2239,6 +2253,7 @@ async function* generateAnswerFromGivenContext(
           (v, i) =>
             `Index ${i + startIndex} \n ${answerContextMap(
               v as VespaSearchResults,
+              userMetadata,
               20,
               true,
             )}`,
@@ -2266,6 +2281,7 @@ async function* generateAnswerFromGivenContext(
     const iterator = baselineRAGJsonStream(
       builtUserQuery,
       userCtx,
+      userMetadata,
       initialContext,
       {
         stream: true,
@@ -2362,6 +2378,7 @@ const getSearchRangeSummary = (
   from: number,
   to: number,
   direction: string,
+  userMetadata: UserMetadataType,
   parentSpan?: Span,
 ) => {
   const summarySpan = parentSpan?.startSpan("getSearchRangeSummary")
@@ -2381,6 +2398,7 @@ const getSearchRangeSummary = (
     const format = (date: Date) =>
       `${date.toLocaleString("default", {
         month: "long",
+        timeZone: userMetadata.userTimezone,
       })} ${date.getDate()}, ${date.getFullYear()} - ${formatTime(date)}`
 
     const formatTime = (date: Date) => {
@@ -2406,6 +2424,7 @@ const getSearchRangeSummary = (
       Math.abs(to - now) > 30 * 24 * 60 * 60 * 1000
         ? `${endDate.toLocaleString("default", {
             month: "long",
+            timeZone: userMetadata.userTimezone,
           })} ${endDate.getFullYear()}`
         : getRelativeTime(to)
     const result = `from today until ${endStr}`
@@ -2420,6 +2439,7 @@ const getSearchRangeSummary = (
       Math.abs(now - from) > 30 * 24 * 60 * 60 * 1000
         ? `${startDate.toLocaleString("default", {
             month: "long",
+            timeZone: userMetadata.userTimezone,
           })} ${startDate.getFullYear()}`
         : getRelativeTime(from)
     const result = `from today back to ${startStr}`
@@ -2435,6 +2455,7 @@ async function* generatePointQueryTimeExpansion(
   classification: QueryRouterLLMResponse,
   email: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   alpha: number,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
@@ -2652,8 +2673,8 @@ async function* generatePointQueryTimeExpansion(
         to,
       )}`,
     )
-    iterationSpan?.setAttribute("from", new Date(from).toLocaleString())
-    iterationSpan?.setAttribute("to", new Date(to).toLocaleString())
+    iterationSpan?.setAttribute("from", new Date(from).toLocaleString("en-US", { timeZone: userMetadata.userTimezone}))
+    iterationSpan?.setAttribute("to", new Date(to).toLocaleString("en-US", { timeZone: userMetadata.userTimezone}))
     // Search in both calendar events and emails
     const searchSpan = iterationSpan?.startSpan("search_vespa")
     const emailSearchSpan = searchSpan?.startSpan("email_search")
@@ -2831,6 +2852,7 @@ async function* generatePointQueryTimeExpansion(
     const initialContext = buildContext(
       combinedResults?.root?.children,
       maxSummaryCount,
+      userMetadata,
       startIndex,
     )
 
@@ -2850,7 +2872,7 @@ async function* generatePointQueryTimeExpansion(
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
     loggerWithChild({ email: email }).info("Using meetingPromptJsonStream")
-    const iterator = meetingPromptJsonStream(input, userCtx, initialContext, {
+    const iterator = meetingPromptJsonStream(input, userCtx, userMetadata.dateForAI, initialContext, {
       stream: true,
       modelId: defaultBestModel,
       reasoning: config.isReasoning && userRequestsReasoning,
@@ -2893,6 +2915,7 @@ async function* generatePointQueryTimeExpansion(
     starting_iteration_date,
     to,
     direction,
+    userMetadata,
     noAnswerSpan,
   )
   const totalCost = costArr.reduce((a, b) => a + b, 0)
@@ -2937,6 +2960,7 @@ async function* processResultsForMetadata(
   items: VespaSearchResult[],
   input: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   app: Apps[] | null,
   entity: any,
   chunksCount: number | undefined,
@@ -2960,7 +2984,7 @@ async function* processResultsForMetadata(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
   )
-  const context = buildContext(items, chunksCount)
+  const context = buildContext(items, chunksCount, userMetadata)
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
@@ -2973,10 +2997,10 @@ async function* processResultsForMetadata(
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app?.length == 1 && app[0] === Apps.Gmail) {
     loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(input, userCtx, context, streamOptions)
+    iterator = mailPromptJsonStream(input, userCtx, userMetadata.dateForAI, context, streamOptions)
   } else {
     loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(input, userCtx, context, streamOptions)
+    iterator = baselineRAGJsonStream(input, userCtx, userMetadata, context, streamOptions)
   }
 
   return yield* processIterator(
@@ -2992,6 +3016,7 @@ async function* generateMetadataQueryAnswer(
   messages: Message[],
   email: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   userAlpha: number = 0.5,
   pageSize: number = 10,
   maxSummaryCount: number | undefined,
@@ -3204,7 +3229,7 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3291,7 +3316,7 @@ async function* generateMetadataQueryAnswer(
         ),
       )
 
-      pageSpan?.setAttribute("context", buildContext(items, 20))
+      pageSpan?.setAttribute("context", buildContext(items, 20, userMetadata))
       if (!items.length) {
         loggerWithChild({ email: email }).info(
           `No documents found on iteration ${iteration}${
@@ -3309,6 +3334,7 @@ async function* generateMetadataQueryAnswer(
         items,
         input,
         userCtx,
+        userMetadata,
         apps,
         entities,
         undefined,
@@ -3368,7 +3394,7 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata,span)
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3461,7 +3487,7 @@ async function* generateMetadataQueryAnswer(
       ),
     )
 
-    span?.setAttribute("context", buildContext(items, 20))
+    span?.setAttribute("context", buildContext(items, 20, userMetadata))
     span?.end()
     loggerWithChild({ email: email }).info(
       `Retrieved Documents : ${QueryType.GetItems} - ${items.length}`,
@@ -3481,6 +3507,7 @@ async function* generateMetadataQueryAnswer(
       items,
       input,
       userCtx,
+      userMetadata,
       apps,
       entities,
       maxSummaryCount,
@@ -3519,7 +3546,7 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, span)
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3596,7 +3623,7 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
-      iterationSpan?.setAttribute(`context`, buildContext(items, 20))
+      iterationSpan?.setAttribute(`context`, buildContext(items, 20, userMetadata))
       iterationSpan?.end()
 
       loggerWithChild({ email: email }).info(
@@ -3619,6 +3646,7 @@ async function* generateMetadataQueryAnswer(
         items,
         input,
         userCtx,
+        userMetadata,
         apps,
         entities,
         undefined,
@@ -3731,6 +3759,7 @@ const fallbackText = (classification: QueryRouterLLMResponse): string => {
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   message: string,
   classification: QueryRouterLLMResponse,
   messages: Message[],
@@ -3776,6 +3805,7 @@ export async function* UnderstandMessageAndAnswer(
       messages,
       email,
       userCtx,
+      userMetadata,
       alpha,
       count,
       maxDefaultSummary,
@@ -3826,6 +3856,7 @@ export async function* UnderstandMessageAndAnswer(
       classification,
       email,
       userCtx,
+      userMetadata,
       alpha,
       chatPageSize,
       maxDefaultSummary,
@@ -3845,6 +3876,7 @@ export async function* UnderstandMessageAndAnswer(
       messages,
       email,
       userCtx,
+      userMetadata,
       alpha,
       chatPageSize,
       3,
@@ -3860,6 +3892,7 @@ export async function* UnderstandMessageAndAnswer(
 export async function* UnderstandMessageAndAnswerForGivenContext(
   email: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   message: string,
   alpha: number,
   fileIds: string[],
@@ -3892,6 +3925,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     message,
     email,
     userCtx,
+    userMetadata,
     alpha,
     fileIds,
     userRequestsReasoning,
@@ -4192,12 +4226,12 @@ export const MessageApi = async (c: Context) => {
     rootSpan.setAttribute("message", message)
 
     // Extract sources from search parameters
-    const sources = c.req.query("selectedSources")
-    const isMsgWithSources = !!sources
+    const kbItems = c.req.query("selectedKbItems")
+    const isMsgWithKbItems = !!kbItems
     let fileIds: string[] = []
-    if (sources) {
+    if (kbItems) {
       try {
-        const resp = await getCollectionFilesVespaIds(JSON.parse(sources), db)
+        const resp = await getCollectionFilesVespaIds(JSON.parse(kbItems), db)
         fileIds = resp
           .map((file) => file.vespaDocId || "")
           .filter((id) => id !== "")
@@ -4233,6 +4267,9 @@ export const MessageApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -4247,9 +4284,10 @@ export const MessageApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title,
+            title: "Untitled",
             attachments: [],
             agentId: agentPromptValue,
+            chatType: isMsgWithKbItems ? ChatType.KbChat : ChatType.Default,
           })
 
           const insertedMsg = await insertMessage(tx, {
@@ -4423,6 +4461,7 @@ export const MessageApi = async (c: Context) => {
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
+              userMetadata,
               message,
               0.5,
               fileIds,
@@ -4431,7 +4470,7 @@ export const MessageApi = async (c: Context) => {
               threadIds,
               imageAttachmentFileIds,
               agentPromptValue,
-              isMsgWithSources,
+              isMsgWithKbItems,
               actualModelId || config.defaultBestModel,
             )
             stream.writeSSE({
@@ -4767,6 +4806,7 @@ export const MessageApi = async (c: Context) => {
                 generateSearchQueryOrAnswerFromConversation(
                   message,
                   ctx,
+                  userMetadata,
                   {
                     modelId: actualModelId
                       ? (actualModelId as Models)
@@ -5161,6 +5201,7 @@ export const MessageApi = async (c: Context) => {
                   iterator = UnderstandMessageAndAnswerForGivenContext(
                     email,
                     ctx,
+                    userMetadata,
                     message,
                     0.5,
                     parsedMessage.data.fileIds as string[],
@@ -5186,6 +5227,7 @@ export const MessageApi = async (c: Context) => {
                 iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,
+                  userMetadata,
                   message,
                   classification,
                   llmFormattedMessages,
@@ -5785,10 +5827,13 @@ export const MessageRetryApi = async (c: Context) => {
     )
     const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata = {userTimezone, dateForAI}
 
     // Extract sources from search parameters
-    const sources = c.req.query("selectedSources")
-    const isMsgWithSources = !!sources
+    const kbItems = c.req.query("selectedKbItems")
+    const isMsgWithKbItems = !!kbItems
 
     let newCitations: Citation[] = []
     // the last message before our assistant's message was the user's message
@@ -5877,6 +5922,7 @@ export const MessageRetryApi = async (c: Context) => {
             const iterator = UnderstandMessageAndAnswerForGivenContext(
               email,
               ctx,
+              userMetadata,
               message,
               0.5,
               fileIds,
@@ -5885,7 +5931,7 @@ export const MessageRetryApi = async (c: Context) => {
               threadIds,
               ImageAttachmentFileIds,
               undefined,
-              isMsgWithSources,
+              isMsgWithKbItems,
               modelId,
             )
             stream.writeSSE({
@@ -6212,6 +6258,7 @@ export const MessageRetryApi = async (c: Context) => {
               generateSearchQueryOrAnswerFromConversation(
                 message,
                 ctx,
+                userMetadata,
                 {
                   modelId: modelId
                     ? (modelId as Models)
@@ -6396,6 +6443,7 @@ export const MessageRetryApi = async (c: Context) => {
               const iterator = UnderstandMessageAndAnswer(
                 email,
                 ctx,
+                userMetadata,
                 message,
                 classification,
                 convWithNoErrMsg,
@@ -7174,6 +7222,12 @@ export const GenerateChatTitleApi = async (c: Context) => {
     // @ts-ignore
     const { chatId, message } = c.req.valid("json")
 
+    const currentChat = await getChatMessagesWithAuth(db, chatId, email)
+    let assistantResponse = ""
+    if (currentChat[1].messageRole === "assistant" && currentChat[1].message) {
+      assistantResponse = currentChat[1].message
+    }
+
     const { user, workspace } = await getUserAndWorkspaceByEmail(
       db,
       workspaceId,
@@ -7185,10 +7239,14 @@ export const GenerateChatTitleApi = async (c: Context) => {
       `Generating title for chat ${chatId} with message: ${String(message).substring(0, 100)}...`,
     )
 
-    const titleResp = await generateTitleUsingQuery(message, {
-      modelId: defaultFastModel,
-      stream: false,
-    })
+    const titleResp = await generateTitleUsingQuery(
+      message,
+      {
+        modelId: defaultFastModel,
+        stream: false,
+      },
+      assistantResponse,
+    )
 
     loggerWithChild({ email: email }).info(
       `Generated title: ${titleResp.title}`,

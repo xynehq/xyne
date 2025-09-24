@@ -19,6 +19,8 @@ import {
   SearchSlackChannels,
   agentChatMessageSchema,
   chatTitleSchema,
+  GetDriveItem,
+  GetDriveItemsByDocIds,
   HighlightApi,
   highlightSchema,
 } from "@/api/search"
@@ -41,6 +43,7 @@ import {
   deleteUserDataSchema,
   ingestMoreChannelSchema,
   startSlackIngestionSchema,
+  UserRoleChangeSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -73,6 +76,11 @@ import {
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
   GetWorkspaceApiKeys,
+  UpdateUser,
+  HandlePerUserSlackSync,
+  HandlePerUserGoogleWorkSpaceSync,
+  ListAllLoggedInUsers,
+  ListAllIngestedUsers,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -238,6 +246,7 @@ import {
   DeleteItemApi,
   GetFilePreviewApi,
   GetFileContentApi,
+  DownloadFileApi,
   GetChunkContentApi,
 } from "@/api/knowledgeBase"
 import {
@@ -976,6 +985,8 @@ export const AppRoutes = app
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
+  .post("/search/driveitem", GetDriveItem)
+  .post("/search/driveitemsbydocids", GetDriveItemsByDocIds)
   .post("/tuning/evaluate", EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(
@@ -1111,6 +1122,7 @@ export const AppRoutes = app
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
+  .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
   .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
   .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
@@ -1148,6 +1160,12 @@ export const AppRoutes = app
   // TODO: debug
   // for some reason the validation schema
   // is not making the keys mandatory
+  .get("/list_loggedIn_users", ListAllLoggedInUsers)
+  .get("/list_ingested_users", ListAllIngestedUsers)
+  .post("/change_role", zValidator("form", UserRoleChangeSchema), UpdateUser)
+  .post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+  .post("syncSlackByMail", HandlePerUserSlackSync)
+  // create the provider + connector
   .post(
     "/oauth/create",
     zValidator("form", createOAuthProvider),
@@ -1476,104 +1494,6 @@ app.get(
   },
 )
 
-// Serving exact frontend routes and adding AuthRedirect wherever needed
-app.get("/", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/chat", AuthRedirect, async (c, next) => {
-  if (c.req.query("shareToken")) {
-    const staticHandler = serveStatic({ path: "./dist/index.html" })
-    return await staticHandler(c, next)
-  }
-  return c.redirect("/")
-})
-app.get("/trace", AuthRedirect, (c) => c.redirect("/"))
-app.get("/auth", serveStatic({ path: "./dist/index.html" }))
-app.get("/workflow", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/agent", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/search", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/dashboard", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/pdf.worker.min.js", serveStatic({ path: "./dist/pdf.worker.min.js" }))
-app.get(
-  "/chat/:param",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/trace/:chatId/:messageId",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations/fileupload",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations/google",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations/slack",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/integrations/mcp",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-// Catch-all for any other integration routes
-app.get(
-  "/integrations/*",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations/google",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations/slack",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations/mcp",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get(
-  "/admin/integrations/*",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-app.get("/tuning", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/call", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get("/oauth/success", serveStatic({ path: "./dist/index.html" }))
-app.get("/assets/*", serveStatic({ root: "./dist" }))
-app.get("/api-key", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
-app.get(
-  "/knowledgeManagement",
-  AuthRedirect,
-  serveStatic({ path: "./dist/index.html" }),
-)
-
 // START of Health Check Endpoints
 // Comprehensive health check endpoint
 
@@ -1640,6 +1560,30 @@ app.get(
   "/health/vespa",
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
 )
+
+// Serving exact frontend routes and adding AuthRedirect wherever needed
+app.get("/auth", serveStatic({ path: "./dist/index.html" }))
+
+// PDF.js worker files
+app.get("/pdfjs/pdf.worker.min.mjs", serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }))
+
+// PDF.js character maps
+app.get("/pdfjs/cmaps/*", serveStatic({ root: "./dist" }))
+
+// PDF.js standard fonts
+app.get("/pdfjs/standard_fonts/*", serveStatic({ root: "./dist" }))
+
+// PDF.js WASM files
+app.get("/pdfjs/wasm/*", serveStatic({ root: "./dist" }))
+
+// PDF.js annotation images
+app.get("/pdfjs/images/*", serveStatic({ root: "./dist" }))
+
+// PDF.js ICC color profiles
+app.get("/pdfjs/iccs/*", serveStatic({ root: "./dist" }))
+
+app.get("/assets/*", serveStatic({ root: "./dist" }))
+app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   if (isSlackEnabled()) {
