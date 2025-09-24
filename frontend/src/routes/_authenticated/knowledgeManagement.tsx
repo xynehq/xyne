@@ -64,7 +64,7 @@ import {
 import ExcelViewer from "@/components/ExcelViewer"
 import CsvViewer from "@/components/CsvViewer"
 import TxtViewer from "@/components/TxtViewer"
-import { JSONViewer } from "@/components/JSONViewer"
+import ReactJsonView from "react-json-view"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -2252,7 +2252,15 @@ function KnowledgeManagementContent() {
           <div className="flex-1 overflow-auto p-4">
             {vespaData ? (
               <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <JSONViewer data={vespaData} />
+                <ReactJsonView
+                  src={vespaData}
+                  theme="rjv-default"
+                  displayDataTypes={false}
+                  displayObjectSize={false}
+                  enableClipboard={false}
+                  name={false}
+                  collapsed={1}
+                />
               </div>
             ) : (
               <div className="flex items-center justify-center h-32">
