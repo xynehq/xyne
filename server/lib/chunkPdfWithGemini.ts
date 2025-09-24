@@ -178,7 +178,7 @@ export async function splitPdfIntoInlineSizedChunks(
     )
 
     if (logger) {
-      console.log(
+      Logger.info(
         {
           startPage: start + 1,
           endPage: start + count,
