@@ -6,8 +6,12 @@ import { AccessToken, RoomServiceClient } from "livekit-server-sdk"
 import { db } from "@/db/client"
 import { getUserByEmail, getUsersByWorkspace } from "@/db/user"
 import { callNotificationService } from "@/services/callNotifications"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
 
 const { JwtPayloadKey } = config
+
+const Logger = getLogger(Subsystem.Api).child({ module: "calls" })
 
 // LiveKit configuration
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY!
@@ -90,18 +94,21 @@ export const InitiateCallApi = async (c: Context) => {
     }
     const caller = callerUsers[0]
 
-    // Get workspace users to find target user (scoped to current workspace)
-    const workspaceUsers = await getUsersByWorkspace(db, workspaceId)
-    const targetUser = workspaceUsers.find(
-      (user) => user.externalId === validatedData.targetUserId,
+    // Check if caller is trying to call themselves before making DB queries
+    if (caller.externalId === validatedData.targetUserId) {
+      throw new HTTPException(400, { message: "Cannot call yourself" })
+    }
+
+    // Get target user directly with external ID filter (scoped to current workspace)
+    const targetUsers = await getUsersByWorkspace(
+      db,
+      workspaceId,
+      validatedData.targetUserId,
     )
+    const targetUser = targetUsers[0]
 
     if (!targetUser) {
       throw new HTTPException(404, { message: "Target user not found" })
-    }
-
-    if (caller.externalId === targetUser.externalId) {
-      throw new HTTPException(400, { message: "Cannot call yourself" })
     }
 
     // Generate unique room name
@@ -152,8 +159,8 @@ export const InitiateCallApi = async (c: Context) => {
     const notificationSent =
       callNotificationService.sendCallInvitation(callNotification)
 
-    console.log(`Call initiated by ${caller.name} to ${targetUser.name}`)
-    console.log(`Real-time notification sent: ${notificationSent}`)
+    Logger.info(`Call initiated by ${caller.name} to ${targetUser.name}`)
+    Logger.info(`Real-time notification sent: ${notificationSent}`)
 
     return c.json({
       success: true,
@@ -176,7 +183,7 @@ export const InitiateCallApi = async (c: Context) => {
       },
     })
   } catch (error) {
-    console.error("Error initiating call:", error)
+    Logger.error(error, "Error initiating call")
     if (error instanceof HTTPException) {
       throw error
     }
@@ -227,7 +234,7 @@ export const JoinCallApi = async (c: Context) => {
       },
     })
   } catch (error) {
-    console.error("Error joining call:", error)
+    Logger.error(error, "Error joining call")
     if (error instanceof HTTPException) {
       throw error
     }
@@ -260,18 +267,21 @@ export const InviteToCallApi = async (c: Context) => {
     }
     const inviter = inviterUsers[0]
 
-    // Get workspace users to find target user (scoped to current workspace)
-    const workspaceUsers = await getUsersByWorkspace(db, workspaceId)
-    const targetUser = workspaceUsers.find(
-      (user) => user.externalId === validatedData.targetUserId,
+    // Check if inviter is trying to invite themselves before making DB queries
+    if (inviter.externalId === validatedData.targetUserId) {
+      throw new HTTPException(400, { message: "Cannot invite yourself" })
+    }
+
+    // Get target user directly with external ID filter (scoped to current workspace)
+    const targetUsers = await getUsersByWorkspace(
+      db,
+      workspaceId,
+      validatedData.targetUserId,
     )
+    const targetUser = targetUsers[0]
 
     if (!targetUser) {
       throw new HTTPException(404, { message: "Target user not found" })
-    }
-
-    if (inviter.externalId === targetUser.externalId) {
-      throw new HTTPException(400, { message: "Cannot invite yourself" })
     }
 
     // Check if room exists
@@ -317,10 +327,10 @@ export const InviteToCallApi = async (c: Context) => {
     const notificationSent =
       callNotificationService.sendCallInvitation(callNotification)
 
-    console.log(
+    Logger.info(
       `User ${inviter.name} invited ${targetUser.name} to call ${validatedData.roomName}`,
     )
-    console.log(`Real-time notification sent: ${notificationSent}`)
+    Logger.info(`Real-time notification sent: ${notificationSent}`)
 
     return c.json({
       success: true,
@@ -341,7 +351,7 @@ export const InviteToCallApi = async (c: Context) => {
       },
     })
   } catch (error) {
-    console.error("Error inviting user to call:", error)
+    Logger.error(error, "Error inviting user to call")
     if (error instanceof HTTPException) {
       throw error
     }
@@ -373,7 +383,7 @@ export const EndCallApi = async (c: Context) => {
       message: "Call ended successfully",
     })
   } catch (error) {
-    console.error("Error ending call:", error)
+    Logger.error(error, "Error ending call")
     if (error instanceof HTTPException) {
       throw error
     }
@@ -412,7 +422,7 @@ export const GetActiveCallsApi = async (c: Context) => {
       })),
     })
   } catch (error) {
-    console.error("Error getting active calls:", error)
+    Logger.error(error, "Error getting active calls")
     throw new HTTPException(500, { message: "Failed to get active calls" })
   }
 }

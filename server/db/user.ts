@@ -230,18 +230,24 @@ export const getUserById = async (
 export const getUsersByWorkspace = async (
   trx: TxnOrClient,
   workspaceExternalId: string,
+  externalId?: string,
 ): Promise<SelectUser[]> => {
+  const conditions = [
+    eq(users.workspaceExternalId, workspaceExternalId),
+    eq(users.deletedAt, new Date("1970-01-01T00:00:00Z")),
+  ]
+
+  // Add external ID filter if provided
+  if (externalId) {
+    conditions.push(eq(users.externalId, externalId))
+  }
+
   const resp = await trx
     .select()
     .from(users)
-    .where(
-      and(
-        eq(users.workspaceExternalId, workspaceExternalId),
-        eq(users.deletedAt, new Date('1970-01-01T00:00:00Z'))
-      )
-    )
-  
-  return resp.map(user => {
+    .where(and(...conditions))
+
+  return resp.map((user) => {
     const parsedRes = selectUserSchema.safeParse(user)
     if (!parsedRes.success) {
       throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
