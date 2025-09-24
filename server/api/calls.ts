@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception"
 import type { Context } from "hono"
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk"
 import { db } from "@/db/client"
-import { getUserByEmail, getAllActiveUsers } from "@/db/user"
+import { getUserByEmail, getUsersByWorkspace } from "@/db/user"
 import { callNotificationService } from "@/services/callNotifications"
 
 const { JwtPayloadKey } = config
@@ -12,7 +12,7 @@ const { JwtPayloadKey } = config
 // LiveKit configuration
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY!
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET!
-const LIVEKIT_URL = process.env.LIVEKIT_URL || "ws://10.10.50.22:7880"
+const LIVEKIT_URL = process.env.LIVEKIT_URL || "ws://localhost:7880"
 
 if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
   throw new Error(
@@ -90,9 +90,9 @@ export const InitiateCallApi = async (c: Context) => {
     }
     const caller = callerUsers[0]
 
-    // Get all workspace users to find target user
-    const allUsers = await getAllActiveUsers(db)
-    const targetUser = allUsers.find(
+    // Get workspace users to find target user (scoped to current workspace)
+    const workspaceUsers = await getUsersByWorkspace(db, workspaceId)
+    const targetUser = workspaceUsers.find(
       (user) => user.externalId === validatedData.targetUserId,
     )
 
@@ -159,7 +159,6 @@ export const InitiateCallApi = async (c: Context) => {
       success: true,
       roomName,
       callerToken,
-      targetToken,
       callType: validatedData.callType,
       livekitUrl: LIVEKIT_URL,
       notificationSent, // Include whether notification was sent
@@ -261,9 +260,9 @@ export const InviteToCallApi = async (c: Context) => {
     }
     const inviter = inviterUsers[0]
 
-    // Get all workspace users to find target user
-    const allUsers = await getAllActiveUsers(db)
-    const targetUser = allUsers.find(
+    // Get workspace users to find target user (scoped to current workspace)
+    const workspaceUsers = await getUsersByWorkspace(db, workspaceId)
+    const targetUser = workspaceUsers.find(
       (user) => user.externalId === validatedData.targetUserId,
     )
 
@@ -326,7 +325,6 @@ export const InviteToCallApi = async (c: Context) => {
     return c.json({
       success: true,
       roomName: validatedData.roomName,
-      targetToken,
       callType: validatedData.callType,
       notificationSent,
       inviter: {

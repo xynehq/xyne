@@ -38,11 +38,21 @@ class CallNotificationClient {
   private reconnectDelay = 1000
   private onNotificationCallbacks: CallNotificationHandler[] = []
   private onStatusCallbacks: CallStatusHandler[] = []
-  private soundInterval: NodeJS.Timeout | null = null
+  private soundInterval: ReturnType<typeof setInterval> | null = null
   private audioContextInitialized = false
+  private connectionInitialized = false
+  private isMainWindow = true // Track if this is the main window
 
   constructor() {
     this.initializeAudioOnUserInteraction()
+    
+    // Detect if this is a popup window (call window) or main window
+    this.isMainWindow = !window.opener
+    
+    // Only set up connection management for main window
+    if (this.isMainWindow) {
+      this.setupWindowEventHandlers()
+    }
   }
 
   // Initialize audio context on first user interaction to comply with autoplay policy
@@ -272,7 +282,41 @@ class CallNotificationClient {
     }
   }
 
+  // Set up window event handlers to maintain connection stability
+  private setupWindowEventHandlers() {
+    // Prevent WebSocket disconnection on page visibility changes
+    document.addEventListener('visibilitychange', () => {
+      // Reconnect if connection was lost while page was hidden
+      if (!document.hidden && !this.isConnected()) {
+        this.connect()
+      }
+    })
+
+    // Ensure connection on window focus
+    window.addEventListener('focus', () => {
+      if (!this.isConnected()) {
+        this.connect()
+      }
+    })
+  }
+
   connect() {
+    // Only allow connection from main window to prevent conflicts
+    if (!this.isMainWindow) {
+      return
+    }
+
+    // Don't create a new connection if one already exists and is open or connecting
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return
+    }
+
+    // Prevent multiple connection attempts during initialization
+    if (this.connectionInitialized) {
+      return
+    }
+    this.connectionInitialized = true
+
     try {
       // Use the same origin but with ws protocol
       const wsUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws/calls`
@@ -281,6 +325,7 @@ class CallNotificationClient {
       this.ws.onopen = () => {
         console.log("Connected to call notifications")
         this.reconnectAttempts = 0
+        this.connectionInitialized = false // Reset flag on successful connection
       }
 
       this.ws.onmessage = (event) => {
@@ -313,7 +358,11 @@ class CallNotificationClient {
 
       this.ws.onclose = () => {
         console.log("Call notification connection closed")
-        this.reconnect()
+        this.connectionInitialized = false // Reset flag on connection close
+        // Only attempt reconnection from main window
+        if (this.isMainWindow) {
+          this.reconnect()
+        }
       }
 
       this.ws.onerror = (error) => {
@@ -321,6 +370,7 @@ class CallNotificationClient {
       }
     } catch (error) {
       console.error("Error connecting to call notifications:", error)
+      this.connectionInitialized = false // Reset flag on error
       this.reconnect()
     }
   }
@@ -338,12 +388,23 @@ class CallNotificationClient {
   }
 
   disconnect() {
+    // Only allow disconnection from main window or during app shutdown
+    if (!this.isMainWindow) {
+      return
+    }
+    
     if (this.ws) {
       this.ws.close()
       this.ws = null
     }
+    this.connectionInitialized = false
     // Stop any ongoing call sound when disconnecting
     this.stopCallSoundLoop()
+  }
+
+  // Check if WebSocket is connected
+  isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN
   }
 
   // Public method to stop call notification sound
@@ -401,11 +462,16 @@ export function useCallNotifications() {
   useEffect(() => {
     const client = clientRef.current
 
-    // Request notification permissions for fallback
-    client.requestNotificationPermission().catch(console.error)
+    // Only set up connections and handlers for main window
+    if (!window.opener) {
+      // Request notification permissions for fallback
+      client.requestNotificationPermission().catch(console.error)
 
-    // Connect to WebSocket
-    client.connect()
+      // Connect to WebSocket only if not already connected
+      if (!client.isConnected()) {
+        client.connect()
+      }
+    }
 
     // Set up notification handlers
     const removeNotificationHandler = client.onCallNotification(
@@ -420,11 +486,11 @@ export function useCallNotifications() {
       setCallStatus(status)
     })
 
-    // Cleanup on unmount
+    // Cleanup on unmount - only remove handlers, keep connection alive for singleton
     return () => {
       removeNotificationHandler()
       removeStatusHandler()
-      client.disconnect()
+      // Don't disconnect the singleton client as other components might be using it
     }
   }, [])
 

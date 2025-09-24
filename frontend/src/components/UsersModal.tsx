@@ -49,7 +49,6 @@ export default function UsersModal({ onClose }: UsersModalProps) {
       const response = await api.workspace.users.$get()
       if (response.ok) {
         const data = await response.json()
-        console.log("Fetched users:", data)
         const usersList = data || []
         setUsers(usersList)
         setFilteredUsers(usersList)
@@ -138,20 +137,22 @@ export default function UsersModal({ onClose }: UsersModalProps) {
       if (response.ok) {
         const data = await response.json()
 
-        // Generate both call links
-        const callerLink = `${window.location.origin}/call?room=${data.roomName}&token=${data.callerToken}&type=${callType}`
-        const targetLink = `${window.location.origin}/call?room=${data.roomName}&token=${data.targetToken}&type=${callType}`
+        // Generate caller link (only the caller gets their token directly)
+        const callerLink = `${window.location.origin}/call?room=${data.roomName}&token=${data.callerToken}&type=${callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
+        
+        // Generate shareable link without token (target user will get token via WebSocket)
+        const shareableLink = `${window.location.origin}/call?room=${data.roomName}&type=${callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
 
         // Show simple notification status
         const notificationStatus = data.notificationSent
           ? `Real-time notification sent to ${data.target.name}!`
-          : `${data.target.name} is offline - you can share the link from the call interface.`
+          : `${data.target.name} is offline - you can share the link: ${shareableLink}`
 
         // Show a simple toast
         toast({
           title: "Call Started!",
           description: notificationStatus,
-          duration: 3000,
+          duration: 5000,
         })
 
         // Open the caller's window
@@ -167,27 +168,6 @@ export default function UsersModal({ onClose }: UsersModalProps) {
             description: "Please allow popups to make calls",
             variant: "destructive",
           })
-        }
-
-        // Log the links to console for debugging
-        console.log("=== CALL INITIATED ===")
-        console.log("Caller Link:", callerLink)
-        console.log("Target Link (share this):", targetLink)
-        console.log("Room Name:", data.roomName)
-        console.log("=====================")
-
-        // For testing: open both windows (comment out in production)
-        if (process.env.NODE_ENV === "development") {
-          setTimeout(() => {
-            const targetWindow = window.open(
-              targetLink,
-              "call-window-target",
-              "width=800,height=600,resizable=yes,scrollbars=no,status=no,location=no,toolbar=no,menubar=no",
-            )
-            if (targetWindow) {
-              console.log("Opened target window for testing")
-            }
-          }, 2000) // Open target window 2 seconds after caller window
         }
 
         onClose()

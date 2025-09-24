@@ -1,7 +1,7 @@
 import { z } from "zod"
 import config from "@/config"
 import { db } from "@/db/client"
-import { getUsersByWorkspace, getAllActiveUsers } from "@/db/user"
+import { getUsersByWorkspace } from "@/db/user"
 import { HTTPException } from "hono/http-exception"
 import type { Context } from "hono"
 
@@ -15,11 +15,16 @@ export const searchUsersSchema = z.object({
 // Search users in workspace
 export const SearchWorkspaceUsersApi = async (c: Context) => {
   try {
+    const { workspaceId } = c.get(JwtPayloadKey)
     const query = c.req.query()
     const { q } = searchUsersSchema.parse(query)
     
-    // Get all active users (no workspace restriction for now)
-    const users = await getAllActiveUsers(db)
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "Workspace ID is required" })
+    }
+    
+    // Get users scoped to the current workspace
+    const users = await getUsersByWorkspace(db, workspaceId)
     
     // Filter users based on search query (name or email)
     const filteredUsers = users.filter(user => 

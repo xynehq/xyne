@@ -5,8 +5,8 @@ import {
   formatChatMessageLinks,
 } from "@livekit/components-react"
 import "@livekit/components-styles/index.css"
-import { InviteUsersModal } from './InviteUsersModal'
-import { Button } from '@/components/ui/button'
+import { InviteUsersModal } from "./InviteUsersModal"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -15,8 +15,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { UserPlus, Share2, Copy } from 'lucide-react'
-import { api } from '@/api'
+import { UserPlus, Share2, Copy } from "lucide-react"
+import { api } from "@/api"
 import { useToast } from "@/hooks/use-toast"
 
 const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || "ws://localhost:7880"
@@ -27,7 +27,8 @@ export default function CallPage() {
   const room = urlParams.get("room") || ""
   const token = urlParams.get("token") || ""
   const callType = urlParams.get("type") || "video"
-  
+  const urlServerUrl = urlParams.get("serverUrl")
+
   const [isCallEnded, setIsCallEnded] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
@@ -35,6 +36,7 @@ export default function CallPage() {
   const [joinError, setJoinError] = useState<string | null>(null)
   const [actualToken, setActualToken] = useState(token)
   const [isCopying, setIsCopying] = useState(false)
+  const [serverUrl, setServerUrl] = useState(urlServerUrl || LIVEKIT_URL)
   const { toast } = useToast()
 
   // Generate the shareable call link (without token for security)
@@ -45,22 +47,23 @@ export default function CallPage() {
     if (room && !token && !isJoining && !joinError) {
       joinCall()
     }
-  }, [room, token])
+  }, [room, token, isJoining, joinError])
 
   const joinCall = async () => {
     if (!room) return
-    
+
     setIsJoining(true)
     setJoinError(null)
-    
+
     try {
       const response = await api.calls.join.$post({
-        json: { roomName: room }
+        json: { roomName: room },
       })
-      
+
       if (response.ok) {
         const data = await response.json()
         setActualToken(data.token)
+        if (data.livekitUrl) setServerUrl(data.livekitUrl)
       } else {
         const errorData = await response.json()
         setJoinError(errorData.message || "Failed to join call")
@@ -186,18 +189,16 @@ export default function CallPage() {
           video={callType === "video"}
           audio={true}
           token={actualToken}
-          serverUrl={LIVEKIT_URL}
+          serverUrl={serverUrl}
           // Use the default LiveKit styles
           data-lk-theme="default"
           style={{ height: "100%", overflow: "hidden" }}
           onDisconnected={handleDisconnect}
         >
           {/* LiveKit provides a complete VideoConference component */}
-          <VideoConference 
-            chatMessageFormatter={formatChatMessageLinks}
-          />
+          <VideoConference chatMessageFormatter={formatChatMessageLinks} />
         </LiveKitRoom>
-        
+
         {/* Action Buttons - Bottom Left */}
         <div className="absolute bottom-4 left-4 flex gap-4 z-50">
           <div className="relative group">
@@ -211,7 +212,7 @@ export default function CallPage() {
               Add people
             </div>
           </div>
-          
+
           <div className="relative group">
             <button
               onClick={() => setShowShareModal(true)}
@@ -225,24 +226,23 @@ export default function CallPage() {
           </div>
         </div>
       </div>
-      
+
       {/* Invite Users Modal */}
       <InviteUsersModal
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
         roomName={room}
-        callType={callType as 'video' | 'audio'}
+        callType={callType as "video" | "audio"}
       />
-      
+
       {/* Share Call Link Modal */}
       <Dialog open={showShareModal} onOpenChange={setShowShareModal}>
         <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              Share Call Link
-            </DialogTitle>
+            <DialogTitle>Share Call Link</DialogTitle>
             <DialogDescription>
-              Share this link with others to invite them to join the {callType} call.
+              Share this link with others to invite them to join the {callType}{" "}
+              call.
             </DialogDescription>
           </DialogHeader>
 
@@ -270,11 +270,7 @@ export default function CallPage() {
 
             {/* Action Buttons */}
             <div className="flex flex-col gap-2 pt-2">
-              <Button
-                onClick={handleShareNative}
-                className="w-full"
-                size="sm"
-              >
+              <Button onClick={handleShareNative} className="w-full" size="sm">
                 <Share2 className="h-4 w-4 mr-2" />
                 Share Link
               </Button>
@@ -285,5 +281,3 @@ export default function CallPage() {
     </div>
   )
 }
-
-
