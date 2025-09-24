@@ -24,7 +24,7 @@ import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { AuthType, ConnectorStatus } from "@/shared/types"
 import { extractDriveIds, extractCollectionVespaIds } from "./utils"
-import { getAppSyncJobsByEmail } from "@/db/syncJob"
+import { getUserSyncJobsByEmail } from "@/db/syncJob"
 // Define your Vespa endpoint and schema name
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
@@ -93,20 +93,11 @@ export const searchVespa = async (
     Logger.error({ err: error, email }, "Error fetching Slack connector status")
   }
   try {
-    const authTypeForSyncJobs =
-      process.env.NODE_ENV !== "production"
-        ? AuthType.OAuth
-        : AuthType.ServiceAccount
     const [driveConnector, gmailConnector, calendarConnector] =
       await Promise.all([
-        getAppSyncJobsByEmail(db, Apps.GoogleDrive, authTypeForSyncJobs, email),
-        getAppSyncJobsByEmail(db, Apps.Gmail, authTypeForSyncJobs, email),
-        getAppSyncJobsByEmail(
-          db,
-          Apps.GoogleCalendar,
-          authTypeForSyncJobs,
-          email,
-        ),
+        getUserSyncJobsByEmail(db, Apps.GoogleDrive, email),
+        getUserSyncJobsByEmail(db, Apps.Gmail, email),
+        getUserSyncJobsByEmail(db, Apps.GoogleCalendar, email),
       ])
     isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
     isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)

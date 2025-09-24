@@ -68,7 +68,7 @@ import type {
 } from "@xyne/vespa-ts/types"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { chunkDocument } from "@/chunks"
-import { getAppSyncJobsByEmail } from "@/db/syncJob"
+import { getUserSyncJobsByEmail } from "@/db/syncJob"
 import { getTracer } from "@/tracer"
 import { getDateForAI } from "@/utils/index"
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
@@ -454,25 +454,11 @@ export const SearchApi = async (c: Context) => {
       )
     }
     try {
-      const authTypeForSyncJobs =
-        process.env.NODE_ENV !== "production"
-          ? AuthType.OAuth
-          : AuthType.ServiceAccount
       const [driveConnector, gmailConnector, calendarConnector] =
         await Promise.all([
-          getAppSyncJobsByEmail(
-            db,
-            Apps.GoogleDrive,
-            authTypeForSyncJobs,
-            email,
-          ),
-          getAppSyncJobsByEmail(db, Apps.Gmail, authTypeForSyncJobs, email),
-          getAppSyncJobsByEmail(
-            db,
-            Apps.GoogleCalendar,
-            authTypeForSyncJobs,
-            email,
-          ),
+          getUserSyncJobsByEmail(db, Apps.GoogleDrive, email),
+          getUserSyncJobsByEmail(db, Apps.Gmail, email),
+          getUserSyncJobsByEmail(db, Apps.GoogleCalendar, email),
         ])
       isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
       isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
