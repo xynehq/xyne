@@ -11,6 +11,7 @@ import {
   generateFollowUpQuestions,
   webSearchQuestion,
   getDeepResearchResponse,
+  aggregatorQueryJsonStream,
 } from "@/ai/provider"
 import { generateFollowUpQuestionsSystemPrompt } from "@/ai/prompts"
 import {
@@ -701,6 +702,71 @@ async function* processIterator(
     }
   }
   return parsed.answer
+}
+
+type AggregatorParsed = { docIds: string[] | null } | { [k: string]: any }
+
+export async function* processIteratorForAggregatorQueries(
+  iterator: AsyncIterableIterator<ConverseResponse>,
+): AsyncIterableIterator<
+  ConverseResponse & {
+    docIds?: string[]
+  }
+> {
+  let buffer = ""
+  let currentDocIds: string[] = []
+  let parsed: AggregatorParsed = { docIds: null }
+
+  // token we require before attempting to parse a final JSON object
+  const DOCIDS_TOKEN = '"docIds":'
+
+  // Track already-yielded ids to only stream new ones
+  const yielded = new Set<string>()
+
+  for await (const chunk of iterator) {
+    if (chunk.text) {
+      buffer += chunk.text
+      try {
+        const parsable = cleanBuffer(buffer)
+        parsed = jsonParseLLMOutput(parsable, DOCIDS_TOKEN) as AggregatorParsed
+
+        // Expect shape: { docIds: string[] } OR { docIds: [] }
+        const docIds = Array.isArray((parsed as any)?.docIds)
+          ? ((parsed as any).docIds as string[])
+          : null
+
+        if (docIds) {
+          // Stream only the new docIds
+          const newOnes: string[] = []
+          for (const id of docIds) {
+            if (!yielded.has(id)) {
+              yielded.add(id)
+              newOnes.push(id)
+            }
+          }
+          if (newOnes.length > 0) {
+            yield { docIds: newOnes }
+          }
+          currentDocIds = docIds
+        } else if ((parsed as any)?.docIds === null) {
+          // If model explicitly outputs null or incomplete JSON, keep waiting
+          // Do nothing; continue accumulating
+        }
+      } catch {
+        // Not parseable yet; keep accumulating
+      }
+    }
+
+    if (chunk.cost) {
+      // Pass through token/cost info if present
+      yield { cost: chunk.cost }
+    }
+  }
+
+  // Return final array (empty if none)
+  return (
+    Array.isArray((parsed as any)?.docIds) ? (parsed as any).docIds : []
+  ) as any
 }
 
 export const GetChatApi = async (c: Context) => {
@@ -1681,7 +1747,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(totalResults, maxSummaryCount, userMetadata)
+        const initialContext = buildContext(
+          totalResults,
+          maxSummaryCount,
+          userMetadata,
+        )
 
         const { imageFileNames } = extractImageFileNames(
           initialContext,
@@ -3033,40 +3103,33 @@ async function* processResultsForAggregatorQuery(
     span?.setAttribute("Google Drive, chunk_size", chunksCount)
   }
 
-  // todo keep it 20??
-  chunksCount = 20
-  span?.setAttribute(
-    "Document chunk size",
-    `full_context maxed to ${chunksCount}`,
-  )
-  const context = buildContext(items, chunksCount, userMetadata)
-  const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
     modelId: modelId ? (modelId as Models) : defaultBestModel,
     reasoning: config.isReasoning && userRequestsReasoning,
-    imageFileNames,
     agentPrompt: agentContext,
   }
 
   let iterator: AsyncIterableIterator<ConverseResponse>
-  if (app?.length == 1 && app[0] === Apps.Gmail) {
-    loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(input, userCtx, userMetadata.dateForAI, context, streamOptions)
-  } else {
-    loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(input, userCtx, userMetadata, context, streamOptions)
-  }
 
-  return yield* processIterator(
-    iterator,
+  iterator = aggregatorQueryJsonStream(
+    input,
+    userCtx,
+    userMetadata,
     items,
-    0,
-    config.isReasoning && userRequestsReasoning,
+    streamOptions,
+  )
+
+  return yield* processIteratorForAggregatorQueries(
+    iterator,
   )
 }
 
-const getAllFinalItems = () => {}
+const getAllFinalItems = (itemIds: string[]): VespaSearchResult[] => {
+  // TODO: Implement this function to retrieve VespaSearchResult[] by itemIds
+  // For now returning empty array to avoid compilation errors
+  return []
+}
 
 async function* generateMetadataQueryAnswer(
   input: string,
@@ -3734,6 +3797,7 @@ async function* generateMetadataQueryAnswer(
       }
     }
   } else if (isAggregatorQuery) {
+    console.log("Entered inside isAggregatorQuery...")
     const pageSizeForAggregatorQuery = 40
     const maxIterationsForAggregatorQuery = 10
     // Specific metadata retrieval
@@ -3861,18 +3925,6 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `Number of documents for ${QueryType.SearchWithFilters} = ${items.length}`,
       )
-      if (!items.length) {
-        loggerWithChild({ email: email }).info(
-          `No documents found on iteration ${iteration}${
-            hasValidTimeRange
-              ? " within time range."
-              : " falling back to iterative RAG"
-          }`,
-        )
-        iterationSpan?.end()
-        yield { text: METADATA_FALLBACK_TO_RAG }
-        return
-      }
 
       const itemIds = yield* processResultsForAggregatorQuery(
         items,
@@ -3888,14 +3940,23 @@ async function* generateMetadataQueryAnswer(
         agentPrompt,
         modelId,
       )
+      console.log("itemIds")
+      console.log(itemIds)
+      console.log("itemIds")
       finalItemIds.push(...itemIds)
     }
-
+    console.log("finalItemIds")
+    console.log(finalItemIds)
+    console.log("finalItemIds")
     const allFinalItems = getAllFinalItems(finalItemIds)
+    console.log("allFinalItems")
+    console.log(allFinalItems)
+    console.log("allFinalItems")
     const answer = yield* processResultsForMetadata(
       allFinalItems,
       input,
       userCtx,
+      userMetadata,
       apps,
       entities,
       undefined,
@@ -3905,6 +3966,10 @@ async function* generateMetadataQueryAnswer(
       agentPrompt,
       modelId,
     )
+
+    console.log("answer")
+    console.log(answer)
+    console.log("answer")
 
     if (answer == null) {
       yield { text: METADATA_FALLBACK_TO_RAG }

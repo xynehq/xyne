@@ -34,6 +34,7 @@ import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
 
 import { ModelToProviderMap } from "@/ai/mappers"
+import { answerContextMap } from "@/ai/context"
 import type {
   AnswerResponse,
   ChainBreakClassifications,
@@ -86,6 +87,7 @@ import {
   deepResearchPrompt,
   webSearchSystemPrompt,
   agentWithNoIntegrationsSystemPrompt,
+  aggregatorQueryPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -2009,4 +2011,66 @@ export const agentWithNoIntegrationsQuestion = (
     Logger.error(error, "Error in agentWithNoIntegrationsQuestion")
     throw error
   }
+}
+
+// Helper function to build structured context from raw Vespa search results
+const buildStructuredContextFromItems = (
+  items: any[],
+  userMetadata: UserMetadataType,
+): string => {
+  return items
+    .map((item, index) => {
+      // Use answerContextMap to create structured context for each item
+      const contextFromAnswerContextMap = answerContextMap(item, userMetadata)
+
+      // Add document index and docId to the context
+      const documentIndex = index + 1
+      const docId = item.fields?.docId || "Unknown"
+
+      return `Document Index: ${documentIndex}
+      Doc ID: ${docId}
+      ${contextFromAnswerContextMap}
+      `
+    })
+    .join("\n\n")
+}
+
+export const aggregatorQueryJsonStream = (
+  userQuery: string,
+  userCtx: string,
+  userMetadata: UserMetadataType,
+  items: any[], // VespaSearchResult[]
+  params: ModelParams,
+): AsyncIterableIterator<ConverseResponse> => {
+  if (!params.modelId) {
+    params.modelId = defaultFastModel
+  }
+
+  // Build structured context from raw items and their chunks
+  const structuredContext = buildStructuredContextFromItems(items, userMetadata)
+  console.log("Structured Context")
+  console.log(structuredContext)
+  console.log("Structured Context")
+
+  params.systemPrompt = aggregatorQueryPrompt(
+    userCtx,
+    indexToCitation(structuredContext),
+    userMetadata.dateForAI,
+  )
+
+  params.json = true
+
+  const baseMessage = {
+    role: ConversationRole.USER,
+    content: [
+      {
+        text: `${userQuery}`,
+      },
+    ],
+  }
+
+  const messages: Message[] = params.messages
+    ? [...params.messages, baseMessage]
+    : [baseMessage]
+  return getProviderByModel(params.modelId).converseStream(messages, params)
 }

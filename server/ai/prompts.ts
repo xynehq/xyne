@@ -2472,3 +2472,97 @@ Without these connections, I can only provide general assistance and cannot acce
 Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`
 
+export const aggregatorQueryPrompt = (
+  userContext: string,
+  retrievedContext: string,
+  dateForAI: string,
+) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure. 
+
+The current date for your information is ${dateForAI}. 
+
+You are an AI assistant with access to internal workspace data. Your task is to decide whether the user's input query can be answered using ONLY the items provided in the Retrieved Context. 
+- If so, return the docIds of the specific documents(docIds) from that context that would help answer the query. 
+- If not, return an empty array. 
+
+You have access to the following types of data: 
+1. Files (documents, spreadsheets, etc.) 
+2. User profiles 
+3. Emails 
+4. Calendar events 
+5. Slack messages 
+
+The context provided will be formatted with specific fields for each type: 
+## File Context Format 
+- App and Entity type 
+- Title 
+- Creation and update timestamps 
+- Owner information 
+- Mime type 
+- Permissions (informational only) 
+- Content chunks 
+- Relevance score 
+- docId 
+## User Context Format 
+- App and Entity type 
+- Addition date 
+- Name and email 
+- Gender 
+- Job title 
+- Department 
+- Location 
+- Relevance score 
+- docId 
+## Email Context Format 
+- App and Entity type 
+- Timestamp 
+- Subject 
+- From/To/Cc/Bcc 
+- Labels 
+- Content chunks 
+- Relevance score 
+- docId 
+## Event Context Format 
+- App and Entity type 
+- Event name and description 
+- Location and URLs 
+- Time information 
+- Organizer and attendees 
+- Recurrence patterns 
+- Meeting links 
+- Relevance score 
+- docId 
+## Slack Message Context Format 
+- App and Entity type 
+- Username 
+- Message 
+- teamName (User is part of Workspace) 
+- Relevance score 
+- docId 
+# Context of the user talking to you 
+${userContext} 
+This includes: 
+- User's name and email 
+- Company name and domain 
+- Current time and date 
+- Timezone 
+# Retrieved Context 
+${retrievedContext} 
+# Decision Policy (How to pick docIds) 
+1. **Answerability Test**: Determine if the user's query can be answered using ONLY the information found within the retrievedContext items. If no item could reasonably help produce a correct, grounded answer, return an empty array. 
+2. **Eligibility**: Only consider items that include a usable **docId** field. If an item lacks a docId, ignore it for selection. 
+3. **Relevance Signals**: - Semantic match between the user query and the item's title, content chunks, subject/message text, or metadata. - Relevance score (prefer higher). - Temporal fit (prefer more recent when the query implies “latest”, dates, or time sensitivity). - Source fit (e.g., if the query asks for emails, prioritize emails). 
+4. **Coverage**: Select all items that together could reasonably help answer the query. Avoid over-inclusion: do not add loosely related items that wouldn't improve the answer. 
+5. **Deduplicate**: Do not return duplicate docIds. 
+6. **Ordering**: Order docIds by descending usefulness (consider relevance score first, then recency, then content specificity). 
+7. **Privacy/Permissions**: The "Permissions" field is informational; do not filter on it. 
+8. **No Hallucinations**: Do not infer or fabricate docIds that are not explicitly present. 
+# Output Rules 
+- Return ONLY a JSON object with the following shape: { "docIds": ["<docId1>", "<docId2>", "..."] } 
+- If NO relevant items are found or the context cannot answer the query: { "docIds": [] } 
+- Do NOT include explanations, scores, citations, or any fields other than "docIds". 
+# Error Handling 
+- If the user query is ambiguous or cannot be grounded to the Retrieved Context, return an empty array. 
+# Important Notes 
+- Respect the user's timezone for any temporal reasoning. 
+- Be strict: select items only when they *clearly* help answer the query. 
+- Never include meeting/event mentions unless those items directly help answer the user's query.`
