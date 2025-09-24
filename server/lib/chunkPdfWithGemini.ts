@@ -9,7 +9,8 @@ import { FileSizeExceededError, PdfPageTooLargeError } from "@/integrations/data
 const Logger = getLogger(Subsystem.AI).child({ module: "chunkPdfWithGemini" })
 
 // Splitting uses pdf-lib only; pdfjs not required here
-
+const PAGE_SPLIT_NUMBER = 30
+const GEMINI_OUTPUT_LIMIT = 65535 // previously -> 8192
 export type ChunkPdfOptions = {
   projectId?: string
   location?: string
@@ -182,6 +183,61 @@ export async function splitPdfIntoInlineSizedChunks(
   return chunks
 }
 
+// Page-first splitter (≤ maxPagesPerChunk), then size rule (≤ maxBytes)
+export async function splitPdfByPagesThenSize(
+  data: Uint8Array,
+  maxPagesPerChunk: number = PAGE_SPLIT_NUMBER,
+  maxBytes: number = INLINE_MAX_BYTES,
+  logger?: { info: Function; warn: Function },
+): Promise<Uint8Array[]> {
+  const srcPdf = await PDFDocument.load(data)
+  const totalPages = srcPdf.getPageCount()
+
+  // If small page count, fall back to size-based splitting only
+  if (totalPages <= maxPagesPerChunk) {
+    if (data.length <= maxBytes) return [data]
+    return await splitPdfIntoInlineSizedChunks(data, maxBytes, logger)
+  }
+
+  const chunks: Uint8Array[] = []
+
+  // Helper: split a specific page range by size (stays within the range)
+  const splitRangeBySize = async (
+    startPage: number,
+    pageCount: number,
+  ): Promise<void> => {
+    let localStart = startPage
+    let remaining = pageCount
+    while (remaining > 0) {
+      const { count, bytes } = await findMaxFittingCount(srcPdf, localStart, remaining, maxBytes)
+      Logger.debug(
+          "Prepared sub-PDF chunk within page group",
+      )
+      
+      chunks.push(bytes)
+      localStart += count
+      remaining -= count
+    }
+  }
+
+  // Page-first: iterate groups of ≤ maxPagesPerChunk, then size-check each
+  for (let start = 0; start < totalPages; start += maxPagesPerChunk) {
+    const count = Math.min(maxPagesPerChunk, totalPages - start)
+    const bytes = await saveRange(srcPdf, start, count)
+
+    
+
+    if (bytes.length <= maxBytes) {
+      chunks.push(bytes)
+    } else {
+      // Further split this page group by size
+      await splitRangeBySize(start, count)
+    }
+  }
+
+  return chunks
+}
+
 /**
  * Extract semantic chunks from a PDF using Gemini Flash on Vertex AI.
  * - If the data passed to this function is < 17MB, it is sent as inlineData (base64-encoded).
@@ -210,7 +266,7 @@ export async function extractSemanticChunksFromPdf(
   }
 
   const modelId = opts.model || process.env.VERTEX_AI_MODEL_PDF_PROCESSING || "gemini-2.5-flash"
-  const maxOutputTokens = opts.maxOutputTokens ?? 8192
+  const maxOutputTokens = opts.maxOutputTokens ?? GEMINI_OUTPUT_LIMIT 
   const temperature = opts.temperature ?? 0.1
 
   const vertex = new VertexAI({ project: projectId, location })
@@ -312,27 +368,17 @@ export async function extractTextAndImagesWithChunksFromPDFviaGemini(
   const text_chunk_pos: number[] = []
   let globalSeq = 0
 
-  if (data.length <= INLINE_MAX_BYTES) {
-    // Single call path
-    Logger.info("Sending single PDF to Gemini , no splitting needed")
-    const raw = await extractSemanticChunksFromPdf(data, opts as ChunkPdfOptions)
+  // Page-first rule: if > 30 pages, split into ≤30-page groups first,
+  // then ensure each group is ≤ 17MB (split further if needed).
+  const subPdfs = await splitPdfByPagesThenSize(data, PAGE_SPLIT_NUMBER, INLINE_MAX_BYTES, Logger)
+  for (let i = 0; i < subPdfs.length; i++) {
+    const part = subPdfs[i]
+    Logger.info({ index: i + 1, bytes: part.length }, "Sending sub-PDF to Gemini")
+    const raw = await extractSemanticChunksFromPdf(part, opts as ChunkPdfOptions)
     const chunks = parseGeminiChunkBlocks(raw)
     for (const c of chunks) {
       text_chunks.push(c)
       text_chunk_pos.push(globalSeq++)
-    }
-  } else {
-    // Split into page-based sub-PDFs that are each <= 17MB
-    const subPdfs = await splitPdfIntoInlineSizedChunks(data, INLINE_MAX_BYTES, Logger)
-    for (let i = 0; i < subPdfs.length; i++) {
-      const part = subPdfs[i]
-      Logger.info({ index: i + 1, bytes: part.length }, "Sending sub-PDF to Gemini")
-      const raw = await extractSemanticChunksFromPdf(part, opts as ChunkPdfOptions)
-      const chunks = parseGeminiChunkBlocks(raw)
-      for (const c of chunks) {
-        text_chunks.push(c)
-        text_chunk_pos.push(globalSeq++)
-      }
     }
   }
 
