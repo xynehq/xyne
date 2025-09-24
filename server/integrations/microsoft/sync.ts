@@ -1162,12 +1162,6 @@ const updateSharepointDeltaLinks = async (
   newDeltaLinks: Record<string, string>
 }> => {
   let sites = await discoverSharePointSites(graphClient, email)
-  sites = sites.filter(
-    (d) =>
-      d.name === "VISA_SIN" ||
-      d.name === "Visa + Juspay B2B" ||
-      d.name === "test site 1",
-  )
   let drives = await discoverSiteDrives(graphClient, sites, email)
 
   const driveSet = new Set(

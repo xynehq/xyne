@@ -331,28 +331,28 @@ export const getMicrosoftAuthConnectorWithCredentials = async (
     throw new MissingOauthConnectorCredentialsError({})
   }
   // parse the string
-  const credentails: MicrosoftServiceCredentials = JSON.parse(
+  const credentials: MicrosoftServiceCredentials = JSON.parse(
     authRes.credentials as string,
   )
 
-  if (IsExpired(authRes.app, new Date(credentails.expires_at), 5 * 60)) {
+  if (IsExpired(authRes.app, new Date(credentials.expires_at), 5 * 60)) {
     // token is expired. We should get new tokens
     // update it in place
     if (IsMicrosoftApp(authRes.app)) {
       const authProvider = new CustomServiceAuthProvider(
-        credentails.tenantId,
-        credentails.clientId,
-        credentails.clientSecret,
+        credentials.tenantId,
+        credentials.clientId,
+        credentials.clientSecret,
       )
 
       const accessToken = await authProvider.getAccessTokenWithExpiry()
-      credentails.access_token = accessToken.token
-      credentails.expires_at = new Date(
+      credentials.access_token = accessToken.token
+      credentials.expires_at = new Date(
         accessToken.expiresOnTimestamp,
       ).toISOString()
 
       authRes = await updateConnector(trx, authRes.id, {
-        credentials: JSON.stringify(authRes.credentials),
+        credentials: JSON.stringify(credentials),
       })
       Logger.info(`Microsoft connector successfully updated: ${authRes.id}`)
     } else {
