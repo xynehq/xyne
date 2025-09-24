@@ -74,7 +74,7 @@ export const Snackbar: React.FC<SnackbarProps> = ({
         return 'text-blue-800 dark:text-blue-200'
     }
   }
-
+//TODO: will refactor later
   const getPositionClasses = () => {
     switch (position) {
       case 'top-right':
