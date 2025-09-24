@@ -24,7 +24,7 @@ import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
 import { AuthType, ConnectorStatus } from "@/shared/types"
 import { extractDriveIds, extractCollectionVespaIds } from "./utils"
-import { getUserSyncJobsByEmail } from "@/db/syncJob"
+import { getAppSyncJobsByEmail } from "@/db/syncJob"
 // Define your Vespa endpoint and schema name
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa" })
@@ -95,9 +95,19 @@ export const searchVespa = async (
   try {
     const [driveConnector, gmailConnector, calendarConnector] =
       await Promise.all([
-        getUserSyncJobsByEmail(db, Apps.GoogleDrive, email),
-        getUserSyncJobsByEmail(db, Apps.Gmail, email),
-        getUserSyncJobsByEmail(db, Apps.GoogleCalendar, email),
+        getAppSyncJobsByEmail(
+          db,
+          Apps.GoogleDrive,
+          config.CurrentAuthType,
+          email,
+        ),
+        getAppSyncJobsByEmail(db, Apps.Gmail, config.CurrentAuthType, email),
+        getAppSyncJobsByEmail(
+          db,
+          Apps.GoogleCalendar,
+          config.CurrentAuthType,
+          email,
+        ),
       ])
     isDriveConnected = Boolean(driveConnector && driveConnector.length > 0)
     isGmailConnected = Boolean(gmailConnector && gmailConnector.length > 0)
