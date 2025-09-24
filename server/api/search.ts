@@ -454,23 +454,19 @@ export const SearchApi = async (c: Context) => {
       )
     }
     try {
-      const authTypeForSyncJobs =
-        process.env.NODE_ENV !== "production"
-          ? AuthType.OAuth
-          : AuthType.ServiceAccount
       const [driveConnector, gmailConnector, calendarConnector] =
         await Promise.all([
           getAppSyncJobsByEmail(
             db,
             Apps.GoogleDrive,
-            authTypeForSyncJobs,
+            config.CurrentAuthType,
             email,
           ),
-          getAppSyncJobsByEmail(db, Apps.Gmail, authTypeForSyncJobs, email),
+          getAppSyncJobsByEmail(db, Apps.Gmail, config.CurrentAuthType, email),
           getAppSyncJobsByEmail(
             db,
             Apps.GoogleCalendar,
-            authTypeForSyncJobs,
+            config.CurrentAuthType,
             email,
           ),
         ])
