@@ -2,7 +2,7 @@ import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, X, Trash2, CornerDownLeft, AlertCircle, CheckCircle } from "lucide-react"
+import { ArrowLeft, X, CornerDownLeft, Trash2, AlertCircle, CheckCircle } from "lucide-react"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface EmailConfigUIProps {
@@ -300,25 +300,15 @@ const EmailConfigUI: React.FC<EmailConfigUIProps> = ({
                 onChange={(e) => handleEmailInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="type email address"
-                className={`w-full pr-16 dark:bg-gray-800 dark:text-gray-300 ${
-                  emailValidationError
-                    ? "border-red-500 dark:border-red-400 focus:border-red-500 dark:focus:border-red-400"
-                    : isEmailValid && newEmailAddress
-                    ? "border-green-500 dark:border-green-400 focus:border-green-500 dark:focus:border-green-400"
-                    : "dark:border-gray-600"
-                }`}
+                className={`w-full pr-16 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600`}
               />
-              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                 <div className="flex items-center justify-center w-6 h-6">
-                  {emailValidationError ? (
-                    <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400" />
-                  ) : isEmailValid && newEmailAddress ? (
-                    <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400" />
-                  ) : (
-                    <CornerDownLeft className="w-4 h-4 text-slate-400 dark:text-gray-500" />
-                  )}
+                  {isEmailValid && newEmailAddress ? <CornerDownLeft className="w-4 h-4 text-slate-400 dark:text-gray-500" />
+                  : null}
                 </div>
               </div>
+
             </div>
             
             {/* Email validation feedback */}
