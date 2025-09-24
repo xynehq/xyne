@@ -44,6 +44,5 @@ jobs:
         env:
           HUSKY: 0
           # CHANGED: Use GitHub App token instead of default GITHUB_TOKEN
-          GITHUB_TOKEN: ${{ steps.github-app-token.outputs.token }}
           GH_TOKEN: ${{ steps.github-app-token.outputs.token }}
         run: bunx semantic-release --no-ci
