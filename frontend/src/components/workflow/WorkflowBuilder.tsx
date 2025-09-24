@@ -1980,13 +1980,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [fitView])
 
   // Watch for nodes changes and smart fit the entire workflow
-  const previousNodeCount = useRef(0)
+  const previousRealNodeCount = useRef(0)
   useEffect(() => {
-    if (nodes.length > previousNodeCount.current && nodes.length > 1) {
-      // Smart fit the entire workflow to keep everything visible
+    // Check if we have real workflow nodes (exclude trigger selector placeholder)
+    const realNodes = nodes.filter(node => {
+      const nodeData = node.data as any
+      return nodeData?.step?.type !== "trigger_selector" && !nodeData?.isTriggerSelector
+    })
+    
+    if (realNodes.length > previousRealNodeCount.current && realNodes.length > 0) {
+      // Smart fit the entire workflow to keep everything visible for real nodes
       smartFitWorkflow()
     }
-    previousNodeCount.current = nodes.length
+    previousRealNodeCount.current = realNodes.length
   }, [nodes, smartFitWorkflow])
 
   // Create nodes and edges from selectedTemplate or localSelectedTemplate
