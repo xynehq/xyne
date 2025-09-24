@@ -945,9 +945,17 @@ export const MessageWithToolsApi = async (c: Context) => {
     let enableWebSearch = false
     let isDeepResearchEnabled = false
 
+    type ModelConfig = {
+      model?: string
+      reasoning?: boolean
+      websearch?: boolean
+      deepResearch?: boolean
+      capabilities?: string[] | { [key: string]: boolean }
+    }
+
     if (selectedModelConfig) {
       try {
-        const modelConfig = JSON.parse(selectedModelConfig)
+        const modelConfig = JSON.parse(selectedModelConfig) as ModelConfig
         modelId = modelConfig.model || null
 
         // Handle new direct boolean format
@@ -1007,6 +1015,8 @@ export const MessageWithToolsApi = async (c: Context) => {
     } else {
       actualModelId = defaultBestModel
     }
+
+    console.log({actualModelId, modelId, selectedModelConfig})
 
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
@@ -1512,9 +1522,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             client: Client
           }
         > = {}
-        const maxIterations = 10
         let iterationCount = 0
-        let answered = false
         let isCustomMCP = false
         await logAndStreamReasoning({
           type: AgentReasoningStepType.LogMessage,
@@ -1646,55 +1654,6 @@ export const MessageWithToolsApi = async (c: Context) => {
               tools: filteredTools,
               client: client,
             }
-            // Fetch all available tools from the client
-            // TODO: look in the DB. cache logic has to be discussed.
-            // const respone = await client.listTools()
-            // const clientTools = response.tools
-
-            // // Update tool definitions in the database for future use
-            // await syncConnectorTools(
-            //   db,
-            //   workspace.id,
-            //   connector.id,
-            //   clientTools.map((tool) => ({
-            //     toolName: tool.name,
-            //     toolSchema: JSON.stringify(tool),
-            //     description: tool.description,
-            //   })),
-            // )
-            // // Create a map for quick lookup
-            // const toolSchemaMap = new Map(
-            //   clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
-            // )
-            // // Filter to only the requested tools, or use all tools if toolNames is empty
-            // const filteredTools = []
-            // if (toolNames.length === 0) {
-            //   // If toolNames is empty, add all tools
-            //   for (const [toolName, schema] of toolSchemaMap.entries()) {
-            //     filteredTools.push({
-            //       name: toolName,
-            //       schema: schema || "",
-            //     })
-            //   }
-            // } else {
-            //   // Otherwise, filter to only the requested tools
-            //   for (const toolName of toolNames) {
-            //     if (toolSchemaMap.has(toolName)) {
-            //       filteredTools.push({
-            //         name: toolName,
-            //         schema: toolSchemaMap.get(toolName) || "",
-            //       })
-            //     } else {
-            //       Logger.info(
-            //         `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
-            //       )
-            //     }
-            //   }
-            // }
-            // finalToolsList[connectorId] = {
-            //   tools: filteredTools,
-            //   client: client,
-            // }
           }
         }
         // ====== JAF-based agent loop starts here (replaces manual loop) ======
@@ -1732,6 +1691,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                   )
                   if (
                     v.fields &&
+                    typeof v.fields === "object" &&
+                    v.fields !== null &&
                     "sddocname" in v.fields &&
                     v.fields.sddocname === chatContainerSchema &&
                     (v.fields as any).creator
@@ -1757,6 +1718,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                 for (const v of results.root.children) {
                   if (
                     v.fields &&
+                    typeof v.fields === "object" &&
+                    v.fields !== null &&
                     "sddocname" in v.fields &&
                     v.fields.sddocname === chatContainerSchema
                   ) {
@@ -1887,7 +1850,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         toolsCompositionSpan.end()
 
         // Build dynamic instructions that include tools + current context fragments
-        const agentInstructions = (_state: any) => {
+        const agentInstructions = () => {
           const toolOverview = buildToolsOverview(allJAFTools)
           const contextSection = buildContextSection(gatheredFragments)
           const agentSection = agentPromptForLLM
@@ -1924,7 +1887,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
           name: "xyne-agent",
-          instructions: () => agentInstructions(null),
+          instructions: () => agentInstructions(),
           tools: allJAFTools,
           modelConfig: { name: defaultBestModel as unknown as string },
         }

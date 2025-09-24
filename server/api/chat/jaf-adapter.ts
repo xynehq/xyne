@@ -22,7 +22,9 @@ type AgentToolParameter = {
   required: boolean
 }
 
-function paramsToZod(parameters: Record<string, AgentToolParameter>): z.ZodObject<Record<string, z.ZodTypeAny>> {
+function paramsToZod(
+  parameters: Record<string, AgentToolParameter>,
+): z.ZodObject<any> {
   const shape: Record<string, z.ZodTypeAny> = {}
   for (const [key, spec] of Object.entries(parameters || {})) {
     let schema: z.ZodTypeAny
@@ -41,7 +43,7 @@ function paramsToZod(parameters: Record<string, AgentToolParameter>): z.ZodObjec
         break
       case "object":
         // Ensure top-level parameter properties that are objects are valid JSON Schema objects
-        schema = z.object({}).passthrough()
+        schema = z.looseObject({})
         break
       default:
         schema = z.unknown()
@@ -49,25 +51,27 @@ function paramsToZod(parameters: Record<string, AgentToolParameter>): z.ZodObjec
     if (!spec.required) schema = schema.optional()
     shape[key] = schema.describe(spec.description || "")
   }
-  return z.object(shape)
+  return z.object(shape) as z.ZodObject<any>
 }
 
-type ZodObjectWithRawSchema = z.ZodObject<z.ZodRawShape, "passthrough"> & {
+type ZodObjectWithRawSchema = z.ZodObject<any> & {
   __xyne_raw_json_schema?: unknown
 }
 
-function mcpToolSchemaStringToZodObject(schemaStr?: string | null): z.AnyZodObject {
+function mcpToolSchemaStringToZodObject(
+  schemaStr?: string | null,
+): z.ZodObject<any> {
   // Simplified and safe: bypass JSON->Zod conversion to avoid recursive $defs hangs.
   // Attach the raw JSON schema so downstream provider can use it directly.
-  if (!schemaStr) return z.object({}).passthrough()
+  if (!schemaStr) return z.looseObject({}) as unknown as z.ZodObject<any>
   try {
     const parsed = JSON.parse(schemaStr)
     const inputSchema = parsed?.inputSchema || parsed?.parameters || parsed
-    const obj = z.object({}).passthrough() as ZodObjectWithRawSchema
+    const obj = z.looseObject({}) as unknown as ZodObjectWithRawSchema
     obj.__xyne_raw_json_schema = inputSchema
-    return obj
+    return obj as unknown as z.ZodObject<any>
   } catch {
-    return z.object({}).passthrough()
+    return z.looseObject({}) as unknown as z.ZodObject<any>
   }
 }
 

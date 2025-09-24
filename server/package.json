@@ -42,6 +42,9 @@
     "release": "semantic-release"
   },
   "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^3.0.23",
+    "@ai-sdk/google-vertex": "^3.0.29",
+    "@ai-sdk/openai": "^2.0.34",
     "@anthropic-ai/vertex-sdk": "^0.13.1",
     "@aws-sdk/client-bedrock": "^3.797.0",
     "@aws-sdk/client-bedrock-runtime": "^3.797.0",
@@ -67,6 +70,7 @@
     "@types/node": "^24.3.0",
     "@xyne/vespa-ts": "^1.0.7",
     "@xynehq/jaf": "^0.1.4",
+    "ai": "^5.0.51",
     "arctic": "^3.3.0",
     "async-mutex": "^0.5.0",
     "autoevals": "^0.0.119",

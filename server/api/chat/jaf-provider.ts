@@ -1,12 +1,29 @@
-import { getProviderByModel } from "@/ai/provider"
-import type { Message as ProviderMessage } from "@aws-sdk/client-bedrock-runtime"
-import type { Agent as JAFAgent, ModelProvider as JAFModelProvider } from "@xynehq/jaf"
+import { getAISDKProviderByModel } from "@/ai/provider"
+import { MODEL_CONFIGURATIONS } from "@/ai/modelConfig"
+import type {
+  ModelProvider as JAFModelProvider,
+  Message as JAFMessage,
+  Agent as JAFAgent,
+} from "@xynehq/jaf"
+import { getTextContent } from "@xynehq/jaf"
 import { Models } from "@/ai/types"
-import {
-  resolveProviderType,
-  jafToProviderMessages,
-  zodSchemaToJsonSchema,
-} from "./jaf-provider-utils"
+import type {
+  JSONSchema7,
+  JSONValue,
+  LanguageModelV2CallOptions,
+  LanguageModelV2Content,
+  LanguageModelV2FunctionTool,
+  LanguageModelV2Message,
+  LanguageModelV2ToolCall,
+  LanguageModelV2ToolChoice,
+  LanguageModelV2ToolResultOutput,
+  LanguageModelV2TextPart,
+  LanguageModelV2FilePart,
+  LanguageModelV2ReasoningPart,
+  LanguageModelV2ToolCallPart,
+  LanguageModelV2ToolResultPart,
+} from "@ai-sdk/provider"
+import { zodSchemaToJsonSchema } from "./jaf-provider-utils"
 
 export type MakeXyneJAFProviderOptions = {
   baseURL?: string
@@ -23,67 +40,272 @@ export const makeXyneJAFProvider = <Ctx>(
         throw new Error(`Model not specified for agent ${agent.name}`)
       }
 
-      const provider = getProviderByModel(model as Models)
-      const providerType = resolveProviderType(provider, model)
-      const providerMessages: ProviderMessage[] = jafToProviderMessages(
-        state.messages,
-        providerType,
-      )
+      const provider = getAISDKProviderByModel(model as Models)
+      const modelConfig = MODEL_CONFIGURATIONS[model as Models]
+      const actualModelId = modelConfig?.actualName ?? model
+      const languageModel = provider.languageModel(actualModelId)
 
-      const tools = buildToolDefinitions(agent)
-      const advRun = (state.context as { advancedConfig?: { run?: { parallelToolCalls: boolean; toolChoice: "auto" | "none" | "required" | undefined } } })?.advancedConfig?.run
+      const prompt = buildPromptFromMessages(state.messages, agent.instructions(state))
+      const tools = buildFunctionTools(agent)
+      const advRun = (state.context as {
+        advancedConfig?: {
+          run?: {
+            parallelToolCalls: boolean
+            toolChoice: "auto" | "none" | "required" | undefined
+          }
+        }
+      })?.advancedConfig?.run
 
-      const providerOptions = {
-        modelId: model as Models,
-        stream: false,
-        json: !!agent.outputCodec,
+      const callOptions: LanguageModelV2CallOptions = {
+        prompt,
+        maxOutputTokens: agent.modelConfig?.maxTokens,
         temperature: agent.modelConfig?.temperature,
-        max_new_tokens: agent.modelConfig?.maxTokens,
-        systemPrompt: agent.instructions(state),
-        tools: tools.length ? tools : undefined,
-        tool_choice: tools.length ? advRun?.toolChoice ?? "auto" : undefined,
-        parallel_tool_calls: tools.length
-          ? advRun?.parallelToolCalls ?? true
-          : undefined,
+        ...(tools.length ? { tools } : {}),
       }
 
-      const result = await provider.converse(providerMessages, providerOptions)
-
-      const content = result.text || ""
-      return {
-        message: {
-          content,
-          ...(result.tool_calls && result.tool_calls.length
-            ? { tool_calls: result.tool_calls }
-            : {}),
-        },
+      if (tools.length) {
+        callOptions.toolChoice = mapToolChoice(advRun?.toolChoice)
       }
+
+      if (agent.outputCodec) {
+        callOptions.responseFormat = {
+          type: "json",
+          schema: zodSchemaToJsonSchema(agent.outputCodec) as JSONSchema7,
+        }
+      }
+
+      const result = await languageModel.doGenerate(callOptions)
+
+      const message = convertResultToJAFMessage(result.content)
+
+      return { message }
     },
   }
 }
 
 type SchemaWithRawJson = {
-  __xyne_raw_json_schema?: unknown
+  __xyne_raw_json_schema?: JSONSchema7
 }
 
-function buildToolDefinitions<Ctx, Out>(
+const mapToolChoice = (
+  choice: "auto" | "none" | "required" | undefined,
+): LanguageModelV2ToolChoice | undefined => {
+  if (!choice) return undefined
+  switch (choice) {
+    case "auto":
+      return { type: "auto" }
+    case "none":
+      return { type: "none" }
+    case "required":
+      return { type: "required" }
+    default:
+      return undefined
+  }
+}
+
+const buildFunctionTools = <Ctx, Out>(
   agent: Readonly<JAFAgent<Ctx, Out>>,
-): Array<{
-  name: string
-  description: string
-  parameters: unknown
-}> {
+): LanguageModelV2FunctionTool[] => {
+  const ensureObjectSchema = (schema: JSONSchema7 | undefined): JSONSchema7 => {
+    if (!schema || typeof schema !== "object") {
+      return { type: "object", properties: {} }
+    }
+
+    if (schema.type === "object" || schema.properties) {
+      return {
+        ...schema,
+        type: "object",
+        properties: schema.properties ?? {},
+      }
+    }
+
+    return {
+      type: "object",
+      properties: {
+        value: schema,
+      },
+      required: ["value"],
+    }
+  }
+
   return (agent.tools || []).map((tool) => {
     const schemaParameters = tool.schema.parameters as SchemaWithRawJson
     const rawSchema = schemaParameters.__xyne_raw_json_schema
+    const inputSchema = ensureObjectSchema(
+      (rawSchema && typeof rawSchema === "object"
+        ? (rawSchema as JSONSchema7)
+        : (zodSchemaToJsonSchema(tool.schema.parameters) as JSONSchema7)) ??
+        undefined,
+    )
 
     return {
+      type: "function" as const,
       name: tool.schema.name,
       description: tool.schema.description,
-      parameters:
-        rawSchema && typeof rawSchema === "object"
-          ? rawSchema
-          : zodSchemaToJsonSchema(tool.schema.parameters),
+      inputSchema,
     }
   })
+}
+
+const buildPromptFromMessages = (
+  messages: ReadonlyArray<JAFMessage>,
+  systemInstruction: string,
+): LanguageModelV2Message[] => {
+  const prompt: LanguageModelV2Message[] = []
+  const toolNameById = new Map<string, string>()
+
+  prompt.push({ role: "system", content: systemInstruction })
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      const text = getTextContent(message.content) || ""
+      prompt.push({
+        role: "user",
+        content: [{ type: "text", text }],
+      })
+      continue
+    }
+
+    if (message.role === "assistant") {
+      const parts: Array<
+        LanguageModelV2TextPart |
+        LanguageModelV2FilePart |
+        LanguageModelV2ReasoningPart |
+        LanguageModelV2ToolCallPart |
+        LanguageModelV2ToolResultPart
+      > = []
+      const text = getTextContent(message.content)
+      if (text) {
+        parts.push({ type: "text", text })
+      }
+
+      for (const toolCall of message.tool_calls ?? []) {
+        toolNameById.set(toolCall.id, toolCall.function.name)
+        parts.push({
+          type: "tool-call",
+          toolCallId: toolCall.id,
+            toolName: toolCall.function.name,
+            input:
+              typeof toolCall.function.arguments === "string"
+                ? toolCall.function.arguments
+                : JSON.stringify(toolCall.function.arguments ?? {}),
+        })
+      }
+
+      if (parts.length > 0) {
+        prompt.push({
+          role: "assistant",
+          content: parts,
+        })
+      }
+      continue
+    }
+
+    if (message.role === "tool") {
+      const toolCallId = (message as { tool_call_id?: string }).tool_call_id
+      if (!toolCallId) {
+        continue
+      }
+
+      const toolName = toolNameById.get(toolCallId) ?? "unknown"
+      const output = createToolResultOutput(message)
+      prompt.push({
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId,
+            toolName,
+            output,
+          },
+        ],
+      })
+    }
+  }
+
+  return prompt
+}
+
+const createToolResultOutput = (
+  message: JAFMessage,
+): LanguageModelV2ToolResultOutput => {
+  const raw = getTextContent(message.content)
+  if (!raw) {
+    return { type: "text", value: "" }
+  }
+
+  const parsed = safeParseJson(raw)
+  if (typeof parsed === "string") {
+    return { type: "text", value: parsed }
+  }
+
+  if (
+    parsed === null ||
+    typeof parsed === "number" ||
+    typeof parsed === "boolean" ||
+    Array.isArray(parsed) ||
+    typeof parsed === "object"
+  ) {
+    return { type: "json", value: parsed as JSONValue }
+  }
+
+  return { type: "text", value: raw }
+}
+
+const convertResultToJAFMessage = (
+  content: Array<LanguageModelV2Content>,
+): {
+  content: string
+  tool_calls?: Array<{
+    id: string
+    type: "function"
+    function: { name: string; arguments: string }
+  }>
+} => {
+  const textSegments = content
+    .filter((part): part is Extract<LanguageModelV2Content, { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+
+  let aggregatedText = textSegments.join("\n")
+
+  if (!aggregatedText) {
+    const toolResult = content.find(
+      (part): part is Extract<LanguageModelV2Content, { type: "tool-result" }> =>
+        part.type === "tool-result",
+    )
+    if (toolResult) {
+      const resultValue = toolResult.result
+      aggregatedText =
+        typeof resultValue === "string"
+          ? resultValue
+          : JSON.stringify(resultValue ?? {})
+    }
+  }
+
+  const toolCalls = content
+    .filter((part): part is LanguageModelV2ToolCall => part.type === "tool-call")
+    .map((part) => ({
+      id: part.toolCallId,
+      type: "function" as const,
+      function: {
+        name: part.toolName,
+        arguments:
+          typeof part.input === "string"
+            ? part.input
+            : JSON.stringify(part.input ?? {}),
+      },
+    }))
+
+  return {
+    content: aggregatedText || "",
+    ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+  }
+}
+
+const safeParseJson = (value: string): unknown => {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
 }
