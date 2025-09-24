@@ -80,6 +80,7 @@ import {
   HandlePerUserGoogleWorkSpaceSync,
   ListAllLoggedInUsers,
   ListAllIngestedUsers,
+  GetVespaDataForKBDoc,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -792,7 +793,11 @@ export const AppRoutes = app
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
-  .post("/chat/generateTitle", zValidator("json", chatTitleSchema), GenerateChatTitleApi)
+  .post(
+    "/chat/generateTitle",
+    zValidator("json", chatTitleSchema),
+    GenerateChatTitleApi,
+  )
   .post(
     "/chat/bookmark",
     zValidator("json", chatBookmarkSchema),
@@ -1126,6 +1131,11 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
+  .post(
+    "/kb/vespa-data",
+    zValidator("json", deleteDocumentSchema),
+    GetVespaDataForKBDoc,
+  )
 
   // Admin Dashboard Routes
   .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
@@ -1446,7 +1456,10 @@ app.get(
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 
 // PDF.js worker files
-app.get("/pdfjs/pdf.worker.min.mjs", serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }))
+app.get(
+  "/pdfjs/pdf.worker.min.mjs",
+  serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }),
+)
 
 // PDF.js character maps
 app.get("/pdfjs/cmaps/*", serveStatic({ root: "./dist" }))

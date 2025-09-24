@@ -664,7 +664,7 @@ export const getAllFolderItems = async (
   trx: TxnOrClient,
 ) => {
   const res = []
-  let queue = [...parentIds];
+  let queue = [...parentIds]
   while (queue.length > 0) {
     const curr = queue.shift()!
 
@@ -690,15 +690,15 @@ export const getAllFolderIds = async (
   trx: TxnOrClient,
 ) => {
   const res = []
-  let queue = [...parentIds];
+  let queue = [...parentIds]
   while (queue.length > 0) {
     const curr = queue.shift()!
 
     const resp = await getParentItems(curr, trx)
     for (const item of resp) {
       if (item.type == "folder") {
-        res.push(item.id) 
-        queue.push(item.id) 
+        res.push(item.id)
+        queue.push(item.id)
       }
     }
   }
@@ -857,4 +857,17 @@ export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
     .where(and(...whereConditions))
 
   return result.length > 0 ? result[0].docId : null
+}
+
+export const fetchVespaDocIdForKbItems = async (
+  trx: TxnOrClient,
+  docId: string,
+) => {
+  const [result] = await trx
+    .select({ vespaDocId: collectionItems.vespaDocId })
+    .from(collectionItems)
+    .where(
+      and(eq(collectionItems.id, docId), isNull(collectionItems.deletedAt)),
+    )
+  return result ? result.vespaDocId : null
 }

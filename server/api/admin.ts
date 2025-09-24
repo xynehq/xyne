@@ -112,6 +112,10 @@ import {
 import { zValidator } from "@hono/zod-validator"
 import { handleSlackChanges } from "@/integrations/slack/sync"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
+import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
+import { GetDocument } from "@/search/vespa"
+import { deleteDocumentSchema } from "./dataSource"
+import { fetchVespaDocIdForKbItems } from "@/db/knowledgeBase"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -2015,5 +2019,88 @@ export const HandlePerUserSlackSync = async (c: Context) => {
       },
       500,
     )
+  }
+}
+
+export const GetVespaDataForKBDoc = async (c: Context) => {
+  try {
+    const { sub: userEmail } = c.get(JwtPayloadKey)
+
+    const rawData = await c.req.json()
+    const validatedData = deleteDocumentSchema.parse(rawData)
+    const { docId, schema: rawSchema } = validatedData
+    console.log(rawData, validatedData)
+    const validSchemas = [KbItemsSchema]
+    if (!validSchemas.includes(rawSchema)) {
+      throw new HTTPException(400, {
+        message: `Invalid schema type. Expected 'kb_items', got '${rawSchema}'`,
+      })
+    }
+    const vespaDocId = await fetchVespaDocIdForKbItems(db, docId)
+    if (!vespaDocId) {
+      throw new HTTPException(404, {
+        message: `Document with id ${docId} not found in the system.`,
+      })
+    }
+    // console.log("Fetched Vespa Doc ID:", vespaDocId)
+    const schema = rawSchema as VespaSchema
+
+    const documentData = await GetDocument(schema, vespaDocId)
+
+    if (!documentData || !("fields" in documentData) || !documentData.fields) {
+      loggerWithChild({ email: userEmail }).warn(
+        `Document not found or fields missing for docId: ${docId}, schema: ${schema} during delete operation by ${userEmail}`,
+      )
+      throw new HTTPException(404, { message: "Document not found." })
+    }
+
+    const fields = documentData.fields as Record<string, any>
+    let ownerEmail: string
+
+    if (schema === KbItemsSchema) {
+      ownerEmail = fields.createdBy as string
+    } else {
+      loggerWithChild({ email: userEmail }).error(
+        `Only Knowledge Base document can be accessed by Accessed`,
+      )
+      throw new HTTPException(400, {
+        message: "Unsupported schema type for data access.",
+      })
+    }
+
+    if (!ownerEmail) {
+      loggerWithChild({ email: userEmail }).error(
+        `Ownership field (createdBy/uploadedBy) missing for document ${docId} of schema ${schema}. Cannot verify ownership for user ${userEmail}.`,
+      )
+      throw new HTTPException(500, {
+        message:
+          "Internal server error: Cannot verify document ownership due to missing data.",
+      })
+    }
+    if (ownerEmail !== userEmail) {
+      loggerWithChild({ email: userEmail }).warn(
+        `User ${userEmail} attempt to access document ${docId} (schema: ${schema}) owned by ${ownerEmail}. Access denied.`,
+      )
+      throw new HTTPException(403, {
+        message:
+          "Forbidden: You do not have permission to access this document.",
+      })
+    }
+    loggerWithChild({ email: userEmail }).info(
+      `User ${userEmail} authorized to delete document ${docId} (schema: ${schema}) owned by ${ownerEmail}.`,
+    )
+    return c.json(
+      {
+        success: true,
+        data: fields,
+      },
+      200,
+    )
+  } catch (error) {
+    Logger.error(error, "Error fetching Vespa data for KB document")
+    throw new HTTPException(500, {
+      message:
+        "Unable to fetch document data at this time. Please try again later.",
+    })
   }
 }
