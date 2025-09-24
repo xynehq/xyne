@@ -221,6 +221,7 @@ import {
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
+import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -3718,6 +3719,12 @@ export const AgentMessageApi = async (c: Context) => {
     if (path) {
       ids = await getRecordBypath(path, db)
       if (ids != null) {
+        // Check if the vespaId exists in the agent's app integrations using our validation function
+        if (!(await validateVespaIdInAgentIntegrations(agentForDb, ids))) {
+          throw new HTTPException(403, {
+            message: `Access denied: The path '${path}' is not accessible through this agent's integrations`,
+          })
+        }
         isValidPath = Boolean(true)
       } else {
         throw new HTTPException(400, {
