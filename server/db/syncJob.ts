@@ -61,17 +61,6 @@ export const getAppSyncJobsByEmail = async (
     )
   return z.array(selectSyncJobSchema).parse(jobs)
 }
-export const getUserSyncJobsByEmail = async (
-  trx: TxnOrClient,
-  app: Apps,
-  email: string,
-): Promise<SelectSyncJob[]> => {
-  const jobs = await trx
-    .select()
-    .from(syncJobs)
-    .where(and(and(eq(syncJobs.app, app)), eq(syncJobs.email, email)))
-  return z.array(selectSyncJobSchema).parse(jobs)
-}
 
 export const updateSyncJob = async (
   trx: TxnOrClient,
