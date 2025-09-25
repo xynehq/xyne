@@ -181,14 +181,27 @@ const buildPromptFromMessages = (
 
       for (const toolCall of message.tool_calls ?? []) {
         toolNameById.set(toolCall.id, toolCall.function.name)
+
+        const rawArgs = toolCall.function.arguments
+        let parsedArgs: JSONValue = {}
+        if (typeof rawArgs === "string") {
+          try {
+            const maybeParsed = JSON.parse(rawArgs)
+            if (maybeParsed && typeof maybeParsed === "object") {
+              parsedArgs = maybeParsed as JSONValue
+            }
+          } catch {
+            // keep default empty object if parsing fails
+          }
+        } else if (rawArgs && typeof rawArgs === "object") {
+          parsedArgs = rawArgs as JSONValue
+        }
+
         parts.push({
           type: "tool-call",
           toolCallId: toolCall.id,
-            toolName: toolCall.function.name,
-            input:
-              typeof toolCall.function.arguments === "string"
-                ? toolCall.function.arguments
-                : JSON.stringify(toolCall.function.arguments ?? {}),
+          toolName: toolCall.function.name,
+          input: parsedArgs,
         })
       }
 

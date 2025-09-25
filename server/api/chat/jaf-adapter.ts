@@ -1,4 +1,5 @@
 import { z, type ZodRawShape, type ZodType } from "zod"
+import type { JSONSchema7 } from "json-schema"
 import type { Tool } from "@xynehq/jaf"
 import { ToolResponse } from "@xynehq/jaf"
 import type { MinimalAgentFragment } from "./types"
@@ -30,44 +31,79 @@ const toToolSchemaParameters = (schema: ZodType): ToolSchemaParameters =>
 function paramsToZod(
   parameters: Record<string, AgentToolParameter>,
 ): ToolSchemaParameters {
-  const shapeEntries = Object.entries(parameters || {}).map(([key, spec]) => {
-    const normalizedType = (spec.type || "string").toLowerCase()
-    let schema: ZodType
-    switch (normalizedType) {
-      case "string":
-        schema = z.string()
-        break
-      case "number":
-        schema = z.number()
-        break
-      case "boolean":
-        schema = z.boolean()
-        break
-      case "array":
-        schema = z.array(z.unknown())
-        break
-      case "object":
-        // Ensure top-level parameter properties that are objects are valid JSON Schema objects
-        schema = z.looseObject({})
-        break
-      default:
-        schema = z.unknown()
-    }
-    const described = schema.describe(spec.description || "")
-    return [
-      key,
-      spec.required ? described : described.optional(),
-    ] as const
-  })
-
-  if (shapeEntries.length === 0) {
+  if (!parameters || Object.keys(parameters).length === 0) {
     return toToolSchemaParameters(z.looseObject({}))
   }
 
-  const shape = Object.fromEntries(shapeEntries) as Record<string, ZodType>
-  return toToolSchemaParameters(
-    z.looseObject(shape as unknown as ZodRawShape),
-  )
+  const shape: Record<string, ZodType> = {}
+  const jsonProperties: NonNullable<JSONSchema7["properties"]> = {}
+  const requiredKeys: string[] = []
+
+  for (const [key, spec] of Object.entries(parameters)) {
+    const normalizedType = (spec.type || "string").toLowerCase()
+
+    let schema: ZodType
+    let jsonSchema: JSONSchema7
+
+    switch (normalizedType) {
+      case "string": {
+        schema = z.string()
+        jsonSchema = { type: "string" }
+        break
+      }
+      case "number": {
+        schema = z.number()
+        jsonSchema = { type: "number" }
+        break
+      }
+      case "boolean": {
+        schema = z.boolean()
+        jsonSchema = { type: "boolean" }
+        break
+      }
+      case "array": {
+        schema = z.array(z.unknown())
+        jsonSchema = { type: "array", items: {} }
+        break
+      }
+      case "object": {
+        schema = z.looseObject({})
+        jsonSchema = { type: "object" }
+        break
+      }
+      default: {
+        schema = z.unknown()
+        jsonSchema = {}
+        break
+      }
+    }
+
+    const described = schema.describe(spec.description || "")
+    shape[key] = spec.required ? described : described.optional()
+
+    if (spec.description) {
+      jsonSchema.description = spec.description
+    }
+    jsonProperties[key] = jsonSchema
+    if (spec.required) {
+      requiredKeys.push(key)
+    }
+  }
+
+  const looseObject = z.looseObject(shape as unknown as ZodRawShape) as ZodObjectWithRawSchema
+
+  const jsonSchema: JSONSchema7 = {
+    type: "object",
+    properties: jsonProperties,
+    additionalProperties: false,
+  }
+  if (requiredKeys.length > 0) {
+    jsonSchema.required = requiredKeys
+  }
+
+  looseObject.__xyne_raw_json_schema = jsonSchema
+
+  return toToolSchemaParameters(looseObject)
 }
 
 type ZodObjectWithRawSchema = ZodType & {
