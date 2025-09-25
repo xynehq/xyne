@@ -150,6 +150,7 @@ import {
 } from "./WorkflowIcons"
 import {
   workflowExecutionsAPI,
+  workflowToolsAPI,
 } from "./api/ApiHandlers"
 import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
@@ -2344,7 +2345,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                (nodeData.step.type === "form_submission" || 
                 nodeData.step.type === "manual" || 
                 nodeData.step.type === "schedule" ||
-                nodeData.step.type === "app_event")
+                nodeData.step.type === "app_event" ||
+                nodeData.step.type === "webhook")
       })
       
       if (lastSavedHash === "" && hasValidTrigger) {
@@ -3454,85 +3456,131 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
 
   const handleWebhookConfigSave = useCallback(
-    (webhookConfig: WebhookConfig) => {
-      if (selectedWebhookNodeId === "pending") {
-        // Create new webhook node when saving configuration
-        const newNodeId = "webhook-trigger"
-        
-        // Create the tool object for Webhook
-        const webhookTool = {
-          id: `tool-${newNodeId}`,
-          type: "webhook",
-          val: webhookConfig, // Use 'val' to match template structure
-          value: webhookConfig, // Also include 'value' for compatibility
-          config: webhookConfig,
-        }
+    async (webhookConfig: WebhookConfig) => {
+      try {
+        let savedWebhookData: any
 
-        // Create webhook node
-        const webhookNode: Node = {
-          id: newNodeId,
-          type: "stepNode",
-          position: { x: 400, y: 100 }, // Consistent X position for straight line connections
-          data: {
-            step: {
-              id: newNodeId,
-              name: `Webhook: ${webhookConfig.path}`,
-              status: "PENDING",
-              contents: [],
-              type: "webhook",
-              config: webhookConfig,
+        if (selectedWebhookNodeId === "pending") {
+          // Create new webhook - call API to save to workflow_tool table
+          savedWebhookData = await workflowToolsAPI.saveWebhookConfig({
+            webhookUrl: webhookConfig.webhookUrl,
+            httpMethod: webhookConfig.httpMethod,
+            path: webhookConfig.path,
+            authentication: webhookConfig.authentication,
+            selectedCredential: webhookConfig.selectedCredential,
+            responseMode: webhookConfig.responseMode,
+            headers: webhookConfig.headers,
+            queryParams: webhookConfig.queryParams,
+            options: webhookConfig.options,
+          })
+
+          console.log("Webhook saved to backend:", savedWebhookData)
+
+          // Create new webhook node when saving configuration
+          const newNodeId = "webhook-trigger"
+          
+          // Create the tool object for Webhook with backend response
+          const webhookTool = {
+            id: savedWebhookData?.id || `tool-${newNodeId}`,
+            type: "webhook",
+            val: savedWebhookData?.value || webhookConfig, // Use backend response or fallback
+            value: savedWebhookData?.value || webhookConfig,
+            config: savedWebhookData?.config || webhookConfig,
+          }
+
+          // Create webhook node
+          const webhookNode: Node = {
+            id: newNodeId,
+            type: "stepNode",
+            position: { x: 400, y: 100 }, // Consistent X position for straight line connections
+            data: {
+              step: {
+                id: newNodeId,
+                name: `Webhook: ${webhookConfig.path}`,
+                status: "PENDING",
+                contents: [],
+                type: "webhook",
+                config: savedWebhookData?.config || webhookConfig,
+              },
+              tools: [webhookTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + icon since this is the starting node
+              anyNodeSelected: false,
             },
-            tools: [webhookTool],
-            isActive: false,
-            isCompleted: false,
-            hasNext: true, // Show + icon since this is the starting node
-            anyNodeSelected: false,
-          },
-          draggable: true,
-          selectable: true,
-          selected: true, // Select the newly created node
-        }
+            draggable: true,
+            selectable: true,
+            selected: true, // Select the newly created node
+          }
 
-        setNodes([webhookNode])
-        setNodeCounter(2)
-        setSelectedNodes([webhookNode]) // Update selectedNodes for the anyNodeSelected flag
-      } else if (selectedWebhookNodeId && selectedWebhookNodeId !== "pending") {
-        // Update existing webhook node
-        const webhookTool = {
-          id: getToolIdFromStepId(selectedWebhookNodeId),
-          type: "webhook",
-          val: webhookConfig,
-          value: webhookConfig,
-          config: webhookConfig,
-        }
+          setNodes([webhookNode])
+          setNodeCounter(2)
+          setSelectedNodes([webhookNode]) // Update selectedNodes for the anyNodeSelected flag
 
-        setNodes((nds) =>
-          nds.map((node) =>
-            node.id === selectedWebhookNodeId
-              ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    step: {
-                      ...(node.data.step || {}),
-                      name: `Webhook: ${webhookConfig.path}`,
-                      config: webhookConfig,
+        } else if (selectedWebhookNodeId && selectedWebhookNodeId !== "pending") {
+          // Update existing webhook - call API to update workflow_tool table
+          const toolId = getToolIdFromStepId(selectedWebhookNodeId)
+          
+          if (!toolId) {
+            throw new Error("Tool ID not found for webhook node")
+          }
+          
+          savedWebhookData = await workflowToolsAPI.updateWebhookConfig(toolId, {
+            webhookUrl: webhookConfig.webhookUrl,
+            httpMethod: webhookConfig.httpMethod,
+            path: webhookConfig.path,
+            authentication: webhookConfig.authentication,
+            selectedCredential: webhookConfig.selectedCredential,
+            responseMode: webhookConfig.responseMode,
+            headers: webhookConfig.headers,
+            queryParams: webhookConfig.queryParams,
+            options: webhookConfig.options,
+          })
+
+          console.log("Webhook updated in backend:", savedWebhookData)
+
+          // Update existing webhook node
+          const webhookTool = {
+            id: toolId,
+            type: "webhook",
+            val: savedWebhookData?.value || webhookConfig,
+            value: savedWebhookData?.value || webhookConfig,
+            config: savedWebhookData?.config || webhookConfig,
+          }
+
+          setNodes((nds) =>
+            nds.map((node) =>
+              node.id === selectedWebhookNodeId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      step: {
+                        ...(node.data.step || {}),
+                        name: `Webhook: ${webhookConfig.path}`,
+                        config: savedWebhookData?.config || webhookConfig,
+                      },
+                      tools: [webhookTool],
+                      hasNext: !edges.some(edge => edge.source === selectedWebhookNodeId),
                     },
-                    tools: [webhookTool],
-                    hasNext: !edges.some(edge => edge.source === selectedWebhookNodeId),
-                  },
-                }
-              : node,
-          ),
-        )
-      }
+                  }
+                : node,
+            ),
+          )
+        }
 
-      setShowWebhookConfigUI(false)
-      setSelectedWebhookNodeId(null)
-      setZoomLevel(100)
-      setTimeout(() => {
-        zoomTo(1)
-      }, 50)
+        setShowWebhookConfigUI(false)
+        setSelectedWebhookNodeId(null)
+        setZoomLevel(100)
+        setTimeout(() => {
+          zoomTo(1)
+        }, 50)
+
+      } catch (error) {
+        console.error("Failed to save webhook configuration:", error)
+        // Show error message to user
+        alert("Failed to save webhook configuration. Please try again.")
+      }
     },
     [selectedWebhookNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges, getToolIdFromStepId],
   )

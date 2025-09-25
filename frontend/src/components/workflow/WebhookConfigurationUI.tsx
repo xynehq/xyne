@@ -3,6 +3,7 @@ import { Copy, Check, X } from "lucide-react"
 import { WebhookConfig } from "./Types"
 import { BackArrowIcon } from "./WorkflowIcons"
 import Dropdown from "@/components/ui/dropdown"
+import { CredentialSelector } from "./CredentialSelector"
 
 interface WebhookConfigurationUIProps {
   isVisible: boolean
@@ -31,6 +32,7 @@ export default function WebhookConfigurationUI({
     httpMethod: "POST",
     path: "",
     authentication: "none",
+    selectedCredential: undefined,
     responseMode: "immediately",
     options: {},
     headers: {},
@@ -42,35 +44,73 @@ export default function WebhookConfigurationUI({
   const [newParamKey, setNewParamKey] = useState("")
   const [newParamValue, setNewParamValue] = useState("")
   const [copied, setCopied] = useState(false)
+  const [hasChanges, setHasChanges] = useState(false)
+  const [originalConfig, setOriginalConfig] = useState<WebhookConfig | null>(null)
 
   // Initialize config from initialConfig or toolData
   useEffect(() => {
+    let newConfig: WebhookConfig
+
     if (initialConfig) {
-      setConfig(initialConfig)
-    } else if (toolData?.val || toolData?.config) {
-      const data = toolData.val || toolData.config
-      setConfig({
-        webhookUrl: data.webhookUrl || "",
-        httpMethod: data.httpMethod || "POST",
-        path: data.path || "",
-        authentication: data.authentication || "none",
-        responseMode: data.responseMode || "immediately",
-        options: data.options || {},
-        headers: data.headers || {},
-        queryParams: data.queryParams || {},
-      })
+      newConfig = initialConfig
+    } else if (toolData) {
+      // Handle toolData structure: { value: {...}, config: {...} }
+      const valueData = toolData.value || toolData.val || {}
+      const configData = toolData.config || {}
+      
+      console.log("🔧 Initializing webhook config from toolData:", { valueData, configData })
+      
+      newConfig = {
+        webhookUrl: valueData.webhookUrl || "",
+        httpMethod: valueData.httpMethod || "POST",
+        path: valueData.path || "",
+        authentication: configData.authentication || "none",
+        selectedCredential: configData.selectedCredential || undefined,
+        responseMode: configData.responseMode || "immediately",
+        options: configData.options || {},
+        headers: configData.headers || {},
+        queryParams: configData.queryParams || {},
+      }
+      
+      console.log("🔧 Extracted path from toolData:", valueData.path)
+    } else {
+      // Default config for new webhooks
+      newConfig = {
+        webhookUrl: "",
+        httpMethod: "POST",
+        path: "",
+        authentication: "none",
+        selectedCredential: undefined,
+        responseMode: "immediately",
+        options: {},
+        headers: {},
+        queryParams: {},
+      }
     }
+
+    console.log("🔧 Setting webhook config:", newConfig)
+    setConfig(newConfig)
+    setOriginalConfig(newConfig)
+    setHasChanges(false)
   }, [initialConfig, toolData])
+
+  // Track changes in config
+  useEffect(() => {
+    if (originalConfig) {
+      const configChanged = JSON.stringify(config) !== JSON.stringify(originalConfig)
+      setHasChanges(configChanged)
+    }
+  }, [config, originalConfig])
 
   // Generate webhook URL based on the path
   const generateWebhookUrl = () => {
     const baseUrl = window.location.origin
-    const cleanPath = config.path.startsWith('/') ? config.path : `/${config.path}`
+    const cleanPath = config.path?.startsWith('/') ? config.path : `/${config.path || ''}`
     return `${baseUrl}/webhook${cleanPath}`
   }
 
   const handleSave = () => {
-    if (!config.path.trim()) {
+    if (!config.path?.trim()) {
       alert("Please enter a webhook path")
       return
     }
@@ -293,17 +333,29 @@ export default function WebhookConfigurationUI({
             <Dropdown
               options={[
                 { value: "none", label: "None" },
-                { value: "basic", label: "Basic Auth" },
-                { value: "bearer", label: "Bearer Token" },
-                { value: "api_key", label: "API Key" }
+                { value: "basic", label: "Basic Auth" }
               ]}
               value={config.authentication}
-              onSelect={(value) => setConfig(prev => ({ ...prev, authentication: value as WebhookConfig['authentication'] }))}
+              onSelect={(value) => setConfig(prev => ({ ...prev, authentication: value as WebhookConfig['authentication'], selectedCredential: undefined }))}
               placeholder="Select authentication type"
               className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
               variant="outline"
             />
           </div>
+
+          {/* Credential Selector - Shows when authentication is not "none" */}
+          {config.authentication !== "none" && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
+                Credential for {config.authentication === "basic" ? "Basic Auth" : config.authentication === "bearer" ? "Bearer Token" : "API Key"}
+              </label>
+              <CredentialSelector
+                authType={config.authentication as "basic" | "bearer" | "api_key"}
+                selectedCredentialId={config.selectedCredential}
+                onSelect={(credentialId) => setConfig(prev => ({ ...prev, selectedCredential: credentialId || undefined }))}
+              />
+            </div>
+          )}
 
           {/* Response Mode */}
           <div className="space-y-2">
@@ -312,9 +364,7 @@ export default function WebhookConfigurationUI({
             </label>
             <Dropdown
               options={[
-                { value: "immediately", label: "Immediately" },
-                { value: "wait_for_completion", label: "Wait for Completion" },
-                { value: "custom", label: "Custom" }
+                { value: "immediately", label: "Immediately" }
               ]}
               value={config.responseMode}
               onSelect={(value) => setConfig(prev => ({ ...prev, responseMode: value as WebhookConfig['responseMode'] }))}
@@ -470,7 +520,14 @@ export default function WebhookConfigurationUI({
           <div className="pt-6 px-0">
             <button
               onClick={handleSave}
-              disabled={!config.path.trim()}
+              disabled={(() => {
+                // For new webhooks, require path
+                if (!toolData && !initialConfig) {
+                  return !config.path?.trim()
+                }
+                // For editing webhooks, require path and changes
+                return !config.path?.trim() || !hasChanges
+              })()}
               className="w-full bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-full shadow-none py-2 px-6 transition-colors"
             >
               Save Configuration
