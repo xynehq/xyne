@@ -202,19 +202,26 @@ setup_permissions() {
     USER_UID="1000"
     USER_GID="1000"
 
-    # Use busybox containers to set permissions without requiring sudo
-    docker run --rm -v "$(pwd)/$DATA_DIR/postgres-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/vespa-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/vespa-models:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/app-uploads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/app-logs:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/app-assets:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/app-migrations:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/app-downloads:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/grafana-storage:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
-    docker run --rm -v "$(pwd)/$DATA_DIR/ollama-data:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    # Directories that need standard 1000:1000 ownership
+    STANDARD_DIRS=(
+        "postgres-data"
+        "vespa-data"
+        "vespa-models"
+        "app-uploads"
+        "app-logs"
+        "app-assets"
+        "app-migrations"
+        "app-downloads"
+        "grafana-storage"
+        "ollama-data"
+    )
 
-    # Initialize prometheus and loki directories with correct permissions
+    # Use busybox containers to set permissions without requiring sudo
+    for dir in "${STANDARD_DIRS[@]}"; do
+        docker run --rm -v "$(pwd)/$DATA_DIR/$dir:/data" busybox chown -R "$USER_UID:$USER_GID" /data 2>/dev/null || true
+    done
+
+    # Special directories with custom ownership requirements
     docker run --rm -v "$(pwd)/$DATA_DIR/prometheus-data:/data" busybox sh -c 'mkdir -p /data && chown -R 65534:65534 /data' 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/loki-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
     docker run --rm -v "$(pwd)/$DATA_DIR/promtail-data:/data" busybox sh -c 'mkdir -p /data && chown -R 10001:10001 /data' 2>/dev/null || true
