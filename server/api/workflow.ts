@@ -1946,14 +1946,18 @@ const executeWorkflowTool = async (
 
       case "email":
         // Enhanced email tool using config for recipients and configurable path for content extraction
-
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
-        const subject = emailConfig.subject || "Workflow Results"
+        
         const contentType = emailConfig.content_type || "html"
-        Logger.debug(`DEBUG - Email tool config details: toEmail=${JSON.stringify(toEmail)}, fromEmail=${fromEmail}, subject=${subject}, contentType=${contentType}`)
+        const [execution] = await db
+          .select()
+          .from(workflowExecution)
+          .where(eq(workflowExecution.id, executionId))
 
+        const workflowName = execution?.name || "Unknown Workflow"
+        const subject = emailConfig.subject || `Results of Workflow: ${workflowName}`
         // New configurable content path feature
         const contentPath =
           emailConfig.content_path || emailConfig.content_source_path
@@ -1993,7 +1997,7 @@ const executeWorkflowTool = async (
 <body>
     <div class="content">
         <div class="header">
-            <h2>🤖 Workflow Results</h2>
+            <h2>🤖 Results of Workflow: ${workflowName} </h2>
             <p>Generated on: ${new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"})}</p>
         </div>
         <div class="body-content">
