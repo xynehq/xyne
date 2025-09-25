@@ -2,7 +2,6 @@ import {
   answerContextMap,
   answerContextMapFromFragments,
   cleanContext,
-  constructToolContext,
   userContext,
 } from "@/ai/context"
 import {
@@ -10,23 +9,13 @@ import {
   generateConsolidatedStepSummaryPromptJson,
 } from "@/ai/agentPrompts"
 import {
-  // baselineRAGIterationJsonStream,
-  baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
   jsonParseLLMOutput,
-  mailPromptJsonStream,
-  temporalPromptJsonStream,
-  queryRewriter,
-  generateAnswerBasedOnToolOutput,
-  meetingPromptJsonStream,
-  generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
 } from "@/ai/provider"
 import {
-  getConnectorByExternalId,
-  getConnectorByApp,
   getConnectorById,
 } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -47,12 +36,8 @@ import {
   type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
-  type UserQuery,
 } from "@/ai/types"
 import {
-  deleteMessagesByChatId,
-  getChatByExternalId,
-  getPublicChats,
   insertChat,
   updateChatByExternalIdWithAuth,
   updateMessageByExternalId,
@@ -60,114 +45,73 @@ import {
 import { db } from "@/db/client"
 import {
   insertMessage,
-  getMessageByExternalId,
-  getChatMessagesBefore,
-  updateMessage,
   getChatMessagesWithAuth,
 } from "@/db/message"
-import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
+import { getToolsByConnectorId } from "@/db/tool"
 import {
-  selectPublicChatSchema,
-  selectPublicMessagesSchema,
-  messageFeedbackEnum,
   type SelectChat,
   type SelectMessage,
-  selectMessageSchema,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   AgentReasoningStepType,
-  AgentToolName,
   ApiKeyScopes,
   ChatSSEvents,
   ContextSysthesisState,
   KnowledgeBaseEntity,
-  OpenAIError,
-  XyneTools,
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
 import {
   MessageRole,
   Subsystem,
-  MCPClientConfig,
-  MCPClientStdioConfig,
   type UserMetadataType,
 } from "@/types"
 import {
-  delay,
   getErrorMessage,
-  getRelativeTime,
-  interpretDateFromReturnedTemporalValue,
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
 import {
-  ToolResultContentBlock,
   type ConversationRole,
   type Message,
 } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSEStreamingApi
+import { streamSSE } from "hono/streaming" // Import SSEStreamingApi
 import { z } from "zod"
-import type { chatSchema, MessageRetryReqType } from "@/api/search"
-import { getTracer, type Span, type Tracer } from "@/tracer"
+import { getTracer, type Tracer } from "@/tracer"
 import {
-  searchVespa,
-  searchVespaInFiles,
-  getItems,
   GetDocumentsByDocIds,
   getDocumentOrNull,
-  searchVespaThroughAgent,
-  searchVespaAgent,
-  SearchVespaThreads,
   getAllDocumentsForAgent,
   searchSlackInVespa,
 } from "@/search/vespa"
 import {
   Apps,
-  CalendarEntity,
-  chatMessageSchema,
   chatUserSchema,
   chatContainerSchema,
-  dataSourceFileSchema,
-  DriveEntity,
-  entitySchema,
-  eventSchema,
-  fileSchema,
-  GooglePeopleEntity,
-  mailAttachmentSchema,
-  MailEntity,
-  mailSchema,
-  SystemEntity,
   VespaChatContainerSearchSchema,
   VespaChatUserSchema,
-  VespaSearchResultsSchema,
   type VespaSearchResult,
   type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import {
   insertChatTrace,
-  deleteChatTracesByChatExternalId,
-  updateChatTrace,
 } from "@/db/chatTrace"
 import type { AttachmentMetadata } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
-  getAgentByExternalId,
   getAgentByExternalIdWithPermissionCheck,
   type SelectAgent,
 } from "@/db/agent"
-import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { activeStreams } from "./stream"
 import {
   ragPipelineConfig,
   RagPipelineStages,
-  type AgentTool,
   type Citation,
   type ImageCitation,
   type MinimalAgentFragment,
@@ -176,7 +120,6 @@ import {
   convertReasoningStepToText,
   extractFileIdsFromMessage,
   extractImageFileNames,
-  flattenObject,
   getCitationToImage,
   handleError,
   isMessageWithContext,
@@ -190,7 +133,6 @@ import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   buildContext,
   buildUserQuery,
-  cleanBuffer,
   getThreadContext,
   isContextSelected,
   UnderstandMessageAndAnswer,
@@ -204,13 +146,11 @@ import {
   generateTraceId,
   getTextContent,
   type Agent as JAFAgent,
-  type Tool as JAFTool,
   type Message as JAFMessage,
   type RunConfig as JAFRunConfig,
   type RunState as JAFRunState,
   type RunResult as JAFRunResult,
   type TraceEvent as JAFTraceEvent,
-  type JAFError,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -222,24 +162,19 @@ import {
   buildToolsOverview,
   buildContextSection,
 } from "@/api/chat/jaf-adapter"
-import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
 const {
   JwtPayloadKey,
-  chatHistoryPageSize,
   defaultBestModel,
   defaultFastModel,
   maxDefaultSummary,
-  chatPageSize,
   isReasoning,
-  fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
   maxValidLinks,
-  maxUserRequestCount,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
