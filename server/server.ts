@@ -79,6 +79,7 @@ import {
   HandlePerUserGoogleWorkSpaceSync,
   ListAllLoggedInUsers,
   ListAllIngestedUsers,
+  GetKbVespaContent,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -152,7 +153,7 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import { UserRole, Apps, CreateApiKeySchema } from "@/shared/types" // Import Apps
+import { UserRole, Apps, CreateApiKeySchema, getDocumentSchema } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -1131,6 +1132,11 @@ export const AppRoutes = app
     zValidator("json", deleteUserDataSchema),
     AdminDeleteUserData,
   )
+  .post(
+    "/kb/vespa-data",
+    zValidator("json", getDocumentSchema),
+    GetKbVespaContent,
+  )
 
   // Admin Dashboard Routes
   .get("/chats", zValidator("query", adminQuerySchema), GetAdminChats)
@@ -1484,7 +1490,10 @@ app.get(
 app.get("/auth", serveStatic({ path: "./dist/index.html" }))
 
 // PDF.js worker files
-app.get("/pdfjs/pdf.worker.min.mjs", serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }))
+app.get(
+  "/pdfjs/pdf.worker.min.mjs",
+  serveStatic({ path: "./dist/pdfjs/pdf.worker.min.mjs" }),
+)
 
 // PDF.js character maps
 app.get("/pdfjs/cmaps/*", serveStatic({ root: "./dist" }))

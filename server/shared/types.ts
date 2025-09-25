@@ -759,3 +759,7 @@ export interface ModelConfiguration {
   deepResearch: boolean
   description: string
 }
+export const getDocumentSchema = z.object({
+  docId: z.string().min(1),
+  schema: z.string().min(1),
+})
