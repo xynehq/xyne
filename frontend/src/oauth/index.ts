@@ -1,4 +1,3 @@
-import { loadConfig } from "@/config"
 import { Apps } from "shared/types"
 
 export class OAuthModal {
@@ -11,6 +10,7 @@ export class OAuthModal {
   private completed = false // Flag to prevent multiple resolve/reject calls
   private logger = console
   private successUrl: string = ""
+  private config: { API_BASE_URL: string, WS_BASE_URL: string } = { API_BASE_URL: "", WS_BASE_URL: "" }
 
   constructor(
     // connectorId: string;
@@ -20,18 +20,22 @@ export class OAuthModal {
     // this.connectorId = config.connectorId;
     this.width = width || 600
     this.height = height || 700
+    if (typeof window === "undefined") {
+      this.config = { API_BASE_URL: "", WS_BASE_URL: "" }
+    }else{
+      this.config = (window as any).CONFIG
+    }
   }
 
   public startAuth(app: Apps) {
     return new Promise(async (resolve, reject) => {
       try {
-        const config = await loadConfig()
-        if (!config) {
+        if (!this.config) {
           throw new Error("Failed to load config")
         }
 
-        const authUrl = `${config.API_BASE_URL}/oauth/start`
-        this.successUrl = `${config.API_BASE_URL}/oauth/success`
+        const authUrl = `${this.config.API_BASE_URL}/oauth/start`
+        this.successUrl = `${this.config.API_BASE_URL}/oauth/success`
         //clientLog({currentApp: app}, 'Starting OAuth')
         this.logger.info({ currentApp: app }, "Starting OAuth")
         this.openAuthWindow(`${authUrl}?app=${app}`)

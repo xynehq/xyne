@@ -271,6 +271,7 @@ import {
   ServiceName,
   type HealthStatusResponse,
 } from "@/health/type"
+import { generateConfigFile } from "@/utils/generateConfig"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -1431,15 +1432,6 @@ app.get("/health", async (c) => {
   }
 })
 
-app.get("/config", (c) => {
-  if (!config.apiBaseUrl || !config.wsBaseUrl) {
-    Logger.info("Either API URL or WS base URL is not configured")
-  }
-  return c.json({
-    API_BASE_URL: config.apiBaseUrl,
-    WS_BASE_URL: config.wsBaseUrl,
-  });
-});
 
 // Postgres health check endpoint
 app.get(
@@ -1510,6 +1502,9 @@ internalMetricRouter.get("/metrics", async (c) => {
 init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
+
+// Generate config file for frontend
+generateConfigFile()
 
 const errorHandler = (error: Error) => {
   // Added Error type

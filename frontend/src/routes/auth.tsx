@@ -9,7 +9,6 @@ import xyneLogoSvg from "@/assets/xyne-logo.svg"
 import signinBackgroundPng from "@/assets/signin-background.png"
 import signinCenterImagePng from "@/assets/signin-center-image.png"
 import googleIconSvg from "@/assets/google-icon.svg"
-import { loadConfig } from "@/config"
 
 
 const XyneLogo = () => (
@@ -25,18 +24,16 @@ const XyneLogo = () => (
 export default function LoginForm() {
   const handleGoogleLogin = async () => {
     try {
-      console.info("User Clicked login with google")
-      const config = await loadConfig()
-        if (!config) {
-          console.error("Failed to load config")
-          return
-        }
-      const { API_BASE_URL } = config
-      const redirectUrl = `${API_BASE_URL}/v1/auth/callback`
-      window.location.href = redirectUrl
-    } catch (error) {
-    console.error("Failed to load config:", error)
+    if (typeof window === "undefined") throw new Error("Cannot run on server")
+    const cfg = (window as any).CONFIG
+    if (!cfg || !cfg.API_BASE_URL) {
+      throw new Error("window.CONFIG is not defined or invalid")
     }
+    const redirectUrl = `${cfg.API_BASE_URL}/v1/auth/callback`
+    window.location.href = redirectUrl
+   }catch (error) {
+    console.error("Failed to load config:", error)
+   }
   }
 
   return (

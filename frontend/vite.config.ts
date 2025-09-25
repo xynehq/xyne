@@ -6,9 +6,31 @@ import react from "@vitejs/plugin-react"
 import svgr from "vite-plugin-svgr"
 import fs from "fs"
 import { viteStaticCopy } from "vite-plugin-static-copy"
-
-// import viteReact from '@vitejs/plugin-react'
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite"
+
+// 🔹 Add this helper plugin at the top
+function injectDevConfig() {
+  return {
+    name: "inject-dev-config",
+    transformIndexHtml(html: string) {
+      if (process.env.NODE_ENV === "development") {
+        return html.replace(
+          "</head>",
+          `
+          <script>
+            window.CONFIG = {
+              API_BASE_URL: "${process.env.VITE_API_BASE_URL || "http://localhost:3000"}",
+              WS_BASE_URL: "${process.env.VITE_WS_BASE_URL || "ws://localhost:3000"}"
+            }
+          </script>
+          </head>
+        `,
+        )
+      }
+      return html
+    },
+  }
+}
 
 export default defineConfig(({ mode }) => {
   // Load environment variables from .env.production if in production mode,
@@ -25,6 +47,7 @@ export default defineConfig(({ mode }) => {
     TZ: process.env.TZ,
     ...env,
   }
+
   return {
     plugins: [
       TanStackRouterVite({
@@ -94,6 +117,7 @@ export default defineConfig(({ mode }) => {
           },
         ],
       }),
+      injectDevConfig(), // 👈 Added here
     ],
     optimizeDeps: {
       exclude: ["zod"],

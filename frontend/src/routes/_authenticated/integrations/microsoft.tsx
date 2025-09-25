@@ -17,7 +17,7 @@ import { Sidebar } from "@/components/Sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useEffect, useState } from "react"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
-import { wsClient } from "@/api"
+import { getWSClient } from "@/api"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
 import { Connectors, OAuthIntegrationStatus } from "@/types"
@@ -85,6 +85,7 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
         (c) => c.app === Apps.MicrosoftDrive && c.authType === AuthType.OAuth,
       )
       if (oauthConnector) {
+        const wsClient = getWSClient() //
         socket = wsClient.ws.$ws({
           query: { id: oauthConnector.id },
         })
