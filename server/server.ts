@@ -80,7 +80,7 @@ import {
   HandlePerUserGoogleWorkSpaceSync,
   ListAllLoggedInUsers,
   ListAllIngestedUsers,
-  GetVespaDataForKBDoc,
+  GetKbVespaContent,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
 import { init as initQueue } from "@/queue"
@@ -1134,7 +1134,7 @@ export const AppRoutes = app
   .post(
     "/kb/vespa-data",
     zValidator("json", deleteDocumentSchema),
-    GetVespaDataForKBDoc,
+    GetKbVespaContent,
   )
 
   // Admin Dashboard Routes

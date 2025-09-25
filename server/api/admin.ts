@@ -115,7 +115,7 @@ import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
 import { deleteDocumentSchema } from "./dataSource"
-import { fetchVespaDocIdForKbItems } from "@/db/knowledgeBase"
+import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -2022,7 +2022,7 @@ export const HandlePerUserSlackSync = async (c: Context) => {
   }
 }
 
-export const GetVespaDataForKBDoc = async (c: Context) => {
+export const GetKbVespaContent = async (c: Context) => {
   try {
     const { sub: userEmail } = c.get(JwtPayloadKey)
 
@@ -2035,8 +2035,8 @@ export const GetVespaDataForKBDoc = async (c: Context) => {
         message: `Invalid schema type. Expected 'kb_items', got '${rawSchema}'`,
       })
     }
-    const vespaDocId = await fetchVespaDocIdForKbItems(db, docId)
-    if (!vespaDocId) {
+    const collectionFile = await getCollectionFilesVespaIds([docId], db)
+    if (!collectionFile[0]) {
       throw new HTTPException(404, {
         message: `Document with id ${docId} not found in the system.`,
       })
@@ -2044,7 +2044,10 @@ export const GetVespaDataForKBDoc = async (c: Context) => {
     // console.log("Fetched Vespa Doc ID:", vespaDocId)
     const schema = rawSchema as VespaSchema
 
-    const documentData = await GetDocument(schema, vespaDocId)
+    const documentData = await GetDocument(
+      schema,
+      collectionFile[0].vespaDocId!,
+    )
 
     if (!documentData || !("fields" in documentData) || !documentData.fields) {
       loggerWithChild({ email: userEmail }).warn(

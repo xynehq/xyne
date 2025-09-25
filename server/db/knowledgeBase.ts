@@ -858,16 +858,3 @@ export const getRecordBypath = async (path: string, trx: TxnOrClient) => {
 
   return result.length > 0 ? result[0].docId : null
 }
-
-export const fetchVespaDocIdForKbItems = async (
-  trx: TxnOrClient,
-  docId: string,
-) => {
-  const [result] = await trx
-    .select({ vespaDocId: collectionItems.vespaDocId })
-    .from(collectionItems)
-    .where(
-      and(eq(collectionItems.id, docId), isNull(collectionItems.deletedAt)),
-    )
-  return result ? result.vespaDocId : null
-}
