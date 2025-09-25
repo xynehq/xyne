@@ -141,6 +141,8 @@ import {
   MailEntity,
   mailSchema,
   SystemEntity,
+  VespaChatContainerSearchSchema,
+  VespaChatUserSchema,
   VespaSearchResultsSchema,
   type VespaSearchResult,
   type VespaSearchResults,
@@ -244,6 +246,17 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
+
+type ChatContainerFields = z.infer<typeof VespaChatContainerSearchSchema>
+type ChatUserFields = z.infer<typeof VespaChatUserSchema>
+
+const isChatContainerFields = (
+  value: unknown,
+): value is ChatContainerFields =>
+  isRecord(value) && VespaChatContainerSearchSchema.safeParse(value).success
+
+const isChatUserFields = (value: unknown): value is ChatUserFields =>
+  isRecord(value) && VespaChatUserSchema.safeParse(value).success
 
 // Generate AI summary for agent reasoning steps
 const generateStepSummary = async (
@@ -1578,20 +1591,19 @@ export const MessageWithToolsApi = async (c: Context) => {
                     0,
                     true,
                   )
-                  if (
-                    v.fields &&
-                    typeof v.fields === "object" &&
-                    v.fields !== null &&
-                    "sddocname" in v.fields &&
-                    v.fields.sddocname === chatContainerSchema &&
-                    (v.fields as any).creator
-                  ) {
+                  const chatContainerFields =
+                    isChatContainerFields(v.fields) &&
+                    v.fields.sddocname === chatContainerSchema
+                      ? v.fields
+                      : undefined
+
+                  if (chatContainerFields?.creator) {
                     const creator = await getDocumentOrNull(
                       chatUserSchema,
-                      (v.fields as any).creator,
+                      chatContainerFields.creator,
                     )
-                    if (creator) {
-                      content += `\nCreator: ${(creator.fields as any).name}`
+                    if (creator && isChatUserFields(creator.fields)) {
+                      content += `\nCreator: ${creator.fields.name}`
                     }
                   }
                   return `Index ${i + 1} \n ${content}`
@@ -1605,14 +1617,13 @@ export const MessageWithToolsApi = async (c: Context) => {
               const threadContexts: VespaSearchResult[] = []
               if (results?.root?.children) {
                 for (const v of results.root.children) {
-                  if (
-                    v.fields &&
-                    typeof v.fields === "object" &&
-                    v.fields !== null &&
-                    "sddocname" in v.fields &&
+                  const chatContainerFields =
+                    isChatContainerFields(v.fields) &&
                     v.fields.sddocname === chatContainerSchema
-                  ) {
-                    const channelId = (v.fields as any).docId
+                      ? v.fields
+                      : undefined
+                  if (chatContainerFields) {
+                    const channelId = chatContainerFields.docId
 
                     if (channelId) {
                       const searchResults = await searchSlackInVespa(
