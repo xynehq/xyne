@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
-import { Bot, Mail } from "lucide-react"
+import { Bot, Mail, FileText } from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -139,13 +139,11 @@ import {
   ManualTriggerIcon,
   AppEventIcon,
   ScheduleIcon,
-  FormSubmissionIcon,
   WorkflowExecutionIcon,
   ChatMessageIcon,
   HelpIcon,
   TemplatesIcon,
   AddIcon,
-  FormDocumentIcon,
 } from "./WorkflowIcons"
 import {
   workflowExecutionsAPI,
@@ -780,7 +778,7 @@ const StepNode: React.FC<NodeProps> = ({
                 borderRadius: "4.8px",
               }}
             >
-              <FormDocumentIcon width={16} height={16} />
+              <FileText size={16} />
             </div>
 
             <h3
@@ -1582,7 +1580,7 @@ const TriggersSidebar = ({
       name: "On Form Submission",
       description:
         "Generate webforms in Xyne and pass their responses to the workflow",
-      icon: <FormSubmissionIcon width={20} height={20} />,
+      icon: <FileText size={20} />,
       enabled: true,
     },
     {

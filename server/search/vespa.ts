@@ -65,7 +65,7 @@ export const GetDocument = vespa.GetDocument.bind(vespa)
 export const getDocumentOrNull = vespa.getDocumentOrNull.bind(vespa)
 export const UpdateDocument = vespa.UpdateDocument.bind(vespa)
 export const DeleteDocument = vespa.DeleteDocument.bind(vespa)
-
+export const searchCollectionRAG = vespa.searchCollectionRAG.bind(vespa)
 export const searchVespa = async (
   query: string,
   email: string,

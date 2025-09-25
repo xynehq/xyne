@@ -200,6 +200,21 @@ export const EXTENSION_MAPPINGS = {
   [FileType.TEXT]: [".txt", ".md"],
 } as const
 
+export enum ApiKeyScopes {
+  CREATE_AGENT = "CREATE_AGENT",
+  AGENT_CHAT = "AGENT_CHAT",
+  AGENT_CHAT_STOP = "AGENT_CHAT_STOP",
+  UPDATE_AGENT = "UPDATE_AGENT",
+  DELETE_AGENT = "DELETE_AGENT",
+  CHAT_HISTORY = "CHAT_HISTORY",
+  CREATE_COLLECTION = "CREATE_COLLECTION",
+  LIST_COLLECTIONS = "LIST_COLLECTIONS",
+  UPLOAD_FILES = "UPLOAD_FILES",
+  SEARCH_COLLECTION = "SEARCH_COLLECTION",
+  DELETE_COLLECTION = "DELETE_COLLECTION",
+  DELETE_COLLECTION_ITEM = "DELETE_COLLECTION_ITEM",
+}
+
 export const AutocompleteFileSchema = z
   .object({
     type: z.literal(fileSchema),
@@ -673,6 +688,19 @@ export const attachmentMetadataSchema = z.object({
 })
 
 export type AttachmentMetadata = z.infer<typeof attachmentMetadataSchema>
+
+export const ApiKeyPermissionsSchema = z.object({
+  scopes: z.array(z.nativeEnum(ApiKeyScopes)),
+  agents: z.array(z.string()).optional(),
+})
+
+export const CreateApiKeySchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  permissions: ApiKeyPermissionsSchema,
+})
+
+export type ApiKeyPermissions = z.infer<typeof ApiKeyPermissionsSchema>
+export type CreateApiKeyRequest = z.infer<typeof CreateApiKeySchema>
 
 export const DEFAULT_TEST_AGENT_ID = "default-test-agent"
 

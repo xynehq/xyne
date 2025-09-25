@@ -91,7 +91,6 @@ import {
   getAgentFeedbackMessages,
   getAgentUserFeedbackMessages,
   getAllUserFeedbackMessages,
-  getWorkspaceApiKeys,
 } from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
@@ -1837,45 +1836,6 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Error fetching all user feedback messages")
-    return c.json(
-      {
-        success: false,
-        message: getErrorMessage(error),
-      },
-      500,
-    )
-  }
-}
-
-export const GetWorkspaceApiKeys = async (c: Context) => {
-  let email = ""
-  try {
-    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    email = sub
-
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceExternalId,
-      email,
-    )
-    if (
-      !userAndWorkspace ||
-      !userAndWorkspace.user ||
-      !userAndWorkspace.workspace
-    ) {
-      return c.json({ message: "User or workspace not found" }, 404)
-    }
-    const apiKeys = await getWorkspaceApiKeys({
-      db,
-      userId: userAndWorkspace.user.externalId,
-      workspaceId: userAndWorkspace.workspace.externalId,
-    })
-    return c.json({
-      success: true,
-      data: apiKeys,
-    })
-  } catch (error) {
-    Logger.error(error, "Error fetching agent API keys")
     return c.json(
       {
         success: false,

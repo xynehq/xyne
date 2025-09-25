@@ -74,7 +74,6 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
-  GetWorkspaceApiKeys,
   UpdateUser,
   HandlePerUserSlackSync,
   HandlePerUserGoogleWorkSpaceSync,
@@ -108,7 +107,12 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
-import { GetUserWorkspaceInfo } from "@/api/auth"
+import {
+  GetUserWorkspaceInfo,
+  GenerateUserApiKey,
+  GetUserApiKeys,
+  DeleteUserApiKey,
+} from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -149,7 +153,7 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import { UserRole, Apps, getDocumentSchema } from "@/shared/types" // Import Apps
+import { UserRole, Apps, CreateApiKeySchema, getDocumentSchema } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -344,6 +348,7 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
         workspaceId: apiKeys.workspaceId,
         userId: apiKeys.userId,
         userEmail: users.email,
+        config: apiKeys.config,
       })
       .from(apiKeys)
       .leftJoin(users, eq(apiKeys.userId, users.externalId)) // or users.externalId depending on your schema
@@ -358,6 +363,7 @@ const ApiKeyMiddleware = async (c: Context, next: Next) => {
     c.set("apiKey", apiKey)
     c.set("workspaceId", foundApiKey.workspaceId)
     c.set("userEmail", foundApiKey.userEmail)
+    c.set("config", foundApiKey.config)
 
     Logger.info(`API key verified for workspace ID: ${foundApiKey.workspaceId}`)
 
@@ -766,18 +772,6 @@ const getNewAccessRefreshToken = async (c: Context) => {
 
 export const AppRoutes = app
   .basePath("/api/v1")
-  .post(
-    "/agent/chat",
-    ApiKeyMiddleware,
-    zValidator("json", agentChatMessageSchema),
-    AgentMessageApi,
-  )
-  .post(
-    "/agent/chat/stop",
-    ApiKeyMiddleware,
-    zValidator("json", chatStopSchema),
-    StopStreamingApi,
-  )
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
@@ -879,6 +873,13 @@ export const AppRoutes = app
     SearchSlackChannels,
   )
   .get("/me", GetUserWorkspaceInfo)
+  .get("/users/api-keys", GetUserApiKeys)
+  .post(
+    "/users/api-key",
+    zValidator("json", CreateApiKeySchema),
+    GenerateUserApiKey,
+  )
+  .delete("/users/api-keys/:keyId", DeleteUserApiKey)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
@@ -1151,6 +1152,7 @@ export const AppRoutes = app
     zValidator("query", userAgentLeaderboardQuerySchema),
     GetUserAgentLeaderboard,
   )
+
   .get(
     "/agents/:agentId/analysis",
     zValidator("query", agentAnalysisQuerySchema),
@@ -1167,7 +1169,6 @@ export const AppRoutes = app
     zValidator("query", agentAnalysisQuerySchema),
     GetAgentUserFeedbackMessages,
   )
-  .get("/workspace/api-key", GetWorkspaceApiKeys)
   .get(
     "/admin/users/:userId/feedback",
     zValidator("query", userAgentLeaderboardQuerySchema),
@@ -1181,6 +1182,39 @@ app.get(
   zValidator("query", oauthStartQuerySchema),
   StartOAuth,
 )
+
+// Consumer API endpoints, authenticated by ApiKeyMiddleware
+app
+  .basePath("/api/consumer")
+  .use("*", ApiKeyMiddleware)
+  .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi) // Create Agent
+  .post(
+    "/agent/chat",
+    zValidator("json", agentChatMessageSchema), // Agent Chat
+    AgentMessageApi,
+  )
+  .post(
+    "/agent/chat/stop",
+    zValidator("json", chatStopSchema), // Agent Chat Stop
+    StopStreamingApi,
+  )
+  .put(
+    "/agent/:agentExternalId",
+    zValidator("json", updateAgentSchema), // Update Agent
+    UpdateAgentApi,
+  )
+  .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
+  .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
+  .post("/cl", CreateCollectionApi) // Create collection (KB)
+  .get("/cl", ListCollectionsApi) // List all collections
+  .get(
+    "/cl/search",
+    zValidator("query", searchKnowledgeBaseSchema), // Search over KB
+    SearchKnowledgeBaseApi,
+  )
+  .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
+  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB
 
 const generateTokens = async (
   email: string,
