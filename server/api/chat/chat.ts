@@ -69,6 +69,7 @@ import {
   OpenAIError,
   type MessageReqType,
   DEFAULT_TEST_AGENT_ID,
+  ApiKeyScopes,
 } from "@/shared/types"
 import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import {
@@ -210,6 +211,7 @@ import {
 } from "./deepsearch"
 import { getDateForAI } from "@/utils/index"
 import type { User } from "@microsoft/microsoft-graph-types"
+import { getAuth, safeGet } from "../agent"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -893,10 +895,18 @@ export const ChatDeleteApi = async (c: Context) => {
 }
 
 export const ChatHistory = async (c: Context) => {
-  let email = ""
+  const { email, via_apiKey } = getAuth(c)
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.CHAT_HISTORY)) {
+      return c.json(
+        { message: "API key does not have scope to view chat history" },
+        403,
+      )
+    }
+  }
   try {
-    const { sub } = c.get(JwtPayloadKey)
-    const email = sub
     // @ts-ignore
     const { page, from, to } = c.req.valid("query")
     const offset = page * chatHistoryPageSize
@@ -6799,18 +6809,17 @@ export const MessageRetryApi = async (c: Context) => {
 
 // New API Endpoint to stop streaming
 export const StopStreamingApi = async (c: Context) => {
-  // const { sub } = c.get(JwtPayloadKey) ?? {}
-  let email = ""
+  const { email, via_apiKey } = getAuth(c)
 
-  let jwtPayload
-  try {
-    jwtPayload = c.get(JwtPayloadKey)
-  } catch (e) {}
-
-  if (jwtPayload) {
-    email = jwtPayload?.sub
-  } else {
-    email = c.get("userEmail") ?? ""
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.AGENT_CHAT_STOP)) {
+      return c.json(
+        { message: "API key does not have scope to stop agent chat" },
+        403,
+      )
+    }
   }
 
   try {

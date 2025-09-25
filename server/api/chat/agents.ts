@@ -79,6 +79,7 @@ import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   AgentReasoningStepType,
   AgentToolName,
+  ApiKeyScopes,
   ChatSSEvents,
   ContextSysthesisState,
   KnowledgeBaseEntity,
@@ -222,6 +223,7 @@ import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
+import { getAuth, safeGet } from "../agent"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -2818,25 +2820,14 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let email = ""
-  let workspaceId = ""
-  let via_apiKey = false
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   let body
 
   try {
-    let jwtPayload
-    try {
-      jwtPayload = c.get(JwtPayloadKey)
-    } catch (e) {}
-    if (jwtPayload) {
-      email = jwtPayload?.sub
-      workspaceId = jwtPayload?.workspaceId
+    if (!via_apiKey) {
       // @ts-ignore
       body = c.req.valid("query")
     } else {
-      email = c.get("userEmail") ?? ""
-      workspaceId = c.get("workspaceId") ?? ""
-      via_apiKey = true
       // @ts-ignore
       body = c.req.valid("json")
     }
@@ -3533,29 +3524,41 @@ export const AgentMessageApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let email = ""
-  let workspaceId = ""
-  let via_apiKey = false
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   let body
 
   try {
-    let jwtPayload
-    try {
-      jwtPayload = c.get(JwtPayloadKey)
-    } catch (e) {}
-
-    if (jwtPayload) {
-      email = jwtPayload?.sub
-      workspaceId = jwtPayload?.workspaceId
+    if (!via_apiKey) {
       // @ts-ignore
       body = c.req.valid("query")
     } else {
-      // fallback if JwtPayloadKey is not available
-      email = c.get("userEmail") ?? ""
-      workspaceId = c.get("workspaceId") ?? ""
-      via_apiKey = true
       // @ts-ignore
       body = c.req.valid("json")
+      const apiKeyScopes =
+        safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+      const agentAccess =
+        safeGet<{ agents?: string[] }>(c, "config")?.agents || []
+
+      // Check if API key has agent chat scope
+      if (!apiKeyScopes.includes(ApiKeyScopes.AGENT_CHAT)) {
+        return c.json(
+          {
+            message: "API key does not have scope to chat with agents",
+          },
+          403,
+        )
+      }
+
+      // Check agent access: if agentAccess is empty, allow all agents; otherwise check specific access
+      //@ts-ignore
+      if (agentAccess.length > 0 && !agentAccess.includes(body?.agentId)) {
+        return c.json(
+          {
+            message: "API key is not authorized for this agent",
+          },
+          403,
+        )
+      }
     }
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
@@ -3645,8 +3648,9 @@ export const AgentMessageApi = async (c: Context) => {
     }
 
     // Convert friendly model label to actual model value
-    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    let actualModelId: string = modelId || "gemini-2-5-pro"
     if (modelId) {
+      // Ensure we always have a string
       const convertedModelId = getModelValueFromLabel(modelId)
       if (convertedModelId) {
         actualModelId = convertedModelId as string // Can be Models enum or string
