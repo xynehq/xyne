@@ -140,7 +140,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CitationPreview } from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
-import { processMessage } from "@/utils/chatUtils"
+import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -155,7 +155,9 @@ interface DynamicSpaceConfig {
 }
 
 // Custom hook for dynamic space calculations
-const useDynamicSpaceManagement = (containerRef: React.RefObject<HTMLDivElement>) => {
+const useDynamicSpaceManagement = (
+  containerRef: React.RefObject<HTMLDivElement>,
+) => {
   const [spaceConfig, setSpaceConfig] = useState<DynamicSpaceConfig>({
     heightToAdd: 600,
     viewportBuffer: 200,
@@ -168,7 +170,7 @@ const useDynamicSpaceManagement = (containerRef: React.RefObject<HTMLDivElement>
   const calculateDynamicValues = useCallback(() => {
     const viewportHeight = window.innerHeight
     const viewportWidth = window.innerWidth
-    
+
     // Calculate responsive height to add based on viewport
     // Enhanced space for larger screens: Minimum 350px, maximum 750px, 50-65% of viewport height
     let heightToAdd: number
@@ -182,16 +184,16 @@ const useDynamicSpaceManagement = (containerRef: React.RefObject<HTMLDivElement>
 
     // Calculate actual container width (accounting for max-w-3xl = 768px)
     const containerWidth = Math.min(768, viewportWidth - 80) // 40px padding on each side
-    
+
     // Calculate characters per line based on actual container width and font metrics
     // Approximate character width for text-[15px] font: ~8.5px
     const avgCharWidth = 8.5
     const charsPerLine = Math.floor((containerWidth - 40) / avgCharWidth) // 40px for message padding
-    
+
     // Calculate responsive line height based on viewport
     // Base line height of 24px, but scale for different screen sizes
     const lineHeight = viewportWidth <= 768 ? 22 : 24
-    
+
     // Dynamic viewport buffer based on screen size
     const viewportBuffer = viewportHeight <= 600 ? 150 : 200
 
@@ -221,9 +223,9 @@ const useDynamicSpaceManagement = (containerRef: React.RefObject<HTMLDivElement>
       }, 150) // Debounce resize events
     }
 
-    window.addEventListener('resize', handleResize)
+    window.addEventListener("resize", handleResize)
     return () => {
-      window.removeEventListener('resize', handleResize)
+      window.removeEventListener("resize", handleResize)
       clearTimeout(timeoutId)
     }
   }, [calculateDynamicValues])
@@ -576,10 +578,10 @@ export const ChatPage = ({
 
   // Dynamic space management hook
   const dynamicSpace = useDynamicSpaceManagement(messagesContainerRef)
-  
+
   // Add state for tracking content dimensions for space management
   const [actualContentHeight, setActualContentHeight] = useState(0)
-  
+
   // State for intelligent space management
   const [lastQuerySpace, setLastQuerySpace] = useState(0) // Space from previous query
   const [totalAddedSpace, setTotalAddedSpace] = useState(0) // Total space added for current query
@@ -591,14 +593,14 @@ export const ChatPage = ({
       const container = messagesContainerRef.current
       const observer = new ResizeObserver(() => {
         // Measure the actual content height excluding the spacer
-        const contentElements = container.querySelectorAll('[data-index]')
+        const contentElements = container.querySelectorAll("[data-index]")
         let totalHeight = 0
         contentElements.forEach((element) => {
           totalHeight += element.getBoundingClientRect().height
         })
         setActualContentHeight(totalHeight)
       })
-      
+
       observer.observe(container)
       return () => observer.disconnect()
     }
@@ -609,32 +611,43 @@ export const ChatPage = ({
     if ((isStreaming || retryIsStreaming) && messages.length > 0) {
       // Start animation state
       setIsSpaceAnimating(true)
-      
+
       // Find the last assistant message before this new query
       const lastAssistantMessage = messages
         .slice()
         .reverse()
-        .find((msg: any) => msg.messageRole === 'assistant')
-      
+        .find((msg: any) => msg.messageRole === "assistant")
+
       if (lastAssistantMessage) {
         // Calculate what the leftover space should be from the last completed response using dynamic values
         // Account for the first line starting from the Xyne icon (no space reduction for first line)
         const completedAnswerLength = lastAssistantMessage.message?.length || 0
-        const effectiveCompletedLength = Math.max(0, completedAnswerLength - dynamicSpace.charsPerLine)
-        const completedAnswerHeight = Math.ceil(effectiveCompletedLength / dynamicSpace.charsPerLine) * dynamicSpace.lineHeight
-        
+        const effectiveCompletedLength = Math.max(
+          0,
+          completedAnswerLength - dynamicSpace.charsPerLine,
+        )
+        const completedAnswerHeight =
+          Math.ceil(effectiveCompletedLength / dynamicSpace.charsPerLine) *
+          dynamicSpace.lineHeight
+
         // Calculate leftover space from previous query using dynamic height
-        const previousLeftSpace = Math.max(0, dynamicSpace.heightToAdd - completedAnswerHeight)
-        
+        const previousLeftSpace = Math.max(
+          0,
+          dynamicSpace.heightToAdd - completedAnswerHeight,
+        )
+
         // Update lastQuerySpace if it's different
         if (previousLeftSpace !== lastQuerySpace) {
           setLastQuerySpace(previousLeftSpace)
         }
-        
+
         // Calculate total space for this new query using dynamic values
-        const additionalSpaceNeeded = Math.max(0, dynamicSpace.heightToAdd - previousLeftSpace)
+        const additionalSpaceNeeded = Math.max(
+          0,
+          dynamicSpace.heightToAdd - previousLeftSpace,
+        )
         const totalSpaceToHave = previousLeftSpace + additionalSpaceNeeded
-        
+
         // Update total added space if it's different with animation timing
         if (totalSpaceToHave !== totalAddedSpace) {
           // Slight delay to ensure smooth transition
@@ -650,13 +663,19 @@ export const ChatPage = ({
           }, 50)
         }
       }
-      
+
       // End animation state after transition completes
       setTimeout(() => {
         setIsSpaceAnimating(false)
       }, 400) // Match the spacer transition duration
     }
-  }, [isStreaming, retryIsStreaming, messages.length, lastQuerySpace, totalAddedSpace])
+  }, [
+    isStreaming,
+    retryIsStreaming,
+    messages.length,
+    lastQuerySpace,
+    totalAddedSpace,
+  ])
 
   // Effect to recalculate spacing when streaming completes
   useEffect(() => {
@@ -665,7 +684,7 @@ export const ChatPage = ({
       const timer = setTimeout(() => {
         if (messagesContainerRef.current) {
           const container = messagesContainerRef.current
-          const contentElements = container.querySelectorAll('[data-index]')
+          const contentElements = container.querySelectorAll("[data-index]")
           let totalHeight = 0
           contentElements.forEach((element) => {
             totalHeight += element.getBoundingClientRect().height
@@ -673,7 +692,7 @@ export const ChatPage = ({
           setActualContentHeight(totalHeight)
         }
       }, 100) // Small delay to ensure DOM is updated
-      
+
       return () => clearTimeout(timer)
     }
   }, [isStreaming, retryIsStreaming, messages.length])
@@ -1055,13 +1074,13 @@ export const ChatPage = ({
         // Reset scroll state
         isAutoScrollingRef.current = true
         setUserHasScrolled(false)
-        
+
         // Smooth scroll to bottom instead of instant
         container.scrollTo({
           top: container.scrollHeight,
-          behavior: 'smooth'
+          behavior: "smooth",
         })
-        
+
         // Wait for smooth scroll to complete before resetting auto-scroll flag
         setTimeout(() => {
           isAutoScrollingRef.current = false
@@ -2667,7 +2686,8 @@ const VirtualizedMessages = React.forwardRef<
         // Skip if we're in the middle of auto-scrolling
         if (isAutoScrollingRef.current) return
 
-        const container = (typeof ref === "object" && ref?.current) || parentRef.current
+        const container =
+          (typeof ref === "object" && ref?.current) || parentRef.current
         if (!container) return
 
         const scrollTop = container.scrollTop
@@ -2698,24 +2718,28 @@ const VirtualizedMessages = React.forwardRef<
       const intervalId = setInterval(checkIfAtBottom, 100) // Check every 100ms
 
       return () => clearInterval(intervalId)
-    }, [userHasScrolled, setUserHasScrolled, ref, isAutoScrollingRef, allItems.length, partial])
+    }, [
+      userHasScrolled,
+      setUserHasScrolled,
+      ref,
+      isAutoScrollingRef,
+      allItems.length,
+      partial,
+    ])
 
     // Detect user scrolling - simplified since continuous checking handles button visibility
-    const handleScroll = useCallback(
-      (e: React.UIEvent<HTMLDivElement>) => {
-        // Skip if we're in the middle of auto-scrolling
-        if (isAutoScrollingRef.current) return
+    const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+      // Skip if we're in the middle of auto-scrolling
+      if (isAutoScrollingRef.current) return
 
-        const element = e.currentTarget
-        const scrollTop = element.scrollTop
+      const element = e.currentTarget
+      const scrollTop = element.scrollTop
 
-        // Just track the scroll position for reference
-        lastScrollTop.current = scrollTop
-        
-        // The continuous useEffect above will handle scroll button visibility
-      },
-      [],
-    )
+      // Just track the scroll position for reference
+      lastScrollTop.current = scrollTop
+
+      // The continuous useEffect above will handle scroll button visibility
+    }, [])
 
     return (
       <div
@@ -2908,111 +2932,131 @@ const VirtualizedMessages = React.forwardRef<
               )
             })}
           </div>
-          
+
           {/* Intelligent dynamic bottom spacer - now fully responsive */}
-          {messages.length > 0 && (() => {
-            // Access dynamic space values from the parent component's hook
-            // These values are passed down through props and update automatically with screen size
-            
-            // Check if we're currently streaming (new query in progress)
-            const isCurrentlyStreaming = isStreaming || retryIsStreaming;
-            
-            if (isCurrentlyStreaming) {
-              // CASE 1: Currently streaming - show the added space
-              const responseLength = partial?.length || 0;
-              
-              // Calculate how much space the current answer is using with dynamic values
-              // Account for the first line starting from the Xyne icon (no space reduction for first line)
-              const CHARS_PER_LINE = 80; // Fallback value
-              const LINE_HEIGHT = 24; // Fallback value
-              
-              // Only start reducing space after the first line is complete
-              const effectiveResponseLength = Math.max(0, responseLength - CHARS_PER_LINE);
-              const estimatedAnswerHeight = Math.ceil(effectiveResponseLength / CHARS_PER_LINE) * LINE_HEIGHT;
-              
-              // Space utilized = how much of our added space the answer is using
-              const spaceUtilized = Math.min(estimatedAnswerHeight, totalAddedSpace);
-              
-              // Remaining space = total added space - space utilized by answer
-              const remainingSpace = Math.max(0, totalAddedSpace - spaceUtilized);
-              
-              return (
-                <div 
-                  style={{ 
-                    height: `${remainingSpace}px`,
-                    width: '100%',
-                    transition: isSpaceAnimating 
-                      ? 'height 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)' 
-                      : 'height 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)',
-                    flexShrink: 0,
-                    transformOrigin: 'bottom',
-                    // Debug styling (uncomment for debugging)
-                    // border: '2px solid red',
-                    // backgroundColor: 'rgba(255,0,0,0.1)'
-                  }}
-                  className="pointer-events-none"
-                  data-total-added={totalAddedSpace}
-                  data-space-utilized={spaceUtilized}
-                  data-remaining-space={remainingSpace}
-                  data-answer-height={estimatedAnswerHeight}
-                  data-streaming="true"
-                  data-animating={isSpaceAnimating}
-                />
-              );
-            } else {
-              // CASE 2: Not streaming - maintain leftover space from last query
-              const lastMessage = messages[messages.length - 1];
-              if (lastMessage && lastMessage.messageRole === 'assistant') {
-                // Calculate actual space used by the completed answer with dynamic values
+          {messages.length > 0 &&
+            (() => {
+              // Access dynamic space values from the parent component's hook
+              // These values are passed down through props and update automatically with screen size
+
+              // Check if we're currently streaming (new query in progress)
+              const isCurrentlyStreaming = isStreaming || retryIsStreaming
+
+              if (isCurrentlyStreaming) {
+                // CASE 1: Currently streaming - show the added space
+                const responseLength = partial?.length || 0
+
+                // Calculate how much space the current answer is using with dynamic values
                 // Account for the first line starting from the Xyne icon (no space reduction for first line)
-                const completedAnswerLength = lastMessage.message?.length || 0;
-                const CHARS_PER_LINE = 80; // Fallback value
-                const LINE_HEIGHT = 24; // Fallback value
-                
-                // Only count space usage after the first line
-                const effectiveCompletedLength = Math.max(0, completedAnswerLength - CHARS_PER_LINE);
-                const completedAnswerHeight = Math.ceil(effectiveCompletedLength / CHARS_PER_LINE) * LINE_HEIGHT;
-                
-                // Space utilized by the completed answer
-                const spaceUtilized = Math.min(completedAnswerHeight, totalAddedSpace);
-                
-                // Left space = total added space - space actually used
-                const leftSpace = Math.max(0, totalAddedSpace - spaceUtilized);
-                
-                // Update last query space for next query calculation
-                if (leftSpace !== lastQuerySpace) {
-                  setLastQuerySpace(leftSpace);
-                }
-                
+                const CHARS_PER_LINE = 80 // Fallback value
+                const LINE_HEIGHT = 24 // Fallback value
+
+                // Only start reducing space after the first line is complete
+                const effectiveResponseLength = Math.max(
+                  0,
+                  responseLength - CHARS_PER_LINE,
+                )
+                const estimatedAnswerHeight =
+                  Math.ceil(effectiveResponseLength / CHARS_PER_LINE) *
+                  LINE_HEIGHT
+
+                // Space utilized = how much of our added space the answer is using
+                const spaceUtilized = Math.min(
+                  estimatedAnswerHeight,
+                  totalAddedSpace,
+                )
+
+                // Remaining space = total added space - space utilized by answer
+                const remainingSpace = Math.max(
+                  0,
+                  totalAddedSpace - spaceUtilized,
+                )
+
                 return (
-                  <div 
-                    style={{ 
-                      height: `${leftSpace}px`,
-                      width: '100%',
-                      transition: isSpaceAnimating 
-                        ? 'height 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)' 
-                        : 'height 0.4s cubic-bezier(0.4, 0.0, 0.2, 1)',
+                  <div
+                    style={{
+                      height: `${remainingSpace}px`,
+                      width: "100%",
+                      transition: isSpaceAnimating
+                        ? "height 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)"
+                        : "height 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)",
                       flexShrink: 0,
-                      transformOrigin: 'bottom',
+                      transformOrigin: "bottom",
                       // Debug styling (uncomment for debugging)
-                      // border: '2px solid blue',
-                      // backgroundColor: 'rgba(0,0,255,0.1)'
+                      // border: '2px solid red',
+                      // backgroundColor: 'rgba(255,0,0,0.1)'
                     }}
                     className="pointer-events-none"
                     data-total-added={totalAddedSpace}
                     data-space-utilized={spaceUtilized}
-                    data-left-space={leftSpace}
-                    data-answer-height={completedAnswerHeight}
-                    data-streaming="false"
+                    data-remaining-space={remainingSpace}
+                    data-answer-height={estimatedAnswerHeight}
+                    data-streaming="true"
                     data-animating={isSpaceAnimating}
                   />
-                );
+                )
+              } else {
+                // CASE 2: Not streaming - maintain leftover space from last query
+                const lastMessage = messages[messages.length - 1]
+                if (lastMessage && lastMessage.messageRole === "assistant") {
+                  // Calculate actual space used by the completed answer with dynamic values
+                  // Account for the first line starting from the Xyne icon (no space reduction for first line)
+                  const completedAnswerLength = lastMessage.message?.length || 0
+                  const CHARS_PER_LINE = 80 // Fallback value
+                  const LINE_HEIGHT = 24 // Fallback value
+
+                  // Only count space usage after the first line
+                  const effectiveCompletedLength = Math.max(
+                    0,
+                    completedAnswerLength - CHARS_PER_LINE,
+                  )
+                  const completedAnswerHeight =
+                    Math.ceil(effectiveCompletedLength / CHARS_PER_LINE) *
+                    LINE_HEIGHT
+
+                  // Space utilized by the completed answer
+                  const spaceUtilized = Math.min(
+                    completedAnswerHeight,
+                    totalAddedSpace,
+                  )
+
+                  // Left space = total added space - space actually used
+                  const leftSpace = Math.max(0, totalAddedSpace - spaceUtilized)
+
+                  // Update last query space for next query calculation
+                  if (leftSpace !== lastQuerySpace) {
+                    setLastQuerySpace(leftSpace)
+                  }
+
+                  return (
+                    <div
+                      style={{
+                        height: `${leftSpace}px`,
+                        width: "100%",
+                        transition: isSpaceAnimating
+                          ? "height 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)"
+                          : "height 0.4s cubic-bezier(0.4, 0.0, 0.2, 1)",
+                        flexShrink: 0,
+                        transformOrigin: "bottom",
+                        // Debug styling (uncomment for debugging)
+                        // border: '2px solid blue',
+                        // backgroundColor: 'rgba(0,0,255,0.1)'
+                      }}
+                      className="pointer-events-none"
+                      data-total-added={totalAddedSpace}
+                      data-space-utilized={spaceUtilized}
+                      data-left-space={leftSpace}
+                      data-answer-height={completedAnswerHeight}
+                      data-streaming="false"
+                      data-animating={isSpaceAnimating}
+                    />
+                  )
+                }
+
+                // Fallback - no space if no assistant message
+                return null
               }
-              
-              // Fallback - no space if no assistant message
-              return null;
-            }
-          })()}
+            })()}
         </div>
       </div>
     )
@@ -3238,7 +3282,7 @@ export const ChatMessage = ({
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
                       navigator.clipboard.writeText(
-                        processMessage(message, citationMap, citationUrls),
+                        cleanCitationsFromResponse(message),
                       )
                     }
                   />
