@@ -54,7 +54,13 @@ import {
 import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
-import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
+import {
+  Apps,
+  AuthType,
+  ConnectorStatus,
+  ConnectorType,
+  getDocumentSchema,
+} from "@/shared/types"
 import {
   createOAuthProvider,
   getAppGlobalOAuthProvider,
@@ -114,7 +120,6 @@ import { handleSlackChanges } from "@/integrations/slack/sync"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
-import { deleteDocumentSchema } from "./dataSource"
 import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
@@ -2027,7 +2032,7 @@ export const GetKbVespaContent = async (c: Context) => {
     const { sub: userEmail } = c.get(JwtPayloadKey)
 
     const rawData = await c.req.json()
-    const validatedData = deleteDocumentSchema.parse(rawData)
+    const validatedData = getDocumentSchema.parse(rawData)
     const { docId, schema: rawSchema } = validatedData
     const validSchemas = [KbItemsSchema]
     if (!validSchemas.includes(rawSchema)) {
