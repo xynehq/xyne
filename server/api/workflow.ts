@@ -169,9 +169,9 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
     const tools =
       toolIds.length > 0
         ? await db
-            .select()
-            .from(workflowTool)
-            .where(inArray(workflowTool.id, toolIds))
+          .select()
+          .from(workflowTool)
+          .where(inArray(workflowTool.id, toolIds))
         : []
 
     return c.json({
@@ -470,69 +470,69 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       const toolStatus = hasUploadError ? ToolExecutionStatus.FAILED : ToolExecutionStatus.COMPLETED
       const stepStatus = hasUploadError ? WorkflowStatus.FAILED : WorkflowStatus.COMPLETED
 
-      ;[toolExecutionRecord] = await db
-        .insert(toolExecution)
-        .values({
-          workflowToolId: rootStepTool.id,
-          workflowExecutionId: execution.id,
-          status: toolStatus,
-          result: hasUploadError ? {
-            error: processedFormData._uploadError.error,
-            failedAt: new Date().toISOString(),
-            failedBy: "api",
-          } : {
-            formData: processedFormData,
-            submittedAt: new Date().toISOString(),
-            submittedBy: "api",
-            autoCompleted: true,
-          },
-          startedAt: new Date(),
-          completedAt: new Date(),
-        })
-        .returning()
-    
+        ;[toolExecutionRecord] = await db
+          .insert(toolExecution)
+          .values({
+            workflowToolId: rootStepTool.id,
+            workflowExecutionId: execution.id,
+            status: toolStatus,
+            result: hasUploadError ? {
+              error: processedFormData._uploadError.error,
+              failedAt: new Date().toISOString(),
+              failedBy: "api",
+            } : {
+              formData: processedFormData,
+              submittedAt: new Date().toISOString(),
+              submittedBy: "api",
+              autoCompleted: true,
+            },
+            startedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .returning()
 
-    // Mark root step as completed or failed
-    await db
-      .update(workflowStepExecution)
-      .set({
-        status: stepStatus,
-        completedBy: "api",
-        completedAt: new Date(),
-        toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
-        metadata: hasUploadError ? {
-          ...(rootStepExecution.metadata || {}),
-          failureReason: `File upload failed for ${processedFormData._uploadError.field}`,
-          error: processedFormData._uploadError.error,
-        } : {
-          ...(rootStepExecution.metadata || {}),
-          formSubmission: {
-            formData: processedFormData,
-            submittedAt: new Date().toISOString(),
-            submittedBy: "api",
-            autoCompleted: true,
-          },
-        },
-      })
-      .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
-    // Mark entire workflow as failed if upload failed
-    if (hasUploadError) {
+      // Mark root step as completed or failed
       await db
-        .update(workflowExecution)
+        .update(workflowStepExecution)
         .set({
-          status: WorkflowStatus.FAILED,
+          status: stepStatus,
           completedBy: "api",
           completedAt: new Date(),
+          toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
+          metadata: hasUploadError ? {
+            ...(rootStepExecution.metadata || {}),
+            failureReason: `File upload failed for ${processedFormData._uploadError.field}`,
+            error: processedFormData._uploadError.error,
+          } : {
+            ...(rootStepExecution.metadata || {}),
+            formSubmission: {
+              formData: processedFormData,
+              submittedAt: new Date().toISOString(),
+              submittedBy: "api",
+              autoCompleted: true,
+            },
+          },
         })
-        .where(eq(workflowExecution.id, execution.id))
+        .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
-      // Now return the error after all database updates are complete
-      return c.json({
-        success: false,
-        error: processedFormData._uploadError.error,
-      }, 400)
-    }
+      // Mark entire workflow as failed if upload failed
+      if (hasUploadError) {
+        await db
+          .update(workflowExecution)
+          .set({
+            status: WorkflowStatus.FAILED,
+            completedBy: "api",
+            completedAt: new Date(),
+          })
+          .where(eq(workflowExecution.id, execution.id))
+
+        // Now return the error after all database updates are complete
+        return c.json({
+          success: false,
+          error: processedFormData._uploadError.error,
+        }, 400)
+      }
     }
     // Auto-execute next automated steps
     const allTools = await db.select().from(workflowTool)
@@ -733,7 +733,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       const isRootStep = currentExecution.rootWorkflowStepExeId === step.id
       const hasBeenStarted = step.status !== WorkflowStatus.DRAFT
       const hasToolExecutions = step.toolExecIds && step.toolExecIds.length > 0
-      
+
       return isRootStep || hasBeenStarted || hasToolExecutions
     })
 
@@ -745,7 +745,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
     const completedSteps = executedSteps.filter(step => step.status === WorkflowStatus.COMPLETED)
     const failedSteps = executedSteps.filter(step => step.status === WorkflowStatus.FAILED)
     const activeSteps = executedSteps.filter(step => step.status === WorkflowStatus.ACTIVE)
-    const manualStepsAwaitingInput = executedSteps.filter(step => 
+    const manualStepsAwaitingInput = executedSteps.filter(step =>
       step.type === StepType.MANUAL && step.status === WorkflowStatus.DRAFT
     )
 
@@ -782,7 +782,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
           metadata: progressMetadata
         })
         .where(eq(workflowExecution.id, executionId))
-      
+
       Logger.info(`Workflow ${executionId} marked as failed due to ${failedSteps.length} failed steps`)
       return true
     }
@@ -817,7 +817,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       Logger.info(
         `Workflow ${executionId} completion criteria met: ${completionReason}`
       )
-      
+
       await db
         .update(workflowExecution)
         .set({
@@ -827,7 +827,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
           metadata: progressMetadata
         })
         .where(eq(workflowExecution.id, executionId))
-      
+
       Logger.info(`Workflow ${executionId} marked as completed`)
       return true
     }
@@ -985,12 +985,12 @@ const executeWorkflowChain = async (
     }
 
     // Execute the tool
-    const toolResult = await executeWorkflowTool(tool, previousResults)
+    const toolResult = await executeWorkflowTool(tool, previousResults, executionId)
 
     // Check if tool execution failed
     if (toolResult.status !== "success") {
       Logger.error(`Tool execution failed for step ${step.name}: ${JSON.stringify(toolResult.result)}`)
-      
+
       // Create failed tool execution record
       let toolExecutionRecord
       try {
@@ -1801,6 +1801,7 @@ const extractContentFromPath = (
 const executeWorkflowTool = async (
   tool: any,
   previousStepResults: any = {},
+  executionId: string,
 ) => {
   try {
     switch (tool.type) {
@@ -1840,8 +1841,14 @@ const executeWorkflowTool = async (
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
-        const subject = emailConfig.subject || "Workflow Results"
         const contentType = emailConfig.content_type || "html"
+        const [execution] = await db
+          .select()
+          .from(workflowExecution)
+          .where(eq(workflowExecution.id, executionId))
+
+        const workflowName = execution?.name || "Workflow"
+        const subject = emailConfig.subject || `Results of ${workflowName}`
 
         // New configurable content path feature
         const contentPath =
@@ -1855,7 +1862,7 @@ const executeWorkflowTool = async (
             emailBody = extractContentFromPath(previousStepResults, contentPath)
             if (!emailBody) {
               emailBody = `No content found at path: ${contentPath}`
-          }
+            }
           } else {
             // Fallback to extracting from response.aiOutput path
             emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
@@ -1881,8 +1888,8 @@ const executeWorkflowTool = async (
 <body>
     <div class="content">
         <div class="header">
-            <h2>🤖 Workflow Results</h2>
-            <p>Generated on: ${new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"})}</p>
+            <h2>🤖 Result of the ${workflowName}</h2>
+            <p>Generated on: ${new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })}</p>
         </div>
         <div class="body-content">
             ${emailBody.replace(/\n/g, "<br>")}
@@ -1914,12 +1921,12 @@ const executeWorkflowTool = async (
           const emailResults = []
           for (const recipient of recipients) {
             try {
-          const emailSent = await emailService.sendEmail({
+              const emailSent = await emailService.sendEmail({
                 to: recipient,
                 subject,
                 body: emailBody,
                 contentType: contentType === "html" ? "html" : "text",
-          })
+              })
               emailResults.push({ recipient, sent: emailSent })
             } catch (emailError) {
               emailResults.push({
@@ -1969,19 +1976,19 @@ const executeWorkflowTool = async (
         // Enhanced AI agent with Text/Form input type support
         const aiConfig = tool.config || {}
         const aiValue = tool.value || {}
-        
+
         const inputType = aiConfig.inputType || "text" // Default to text
         const aiModelEnum = aiConfig.aiModel || aiConfig.model || "vertex-gemini-2-5-flash"
         const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
 
         // Convert enum value to actual API model name
         const aiModel = getActualNameFromEnum(aiModelEnum) || "gemini-2.5-flash"
-        
+
         // Map to Models enum for provider selection, preferring VertexAI for compatible models
         let modelId: Models
         const isModels = (v: string): v is Models =>
           (Object.values(Models) as string[]).includes(v as Models)
-        
+
         // Map Google AI models to their VertexAI equivalents for better enterprise integration
         switch (aiModelEnum) {
           case "googleai-gemini-2-5-flash":
@@ -2000,7 +2007,7 @@ const executeWorkflowTool = async (
               modelId = Models.Vertex_Gemini_2_5_Flash;
             }
         }
-        
+
         Logger.info(`Using model enum: ${aiModelEnum}, actual model: ${aiModel}`)
         try {
           let analysisInput = ""
@@ -2153,9 +2160,9 @@ const executeWorkflowTool = async (
           }
 
           // Use VertexAI provider instead of direct Gemini API
-          const fullPrompt = `${prompt}\n\nInput to analyze:\n${analysisInput.slice(0, 8000)}`
+          const fullPrompt = `${prompt}\n\nInput to analyze:\n${analysisInput}`
           Logger.info(`Calling VertexAI provider with model: ${modelId}`)
-          
+
           const messages: Message[] = [
             {
               role: "user",
@@ -2169,11 +2176,26 @@ const executeWorkflowTool = async (
 
           const modelParams = {
             modelId,
-            systemPrompt: "You are an AI assistant that analyzes content and provides helpful insights.",
+            systemPrompt: `
+  You are an AI assistant that analyzes content and provides helpful insights.
+
+  CRITICAL FORMATTING REQUIREMENT:
+  - Respond ONLY in plain text format
+  - Do NOT use any markdown syntax whatsoever
+  - Do NOT use numbered lists (1., 2., 3.) or bullet points (*, -, •)
+  - Do NOT use bold (**text**), italics (*text*), or any special formatting
+  - Do NOT use headers (# ## ###), code blocks (\`\`\`), or inline code (\`)
+  - Do NOT use any symbols for formatting like asterisks, hashes, or underscores
+  - Write everything as continuous paragraphs with normal punctuation only
+  - Use regular text with periods, commas, and line breaks for structure
+
+  Write your response as if you were writing a plain text email or document - no special formatting allowed.
+  `,
             maxTokens: 2048,
             temperature: 0.3,
             stream: false,
           }
+
 
           const provider = getProviderByModel(modelId)
           const response = await provider.converse(messages, modelParams)
@@ -2287,7 +2309,7 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
 export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
   try {
     const requestData = await c.req.json()
-    
+
     // Create the main workflow template
     const [template] = await db
       .insert(workflowTemplate)
@@ -2302,16 +2324,16 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       .returning()
 
     const templateId = template.id
-    
+
     // Create workflow tools first (needed for step tool references)
     const toolIdMap = new Map<string, string>() // frontend tool ID -> backend tool ID
     const createdTools: any[] = []
-    
+
     // Collect all tools from nodes
     const allTools = requestData.nodes
       .flatMap((node: any) => node.data?.tools || [])
       .filter((tool: any) => tool && tool.type)
-    
+
     // Create unique tools (deduplicate by frontend tool ID if it exists)
     const uniqueTools = allTools.reduce((acc: any[], tool: any) => {
       // If tool has an ID and we haven't seen it, add it
@@ -2323,11 +2345,11 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       }
       return acc
     }, [])
-    
+
     for (const tool of uniqueTools) {
       // Process form tools to ensure file fields use "document_file" as ID
       let processedValue = tool.value || {}
-      
+
       if (tool.type === ToolType.FORM && processedValue.fields && Array.isArray(processedValue.fields)) {
         processedValue = {
           ...processedValue,
@@ -2342,17 +2364,17 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           })
         }
       }
-      
+
       // Process AI agent tools to add inputType: "form" in config
       let processedConfig = tool.config || {}
-      
+
       if (tool.type === "ai_agent") {
         processedConfig = {
           ...processedConfig,
           inputType: "form"
         }
       }
-      
+
       const [createdTool] = await db
         .insert(workflowTool)
         .values({
@@ -2362,19 +2384,19 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           createdBy: "demo",
         })
         .returning()
-      
+
       createdTools.push(createdTool)
-      
+
       // Map frontend tool ID to backend tool ID
       if (tool.id) {
         toolIdMap.set(tool.id, createdTool.id)
       }
     }
-    
+
     // Create workflow step templates
     const stepIdMap = new Map<string, string>() // frontend step ID -> backend step ID
     const createdSteps: any[] = []
-    
+
     // Sort nodes by step_order if available, otherwise by position.y
     const sortedNodes = [...requestData.nodes].sort((a, b) => {
       const orderA = a.data?.step?.metadata?.step_order ?? 999
@@ -2382,11 +2404,11 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       if (orderA !== orderB) return orderA - orderB
       return a.position.y - b.position.y
     })
-    
+
     // First pass: create all steps to get their IDs
     for (const node of sortedNodes) {
       const stepData = node.data.step
-      
+
       const [createdStep] = await db
         .insert(workflowStepTemplate)
         .values({
@@ -2410,29 +2432,29 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           toolIds: [], // Will be updated in second pass
         })
         .returning()
-      
+
       createdSteps.push(createdStep)
       stepIdMap.set(stepData.id, createdStep.id)
     }
-    
+
     // Second pass: update relationships based on edges
     for (const step of createdSteps) {
       const frontendStepId = [...stepIdMap.entries()].find(([_, backendId]) => backendId === step.id)?.[0]
       const correspondingNode = requestData.nodes.find((n: any) => n.data.step.id === frontendStepId)
-      
+
       // Find edges where this step is involved
       const outgoingEdges = requestData.edges.filter((edge: any) => edge.source === frontendStepId)
       const incomingEdges = requestData.edges.filter((edge: any) => edge.target === frontendStepId)
-      
+
       // Map frontend step IDs to backend step IDs
       const nextStepIds = outgoingEdges
         .map((edge: any) => stepIdMap.get(edge.target))
         .filter(Boolean)
-      
+
       const prevStepIds = incomingEdges
         .map((edge: any) => stepIdMap.get(edge.source))
         .filter(Boolean)
-      
+
       // Map tool IDs for this step
       const stepToolIds: string[] = []
       if (correspondingNode?.data?.tools) {
@@ -2441,8 +2463,8 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
             stepToolIds.push(toolIdMap.get(tool.id)!)
           } else {
             // Find tool by type and config if no ID mapping
-            const matchingTool = createdTools.find(t => 
-              t.type === tool.type && 
+            const matchingTool = createdTools.find(t =>
+              t.type === tool.type &&
               JSON.stringify(t.value) === JSON.stringify(tool.value || {})
             )
             if (matchingTool) {
@@ -2451,7 +2473,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           }
         }
       }
-      
+
       // Update the step with relationships
       await db
         .update(workflowStepTemplate)
@@ -2462,7 +2484,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         })
         .where(eq(workflowStepTemplate.id, step.id))
     }
-    
+
     // Set root step (first step in the workflow - usually form submission or trigger)
     let rootStepId = null
     if (createdSteps.length > 0) {
@@ -2472,9 +2494,9 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         const hasIncomingEdges = requestData.edges.some((edge: any) => edge.target === frontendStepId)
         return !hasIncomingEdges
       })
-      
+
       rootStepId = rootStep?.id || createdSteps[0].id
-      
+
       // Update template with root step ID
       await db
         .update(workflowTemplate)
@@ -2483,7 +2505,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         })
         .where(eq(workflowTemplate.id, templateId))
     }
-    
+
     // Return the complete workflow template with steps and tools
     const completeTemplate = {
       ...template,
@@ -2727,10 +2749,10 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
       toolUpdateData.updatedAt = new Date()
 
       const [updatedTool] = await trx
-      .update(workflowTool)
+        .update(workflowTool)
         .set(toolUpdateData)
-      .where(eq(workflowTool.id, toolId))
-      .returning()
+        .where(eq(workflowTool.id, toolId))
+        .returning()
 
       // Update associated step if stepName or stepDescription is provided
       let updatedStep = null
@@ -3286,7 +3308,7 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
   try {
     const { MODEL_CONFIGURATIONS } = await import("@/ai/modelConfig")
     const { AIProviders } = await import("@/ai/types")
-    
+
     // Get all VertexAI model enum values (includes both Claude and Gemini models)
     const vertexAIModelEnums = Object.entries(MODEL_CONFIGURATIONS)
       .filter(([_, config]) => config.provider === AIProviders.VertexAI)
@@ -3299,8 +3321,8 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
         websearch: config.websearch,
         deepResearch: config.deepResearch,
         // Add model type for better categorization in frontend
-        modelType: enumValue.includes('gemini') ? 'gemini' : 
-                   enumValue.includes('claude') ? 'claude' : 'other',
+        modelType: enumValue.includes('gemini') ? 'gemini' :
+          enumValue.includes('claude') ? 'claude' : 'other',
       }))
       .sort((a, b) => {
         const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
