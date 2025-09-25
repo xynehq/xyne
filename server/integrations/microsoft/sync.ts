@@ -1611,9 +1611,9 @@ export const handleMicrosoftOAuthChanges = async (
 
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
-        oauthTokens.refresh_token,
         MICROSOFT_CLIENT_ID,
         MICROSOFT_CLIENT_SECRET,
+        oauthTokens.refresh_token,
       )
 
       let {
@@ -1717,9 +1717,9 @@ export const handleMicrosoftOAuthChanges = async (
 
       const graphClient = createMicrosoftGraphClient(
         oauthTokens.access_token,
-        oauthTokens.refresh_token,
         MICROSOFT_CLIENT_ID,
         MICROSOFT_CLIENT_SECRET,
+        oauthTokens.refresh_token,
       )
 
       let {

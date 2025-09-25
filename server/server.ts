@@ -923,9 +923,13 @@ export const AppRoutes = app
   )
   .post("/workflow/templates/:templateId/execute", ExecuteTemplateApi)
   .post(
-    "/oauth/create",
-    zValidator("form", createOAuthProvider),
-    CreateOAuthProvider,
+    "/workflow/templates/:templateId/execute-with-input",
+    ExecuteWorkflowWithInputApi,
+  )
+  .post(
+    "/workflow/templates/:templateId/steps",
+    zValidator("json", addStepToWorkflowSchema),
+    AddStepToWorkflowApi,
   )
   .post(
     "/workflow/executions",

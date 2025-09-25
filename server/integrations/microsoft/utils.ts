@@ -1,6 +1,6 @@
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import type { MicrosoftClient, MicrosoftGraphClient } from "./client"
+import type {  MicrosoftGraphClient } from "./client"
 import { downloadFileFromGraph, makeGraphApiCall } from "./client"
 import { Apps, DriveEntity } from "@/shared/types"
 import { chunkDocument } from "@/chunks"
@@ -451,7 +451,7 @@ async function processMicrosoftWord(
         owner: "",
         photoLink: "",
         ownerEmail: userEmail,
-        entity: DriveEntity.Docs, // Reuse Google's entity types
+        entity: DriveEntity.WordDocument, // Reuse Google's entity types
         chunks: extractedContent.text_chunks || [], // Use text_chunks property
         permissions: [],
         mimeType: file.file?.mimeType ?? "",
