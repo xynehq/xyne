@@ -154,6 +154,27 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       description: "Send emails to added mails",
       icon: <Mail className="w-5 h-5" />,
     },
+    {
+      id: "review",
+      name: "Review",
+      description: "Require manual approval before continuing workflow",
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+          />
+        </svg>
+      ),
+    },
   ]
 
   // Coming soon actions (upcoming features)
@@ -260,8 +281,8 @@ print('Hello, World!')"
             <div
               key={action.id}
               onClick={() => {
-                if (action.id === "ai_agent" || action.id === "email") {
-                  // For AI Agent and Email, trigger custom event to open respective ConfigUI
+                if (action.id === "ai_agent" || action.id === "email" || action.id === "review") {
+                  // For AI Agent, Email, and Review, trigger custom event to open respective ConfigUI
                   onSelectAction(action.id)
                   onClose() // Close WhatHappensNextUI
                 } else {

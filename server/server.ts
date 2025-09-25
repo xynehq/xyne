@@ -193,6 +193,7 @@ import {
   DeleteWorkflowStepTemplateApi,
   UpdateWorkflowStepExecutionApi,
   CompleteWorkflowStepExecutionApi,
+  ReviewWorkflowStepApi,
   SubmitFormStepApi,
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
@@ -206,6 +207,7 @@ import {
   createWorkflowToolSchema,
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
+  reviewSubmissionSchema,
   listWorkflowExecutionsQuerySchema,
 } from "@/api/workflow"
 import metricRegister from "@/metrics/sharedRegistry"
@@ -960,6 +962,11 @@ export const AppRoutes = app
     UpdateWorkflowStepExecutionApi,
   )
   .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
+  .post(
+    "/workflow/steps/:stepId/review",
+    zValidator("json", reviewSubmissionSchema),
+    ReviewWorkflowStepApi,
+  )
   .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)

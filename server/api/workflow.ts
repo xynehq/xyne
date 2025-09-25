@@ -63,6 +63,7 @@ export {
   createWorkflowToolSchema,
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
+  reviewSubmissionSchema,
 } from "@/db/schema/workflows"
 
 // Export query schema
@@ -1922,6 +1923,16 @@ const executeWorkflowTool = async (
             message: "User input required - handled by form submission API",
           },
         }
+      case "review":
+        // Review tools are handled by review submission API
+        return {
+          status: "awaiting_user_input",
+          result: {
+            reviewDefinition: tool.value,
+            config: tool.config, // Contains approved/rejected step IDs
+            message: "User review required - approve or reject to continue",
+          },
+        }
 
       case "python_script":
         // Execute actual Python script from database using unified function
@@ -3054,6 +3065,7 @@ function getStepIcon(toolType: string): string {
     delay: "⏰",
     agent: "🤖",
     merged_node: "🔀",
+    review: "👁️",
   }
   return iconMap[toolType] || "⚙️"
 }
@@ -3265,6 +3277,46 @@ export const CompleteWorkflowStepExecutionApi = async (c: Context) => {
   try {
     const stepId = c.req.param("stepId")
 
+    // Get the current step execution
+    const [currentStep] = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.id, stepId))
+
+    if (!currentStep) {
+      throw new HTTPException(404, {
+        message: "Workflow step execution not found",
+      })
+    }
+
+    // Check if all previous steps are completed
+    const prevStepIds = currentStep.prevStepIds || []
+    
+    if (prevStepIds.length > 0) {
+      // Get all step executions for this workflow
+      const allSteps = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+      // Find previous steps and check their status
+      const previousSteps = allSteps.filter(step => 
+        prevStepIds.includes(step.workflowStepTemplateId)
+      )
+
+      const incompletePrevSteps = previousSteps.filter(step => 
+        step.status !== WorkflowStatus.COMPLETED
+      )
+
+      if (incompletePrevSteps.length > 0) {
+        const incompleteStepNames = incompletePrevSteps.map(step => step.name).join(", ")
+        throw new HTTPException(400, {
+          message: `Cannot complete step. Previous steps must be completed first: ${incompleteStepNames}`,
+        })
+      }
+    }
+
+    // All previous steps are completed, mark this step as complete
     const [stepExecution] = await db
       .update(workflowStepExecution)
       .set({
@@ -3281,6 +3333,217 @@ export const CompleteWorkflowStepExecutionApi = async (c: Context) => {
     })
   } catch (error) {
     Logger.error(error, "Failed to complete workflow step execution")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Review workflow step execution (approve/reject)
+export const ReviewWorkflowStepApi = async (c: Context) => {
+  try {
+    const stepId = c.req.param("stepId")
+    const requestData = await c.req.json()
+    
+    // Validate input
+    if (!requestData.input || !["approved", "rejected"].includes(requestData.input)) {
+      throw new HTTPException(400, {
+        message: "Input must be either 'approved' or 'rejected'",
+      })
+    }
+
+    const reviewDecision = requestData.input as "approved" | "rejected"
+
+    // Get the current step execution
+    const [currentStep] = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.id, stepId))
+
+    if (!currentStep) {
+      throw new HTTPException(404, {
+        message: "Workflow step execution not found",
+      })
+    }
+
+    // Get the step template to access tool configuration
+    const stepTemplate = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.id, currentStep.workflowStepTemplateId))
+
+    if (!stepTemplate || stepTemplate.length === 0) {
+      throw new HTTPException(404, { message: "Step template not found" })
+    }
+
+    const toolIds = stepTemplate[0].toolIds || []
+    if (toolIds.length === 0) {
+      throw new HTTPException(400, {
+        message: "No tools configured for this step",
+      })
+    }
+
+    // Get the review tool
+    const reviewTool = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolIds[0]))
+
+    if (!reviewTool || reviewTool.length === 0) {
+      throw new HTTPException(404, { message: "Review tool not found" })
+    }
+
+    if (reviewTool[0].type !== ToolType.REVIEW) {
+      throw new HTTPException(400, {
+        message: "Step is not a review step",
+      })
+    }
+
+    // Get the next step template ID based on approval/rejection
+    const toolConfig = reviewTool[0].config as any
+    const nextStepTemplateId = reviewDecision === "approved" 
+      ? toolConfig?.approved 
+      : toolConfig?.rejected
+
+    if (!nextStepTemplateId) {
+      throw new HTTPException(400, {
+        message: `No ${reviewDecision} step configured for this review`,
+      })
+    }
+
+    // Get the single previous step that led to this review step
+    const allWorkflowSteps = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+    // Find the single previous step that has the current review step as its next step
+    const previousStep = allWorkflowSteps.find(step => 
+      step.nextStepIds?.includes(currentStep.workflowStepTemplateId) && 
+      step.status === WorkflowStatus.COMPLETED
+    )
+
+    // Get previous step tool result
+    let previousStepResult = null
+    if (previousStep) {
+      const allToolExecutions = await db
+        .select()
+        .from(toolExecution)
+        .where(eq(toolExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+      // Get the first tool execution result from the previous step
+      const previousToolExec = allToolExecutions.find(te => 
+        previousStep.toolExecIds?.includes(te.id)
+      )
+      
+      if (previousToolExec) {
+        previousStepResult = previousToolExec.result
+      }
+    }
+
+    // Create tool execution record for the review decision
+    const [toolExecutionRecord] = await db
+      .insert(toolExecution)
+      .values({
+        workflowToolId: reviewTool[0].id,
+        workflowExecutionId: currentStep.workflowExecutionId,
+        status: ToolExecutionStatus.COMPLETED,
+        result: {
+          reviewDecision: reviewDecision,
+          decidedAt: new Date().toISOString(),
+          decidedBy: "demo",
+          nextStepTemplateId: nextStepTemplateId,
+          // Include previous step tool result so the next step can access the original input
+          input: previousStepResult,
+        },
+        startedAt: new Date(),
+        completedAt: new Date(),
+      })
+      .returning()
+
+    // Mark the review step as completed
+    const [completedStep] = await db
+      .update(workflowStepExecution)
+      .set({
+        status: WorkflowStatus.COMPLETED,
+        completedBy: "demo",
+        completedAt: new Date(),
+        toolExecIds: [toolExecutionRecord.id],
+        metadata: {
+          ...(currentStep.metadata || {}),
+          reviewDecision: {
+            decision: reviewDecision,
+            decidedAt: new Date().toISOString(),
+            decidedBy: "demo",
+            nextStepTemplateId: nextStepTemplateId,
+          },
+        },
+      })
+      .where(eq(workflowStepExecution.id, stepId))
+      .returning()
+
+    // Continue workflow execution - execute the next step based on decision
+    const tools = await db.select().from(workflowTool)
+    const stepName = currentStep.name || "Review Step"
+    const currentResults: Record<string, any> = {}
+
+    currentResults[stepName] = {
+      stepId: currentStep.id,
+      reviewDecision: {
+        decision: reviewDecision,
+        decidedAt: new Date().toISOString(),
+        decidedBy: "demo",
+        nextStepTemplateId: nextStepTemplateId,
+      },
+      toolExecution: toolExecutionRecord,
+      // Include previous step tool result so the next step can access the original input
+      previousStepResult: previousStepResult,
+    }
+
+    // Get all step executions for this workflow to find the next step
+    const allSteps = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+    // Find the next step execution that matches the template ID
+    const nextStep = allSteps.find(
+      (s) => s.workflowStepTemplateId === nextStepTemplateId
+    )
+
+    if (nextStep && nextStep.type === StepType.AUTOMATED) {
+      // Execute the next automated step
+      executeWorkflowChain(
+        currentStep.workflowExecutionId,
+        nextStep.id,
+        tools,
+        currentResults,
+      ).catch((error) => {
+        Logger.error(
+          error,
+          `Background workflow execution failed after review decision`,
+        )
+      })
+    }
+
+    return c.json({
+      success: true,
+      message: `Review ${reviewDecision} successfully - workflow continued`,
+      data: {
+        stepId: stepId,
+        reviewDecision: reviewDecision,
+        nextStepTemplateId: nextStepTemplateId,
+        toolExecution: toolExecutionRecord,
+        completedStep: completedStep,
+      },
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to process review decision")
+    
+    if (error instanceof HTTPException) {
+      throw error
+    }
+
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })

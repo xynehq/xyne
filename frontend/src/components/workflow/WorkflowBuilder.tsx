@@ -154,6 +154,7 @@ import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
+import ReviewExecutionUI from "./ReviewExecutionUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
@@ -986,6 +987,153 @@ const StepNode: React.FC<NodeProps> = ({
                   stroke="currentColor"
                   strokeWidth="2"
                 >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // Special rendering for review nodes and steps with review tools
+  const hasReviewTool = tools && tools.length > 0 && tools[0].type === "review"
+  if (step.type === "review" || hasReviewTool) {
+    // Get config from step or tool
+    const reviewConfig =
+      (step as any).config || (hasReviewTool && tools?.[0]?.config) || {}
+    const reviewDefinition =
+      (step as any).value || (hasReviewTool && tools?.[0]?.val) || {}
+    
+    const isConfigured = reviewConfig.approved && reviewConfig.rejected
+    const isAwaitingReview = step.status === "active" && step.type === "review"
+
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all ${
+            isAwaitingReview
+              ? "bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600"
+              : "bg-white dark:bg-gray-800 border-2"
+          } ${
+            selected 
+              ? "border-purple-600 shadow-xl shadow-purple-500/15" 
+              : isAwaitingReview
+              ? "border-amber-300 dark:border-amber-600"
+              : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
+          } rounded-xl p-4 min-w-[280px] flex flex-col`}
+        >
+          {/* Header */}
+          <div className="flex items-center space-x-3 mb-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              isAwaitingReview 
+                ? "bg-amber-100 dark:bg-amber-800" 
+                : "bg-orange-100 dark:bg-orange-800"
+            }`}>
+              <svg
+                className={`w-4 h-4 ${
+                  isAwaitingReview 
+                    ? "text-amber-600 dark:text-amber-300" 
+                    : "text-orange-600 dark:text-orange-300"
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
+              </svg>
+            </div>
+            <div className="flex-1 text-left">
+              <h3 className={`font-semibold text-sm ${
+                isAwaitingReview 
+                  ? "text-amber-900 dark:text-amber-100" 
+                  : "text-gray-900 dark:text-gray-100"
+              }`}>
+                {step.name || reviewDefinition.title || "Review Step"}
+              </h3>
+              {isAwaitingReview && (
+                <div className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                  Action Required
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="text-left flex-1">
+            <p className={`text-sm ${
+              isAwaitingReview 
+                ? "text-amber-700 dark:text-amber-300" 
+                : "text-gray-600 dark:text-gray-400"
+            } leading-relaxed`}>
+              {(() => {
+                if (isAwaitingReview) {
+                  return "Review is required to continue the workflow. Click to approve or reject."
+                }
+                
+                if (reviewDefinition.description) {
+                  return reviewDefinition.description
+                }
+                
+                if (isConfigured) {
+                  return `Review step configured with approval and rejection paths.`
+                }
+                
+                return "Review step - configure approval and rejection paths"
+              })()}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+
+          {/* Add Next Step Button */}
+          {hasNext && !isAwaitingReview && (
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
+              }}
+            >
+              <div className="bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
@@ -1843,6 +1991,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [showAIAgentConfigUI, setShowAIAgentConfigUI] = useState(false)
   const [showEmailConfigUI, setShowEmailConfigUI] = useState(false)
   const [showOnFormSubmissionUI, setShowOnFormSubmissionUI] = useState(false)
+  const [showReviewExecutionUI, setShowReviewExecutionUI] = useState(false)
   const [selectedNodeForNext, setSelectedNodeForNext] = useState<string | null>(
     null,
   )
@@ -1853,6 +2002,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     null,
   )
   const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
+    null,
+  )
+  const [selectedReviewStepId, setSelectedReviewStepId] = useState<string | null>(
     null,
   )
   const [zoomLevel, setZoomLevel] = useState(100)
@@ -2247,10 +2399,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowReviewExecutionUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
       setSelectedFormNodeId(null)
+      setSelectedReviewStepId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -2279,6 +2433,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setShowAIAgentConfigUI(true)
           break
 
+        case "review":
+          // Open Review execution sidebar
+          setSelectedReviewStepId(step.id)
+          setShowReviewExecutionUI(true)
+          break
+
         default:
           if (onStepClick) {
             onStepClick(step)
@@ -2295,7 +2455,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       showEmailConfigUI,
       selectedEmailNodeId,
       showOnFormSubmissionUI,
-      selectedFormNodeId
+      selectedFormNodeId,
+      showReviewExecutionUI,
+      selectedReviewStepId
     ],
   )
 
@@ -3802,6 +3964,42 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }
             toolId={selectedFormNodeId ? getToolIdFromStepId(selectedFormNodeId) : undefined}
           />
+
+        {/* Review Execution Sidebar */}
+        <ReviewExecutionUI
+          isVisible={showReviewExecutionUI}
+          onBack={() => setShowReviewExecutionUI(false)}
+          onClose={() => {
+            setShowReviewExecutionUI(false)
+            setSelectedReviewStepId(null)
+          }}
+          stepExecutionId={selectedReviewStepId || ""}
+          stepName={
+            selectedReviewStepId
+              ? (() => {
+                  const node = nodes.find((n) => {
+                    const step = n.data?.step as { id?: string; name?: string }
+                    return step?.id === selectedReviewStepId
+                  })
+                  const step = node?.data?.step as { name?: string }
+                  return step?.name || "Review Step"
+                })()
+              : "Review Step"
+          }
+          previousStepResult={
+            selectedReviewStepId
+              ? (() => {
+                  // Get previous step results for review context
+                  // This would typically come from the workflow execution data
+                  return { content: "Previous step content for review" }
+                })()
+              : null
+          }
+          onReviewSubmitted={() => {
+            // Restart workflow polling after review submission
+            console.log("Review submitted, workflow will continue")
+          }}
+        />
       </div>
 
       {/* Execution Result Modal */}
