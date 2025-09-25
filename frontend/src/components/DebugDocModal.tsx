@@ -15,7 +15,33 @@ interface DebugDocModalProps {
   isOpen: boolean
   onClose: () => void
 }
+interface KnowledgeBaseFileMetadata {
+  originalFileName: string
+  uploadedBy: string
+  chunksCount: number
+  imageChunksCount: number
+  processingMethod: string
+  lastModified: number
+}
 
+interface KnowledgeBaseFile {
+  storagePath: string
+  chunks: any[] // You may want to define a more specific type for chunks
+  fileName: string
+  fileSize: number
+  itemId: string
+  duration: number
+  clId: string
+  metadata: string | KnowledgeBaseFileMetadata // Can be JSON string or parsed object
+  createdBy: string
+  entity: string
+  app: string
+  chunks_pos: any[] // You may want to define a more specific type for chunk positions
+  docId: string
+  createdAt: number
+  updatedAt: number
+  mimeType: string
+}
 export function DebugDocModal({
   documentId,
   documentName,
@@ -23,7 +49,7 @@ export function DebugDocModal({
   onClose,
 }: DebugDocModalProps) {
   const { toast } = useToast()
-  const [vespaData, setVespaData] = useState<any>(null)
+  const [vespaData, setVespaData] = useState<KnowledgeBaseFile | null>(null)
   const [loadingVespaData, setLoadingVespaData] = useState(false)
 
   const handleFetchVespaData = async () => {
@@ -65,6 +91,7 @@ export function DebugDocModal({
       }
 
       const data = await response.json()
+      data.data.metadata = JSON.parse(data.data.metadata)
       setVespaData(data.data)
     } catch (error) {
       console.error("Error fetching Vespa data:", error)
