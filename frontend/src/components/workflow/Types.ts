@@ -286,8 +286,17 @@ export interface WorkflowExecutionModalProps {
   onClose: () => void
   workflowName: string
   workflowDescription: string
-  templateId: string
-  workflowTemplate: WorkflowTemplate
+  templateId?: string
+  workflowTemplate?: WorkflowTemplate
+  workflowData?: {
+    name: string
+    description: string
+    version?: string
+    config?: any
+    nodes: any[]
+    edges: any[]
+    metadata?: any
+  }
   onViewExecution?: (executionId: string) => void
 }
 

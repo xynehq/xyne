@@ -175,6 +175,24 @@ setup_environment() {
     
     # Create network if it doesn't exist
     docker network create xyne 2>/dev/null || echo "Network 'xyne' already exists"
+
+    # Process prometheus configuration template
+    echo " Processing prometheus configuration template..."
+    if [ -f prometheus-selfhosted.yml.template ]; then
+        # Load environment variables if .env exists
+        if [ -f .env ]; then
+            set -a && source .env && set +a
+        fi
+
+        # Set default METRICS_PORT if not defined
+        METRICS_PORT=${METRICS_PORT:-3001}
+        export METRICS_PORT
+
+        envsubst < prometheus-selfhosted.yml.template > prometheus-selfhosted.yml
+        echo " Prometheus configuration updated with METRICS_PORT=${METRICS_PORT}"
+    else
+        echo " Template file not found, using existing prometheus-selfhosted.yml"
+    fi
 }
 
 setup_permissions() {
@@ -213,8 +231,8 @@ start_infrastructure() {
     else
         echo -e "${BLUE} Using CPU-only Vespa${NC}"
     fi
-    
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d
+
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build
     echo -e "${GREEN} Infrastructure services started${NC}"
 }
 
@@ -267,7 +285,7 @@ update_infrastructure() {
     echo -e "${YELLOW} Updating infrastructure services...${NC}"
     INFRA_COMPOSE=$(get_infrastructure_compose)
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
     echo -e "${GREEN} Infrastructure services updated${NC}"
 }
 

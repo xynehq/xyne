@@ -26,7 +26,7 @@ import React, {
   import { EnhancedReasoning } from "@/components/EnhancedReasoning"
   import { AttachmentGallery } from "@/components/AttachmentGallery"
   import { jsonToHtmlMessage } from "@/routes/_authenticated/chat"
-  import { processMessage } from "@/utils/chatUtils"
+  import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
   import { ToolsListItem } from "@/types"
   import {
     ImageCitationComponent,
@@ -316,7 +316,7 @@ import React, {
                       onMouseDown={() => setIsCopied(true)}
                       onMouseUp={() => setIsCopied(false)}
                       onClick={() =>
-                        navigator.clipboard.writeText(processMessage(message, citationMap, citationUrls))
+                        navigator.clipboard.writeText(cleanCitationsFromResponse(message))
                       }
                     />
                     <img
@@ -573,16 +573,17 @@ import React, {
       agentIdFromChatBox?: string | null,
       toolsList?: ToolsListItem[] | null,
       selectedModel?: string,
+      selectedKbItems: string[] = [],
     ) => {
       if (!messageToSend || isStreaming || retryIsStreaming) return
   
       setUserHasScrolled(false)
       setQuery("")
   
-      // Automatically add the document ID to selected sources
-      const sourcesWithDocument = [...selectedSources]
-      if (!sourcesWithDocument.includes(documentId)) {
-        sourcesWithDocument.push(documentId)
+      // Automatically add the document ID to selected Kbitems
+      const kbItemsWithChat = [...selectedKbItems]
+      if (!kbItemsWithChat.includes(documentId)) {
+        kbItemsWithChat.push(documentId)
       }
   
       // Add user message optimistically to React Query cache with display text
@@ -604,12 +605,13 @@ import React, {
       try {
         await startStream(
           messageToSend,
-          sourcesWithDocument, // Use the sources array that includes the document ID
+          [],
           false, // isAgenticMode
           null,
           [],
           metadata,
           selectedModel,
+          kbItemsWithChat,
         )
       } catch (error) {
         // If there's an error, clear the optimistically added message from cache
@@ -641,15 +643,15 @@ import React, {
       }
     }
 
-    const handleRetry = async (messageId: string, selectedSources: string[] = [],) => {
+    const handleRetry = async (messageId: string, selectedKbItems: string[] = [],) => {
       if (!messageId || isStreaming) return
       setRetryIsStreaming(true)
-      // Automatically add the document ID to selected sources
-      const sourcesWithDocument = [...selectedSources]
-      if (!sourcesWithDocument.includes(documentId)) {
-        sourcesWithDocument.push(documentId)
+      // Automatically add the document ID to selected kbitems
+      const kbItemsWithChat = [...selectedKbItems]
+      if (!kbItemsWithChat.includes(documentId)) {
+        kbItemsWithChat.push(documentId)
       }
-      await retryMessage(messageId, false, undefined, undefined, sourcesWithDocument)
+      await retryMessage(messageId, false, undefined, undefined, [], kbItemsWithChat)
     }
   
     // Handle feedback

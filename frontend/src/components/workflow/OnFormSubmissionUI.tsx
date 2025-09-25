@@ -2,9 +2,7 @@ import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import Dropdown from "@/components/ui/dropdown"
-import { FileText, ChevronDown, Upload, File, X } from "lucide-react"
+import { ChevronDown, Upload, File as FileIcon, X } from "lucide-react"
 import { BackArrowIcon } from "./WorkflowIcons"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
@@ -24,8 +22,7 @@ interface FormField {
   id: string
   name: string
   placeholder: string
-  type: "text" | "email" | "file" | "number" | "textarea" | "dropdown"
-  options?: string[] 
+  type: "file" // Only file type is supported
   fileTypes?: string[] 
   required?: boolean
   maxSize?: string
@@ -38,27 +35,12 @@ export interface FormConfig {
 }
 
 
+// Only allow specific file types as requested
 const VALID_FILE_TYPES = [
-  "pdf", "doc", "docx", "txt", "rtf", "odt",
-  "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg",
-  "mp4", "avi", "mov", "wmv", "flv", "webm",
-  "mp3", "wav", "flac", "aac", "ogg",
-  "zip", "rar", "7z", "tar", "gz",
-  "xls", "xlsx", "csv", "ppt", "pptx",
-  "json", "xml", "html", "css", "js", "ts",
-  "py", "java", "cpp", "c", "cs", "php"
+  "txt", "pdf", "docx", "doc"
 ]
 
 
-const normalizeFileType = (type: string): string => {
-  return type.startsWith('.') ? type.slice(1).toLowerCase() : type.toLowerCase()
-}
-
-
-const isValidFileType = (type: string): boolean => {
-  const normalized = normalizeFileType(type)
-  return VALID_FILE_TYPES.includes(normalized)
-}
 
 const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   isVisible = true,
@@ -87,9 +69,8 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         id: field.id || crypto.randomUUID(),
         name: field.name || field.label || field.id || "Field",
         placeholder: field.placeholder || "",
-        type: field.type === "upload" ? "file" : field.type || "text",
-        options: field.options || [],
-        fileTypes: field.filetypes || field.fileTypes || (field.type === "file" || field.type === "upload" ? ["pdf", "doc", "docx", "txt", "jpg", "png"] : []),
+        type: "file", // Force all fields to be file type
+        fileTypes: field.filetypes || field.fileTypes || ["txt", "pdf", "docx", "doc"],
         required: field.required !== undefined ? field.required : true,
         maxSize: field.maxSize || "",
       }))
@@ -146,7 +127,6 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<{
     [fieldId: string]: File[]
   }>({})
-  const [newFileType, setNewFileType] = useState("")
 
   
   React.useEffect(() => {
@@ -154,8 +134,8 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
       ...prev,
       fields: prev.fields.map(field => ({
         ...field,
-        fileTypes: field.type === "file" && (!field.fileTypes || field.fileTypes.length === 0) 
-          ? ["pdf", "doc", "docx", "txt", "jpg", "png"] 
+        fileTypes: (!field.fileTypes || field.fileTypes.length === 0) 
+          ? ["txt", "pdf", "docx", "doc"] 
           : field.fileTypes,
         required: true
       }))
@@ -179,7 +159,6 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
               required: field.required,
               placeholder: field.placeholder,
               fileTypes: field.fileTypes,
-              options: field.options,
               maxSize: field.maxSize,
             })),
           },
@@ -240,50 +219,9 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
     }))
   }
 
-  const addFileType = (fieldId: string, fileType: string) => {
-    const normalized = normalizeFileType(fileType.trim())
-    const currentFileTypes = getFieldById(fieldId)?.fileTypes || []
-    
-    if (normalized && isValidFileType(normalized) && !currentFileTypes.includes(normalized)) {
-      updateField(fieldId, {
-        fileTypes: [...currentFileTypes, normalized]
-      })
-      setNewFileType("")
-    }
-  }
 
-  const removeFileType = (fieldId: string, typeToRemove: string) => {
-    updateField(fieldId, {
-      fileTypes: getFieldById(fieldId)?.fileTypes?.filter(type => type !== typeToRemove) || []
-    })
-  }
-
-  const getFieldById = (fieldId: string) => {
-    return formConfig.fields.find(field => field.id === fieldId)
-  }
-
-  const handleFileTypeKeyDown = (e: React.KeyboardEvent, fieldId: string) => {
-    if (e.key === "Enter" && newFileType.trim()) {
-      e.preventDefault()
-      addFileType(fieldId, newFileType)
-    }
-  }
-
-  const getFieldTypeIcon = (type: string) => {
-    switch (type) {
-      case "file":
-        return <Upload className="w-4 h-4" />
-      case "text":
-      case "email":
-      case "number":
-        return <FileText className="w-4 h-4" />
-      case "textarea":
-        return <FileText className="w-4 h-4" />
-      case "dropdown":
-        return <ChevronDown className="w-4 h-4" />
-      default:
-        return <FileText className="w-4 h-4" />
-    }
+  const getFieldTypeIcon = () => {
+    return <Upload className="w-4 h-4" />
   }
 
   return (
@@ -382,7 +320,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
             >
               Form Description
             </Label>
-            <Textarea
+            <Input
               id="form-description"
               value={formConfig.description}
               onChange={(e) =>
@@ -392,7 +330,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                 }))
               }
               placeholder="type here"
-              className="w-full min-h-[80px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 placeholder-gray-400 dark:placeholder-gray-400"
+              className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
             />
           </div>
 
@@ -427,7 +365,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                     }
                   >
                     <div className="flex items-center gap-3">
-                      {getFieldTypeIcon(field.type)}
+                      {getFieldTypeIcon()}
                       <span className="font-medium text-slate-900 dark:text-gray-300">
                         {field.name}
                       </span>
@@ -457,155 +395,82 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
                         />
                       </div>
 
-                      {/* Input Type */}
+                      {/* Input Type - Fixed as File */}
                       <div className="space-y-2">
                         <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
                           Input Type
                         </Label>
-                        <Dropdown
-                          options={[
-                            { value: "file", label: "File" },
-                            { value: "text", label: "Text" },
-                            { value: "email", label: "Email" },
-                            { value: "number", label: "Number" },
-                            { value: "textarea", label: "Textarea" },
-                            { value: "dropdown", label: "Dropdown" }
-                          ]}
-                          value={field.type}
-                          onSelect={(value) =>
-                            updateField(field.id, {
-                              type: value as FormField["type"],
-                            })
-                          }
-                          placeholder="Select input type"
-                          variant="outline"
-                          size="md"
-                          rounded="6px"
-                          border="1px solid #E2E8F0"
-                          fontSize="text-sm"
+                        <Input
+                          value="File"
+                          readOnly
+                          disabled
+                          className="w-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 cursor-not-allowed"
                         />
                       </div>
 
-                      {/* Field Type Specific Content */}
-                      {field.type === "file" ? (
-                        <div className="space-y-4">
-                          {/* Uploaded Files Display */}
-                          {uploadedFiles[field.id] &&
-                            uploadedFiles[field.id].length > 0 && (
+                      {/* File Upload Configuration */}
+                      <div className="space-y-4">
+                        {/* Uploaded Files Display */}
+                        {uploadedFiles[field.id] &&
+                          uploadedFiles[field.id].length > 0 && (
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
+                                Uploaded Files
+                              </Label>
                               <div className="space-y-2">
-                                <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                                  Uploaded Files
-                                </Label>
-                                <div className="space-y-2">
-                                  {uploadedFiles[field.id].map(
-                                    (file, index) => (
-                                      <div
-                                        key={index}
-                                        className="flex items-center justify-between p-2 bg-slate-50 dark:bg-gray-700 rounded-md"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <File className="w-4 h-4 text-slate-500 dark:text-gray-400" />
-                                          <span className="text-sm text-slate-700 dark:text-gray-300 truncate">
-                                            {file.name}
-                                          </span>
-                                          <span className="text-xs text-slate-500 dark:text-gray-400">
-                                            ({(file.size / 1024).toFixed(1)} KB)
-                                          </span>
-                                        </div>
-                                        <button
-                                          onClick={() =>
-                                            removeFile(field.id, index)
-                                          }
-                                          className="p-1 hover:bg-slate-200 dark:hover:bg-gray-600 rounded transition-colors"
-                                        >
-                                          <X className="w-4 h-4 text-slate-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400" />
-                                        </button>
-                                      </div>
-                                    ),
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                          {/* File Type Configuration */}
-                          <div className="space-y-3">
-                            <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                              Allowed File Types
-                            </Label>
-                            
-                            {/* Tag input box with pills inside */}
-                            <div className="relative">
-                              <div className="min-h-[40px] w-full px-3 py-2 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md flex flex-wrap items-center gap-1 focus-within:ring-1 focus-within:ring-slate-400 dark:focus-within:ring-gray-500 focus-within:border-slate-400 dark:focus-within:border-gray-500">
-                                {/* Display existing file types as pills inside the input */}
-                                {field.fileTypes?.map((fileType, index) => (
-                                  <div
-                                    key={index}
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                                  >
-                                    <span>.{fileType}</span>
-                                    <button
-                                      onClick={() => removeFileType(field.id, fileType)}
-                                      className="hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5"
-                                      type="button"
+                                {uploadedFiles[field.id].map(
+                                  (file, index) => (
+                                    <div
+                                      key={index}
+                                      className="flex items-center justify-between p-2 bg-slate-50 dark:bg-gray-700 rounded-md"
                                     >
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ))}
-                                
-                                {/* Input field for adding new file types */}
-                                <input
-                                  type="text"
-                                  value={newFileType}
-                                  onChange={(e) => setNewFileType(e.target.value)}
-                                  onKeyDown={(e) => handleFileTypeKeyDown(e, field.id)}
-                                  placeholder={field.fileTypes?.length === 0 ? "Enter file type (e.g., pdf, jpg)" : ""}
-                                  className="flex-1 min-w-[120px] bg-transparent border-none outline-none text-sm text-slate-900 dark:text-gray-300 placeholder-slate-400 dark:placeholder-gray-500"
-                                />
+                                      <div className="flex items-center gap-2">
+                                        <FileIcon className="w-4 h-4 text-slate-500 dark:text-gray-400" />
+                                        <span className="text-sm text-slate-700 dark:text-gray-300 truncate">
+                                          {file.name}
+                                        </span>
+                                        <span className="text-xs text-slate-500 dark:text-gray-400">
+                                          ({(file.size / 1024).toFixed(1)} KB)
+                                        </span>
+                                      </div>
+                                      <button
+                                        onClick={() =>
+                                          removeFile(field.id, index)
+                                        }
+                                        className="p-1 hover:bg-slate-200 dark:hover:bg-gray-600 rounded transition-colors"
+                                      >
+                                        <X className="w-4 h-4 text-slate-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400" />
+                                      </button>
+                                    </div>
+                                  ),
+                                )}
                               </div>
                             </div>
-                            
-                            <p className="text-xs text-slate-500 dark:text-gray-400">
-                              Valid file types: {VALID_FILE_TYPES.slice(0, 10).join(", ")}, and more...
-                            </p>
+                          )}
+
+                        {/* File Type Configuration */}
+                        <div className="space-y-3">
+                          <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
+                            Allowed File Types
+                          </Label>
+                          
+                          {/* Display current file types as read-only pills */}
+                          <div className="min-h-[40px] w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-600 rounded-md flex flex-wrap items-center gap-1">
+                            {field.fileTypes?.map((fileType, index) => (
+                              <div
+                                key={index}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300"
+                              >
+                                <span>.{fileType}</span>
+                              </div>
+                            ))}
                           </div>
+                          
+                          <p className="text-xs text-slate-500 dark:text-gray-400">
+                            Supported file types: {VALID_FILE_TYPES.join(", ")}
+                          </p>
                         </div>
-                      ) : field.type === "dropdown" ? (
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                            Dropdown Options (comma-separated)
-                          </Label>
-                          <Textarea
-                            value={field.options?.join(", ") || ""}
-                            onChange={(e) =>
-                              updateField(field.id, {
-                                options: e.target.value
-                                  .split(",")
-                                  .map((option) => option.trim())
-                                  .filter(Boolean),
-                              })
-                            }
-                            placeholder="Option 1, Option 2, Option 3"
-                            className="w-full min-h-[60px] resize-none dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                            Placeholder Text
-                          </Label>
-                          <Input
-                            value={field.placeholder}
-                            onChange={(e) =>
-                              updateField(field.id, {
-                                placeholder: e.target.value,
-                              })
-                            }
-                            placeholder="type here"
-                            className="w-full dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
-                          />
-                        </div>
-                      )}
+                      </div>
 
 
                       {/* Remove Field Button */}

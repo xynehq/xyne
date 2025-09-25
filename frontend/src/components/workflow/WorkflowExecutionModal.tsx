@@ -10,23 +10,10 @@ import { WorkflowExecutionModalProps } from "./Types"
 const SUPPORTED_FILE_TYPES = {
   // Text files
   "text/plain": "text",
-  "text/csv": "text",
-  // Images
-  "image/jpeg": "image",
-  "image/jpg": "image",
-  "image/png": "image",
-  "image/gif": "image",
-  "image/webp": "image",
   // Documents
   "application/pdf": "PDF",
   "application/msword": "Word",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    "Word",
-  "application/vnd.ms-excel": "Excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
-  "application/vnd.ms-powerpoint": "PowerPoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-    "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
 }
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024 // 40MB
@@ -37,7 +24,6 @@ export function WorkflowExecutionModal({
   workflowName,
   workflowDescription,
   templateId,
-  workflowTemplate,
   onViewExecution,
 }: WorkflowExecutionModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -152,7 +138,7 @@ export function WorkflowExecutionModal({
 
     // Check file type
     if (!SUPPORTED_FILE_TYPES[file.type as keyof typeof SUPPORTED_FILE_TYPES]) {
-      return `Unsupported file type: ${file.type}. Supported formats include text, image, CSV, PDF, Word, Excel, and PowerPoint files.`
+      return `Unsupported file type: ${file.type}. Supported formats include text, PDF, and Word files.`
     }
 
     return null
@@ -172,7 +158,8 @@ export function WorkflowExecutionModal({
     }
   }
 
-  const executeWorkflow = async (file: File) => {
+  const executeWorkflow = async (file: File, execTemplateId?: string) => {
+    const currentTemplateId = execTemplateId || templateId
     setIsUploading(true)
     try {
       // Create form data matching the curl command format
@@ -190,7 +177,7 @@ export function WorkflowExecutionModal({
       }
 
       const response = await workflowExecutionsAPI.executeTemplate(
-        templateId,
+        currentTemplateId!,
         executionData,
       )
 
@@ -267,7 +254,21 @@ export function WorkflowExecutionModal({
     if (!selectedFile) return
 
     setIsProcessing(true)
-    await executeWorkflow(selectedFile)
+    
+    try {
+      // Only execute with existing template ID
+      if (templateId) {
+        await executeWorkflow(selectedFile, templateId)
+      } else {
+        throw new Error("No template ID provided for execution. Please save the workflow first.")
+      }
+    } catch (error) {
+      console.error("Execution error:", error)
+      setIsProcessing(false)
+      setIsFailed(true)
+      const errorMessage = extractErrorMessage(error)
+      setUploadError(`Execution failed: ${errorMessage}`)
+    }
   }
 
   const handleDiscardFile = () => {
@@ -593,8 +594,7 @@ export function WorkflowExecutionModal({
 
                     {/* Supported formats */}
                     <p className="text-gray-500 dark:text-gray-500 text-sm text-center leading-relaxed">
-                      Supported formats include text, image, CSV, PDF, Word,
-                      Excel, and PowerPoint files
+                      Supported formats include text, PDF, and Word files
                       <br />
                       (max 40MB per file).
                     </p>
@@ -607,7 +607,7 @@ export function WorkflowExecutionModal({
                 type="file"
                 onChange={handleFileSelect}
                 className="hidden"
-                accept=".txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                accept=".txt,.pdf,.doc,.docx"
               />
 
               {/* Error Display */}
@@ -649,17 +649,25 @@ export function WorkflowExecutionModal({
             {/* Action Button */}
             <div className="px-8 pb-8">
               <div className="flex justify-end">
-                <Button
-                  onClick={handleStartExecution}
-                  disabled={!selectedFile}
-                  className={`px-6 py-2 rounded-full font-medium transition-all ${
-                    selectedFile
-                      ? "bg-black hover:bg-gray-800 text-white"
-                      : "bg-gray-400 cursor-not-allowed text-gray-600"
-                  }`}
-                >
-                  Start Execution
-                </Button>
+                <div className="relative group">
+                  <Button
+                    onClick={handleStartExecution}
+                    disabled={!selectedFile || !templateId}
+                    className={`px-6 py-2 rounded-full font-medium transition-all ${
+                      selectedFile && templateId
+                        ? "bg-black hover:bg-gray-800 text-white"
+                        : "bg-gray-400 cursor-not-allowed text-gray-600"
+                    }`}
+                  >
+                    Start Execution
+                  </Button>
+                  {!templateId && (
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+                      template not saved Please save template
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </>

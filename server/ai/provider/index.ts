@@ -29,7 +29,7 @@ const {
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
-import { MessageRole, Subsystem } from "@/types"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
 
@@ -116,6 +116,7 @@ import {
 } from "../agentPrompts"
 import { is } from "drizzle-orm"
 import type { ToolDefinition } from "@/api/chat/mapper"
+import { getDateForAI } from "@/utils/index"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -723,6 +724,7 @@ export const userChat = (
 export const generateTitleUsingQuery = async (
   query: string,
   params: ModelParams,
+  assistantResponse?: string,
 ): Promise<{ title: string; cost: number }> => {
   Logger.info("inside generateTitleUsingQuery")
   try {
@@ -736,6 +738,9 @@ export const generateTitleUsingQuery = async (
 
     params.json = true
     Logger.info("inside generateTitleUsingQuery")
+    if(assistantResponse === undefined){
+      assistantResponse = ""
+    }
 
     let { text, cost } = await getProviderByModel(params.modelId).converse(
       [
@@ -743,7 +748,12 @@ export const generateTitleUsingQuery = async (
           role: "user",
           content: [
             {
-              text: query,
+              text: `First user query:
+${query}
+
+Assistant response:
+${assistantResponse}
+        `,
             },
           ],
         },
@@ -936,6 +946,7 @@ export const answerOrSearch = (
   userQuery: string,
   context: string,
   userCtx: string,
+  dateForAI: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
@@ -945,10 +956,11 @@ export const answerOrSearch = (
     if (!isAgentPromptEmpty(params.agentPrompt)) {
       params.systemPrompt = agentOptimizedPrompt(
         userCtx,
+        dateForAI,
         parseAgentPrompt(params.agentPrompt),
       )
     } else {
-      params.systemPrompt = optimizedPrompt(userCtx)
+      params.systemPrompt = optimizedPrompt(userCtx, dateForAI)
     }
     params.json = true
 
@@ -1063,6 +1075,7 @@ export const baselineRAG = async (
 export const baselineRAGJson = async (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
 ): Promise<{ output: AnswerResponse; cost: number }> => {
@@ -1074,9 +1087,10 @@ export const baselineRAGJson = async (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
+      dateForAI
     )
   } else {
-    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx, dateForAI)
   }
   params.json = true
   const baseMessage = {
@@ -1113,6 +1127,7 @@ const indexToCitation = (text: string): string => {
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
@@ -1133,6 +1148,7 @@ export const baselineRAGJsonStream = (
     if (isMsgWithSources) {
       params.systemPrompt = agentBaselineFileContextPromptJson(
         userCtx,
+        userMetadata.dateForAI,
         retrievedCtx,
       )
     } else if (!isAgentPromptEmpty(params.agentPrompt)) {
@@ -1169,11 +1185,13 @@ export const baselineRAGJsonStream = (
         userCtx,
         indexToCitation(retrievedCtx),
         parseAgentPrompt(params.agentPrompt),
+        userMetadata.dateForAI,
       )
     } else {
       params.systemPrompt = baselinePromptJson(
         userCtx,
         indexToCitation(retrievedCtx),
+        userMetadata.dateForAI,
       )
     }
   }
@@ -1198,6 +1216,7 @@ export const baselineRAGJsonStream = (
 export const baselineRAGOffJsonStream = (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
   agentPrompt: string,
@@ -1211,6 +1230,7 @@ export const baselineRAGOffJsonStream = (
   params.systemPrompt = ragOffPromptJson(
     userCtx,
     retrievedCtx,
+    dateForAI,
     parseAgentPrompt(agentPrompt),
   )
   params.json = true
@@ -1237,6 +1257,7 @@ export const baselineRAGOffJsonStream = (
 export const temporalPromptJsonStream = (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
@@ -1248,9 +1269,10 @@ export const temporalPromptJsonStream = (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
+      dateForAI
     )
   } else {
-    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
+    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx, dateForAI)
   }
   params.json = true
   const baseMessage = {
@@ -1271,6 +1293,7 @@ export const temporalPromptJsonStream = (
 export const mailPromptJsonStream = (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
@@ -1286,6 +1309,7 @@ export const mailPromptJsonStream = (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
+      dateForAI,
     )
   } else if (defaultReasoning) {
     if (!isAgentPromptEmpty(params.agentPrompt)) {
@@ -1301,7 +1325,7 @@ export const mailPromptJsonStream = (
       )
     }
   } else {
-    params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
+    params.systemPrompt = emailPromptJson(userCtx, retrievedCtx, dateForAI)
   }
   params.json = true
   const baseMessage = {
@@ -1322,13 +1346,14 @@ export const mailPromptJsonStream = (
 export const meetingPromptJsonStream = (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
+  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx, dateForAI)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1455,12 +1480,14 @@ export async function generateToolSelectionOutput(
   reasoning?: string | null
 } | null> {
   params.json = true
+  const dateForAI = getDateForAI({userTimeZone: "Asia/Kolkata"})
 
   let defaultReasoning = isReasoning
   params.systemPrompt = SearchQueryToolContextPrompt(
     userContext,
     toolContext,
     initialPlanning,
+    dateForAI,
     parseAgentPrompt(agentContext),
     pastActions,
     tools,
@@ -1500,6 +1527,7 @@ export async function generateToolSelectionOutput(
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
+  userMetadata: UserMetadataType,
   params: ModelParams,
   toolContext?: string,
   previousClassification?: QueryRouterLLMResponse | null,
@@ -1517,11 +1545,13 @@ export function generateSearchQueryOrAnswerFromConversation(
   } else if (!isAgentPromptEmpty(params.agentPrompt)) {
     params.systemPrompt = agentSearchQueryPrompt(
       userContext,
+      userMetadata.dateForAI,
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
     params.systemPrompt = searchQueryPrompt(
       userContext,
+      userMetadata.dateForAI,
       previousClassification,
       chainBreakClassifications,
     )
@@ -1546,6 +1576,7 @@ export function generateSearchQueryOrAnswerFromConversation(
 export function generateAnswerBasedOnToolOutput(
   currentMessage: string,
   userContext: string,
+  dateForAI: string,
   params: ModelParams,
   toolContext: string,
   toolOutput: string,
@@ -1559,6 +1590,7 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      dateForAI,
       parsedAgentPrompt,
       fallbackReasoning,
     )
@@ -1568,6 +1600,7 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      dateForAI,
       undefined,
       fallbackReasoning,
     )
@@ -1591,6 +1624,7 @@ export function generateAnswerBasedOnToolOutput(
 
 export function generateSynthesisBasedOnToolOutput(
   userCtx: string,
+  dateForAI: string,
   currentMessage: string,
   gatheredFragments: string,
   params: ModelParams,
@@ -1602,6 +1636,7 @@ export function generateSynthesisBasedOnToolOutput(
     userCtx,
     currentMessage,
     gatheredFragments,
+    dateForAI
   )
 
   const baseMessage = {

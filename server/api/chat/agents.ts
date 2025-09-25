@@ -92,6 +92,7 @@ import {
   Subsystem,
   MCPClientConfig,
   MCPClientStdioConfig,
+  type UserMetadataType,
 } from "@/types"
 import {
   delay,
@@ -219,6 +220,8 @@ import {
 } from "@/api/chat/jaf-adapter"
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
+import { getDateForAI } from "@/utils/index"
+import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -240,6 +243,7 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 const generateStepSummary = async (
   step: AgentReasoningStep,
   userQuery: string,
+  dateForAI: string,
   contextInfo?: string,
   modelId?: string,
 ): Promise<string> => {
@@ -260,7 +264,7 @@ const generateStepSummary = async (
 
     // Use a fast model for summary generation
     const summarySpan = span.startSpan("synthesis_call")
-    const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
+    const summary = await generateSynthesisBasedOnToolOutput(prompt,dateForAI, "", "", {
       modelId: (modelId as Models) || defaultFastModel,
       stream: false,
       json: true,
@@ -565,9 +569,10 @@ const checkAndYieldCitationsForAgent = async function* (
 const vespaResultToMinimalAgentFragment = (
   child: VespaSearchResult,
   idx: number,
+  userMetadata: UserMetadataType,
 ): MinimalAgentFragment => ({
   id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
-  content: answerContextMap(child as VespaSearchResults, 0, true),
+  content: answerContextMap(child as VespaSearchResults, userMetadata, 0, true),
   source: searchToCitation(child as VespaSearchResults),
   confidence: 1.0,
 })
@@ -575,6 +580,7 @@ const vespaResultToMinimalAgentFragment = (
 async function* getToolContinuationIterator(
   message: string,
   userCtx: string,
+  dateForAI: string,
   toolsPrompt: string,
   toolOutput: string,
   results: MinimalAgentFragment[],
@@ -615,6 +621,7 @@ async function* getToolContinuationIterator(
   const continuationIterator = generateAnswerBasedOnToolOutput(
     message,
     userCtx,
+    dateForAI,
     {
       modelId: (modelId as Models) || defaultBestModel,
       stream: true,
@@ -718,6 +725,7 @@ type SynthesisResponse = {
 
 async function performSynthesis(
   ctx: any,
+  dateForAI: string,
   message: string,
   planningContext: string,
   gatheredFragments: MinimalAgentFragment[],
@@ -755,6 +763,7 @@ async function performSynthesis(
     const synthesisSpan = span.startSpan("synthesis_llm_call")
     const synthesisResponse = await generateSynthesisBasedOnToolOutput(
       ctx,
+      dateForAI,
       message,
       planningContext,
       {
@@ -984,7 +993,6 @@ export const MessageWithToolsApi = async (c: Context) => {
         console.error("Failed to parse selectedModelConfig:", error)
       }
     }
-    
 
     // Convert friendly model label to actual model value
     let actualModelId = modelId ? getModelValueFromLabel(modelId) : null
@@ -1073,6 +1081,9 @@ export const MessageWithToolsApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
     initSpan.end()
 
@@ -1116,7 +1127,7 @@ export const MessageWithToolsApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title,
+            title: "Untitled",
             attachments: [],
             ...(agentId ? { agentId: agentIdToStore as string } : {}),
           })
@@ -1300,6 +1311,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const aiGeneratedSummary = await generateStepSummary(
           reasoningStep,
           userQuery,
+          dateForAI,
           undefined,
           actualModelId || undefined,
         )
@@ -1361,6 +1373,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Use the selected model or fallback to fast model for summary generation
           const summaryResult = await generateSynthesisBasedOnToolOutput(
             prompt,
+            dateForAI,
             "",
             "",
             {
@@ -1711,6 +1724,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                 async (v, i) => {
                   let content = answerContextMap(
                     v as VespaSearchResults,
+                    userMetadata,
                     0,
                     true,
                   )
@@ -1772,32 +1786,33 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               planningContext = cleanContext(resolvedContexts?.join("\n"))
               if (chatContexts.length > 0) {
-                planningContext += "\n" + buildContext(chatContexts, 10)
+                planningContext += "\n" + buildContext(chatContexts, 10, userMetadata)
               }
               if (threadContexts.length > 0) {
-                planningContext += "\n" + buildContext(threadContexts, 10)
+                planningContext += "\n" + buildContext(threadContexts, 10, userMetadata)
               }
 
               gatheredFragments = results.root.children.map(
                 (child: VespaSearchResult, idx) =>
-                  vespaResultToMinimalAgentFragment(child, idx),
+                  vespaResultToMinimalAgentFragment(child, idx, userMetadata),
               )
               if (chatContexts.length > 0) {
                 gatheredFragments.push(
                   ...chatContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx),
+                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
                   ),
                 )
               }
               if (threadContexts.length > 0) {
                 gatheredFragments.push(
                   ...threadContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx),
+                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
                   ),
                 )
               }
               const parseSynthesisOutput = await performSynthesis(
                 ctx,
+                dateForAI,
                 message,
                 planningContext,
                 gatheredFragments,
@@ -2686,6 +2701,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 async function* nonRagIterator(
   message: string,
   userCtx: string,
+  dateForAI: string,
   context: string,
   results: MinimalAgentFragment[],
   agentPrompt?: string,
@@ -2703,6 +2719,7 @@ async function* nonRagIterator(
   const ragOffIterator = baselineRAGOffJsonStream(
     message,
     userCtx,
+    dateForAI,
     context,
     {
       modelId: (modelId as Models) || defaultBestModel,
@@ -2928,6 +2945,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -2941,7 +2961,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title,
+            title: "Untitled",
             attachments: [],
             agentId: agentIdToStore as string,
             via_apiKey,
@@ -3075,7 +3095,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             if (allChunks?.root?.children) {
               const startIndex = 0
               fragments = allChunks.root.children.map((child, idx) =>
-                vespaResultToMinimalAgentFragment(child, idx),
+                vespaResultToMinimalAgentFragment(child, idx, userMetadata),
               )
               context = answerContextMapFromFragments(
                 fragments,
@@ -3104,6 +3124,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const ragOffIterator = nonRagIterator(
             message,
             ctx,
+            dateForAI,
             context,
             fragments,
             agentPromptForLLM,
@@ -3342,7 +3363,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
           if (allChunks?.root?.children) {
             fragments = allChunks.root.children.map((child, idx) =>
-              vespaResultToMinimalAgentFragment(child, idx),
+              vespaResultToMinimalAgentFragment(child, idx, userMetadata),
             )
             context = answerContextMapFromFragments(
               fragments,
@@ -3421,6 +3442,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const ragOffIterator = nonRagIterator(
           message,
           ctx,
+          dateForAI,
           context,
           fragments,
           agentPromptForLLM,
@@ -3693,8 +3715,22 @@ export const AgentMessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     let ids
+    let isValidPath: boolean = false
     if (path) {
       ids = await getRecordBypath(path, db)
+      if (ids != null) {
+        // Check if the vespaId exists in the agent's app integrations using our validation function
+        if (!(await validateVespaIdInAgentIntegrations(agentForDb, ids))) {
+          throw new HTTPException(403, {
+            message: `Access denied: The path '${path}' is not accessible through this agent's integrations`,
+          })
+        }
+        isValidPath = Boolean(true)
+      } else {
+        throw new HTTPException(400, {
+          message: `The given path:${path} is not a valid path of collection's folder or file`,
+        })
+      }
     }
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
@@ -3703,8 +3739,10 @@ export const AgentMessageApi = async (c: Context) => {
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
+            collectionFolderIds: [],
           }
     let fileIds = extractedInfo?.fileIds
+    let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
@@ -3719,6 +3757,9 @@ export const AgentMessageApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3732,7 +3773,7 @@ export const AgentMessageApi = async (c: Context) => {
             workspaceExternalId: workspace.externalId,
             userId: user.id,
             email: user.email,
-            title,
+            title: "Untitled",
             attachments: [],
             agentId: agentIdToStore as string,
             via_apiKey,
@@ -3910,6 +3951,7 @@ export const AgentMessageApi = async (c: Context) => {
               const iterator = UnderstandMessageAndAnswerForGivenContext(
                 email,
                 ctx,
+                userMetadata,
                 message,
                 0.5,
                 fileIds,
@@ -3918,6 +3960,10 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 imageAttachmentFileIds,
                 agentPromptForLLM,
+                fileIds.length > 0,
+                actualModelId,
+                Boolean(isValidPath),
+                folderIds,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -4223,6 +4269,7 @@ export const AgentMessageApi = async (c: Context) => {
                   generateSearchQueryOrAnswerFromConversation(
                     message,
                     ctx,
+                    userMetadata,
                     {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
@@ -4450,6 +4497,7 @@ export const AgentMessageApi = async (c: Context) => {
                 const iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,
+                  userMetadata,
                   message,
                   classification,
                   limitedMessages,
@@ -4903,6 +4951,7 @@ export const AgentMessageApi = async (c: Context) => {
           const iterator = UnderstandMessageAndAnswerForGivenContext(
             email,
             ctx,
+            userMetadata,
             message,
             0.5,
             fileIds,

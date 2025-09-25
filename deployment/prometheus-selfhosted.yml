@@ -4,7 +4,7 @@ scrape_configs:
     metrics_path: /prometheus/v1/values
     static_configs:
       - targets: ['vespa:8080']
-      
+
   - job_name: 'google_drive_ingestion'
     metrics_path: /metrics  # default path in your Hono app
     scrape_interval: 2s

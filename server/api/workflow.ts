@@ -2,6 +2,8 @@ import { Hono, type Context } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
+import { type SelectAgent } from "../db/schema"
+import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
@@ -12,6 +14,7 @@ const listWorkflowExecutionsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(10),
   page: z.coerce.number().min(1).optional().default(1),
 })
+import { ExecuteAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { db } from "@/db/client"
@@ -32,6 +35,9 @@ import {
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
 } from "@/db/schema/workflows"
+import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
+import { type CreateAgentPayload } from "./agent"
 import {
   eq,
   sql,
@@ -44,6 +50,8 @@ import {
   asc,
   ne,
 } from "drizzle-orm"
+
+import { type AttachmentMetadata } from "@/shared/types"
 
 // Re-export schemas for server.ts
 export {
@@ -69,9 +77,14 @@ import {
   handleWorkflowFileUpload,
   validateFormData,
   buildValidationSchema,
+  type WorkflowFileData,
+  type AttachmentUploadResponse,
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
 import { getActualNameFromEnum } from "@/ai/modelConfig"
+import { getProviderByModel } from "@/ai/provider"
+import { Models } from "@/ai/types"
+import type { Message } from "@aws-sdk/client-bedrock-runtime"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -79,6 +92,46 @@ const Logger = getLogger(Subsystem.WorkflowApi)
 
 // New Workflow API Routes
 export const workflowRouter = new Hono()
+
+
+
+// Utility function to extract attachment IDs from form data
+const extractAttachmentIds = (formData: Record<string, any>): {
+  imageAttachmentIds: string[]
+  documentAttachmentIds: string[]
+} => {
+  const imageIds: string[] = []
+  const documentIds: string[] = []
+
+  Object.entries(formData).forEach(([key, file]) => {
+    // More defensive checking
+    if (file &&
+      typeof file === 'object' &&
+      file !== null &&
+      'attachmentId' in file &&
+      file.attachmentId) {
+
+      Logger.info(`Processing field ${key} with attachment ID: ${file.attachmentId}`)
+
+
+      if ('attachmentMetadata' in file && file.attachmentMetadata) {
+        const metadata = file.attachmentMetadata as AttachmentMetadata
+        if (metadata.isImage) {
+          imageIds.push(file.attachmentId)
+        } else {
+          documentIds.push(file.attachmentId)
+        }
+      } else {
+        // Fallback: assume non-image if no metadata
+        Logger.warn(`No attachmentMetadata found for ${key}, assuming document`)
+        documentIds.push(file.attachmentId)
+      }
+    }
+  })
+
+  return { imageAttachmentIds: imageIds, documentAttachmentIds: documentIds }
+}
+
 
 // List all workflow templates with root step details
 export const ListWorkflowTemplatesApi = async (c: Context) => {
@@ -166,9 +219,9 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
     const tools =
       toolIds.length > 0
         ? await db
-            .select()
-            .from(workflowTool)
-            .where(inArray(workflowTool.id, toolIds))
+          .select()
+          .from(workflowTool)
+          .where(inArray(workflowTool.id, toolIds))
         : []
 
     return c.json({
@@ -189,7 +242,36 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
 
 // Execute workflow template with root step input
 export const ExecuteWorkflowWithInputApi = async (c: Context) => {
+  let email: string = ""
+  let workspaceId: string = ""
+  let via_apiKey = false
   try {
+    let jwtPayload
+    try {
+      jwtPayload = c.get(JwtPayloadKey)
+    } catch (e) {
+      Logger.info("No JWT payload found in context")
+    }
+
+    if (jwtPayload?.sub && jwtPayload?.workspaceId) {
+      email = jwtPayload.sub
+      workspaceId = jwtPayload.workspaceId
+      via_apiKey = false
+
+    } else {
+      // Try API key context
+      email = c.get("userEmail")
+      workspaceId = c.get("workspaceId")
+      via_apiKey = true
+    }
+
+    // Get user ID for agent creation
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, email)
+    const userId = userAndWorkspace.user.id
+    const workspaceInternalId = userAndWorkspace.workspace.id
+
+    Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${workspaceInternalId}`)
+
     const templateId = c.req.param("templateId")
     const contentType = c.req.header("content-type") || ""
 
@@ -199,6 +281,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Handle both JSON and multipart form data
     if (contentType.includes("multipart/form-data")) {
       const formData = await c.req.formData()
+      Logger.debug(`Received multipart/form-data request with ${formData} `)
       const entries: [string, FormDataEntryValue][] = []
       formData.forEach((value, key) => {
         entries.push([key, value])
@@ -299,36 +382,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
             message: `Root step input validation failed: ${validationResult.errors.join(", ")}`,
           })
         }
-
-        // Handle file uploads with workflow file handler
-        for (const field of formFields) {
-          if (field.type === "file") {
-            const file = requestData.rootStepInput[field.id]
-
-            if (file instanceof File) {
-              try {
-                const fileValidation =
-                  validationSchema[field.id]?.fileValidation
-
-                // We'll create the execution first, then handle file upload
-                // For now, store the file object for later processing
-                requestData.rootStepInput[field.id] = file
-              } catch (uploadError) {
-                Logger.error(
-                  uploadError,
-                  `File validation failed for field ${field.id}`,
-                )
-                throw new HTTPException(400, {
-                  message: `File validation failed for ${field.id}: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`,
-                })
-              }
-            } else if (field.required) {
-              throw new HTTPException(400, {
-                message: `Required file field '${field.id}' is missing`,
-              })
-            }
-          }
-        }
+        
       } else {
         // JSON validation (no files)
         const validationResult = validateFormData(
@@ -351,6 +405,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Create workflow execution
+    //Workflow TODO : currently in metadata we are passing userEmail, workspaceId, userId, workspaceInternalId, but after db changes we can directly fetch userId and workspaceId from workflowExecution tablexw
     const [execution] = await db
       .insert(workflowExecution)
       .values({
@@ -361,7 +416,13 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           `${template[0].name} - ${new Date().toLocaleDateString()}`,
         description:
           requestData.description || `Execution of ${template[0].name}`,
-        metadata: requestData.metadata || {},
+        metadata: {
+          ...requestData.metadata,
+          executionContext: {
+            userEmail: email,
+            workspaceId: workspaceId,
+          }
+        },
         status: WorkflowStatus.ACTIVE,
         rootWorkflowStepExeId: null,
       })
@@ -431,20 +492,71 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
             if (file instanceof File) {
               try {
-                const fileValidation =
-                  buildValidationSchema(formFields)[field.id]?.fileValidation
+                const fileValidation = buildValidationSchema(formFields)[field.id]?.fileValidation
+                let finalProcessedData: WorkflowFileData = {
+                  originalFileName: file.name,
+                  fileName: file.name,
+                  fileSize: file.size,
+                  mimetype: file.type,
+                  uploadedAt: new Date().toISOString(),
+                  uploadedBy: "api",
+                  fileExtension: file.name.split('.').pop() || '',
+                  workflowExecutionId: execution.id,
+                  workflowStepId: rootStepExecution.id,
+                }
 
-                const uploadedFile = await handleWorkflowFileUpload(
-                  file,
-                  execution.id,
-                  rootStepExecution.id,
-                  fileValidation,
-                )
+                try {
+                  // Create FormData for handleAttachmentUpload
+                  const attachmentFormData = new FormData()
+                  attachmentFormData.append('attachment', file)
 
-                processedFormData[field.id] = uploadedFile
-                Logger.info(
-                  `File uploaded for field ${field.id}: ${uploadedFile.relativePath}`,
-                )
+                  // Create mock context with JWT payload for handleAttachmentUpload
+                  //Workflow-TODO: instead of creating mock context, we should create a helper function inside handleAttachmentUpload to accept params directly, or need to refactor handleAttachmentUpload to be more modular
+                  const mockContext = {
+                    req: {
+                      formData: async () => attachmentFormData
+                    },
+                    get: (key: string) => {
+                      if (key === JwtPayloadKey) {
+                        return {
+                          sub: email,
+                          workspaceId: workspaceId
+                        }
+                      }
+                      return undefined
+                    },
+                    json: (data: any, status?: number) => {
+                      return data
+                    }
+                  } as Context
+
+                  // workflow-TODO: add multifile Support 
+                  // call handleAttachmentUpload which store files in vespa and images in downloads/xyne_images_db
+                  const attachmentResult = await handleAttachmentUpload(mockContext) as unknown as AttachmentUploadResponse
+
+
+                  if (attachmentResult && typeof attachmentResult === 'object' && 'attachments' in attachmentResult) {
+                    const attachments : AttachmentMetadata[] = attachmentResult.attachments
+                    if (Array.isArray(attachments) && attachments.length > 0) {
+                      const attachmentId = attachments[0].fileId
+                      finalProcessedData = {
+                        ...finalProcessedData,
+                        attachmentId: attachmentId,
+                        attachmentMetadata: attachments[0]
+                      }
+                    }
+                  } else {
+                    Logger.warn(`handleAttachmentUpload did not return expected attachments array for field ${field.id}`)
+                  }
+                } catch (attachmentError) {
+                  Logger.error(
+                    attachmentError,
+                    `handleAttachmentUpload failed for field ${field.id}, continuing with workflow file upload only`,
+                  )
+                }
+
+                processedFormData[field.id] = finalProcessedData
+
               } catch (uploadError) {
                 Logger.error(
                   uploadError,
@@ -458,6 +570,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           }
         }
       }
+
       ;[toolExecutionRecord] = await db
         .insert(toolExecution)
         .values({
@@ -695,7 +808,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       const isRootStep = currentExecution.rootWorkflowStepExeId === step.id
       const hasBeenStarted = step.status !== WorkflowStatus.DRAFT
       const hasToolExecutions = step.toolExecIds && step.toolExecIds.length > 0
-      
+
       return isRootStep || hasBeenStarted || hasToolExecutions
     })
 
@@ -707,7 +820,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
     const completedSteps = executedSteps.filter(step => step.status === WorkflowStatus.COMPLETED)
     const failedSteps = executedSteps.filter(step => step.status === WorkflowStatus.FAILED)
     const activeSteps = executedSteps.filter(step => step.status === WorkflowStatus.ACTIVE)
-    const manualStepsAwaitingInput = executedSteps.filter(step => 
+    const manualStepsAwaitingInput = executedSteps.filter(step =>
       step.type === StepType.MANUAL && step.status === WorkflowStatus.DRAFT
     )
 
@@ -744,7 +857,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
           metadata: progressMetadata
         })
         .where(eq(workflowExecution.id, executionId))
-      
+
       Logger.info(`Workflow ${executionId} marked as failed due to ${failedSteps.length} failed steps`)
       return true
     }
@@ -779,7 +892,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       Logger.info(
         `Workflow ${executionId} completion criteria met: ${completionReason}`
       )
-      
+
       await db
         .update(workflowExecution)
         .set({
@@ -789,7 +902,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
           metadata: progressMetadata
         })
         .where(eq(workflowExecution.id, executionId))
-      
+
       Logger.info(`Workflow ${executionId} marked as completed`)
       return true
     }
@@ -816,6 +929,7 @@ const executeAutomatedWorkflowSteps = async (
 
     let executionResults = currentResults
 
+    //todo : this is the normal for loop, we need to think about parallel execution of independent steps
     for (const nextStepTemplateId of nextStepTemplateIds) {
       const nextStep = stepExecutions.find(
         (s) => s.workflowStepTemplateId === nextStepTemplateId,
@@ -947,12 +1061,12 @@ const executeWorkflowChain = async (
     }
 
     // Execute the tool
-    const toolResult = await executeWorkflowTool(tool, previousResults)
+    const toolResult = await executeWorkflowTool(tool, previousResults, executionId)
 
     // Check if tool execution failed
     if (toolResult.status !== "success") {
       Logger.error(`Tool execution failed for step ${step.name}: ${JSON.stringify(toolResult.result)}`)
-      
+
       // Create failed tool execution record
       let toolExecutionRecord
       try {
@@ -1009,7 +1123,7 @@ const executeWorkflowChain = async (
         .where(eq(workflowExecution.id, executionId))
 
       Logger.error(`Workflow ${executionId} marked as failed due to step ${step.name} failure`)
-      
+
       // Return error result to stop further execution
       throw new Error(`Step "${step.name}" failed: ${JSON.stringify(toolResult.result)}`)
     }
@@ -1117,6 +1231,7 @@ const executeWorkflowChain = async (
 
         if (nextStep && nextStep.type === StepType.AUTOMATED) {
           // Recursively execute next automated step
+          // workflow-TODO: consider parallel execution , this is only for sequential steps
           await executeWorkflowChain(
             executionId,
             nextStep.id,
@@ -1704,58 +1819,89 @@ else:
 }
 
 // Helper function to extract content from previous step results using simplified input paths
+// Workflow-Todo: This function can be enhanced to support more complex path syntaxes if needed, currently this 
 const extractContentFromPath = (
   previousStepResults: any,
   contentPath: string,
 ): string => {
   try {
-    // New simplified approach: input.* always points to latest.result.*
-    // Examples: "input.aiOutput" -> latest step's result.aiOutput
-    //          "input.output" -> latest step's result.output
 
     if (!contentPath.startsWith("input.")) {
       return `Invalid path: ${contentPath}. Only paths starting with 'input.' are supported.`
     }
 
-    // Get the latest step
+    // Get all step keys
     const stepKeys = Object.keys(previousStepResults)
     if (stepKeys.length === 0) {
       return "No previous steps available"
     }
 
-    const latestStepKey = stepKeys[stepKeys.length - 1]
-    const latestStepResult = previousStepResults[latestStepKey]
-
-    if (!latestStepResult?.result) {
-      return "Latest step has no result data"
-    }
-
-    // Remove "input." prefix and navigate from latest step's result
     const propertyPath = contentPath.slice(6) // Remove "input."
     const pathParts = propertyPath.split(".")
 
-    let target = latestStepResult.result
 
-    // Navigate through the path starting from result
-    for (const part of pathParts) {
-      if (target && typeof target === "object" && part in target) {
-        target = target[part]
-      } else {
-        return `Property '${part}' not found in latest step result`
+    const latestStepKey = stepKeys[stepKeys.length - 1]
+    const latestStepResult = previousStepResults[latestStepKey]
+
+    if (latestStepResult?.result) {
+      let target = latestStepResult.result
+
+      // Navigate through the path starting from result
+      for (const part of pathParts) {
+        if (target && typeof target === "object" && part in target) {
+          target = target[part]
+        } else {
+          Logger.debug(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
+          return `Property '${part}' not found in any step result. Available steps: ${stepKeys.join(", ")}`
+        }
+      }
+
+      // Convert result to string
+      if (typeof target === "string") {
+        return target
+      } else if (target !== null && target !== undefined) {
+        return JSON.stringify(target, null, 2)
       }
     }
 
-    // Convert result to string
-    if (typeof target === "string") {
-      return target
-    } else if (target !== null && target !== undefined) {
-      return JSON.stringify(target, null, 2)
+    return `No content found for path '${contentPath}' in any step. Available steps: ${stepKeys.join(", ")}`
+  } catch (error) {
+    return `Error: ${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
+// Helper function to get execution context (user info) from workflow execution
+//Workflow-Todo : after DB Changes we might not need this function as we can fetch userId and workspaceId directly from workflowExecution table
+const getExecutionContext = async (executionId: string): Promise<{
+  workspaceId: string
+  userEmail: string
+  workspaceInternalId: string
+  userId: string
+} | null> => {
+  try {
+    // Get workflow execution to access metadata
+    const [execution] = await db
+      .select()
+      .from(workflowExecution)
+      .where(eq(workflowExecution.id, executionId))
+
+    if (!execution || !execution.metadata) {
+      Logger.warn(`No execution context found for execution ${executionId}`)
+      return null
     }
 
-    return "No content found"
+    // Check if execution context was stored in metadata
+  
+    const context = execution.metadata as any
+    if (context.executionContext) {
+      return context.executionContext
+    }
+
+    Logger.warn(`No execution context in metadata for execution ${executionId}`)
+    return null
   } catch (error) {
-    console.error("Error extracting content from path:", error)
-    return `Error: ${error instanceof Error ? error.message : String(error)}`
+    Logger.error(error, `Failed to get execution context for ${executionId}`)
+    return null
   }
 }
 
@@ -1763,6 +1909,7 @@ const extractContentFromPath = (
 const executeWorkflowTool = async (
   tool: any,
   previousStepResults: any = {},
+  executionId: string,
 ) => {
   try {
     switch (tool.type) {
@@ -1802,9 +1949,15 @@ const executeWorkflowTool = async (
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
-        const subject = emailConfig.subject || "Workflow Results"
+        
         const contentType = emailConfig.content_type || "html"
+        const [execution] = await db
+          .select()
+          .from(workflowExecution)
+          .where(eq(workflowExecution.id, executionId))
 
+        const workflowName = execution?.name || "Unknown Workflow"
+        const subject = emailConfig.subject || `Results of Workflow: ${workflowName}`
         // New configurable content path feature
         const contentPath =
           emailConfig.content_path || emailConfig.content_source_path
@@ -1815,9 +1968,10 @@ const executeWorkflowTool = async (
           if (contentPath) {
             // Extract content using configurable path
             emailBody = extractContentFromPath(previousStepResults, contentPath)
+
             if (!emailBody) {
               emailBody = `No content found at path: ${contentPath}`
-          }
+            }
           } else {
             // Fallback to extracting from response.aiOutput path
             emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
@@ -1843,8 +1997,8 @@ const executeWorkflowTool = async (
 <body>
     <div class="content">
         <div class="header">
-            <h2>🤖 Workflow Results</h2>
-            <p>Generated on: ${new Date().toLocaleString()}</p>
+            <h2>🤖 Results of Workflow: ${workflowName} </h2>
+            <p>Generated on: ${new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"})}</p>
         </div>
         <div class="body-content">
             ${emailBody.replace(/\n/g, "<br>")}
@@ -1876,12 +2030,12 @@ const executeWorkflowTool = async (
           const emailResults = []
           for (const recipient of recipients) {
             try {
-          const emailSent = await emailService.sendEmail({
+              const emailSent = await emailService.sendEmail({
                 to: recipient,
                 subject,
                 body: emailBody,
                 contentType: contentType === "html" ? "html" : "text",
-          })
+              })
               emailResults.push({ recipient, sent: emailSent })
             } catch (emailError) {
               emailResults.push({
@@ -1928,233 +2082,140 @@ const executeWorkflowTool = async (
         }
 
       case "ai_agent":
-        // Enhanced AI agent with Text/Form input type support
         const aiConfig = tool.config || {}
         const aiValue = tool.value || {}
-        
-        const inputType = aiConfig.inputType || "text" // Default to text
-        const aiModelEnum = aiConfig.aiModel || aiConfig.model || "googleai-gemini-2-5-flash"
-        const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
-        const geminiApiKey =
-          aiConfig.gemini_api_key || process.env.GEMINI_API_KEY
+        const agentId = aiConfig.agentId
 
-        // Convert enum value to actual API model name
-        const aiModel = getActualNameFromEnum(aiModelEnum) || "gemini-2.5-flash"
-        
-        Logger.info(`Using model enum: ${aiModelEnum}, actual model: ${aiModel}`)
+
+        if (!agentId) {
+          Logger.error("No agent ID found in tool config - agent creation may have failed during template creation")
+          return {
+            status: "error",
+            result: {
+              error: "No agent ID configured for this AI agent tool",
+              details: "Agent should have been created during workflow template creation",
+              config: aiConfig
+            }
+          }
+        }
+
         try {
-          let analysisInput = ""
-          let inputMetadata = {}
-
-          if (inputType === "form") {
-            // Extract form data and files from previous step results
-            const prevStepData = Object.values(previousStepResults)[0] as any
-            const formSubmission =
-              prevStepData?.formSubmission?.formData ||
-              prevStepData?.result?.formData ||
-              {}
-
-            // Process text fields
-            const textFields = Object.entries(formSubmission)
-              .filter(([key, value]) => typeof value === "string")
-              .map(([key, value]) => `${key}: ${value}`)
-              .join("\n")
-
-            // Process uploaded files
-            const fileContents = []
-            for (const [key, value] of Object.entries(formSubmission)) {
-              if (value && typeof value === "object" && (value as any).absolutePath) {
-                try {
-                  const fileData = value as any
-                  const fileExt = fileData.fileExtension?.toLowerCase()
-
-                  if (fileExt === "txt") {
-                    // Text files - read directly
-                    const fs = await import("node:fs/promises")
-                    const content = await fs.readFile(
-                      fileData.absolutePath,
-                      "utf-8",
-                    )
-                    fileContents.push(
-                      `File: ${fileData.originalFileName}\nContent:\n${content}`,
-                    )
-                  } else if (fileExt === "pdf") {
-                    // PDF files - extract text using pdf-parse (Node.js friendly)
-                    try {
-                      const fs = await import("node:fs/promises")
-                      const pdfParse = require("pdf-parse")
-
-                      // Read PDF file
-                      const pdfBuffer = await fs.readFile(fileData.absolutePath)
-
-                      // Parse PDF with pdf-parse
-                      const pdfData = await pdfParse(pdfBuffer)
-
-                      const cleanedText = pdfData.text.trim()
-                      if (cleanedText && cleanedText.length > 10) {
-                        fileContents.push(
-                          `File: ${fileData.originalFileName}\nContent:\n${cleanedText}`,
-                        )
-                      } else {
-                        fileContents.push(
-                          `File: ${fileData.originalFileName}\nContent: [PDF file - no readable text found]`,
-                        )
-                      }
-                    } catch (pdfError) {
-                      // Fallback: just indicate PDF was processed but couldn't extract text
-                      fileContents.push(
-                        `File: ${fileData.originalFileName}\nType: PDF document (${fileData.fileSize} bytes)\nNote: PDF text extraction failed. File contains ${fileData.fileSize} bytes of content that may include text, images, or other data.`,
-                      )
-                    }
-                  } else if (
-                    ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(
-                      fileExt,
-                    )
-                  ) {
-                    // Image files - OCR text extraction using sharp + canvas
-                    try {
-                      const fs = await import("node:fs/promises")
-                      const sharp = await import("sharp")
-
-                      // Convert image to high-contrast format for better OCR
-                      const imageBuffer = await fs.readFile(
-                        fileData.absolutePath,
-                      )
-                      const processedImage = await sharp
-                        .default(imageBuffer)
-                        .greyscale()
-                        .normalize()
-                        .sharpen()
-                        .png()
-                        .toBuffer()
-
-                      // For now, indicate image was processed but OCR would need additional setup
-                      // Full OCR would require tesseract.js or similar
-                      const imageInfo = await sharp
-                        .default(imageBuffer)
-                        .metadata()
-                      fileContents.push(
-                        `File: ${fileData.originalFileName}\nType: Image (${imageInfo.width}x${imageInfo.height} ${fileExt.toUpperCase()})\nNote: Image processed but text extraction requires OCR setup. Image contains visual content that may include text, charts, or diagrams.`,
-                      )
-                    } catch (imageError) {
-                      fileContents.push(
-                        `File: ${fileData.originalFileName}\nError: Image processing failed - ${(imageError as Error).message}`,
-                      )
-                    }
-                  } else if (["doc", "docx"].includes(fileExt)) {
-                    // Word documents - would need additional library like mammoth
-                    fileContents.push(
-                      `File: ${fileData.originalFileName}\nType: Microsoft Word document\nNote: Word document processing requires additional setup. File contains ${fileData.fileSize} bytes of content.`,
-                    )
-                  } else {
-                    // Unsupported file type
-                    fileContents.push(
-                      `File: ${fileData.originalFileName}\nType: ${fileExt.toUpperCase()} (${fileData.fileSize} bytes)\nNote: File type not supported for content extraction`,
-                    )
-                  }
-                } catch (fileError) {
-                  fileContents.push(
-                    `File: ${(value as any).originalFileName}\nError: Could not read file - ${(fileError as Error).message}`,
-                  )
-                }
+          // Get execution context for user info
+          const executionContext = await getExecutionContext(executionId)
+          if (!executionContext) {
+            return {
+              status: "error",
+              result: {
+                error: "Could not retrieve execution context",
+                details: "User information not available for agent execution"
               }
             }
+          }
 
-            analysisInput = [textFields, ...fileContents]
-              .filter(Boolean)
-              .join("\n\n")
-            inputMetadata = {
-              inputType: "form",
-              formFields: Object.keys(formSubmission).length,
-              filesProcessed: fileContents.length,
+          // Extract agent parameters with dynamic values
+          const prompt = aiValue.prompt || aiValue.systemPrompt || "Please analyze the provided content"
+          const temperature = aiConfig.temperature || 0.7
+          const workspaceId = executionContext.workspaceId
+          const userEmail = executionContext.userEmail
+
+          // Process input content based on input type
+          let userQuery = ""
+          let imageAttachmentIds: string[] = []
+          let documentAttachmentIds: string[] = []
+
+          if (aiConfig.inputType === "form") {
+            // Extract form data from previous step - corrected data path
+            const stepKeys = Object.keys(previousStepResults)
+
+            if (stepKeys.length > 0) {
+              const latestStepKey = stepKeys[stepKeys.length - 1]
+              const prevStepData = previousStepResults[latestStepKey]
+
+              // Try multiple possible paths for form data
+              const formSubmission =
+                prevStepData?.formSubmission?.formData ||
+                prevStepData?.result?.formData ||
+                prevStepData?.toolExecution?.result?.formData ||
+                {}
+
+              const extractedIds = extractAttachmentIds(formSubmission)
+              imageAttachmentIds = extractedIds.imageAttachmentIds
+              documentAttachmentIds = extractedIds.documentAttachmentIds
+
+              // Process text fields
+              const textFields = Object.entries(formSubmission)
+                .filter(([key, value]) => typeof value === "string")
+                .map(([key, value]) => `${key}: ${value}`)
+                .join("\n")
+
+              userQuery = `${prompt}\n\nForm Data:\n${textFields}`
+            } else {
+              Logger.warn("No previous step data found")
+              userQuery = prompt
             }
           } else {
-            // Text input - get from previous step result
-            const prevStepData = Object.values(previousStepResults)[0] as any
-            analysisInput =
-              prevStepData?.result?.output ||
-              prevStepData?.result?.content ||
-              JSON.stringify(prevStepData?.result || {})
-            inputMetadata = {
-              inputType: "text",
-              sourceStep: Object.keys(previousStepResults)[0] || "unknown",
+            const stepKeys = Object.keys(previousStepResults)
+            if (stepKeys.length > 0) {
+              const latestStepKey = stepKeys[stepKeys.length - 1]
+              const prevStepData = previousStepResults[latestStepKey]
+              const content = prevStepData?.result?.output ||
+                prevStepData?.result?.content ||
+                JSON.stringify(prevStepData?.result || {})
+              userQuery = `${prompt}\n\nContent to analyze:\n${content}`
+            } else {
+              userQuery = prompt
             }
           }
-
-          if (!analysisInput.trim()) {
-            return {
-              status: "error",
-              result: {
-                error: "No input content found for AI analysis",
-                inputType,
-                inputMetadata,
-              },
-            }
-          }
-
-          // Call Gemini API
-          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`
-          Logger.info(`Calling Gemini API at: ${geminiUrl}`)
-          const fullPrompt = `${prompt}\n\nInput to analyze:\n${analysisInput.slice(0, 8000)}`
-
-          const geminiResponse = await fetch(geminiUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [{ text: fullPrompt }],
-                },
-              ],
-              generationConfig: {
-                temperature: 0.3,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 2048,
-              },
-            }),
+          const result: ExecuteAgentResponse = await ExecuteAgentForWorkflow({
+            agentId,
+            userQuery,
+            workspaceId,
+            userEmail,
+            isStreamable: false,
+            temperature,
+            attachmentFileIds: imageAttachmentIds,
+            nonImageAttachmentFileIds: documentAttachmentIds,
           })
 
-          if (!geminiResponse.ok) {
+          if (!result.success) {
             return {
               status: "error",
               result: {
-                error: `Gemini API error: ${geminiResponse.status}`,
-                inputType,
-                inputMetadata,
-              },
+                error: "Agent execution failed",
+                details: result.error,
+              }
             }
           }
 
-          const geminiData = await geminiResponse.json()
-          const aiOutput =
-            geminiData.candidates?.[0]?.content?.parts?.[0]?.text ||
-            "No response from AI"
+          // Extract response from agent result
+          const agentResponse = result.type === 'streaming'
+            ? "Streaming response completed"
+            : result.response.text
 
           return {
             status: "success",
             result: {
-              aiOutput,
-              model: aiModel,
-              modelEnum: aiModelEnum,
-              inputType,
-              inputMetadata,
-              usage: geminiData.usageMetadata || {},
+              aiOutput: agentResponse,
+              agentName: result.agentName,
+              model: result.modelId,
+              chatId: result.chatId,
+              inputType: aiConfig.inputType || "text",
               processedAt: new Date().toISOString(),
-            },
+            }
           }
+
         } catch (error) {
+          Logger.error(error, "ExecuteAgentForWorkflow failed in workflow")
           return {
             status: "error",
             result: {
-              error: "AI agent execution failed",
+              error: "Agent execution failed",
               message: error instanceof Error ? error.message : String(error),
               inputType: aiConfig.inputType,
-              modelEnum: aiModelEnum,
-              model: aiModel,
-            },
+            }
           }
         }
+
 
       default:
         return {
@@ -2226,8 +2287,32 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
 // Create complex workflow template from frontend workflow builder
 export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
   try {
+
+    let jwtPayload
+    try {
+      jwtPayload = c.get(JwtPayloadKey)
+    } catch (e) {
+      Logger.info("No JWT payload found in context")
+    }
+
+    const userEmail = jwtPayload?.sub
+    if (!userEmail) {
+      throw new HTTPException(401, { message: "Unauthorized - no user email" })
+    }
+
+    // Get workspace ID from JWT payload
+    const workspaceId = jwtPayload?.workspaceId
+    if (!workspaceId) {
+      throw new HTTPException(400, { message: "No workspace ID in token" })
+    }
+
+    // Get user ID for agent creation
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, userEmail)
+    const userId = userAndWorkspace.user.id
+    const workspaceInternalId = userAndWorkspace.workspace.id
+
     const requestData = await c.req.json()
-    
+   
     // Create the main workflow template
     const [template] = await db
       .insert(workflowTemplate)
@@ -2242,16 +2327,16 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       .returning()
 
     const templateId = template.id
-    
+
     // Create workflow tools first (needed for step tool references)
     const toolIdMap = new Map<string, string>() // frontend tool ID -> backend tool ID
     const createdTools: any[] = []
-    
+
     // Collect all tools from nodes
     const allTools = requestData.nodes
       .flatMap((node: any) => node.data?.tools || [])
       .filter((tool: any) => tool && tool.type)
-    
+
     // Create unique tools (deduplicate by frontend tool ID if it exists)
     const uniqueTools = allTools.reduce((acc: any[], tool: any) => {
       // If tool has an ID and we haven't seen it, add it
@@ -2263,11 +2348,12 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       }
       return acc
     }, [])
-    
+
     for (const tool of uniqueTools) {
       // Process form tools to ensure file fields use "document_file" as ID
       let processedValue = tool.value || {}
-      
+
+
       if (tool.type === ToolType.FORM && processedValue.fields && Array.isArray(processedValue.fields)) {
         processedValue = {
           ...processedValue,
@@ -2282,17 +2368,61 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           })
         }
       }
-      
+
       // Process AI agent tools to add inputType: "form" in config
       let processedConfig = tool.config || {}
-      
+
       if (tool.type === "ai_agent") {
-        processedConfig = {
-          ...processedConfig,
-          inputType: "form"
+        try {
+          Logger.info(`Creating agent for AI agent tool: ${JSON.stringify(tool.value)}`)
+
+          // Extract agent data from tool configuration
+          const agentData: CreateAgentPayload = {
+            name: tool.value?.name || `Workflow Agent - ${template.name}`,
+            description: tool.value?.description || "Auto-generated agent for workflow execution",
+            prompt: tool.value?.systemPrompt || "You are a helpful assistant that processes workflow data.",
+            model: tool.value?.model || "googleai-gemini-2-5-flash", // Use model from tool config
+            isPublic: false, // Workflow agents are private by default
+            appIntegrations: [], // No app integrations for workflow agents
+            allowWebSearch: false, // Disable web search for workflow agents
+            isRagOn: false, // Disable RAG for workflow agents
+            uploadedFileNames: [], // No uploaded files for workflow agents
+            docIds: [], // No document IDs for workflow agents
+            userEmails: [] // No additional users for permissions
+          }
+
+          Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
+
+          // Create the agent using createAgentForWorkflow
+          const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, workspaceInternalId)
+
+          Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
+
+          // Store the agent ID in the tool config for later use
+          processedConfig = {
+            ...processedConfig,
+            inputType: "form",
+            agentId: newAgent.externalId, // ← This replaces the hardcoded agent ID
+            createdAgentId: newAgent.externalId, // Store backup reference
+            agentName: newAgent.name,
+            dynamicallyCreated: true // Flag to indicate this was auto-created
+          }
+
+          Logger.info(`Tool config updated with agent ID: ${newAgent.externalId}`)
+
+        } catch (agentCreationError) {
+          Logger.error(agentCreationError, `Failed to create agent for workflow tool, using fallback config`)
+
+          // Fallback to original behavior if agent creation fails
+          processedConfig = {
+            ...processedConfig,
+            inputType: "form",
+            agentCreationFailed: true,
+            agentCreationError: agentCreationError instanceof Error ? agentCreationError.message : String(agentCreationError)
+          }
         }
       }
-      
+
       const [createdTool] = await db
         .insert(workflowTool)
         .values({
@@ -2302,19 +2432,19 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           createdBy: "demo",
         })
         .returning()
-      
+
       createdTools.push(createdTool)
-      
+
       // Map frontend tool ID to backend tool ID
       if (tool.id) {
         toolIdMap.set(tool.id, createdTool.id)
       }
     }
-    
+
     // Create workflow step templates
     const stepIdMap = new Map<string, string>() // frontend step ID -> backend step ID
     const createdSteps: any[] = []
-    
+
     // Sort nodes by step_order if available, otherwise by position.y
     const sortedNodes = [...requestData.nodes].sort((a, b) => {
       const orderA = a.data?.step?.metadata?.step_order ?? 999
@@ -2322,11 +2452,11 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       if (orderA !== orderB) return orderA - orderB
       return a.position.y - b.position.y
     })
-    
+
     // First pass: create all steps to get their IDs
     for (const node of sortedNodes) {
       const stepData = node.data.step
-      
+
       const [createdStep] = await db
         .insert(workflowStepTemplate)
         .values({
@@ -2350,29 +2480,29 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           toolIds: [], // Will be updated in second pass
         })
         .returning()
-      
+
       createdSteps.push(createdStep)
       stepIdMap.set(stepData.id, createdStep.id)
     }
-    
+
     // Second pass: update relationships based on edges
     for (const step of createdSteps) {
       const frontendStepId = [...stepIdMap.entries()].find(([_, backendId]) => backendId === step.id)?.[0]
       const correspondingNode = requestData.nodes.find((n: any) => n.data.step.id === frontendStepId)
-      
+
       // Find edges where this step is involved
       const outgoingEdges = requestData.edges.filter((edge: any) => edge.source === frontendStepId)
       const incomingEdges = requestData.edges.filter((edge: any) => edge.target === frontendStepId)
-      
+
       // Map frontend step IDs to backend step IDs
       const nextStepIds = outgoingEdges
         .map((edge: any) => stepIdMap.get(edge.target))
         .filter(Boolean)
-      
+
       const prevStepIds = incomingEdges
         .map((edge: any) => stepIdMap.get(edge.source))
         .filter(Boolean)
-      
+
       // Map tool IDs for this step
       const stepToolIds: string[] = []
       if (correspondingNode?.data?.tools) {
@@ -2381,8 +2511,8 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
             stepToolIds.push(toolIdMap.get(tool.id)!)
           } else {
             // Find tool by type and config if no ID mapping
-            const matchingTool = createdTools.find(t => 
-              t.type === tool.type && 
+            const matchingTool = createdTools.find(t =>
+              t.type === tool.type &&
               JSON.stringify(t.value) === JSON.stringify(tool.value || {})
             )
             if (matchingTool) {
@@ -2391,7 +2521,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           }
         }
       }
-      
+
       // Update the step with relationships
       await db
         .update(workflowStepTemplate)
@@ -2402,7 +2532,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         })
         .where(eq(workflowStepTemplate.id, step.id))
     }
-    
+
     // Set root step (first step in the workflow - usually form submission or trigger)
     let rootStepId = null
     if (createdSteps.length > 0) {
@@ -2412,9 +2542,9 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         const hasIncomingEdges = requestData.edges.some((edge: any) => edge.target === frontendStepId)
         return !hasIncomingEdges
       })
-      
+
       rootStepId = rootStep?.id || createdSteps[0].id
-      
+
       // Update template with root step ID
       await db
         .update(workflowTemplate)
@@ -2423,7 +2553,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         })
         .where(eq(workflowTemplate.id, templateId))
     }
-    
+
     // Return the complete workflow template with steps and tools
     const completeTemplate = {
       ...template,
@@ -2667,10 +2797,10 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
       toolUpdateData.updatedAt = new Date()
 
       const [updatedTool] = await trx
-      .update(workflowTool)
+        .update(workflowTool)
         .set(toolUpdateData)
-      .where(eq(workflowTool.id, toolId))
-      .returning()
+        .where(eq(workflowTool.id, toolId))
+        .returning()
 
       // Update associated step if stepName or stepDescription is provided
       let updatedStep = null
@@ -3221,36 +3351,56 @@ export const GetFormDefinitionApi = async (c: Context) => {
   }
 }
 
-// Get Gemini model enum names for workflow tools
-export const GetGeminiModelEnumsApi = async (c: Context) => {
+// Get VertexAI model enum names for workflow tools (replaces GetGeminiModelEnumsApi)
+export const GetVertexAIModelEnumsApi = async (c: Context) => {
   try {
     const { MODEL_CONFIGURATIONS } = await import("@/ai/modelConfig")
     const { AIProviders } = await import("@/ai/types")
     
-    // Get all Google AI model enum values
-    const geminiModelEnums = Object.entries(MODEL_CONFIGURATIONS)
-      .filter(([_, config]) => config.provider === AIProviders.GoogleAI)
+    // Get all VertexAI model enum values (includes both Claude and Gemini models)
+    const vertexAIModelEnums = Object.entries(MODEL_CONFIGURATIONS)
+      .filter(([_, config]) => config.provider === AIProviders.VertexAI)
       .map(([enumValue, config]) => ({
-        enumValue, // e.g., "googleai-gemini-2-5-flash"
-        labelName: config.labelName, // e.g., "Gemini 2.5 Flash" 
-        actualName: config.actualName, // e.g., "gemini-2.5-flash"
+        enumValue, // e.g., "vertex-gemini-2-5-flash", "vertex-claude-sonnet-4"
+        labelName: config.labelName, // e.g., "Gemini 2.5 Flash", "Claude Sonnet 4"
+        actualName: config.actualName, // e.g., "gemini-2.5-flash", "claude-sonnet-4@20250514"
         description: config.description,
         reasoning: config.reasoning,
         websearch: config.websearch,
         deepResearch: config.deepResearch,
+        // Add model type for better categorization in frontend
+        modelType: enumValue.includes('gemini') ? 'gemini' : 
+                   enumValue.includes('claude') ? 'claude' : 'other',
       }))
+      .sort((a, b) => {
+        const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
+        const orderA = typeOrder[a.modelType] ?? 99;
+        const orderB = typeOrder[b.modelType] ?? 99;
+
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+        return a.labelName.localeCompare(b.labelName);
+      })
 
     return c.json({
       success: true,
-      data: geminiModelEnums,
-      count: geminiModelEnums.length,
+      data: vertexAIModelEnums,
+      count: vertexAIModelEnums.length,
+      message: "VertexAI models include both Claude and Gemini models optimized for enterprise use",
     })
   } catch (error) {
-    Logger.error(error, "Failed to get Gemini model enums")
+    Logger.error(error, "Failed to get VertexAI model enums")
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
   }
+}
+
+// Legacy endpoint - kept for backward compatibility but redirects to VertexAI
+export const GetGeminiModelEnumsApi = async (c: Context) => {
+  Logger.warn("GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead")
+  return GetVertexAIModelEnumsApi(c)
 }
 
 // Serve workflow file

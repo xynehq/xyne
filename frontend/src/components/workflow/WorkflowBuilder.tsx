@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
-import { Bot, Mail } from "lucide-react"
+import { Bot, Mail, FileText } from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -139,13 +139,11 @@ import {
   ManualTriggerIcon,
   AppEventIcon,
   ScheduleIcon,
-  FormSubmissionIcon,
   WorkflowExecutionIcon,
   ChatMessageIcon,
   HelpIcon,
   TemplatesIcon,
   AddIcon,
-  FormDocumentIcon,
 } from "./WorkflowIcons"
 import {
   workflowExecutionsAPI,
@@ -156,6 +154,8 @@ import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
+import Snackbar from "../ui/Snackbar"
+import ConfirmationPopup from "../ui/ConfirmationPopup"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -300,10 +300,6 @@ const StepNode: React.FC<NodeProps> = ({
                 onClick={(e) => {
                   e.stopPropagation()
                   e.preventDefault()
-                  console.log(
-                    "Plus button clicked for unconfigured AI agent:",
-                    id,
-                  )
                   const event = new CustomEvent("openWhatHappensNext", {
                     detail: { nodeId: id },
                   })
@@ -453,7 +449,6 @@ const StepNode: React.FC<NodeProps> = ({
               onClick={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
-                console.log("Plus button clicked for node:", id)
                 const event = new CustomEvent("openWhatHappensNext", {
                   detail: { nodeId: id },
                 })
@@ -569,7 +564,6 @@ const StepNode: React.FC<NodeProps> = ({
                 onClick={(e) => {
                   e.stopPropagation()
                   e.preventDefault()
-                  console.log("Plus button clicked for unconfigured email:", id)
                   const event = new CustomEvent("openWhatHappensNext", {
                     detail: { nodeId: id },
                   })
@@ -719,7 +713,6 @@ const StepNode: React.FC<NodeProps> = ({
               onClick={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
-                console.log("Plus button clicked for node:", id)
                 const event = new CustomEvent("openWhatHappensNext", {
                   detail: { nodeId: id },
                 })
@@ -785,7 +778,7 @@ const StepNode: React.FC<NodeProps> = ({
                 borderRadius: "4.8px",
               }}
             >
-              <FormDocumentIcon width={16} height={16} />
+              <FileText size={16} />
             </div>
 
             <h3
@@ -866,7 +859,7 @@ const StepNode: React.FC<NodeProps> = ({
                     if (fields.length > 0) {
                       const fieldDescriptions = fields.map((field: any) => {
                         if (field.type === "file") {
-                          return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                          return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
                         } else if (field.type === "email") {
                           return `Enter ${field.name || "email address"}`
                         } else if (field.type === "text") {
@@ -888,7 +881,7 @@ const StepNode: React.FC<NodeProps> = ({
                     if (fields.length > 0) {
                       const fieldDescriptions = fields.map((field: any) => {
                         if (field.type === "file") {
-                          return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                          return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
                         } else if (field.type === "email") {
                           return `Enter ${field.name || "email address"}`
                         } else if (field.type === "text") {
@@ -911,7 +904,7 @@ const StepNode: React.FC<NodeProps> = ({
                     // Show field details when only fields are configured
                     const fieldDescriptions = fields.map((field: any) => {
                       if (field.type === "file") {
-                        return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                        return `Upload a ${field.name || "file"} in formats such as text, PDF, or Word`
                       } else if (field.type === "email") {
                         return `Enter ${field.name || "email address"}`
                       } else if (field.type === "text") {
@@ -935,7 +928,7 @@ const StepNode: React.FC<NodeProps> = ({
                 }
 
                 // Fallback content when no configuration
-                return "Upload a file in formats such as PDF, DOCX, or JPG."
+                return "Upload a file in formats such as text, PDF, or Word."
               })()}
             </p>
           </div>
@@ -970,7 +963,6 @@ const StepNode: React.FC<NodeProps> = ({
               onClick={(e) => {
                 e.stopPropagation()
                 e.preventDefault()
-                console.log("Plus button clicked for node:", id)
                 const event = new CustomEvent("openWhatHappensNext", {
                   detail: { nodeId: id },
                 })
@@ -1128,16 +1120,26 @@ const StepNode: React.FC<NodeProps> = ({
 // Header component
 const Header = ({
   onBackToWorkflows,
+  onRefreshWorkflows,
   workflowName,
   selectedTemplate,
   onWorkflowNameChange,
   isEditable = true,
+  onSaveChanges,
+  isSaveDisabled = false,
+  hasUnsavedChanges = false,
+  onConfirmRefresh,
 }: { 
   onBackToWorkflows?: () => void; 
+  onRefreshWorkflows?: () => void;
   workflowName?: string;
   selectedTemplate?: WorkflowTemplate | null;
   onWorkflowNameChange?: (newName: string) => void;
   isEditable?: boolean;
+  onSaveChanges?: () => void;
+  isSaveDisabled?: boolean;
+  hasUnsavedChanges?: boolean;
+  onConfirmRefresh?: (callback: () => void) => void;
 }) => {
   const [isEditing, setIsEditing] = useState(false)
   const [editingName, setEditingName] = useState("")
@@ -1145,7 +1147,8 @@ const Header = ({
 
   const currentName = workflowName || selectedTemplate?.name || "Untitled Workflow"
 
-  const handleDoubleClick = () => {
+  const handleClick = () => {
+    if (!isEditable) return
     setEditingName(currentName)
     setIsEditing(true)
   }
@@ -1179,12 +1182,24 @@ const Header = ({
   }, [isEditing])
 
   return (
-    <div className="flex items-center justify-start px-6 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px]">
+    <div className="flex items-center justify-between px-6 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px]">
       {/* Breadcrumb */}
       <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
         <span
           className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
-          onClick={onBackToWorkflows}
+          onClick={() => {
+            const handleRefresh = () => {
+              onBackToWorkflows?.()
+              onRefreshWorkflows?.()
+            }
+            
+            // Check if we're in editable mode with unsaved changes
+            if (isEditable && hasUnsavedChanges && onConfirmRefresh) {
+              onConfirmRefresh(handleRefresh)
+            } else {
+              handleRefresh()
+            }
+          }}
         >
           Workflow
         </span>
@@ -1198,23 +1213,39 @@ const Header = ({
               onChange={(e) => setEditingName(e.target.value)}
               onBlur={handleSave}
               onKeyDown={handleKeyDown}
-              className="bg-transparent border-b border-blue-500 dark:border-blue-400 outline-none text-[#3B4145] dark:text-gray-300 text-sm font-medium min-w-[120px] max-w-[300px]"
-              style={{ width: `${Math.max(120, editingName.length * 8)}px` }}
+              className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-0 outline-none focus:border-black dark:focus:border-white text-[#3B4145] dark:text-gray-300 text-sm font-medium w-60 h-6"
+              placeholder="Enter workflow name"
+              autoFocus
             />
           ) : (
             <span 
               className={isEditable 
-                ? "cursor-pointer hover:text-[#1a1d20] dark:hover:text-gray-100 transition-colors"
+                ? "cursor-pointer hover:text-[#1a1d20] dark:hover:text-gray-100 transition-colors px-2 py-1 rounded hover:bg-gray-50 dark:hover:bg-gray-800"
                 : "text-[#3B4145] dark:text-gray-300"
               }
-              onDoubleClick={isEditable ? handleDoubleClick : undefined}
-              title={isEditable ? "Double-click to edit workflow name" : undefined}
+              onClick={isEditable ? handleClick : undefined}
+              title={isEditable ? "Click to edit workflow name" : undefined}
             >
               {currentName}
             </span>
           )}
         </span>
       </div>
+
+      {/* Save Changes Button - only show in builder mode (create from blank) */}
+      {onSaveChanges && isEditable && (
+          <button
+            onClick={onSaveChanges}
+            disabled={isSaveDisabled}
+            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
+              isSaveDisabled
+                ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
+            }`}
+          >
+            Save Changes
+          </button>
+      )}
     </div>
   )
 }
@@ -1549,7 +1580,7 @@ const TriggersSidebar = ({
       name: "On Form Submission",
       description:
         "Generate webforms in Xyne and pass their responses to the workflow",
-      icon: <FormSubmissionIcon width={20} height={20} />,
+      icon: <FileText size={20} />,
       enabled: true,
     },
     {
@@ -1782,6 +1813,7 @@ interface WorkflowBuilderProps {
   onStepClick?: (step: Step) => void
   user?: UserDetail
   onBackToWorkflows?: () => void
+  onRefreshWorkflows?: () => void
   selectedTemplate?: WorkflowTemplate | null
   isLoadingTemplate?: boolean
   isEditableMode?: boolean
@@ -1793,6 +1825,7 @@ interface WorkflowBuilderProps {
 const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   onStepClick,
   onBackToWorkflows,
+  onRefreshWorkflows,
   selectedTemplate,
   isLoadingTemplate,
   isEditableMode,
@@ -1846,6 +1879,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
   // Workflow name state
   const [currentWorkflowName, setCurrentWorkflowName] = useState<string>("")
+  // Snackbar state
+  const [snackbarMessage, setSnackbarMessage] = useState<string>("")
+  const [snackbarType, setSnackbarType] = useState<'success' | 'error' | 'warning' | 'info'>('info')
+  const [showSnackbar, setShowSnackbar] = useState(false)
+  // Save Changes button state
+  const [isWorkflowSaved, setIsWorkflowSaved] = useState(false)
+  const [hasWorkflowChanged, setHasWorkflowChanged] = useState(false)
+  const [lastSavedHash, setLastSavedHash] = useState<string>("")
+  // Confirmation popup state
+  const [showConfirmationPopup, setShowConfirmationPopup] = useState(false)
+  const [pendingRefreshCallback, setPendingRefreshCallback] = useState<(() => void) | null>(null)
 
   // Empty initial state
   const initialNodes: Node[] = []
@@ -1856,14 +1900,42 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   // Utility function to get tool ID from step ID
   const getToolIdFromStepId = useCallback((stepId: string): string | undefined => {
-    console.log("Finding toolId for node:", stepId)
     const node = nodes.find((n) => n.id === stepId)
-    console.log("Found node:", node)
     const tools = node?.data?.tools as Tool[] | undefined
-    console.log("Found tools:", tools)
     return tools && tools.length > 0 ? tools[0]?.id : undefined
   }, [nodes])
   
+  // Helper function to show snackbar messages
+  const showSnackbarMessage = useCallback((message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+    setSnackbarMessage(message)
+    setSnackbarType(type)
+    setShowSnackbar(true)
+  }, [])
+
+  // Helper function to create a hash of the current workflow state
+  // Excludes position coordinates and UI state to prevent save button activation on node drag or UI interactions
+  const createWorkflowHash = () => {
+    const workflowState = {
+      nodes: nodes.map(node => ({
+        id: node.id,
+        type: node.type,
+        // Exclude position from hash calculation
+        data: {
+          step: node.data?.step,
+          tools: node.data?.tools,
+          // Exclude UI state properties like hasNext, isActive, isCompleted, anyNodeSelected
+        }
+      })),
+      edges: edges.map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: edge.type
+      }))
+    }
+    return JSON.stringify(workflowState)
+  }
+
   // Helper function to get workflow name consistently across components
   const getWorkflowName = useCallback(() => {
     // If user has set a custom name, use it
@@ -1886,6 +1958,41 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [currentWorkflowName, selectedTemplate?.name, selectedTemplate, nodes.length])
   const { fitView, zoomTo, getViewport } = useReactFlow()
 
+  // Smart fit view to show entire workflow with proper padding
+  const smartFitWorkflow = useCallback(() => {
+    setTimeout(() => {
+      // Use fitView to show the entire workflow with extra bottom padding for + button
+      fitView({
+        padding: {
+          top: 0.1,    // 10% padding at top
+          right: 0.15, // 15% padding on sides
+          bottom: 0.5, // 50% padding at bottom to ensure + button is fully visible
+          left: 0.15   // 15% padding on sides
+        },
+        includeHiddenNodes: false,
+        minZoom: 0.4, // Balanced minimum zoom for better workflow visibility
+        maxZoom: 1.2, // Maximum zoom level to keep nodes readable
+        duration: 600, // Smooth animation
+      })
+    }, 150) // Small delay to ensure the node is fully rendered
+  }, [fitView])
+
+  // Watch for nodes changes and smart fit the entire workflow
+  const previousRealNodeCount = useRef(0)
+  useEffect(() => {
+    // Check if we have real workflow nodes (exclude trigger selector placeholder)
+    const realNodes = nodes.filter(node => {
+      const nodeData = node.data as any
+      return nodeData?.step?.type !== "trigger_selector" && !nodeData?.isTriggerSelector
+    })
+    
+    if (realNodes.length > previousRealNodeCount.current && realNodes.length > 0) {
+      // Smart fit the entire workflow to keep everything visible for real nodes
+      smartFitWorkflow()
+    }
+    previousRealNodeCount.current = realNodes.length
+  }, [nodes, smartFitWorkflow])
+
   // Create nodes and edges from selectedTemplate or localSelectedTemplate
   useEffect(() => {
     const templateToUse = localSelectedTemplate || selectedTemplate
@@ -1893,8 +2000,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       templateToUse &&
       (templateToUse.steps || templateToUse.stepExecutions)
     ) {
-      console.log("Creating workflow from template:", templateToUse)
-
       // Check if this is an execution (has stepExecutions) or template (has steps)
       const isExecution =
         templateToUse.stepExecutions &&
@@ -1918,9 +2023,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         // Final fallback to creation time
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       }) : []
-
-      console.log("Original steps:", stepsData)
-      console.log("Sorted steps:", sortedSteps)
 
       // Create nodes from steps in top-down layout
       const templateNodes: Node[] = sortedSteps.map((step: any, index: number) => {
@@ -2030,9 +2132,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         })
       })
 
-      console.log("Created nodes:", templateNodes.length)
-      console.log("Created edges:", templateEdges.length)
-
       setNodes(templateNodes)
       setEdges(templateEdges)
       setNodeCounter((stepsData?.length || 0) + 1)
@@ -2043,11 +2142,56 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         setCurrentWorkflowName(templateToUse.name)
       }
 
+      // Reset save state when loading a template (existing workflow)
+      setIsWorkflowSaved(true) // Template is already saved
+      setHasWorkflowChanged(false) // No changes yet
+      const initialHash = createWorkflowHash()
+      setLastSavedHash(initialHash)
+
       setTimeout(() => {
         fitView({ padding: 0.2 })
       }, 50)
     }
   }, [selectedTemplate, localSelectedTemplate, setNodes, setEdges, fitView, currentWorkflowName, setCurrentWorkflowName])
+
+  // Monitor workflow changes to enable/disable Save Changes button
+  useEffect(() => {
+    if (nodes.length > 0 || edges.length > 0) {
+      const currentHash = createWorkflowHash()
+      
+      // Check if we have a valid trigger node (not just the trigger selector)
+      const hasValidTrigger = nodes.some(node => {
+        const nodeData = node.data as any
+        return nodeData?.step?.type && 
+               nodeData.step.type !== "trigger_selector" && 
+               (nodeData.step.type === "form_submission" || 
+                nodeData.step.type === "manual" || 
+                nodeData.step.type === "schedule" ||
+                nodeData.step.type === "app_event")
+      })
+      
+      if (lastSavedHash === "" && hasValidTrigger) {
+        // First time with nodes/edges and valid trigger, mark as changed
+        setHasWorkflowChanged(true)
+        setIsWorkflowSaved(false)
+      } else if (currentHash !== lastSavedHash && hasValidTrigger) {
+        // Workflow has changed since last save and has valid trigger
+        setHasWorkflowChanged(true)
+        setIsWorkflowSaved(false)
+      } else if (!hasValidTrigger) {
+        // No valid trigger yet, keep disabled
+        setHasWorkflowChanged(false)
+        setIsWorkflowSaved(false)
+      } else {
+        // Workflow matches last saved state
+        setHasWorkflowChanged(false)
+      }
+    } else {
+      // No nodes/edges, reset state
+      setHasWorkflowChanged(false)
+      setIsWorkflowSaved(false)
+    }
+  }, [nodes, edges, lastSavedHash])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -2093,17 +2237,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       const primaryTool = tools[0]
       const toolType = primaryTool?.type || step.type
 
-      console.log(
-        "🎯 Node clicked:",
-        node.id,
-        "Tool type:",
-        toolType,
-        "Step type:",
-        step.type,
-      )
-
-      // Always override sidebar with clicked node data
-
       // Close menu sidebars when nodes are clicked
       setShowTriggersSidebar(false)
       setShowWhatHappensNextUI(false)
@@ -2123,7 +2256,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open Form config sidebar
           setSelectedFormNodeId(node.id)
           setShowOnFormSubmissionUI(true)
-          console.log("📝 Opening form config sidebar")
           break
 
         case "python_code":
@@ -2131,30 +2263,21 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open What Happens Next sidebar for Python code configuration
           setSelectedNodeForNext(node.id)
           setShowWhatHappensNextUI(true)
-          console.log(
-            "🐍 Opening Python code config sidebar for type:",
-            toolType,
-          )
           break
 
         case "email":
           // Open Email config sidebar
           setSelectedEmailNodeId(node.id)
           setShowEmailConfigUI(true)
-          console.log("📧 Opening email config sidebar")
           break
 
         case "ai_agent":
           // Open AI Agent config sidebar
           setSelectedAgentNodeId(node.id)
           setShowAIAgentConfigUI(true)
-          console.log("🤖 Opening AI agent config sidebar")
           break
 
         default:
-          // For unknown types, don't open What Happens Next sidebar - this was causing the bug
-          console.log("❓ Unknown node type:", toolType, "- not opening sidebar")
-
           if (onStepClick) {
             onStepClick(step)
           }
@@ -2345,8 +2468,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   useEffect(() => {
     const handleOpenWhatHappensNext = (event: CustomEvent) => {
       const { nodeId } = event.detail
-      console.log("Plus button clicked, opening What Happens Next for node:", nodeId)
-      
+
       // Close all other sidebars when What Happens Next opens
       setShowTriggersSidebar(false)
       setShowAIAgentConfigUI(false)
@@ -2359,9 +2481,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
 
     const handleOpenTriggersSidebar = (event: CustomEvent) => {
-      const { nodeId } = event.detail
-      console.log("Add first step clicked, opening triggers sidebar for node:", nodeId)
-      
       // Close all other sidebars
       setShowWhatHappensNextUI(false)
       setShowAIAgentConfigUI(false)
@@ -2424,13 +2543,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       try {
         // Use the status endpoint for lightweight polling
         const statusData = await workflowExecutionsAPI.fetchStatus(executionId)
-        
-        console.log("📊 Polling status for execution:", executionId, "Status:", statusData.status)
 
         // Check if workflow is completed or failed to stop polling
         if (statusData.success) {
           if (statusData.status === "completed") {
-            console.log("✅ Workflow execution completed!")
             // Fetch full details to update nodes with final status
             const fullData = await workflowExecutionsAPI.fetchById(executionId)
             
@@ -2456,7 +2572,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             
             stopPolling()
           } else if (statusData.status === "failed") {
-            console.log("❌ Workflow execution failed!")
             // Update nodes to show failed status
             setNodes((currentNodes) =>
               currentNodes.map((node) => ({
@@ -2536,10 +2651,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const executeWorkflow = useCallback(async (file?: File) => {
     if (file) {
-      // File execution mode - requires existing template
-      console.log("Executing workflow with file:", file.name)
-      console.log("Selected template:", selectedTemplate)
-
       try {
         // Check if we have a valid template (prioritize createdTemplate over selectedTemplate)
         const currentTemplate = createdTemplate || selectedTemplate
@@ -2555,8 +2666,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           file_description: `Test document: ${file.name}`,
         }
 
-        console.log("Generated form data:", formData)
-
         const executionData = {
           name: formData.name,
           description: formData.description,
@@ -2569,8 +2678,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           executionData,
         )
 
-        console.log("🚀 WORKFLOW EXECUTION RESPONSE:", response)
-
         // Handle response similar to execution modal
         if (response.error || response.status === "error") {
           console.error("Execution failed:", response.error || response.message)
@@ -2578,7 +2685,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         } else {
           // Extract execution ID from response.data.execution.id
           const executionId = response.data?.execution?.id
-          console.log("📋 Extracted execution ID:", executionId)
 
           if (executionId) {
             // Start polling for completion with the execution ID
@@ -2594,114 +2700,31 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         throw error
       }
     } else {
-      // Template creation mode - first create template, then open execution modal
-      console.log("Creating workflow template for execution...")
-      
       // Check if we have nodes to create a workflow
       if (nodes.length === 0) {
         throw new Error("Cannot execute workflow: No workflow steps defined. Please add at least one step to your workflow.")
       }
 
-      // Create the workflow state payload for the complex template API
-      // Use the centralized name resolution function to ensure consistency
-      const derivedName = getWorkflowName()
+      // Check if we already have a saved template
+      const currentTemplate = createdTemplate || selectedTemplate
       
-      console.log("🔍 Debug workflow name values:", {
-        currentWorkflowName,
-        selectedTemplateName: selectedTemplate?.name,
-        derivedName,
-        isBlankWorkflow: !selectedTemplate,
-        nodesCount: nodes.length
-      })
-      
-      const workflowState = {
-        name: derivedName,
-        description: selectedTemplate?.description || "Workflow created from builder",
-        version: "1.0.0",
-        config: {
-          ai_model: "gemini-1.5-pro",
-          max_file_size: "10MB",
-          auto_execution: false,
-          schema_version: "1.0",
-          allowed_file_types: ["pdf", "docx", "txt", "jpg", "png"],
-          supports_file_upload: true,
-        },
-        nodes: nodes.map(node => ({
-          id: node.id,
-          type: node.type,
-          position: node.position,
-          data: {
-            step: node.data?.step,
-            tools: node.data?.tools,
-            isActive: node.data?.isActive,
-            isCompleted: node.data?.isCompleted,
-            hasNext: node.data?.hasNext,
-          }
-        })),
-        edges: edges.map(edge => ({
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          type: edge.type,
-          sourceHandle: edge.sourceHandle,
-          targetHandle: edge.targetHandle,
-          style: edge.style,
-          markerEnd: edge.markerEnd,
-        })),
-        metadata: {
-          nodeCount: nodes.length,
-          edgeCount: edges.length,
-          createdAt: new Date().toISOString(),
-          workflowType: templateWorkflow ? 'template-based' : 'user-created'
-        }
+      if (currentTemplate && currentTemplate.id && currentTemplate.id !== 'pending-creation') {
+        // We have a valid saved template, open the execution modal directly
+        setShowExecutionModal(true)
+        return
       }
-      
-      console.log("=== WORKFLOW STATE FOR BACKEND API ===")
-      console.log(JSON.stringify(workflowState, null, 2))
-      console.log("=== END WORKFLOW STATE ===")
 
-      try {
-        // Create the workflow template in the backend
-        const response = await api.workflow.templates.complex.$post({
-          json: workflowState,
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(`Failed to create workflow template: ${response.status} ${response.statusText}. ${errorText.substring(0, 200)}`)
-        }
-
-        const result = await response.json()
-        console.log("✅ Workflow template created successfully:", result)
-
-        // Update the selectedTemplate state with the newly created template
-        if (result.success && result.data) {
-          // The API returns the created template - we can use this for execution
-          const newTemplate = result.data
-          
-          // Store the created template for use in the execution modal
-          setCreatedTemplate(newTemplate)
-          
-          // Open the WorkflowExecutionModal with the created template
-          setShowExecutionModal(true)
-          
-          console.log("📋 Template ID for execution:", newTemplate.id)
-        } else {
-          throw new Error("Failed to create workflow template: Invalid response format")
-        }
-      } catch (error) {
-        console.error("❌ Failed to create workflow template:", error)
-        throw error
-      }
+      // If no saved template exists, show snackbar message instead of throwing error
+      showSnackbarMessage(
+        "Cannot execute workflow: No saved template found. Please save the workflow first using the 'Save Changes' button.",
+        'warning'
+      )
     }
-  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName])
+  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName, showSnackbarMessage])
 
   const handleTriggerClick = useCallback(
     (triggerId: string) => {
       if (triggerId === "form") {
-        // Don't create form submission node yet, just open configuration sidebar
-        console.log("🎯 Form trigger selected - opening form config sidebar")
-        
         // Close TriggersSidebar with slide-out animation when OnFormSubmissionUI opens
         setShowTriggersSidebar(false)
         setSelectedFormNodeId("pending") // Temporary ID to indicate we're in creation mode
@@ -2721,8 +2744,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
 
   const handleWhatHappensNextAction = useCallback(async (actionId: string) => {
-    console.log("Selected action:", actionId)
-    
     if (actionId === "ai_agent") {
       // When AI Agent is selected from WhatHappensNextUI, keep it visible in background
       if (selectedNodeForNext) {
@@ -2766,12 +2787,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleAIAgentConfigSave = useCallback(
     (agentConfig: AIAgentConfig) => {
-      console.log("🔧 AI Agent Config Save - selectedAgentNodeId:", selectedAgentNodeId, "selectedNodeForNext:", selectedNodeForNext)
-      
       if (selectedAgentNodeId === "pending" && selectedNodeForNext) {
         // Create new AI Agent node when saving configuration
         const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
-        console.log("📍 Source node found:", sourceNode)
         if (sourceNode) {
           const newNodeId = `ai-agent-${nodeCounter}`
           
@@ -2915,17 +2933,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )
       }
 
-      // Reset zoom to 100% after saving configuration
+      // Reset zoom and auto-fit workflow after saving configuration
       setZoomLevel(100)
       setTimeout(() => {
-        zoomTo(1)
+        smartFitWorkflow()
       }, 50)
 
       setShowAIAgentConfigUI(false)
       setSelectedAgentNodeId(null)
       setSelectedNodeForNext(null)
     },
-    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, zoomTo],
+    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
   )
 
   const handleEmailConfigBack = useCallback(() => {
@@ -2950,12 +2968,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleEmailConfigSave = useCallback(
     (emailConfig: EmailConfig) => {
-      console.log("📧 Email Config Save - selectedEmailNodeId:", selectedEmailNodeId, "selectedNodeForNext:", selectedNodeForNext)
-      
       if (selectedEmailNodeId === "pending" && selectedNodeForNext) {
         // Create new Email node when saving configuration
         const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
-        console.log("📍 Source node found:", sourceNode)
         if (sourceNode) {
           const newNodeId = `email-${nodeCounter}`
           
@@ -3089,17 +3104,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )
       }
 
-      // Reset zoom to 100% after saving configuration
+      // Reset zoom and auto-fit workflow after saving configuration
       setZoomLevel(100)
       setTimeout(() => {
-        zoomTo(1)
+        smartFitWorkflow()
       }, 50)
 
       setShowEmailConfigUI(false)
       setSelectedEmailNodeId(null)
       setSelectedNodeForNext(null)
     },
-    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, zoomTo],
+    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
   )
 
   const handleOnFormSubmissionBack = useCallback(() => {
@@ -3126,12 +3141,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleOnFormSubmissionSave = useCallback(
     (formConfig: FormConfig) => {
-      console.log("📝 Form Config Save - selectedFormNodeId:", selectedFormNodeId)
-      
       if (selectedFormNodeId === "pending") {
         // Create new form submission node when saving configuration
-        console.log("✨ Creating new form submission node")
-        
         const newNodeId = "form-submission"
         
         // Create the tool object for Form
@@ -3216,10 +3227,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setZoomLevel(100)
 
       setTimeout(() => {
-        zoomTo(1)
+        smartFitWorkflow()
       }, 50)
     },
-    [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges],
+    [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges],
   )
 
   const handleResultClick = useCallback((result: any) => {
@@ -3233,8 +3244,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [])
 
   const handleTemplateSelect = useCallback(async (template: any) => {
-    console.log('Selected template:', template)
-    
     // Find the full template data from availableTemplates
     const fullTemplate = availableTemplates.find(t => t.id === template.id)
     if (fullTemplate) {
@@ -3244,7 +3253,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         if (response.ok) {
           const result = await response.json()
           if (result.success && result.data) {
-            console.log('Setting detailed template:', result.data)
             // Set the detailed template which will trigger the useEffect to create nodes
             setLocalSelectedTemplate(result.data)
           } else {
@@ -3275,11 +3283,161 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   // Handler for workflow name change
   const handleWorkflowNameChange = useCallback((newName: string) => {
-    console.log("🏷️ Workflow name changing from:", currentWorkflowName, "to:", newName)
     setCurrentWorkflowName(newName)
     // Here you could also update the selectedTemplate if needed
     // or make an API call to save the name change
   }, [currentWorkflowName])
+
+  // Handler for refresh confirmation
+  const handleConfirmRefresh = useCallback((callback: () => void) => {
+    setPendingRefreshCallback(() => callback)
+    setShowConfirmationPopup(true)
+  }, [])
+
+  // Handler for beforeunload event (browser refresh/close)
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Only show warning if in builder mode with unsaved changes
+      if (builder && hasWorkflowChanged) {
+        event.preventDefault()
+        event.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
+        return 'You have unsaved changes. Are you sure you want to leave?'
+      }
+    }
+
+    // Handler for keyboard refresh events (Cmd+R, Cmd+Shift+R)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Cmd+R or Cmd+Shift+R (Mac) or Ctrl+R, Ctrl+Shift+R (Windows/Linux)
+      const isRefreshKey = event.key === 'r' || event.key === 'R'
+      const isModifierPressed = event.metaKey || event.ctrlKey // Cmd on Mac, Ctrl on Windows/Linux
+      
+      if (isRefreshKey && isModifierPressed && builder && hasWorkflowChanged) {
+        // Prevent the default refresh behavior
+        event.preventDefault()
+        event.stopPropagation()
+        
+        // Show our custom confirmation popup
+        handleConfirmRefresh(() => {
+          // If user confirms, perform the refresh
+          window.location.reload()
+        })
+      }
+    }
+
+    // Add event listeners
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('keydown', handleKeyDown, true) // Use capture phase for better control
+
+    // Cleanup event listeners
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('keydown', handleKeyDown, true)
+    }
+  }, [builder, hasWorkflowChanged, handleConfirmRefresh])
+
+  // Handler for save changes button
+  const handleSaveChanges = useCallback(async () => {
+    try {
+      // Check if we have nodes to create a workflow
+      if (nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.step?.type === "trigger_selector")) {
+        throw new Error("Cannot save workflow: No workflow steps defined. Please add at least one step to your workflow.")
+      }
+
+      // Create the workflow state payload that will be sent to the complex template API
+      // Use the centralized name resolution function to ensure consistency
+      const derivedName = getWorkflowName()
+      
+      const workflowData = {
+        name: derivedName,
+        description: selectedTemplate?.description || "Workflow created from builder",
+        version: "1.0.0",
+        config: {
+          ai_model: "gemini-1.5-pro",
+          max_file_size: "10MB",
+          auto_execution: false,
+          schema_version: "1.0",
+          allowed_file_types: ["pdf", "docx", "txt"],
+          supports_file_upload: true,
+        },
+        nodes: nodes.map(node => ({
+          id: node.id,
+          type: node.type,
+          position: node.position,
+          data: {
+            step: node.data?.step,
+            tools: node.data?.tools,
+            isActive: node.data?.isActive,
+            isCompleted: node.data?.isCompleted,
+            hasNext: node.data?.hasNext,
+          }
+        })),
+        edges: edges.map(edge => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: edge.type,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle,
+          style: edge.style,
+          markerEnd: edge.markerEnd,
+        })),
+        metadata: {
+          nodeCount: nodes.length,
+          edgeCount: edges.length,
+          createdAt: new Date().toISOString(),
+          workflowType: templateWorkflow ? 'template-based' : 'user-created'
+        }
+      }
+
+      // Create the workflow template via complex.post API
+      const createResponse = await api.workflow.templates.complex.$post({
+        json: workflowData,
+      })
+
+      if (!createResponse.ok) {
+        const errorText = await createResponse.text()
+        throw new Error(`Failed to create workflow template: ${createResponse.status} ${createResponse.statusText}. ${errorText.substring(0, 200)}`)
+      }
+
+      const createResult = await createResponse.json()
+
+      if (!createResult.success || !createResult.data) {
+        throw new Error("Failed to create workflow template: Invalid response format")
+      }
+
+      // Extract the created template ID
+      const createdTemplateId = createResult.data.id
+
+      // Update the created template state for future use
+      const newCreatedTemplate = {
+        id: createdTemplateId,
+        name: workflowData.name,
+        description: workflowData.description,
+        version: workflowData.version,
+        status: 'active',
+        config: workflowData.config,
+        createdBy: 'current-user',
+        rootWorkflowStepTemplateId: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any
+      
+      setCreatedTemplate(newCreatedTemplate)
+      
+      // Mark workflow as saved and update hash
+      const currentHash = createWorkflowHash()
+      setLastSavedHash(currentHash)
+      setIsWorkflowSaved(true)
+      setHasWorkflowChanged(false)
+      
+      // Show success snackbar
+      showSnackbarMessage("Workflow saved successfully! You can now execute it.", 'success')
+
+    } catch (error) {
+      console.error("Failed to save workflow:", error)
+      showSnackbarMessage(`Failed to save workflow: ${error instanceof Error ? error.message : "Unknown error"}`, 'error')
+    }
+  }, [nodes, edges, templateWorkflow, selectedTemplate, getWorkflowName, setCreatedTemplate, showSnackbarMessage])
 
   // Use the centralized workflow name function for display consistency
 
@@ -3288,10 +3446,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       {/* Header */}
       <Header
         onBackToWorkflows={onBackToWorkflows}
+        onRefreshWorkflows={onRefreshWorkflows}
         workflowName={getWorkflowName()}
         selectedTemplate={selectedTemplate}
         onWorkflowNameChange={handleWorkflowNameChange}
         isEditable={builder}
+        onSaveChanges={handleSaveChanges}
+        isSaveDisabled={!hasWorkflowChanged || (isWorkflowSaved && !hasWorkflowChanged)}
+        hasUnsavedChanges={builder && hasWorkflowChanged}
+        onConfirmRefresh={handleConfirmRefresh}
       />
 
       {/* Main content area */}
@@ -3373,13 +3536,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       await executeWorkflow()
                     } catch (error) {
                       console.error("Failed to execute workflow:", error)
-                      // You could add user notification here if needed
-                      alert(`Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`)
+                      showSnackbarMessage(`Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`, 'error')
                     }
                   }}
                   zoomLevel={zoomLevel}
                   onZoomChange={handleZoomChange}
-                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector)}
+                  disabled={nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.isTriggerSelector) || (builder && !isWorkflowSaved)}
                 />
               </Panel>
             )}
@@ -3449,8 +3611,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               }
               selectedTemplate={selectedTemplate}
               onStepCreated={(stepData) => {
-                console.log("Step created:", stepData)
-                
                 // Create visual step below the selected node
                 if (selectedNodeForNext && stepData) {
                   const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
@@ -3650,20 +3810,25 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       />
 
       {/* Workflow Execution Modal */}
-      {showExecutionModal && (createdTemplate || selectedTemplate) && (
-        <WorkflowExecutionModal
-          isOpen={showExecutionModal}
-          onClose={() => {
-            setShowExecutionModal(false)
-            setCreatedTemplate(null) // Clear created template when modal closes
-          }}
-          workflowName={(createdTemplate || selectedTemplate)?.name || "Custom Workflow"}
-          workflowDescription={(createdTemplate || selectedTemplate)?.description || "User-created workflow"}
-          templateId={(createdTemplate || selectedTemplate)!.id}
-          workflowTemplate={(createdTemplate || selectedTemplate)!}
-          onViewExecution={onViewExecution}
-        />
-      )}
+      {showExecutionModal && (createdTemplate || selectedTemplate) && (() => {
+        const template = createdTemplate || selectedTemplate
+        const templateId = template?.id !== 'pending-creation' ? template?.id : undefined
+        
+        return (
+          <WorkflowExecutionModal
+            isOpen={showExecutionModal}
+            onClose={() => {
+              setShowExecutionModal(false)
+              // Keep createdTemplate state so it can be reused for future executions
+            }}
+            workflowName={template?.name || "Custom Workflow"}
+            workflowDescription={template?.description || "User-created workflow"}
+            templateId={templateId}
+            workflowTemplate={templateId ? template || undefined : undefined}
+            onViewExecution={onViewExecution}
+          />
+        )
+      })()}
 
       {/* Template Selection Modal */}
       <TemplateSelectionModal
@@ -3682,6 +3847,36 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         loading={templatesLoading}
         error={templatesError}
         onSelectTemplate={handleTemplateSelect}
+      />
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        message={snackbarMessage}
+        type={snackbarType}
+        isVisible={showSnackbar}
+        onClose={() => setShowSnackbar(false)}
+        duration={5000}
+        position="top-center"
+      />
+
+      {/* Confirmation Popup for unsaved changes */}
+      <ConfirmationPopup
+        isVisible={showConfirmationPopup}
+        title="Hold on — you have unsaved work"
+        message="Refreshing now will discard your edits permanently"
+        confirmText="Refresh"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setShowConfirmationPopup(false)
+          if (pendingRefreshCallback) {
+            pendingRefreshCallback()
+            setPendingRefreshCallback(null)
+          }
+        }}
+        onCancel={() => {
+          setShowConfirmationPopup(false)
+          setPendingRefreshCallback(null)
+        }}
       />
     </div>
   )

@@ -1,14 +1,9 @@
-FROM vespaengine/vespa:latest
+FROM vespaengine/vespa:8.583.10
 
-# Switch to root to install packages
 USER root
 
-# Install CUDA-enabled ONNX runtime for Vespa
-# Using dnf directly as it's the package manager in the base image
-RUN dnf -y install dnf-plugins-core && \
-    dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && \
-    dnf -y install vespa-onnxruntime-cuda && \
-    dnf clean all
+RUN dnf -y install 'dnf-command(config-manager)'
+RUN dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
+RUN dnf -y install $(rpm -q --queryformat '%{NAME}-cuda-%{VERSION}' vespa-onnxruntime)
 
-# Switch back to vespa user (UID 1000 is typical for vespaengine/vespa)
-USER 1000
+USER vespa

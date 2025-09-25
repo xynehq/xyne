@@ -1,6 +1,6 @@
 import { answerContextMap } from "@/ai/context"
 import { getLogger } from "@/logger"
-import { MessageRole, Subsystem } from "@/types"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { delay, getErrorMessage } from "@/utils"
 
 import { getTracer, type Span, type Tracer } from "@/tracer"
@@ -66,6 +66,8 @@ import { expandEmailThreadsInResults } from "./utils"
 import { resolveNamesToEmails } from "./chat"
 import type { Intent } from "@/ai/types"
 import type { GetThreadItemsParams } from "@xyne/vespa-ts"
+import { time } from "console"
+import { getDateForAI } from "@/utils/index"
 
 const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
@@ -257,6 +259,8 @@ interface UnifiedSearchOptions {
   collectionFileIds?: string[]
 }
 
+const userMetadata: UserMetadataType = {userTimezone: "Asia/Kolkata", dateForAI: getDateForAI({userTimeZone: "Asia/Kolkata"})}
+
 async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   result: string
   contexts: MinimalAgentFragment[]
@@ -447,7 +451,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       const fields = r.fields as VespaDataSourceFile
       return {
         id: `${fields.docId}`,
-        content: answerContextMap(r, maxDefaultSummary),
+        content: answerContextMap(r, userMetadata, maxDefaultSummary),
         source: {
           docId: fields.docId,
           title: fields.fileName || "Untitled",
@@ -461,7 +465,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     const citation = searchToCitation(r)
     return {
       id: `${citation.docId}`,
-      content: answerContextMap(r, maxDefaultSummary),
+      content: answerContextMap(r, userMetadata, maxDefaultSummary),
       source: citation,
       confidence: r.relevance || 0.7,
     }
@@ -761,6 +765,7 @@ export const metadataRetrievalTool: AgentTool = {
           resolvedIntent,
           email,
           userCtx ?? "",
+          userMetadata,
           span,
         )
         Logger.info(`Resolved intent: ${JSON.stringify(resolvedIntent)}`)
@@ -1035,7 +1040,7 @@ export const getSlackThreads: AgentTool = {
             Logger.debug({ item }, "Processing item in metadata_retrieval tool")
 
             const content = item.fields
-              ? answerContextMap(item, maxDefaultSummary)
+              ? answerContextMap(item, userMetadata, maxDefaultSummary)
               : `Context unavailable for ${citation.title || citation.docId}`
 
             return {
@@ -1249,7 +1254,7 @@ export const getSlackMessagesFromUser: AgentTool = {
             Logger.debug({ item }, "Processing item in metadata_retrieval tool")
 
             const content = item.fields
-              ? answerContextMap(item, maxDefaultSummary)
+              ? answerContextMap(item, userMetadata, maxDefaultSummary)
               : `Context unavailable for ${citation.title || citation.docId}`
 
             return {
@@ -1489,7 +1494,7 @@ export const getSlackRelatedMessages: AgentTool = {
           Logger.debug({ item }, "Processing Slack message item")
 
           const content = item.fields
-            ? answerContextMap(item, maxDefaultSummary)
+            ? answerContextMap(item, userMetadata, maxDefaultSummary)
             : `Content unavailable for ${citation.title || citation.docId}`
 
           return {
@@ -1826,7 +1831,7 @@ export const getSlackMessagesFromChannel: AgentTool = {
           Logger.debug({ item }, "Processing item in metadata_retrieval tool")
 
           const content = item.fields
-            ? answerContextMap(item, maxDefaultSummary)
+            ? answerContextMap(item, userMetadata, maxDefaultSummary)
             : `Context unavailable for ${citation.title || citation.docId}`
 
           return {
@@ -2033,7 +2038,7 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
           Logger.debug({ item }, "Processing item in metadata_retrieval tool")
 
           const content = item.fields
-            ? answerContextMap(item, maxDefaultSummary)
+            ? answerContextMap(item, userMetadata, maxDefaultSummary)
             : `Context unavailable for ${citation.title || citation.docId}`
 
           return {
