@@ -143,8 +143,6 @@ export const processSiteDrives = async (
 
           if (response.value && Array.isArray(response.value)) {
             for (const item of response.value) {
-              // Only process files, not folders
-              if (item.file) {
                 try {
                   const permissions: string[] = await getFilePermissions(
                     client,
@@ -169,7 +167,6 @@ export const processSiteDrives = async (
                       size: item.size,
                       downloadUrl: item["@microsoft.graph.downloadUrl"],
                       siteId: siteDrive.sharePointIds?.siteId,
-                      siteName: siteDrive.name,
                       driveId: siteDrive.id,
                       driveName: siteDrive.name,
                       driveType: siteDrive.driveType,
@@ -197,7 +194,6 @@ export const processSiteDrives = async (
                     `Error processing file ${item.id} from drive ${siteDrive.name}: ${(error as Error).message}`,
                   )
                 }
-              }
             }
           }
 

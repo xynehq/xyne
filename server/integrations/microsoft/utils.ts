@@ -445,7 +445,7 @@ async function processMicrosoftWord(
       results.push({
         title: file.name!,
         url: file.webUrl ?? "",
-        app: Apps.MicrosoftDrive,
+        app: graphClient.refreshToken? Apps.MicrosoftDrive : Apps.MicrosoftSharepoint,
         docId: file.id!,
         parentId: file.parentReference?.id ?? null,
         owner: "",

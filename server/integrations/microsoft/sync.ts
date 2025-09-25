@@ -1358,22 +1358,11 @@ const handleSharePointFileDelete = async (
   try {
     const existingDoc = await getDocumentOrNull(fileSchema, fileId)
     if (existingDoc) {
-      const permissions =
-        (existingDoc.fields as VespaFileWithDrivePermission)?.permissions ?? []
-
-      //until groups gets implemented
-      if (permissions.length <= 1) {
-        // Remove the document entirely if no one can access it anymore
-        await DeleteDocument(fileId, fileSchema)
-        stats.removed += 1
-        stats.summary += `Deleted SharePoint file ${fileId}\n`
-      } else if (permissions.length > 1) {
-        // Remove user's permission from the document
-        const newPermissions = permissions.filter((p) => p !== email)
-        await UpdateDocumentPermissions(fileSchema, fileId, newPermissions)
-        stats.updated += 1
-        stats.summary += `Removed user permission for SharePoint file ${fileId}\n`
-      }
+      // "deleted or @removed" in delta implies the file was deleted, not just permission changes.
+      // Safe to delete from Vespa regardless of ACLs or user-specific permissions.
+      await DeleteDocument(fileId, fileSchema)
+      stats.removed += 1
+      stats.summary += `Deleted SharePoint file ${fileId}\n`
     } else {
       throw new Error("File not found in vespa")
     }
