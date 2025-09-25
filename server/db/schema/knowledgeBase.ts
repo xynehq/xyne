@@ -96,6 +96,8 @@ export const collectionItems = pgTable(
 
     processingInfo: jsonb("processing_info").default({}).notNull(),
     processedAt: timestamp("processed_at"),
+    uploadStatus: varchar("upload_status", { length: 20 }).default("pending").notNull().$type<"pending" | "processing" | "completed" | "failed">(),
+    statusMessage: text("status_message"), // Stores error messages, processing details, or success info
     metadata: jsonb("metadata").default({}).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

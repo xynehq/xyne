@@ -1,0 +1,35 @@
+import PgBoss from "pg-boss"
+import config from "@/config"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+
+const Logger = getLogger(Subsystem.Queue)
+
+const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
+export const boss = new PgBoss({
+  connectionString: url,
+  monitorStateIntervalMinutes: 10,
+})
+
+export const FileProcessingQueue = `file-processing`
+
+/**
+ * Initialize pg-boss for API server usage only
+ * - Starts pg-boss connection
+ * - Creates only the FileProcessingQueue
+ * - Does NOT start any workers (workers run in sync-server.ts)
+ */
+export const initApiServerQueue = async () => {
+  Logger.info("API Server Queue init - starting pg-boss")
+  await boss.start()
+  
+  Logger.info("Creating FileProcessingQueue for API server")
+  await boss.createQueue(FileProcessingQueue)
+  
+  Logger.info("API Server Queue initialization complete - ready for boss.send()")
+}
+
+// Error handling
+boss.on("error", (error) => {
+  Logger.error(error, `API Server Queue error: ${error.message}`)
+})

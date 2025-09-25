@@ -43,8 +43,8 @@ import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { insert, DeleteDocument, GetDocument } from "@/search/vespa"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
+import { boss, FileProcessingQueue } from "@/queue/api-server-queue"
 import crypto from "crypto"
-import { FileProcessorService } from "@/services/fileProcessor"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
@@ -109,7 +109,7 @@ function getStoragePath(
   collectionId: string,
   storageKey: string,
   fileName: string,
-): string {
+): string {  
   const date = new Date()
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -173,34 +173,7 @@ export const CreateCollectionApi = async (c: Context) => {
     const collection = await db.transaction(async (tx) => {
       const createdCollection = await createCollection(tx, collectionData)
 
-      const vespaDoc = {
-        docId: vespaDocId,
-        clId: createdCollection.id,
-        itemId: createdCollection.id,
-        fileName: validatedData.name,
-        app: Apps.KnowledgeBase as const,
-        entity: KnowledgeBaseEntity.Collection,
-        description: validatedData.description || "",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          ...validatedData.metadata,
-        }),
-        createdBy: user.email,
-        duration: 0,
-        mimeType: "knowledge_base",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: null,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
+      // Note: Collection indexing in Vespa removed - only files are indexed by worker
       return createdCollection
     })
     loggerWithChild({ email: userEmail }).info(
@@ -994,6 +967,7 @@ export const UploadFilesApi = async (c: Context) => {
       duplicateId?: string
       isIdentical?: boolean
       wasRenamed?: boolean
+      uploadStatus?: string // Add uploadStatus field
     }
 
     const uploadResults: UploadResult[] = []
@@ -1040,7 +1014,7 @@ export const UploadFilesApi = async (c: Context) => {
         // Parse the file path to extract folder structure
         const pathParts = filePath.split("/").filter((part) => part.length > 0)
         const originalFileName = pathParts.pop() || file.name // Get the actual filename
-       
+        
 
         // Skip if the filename is a system file (in case it comes from path)
         if (
@@ -1186,81 +1160,37 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
-        // Process file using the service
-        const processingResult = await FileProcessorService.processFile(
-          buffer,
-          file.type || "text/plain",
+        // Create file record in database with 'pending' status
+        const item = await createFileItem(
+          db,
+          collectionId,
+          targetParentId,
           fileName,
           vespaDocId,
+          fileName,
           storagePath,
+          storageKey,
+          file.type || "application/octet-stream",
+          file.size,
+          checksum,
+          {
+            originalPath: filePath,
+            folderStructure: pathParts.join("/"),
+            originalFileName:
+              originalFileName !== fileName ? originalFileName : undefined,
+            wasOverwritten:
+              existingFile &&
+              duplicateStrategy === DuplicateStrategy.OVERWRITE,
+          },
+          user.id,
+          user.email,
+          `File uploaded successfully, queued for processing` // Initial status message
         )
 
-        const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
-          processingResult
-
-        // Use transaction for atomic file creation AND Vespa insertion
-        const item = await db.transaction(async (tx) => {
-          const createdItem = await createFileItem(
-            tx,
-            collectionId,
-            targetParentId,
-            fileName,
-            vespaDocId,
-            fileName,
-            storagePath,
-            storageKey,
-            file.type || "application/octet-stream",
-            file.size,
-            checksum,
-            {
-              originalPath: filePath,
-              folderStructure: pathParts.join("/"),
-              originalFileName:
-                originalFileName !== fileName ? originalFileName : undefined,
-              wasOverwritten:
-                existingFile &&
-                duplicateStrategy === DuplicateStrategy.OVERWRITE,
-            },
-            user.id,
-            user.email,
-          )
-
-          // Create Vespa document within the same transaction
-          const vespaDoc = {
-            docId: vespaDocId,
-            clId: collectionId,
-            itemId: createdItem.id,
-            fileName:
-              targetPath === "/"
-                ? collection?.name + targetPath + filePath
-                : collection?.name + targetPath + fileName,
-            app: Apps.KnowledgeBase as const,
-            entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
-            description: "", // Default description for uploaded files
-            storagePath: storagePath,
-            chunks: chunks,
-            chunks_pos: chunks_pos,
-            image_chunks: image_chunks,
-            image_chunks_pos: image_chunks_pos,
-            metadata: JSON.stringify({
-              originalFileName: file.name,
-              uploadedBy: user.email,
-              chunksCount: chunks.length,
-              imageChunksCount: image_chunks.length,
-              processingMethod: getBaseMimeType(file.type || "text/plain"),
-              lastModified: Date.now(),
-            }),
-            createdBy: user.email,
-            duration: 0,
-            mimeType: getBaseMimeType(file.type || "text/plain"),
-            fileSize: file.size,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            clFd: targetParentId,
-          }
-
-          await insert(vespaDoc, KbItemsSchema)
-          return createdItem
+        // Submit to processing queue for async processing  
+        const jobId = await boss.send(FileProcessingQueue, { fileId: item.id }, {
+          retryLimit: 3,
+          expireInHours: 12
         })
 
         uploadResults.push({
@@ -1271,9 +1201,10 @@ export const UploadFilesApi = async (c: Context) => {
           parentId: targetParentId,
           message:
             fileName !== originalFileName
-              ? `File uploaded as "${fileName}" (renamed to avoid duplicate)`
-              : "File uploaded successfully",
+              ? `File uploaded as "${fileName}" (renamed to avoid duplicate) - queued for processing`
+              : "File uploaded successfully - queued for processing",
           wasRenamed: fileName !== originalFileName,
+          uploadStatus: 'pending', // Indicate it's pending processing
         })
 
         loggerWithChild({ email: userEmail }).info(
