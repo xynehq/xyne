@@ -3961,7 +3961,7 @@ export const AgentMessageApi = async (c: Context) => {
                 imageAttachmentFileIds,
                 agentPromptForLLM,
                 fileIds.length > 0,
-                undefined,
+                actualModelId,
                 Boolean(isValidPath),
                 folderIds,
               )
