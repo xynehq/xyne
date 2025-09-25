@@ -577,8 +577,6 @@ function KnowledgeManagementContent() {
     checkForOngoingUploads()
   }, [toast])
 
- 
-
   useEffect(() => {
     const fetchCollections = async () => {
       try {
@@ -705,14 +703,14 @@ function KnowledgeManagementContent() {
         }))
         const batchFiles = batches[i].map((f) => f.file)
         const uploadResult = await uploadFileBatch(batchFiles, cl.id)
-        
+
         // Accumulate results from each batch
         if (uploadResult.summary) {
           totalSuccessful += uploadResult.summary.successful || 0
           totalSkipped += uploadResult.summary.skipped || 0
           totalFailed += uploadResult.summary.failed || 0
         }
-        
+
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -771,25 +769,29 @@ function KnowledgeManagementContent() {
       })
 
       handleCloseModal()
-      
+
       // Create detailed success message based on actual upload results
       let description = `Successfully created knowledge base "${collectionName.trim()}"`
       const details = []
       if (totalSuccessful > 0) {
-        details.push(`${totalSuccessful} file${totalSuccessful !== 1 ? 's' : ''} uploaded`)
+        details.push(
+          `${totalSuccessful} file${totalSuccessful !== 1 ? "s" : ""} uploaded`,
+        )
       }
       if (totalSkipped > 0) {
-        details.push(`${totalSkipped} duplicate${totalSkipped !== 1 ? 's' : ''} skipped`)
+        details.push(
+          `${totalSkipped} duplicate${totalSkipped !== 1 ? "s" : ""} skipped`,
+        )
       }
       if (totalFailed > 0) {
         details.push(`${totalFailed} failed`)
       }
 
       if (details.length > 0) {
-        description += `: ${details.join(', ')}`
+        description += `: ${details.join(", ")}`
       }
       description += "."
-      
+
       toast.success({
         title: "Knowledge Base Created",
         description,
@@ -863,7 +865,6 @@ function KnowledgeManagementContent() {
       let totalSuccessful = 0
       let totalSkipped = 0
       let totalFailed = 0
-      
 
       const batches = createBatches(selectedFiles, addingToCollection.name)
       setBatchProgress((prev: typeof batchProgress) => ({
@@ -882,14 +883,14 @@ function KnowledgeManagementContent() {
           addingToCollection.id,
           targetFolder?.id,
         )
-        
+
         // Accumulate results from each batch
         if (uploadedResult.summary) {
           totalSuccessful += uploadedResult.summary.successful || 0
           totalSkipped += uploadedResult.summary.skipped || 0
           totalFailed += uploadedResult.summary.failed || 0
         }
-        
+
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -945,19 +946,21 @@ function KnowledgeManagementContent() {
       if (totalSuccessful > 0 || totalSkipped > 0) {
         let description = `Successfully processed files for collection "${addingToCollection.name}": `
         const parts = []
-        
+
         if (totalSuccessful > 0) {
           parts.push(`${totalSuccessful} uploaded`)
         }
         if (totalSkipped > 0) {
-          parts.push(`${totalSkipped} duplicate${totalSkipped !== 1 ? 's' : ''} skipped`)
+          parts.push(
+            `${totalSkipped} duplicate${totalSkipped !== 1 ? "s" : ""} skipped`,
+          )
         }
         if (totalFailed > 0) {
           parts.push(`${totalFailed} failed`)
         }
-        
-        description += parts.join(', ') + '.'
-        
+
+        description += parts.join(", ") + "."
+
         toast.success({
           title: "Files Added",
           description,
@@ -965,11 +968,11 @@ function KnowledgeManagementContent() {
       } else if (totalFailed > 0) {
         toast.error({
           title: "Add Files Failed",
-          description: `${totalFailed} file${totalFailed !== 1 ? 's' : ''} failed to upload. Please try again.`,
+          description: `${totalFailed} file${totalFailed !== 1 ? "s" : ""} failed to upload. Please try again.`,
         })
       } else {
         toast.error({
-          title: "Add Files Failed", 
+          title: "Add Files Failed",
           description: "Failed to add files to collection. Please try again.",
         })
       }
@@ -1435,7 +1438,9 @@ function KnowledgeManagementContent() {
             {/* Top section - File tree and Document viewer */}
             <div className="flex flex-1 h-full overflow-hidden">
               {/* Center pane - Document viewer (scrollable) */}
-              <div className="flex-1 flex flex-col bg-white h-full overflow-hidden min-w-0 max-w-[calc(100vw-652px)]">
+              <div
+                className={`flex-1 flex flex-col bg-white h-full overflow-hidden min-w-0 ${isChatHidden ? "" : "max-w-[calc(100vw-652px)]"}`}
+              >
                 {/* Document header (sticky) */}
                 <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
                   <div className="flex items-center gap-4">

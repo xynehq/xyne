@@ -175,6 +175,24 @@ setup_environment() {
     
     # Create network if it doesn't exist
     docker network create xyne 2>/dev/null || echo "Network 'xyne' already exists"
+
+    # Process prometheus configuration template
+    echo " Processing prometheus configuration template..."
+    if [ -f prometheus-selfhosted.yml.template ]; then
+        # Load environment variables if .env exists
+        if [ -f .env ]; then
+            set -a && source .env && set +a
+        fi
+
+        # Set default METRICS_PORT if not defined
+        METRICS_PORT=${METRICS_PORT:-3001}
+        export METRICS_PORT
+
+        envsubst < prometheus-selfhosted.yml.template > prometheus-selfhosted.yml
+        echo " Prometheus configuration updated with METRICS_PORT=${METRICS_PORT}"
+    else
+        echo " Template file not found, using existing prometheus-selfhosted.yml"
+    fi
 }
 
 setup_permissions() {
