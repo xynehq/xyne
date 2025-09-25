@@ -8,9 +8,6 @@ type Options = {
   activeClass?: string;
   debug?: boolean;            // Enable debug logging
   documentId?: string;        // Document ID for caching
-  fuzzyMatching?: boolean;   // Enable fuzzy matching
-  errorTolerance?: number;   // Error tolerance for fuzzy matching (0-10)
-  maxPatternLength?: number; // Maximum pattern length for fuzzy matching
 };
 
 type HighlightMatch = {
@@ -34,7 +31,6 @@ type HighlightResponse = {
 type CacheEntry = {
   response: HighlightResponse;
   timestamp: number;
-  documentContent: string;
 };
 
 type HighlightCache = {
@@ -54,8 +50,6 @@ export function useScopedFind(
     highlightClass = "bg-yellow-200/60 dark:bg-yellow-200/40 rounded-sm px-0.5 py-px", 
     debug = false,
     documentId,
-    errorTolerance = 5,
-    maxPatternLength = 128,
   } = opts;
 
   // Cache for API responses
@@ -284,9 +278,7 @@ export function useScopedFind(
         const cachedEntry = cacheRef.current[cacheKey];
         let result: HighlightResponse;
 
-        if (cachedEntry && 
-            cachedEntry.documentContent === containerText &&
-            (Date.now() - cachedEntry.timestamp) < CACHE_DURATION) {
+        if (cachedEntry && (Date.now() - cachedEntry.timestamp) < CACHE_DURATION) {
           if (debug) {
             console.log('Using cached result for key:', cacheKey);
           }
@@ -302,8 +294,6 @@ export function useScopedFind(
               documentContent: containerText,
               options: {
                 caseSensitive,
-                errorTolerance,
-                maxPatternLength
               }
             }
           });
@@ -319,7 +309,6 @@ export function useScopedFind(
             cacheRef.current[cacheKey] = {
               response: result,
               timestamp: Date.now(),
-              documentContent: containerText
             };
 
             if (debug) {
@@ -378,7 +367,7 @@ export function useScopedFind(
         setIsLoading(false);
       }
     },
-    [clearHighlights, containerRef, extractContainerText, createHighlightMarks, caseSensitive, debug, documentId, generateCacheKey, cleanExpiredCache, errorTolerance, maxPatternLength]
+    [clearHighlights, containerRef, extractContainerText, createHighlightMarks, caseSensitive, debug, documentId, generateCacheKey, cleanExpiredCache]
   );
 
   const scrollToMatch = useCallback(
