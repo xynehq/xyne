@@ -240,7 +240,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       stream: isStreamable,
       json: false,
       reasoning: false,
-      systemPrompt: (agent.prompt || "You are a helpful assistant.") + "IMPORTANT NOTICE:- Please don't give text in markdown format, give only in the text format.",
+      systemPrompt: (agent.prompt || "You are a helpful assistant.") + "\n\nIMPORTANT: Please provide responses in plain text format only. Do not use markdown.",
 
       // ADD IMAGE SUPPORT:
       ...(finalImageFileNames.length > 0 ? { imageFileNames: finalImageFileNames } : {}),
