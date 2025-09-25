@@ -187,7 +187,7 @@ restore_via_docker() {
     # Restore from backup
     print_info "Restoring data from backup..."
     if [[ "$backup_file" =~ \.gz$ ]]; then
-        if gunzip -c "$backup_file" | docker exec -i "$DOCKER_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME"; then
+        if gunzip -c "$backup_file" | docker exec -i "$DOCKER_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME"; then
             print_success "Database restored successfully!"
             return 0
         else
@@ -195,7 +195,7 @@ restore_via_docker() {
             return 1
         fi
     else
-        if cat "$backup_file" | docker exec -i "$DOCKER_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME"; then
+        if cat "$backup_file" | docker exec -i "$DOCKER_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME"; then
             print_success "Database restored successfully!"
             return 0
         else
@@ -235,7 +235,7 @@ restore_via_local() {
     # Restore from backup
     print_info "Restoring data from backup..."
     if [[ "$backup_file" =~ \.gz$ ]]; then
-        if gunzip -c "$backup_file" | psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"; then
+        if gunzip -c "$backup_file" | psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"; then
             print_success "Database restored successfully!"
             return 0
         else
@@ -243,7 +243,7 @@ restore_via_local() {
             return 1
         fi
     else
-        if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" < "$backup_file"; then
+        if psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" < "$backup_file"; then
             print_success "Database restored successfully!"
             return 0
         else
