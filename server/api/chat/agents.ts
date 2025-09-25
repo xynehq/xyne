@@ -221,6 +221,7 @@ import {
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
+import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -3714,8 +3715,22 @@ export const AgentMessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     let ids
+    let isValidPath: boolean = false
     if (path) {
       ids = await getRecordBypath(path, db)
+      if (ids != null) {
+        // Check if the vespaId exists in the agent's app integrations using our validation function
+        if (!(await validateVespaIdInAgentIntegrations(agentForDb, ids))) {
+          throw new HTTPException(403, {
+            message: `Access denied: The path '${path}' is not accessible through this agent's integrations`,
+          })
+        }
+        isValidPath = Boolean(true)
+      } else {
+        throw new HTTPException(400, {
+          message: `The given path:${path} is not a valid path of collection's folder or file`,
+        })
+      }
     }
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
@@ -3724,8 +3739,10 @@ export const AgentMessageApi = async (c: Context) => {
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
+            collectionFolderIds: [],
           }
     let fileIds = extractedInfo?.fileIds
+    let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
@@ -3943,6 +3960,10 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 imageAttachmentFileIds,
                 agentPromptForLLM,
+                fileIds.length > 0,
+                actualModelId,
+                Boolean(isValidPath),
+                folderIds,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
