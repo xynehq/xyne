@@ -166,6 +166,7 @@ import {
   ragPipelineConfig,
   RagPipelineStages,
   type AgentTool,
+  type Citation,
   type ImageCitation,
   type MinimalAgentFragment,
 } from "./types"
@@ -404,7 +405,14 @@ const checkAndYieldCitationsForAgent = async function* (
   results: MinimalAgentFragment[],
   yieldedImageCitations?: Map<number, Set<number>>,
   email: string = "",
-) {
+): AsyncGenerator<
+  {
+    citation?: { index: number; item: Citation }
+    imageCitation?: ImageCitation
+  },
+  void,
+  unknown
+> {
   const tracer = getTracer("chat")
   const span = tracer.startSpan("checkAndYieldCitationsForAgent")
 
@@ -1542,10 +1550,10 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         // Prepare streaming state holders
         let answer = ""
-        const citations: any[] = []
-        const imageCitations: any[] = []
+        const citations: Citation[] = []
+        const imageCitations: ImageCitation[] = []
         const citationMap: Record<number, number> = {}
-        const citationValues: Record<number, string> = {}
+        const citationValues: Record<number, Citation> = {}
         let gatheredFragments: MinimalAgentFragment[] = []
         let planningContext = ""
         let parseSynthesisResult = null
@@ -1993,7 +2001,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   email ?? "",
                 )) {
                   if (cit.citation) {
-                    const { index, item } = cit.citation as any
+                    const { index, item } = cit.citation
                     citations.push(item)
                     citationMap[index] = citations.length - 1
                     await stream.writeSSE({
@@ -2374,8 +2382,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                             Array.isArray(fallbackResponse.contexts)
                           ) {
                             fallbackResponse.contexts.forEach(
-                              (context, _index) => {
-                                citations.push(context)
+                              (context) => {
+                                citations.push(context.source)
                                 citationMap[citations.length] =
                                   citations.length - 1
                               },
@@ -2555,7 +2563,7 @@ async function* nonRagIterator(
   modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: number; item: Citation }
     imageCitation?: ImageCitation
   }
 > {
@@ -2967,10 +2975,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             actualModelId || undefined,
           )
           let answer = ""
-          let citations: any[] = []
-          let imageCitations: any[] = []
+          let citations: Citation[] = []
+          let imageCitations: ImageCitation[] = []
           let citationMap: Record<number, number> = {}
-          let citationValues: Record<number, any> = {}
+          let citationValues: Record<number, Citation> = {}
           let thinking = ""
           let reasoning = isReasoningEnabled
           for await (const chunk of ragOffIterator) {
@@ -3227,8 +3235,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const finalizeAndRespond = async (params: {
           answer: string
           thinking: string
-          citations: any[]
-          imageCitations: any[]
+          citations: Citation[]
+          imageCitations: ImageCitation[]
           citationMap: Record<number, number>
           costArr: number[]
           tokenArr: { inputTokens: number; outputTokens: number }[]
@@ -3776,8 +3784,8 @@ export const AgentMessageApi = async (c: Context) => {
                 "User has selected some context with query, answering only based on that given context",
               )
               let answer = ""
-              let citations = []
-              let imageCitations: any = []
+              let citations: Citation[] = []
+              let imageCitations: ImageCitation[] = []
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
@@ -3821,7 +3829,7 @@ export const AgentMessageApi = async (c: Context) => {
               citations = []
               imageCitations = []
               citationMap = {}
-              let citationValues: Record<number, string> = {}
+              let citationValues: Record<number, Citation> = {}
               let count = 0
               for await (const chunk of iterator) {
                 if (stream.closed) {
@@ -4139,8 +4147,8 @@ export const AgentMessageApi = async (c: Context) => {
               // leads to [NaN] in the answer
               let currentAnswer = ""
               let answer = ""
-              let citations = []
-              let imageCitations: any = []
+              let citations: Citation[] = []
+              let imageCitations: ImageCitation[] = []
               let citationMap: Record<number, number> = {}
               let queryFilters = {
                 apps: [],
@@ -4361,7 +4369,7 @@ export const AgentMessageApi = async (c: Context) => {
                 reasoning = isReasoning && userRequestsReasoning
                 citations = []
                 citationMap = {}
-                let citationValues: Record<number, string> = {}
+                let citationValues: Record<number, Citation> = {}
                 for await (const chunk of iterator) {
                   if (stream.closed) {
                     Logger.info(
@@ -4727,8 +4735,8 @@ export const AgentMessageApi = async (c: Context) => {
         const finalizeAndRespond = async (params: {
           answer: string
           thinking: string
-          citations: any[]
-          imageCitations: any[]
+          citations: Citation[]
+          imageCitations: ImageCitation[]
           citationMap: Record<number, number>
           costArr: number[]
           tokenArr: { inputTokens: number; outputTokens: number }[]
@@ -4953,14 +4961,14 @@ async function collectIterator<
     reasoning?: boolean
     cost?: number
     metadata?: { usage?: { inputTokens: number; outputTokens: number } }
-    citation?: { index: number; item: any }
-    imageCitation?: any
+    citation?: { index: number; item: Citation }
+    imageCitation?: ImageCitation
   },
 >(iterator: AsyncIterable<TChunk>, opts?: { maxBytes?: number }) {
   let answer = ""
   let thinking = ""
-  let citations: any[] = []
-  let imageCitations: any[] = []
+  let citations: Citation[] = []
+  let imageCitations: ImageCitation[] = []
   let citationMap: Record<number, number> = {}
   let costArr: number[] = []
   let tokenArr: { inputTokens: number; outputTokens: number }[] = []
