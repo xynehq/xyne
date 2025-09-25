@@ -1,150 +1,167 @@
-import { ModelToProviderMap } from "@/ai/mappers"
-import { AIProviders, type Models } from "@/ai/types"
-import type {
-  ContentBlock,
-  Message as ProviderMessage,
-  ToolResultContentBlock,
-} from "@aws-sdk/client-bedrock-runtime"
-import type { DocumentType } from "@smithy/types"
-import type { Message as JAFMessage } from "@xynehq/jaf"
+import type { JSONSchema7 } from "json-schema"
 
-export function resolveProviderType(
-  provider: unknown,
-  modelId?: string | null,
-): AIProviders {
-  const providerWithType = provider as { providerType?: string }
-  const providerTypeValue = providerWithType?.providerType
-  if (providerTypeValue && isKnownProvider(providerTypeValue)) {
-    return providerTypeValue
-  }
-
-  if (modelId) {
-    const mapped = (ModelToProviderMap as Record<string, AIProviders>)[
-      modelId as Models
-    ]
-    if (mapped) {
-      return mapped
-    }
-  }
-
-  return AIProviders.OpenAI
+type JsonSchema = JSONSchema7
+type ZodDefinition = Record<string, unknown> & {
+  typeName?: string
+  description?: string
 }
 
-const bedrockProviders = new Set<AIProviders>([AIProviders.AwsBedrock])
+type ZodSchema = {
+  _def?: unknown
+} & object
 
-export function jafToProviderMessages(
-  jafMessages: ReadonlyArray<JAFMessage>,
-  providerType: AIProviders,
-): ProviderMessage[] {
-  if (providerType === AIProviders.VertexAI) {
-    return convertMessagesForVertex(jafMessages)
-  }
+const createStringSchema = (): JsonSchema => ({ type: "string" })
 
-  if (bedrockProviders.has(providerType)) {
-    return convertMessagesForBedrock(jafMessages)
-  }
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
 
-  return convertMessagesForGenericProviders(jafMessages)
+const isZodType = (value: unknown): value is ZodSchema =>
+  isRecord(value) && "_def" in value
+
+const isJsonSchemaPrimitive = (
+  value: unknown,
+): value is string | number | boolean | null =>
+  value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+
+const getDefinition = (schema: ZodSchema | undefined): ZodDefinition | undefined => {
+  const definition = schema?._def
+  return isRecord(definition) ? (definition as ZodDefinition) : undefined
 }
 
-export function zodSchemaToJsonSchema(zodSchema: any): any {
-  const def = zodSchema?._def
-  const typeName = def?.typeName
+const getZodType = (value: unknown): ZodSchema | undefined =>
+  (isZodType(value) ? value : undefined)
 
-  const attachDesc = (schema: any, node: any) => {
-    const d = node?._def?.description
-    if (d) schema.description = d
-    return schema
+export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
+  const def = getDefinition(zodSchema)
+  const typeName = typeof def?.typeName === "string" ? def.typeName : undefined
+
+  const attachDesc = (schema: JsonSchema, node: ZodSchema | undefined): JsonSchema => {
+    const description = getDefinition(node)?.description
+    return typeof description === "string" && description.length > 0
+      ? { ...schema, description }
+      : schema
   }
 
-  const unwrap = (inner: any) => attachDesc(zodSchemaToJsonSchema(inner), zodSchema)
+  const schemaFromCandidate = (candidate: unknown): JsonSchema => {
+    const zod = getZodType(candidate)
+    return zod ? zodSchemaToJsonSchema(zod) : createStringSchema()
+  }
+
+  const unwrap = (inner: unknown): JsonSchema => attachDesc(schemaFromCandidate(inner), zodSchema)
 
   if (!def || !typeName) {
-    return { type: "string" }
+    return attachDesc(createStringSchema(), zodSchema)
   }
 
   if (typeName === "ZodOptional" || typeName === "ZodDefault") {
     return unwrap(def.innerType)
   }
   if (typeName === "ZodNullable") {
-    const inner = zodSchemaToJsonSchema(def.innerType)
-    return attachDesc({ anyOf: [inner, { type: "null" }] }, zodSchema)
+    const innerSchema = schemaFromCandidate(def.innerType)
+    const nullSchema: JsonSchema = { type: "null" }
+    const nullableSchema: JsonSchema = { anyOf: [innerSchema, nullSchema] }
+    return attachDesc(nullableSchema, zodSchema)
   }
   if (typeName === "ZodEffects") {
-    return unwrap(def.schema || def.innerType || def.type)
+    return unwrap(def.schema ?? def.innerType ?? def.type)
   }
   if (typeName === "ZodBranded" || typeName === "ZodReadonly") {
-    return unwrap(def.type || def.innerType)
+    return unwrap(def.type ?? def.innerType)
   }
 
   if (typeName === "ZodObject") {
-    const shape = def.shape()
-    const properties: Record<string, any> = {}
+    const shapeGetter = typeof def.shape === "function" ? def.shape : undefined
+    const shapeResult = shapeGetter ? shapeGetter() : undefined
+    const shapeEntries = isRecord(shapeResult) ? Object.entries(shapeResult) : []
+
+    const properties: Record<string, JsonSchema> = {}
     const required: string[] = []
-    for (const [key, value] of Object.entries(shape)) {
-      properties[key] = zodSchemaToJsonSchema(value)
-      if (isZodSchemaRequired(value)) required.push(key)
+
+    for (const [key, rawValue] of shapeEntries) {
+      const propertySchema = schemaFromCandidate(rawValue)
+      properties[key] = propertySchema
+      if (isZodType(rawValue) && isZodSchemaRequired(rawValue)) {
+        required.push(key)
+      }
     }
-    const obj: any = {
+
+    const objectSchema: JsonSchema = {
       type: "object",
       properties,
       additionalProperties: false,
     }
-    if (required.length) obj.required = required
-    return attachDesc(obj, zodSchema)
+
+    if (required.length > 0) {
+      objectSchema.required = required
+    }
+
+    return attachDesc(objectSchema, zodSchema)
   }
   if (typeName === "ZodRecord") {
-    const valSchema = zodSchemaToJsonSchema(def.valueType)
-    return attachDesc(
-      { type: "object", additionalProperties: valSchema },
-      zodSchema,
-    )
+    const valueSchema = schemaFromCandidate(def.valueType)
+    const recordSchema: JsonSchema = {
+      type: "object",
+      additionalProperties: valueSchema,
+    }
+    return attachDesc(recordSchema, zodSchema)
   }
   if (typeName === "ZodArray") {
-    const itemSchema = zodSchemaToJsonSchema(def.type)
-    return attachDesc({ type: "array", items: itemSchema }, zodSchema)
+    const itemSchema = schemaFromCandidate(def.type)
+    const arraySchema: JsonSchema = { type: "array", items: itemSchema }
+    return attachDesc(arraySchema, zodSchema)
   }
   if (typeName === "ZodTuple") {
-    const items = (def.items || []).map((i: any) => zodSchemaToJsonSchema(i))
-    const schema: any = {
+    const tupleItemsRaw: unknown[] = Array.isArray(def.items) ? def.items : []
+    const items = tupleItemsRaw.map((item) => schemaFromCandidate(item))
+    const tupleSchema: JsonSchema = {
       type: "array",
       items,
       minItems: items.length,
       maxItems: items.length,
     }
-    if (def.rest) {
-      schema.additionalItems = zodSchemaToJsonSchema(def.rest)
-      delete schema.maxItems
+
+    if (isZodType(def.rest)) {
+      tupleSchema.additionalItems = zodSchemaToJsonSchema(def.rest)
+      delete tupleSchema.maxItems
     } else {
-      schema.additionalItems = false
+      tupleSchema.additionalItems = false
     }
-    return attachDesc(schema, zodSchema)
+
+    return attachDesc(tupleSchema, zodSchema)
   }
   if (typeName === "ZodUnion") {
-    const options = (def.options || []).map((o: any) => zodSchemaToJsonSchema(o))
-    return attachDesc({ anyOf: options }, zodSchema)
+    const unionOptionsRaw: unknown[] = Array.isArray(def.options) ? def.options : []
+    const unionSchemas = unionOptionsRaw.map((option) => schemaFromCandidate(option))
+    const unionSchema: JsonSchema = { anyOf: unionSchemas }
+    return attachDesc(unionSchema, zodSchema)
   }
   if (typeName === "ZodDiscriminatedUnion") {
-    const options = Array.from(def.options.values()).map((o: any) =>
-      zodSchemaToJsonSchema(o),
-    )
-    return attachDesc({ anyOf: options }, zodSchema)
+    const optionsIterable: Iterable<unknown> = def.options instanceof Map ? def.options.values() : []
+    const discriminatedSchemas = Array.from(optionsIterable).map((option) => schemaFromCandidate(option))
+    const discriminatedUnionSchema: JsonSchema = { anyOf: discriminatedSchemas }
+    return attachDesc(discriminatedUnionSchema, zodSchema)
   }
   if (typeName === "ZodIntersection") {
-    const left = zodSchemaToJsonSchema(def.left)
-    const right = zodSchemaToJsonSchema(def.right)
-    return attachDesc({ allOf: [left, right] }, zodSchema)
+    const leftSchema = schemaFromCandidate(def.left)
+    const rightSchema = schemaFromCandidate(def.right)
+    const intersectionSchema: JsonSchema = { allOf: [leftSchema, rightSchema] }
+    return attachDesc(intersectionSchema, zodSchema)
   }
 
   if (typeName === "ZodString") {
     return attachDesc({ type: "string" }, zodSchema)
   }
   if (typeName === "ZodNumber") {
-    const checks = def?.checks
-    if (Array.isArray(checks) && checks.some((c: any) => c?.kind === "int")) {
-      return attachDesc({ type: "integer" }, zodSchema)
-    }
-    return attachDesc({ type: "number" }, zodSchema)
+    const checks: unknown[] = Array.isArray(def.checks) ? def.checks : []
+    const hasIntegerCheck = checks.some((check) => {
+      if (!isRecord(check)) {
+        return false
+      }
+      const kind = check.kind
+      return typeof kind === "string" && kind === "int"
+    })
+    const numberSchema: JsonSchema = { type: hasIntegerCheck ? "integer" : "number" }
+    return attachDesc(numberSchema, zodSchema)
   }
   if (typeName === "ZodBigInt") {
     return attachDesc({ type: "integer" }, zodSchema)
@@ -153,257 +170,74 @@ export function zodSchemaToJsonSchema(zodSchema: any): any {
     return attachDesc({ type: "boolean" }, zodSchema)
   }
   if (typeName === "ZodDate") {
-    return attachDesc({ type: "string", format: "date-time" }, zodSchema)
+    const dateSchema: JsonSchema = { type: "string", format: "date-time" }
+    return attachDesc(dateSchema, zodSchema)
   }
   if (typeName === "ZodNull") {
     return attachDesc({ type: "null" }, zodSchema)
   }
   if (typeName === "ZodEnum") {
-    return attachDesc({ type: "string", enum: def.values }, zodSchema)
+    const enumValuesRaw: unknown[] = Array.isArray(def.values) ? def.values : []
+    const enumValues = enumValuesRaw.filter((value): value is string => typeof value === "string")
+    const enumSchema: JsonSchema = { type: "string" }
+    if (enumValues.length > 0) {
+      enumSchema.enum = enumValues
+    }
+    return attachDesc(enumSchema, zodSchema)
   }
   if (typeName === "ZodNativeEnum") {
-    const vals = Object.values(def.values).filter(
-      (v) => typeof v === "string" || typeof v === "number",
+    const rawValues = isRecord(def.values) ? Object.values(def.values) : []
+    const nativeEnumValues = rawValues.filter((value): value is string | number =>
+      typeof value === "string" || typeof value === "number",
     )
-    return attachDesc({ enum: vals }, zodSchema)
+    const nativeEnumSchema: JsonSchema = {}
+    if (nativeEnumValues.length > 0) {
+      nativeEnumSchema.enum = nativeEnumValues
+    }
+    return attachDesc(nativeEnumSchema, zodSchema)
   }
   if (typeName === "ZodLiteral") {
-    const v = def.value
-    const litSchema: any = { enum: [v] }
-    if (typeof v === "string") litSchema.type = "string"
-    else if (typeof v === "number") litSchema.type = "number"
-    else if (typeof v === "boolean") litSchema.type = "boolean"
-    return attachDesc(litSchema, zodSchema)
+    const literalValue = def.value
+    if (!isJsonSchemaPrimitive(literalValue)) {
+      return attachDesc(createStringSchema(), zodSchema)
+    }
+    const literalSchema: JsonSchema = { enum: [literalValue] }
+    if (typeof literalValue === "string") {
+      literalSchema.type = "string"
+    } else if (typeof literalValue === "number") {
+      literalSchema.type = "number"
+    } else if (typeof literalValue === "boolean") {
+      literalSchema.type = "boolean"
+    } else if (literalValue === null) {
+      literalSchema.type = "null"
+    }
+    return attachDesc(literalSchema, zodSchema)
   }
   if (typeName === "ZodSet") {
-    return attachDesc(
-      {
-        type: "array",
-        items: zodSchemaToJsonSchema(def.valueType),
-        uniqueItems: true,
-      },
-      zodSchema,
-    )
+    const setSchema: JsonSchema = {
+      type: "array",
+      items: schemaFromCandidate(def.valueType),
+      uniqueItems: true,
+    }
+    return attachDesc(setSchema, zodSchema)
   }
   if (typeName === "ZodMap") {
-    return attachDesc(
-      {
-        type: "object",
-        additionalProperties: zodSchemaToJsonSchema(def.valueType),
-      },
-      zodSchema,
-    )
+    const mapSchema: JsonSchema = {
+      type: "object",
+      additionalProperties: schemaFromCandidate(def.valueType),
+    }
+    return attachDesc(mapSchema, zodSchema)
   }
   if (typeName === "ZodAny" || typeName === "ZodUnknown") {
-    return attachDesc({ type: "string" }, zodSchema)
+    return attachDesc(createStringSchema(), zodSchema)
   }
 
-  return attachDesc({ type: "string" }, zodSchema)
+  return attachDesc(createStringSchema(), zodSchema)
 }
 
-function convertMessagesForGenericProviders(
-  jafMessages: ReadonlyArray<JAFMessage>,
-): ProviderMessage[] {
-  const out: ProviderMessage[] = []
-  for (const message of jafMessages) {
-    const role = message.role === "tool" ? "assistant" : message.role
-    if (role !== "user" && role !== "assistant") {
-      continue
-    }
-
-    const textContent =
-      typeof message.content === "string"
-        ? message.content
-        : JSON.stringify(message.content)
-
-    out.push({
-      role,
-      content: [createTextBlock(textContent || "")],
-    } as ProviderMessage)
-  }
-  return out
-}
-
-function convertMessagesForBedrock(
-  jafMessages: ReadonlyArray<JAFMessage>,
-): ProviderMessage[] {
-  const out: ProviderMessage[] = []
-
-  for (const message of jafMessages) {
-    switch (message.role) {
-      case "user": {
-        const contentBlocks = normalizeTextContent(message.content)
-        out.push({
-          role: "user",
-          content: contentBlocks,
-        } as ProviderMessage)
-        break
-      }
-      case "assistant": {
-        const contentBlocks = normalizeTextContent(message.content)
-        const toolUseBlocks: ContentBlock[] = (message.tool_calls ?? []).map((toolCall) => {
-          let parsedArgs: any = {}
-          try {
-            parsedArgs = JSON.parse(toolCall.function.arguments ?? "{}")
-          } catch {
-            parsedArgs = toolCall.function.arguments ?? {}
-          }
-          return {
-            toolUse: {
-              toolUseId: toolCall.id,
-              name: toolCall.function.name,
-              input: parsedArgs,
-            },
-          } as ContentBlock
-        })
-
-        out.push({
-          role: "assistant",
-          content: [...contentBlocks, ...toolUseBlocks],
-        } as ProviderMessage)
-        break
-      }
-      case "tool": {
-        const toolCallId = (message as any).tool_call_id
-        const rawContent =
-          typeof message.content === "string"
-            ? message.content
-            : JSON.stringify(message.content)
-        let parsedContent: any = rawContent
-        try {
-          parsedContent = JSON.parse(rawContent)
-        } catch {
-          parsedContent = rawContent
-        }
-
-        const toolResultContent = buildToolResultContent(parsedContent)
-        if (!toolCallId) {
-          const fallbackBlocks = toolResultContent.map((block) => {
-            if ("text" in block && block.text) {
-              return createTextBlock(block.text)
-            }
-            return createTextBlock(JSON.stringify(block))
-          })
-          out.push({
-            role: "user",
-            content: fallbackBlocks,
-          } as ProviderMessage)
-          break
-        }
-
-        const status = inferToolResultStatus(parsedContent)
-        out.push({
-          role: "user",
-          content: [
-            {
-              toolResult: {
-                toolUseId: toolCallId,
-                content: toolResultContent,
-                ...(status ? { status } : {}),
-              },
-            },
-          ],
-        } as ProviderMessage)
-        break
-      }
-    }
-  }
-
-  return out
-}
-
-function normalizeTextContent(content: JAFMessage["content"]): ContentBlock[] {
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part && typeof part === "object" && "text" in part && part.text) {
-          return createTextBlock(part.text)
-        }
-        if (part && typeof part === "object") {
-          return createTextBlock(JSON.stringify(part))
-        }
-        return undefined
-      })
-      .filter((part): part is ContentBlock => part !== undefined)
-  }
-
-  if (typeof content === "string" && content.length > 0) {
-    return [createTextBlock(content)]
-  }
-
-  return []
-}
-
-function buildToolResultContent(parsed: unknown): ToolResultContentBlock[] {
-  if (parsed && typeof parsed === "object") {
-    const blocks: ToolResultContentBlock[] = [createToolResultJsonBlock(parsed)]
-
-    const maybeResult = (parsed as any).result
-    if (typeof maybeResult === "string" && maybeResult.trim().length > 0) {
-      blocks.push(createToolResultTextBlock(maybeResult))
-    }
-
-    const maybeMessage = (parsed as any).message
-    if (typeof maybeMessage === "string" && maybeMessage.trim().length > 0) {
-      blocks.push(createToolResultTextBlock(maybeMessage))
-    }
-
-    return blocks
-  }
-
-  const textValue = typeof parsed === "string" ? parsed : JSON.stringify(parsed)
-  return [createToolResultTextBlock(textValue)]
-}
-
-function inferToolResultStatus(parsed: unknown): "success" | "error" | undefined {
-  if (parsed && typeof parsed === "object" && "status" in parsed) {
-    const status = String((parsed as any).status).toLowerCase()
-    if (status.includes("error") || status.includes("denied")) {
-      return "error"
-    }
-    return "success"
-  }
-  return undefined
-}
-
-const createTextBlock = (text: string): ContentBlock => ({ text })
-
-const createToolResultTextBlock = (text: string): ToolResultContentBlock => ({
-  text,
-})
-
-const createToolResultJsonBlock = (json: unknown): ToolResultContentBlock => ({
-  json: toDocumentType(json),
-})
-
-function toDocumentType(value: unknown): DocumentType {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => toDocumentType(item))
-  }
-
-  if (typeof value === "object" && value !== undefined) {
-    const normalized: Record<string, DocumentType> = {}
-    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      normalized[key] = toDocumentType(val)
-    }
-    return normalized
-  }
-
-  return String(value ?? "")
-}
-
-function isZodSchemaRequired(zodSchema: any): boolean {
-  const def = zodSchema?._def
-  const typeName = def?.typeName
+function isZodSchemaRequired(zodSchema: ZodSchema): boolean {
+  const def = getDefinition(zodSchema)
+  const typeName = typeof def?.typeName === "string" ? def.typeName : undefined
 
   if (
     typeName === "ZodOptional" ||
@@ -414,196 +248,22 @@ function isZodSchemaRequired(zodSchema: any): boolean {
     return false
   }
 
-  if (typeName === "ZodEffects" || typeName === "ZodBranded") {
-    const innerType = def.schema || def.type
+  if (typeName === "ZodEffects" || typeName === "ZodBranded" || typeName === "ZodReadonly") {
+    const innerType = getZodType(def?.schema) ?? getZodType(def?.type)
     if (innerType) {
       return isZodSchemaRequired(innerType)
     }
   }
 
-  if (def?.innerType) {
-    return isZodSchemaRequired(def.innerType)
+  const innerFromInnerType = getZodType(def?.innerType)
+  if (innerFromInnerType) {
+    return isZodSchemaRequired(innerFromInnerType)
   }
 
-  if (def?.type) {
-    return isZodSchemaRequired(def.type)
+  const innerFromType = getZodType(def?.type)
+  if (innerFromType) {
+    return isZodSchemaRequired(innerFromType)
   }
 
   return true
-}
-
-function isKnownProvider(value: string): value is AIProviders {
-  return (Object.values(AIProviders) as string[]).includes(value)
-}
-
-function convertMessagesForVertex(
-  jafMessages: ReadonlyArray<JAFMessage>,
-): ProviderMessage[] {
-  const out: ProviderMessage[] = []
-  for (const message of jafMessages) {
-    switch (message.role) {
-      case "user": {
-        out.push({
-          role: "user",
-          content: toVertexTextBlocks(message.content),
-        } as unknown as ProviderMessage)
-        break
-      }
-      case "assistant": {
-        const textBlocks = toVertexTextBlocks(message.content)
-        const toolUseBlocks = (message.tool_calls ?? []).map((toolCall) => ({
-          type: "tool_use",
-          id: toolCall.id,
-          name: toolCall.function.name,
-          input: safeParseJson(toolCall.function.arguments ?? "{}"),
-        }))
-        const combinedContent = [...textBlocks, ...toolUseBlocks].filter(
-          (block) => block !== null,
-        )
-        if (combinedContent.length > 0) {
-          out.push({
-            role: "assistant",
-            content: combinedContent,
-          } as unknown as ProviderMessage)
-        }
-        break
-      }
-      case "tool": {
-        const toolCallId = (message as any).tool_call_id
-        const summary = summariseToolResultContent(message.content)
-        if (toolCallId) {
-          const textBlock = createVertexTextBlock(summary)
-          if (!textBlock) break
-          out.push({
-            role: "user",
-            content: [
-              {
-                type: "tool_result",
-                tool_use_id: toolCallId,
-                content: [textBlock],
-                is_error: false,
-              },
-            ],
-          } as unknown as ProviderMessage)
-        } else {
-          const textBlock = createVertexTextBlock(summary)
-          if (textBlock) {
-            out.push({
-              role: "user",
-              content: [textBlock],
-            } as unknown as ProviderMessage)
-          }
-        }
-        break
-      }
-      default:
-        break
-    }
-  }
-  return out
-}
-
-function createVertexTextBlock(text: string) {
-  const trimmed = typeof text === "string" ? text.trim() : ""
-  if (!trimmed) return null
-  return {
-    type: "text",
-    text: trimmed,
-  }
-}
-
-function toVertexTextBlocks(content: JAFMessage["content"]): any[] {
-  const blocks: any[] = []
-  if (Array.isArray(content)) {
-    for (const part of content) {
-      if (!part) continue
-      if (typeof part === "object" && "type" in part) {
-        blocks.push(part)
-      } else if (typeof part === "object" && "text" in part) {
-        const block = createVertexTextBlock(part.text ?? "")
-        if (block) blocks.push(block)
-      } else {
-        const block = createVertexTextBlock(summariseUnknown(part))
-        if (block) blocks.push(block)
-      }
-    }
-  } else if (typeof content === "string") {
-    const block = createVertexTextBlock(content)
-    if (block) blocks.push(block)
-  } else if (content !== undefined && content !== null) {
-    const block = createVertexTextBlock(summariseUnknown(content))
-    if (block) blocks.push(block)
-  }
-
-  return blocks
-}
-
-function safeParseJson(input: string): unknown {
-  try {
-    return JSON.parse(input)
-  } catch {
-    return input
-  }
-}
-
-function summariseToolResultContent(content: JAFMessage["content"]): string {
-  const rawText = extractRawText(content)
-  if (!rawText) return ""
-  try {
-    const parsed = JSON.parse(rawText)
-    if (parsed && typeof parsed === "object") {
-      const status = typeof (parsed as any).status === "string"
-        ? (parsed as any).status
-        : "executed"
-      const result = (parsed as any).result
-      const message = (parsed as any).message
-      return [
-        `status: ${status}`,
-        result ? `result: ${formatMaybeObject(result)}` : null,
-        message ? `message: ${formatMaybeObject(message)}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n")
-    }
-  } catch {}
-  return rawText.trim()
-}
-
-function extractRawText(content: JAFMessage["content"]): string {
-  if (typeof content === "string") {
-    return content
-  }
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part && typeof part === "object" && "text" in part) {
-          return part.text
-        }
-        return summariseUnknown(part)
-      })
-      .filter((text) => text && text.length > 0)
-      .join("\n")
-  }
-  if (content !== undefined && content !== null) {
-    return summariseUnknown(content)
-  }
-  return ""
-}
-
-function summariseUnknown(value: unknown): string {
-  if (value === null || value === undefined) return ""
-  if (typeof value === "string") return value
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value)
-  }
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-function formatMaybeObject(value: unknown): string {
-  if (typeof value === "string") return value
-  return summariseUnknown(value)
 }

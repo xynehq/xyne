@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z, type ZodRawShape, type ZodType } from "zod"
 import type { Tool } from "@xynehq/jaf"
 import { ToolResponse } from "@xynehq/jaf"
 import type { MinimalAgentFragment } from "./types"
@@ -22,13 +22,18 @@ type AgentToolParameter = {
   required: boolean
 }
 
+type ToolSchemaParameters = Tool<unknown, JAFAdapterCtx>["schema"]["parameters"]
+
+const toToolSchemaParameters = (schema: ZodType): ToolSchemaParameters =>
+  schema as unknown as ToolSchemaParameters
+
 function paramsToZod(
   parameters: Record<string, AgentToolParameter>,
-): z.ZodObject<any> {
-  const shape: Record<string, z.ZodTypeAny> = {}
-  for (const [key, spec] of Object.entries(parameters || {})) {
-    let schema: z.ZodTypeAny
-    switch ((spec.type || "string").toLowerCase()) {
+): ToolSchemaParameters {
+  const shapeEntries = Object.entries(parameters || {}).map(([key, spec]) => {
+    const normalizedType = (spec.type || "string").toLowerCase()
+    let schema: ZodType
+    switch (normalizedType) {
       case "string":
         schema = z.string()
         break
@@ -48,30 +53,41 @@ function paramsToZod(
       default:
         schema = z.unknown()
     }
-    if (!spec.required) schema = schema.optional()
-    shape[key] = schema.describe(spec.description || "")
+    const described = schema.describe(spec.description || "")
+    return [
+      key,
+      spec.required ? described : described.optional(),
+    ] as const
+  })
+
+  if (shapeEntries.length === 0) {
+    return toToolSchemaParameters(z.looseObject({}))
   }
-  return z.object(shape) as z.ZodObject<any>
+
+  const shape = Object.fromEntries(shapeEntries) as Record<string, ZodType>
+  return toToolSchemaParameters(
+    z.looseObject(shape as unknown as ZodRawShape),
+  )
 }
 
-type ZodObjectWithRawSchema = z.ZodObject<any> & {
+type ZodObjectWithRawSchema = ZodType & {
   __xyne_raw_json_schema?: unknown
 }
 
 function mcpToolSchemaStringToZodObject(
   schemaStr?: string | null,
-): z.ZodObject<any> {
+): ToolSchemaParameters {
   // Simplified and safe: bypass JSON->Zod conversion to avoid recursive $defs hangs.
   // Attach the raw JSON schema so downstream provider can use it directly.
-  if (!schemaStr) return z.looseObject({}) as unknown as z.ZodObject<any>
+  if (!schemaStr) return toToolSchemaParameters(z.looseObject({}))
   try {
     const parsed = JSON.parse(schemaStr)
     const inputSchema = parsed?.inputSchema || parsed?.parameters || parsed
-    const obj = z.looseObject({}) as unknown as ZodObjectWithRawSchema
+    const obj = z.looseObject({}) as ZodObjectWithRawSchema
     obj.__xyne_raw_json_schema = inputSchema
-    return obj as unknown as z.ZodObject<any>
+    return toToolSchemaParameters(obj)
   } catch {
-    return z.looseObject({}) as unknown as z.ZodObject<any>
+    return toToolSchemaParameters(z.looseObject({}))
   }
 }
 
@@ -87,7 +103,7 @@ export function buildInternalJAFTools(): Tool<unknown, JAFAdapterCtx>[] {
       schema: {
         name,
         description: at.description,
-        parameters: paramsToZod(at.parameters || {}) as any,
+        parameters: paramsToZod(at.parameters || {})
       },
       async execute(args, context) {
         try {
@@ -159,7 +175,7 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFA
           name: toolName,
           description: toolDescription || `MCP tool from connector ${connectorId}`,
           // Parse MCP tool JSON schema; ensure an OBJECT at top-level for Vertex/Gemini
-          parameters: mcpToolSchemaStringToZodObject(t.toolSchema) as any,
+          parameters: mcpToolSchemaStringToZodObject(t.toolSchema),
         },
         async execute(args, context) {
           try {

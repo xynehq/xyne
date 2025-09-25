@@ -241,6 +241,9 @@ const {
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
 // Generate AI summary for agent reasoning steps
 const generateStepSummary = async (
   step: AgentReasoningStep,
@@ -579,144 +582,6 @@ const vespaResultToMinimalAgentFragment = (
   confidence: 1.0,
 })
 
-async function* getToolContinuationIterator(
-  message: string,
-  userCtx: string,
-  dateForAI: string,
-  toolsPrompt: string,
-  toolOutput: string,
-  results: MinimalAgentFragment[],
-  agentPrompt?: string,
-  messages: Message[] = [],
-  fallbackReasoning?: string,
-  attachmentFileIds?: string[],
-  email?: string,
-  modelId?: string,
-): AsyncIterableIterator<
-  ConverseResponse & {
-    citation?: { index: number; item: any }
-    imageCitation?: ImageCitation
-  }
-> {
-  const context = answerContextMapFromFragments(results, maxDefaultSummary)
-  const { imageFileNames } = extractImageFileNames(
-    context,
-    results.map(
-      (v) =>
-        ({
-          fields: {
-            docId: v.source.docId,
-            title: v.source.title,
-            url: v.source.url,
-          },
-        }) as any,
-    ),
-  )
-  const finalImageFileNames = imageFileNames || []
-
-  if (attachmentFileIds?.length) {
-    finalImageFileNames.push(
-      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
-    )
-  }
-
-  const continuationIterator = generateAnswerBasedOnToolOutput(
-    message,
-    userCtx,
-    dateForAI,
-    {
-      modelId: (modelId as Models) || defaultBestModel,
-      stream: true,
-      json: true,
-      reasoning: false,
-      messages,
-      imageFileNames: finalImageFileNames,
-    },
-    toolsPrompt,
-    context ?? "",
-    agentPrompt,
-    fallbackReasoning,
-  )
-
-  // const previousResultsLength = 0 // todo fix this
-  let buffer = ""
-  let currentAnswer = ""
-  let parsed = { answer: "" }
-  let thinking = ""
-  let reasoning = config.isReasoning
-  let yieldedCitations = new Set<number>()
-  let yieldedImageCitations = new Map<number, Set<number>>()
-  const ANSWER_TOKEN = '"answer":'
-
-  for await (const chunk of continuationIterator) {
-    if (chunk.text) {
-      // if (reasoning) {
-      //   if (thinking && !chunk.text.includes(EndThinkingToken)) {
-      //     thinking += chunk.text
-      //     yield* checkAndYieldCitationsForAgent(
-      //       thinking,
-      //       yieldedCitations,
-      //       results,
-      //       previousResultsLength,
-      //     )
-      //     yield { text: chunk.text, reasoning }
-      //   } else {
-      //     // first time
-      //     const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
-      //     if (
-      //       startThinkingIndex !== -1 &&
-      //       chunk.text.trim().length > StartThinkingToken.length
-      //     ) {
-      //       let token = chunk.text.slice(
-      //         startThinkingIndex + StartThinkingToken.length,
-      //       )
-      //       if (chunk.text.includes(EndThinkingToken)) {
-      //         token = chunk.text.split(EndThinkingToken)[0]
-      //         thinking += token
-      //       } else {
-      //         thinking += token
-      //       }
-      //       yield* checkAndYieldCitationsForAgent(
-      //         thinking,
-      //         yieldedCitations,
-      //         results,
-      //         previousResultsLength,
-      //       )
-      //       yield { text: token, reasoning }
-      //     }
-      //   }
-      // }
-      // if (reasoning && chunk.text.includes(EndThinkingToken)) {
-      //   reasoning = false
-      //   chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-      // }
-      // if (!reasoning) {
-      buffer += chunk.text
-      try {
-        yield { text: chunk.text }
-
-        yield* checkAndYieldCitationsForAgent(
-          buffer,
-          yieldedCitations,
-          results,
-          yieldedImageCitations,
-          email ?? "",
-        )
-      } catch (e) {
-        Logger.error(`Error parsing LLM output: ${e}`)
-        continue
-      }
-    }
-
-    if (chunk.cost) {
-      yield { cost: chunk.cost }
-    }
-    if (chunk.metadata?.usage) {
-      yield { metadata: { usage: chunk.metadata.usage } }
-    }
-  }
-}
-
 type SynthesisResponse = {
   synthesisState:
     | ContextSysthesisState.Complete
@@ -913,8 +778,6 @@ export const MessageWithToolsApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
 
-  let stream: any
-  let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
   let isDebugMode = config.isDebugMode
@@ -1028,8 +891,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
       .map((m) => m.fileId)
-    const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
-    // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
 
     const contextExtractionSpan = initSpan.startSpan("context_extraction")
@@ -1264,7 +1125,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     return streamSSE(c, async (stream) => {
       // Store MCP clients for cleanup to prevent memory leaks
       const mcpClients: Client[] = []
-      let finalReasoningLogString = ""
       let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
       // Track steps per iteration for limiting display
       let currentIterationSteps = 0
@@ -1515,13 +1375,9 @@ export const MessageWithToolsApi = async (c: Context) => {
         loggerWithChild({ email: sub }).info(
           "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
         )
-        const finalToolsList: Record<
-          string,
-          {
-            tools: SelectTool[]
-            client: Client
-          }
-        > = {}
+        const finalToolsList: JAFinalToolsList = {}
+        type FinalToolsEntry = JAFinalToolsList[string]
+        type AdapterTool = FinalToolsEntry["tools"][number]
         let iterationCount = 0
         let isCustomMCP = false
         await logAndStreamReasoning({
@@ -1650,9 +1506,34 @@ export const MessageWithToolsApi = async (c: Context) => {
               return isIncluded
             })
 
-            finalToolsList[connector.id] = {
-              tools: filteredTools,
-              client: client,
+            const formattedTools: FinalToolsEntry["tools"] = filteredTools.map(
+              (tool): AdapterTool => ({
+                toolName: tool.toolName,
+                toolSchema: tool.toolSchema,
+                description: tool.description ?? undefined,
+              }),
+            )
+
+            if (formattedTools.length === 0) {
+              continue
+            }
+
+            const wrappedClient: FinalToolsEntry["client"] = {
+              callTool: async ({ name, arguments: toolArguments }) => {
+                if (isRecord(toolArguments)) {
+                  return client.callTool({
+                    name,
+                    arguments: toolArguments,
+                  })
+                }
+                return client.callTool({ name })
+              },
+              close: () => client.close(),
+            }
+
+            finalToolsList[String(connector.id)] = {
+              tools: formattedTools,
+              client: wrappedClient,
             }
           }
         }
@@ -1832,11 +1713,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentPrompt: agentPromptForLLM,
           userMessage: message,
         }
-        const internalJAFTools: JAFTool<any, JAFAdapterCtx>[] =
-          buildInternalJAFTools()
-        const mcpJAFTools: JAFTool<any, JAFAdapterCtx>[] = buildMCPJAFTools(
-          finalToolsList as unknown as JAFinalToolsList,
-        )
+        const internalJAFTools = buildInternalJAFTools()
+        const mcpJAFTools = buildMCPJAFTools(finalToolsList)
         const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(
           "internal_tools_count",
@@ -2415,8 +2293,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                           .filter(
                             (msg) =>
                               msg.role === "tool" ||
-                              (msg as any).tool_calls ||
-                              (msg as any).tool_call_id,
+                              msg.tool_calls ||
+                              msg.tool_call_id,
                           )
                           .map(
                             (msg, index) =>
@@ -2496,7 +2374,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                             Array.isArray(fallbackResponse.contexts)
                           ) {
                             fallbackResponse.contexts.forEach(
-                              (context: any, index: number) => {
+                              (context, _index) => {
                                 citations.push(context)
                                 citationMap[citations.length] =
                                   citations.length - 1
