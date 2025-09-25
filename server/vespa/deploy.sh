@@ -3,7 +3,9 @@
 #!/bin/sh
 set -e
 
-source ../.env
+if [ -f ../.env ]; then
+  . ../.env
+fi
 
 mkdir -p models
 TOKENIZER_URL=""

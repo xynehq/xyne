@@ -4,12 +4,12 @@ scrape_configs:
     metrics_path: /prometheus/v1/values
     static_configs:
       - targets: ['vespa:8080']
-      
+
   - job_name: 'google_drive_ingestion'
     metrics_path: /metrics  # default path in your Hono app
     scrape_interval: 2s
     static_configs:
-      - targets: ['xyne-app:3001']  # This file is auto-generated from prometheus-selfhosted.yml.template during deployment
+      - targets: ['xyne-app:$METRICS_PORT']
   # - job_name: 'pm2'
   #   metrics_path: /
   #   scrape_interval: 2s
