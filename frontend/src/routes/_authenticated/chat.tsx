@@ -381,6 +381,7 @@ export const ChatPage = ({
     startStream,
     stopStream,
     retryMessage,
+    displayPartial,
   } = useChatStream(
     chatId,
     (title: string) => setChatTitle(title),
@@ -426,7 +427,7 @@ export const ChatPage = ({
   // merging the real stream IDs once available
   const currentResp = isStreaming
     ? {
-        resp: partial,
+        resp: displayPartial || partial,
         thinking,
         deepResearchSteps,
         sources,
@@ -1064,25 +1065,28 @@ export const ChatPage = ({
   }
 
   // Handler for citation clicks - moved before conditional returns
-  const handleCitationClick = useCallback((citation: Citation, fromSources: boolean = false) => {
-    if (!citation || !citation.clId || !citation.itemId) {
-      // For citations without clId or itemId, open as regular link
-      if (citation.url) {
-        window.open(citation.url, "_blank", "noopener,noreferrer")
+  const handleCitationClick = useCallback(
+    (citation: Citation, fromSources: boolean = false) => {
+      if (!citation || !citation.clId || !citation.itemId) {
+        // For citations without clId or itemId, open as regular link
+        if (citation.url) {
+          window.open(citation.url, "_blank", "noopener,noreferrer")
+        }
+        return
       }
-      return
-    }
-    setSelectedCitation(citation)
-    setIsCitationPreviewOpen(true)
-    setCameFromSources(fromSources)
-    // Only close sources panel when opening citation preview, but preserve state for back navigation
-    setShowSources(false)
-    if (!fromSources) {
-      // Clear sources state when coming from inline citations
-      setCurrentCitations([])
-      setCurrentMessageId(null)
-    }
-  }, [])
+      setSelectedCitation(citation)
+      setIsCitationPreviewOpen(true)
+      setCameFromSources(fromSources)
+      // Only close sources panel when opening citation preview, but preserve state for back navigation
+      setShowSources(false)
+      if (!fromSources) {
+        // Clear sources state when coming from inline citations
+        setCurrentCitations([])
+        setCurrentMessageId(null)
+      }
+    },
+    [],
+  )
 
   // Memoized callback for closing citation preview - moved before conditional returns
   const handleCloseCitationPreview = useCallback(() => {
@@ -1120,7 +1124,7 @@ export const ChatPage = ({
 
     // For virtualized content, ensure we scroll to actual bottom
     container.scrollTop = container.scrollHeight
-  }, [messages, partial, userHasScrolled]) // Added userHasScrolled to dependencies
+  }, [messages, displayPartial || partial, userHasScrolled]) // Added userHasScrolled to dependencies
 
   if ((data?.error || historyLoading) && !isSharedChat) {
     return (
@@ -2430,7 +2434,10 @@ const VirtualizedMessages = React.forwardRef<
                       }
                       message={message.message}
                       isUser={message.messageRole === "user"}
-                      responseDone={message.externalId !== "current-resp"}
+                      responseDone={
+                        message.isStreaming !== true &&
+                        message.externalId !== "current-resp"
+                      }
                       thinking={message.thinking}
                       deepResearchSteps={message.deepResearchSteps}
                       citations={message.sources}
@@ -2764,7 +2771,7 @@ export const ChatMessage = ({
                 ) : null}
               </div>
             </div>
-            {responseDone && !isRetrying && (
+            {!isStreaming && responseDone && !isRetrying && (
               <div className="flex flex-col">
                 {isDebugMode && messageId && (
                   <button
@@ -2782,7 +2789,9 @@ export const ChatMessage = ({
                     onMouseDown={() => setIsCopied(true)}
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
-                      navigator.clipboard.writeText(cleanCitationsFromResponse(message))
+                      navigator.clipboard.writeText(
+                        cleanCitationsFromResponse(message),
+                      )
                     }
                   />
                   {/* Retry button temporarily hidden */}

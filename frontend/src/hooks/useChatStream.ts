@@ -11,6 +11,7 @@ import {
 } from "shared/types"
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
+import { CharacterAnimationManager } from "@/utils/characterAnimation"
 
 interface DeepResearchStep {
   id: string
@@ -44,6 +45,10 @@ interface StreamState {
   isRetrying?: boolean
   subscribers: Set<() => void>
   response?: string
+
+  // Character animation display versions
+  displayPartial: string
+  animationManager: CharacterAnimationManager
 }
 
 interface StreamInfo {
@@ -57,6 +62,8 @@ interface StreamInfo {
   chatId?: string
   isStreaming: boolean
   isRetrying?: boolean
+  // Character animation display versions
+  displayPartial: string
 }
 
 // Global map to store active streams - persists across component unmounts
@@ -362,13 +369,27 @@ export const startStream = async (
     isStreaming: true,
     isRetrying: false,
     subscribers: new Set(),
-    response: ""
+    response: "",
+    // Character animation display versions
+    displayPartial: "",
+    animationManager: new CharacterAnimationManager(),
   }
 
   activeStreams.set(streamKey, streamState)
 
   streamState.es.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
     streamState.partial += event.data
+
+    // Add chunk to character animation queue for main response
+    const responseQueue = streamState.animationManager.getQueue(
+      "response",
+      (displayText: string) => {
+        streamState.displayPartial = displayText
+        notifySubscribers(streamKey)
+      },
+    )
+    responseQueue.addChunk(event.data)
+
     notifySubscribers(streamKey)
   })
 
@@ -423,7 +444,9 @@ export const startStream = async (
   )
 
   streamState.es.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-    const { contextChunks, citationMap, updatedResponse } = JSON.parse(event.data)
+    const { contextChunks, citationMap, updatedResponse } = JSON.parse(
+      event.data,
+    )
     streamState.sources = contextChunks
     streamState.citationMap = citationMap
     streamState.response = updatedResponse
@@ -512,42 +535,64 @@ export const startStream = async (
     }
   })
 
-  streamState.es.addEventListener(ChatSSEvents.End, () => {
-    streamState.isStreaming = false
+  streamState.es.addEventListener(ChatSSEvents.End, async () => {
     streamState.es.close()
+    // Wait for all character animations to complete before finalizing
+    await streamState.animationManager.waitForAllAnimationsComplete()
+    streamState.isStreaming = false
+
+    // Finalize character animations with complete content
+    streamState.animationManager.setImmediate(
+      "response",
+      streamState.response || streamState.partial,
+    )
+    streamState.animationManager.setImmediate("thinking", streamState.thinking)
+
+    // Ensure display versions match final content
+    streamState.displayPartial = streamState.response || streamState.partial
+
+    // Now that streaming is complete, notify subscribers so citations appear
+    notifySubscribers(streamKey)
 
     // Create new complete message with accumulated text and citations
-    if (streamKey && queryClient && streamState.chatId && streamState.messageId) {
-      queryClient.setQueryData(["chatHistory", streamState.chatId], (old: any) => {
-        if (!old?.messages) return old
-        
-        // When streaming completes, consolidate all accumulated data (response, citations, thinking) into a final message object
-        // Save the complete assistant message to React Query cache to persist the conversation history
-        // Use streamState.response if available (from CitationsUpdate for web search), otherwise use streamState.partial (from ResponseUpdate for regular chat)
-        const finalMessage = streamState.response || streamState.partial
-        
-        const newAssistantMessage = {
-          externalId: streamState.messageId,
-          messageRole: "assistant",
-          message: finalMessage,
-          sources: streamState.sources,
-          citationMap: streamState.citationMap,
-          thinking: streamState.thinking,
-          imageCitations: streamState.imageCitations,
-          deepResearchSteps: streamState.deepResearchSteps,
-          isStreaming: false,
-          attachments: [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }
-        
-        return {
-          ...old,
-          messages: [...old.messages, newAssistantMessage],
-        }
-      })
+    if (
+      streamKey &&
+      queryClient &&
+      streamState.chatId &&
+      streamState.messageId
+    ) {
+      queryClient.setQueryData(
+        ["chatHistory", streamState.chatId],
+        (old: any) => {
+          if (!old?.messages) return old
+
+          // When streaming completes, consolidate all accumulated data (response, citations, thinking) into a final message object
+          // Save the complete assistant message to React Query cache to persist the conversation history
+          // Use streamState.response if available (from CitationsUpdate for web search), otherwise use streamState.partial (from ResponseUpdate for regular chat)
+          const finalMessage = streamState.response || streamState.partial
+
+          const newAssistantMessage = {
+            externalId: streamState.messageId,
+            messageRole: "assistant",
+            message: finalMessage,
+            sources: streamState.sources,
+            citationMap: streamState.citationMap,
+            thinking: streamState.thinking,
+            imageCitations: streamState.imageCitations,
+            deepResearchSteps: streamState.deepResearchSteps,
+            isStreaming: false,
+            attachments: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+
+          return {
+            ...old,
+            messages: [...old.messages, newAssistantMessage],
+          }
+        },
+      )
     }
-    notifySubscribers(streamKey)
   })
 
   streamState.es.addEventListener(ChatSSEvents.Error, (event) => {
@@ -605,6 +650,12 @@ export const stopStream = async (
   stream.isStreaming = false
   stream.es.close()
 
+  // Stop all animations and cleanup
+  stream.animationManager.stopAll()
+
+  // Ensure display versions show current content immediately
+  stream.displayPartial = stream.partial
+
   const currentChatId = stream.chatId || streamKey
   if (currentChatId) {
     try {
@@ -629,6 +680,9 @@ export const stopStream = async (
     }
   }
   notifySubscribers(currentChatId)
+
+  // Cleanup animation manager before deleting stream
+  stream.animationManager.cleanup()
   activeStreams.delete(streamKey)
 }
 
@@ -647,6 +701,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
       messageId: undefined,
       chatId: undefined,
       isStreaming: false,
+      displayPartial: "",
     }
   }
 
@@ -660,6 +715,7 @@ export const getStreamState = (streamKey: string): StreamInfo => {
     messageId: stream.messageId,
     chatId: stream.chatId,
     isStreaming: stream.isStreaming,
+    displayPartial: stream.displayPartial,
   }
 }
 
@@ -906,7 +962,10 @@ export const useChatStream = (
       }
       // Add selectedKbItems parameter if provided
       if (selectedKbItems && selectedKbItems.length > 0) {
-        url.searchParams.append("selectedKbItems", JSON.stringify(selectedKbItems))
+        url.searchParams.append(
+          "selectedKbItems",
+          JSON.stringify(selectedKbItems),
+        )
       }
 
       let eventSource: EventSource
@@ -941,6 +1000,11 @@ export const useChatStream = (
         isStreaming: false,
         isRetrying: true,
         subscribers: new Set(),
+        response: "",
+
+        // Character animation display versions
+        displayPartial: "",
+        animationManager: new CharacterAnimationManager(),
       }
 
       activeStreams.set(retryStreamKey, streamState)
@@ -1001,6 +1065,17 @@ export const useChatStream = (
 
       eventSource.addEventListener(ChatSSEvents.ResponseUpdate, (event) => {
         streamState.partial += event.data
+
+        // Add chunk to character animation queue for retry response
+        const responseQueue = streamState.animationManager.getQueue(
+          "response",
+          (displayText: string) => {
+            streamState.displayPartial = displayText
+            notifySubscribers(retryStreamKey)
+          },
+        )
+        responseQueue.addChunk(event.data)
+
         patchResponseContent(event.data)
       })
 
@@ -1010,9 +1085,25 @@ export const useChatStream = (
       })
 
       eventSource.addEventListener(ChatSSEvents.CitationsUpdate, (event) => {
-        const { contextChunks, citationMap } = JSON.parse(event.data)
+        const { contextChunks, citationMap, updatedResponse } = JSON.parse(
+          event.data,
+        )
         streamState.sources = contextChunks
         streamState.citationMap = citationMap
+        streamState.response = updatedResponse
+
+        // For web search retry: Update character animation to show citation-numbered text immediately
+        if (updatedResponse) {
+          const responseQueue = streamState.animationManager.getQueue(
+            "response",
+            (displayText: string) => {
+              streamState.displayPartial = displayText
+              notifySubscribers(retryStreamKey)
+            },
+          )
+          // Replace the current animation with the citation-numbered text
+          responseQueue.setImmediate(updatedResponse)
+        }
       })
 
       eventSource.addEventListener(ChatSSEvents.AttachmentUpdate, (event) => {
@@ -1056,7 +1147,10 @@ export const useChatStream = (
         streamState.messageId = newMessageId
       })
 
-      eventSource.addEventListener(ChatSSEvents.End, () => {
+      eventSource.addEventListener(ChatSSEvents.End, async () => {
+        // Wait for all character animations to complete before finalizing retry
+        await streamState.animationManager.waitForAllAnimationsComplete()
+
         patchResponseContent(streamState.partial)
         if (chatId) {
           queryClient.invalidateQueries({ queryKey: ["chatHistory", chatId] })
