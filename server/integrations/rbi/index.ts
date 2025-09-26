@@ -668,7 +668,7 @@ class RBICircularDownloader {
                             const { downloadPath } = await this.downloadPDF();
 
                             // Process and ingest into Knowledge Base
-                            // await this.processAndIngestPDF(downloadPath, userEmail, workspaceId);
+                            await this.processAndIngestPDF(downloadPath, userEmail, workspaceId);
 
                             // Mark as successful
                             allDownloadedFiles.push(downloadPath);
