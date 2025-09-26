@@ -3,12 +3,10 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { RIBBIE_CONFIG } from './config.js';
-
 import { FileProcessorService } from '@/services/fileProcessor';
 import { insert } from '@/search/vespa';
 import { KbItemsSchema } from '@xyne/vespa-ts/types';
 import { Apps, KnowledgeBaseEntity } from '@xyne/vespa-ts/types';
-import { v4 as uuidv4 } from 'uuid';
 import { getUserByEmail } from '@/db/user';
 import { getLogger } from "@/logger"
 import { Subsystem } from '@/logger';
@@ -21,11 +19,11 @@ import {
     generateCollectionVespaDocId,
 } from '@/db/knowledgeBase';
 import { db } from '@/db/client';
-import { env } from 'process';
+
 
 // Knowledge Base storage path
 const KB_STORAGE_ROOT = path.join(process.cwd(), "storage", "kb_files");
-
+const Logger = getLogger(Subsystem.Integrations)
 class RIBBIECircularDownloader {
 
     private downloadedCircularIds = new Set<string>();
@@ -42,7 +40,7 @@ class RIBBIECircularDownloader {
     private page: Page | null = null;
 
     async initialize(): Promise<void> {
-        console.log('🚀 Initializing browser...');
+        Logger.info('🚀 Initializing browser...');
 
         // Launch browser with configuration
         this.browser = await chromium.launch({
@@ -53,13 +51,13 @@ class RIBBIECircularDownloader {
         // Create new page/tab
         this.page = await this.browser.newPage();
 
-        console.log('✅ Browser initialized successfully');
+        Logger.info('✅ Browser initialized successfully');
     }
 
     async navigateToHomePage(): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
-        console.log(`🌐 Navigating to: ${process.env.RIBBIE_CONFIG_URL}`);
+        Logger.info(`🌐 Navigating to: ${process.env.RIBBIE_CONFIG_URL}`);
 
         try {
             // Navigate to the RIBBIE page
@@ -70,17 +68,17 @@ class RIBBIECircularDownloader {
 
             // Wait for page to be fully interactive
             await this.page.waitForLoadState('networkidle');
-            console.log('✅ Successfully loaded RIBBIE circulars page');
+            Logger.info('✅ Successfully loaded RIBBIE circulars page');
 
         } catch (error) {
-            throw new Error(`Failed to load RIBBIE homepage: ${error}`);
+             throw new Error(`Failed to load RIBBIE homepage`, { cause: error });
         }
     }
 
     async clickYearLink(year: number): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
         const targetYear = year.toString();  // Convert year to string
-        console.log(`📅 Looking for year ${targetYear} link...`);
+        Logger.info(`📅 Looking for year ${targetYear} link...`);
 
         // More precise selectors based on actual DOM structure
         const yearSelectors = [
@@ -96,15 +94,15 @@ class RIBBIECircularDownloader {
         // Try each selector until one works
         for (const selector of yearSelectors) {
             try {
-                console.log(`  🔍 Trying selector: ${selector}`);
+                Logger.info(`  🔍 Trying selector: ${selector}`);
                 yearElement = await this.page.waitForSelector(selector, { timeout: 5000 });
 
                 if (yearElement) {
-                    console.log(`✅ Found year link with: ${selector}`);
+                    Logger.info(`✅ Found year link with: ${selector}`);
                     break;
                 }
             } catch (error) {
-                console.log(`  ❌ Selector failed: ${selector}`);
+                Logger.info(`  ❌ Selector failed: ${selector}`);
                 continue;
             }
         }
@@ -115,10 +113,10 @@ class RIBBIECircularDownloader {
 
         try {
             await yearElement.click();
-            console.log(`✅ Clicked ${targetYear} year link`);
+            Logger.info(`✅ Clicked ${targetYear} year link`);
 
-            // Wait for year section to expand (important!)
-            await this.page.waitForTimeout(2000);
+             // Wait for the year section to expand by waiting for a month link to be visible.
+            await this.page.waitForSelector(`a[id^="${targetYear}"]`, { timeout: 5000 });
 
         } catch (error) {
             throw new Error(`Failed to click year ${targetYear}: ${error}`);
@@ -128,7 +126,7 @@ class RIBBIECircularDownloader {
     async clickAllMonths(year: number): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
-        console.log(`📅 Looking for "All Months" link for year ${year}...`);
+        Logger.info(`📅 Looking for "All Months" link for year ${year}...`);
 
         // Strategy: Look for "All Months" link 
         const allMonthsSelectors = [
@@ -145,15 +143,15 @@ class RIBBIECircularDownloader {
         // Try each selector until one works
         for (const selector of allMonthsSelectors) {
             try {
-                console.log(`  🔍 Trying selector: ${selector}`);
+                Logger.info(`  🔍 Trying selector: ${selector}`);
                 allMonthsElement = await this.page.waitForSelector(selector, { timeout: 5000 });
 
                 if (allMonthsElement) {
-                    console.log(`✅ Found "All Months" link with: ${selector}`);
+                    Logger.info(`✅ Found "All Months" link with: ${selector}`);
                     break;
                 }
             } catch (error) {
-                console.log(`  ❌ Selector failed: ${selector}`);
+                Logger.info(`  ❌ Selector failed: ${selector}`);
                 continue;
             }
         }
@@ -164,10 +162,10 @@ class RIBBIECircularDownloader {
 
         try {
             await allMonthsElement.click();
-            console.log(`✅ Clicked "All Months" link`);
+            Logger.info(`✅ Clicked "All Months" link`);
 
             // Wait for the circular table to load (this might take longer)
-            console.log('⏳ Waiting for all circulars to load...');
+            Logger.info('⏳ Waiting for all circulars to load...');
             await this.page.waitForLoadState('networkidle', { timeout: RIBBIE_CONFIG.TIMEOUT });
 
         } catch (error) {
@@ -177,11 +175,11 @@ class RIBBIECircularDownloader {
     async getAllCircularsFromTable(): Promise<Array<{ href: string, text: string, id: string, department: string }>> {
         if (!this.page) throw new Error('Page not initialized');
 
-        console.log('🔍 Getting ALL circular links from the "All Months" table...');
+        Logger.info('🔍 Getting ALL circular links from the "All Months" table...');
 
         // Wait for table to be fully loaded
         await this.page.waitForSelector('table.tablebg', { timeout: 10000 });
-        console.log('✅ Found circular table');
+        Logger.info('✅ Found circular table');
 
         // Get ALL circular data including department information
         const allCircularData = await this.page.$$eval(
@@ -215,7 +213,7 @@ class RIBBIECircularDownloader {
             }
         );
 
-        console.log(`✅ Found ${allCircularData.length} total circulars in table`);
+        Logger.info(`✅ Found ${allCircularData.length} total circulars in table`);
 
         // Apply department filter
         const targetDepartment = RIBBIE_CONFIG.TARGET_DEPARTMENT;
@@ -230,25 +228,25 @@ class RIBBIECircularDownloader {
                 dept === target.toLowerCase();
         });
 
-        console.log(`🎯 Filtered to ${filteredCirculars.length} circulars from "${targetDepartment}"`);
+        Logger.info(`🎯 Filtered to ${filteredCirculars.length} circulars from "${targetDepartment}"`);
 
         // Log first few filtered results for verification
         filteredCirculars.slice(0, 3).forEach((circular, index) => {
-            console.log(`  ${index + 1}. [${circular.department}] ${circular.text}`);
+            Logger.info(`  ${index + 1}. [${circular.department}] ${circular.text}`);
         });
 
         if (filteredCirculars.length > 3) {
-            console.log(`  ... and ${filteredCirculars.length - 3} more from ${targetDepartment}`);
+            Logger.info(`  ... and ${filteredCirculars.length - 3} more from ${targetDepartment}`);
         }
 
         if (filteredCirculars.length === 0) {
-            console.log(`⚠️ No circulars found for department: ${targetDepartment}`);
-            console.log('📋 Available departments in this year:');
+            Logger.info(`⚠️ No circulars found for department: ${targetDepartment}`);
+            Logger.info('📋 Available departments in this year:');
 
             // Show unique departments for debugging
             const uniqueDepartments = [...new Set(allCircularData.map(c => c.department))];
             uniqueDepartments.slice(0, 10).forEach(dept => {
-                console.log(`   - ${dept}`);
+                Logger.info(`   - ${dept}`);
             });
         }
 
@@ -258,7 +256,7 @@ class RIBBIECircularDownloader {
     async navigateToCircular(circular: { href: string, text: string, id: string }): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
-        console.log(`🔗 Navigating to circular: ${circular.text}`);
+        Logger.info(`🔗 Navigating to circular: ${circular.text}`);
 
         try {
             // Convert relative URL to absolute URL if needed
@@ -266,7 +264,7 @@ class RIBBIECircularDownloader {
                 ? circular.href
                 : `${process.env.RIBBIE_CONFIG_BASE_URL}/Scripts/${circular.href}`;
 
-            console.log(`🔗 Full URL: ${fullUrl}`);
+            Logger.info(`🔗 Full URL: ${fullUrl}`);
 
             // Navigate to the circular detail page
             await this.page.goto(fullUrl, {
@@ -274,7 +272,7 @@ class RIBBIECircularDownloader {
                 timeout: RIBBIE_CONFIG.TIMEOUT
             });
 
-            console.log('✅ Loaded circular detail page');
+            Logger.info('✅ Loaded circular detail page');
 
         } catch (error) {
             throw new Error(`Failed to navigate to circular: ${error}`);
@@ -286,7 +284,7 @@ class RIBBIECircularDownloader {
     async downloadPDF(): Promise<{ downloadPath: string }> {
         if (!this.page) throw new Error('Page not initialized');
 
-        console.log('📄 Looking for PDF download link...');
+        Logger.info('📄 Looking for PDF download link...');
 
         // Create downloads folder if it doesn't exist
         await fs.mkdir(RIBBIE_CONFIG.DOWNLOADS_FOLDER, { recursive: true });
@@ -302,15 +300,15 @@ class RIBBIECircularDownloader {
         let pdfElement = null;
         for (const selector of pdfSelectors) {
             try {
-                console.log(`  🔍 Trying selector: ${selector}`);
+                Logger.info(`  🔍 Trying selector: ${selector}`);
                 pdfElement = await this.page.waitForSelector(selector, { timeout: 5000 });
 
                 if (pdfElement) {
-                    console.log(`✅ Found PDF link with: ${selector}`);
+                    Logger.info(`✅ Found PDF link with: ${selector}`);
                     break;
                 }
             } catch (error) {
-                console.log(`  ❌ Selector failed: ${selector}`);
+                Logger.info(`  ❌ Selector failed: ${selector}`);
                 continue;
             }
         }
@@ -326,36 +324,36 @@ class RIBBIECircularDownloader {
                 throw new Error('PDF link has no href');
             }
 
-            console.log(`🔗 PDF URL: ${pdfUrl}`);
+            Logger.info(`🔗 PDF URL: ${pdfUrl}`);
 
             // Convert relative URL to absolute URL if needed
             const absolutePdfUrl = pdfUrl.startsWith('http')
                 ? pdfUrl
                 : `${process.env.RIBBIE_ABSOLUTE_PDF_URL}${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}`;
 
-            console.log(`🔗 Absolute PDF URL: ${absolutePdfUrl}`);
+            Logger.info(`🔗 Absolute PDF URL: ${absolutePdfUrl}`);
 
             // Extract filename from URL
             const urlParts = absolutePdfUrl.split('/');
             const filename = urlParts[urlParts.length - 1];
             const downloadPath = path.join(RIBBIE_CONFIG.DOWNLOADS_FOLDER, filename);
 
-            console.log(`📁 Will save to: ${downloadPath}`);
+            Logger.info(`📁 Will save to: ${downloadPath}`);
 
             // Setup listener for new page (PDF will open in new tab)
             const newPagePromise = this.page.context().waitForEvent('page');
 
             // Click the PDF link (this will open new tab)
             await pdfElement.click();
-            console.log('✅ Clicked PDF link, waiting for new page...');
+            Logger.info('✅ Clicked PDF link, waiting for new page...');
 
             // Wait for new page to open
             const newPage = await newPagePromise;
             await newPage.waitForLoadState('networkidle');
-            console.log('✅ New PDF page opened');
+            Logger.info('✅ New PDF page opened');
 
             // Now we can download directly from the PDF URL
-            console.log('📥 Downloading PDF directly...');
+            Logger.info('📥 Downloading PDF directly...');
 
             // Use the browser context to download the PDF
             const downloadedBuffer = await newPage.evaluate(async (url) => {
@@ -373,7 +371,7 @@ class RIBBIECircularDownloader {
 
             // Close the new PDF page
             await newPage.close();
-            console.log('✅ Closed PDF page');
+            Logger.info('✅ Closed PDF page');
 
             // Verify the download
             const stats = await fs.stat(downloadPath);
@@ -381,8 +379,8 @@ class RIBBIECircularDownloader {
                 throw new Error('Downloaded file is empty');
             }
 
-            console.log(`✅ PDF downloaded successfully: ${downloadPath}`);
-            console.log(`📊 File size: ${(stats.size / 1024).toFixed(2)} KB`);
+            Logger.info(`✅ PDF downloaded successfully: ${downloadPath}`);
+            Logger.info(`📊 File size: ${(stats.size / 1024).toFixed(2)} KB`);
             return { downloadPath };
 
         } catch (error) {
@@ -391,7 +389,7 @@ class RIBBIECircularDownloader {
     }
 
     async createOrGetRBICollection(userEmail: string, workspaceId: number): Promise<string> {
-        console.log('📁 Setting up RIBBIE Circulars collection...');
+        Logger.info('📁 Setting up RIBBIE Circulars collection...');
 
         try {
             // Get user
@@ -406,7 +404,7 @@ class RIBBIECircularDownloader {
             const rbiCollection = collections.find(c => c.name === 'RIBBIE Payment Systems Circulars');
 
             if (rbiCollection) {
-                console.log(`✅ Found existing RIBBIE collection: ${rbiCollection.id}`);
+                Logger.info(`✅ Found existing RIBBIE collection: ${rbiCollection.id}`);
                 return rbiCollection.id;
             }
 
@@ -451,7 +449,7 @@ class RIBBIECircularDownloader {
                 return collection;
             });
 
-            console.log(`✅ Created RIBBIE collection: ${newCollection.id}`);
+            Logger.info(`✅ Created RIBBIE collection: ${newCollection.id}`);
             return newCollection.id;
 
         } catch (error) {
@@ -460,18 +458,18 @@ class RIBBIECircularDownloader {
     }
 
     async processAndIngestPDF(downloadPath: string, userEmail: string, workspaceId: number): Promise<void> {
-        console.log('🔄 Processing PDF for complete Knowledge Base ingestion...');
+        Logger.info('🔄 Processing PDF for complete Knowledge Base ingestion...');
 
         try {
             // STEP 1: Get user and RIBBIE collection
             const users = await getUserByEmail(db, userEmail);
             // logger.info('Users fetched', { users });
-            console.log(`👤 Fetched user for ingestion: ${userEmail} and ${users.length} found`);
+            Logger.info(`👤 Fetched user for ingestion: ${userEmail} and ${users.length} found`);
             if (!users || users.length === 0) {
                 throw new Error(`User not found: ${userEmail}`);
             }
             const user = users[0];
-            console.log(`👤 User ID: ${user.id}, Email: ${user.email}`);
+            Logger.info(`👤 User ID: ${user.id}, Email: ${user.email}`);
 
             // Get or create RIBBIE collection
             const collectionId = await this.createOrGetRBICollection(userEmail, workspaceId);
@@ -485,10 +483,10 @@ class RIBBIECircularDownloader {
             const vespaDocId = generateFileVespaDocId();
             const storageKey = generateStorageKey();
 
-            console.log(`📝 Processing: ${fileName} (${(stats.size / 1024).toFixed(2)} KB)`);
+            Logger.info(`📝 Processing: ${fileName} (${(stats.size / 1024).toFixed(2)} KB)`);
 
             // STEP 3: Process PDF into chunks
-            console.log('⚙️ Extracting text and chunks from PDF...');
+            Logger.info('⚙️ Extracting text and chunks from PDF...');
             const processingResult = await FileProcessorService.processFile(
                 pdfBuffer,
                 'application/pdf',
@@ -499,7 +497,7 @@ class RIBBIECircularDownloader {
                 false       // Don't describe images
             );
 
-            console.log(`✅ Extracted ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`);
+            Logger.info(`✅ Extracted ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`);
 
             // STEP 4: Create proper storage path (following your app's pattern)
             const year = new Date().getFullYear();
@@ -517,7 +515,7 @@ class RIBBIECircularDownloader {
             await fs.mkdir(path.dirname(storagePath), { recursive: true });
             await fs.copyFile(downloadPath, storagePath);
 
-            console.log(`📁 File copied from downloads to KB storage: ${storagePath}`);
+            Logger.info(`📁 File copied from downloads to KB storage: ${storagePath}`);
 
             // STEP 5: Database transaction - Create both collection item AND Vespa document
             await db.transaction(async (tx) => {
@@ -543,7 +541,7 @@ class RIBBIECircularDownloader {
                     userEmail             // userEmail
                 );
 
-                console.log(`✅ Created collection item: ${collectionItem.id}`);
+                Logger.info(`✅ Created collection item: ${collectionItem.id}`);
 
                 // Create Vespa document (searchable content)
                 const vespaDoc = {
@@ -580,14 +578,14 @@ class RIBBIECircularDownloader {
                 };
 
                 await insert(vespaDoc, KbItemsSchema);
-                console.log(`✅ Created Vespa document: ${vespaDocId}`);
+                Logger.info(`✅ Created Vespa document: ${vespaDocId}`);
             });
 
-            console.log(`🎉 SUCCESS: RIBBIE PDF fully integrated into Knowledge Base!`);
-            console.log(`📊 Collection: RIBBIE Circulars`);
-            console.log(`📄 File: ${fileName}`);
-            console.log(`💾 Stored: ${storagePath}`);
-            console.log(`🔍 Now searchable and visible in UI`);
+            Logger.info(`🎉 SUCCESS: RIBBIE PDF fully integrated into Knowledge Base!`);
+            Logger.info(`📊 Collection: RIBBIE Circulars`);
+            Logger.info(`📄 File: ${fileName}`);
+            Logger.info(`💾 Stored: ${storagePath}`);
+            Logger.info(`🔍 Now searchable and visible in UI`);
 
         } catch (error) {
             throw new Error(`Failed to process and ingest PDF: ${error}`);
@@ -595,10 +593,10 @@ class RIBBIECircularDownloader {
     }
 
     async cleanup(): Promise<void> {
-        console.log('🧹 Cleaning up...');
+        Logger.info('🧹 Cleaning up...');
         if (this.browser) {
             await this.browser.close();
-            console.log('✅ Browser closed');
+            Logger.info('✅ Browser closed');
         }
     }
 
@@ -619,14 +617,14 @@ class RIBBIECircularDownloader {
             if (!this.page) throw new Error('Page not initialized after browser setup');
 
             const years = RIBBIE_CONFIG.TARGET_YEARS;
-            console.log(`🎯 Starting to process ${years.length} years: ${years.join(', ')}`);
+            Logger.info(`🎯 Starting to process ${years.length} years: ${years.join(', ')}`);
 
             // Loop through each year
             for (let yearIndex = 0; yearIndex < years.length; yearIndex++) {
                 const year = years[yearIndex];
 
                 try {
-                    console.log(`\n📅 Processing year ${year} (${yearIndex + 1}/${years.length})...`);
+                    Logger.info(`\n📅 Processing year ${year} (${yearIndex + 1}/${years.length})...`);
 
                     // Navigate to homepage for each year (fresh start)
                     await this.navigateToHomePage();
@@ -639,7 +637,7 @@ class RIBBIECircularDownloader {
 
                     // Get ALL circulars from the "All Months" table for this year
                     const allCirculars = await this.getAllCircularsFromTable();
-                    console.log(`🎯 Found ${allCirculars.length} circulars for year ${year}`);
+                    Logger.info(`🎯 Found ${allCirculars.length} circulars for year ${year}`);
                     totalCirculars += allCirculars.length;
 
                     let yearSuccessCount = 0;
@@ -648,15 +646,15 @@ class RIBBIECircularDownloader {
                     // Process each circular for this year
                     for (let i = 0; i < allCirculars.length; i++) {
                         const circular = allCirculars[i];
-                        console.log(`\n📄 [${year}] Processing ${i + 1}/${allCirculars.length}: ${circular.text}`);
-                        console.log(`🏢 Department: ${circular.department}`);
-                        console.log(`\n📄 [${year}] Processing ${i + 1}/${allCirculars.length}: ${circular.text}`);
-                        console.log(`🏢 Department: ${circular.department}`);
+                        Logger.info(`\n📄 [${year}] Processing ${i + 1}/${allCirculars.length}: ${circular.text}`);
+                        Logger.info(`🏢 Department: ${circular.department}`);
+                        Logger.info(`\n📄 [${year}] Processing ${i + 1}/${allCirculars.length}: ${circular.text}`);
+                        Logger.info(`🏢 Department: ${circular.department}`);
 
                         try {
                             // Skip if already downloaded (optional optimization)
                             if (this.isAlreadyDownloaded(circular.id)) {
-                                console.log(`⏭️ Skipping already processed circular ID: ${circular.id}`);
+                                Logger.info(`⏭️ Skipping already processed circular ID: ${circular.id}`);
                                 continue;
                             }
 
@@ -675,14 +673,14 @@ class RIBBIECircularDownloader {
                             yearSuccessCount++;
                             totalSuccessfulCirculars++;
 
-                            console.log(`✅ [${year}] Successfully processed ${i + 1}/${allCirculars.length}: ${downloadPath}`);
+                            Logger.info(`✅ [${year}] Successfully processed ${i + 1}/${allCirculars.length}: ${downloadPath}`);
 
                         } catch (circularError) {
                             yearErrorCount++;
                             console.error(`❌ [${year}] Failed to process circular ${i + 1}/${allCirculars.length} (${circular.text}):`, circularError);
 
                             // Continue with next circular instead of failing completely
-                            console.log(`⏭️ Continuing with next circular...`);
+                            Logger.info(`⏭️ Continuing with next circular...`);
                         }
 
                         // Small delay between circulars to be respectful to the server
@@ -691,31 +689,31 @@ class RIBBIECircularDownloader {
 
                     // Year summary
                     totalSuccessfulYears++;
-                    console.log(`\n✅ Year ${year} COMPLETE!`);
-                    console.log(`📊 Year ${year}: ${yearSuccessCount} success, ${yearErrorCount} errors, ${allCirculars.length} total`);
+                    Logger.info(`\n✅ Year ${year} COMPLETE!`);
+                    Logger.info(`📊 Year ${year}: ${yearSuccessCount} success, ${yearErrorCount} errors, ${allCirculars.length} total`);
 
                 } catch (yearError) {
                     totalFailedYears++;
                     console.error(`❌ Failed to process year ${year}:`, yearError);
-                    console.log(`⏭️ Continuing with next year...`);
+                    Logger.info(`⏭️ Continuing with next year...`);
                 }
 
                 // Delay between years
                 if (yearIndex < years.length - 1) {
-                    console.log(`⏳ Waiting 5 seconds before next year...`);
+                    Logger.info(`⏳ Waiting 5 seconds before next year...`);
                     await this.page.waitForTimeout(5000);
                 }
             }
 
             // Final summary
-            console.log(`\n🎉 ALL YEARS COMPLETE!`);
-            console.log(`📊 Final Results:`);
-            console.log(`   Years processed: ${totalSuccessfulYears}/${years.length} successful`);
-            console.log(`   Years failed: ${totalFailedYears}/${years.length}`);
-            console.log(`   Total circulars found: ${totalCirculars}`);
-            console.log(`   Total circulars downloaded: ${totalSuccessfulCirculars}`);
-            console.log(`   Success rate: ${((totalSuccessfulCirculars / totalCirculars) * 100).toFixed(1)}%`);
-            console.log(`📁 All PDFs are now searchable in your "RIBBIE Circulars" Knowledge Base collection!`);
+            Logger.info(`\n🎉 ALL YEARS COMPLETE!`);
+            Logger.info(`📊 Final Results:`);
+            Logger.info(`   Years processed: ${totalSuccessfulYears}/${years.length} successful`);
+            Logger.info(`   Years failed: ${totalFailedYears}/${years.length}`);
+            Logger.info(`   Total circulars found: ${totalCirculars}`);
+            Logger.info(`   Total circulars downloaded: ${totalSuccessfulCirculars}`);
+            Logger.info(`   Success rate: ${((totalSuccessfulCirculars / totalCirculars) * 100).toFixed(1)}%`);
+            Logger.info(`📁 All PDFs are now searchable in your "RIBBIE Circulars" Knowledge Base collection!`);
 
             return allDownloadedFiles;
 
@@ -733,8 +731,8 @@ export async function testCompleteFlow(): Promise<void> {
     const downloader = new RIBBIECircularDownloader();
     try {
         const downloadPath = await downloader.testCompleteFlow();
-        console.log(`\n🎯 SUCCESS: RIBBIE circular is now searchable in your AI knowledge base!`);
-        console.log(`📁 Local copy: ${downloadPath}`);
+        Logger.info(`\n🎯 SUCCESS: RIBBIE circular is now searchable in your AI knowledge base!`);
+        Logger.info(`📁 Local copy: ${downloadPath.join(', ')}`);
     } catch (error) {
         console.error('\n💥 FAILED:', error);
         process.exit(1);
@@ -742,6 +740,6 @@ export async function testCompleteFlow(): Promise<void> {
 }
 
 // Run test if this file is executed directly
-if (require.main === module) {
+if (import.meta.main) {
     testCompleteFlow().catch(console.error);
 }
