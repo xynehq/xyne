@@ -18,7 +18,7 @@
     "@types/html-to-text": "^9.0.4",
     "@types/uuid": "^10.0.0",
     "cz-conventional-changelog": "^3.3.0",
-    "drizzle-kit": "0.31.4",
+    "drizzle-kit": "0.31.5",
     "husky": "^9.1.7",
     "p-queue": "^8.0.1",
     "semantic-release": "^24.2.7",
