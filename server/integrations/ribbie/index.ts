@@ -415,7 +415,7 @@ class RIBBIECircularDownloader {
                     description: 'Automated collection of RIBBIE circular documents',
                     workspaceId,
                     ownerId: user.id,
-                    isPrivate: false,
+                    isPrivate: true,
                     lastUpdatedById: user.id,
                     lastUpdatedByEmail: userEmail,
                     metadata: { source: 'RIBBIE-automation', vespaDocId: vespaDocId }
