@@ -1475,9 +1475,9 @@ function KnowledgeManagementContent() {
                         onClick={handleViewVespaData}
                         variant="ghost"
                         size="sm"
-                        className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto"
+                        className="flex items-center gap-6 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto border-2"
                       >
-                        View
+                        Raw view
                       </Button>
                     )}
                     <Button
