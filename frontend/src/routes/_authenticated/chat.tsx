@@ -472,8 +472,6 @@ export const ChatPage = ({
     type: MessageFeedback
   } | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
-
-  // Modern query transition state
   const [lastUserMessageIndex, setLastUserMessageIndex] = useState(-1)
 
   useEffect(() => {
