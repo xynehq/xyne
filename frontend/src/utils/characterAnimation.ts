@@ -98,21 +98,23 @@ export class CharacterQueue {
   }
 
   /*Stop the animation*/
-  stopAnimation(): void {
+  stopAnimation(flush: boolean = true): void {
     this.isAnimating = false
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId)
       this.animationId = null
     }
 
-    // If there are still queued characters, display them all immediately
-    if (this.queue.length > 0) {
-      this.displayed += this.queue.join("")
-      this.queue = []
-      this.options.onUpdate(this.displayed)
-    }
+    if (flush) {
+      // If there are still queued characters, display them all immediately
+      if (this.queue.length > 0) {
+        this.displayed += this.queue.join("")
+        this.queue = []
+        this.options.onUpdate(this.displayed)
+      }
 
-    this.options.onComplete?.()
+      this.options.onComplete?.()
+    }
   }
 
   /*Get the current displayed text*/
@@ -127,7 +129,7 @@ export class CharacterQueue {
 
   /* Reset the queue and displayed text*/
   reset(): void {
-    this.stopAnimation()
+    this.stopAnimation(false)
     this.queue = []
     this.displayed = ""
   }
@@ -136,7 +138,9 @@ export class CharacterQueue {
    * Set the entire text immediately (for completed streams)
    */
   setImmediate(text: string): void {
-    this.reset()
+    // Stop animation without flushing queue and clear all state
+    this.stopAnimation(false)
+    this.queue = []
     this.displayed = text
     this.options.onUpdate(this.displayed)
   }

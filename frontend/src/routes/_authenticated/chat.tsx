@@ -428,7 +428,7 @@ export const ChatPage = ({
   // merging the real stream IDs once available
   const currentResp = isStreaming
     ? {
-        resp: displayPartial || partial,
+        resp: displayPartial ?? partial,
         thinking,
         deepResearchSteps,
         sources,
