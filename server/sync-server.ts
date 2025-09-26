@@ -6,6 +6,8 @@ import { Subsystem } from "@/types"
 import { InitialisationError } from "@/errors"
 import metricRegister from "@/metrics/sharedRegistry"
 import { isSlackEnabled, startSocketMode } from "@/integrations/slack/client"
+import { Worker } from "worker_threads"
+import path from "path"
 
 const Logger = getLogger(Subsystem.SyncServer)
 
@@ -46,8 +48,37 @@ app.get("/status", (c) => {
 
 export const initSyncServer = async () => {
   Logger.info("Initializing Sync Server")
-  // Initialize the queue system
-  await initQueue()
+  
+  // Start file processing worker in separate thread
+  const fileProcessingWorker = new Worker(path.join(__dirname, "fileProcessingWorker.ts"))
+  
+  fileProcessingWorker.on("message", (message) => {
+    if (message.status === "initialized") {
+      Logger.info("File processing worker thread initialized successfully")
+    } else if (message.status === "error") {
+      Logger.error(`File processing worker thread failed: ${message.error}`)
+    }
+  })
+  
+  fileProcessingWorker.on("error", (error) => {
+    Logger.error(error, "File processing worker thread error")
+  })
+  
+  fileProcessingWorker.on("exit", (code) => {
+    if (code !== 0) {
+      Logger.error(`File processing worker thread exited with code ${code}`)
+    }
+  })
+  
+  // Initialize the queue system in background - don't await (excluding file processing)
+  initQueue()
+    .then(() => {
+      Logger.info("Queue system initialized successfully")
+    })
+    .catch((error) => {
+      Logger.error(error, "Failed to initialize queue system")
+    })
+    
   Logger.info("Sync Server initialization completed")
 }
 
