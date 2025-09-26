@@ -30,10 +30,11 @@ jobs:
         working-directory: ./server
         run: bun install
 
+
       - name: Run semantic-release
         working-directory: ./server
         env:
           HUSKY: 0
-          GITHUB_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}   # use your PAT here
+          GITHUB_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
           GH_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
         run: bunx semantic-release --no-ci
