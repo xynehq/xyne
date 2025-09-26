@@ -1,7 +1,5 @@
 import { Apps } from "shared/types"
 
-const authUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/start`
-const successUrl = `${import.meta.env.VITE_API_BASE_URL}/oauth/success`
 export class OAuthModal {
   // private authUrl: string;
   // private connectorId: string;
@@ -11,6 +9,8 @@ export class OAuthModal {
   private intervalId: number | null = null
   private completed = false // Flag to prevent multiple resolve/reject calls
   private logger = console
+  private successUrl: string = ""
+  private config: { API_BASE_URL: string, WS_BASE_URL: string } = { API_BASE_URL: "", WS_BASE_URL: "" }
 
   constructor(
     // connectorId: string;
@@ -20,11 +20,22 @@ export class OAuthModal {
     // this.connectorId = config.connectorId;
     this.width = width || 600
     this.height = height || 700
+    if (typeof window === "undefined") {
+      this.config = { API_BASE_URL: "", WS_BASE_URL: "" }
+    }else{
+      this.config = (window as any).CONFIG
+    }
   }
 
   public startAuth(app: Apps) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
+        if (!this.config) {
+          throw new Error("Failed to load config")
+        }
+
+        const authUrl = `${this.config.API_BASE_URL}/oauth/start`
+        this.successUrl = `${this.config.API_BASE_URL}/oauth/success`
         //clientLog({currentApp: app}, 'Starting OAuth')
         this.logger.info({ currentApp: app }, "Starting OAuth")
         this.openAuthWindow(`${authUrl}?app=${app}`)
@@ -101,7 +112,7 @@ export class OAuthModal {
       }
 
       // 3. If we can read the URL, check if it’s the success URL
-      if (currentUrl && currentUrl === successUrl) {
+      if (currentUrl && currentUrl === this.successUrl) {
         // When the popup window reaches the success URL, stop monitoring
         window.clearInterval(this.intervalId!)
         this.intervalId = null

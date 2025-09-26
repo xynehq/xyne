@@ -18,7 +18,7 @@ import { Sidebar } from "@/components/Sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useEffect, useState } from "react"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
-import { wsClient } from "@/api"
+import { getWSClient } from "@/api"
 import OAuthTab from "@/components/OAuthTab"
 import { IntegrationsSidebar } from "@/components/IntegrationsSidebar"
 import { UserStatsTable } from "@/components/ui/userStatsTable"
@@ -83,6 +83,7 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     if (!isPending && data && data.length > 0) {
       const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
       if (oauthConnector) {
+         const wsClient = getWSClient() //
         socket = wsClient.ws.$ws({
           query: { id: oauthConnector.id },
         })

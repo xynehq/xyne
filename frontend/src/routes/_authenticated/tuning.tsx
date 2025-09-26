@@ -1,6 +1,6 @@
 import { Sidebar } from "@/components/Sidebar"
 import { Button } from "@/components/ui/button"
-import { api, wsClient } from "@/api"
+import { api, getWSClient } from "@/api"
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useRef, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
@@ -95,6 +95,7 @@ export default function TuningPage() {
     if (jobId && jobStatus === "running" && !socketRef.current) {
       console.log(`Attempting to open WebSocket for job ID: ${jobId}`)
       // Corrected: Target the specific tuning WebSocket endpoint
+      const wsClient = getWSClient() //
       const socket = wsClient.api.v1.tuning.ws[":jobId"].$ws({
         param: { jobId: jobId }, // Pass jobId as path parameter
         // query: { context: "tuning" }, // Query params might still be useful if needed
