@@ -26,13 +26,17 @@ import logo from "@/assets/logo.svg"
 import { EnhancedReasoning } from "@/components/EnhancedReasoning"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { jsonToHtmlMessage } from "@/routes/_authenticated/chat"
-import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
+import {
+  cleanCitationsFromResponse,
+  processMessage,
+  createTableComponents,
+} from "@/utils/chatUtils.tsx"
 import { ToolsListItem } from "@/types"
 import { ImageCitationComponent } from "../routes/_authenticated/chat"
 import { createCitationLink, Citation } from "@/components/CitationLink"
 import Retry from "@/assets/retry.svg"
-import { PersistentMap } from "@/utils/chatUtils"
-import { MermaidCode } from "@/hooks/useMermaidRenderer"
+import { PersistentMap } from "@/utils/chatUtils.tsx"
+import { MermaidCodeWrapper } from "@/hooks/useMermaidRenderer"
 
 // Persistent storage for tempChatId -> actual chatId mapping using sessionStorage
 const TEMP_CHAT_ID_MAP_KEY = "tempChatIdToChatIdMap"
@@ -140,6 +144,7 @@ const ChatMessage = React.memo(
                     </div>
                   ) : message !== "" ? (
                     <MarkdownPreview
+                      key={`markdown-${messageId || "unknown"}`}
                       source={processMessage(
                         message,
                         citationMap,
@@ -163,7 +168,7 @@ const ChatMessage = React.memo(
                           onCitationClick,
                           false,
                         ),
-                        code: MermaidCode,
+                        code: MermaidCodeWrapper,
                         img: ({ src, alt, ...props }: any) => {
                           if (src?.startsWith("image-citation:")) {
                             const citationKey = src.replace(
@@ -181,60 +186,7 @@ const ChatMessage = React.memo(
                           // Regular image handling
                           return <img src={src} alt={alt} {...props} />
                         },
-                        table: ({ children, ...props }: any) => (
-                          <div className="overflow-x-auto max-w-full">
-                            <table
-                              {...props}
-                              className="min-w-full border-collapse"
-                              style={{
-                                wordBreak: "break-word",
-                                tableLayout: "auto",
-                              }}
-                            >
-                              {children}
-                            </table>
-                          </div>
-                        ),
-                        td: ({ children, ...props }: any) => (
-                          <td
-                            {...props}
-                            style={{
-                              wordBreak: "break-word",
-                              overflowWrap: "break-word",
-                              maxWidth: "200px",
-                              ...props.style,
-                            }}
-                          >
-                            {children}
-                          </td>
-                        ),
-                        th: ({ children, ...props }: any) => (
-                          <th
-                            {...props}
-                            style={{
-                              wordBreak: "break-word",
-                              overflowWrap: "break-word",
-                              maxWidth: "200px",
-                              ...props.style,
-                            }}
-                          >
-                            {children}
-                          </th>
-                        ),
-                        pre: ({ children, ...props }: any) => (
-                          <pre
-                            {...props}
-                            className="overflow-x-auto max-w-full"
-                            style={{
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                              overflowWrap: "break-word",
-                              ...props.style,
-                            }}
-                          >
-                            {children}
-                          </pre>
-                        ),
+                        ...createTableComponents(), // Use extracted table components
                         h1: ({ node, ...props }) => (
                           <h1
                             style={{ fontSize: "1.6em" }}
@@ -359,7 +311,8 @@ const ChatMessage = React.memo(
     )
   },
   (prevProps, nextProps) => {
-    // Only re-render if essential props change - avoid re-rendering during streaming for completed messages
+    // Only re-render if essential props change
+    // Less aggressive memoization to allow proper mermaid rendering during streaming
     if (prevProps.isStreaming !== nextProps.isStreaming) return false
     if (prevProps.message !== nextProps.message) return false
     if (prevProps.thinking !== nextProps.thinking) return false
@@ -369,17 +322,16 @@ const ChatMessage = React.memo(
     if (prevProps.feedbackStatus !== nextProps.feedbackStatus) return false
     if (prevProps.messageId !== nextProps.messageId) return false
 
-    // For completed messages, don't re-render unless something meaningful changed
+    // Allow re-renders for citations and citationMap changes (important for mermaid)
+    if (prevProps.citations?.length !== nextProps.citations?.length)
+      return false
     if (
-      prevProps.responseDone &&
-      nextProps.responseDone &&
-      prevProps.message === nextProps.message &&
-      prevProps.thinking === nextProps.thinking
-    ) {
-      return true
-    }
+      JSON.stringify(prevProps.citationMap) !==
+      JSON.stringify(nextProps.citationMap)
+    )
+      return false
 
-    return false
+    return true
   },
 )
 
@@ -408,11 +360,9 @@ const MessagesArea = React.memo(
   }) => (
     <div className="space-y-4">
       {messages.map((message: SelectPublicMessage, index: number) => {
-        // Create stable key for completed messages to prevent re-renders
+        // Create stable key for messages - avoid using message content to prevent remounting during streaming
         const messageKey =
-          message.externalId && message.externalId !== "current-resp"
-            ? `completed-${message.externalId}`
-            : `msg-${index}-${message.messageRole}-${message.message?.substring(0, 20)}`
+          message.externalId || `msg-${index}-${message.messageRole}`
 
         return (
           <Fragment key={messageKey}>
@@ -468,23 +418,30 @@ const MessagesArea = React.memo(
     </div>
   ),
   (prevProps, nextProps) => {
-    // Only re-render if messages or streaming state changes
+    // Less aggressive memoization to allow proper mermaid rendering
     if (prevProps.messages.length !== nextProps.messages.length) return false
     if (prevProps.currentResp?.resp !== nextProps.currentResp?.resp)
       return false
     if (prevProps.currentResp?.thinking !== nextProps.currentResp?.thinking)
       return false
+    if (
+      prevProps.currentResp?.sources?.length !==
+      nextProps.currentResp?.sources?.length
+    )
+      return false
     if (prevProps.dots !== nextProps.dots) return false
     if (prevProps.disableRetry !== nextProps.disableRetry) return false
+    if (prevProps.isStreaming !== nextProps.isStreaming) return false
 
-    // Check if any message content has changed
+    // Check if any message content has changed - be more thorough
     for (let i = 0; i < prevProps.messages.length; i++) {
       const prevMsg = prevProps.messages[i]
       const nextMsg = nextProps.messages[i]
       if (
         prevMsg?.message !== nextMsg?.message ||
         prevMsg?.thinking !== nextMsg?.thinking ||
-        prevMsg?.externalId !== nextMsg?.externalId
+        prevMsg?.externalId !== nextMsg?.externalId ||
+        prevMsg?.sources?.length !== nextMsg?.sources?.length
       ) {
         return false
       }

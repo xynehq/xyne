@@ -39,7 +39,7 @@ import {
 } from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
 import { Pill } from "@/components/Pill"
-import { MermaidCode } from "@/hooks/useMermaidRenderer"
+import { MermaidCodeWrapper } from "@/hooks/useMermaidRenderer"
 
 import {
   SelectPublicMessage,
@@ -100,66 +100,13 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CitationPreview } from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
-import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
+import {
+  cleanCitationsFromResponse,
+  processMessage,
+  createTableComponents,
+} from "@/utils/chatUtils.tsx"
 
 export const THINKING_PLACEHOLDER = "Thinking"
-
-// Extract table components to avoid duplication
-const createTableComponents = () => ({
-  table: ({ node, ...props }: any) => (
-    <div className="overflow-x-auto max-w-full my-2">
-      <table
-        style={{
-          borderCollapse: "collapse",
-          borderStyle: "hidden",
-          tableLayout: "auto",
-          minWidth: "100%",
-          maxWidth: "none",
-        }}
-        className="w-auto dark:bg-slate-800"
-        {...props}
-      />
-    </div>
-  ),
-  th: ({ node, ...props }: any) => (
-    <th
-      style={{
-        border: "none",
-        padding: "8px 12px",
-        textAlign: "left",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "300px",
-        minWidth: "100px",
-        whiteSpace: "normal",
-      }}
-      className="dark:text-white font-semibold"
-      {...props}
-    />
-  ),
-  td: ({ node, ...props }: any) => (
-    <td
-      style={{
-        border: "none",
-        padding: "8px 12px",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "300px",
-        minWidth: "100px",
-        whiteSpace: "normal",
-      }}
-      className="border-t border-gray-100 dark:border-gray-800 dark:text-white"
-      {...props}
-    />
-  ),
-  tr: ({ node, ...props }: any) => (
-    <tr
-      style={{ border: "none" }}
-      className="bg-white dark:bg-[#1E1E1E]"
-      {...props}
-    />
-  ),
-})
 
 // Mapping from source ID to app/entity object
 // const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
@@ -2407,6 +2354,7 @@ export const ChatMessage = ({
                   </div>
                 ) : message !== "" ? (
                   <MarkdownPreview
+                    key={`markdown-${messageId || "unknown"}`}
                     source={processMessage(message, citationMap, citationUrls)}
                     wrapperElement={{
                       "data-color-mode": theme,
@@ -2422,7 +2370,7 @@ export const ChatMessage = ({
                     }}
                     components={{
                       a: createCitationLink(citations, onCitationClick),
-                      code: MermaidCode,
+                      code: MermaidCodeWrapper,
                       img: ({ src, alt, ...props }: any) => {
                         if (src?.startsWith("image-citation:")) {
                           const citationKey = src.replace("image-citation:", "")

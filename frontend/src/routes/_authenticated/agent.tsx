@@ -73,7 +73,7 @@ import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { createAuthEventSource } from "@/hooks/useChatStream"
-import { textToCitationIndex } from "@/utils/chatUtils"
+import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
 
