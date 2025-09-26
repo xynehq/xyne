@@ -114,11 +114,6 @@
       "path": "@digitalroute/cz-conventional-changelog-for-jira",
       "jiraPrefix": "XYN-",
       "jiraOptional": false
-    },
-    "overrides": {
-      "playwright": "1.49.1",
-      "playwright-core": "1.49.1",
-      "openai": "5.19.1"
     }
   }
 }
