@@ -1,5 +1,6 @@
 import { isURLValid } from "@/validate"
 import { Models } from "@/ai/types"
+import { AuthType } from "./shared/types"
 let vespaBaseHost = "0.0.0.0"
 let vespaPort = process.env.VESPA_PORT || 8080
 let postgresBaseHost = "0.0.0.0"
@@ -17,7 +18,6 @@ export const CLUSTER = "my_content"
 if (process.env.NODE_ENV === "production") {
   postgresBaseHost = process.env.DATABASE_HOST!
   vespaBaseHost = process.env.VESPA_HOST!
-  port = 80
   host = process.env.HOST!
   redirectUri = process.env.GOOGLE_PROD_REDIRECT_URI!
 }
@@ -47,6 +47,8 @@ let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
 let ragOffFeature = true
+let CurrentAuthType: AuthType =
+  (process.env.AUTH_TYPE as AuthType) || AuthType.OAuth
 const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024
 const MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES = 3 * 1024 // 3KB - generous limit for service account JSON files
 
@@ -211,4 +213,5 @@ export default {
   MAX_SERVICE_ACCOUNT_FILE_SIZE_BYTES,
   vespaEndpoint: `http://${vespaBaseHost}:8080`,
   defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
+  CurrentAuthType,
 }
