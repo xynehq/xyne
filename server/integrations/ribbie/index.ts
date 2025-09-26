@@ -2,7 +2,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { RBI_CONFIG } from './config.js';
+import { RIBBIE_CONFIG } from './config.js';
 
 import { FileProcessorService } from '@/services/fileProcessor';
 import { insert } from '@/search/vespa';
@@ -21,13 +21,12 @@ import {
     generateCollectionVespaDocId,
 } from '@/db/knowledgeBase';
 import { db } from '@/db/client';
+import { env } from 'process';
 
 // Knowledge Base storage path
 const KB_STORAGE_ROOT = path.join(process.cwd(), "storage", "kb_files");
-const Logger = getLogger(Subsystem.Integrations).child({
-    module: "rbi-automation",
-})
-class RBICircularDownloader {
+
+class RIBBIECircularDownloader {
 
     private downloadedCircularIds = new Set<string>();
 
@@ -47,8 +46,8 @@ class RBICircularDownloader {
 
         // Launch browser with configuration
         this.browser = await chromium.launch({
-            headless: RBI_CONFIG.HEADLESS,
-            channel: RBI_CONFIG.USE_SYSTEM_CHROME ? 'chrome' : undefined,
+            headless: RIBBIE_CONFIG.HEADLESS,
+            channel: RIBBIE_CONFIG.USE_SYSTEM_CHROME ? 'chrome' : undefined,
         });
 
         // Create new page/tab
@@ -60,21 +59,21 @@ class RBICircularDownloader {
     async navigateToHomePage(): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
-        console.log(`🌐 Navigating to: ${RBI_CONFIG.BASE_URL}`);
+        console.log(`🌐 Navigating to: ${process.env.RIBBIE_CONFIG_URL}`);
 
         try {
-            // Navigate to the RBI page
-            await this.page.goto(RBI_CONFIG.BASE_URL, {
+            // Navigate to the RIBBIE page
+            await this.page.goto(`${process.env.RIBBIE_CONFIG_URL}`, {
                 waitUntil: 'domcontentloaded',
-                timeout: RBI_CONFIG.TIMEOUT
+                timeout: RIBBIE_CONFIG.TIMEOUT
             });
 
             // Wait for page to be fully interactive
             await this.page.waitForLoadState('networkidle');
-            console.log('✅ Successfully loaded RBI circulars page');
+            console.log('✅ Successfully loaded RIBBIE circulars page');
 
         } catch (error) {
-            throw new Error(`Failed to load RBI homepage: ${error}`);
+            throw new Error(`Failed to load RIBBIE homepage: ${error}`);
         }
     }
 
@@ -169,7 +168,7 @@ class RBICircularDownloader {
 
             // Wait for the circular table to load (this might take longer)
             console.log('⏳ Waiting for all circulars to load...');
-            await this.page.waitForLoadState('networkidle', { timeout: RBI_CONFIG.TIMEOUT });
+            await this.page.waitForLoadState('networkidle', { timeout: RIBBIE_CONFIG.TIMEOUT });
 
         } catch (error) {
             throw new Error(`Failed to click "All Months": ${error}`);
@@ -219,7 +218,7 @@ class RBICircularDownloader {
         console.log(`✅ Found ${allCircularData.length} total circulars in table`);
 
         // Apply department filter
-        const targetDepartment = RBI_CONFIG.TARGET_DEPARTMENT;
+        const targetDepartment = RIBBIE_CONFIG.TARGET_DEPARTMENT;
         const filteredCirculars = allCircularData.filter(circular => {
             // Check for exact match or partial match with variations
             const dept = circular.department.toLowerCase();
@@ -265,14 +264,14 @@ class RBICircularDownloader {
             // Convert relative URL to absolute URL if needed
             const fullUrl = circular.href.startsWith('http')
                 ? circular.href
-                : `https://rbi.org.in/Scripts/${circular.href}`;
+                : `${process.env.RIBBIE_CONFIG_BASE_URL}/Scripts/${circular.href}`;
 
             console.log(`🔗 Full URL: ${fullUrl}`);
 
             // Navigate to the circular detail page
             await this.page.goto(fullUrl, {
                 waitUntil: 'networkidle',
-                timeout: RBI_CONFIG.TIMEOUT
+                timeout: RIBBIE_CONFIG.TIMEOUT
             });
 
             console.log('✅ Loaded circular detail page');
@@ -290,7 +289,7 @@ class RBICircularDownloader {
         console.log('📄 Looking for PDF download link...');
 
         // Create downloads folder if it doesn't exist
-        await fs.mkdir(RBI_CONFIG.DOWNLOADS_FOLDER, { recursive: true });
+        await fs.mkdir(RIBBIE_CONFIG.DOWNLOADS_FOLDER, { recursive: true });
 
         const pdfSelectors = [
             'a[href*=".PDF"]',
@@ -332,14 +331,14 @@ class RBICircularDownloader {
             // Convert relative URL to absolute URL if needed
             const absolutePdfUrl = pdfUrl.startsWith('http')
                 ? pdfUrl
-                : `https://rbidocs.rbi.org.in${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}`;
+                : `${process.env.RIBBIE_ABSOLUTE_PDF_URL}${pdfUrl.startsWith('/') ? '' : '/'}${pdfUrl}`;
 
             console.log(`🔗 Absolute PDF URL: ${absolutePdfUrl}`);
 
             // Extract filename from URL
             const urlParts = absolutePdfUrl.split('/');
             const filename = urlParts[urlParts.length - 1];
-            const downloadPath = path.join(RBI_CONFIG.DOWNLOADS_FOLDER, filename);
+            const downloadPath = path.join(RIBBIE_CONFIG.DOWNLOADS_FOLDER, filename);
 
             console.log(`📁 Will save to: ${downloadPath}`);
 
@@ -392,7 +391,7 @@ class RBICircularDownloader {
     }
 
     async createOrGetRBICollection(userEmail: string, workspaceId: number): Promise<string> {
-        console.log('📁 Setting up RBI Circulars collection...');
+        console.log('📁 Setting up RIBBIE Circulars collection...');
 
         try {
             // Get user
@@ -402,27 +401,27 @@ class RBICircularDownloader {
             }
             const user = users[0];
 
-            // Check if RBI collection exists
+            // Check if RIBBIE collection exists
             const collections = await getCollectionsByOwner(db, user.id);
-            const rbiCollection = collections.find(c => c.name === 'RBI Payment Systems Circulars');
+            const rbiCollection = collections.find(c => c.name === 'RIBBIE Payment Systems Circulars');
 
             if (rbiCollection) {
-                console.log(`✅ Found existing RBI collection: ${rbiCollection.id}`);
+                console.log(`✅ Found existing RIBBIE collection: ${rbiCollection.id}`);
                 return rbiCollection.id;
             }
 
-            // Create new RBI collection
+            // Create new RIBBIE collection
             const newCollection = await db.transaction(async (tx) => {
                 const vespaDocId = generateCollectionVespaDocId()
                 const collection = await createCollection(tx, {
-                    name: 'RBI Payment Systems Circulars',
-                    description: 'Automated collection of RBI circular documents',
+                    name: 'RIBBIE Payment Systems Circulars',
+                    description: 'Automated collection of RIBBIE circular documents',
                     workspaceId,
                     ownerId: user.id,
                     isPrivate: false,
                     lastUpdatedById: user.id,
                     lastUpdatedByEmail: userEmail,
-                    metadata: { source: 'rbi-automation', vespaDocId: vespaDocId }
+                    metadata: { source: 'RIBBIE-automation', vespaDocId: vespaDocId }
                 });
 
                 // Add to Vespa for search
@@ -430,16 +429,16 @@ class RBICircularDownloader {
                     docId: vespaDocId,
                     clId: collection.id,
                     itemId: collection.id,
-                    fileName: 'RBI Circulars',
+                    fileName: 'RIBBIE Circulars',
                     app: Apps.KnowledgeBase as const,
                     entity: KnowledgeBaseEntity.Collection,
-                    description: 'Automated RBI circular collection',
+                    description: 'Automated RIBBIE circular collection',
                     storagePath: "",
                     chunks: [],
                     chunks_pos: [],
                     image_chunks: [],
                     image_chunks_pos: [],
-                    metadata: JSON.stringify({ source: 'rbi-automation', vespaDocId: vespaDocId }),
+                    metadata: JSON.stringify({ source: 'RIBBIE-automation', vespaDocId: vespaDocId }),
                     createdBy: userEmail,
                     duration: 0,
                     mimeType: 'application/pdf',
@@ -452,11 +451,11 @@ class RBICircularDownloader {
                 return collection;
             });
 
-            console.log(`✅ Created RBI collection: ${newCollection.id}`);
+            console.log(`✅ Created RIBBIE collection: ${newCollection.id}`);
             return newCollection.id;
 
         } catch (error) {
-            throw new Error(`Failed to create RBI collection: ${error}`);
+            throw new Error(`Failed to create RIBBIE collection: ${error}`);
         }
     }
 
@@ -464,7 +463,7 @@ class RBICircularDownloader {
         console.log('🔄 Processing PDF for complete Knowledge Base ingestion...');
 
         try {
-            // STEP 1: Get user and RBI collection
+            // STEP 1: Get user and RIBBIE collection
             const users = await getUserByEmail(db, userEmail);
             // logger.info('Users fetched', { users });
             console.log(`👤 Fetched user for ingestion: ${userEmail} and ${users.length} found`);
@@ -474,7 +473,7 @@ class RBICircularDownloader {
             const user = users[0];
             console.log(`👤 User ID: ${user.id}, Email: ${user.email}`);
 
-            // Get or create RBI collection
+            // Get or create RIBBIE collection
             const collectionId = await this.createOrGetRBICollection(userEmail, workspaceId);
 
             // STEP 2: Read and process the PDF
@@ -536,7 +535,7 @@ class RBICircularDownloader {
                     stats.size,           // fileSize
                     crypto.createHash('sha256').update(pdfBuffer).digest('hex'), // checksum
                     {                     // metadata
-                        source: 'rbi-automation',
+                        source: 'RIBBIE-automation',
                         originalUrl: this.page?.url() || '',
                         downloadedAt: Date.now(),
                     },
@@ -554,17 +553,17 @@ class RBICircularDownloader {
                     fileName: fileName,
                     app: Apps.KnowledgeBase as const,
                     entity: KnowledgeBaseEntity.File,
-                    description: 'RBI Circular Document',
+                    description: 'RIBBIE Circular Document',
                     storagePath: storagePath,
                     chunks: processingResult.chunks,
                     chunks_pos: processingResult.chunks_pos,
                     image_chunks: processingResult.image_chunks || [],
                     image_chunks_pos: processingResult.image_chunks_pos || [],
                     metadata: JSON.stringify({
-                        source: 'rbi-automation',
+                        source: 'RIBBIE-automation',
                         circularNumber: 'Auto-downloaded',
                         department: 'Reserve Bank of India',
-                        subject: 'RBI Circular Document',
+                        subject: 'RIBBIE Circular Document',
                         dateOfIssue: new Date().toISOString().split('T')[0],
                         originalUrl: this.page?.url() || '',
                         downloadedAt: Date.now(),
@@ -584,8 +583,8 @@ class RBICircularDownloader {
                 console.log(`✅ Created Vespa document: ${vespaDocId}`);
             });
 
-            console.log(`🎉 SUCCESS: RBI PDF fully integrated into Knowledge Base!`);
-            console.log(`📊 Collection: RBI Circulars`);
+            console.log(`🎉 SUCCESS: RIBBIE PDF fully integrated into Knowledge Base!`);
+            console.log(`📊 Collection: RIBBIE Circulars`);
             console.log(`📄 File: ${fileName}`);
             console.log(`💾 Stored: ${storagePath}`);
             console.log(`🔍 Now searchable and visible in UI`);
@@ -619,7 +618,7 @@ class RBICircularDownloader {
             // Add this type guard right after initialize()
             if (!this.page) throw new Error('Page not initialized after browser setup');
 
-            const years = RBI_CONFIG.TARGET_YEARS;
+            const years = RIBBIE_CONFIG.TARGET_YEARS;
             console.log(`🎯 Starting to process ${years.length} years: ${years.join(', ')}`);
 
             // Loop through each year
@@ -716,7 +715,7 @@ class RBICircularDownloader {
             console.log(`   Total circulars found: ${totalCirculars}`);
             console.log(`   Total circulars downloaded: ${totalSuccessfulCirculars}`);
             console.log(`   Success rate: ${((totalSuccessfulCirculars / totalCirculars) * 100).toFixed(1)}%`);
-            console.log(`📁 All PDFs are now searchable in your "RBI Circulars" Knowledge Base collection!`);
+            console.log(`📁 All PDFs are now searchable in your "RIBBIE Circulars" Knowledge Base collection!`);
 
             return allDownloadedFiles;
 
@@ -731,10 +730,10 @@ class RBICircularDownloader {
 }
 
 export async function testCompleteFlow(): Promise<void> {
-    const downloader = new RBICircularDownloader();
+    const downloader = new RIBBIECircularDownloader();
     try {
         const downloadPath = await downloader.testCompleteFlow();
-        console.log(`\n🎯 SUCCESS: RBI circular is now searchable in your AI knowledge base!`);
+        console.log(`\n🎯 SUCCESS: RIBBIE circular is now searchable in your AI knowledge base!`);
         console.log(`📁 Local copy: ${downloadPath}`);
     } catch (error) {
         console.error('\n💥 FAILED:', error);
