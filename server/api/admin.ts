@@ -476,7 +476,7 @@ export const AddServiceConnectionMicrosoft = async (c: Context) => {
 
   let { clientId, clientSecret, tenantId } = form
   let scopes = ["https://graph.microsoft.com/.default"]
-  const app = Apps.MicrosoftDrive
+  const app = Apps.MicrosoftSharepoint
 
   if (!clientId || !clientSecret || !tenantId) {
     throw new HTTPException(400, {
