@@ -225,13 +225,12 @@ export const createOAuthProvider = z
     }
   })
 
-export const microsoftServiceSchema = createOAuthProvider
-  .omit({
-    scopes: true,
-  })
-  .extend({
-    tenantId: z.string(),
-  }) //since credentials are similar for both
+export const microsoftServiceSchema = z.object({
+  clientId: z.string(),
+  clientSecret: z.string(),
+  tenantId: z.string(),
+  app: z.nativeEnum(Apps),
+})
 
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),

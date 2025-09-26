@@ -4,7 +4,7 @@ import { DriveEntity, fileSchema } from "@xyne/vespa-ts"
 import { Apps } from "@/shared/types"
 import { loggerWithChild } from ".."
 import { makeGraphApiCall, type MicrosoftGraphClient } from "../client"
-import { getFilePermissionsSharepoint, processFileContent } from "../utils"
+import { getEntityFromMimeType, getFilePermissionsSharepoint, processFileContent } from "../utils"
 import type { Drive, DriveItem, Site } from "@microsoft/microsoft-graph-types"
 import type { drive_v3 } from "googleapis"
 
@@ -127,6 +127,12 @@ export const processSiteDrives = async (
 
     for (const siteDrive of siteDrives) {
       try {
+        if (!siteDrive.sharePointIds?.siteId || !siteDrive.id) {
+          loggerWithChild({ email: userEmail }).warn(
+            `Skipping drive ${siteDrive.name} - missing sharePointIds or id`,
+          )
+          continue
+        }
         loggerWithChild({ email: userEmail }).info(
           `Processing drive: ${siteDrive.name} from site: ${siteDrive.name}`,
         )
@@ -162,7 +168,7 @@ export const processSiteDrives = async (
                   owner: item.createdBy?.user?.displayName ?? userEmail,
                   photoLink: "",
                   ownerEmail: userEmail,
-                  entity: DriveEntity.Misc,
+                  entity: getEntityFromMimeType(item.file?.mimeType),
                   chunks: await processFileContent(client, item, userEmail),
                   permissions,
                   mimeType: item.file?.mimeType ?? "application/octet-stream",
@@ -211,7 +217,7 @@ export const processSiteDrives = async (
         }
 
         // Store the delta token for this drive
-        if (deltaLinks && siteDrive.id) {
+        if (deltaLink && siteDrive.id) {
           deltaLinks[`${siteDrive.sharePointIds?.siteId}::${siteDrive.id}`] =
             deltaLink
 

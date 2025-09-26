@@ -6,11 +6,9 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { stopwords as englishStopwords } from "@orama/stopwords/english"
 import { OAuth2Client } from "google-auth-library"
-import { Apps } from "./shared/types"
+import { Apps, AuthType } from "./shared/types"
 import crypto from "node:crypto"
 import type { QueryRouterResponse, TemporalClassifier } from "@/ai/types"
-import { AuthType } from "./shared/types"
-import { todo } from "node:test"
 import {
   Client,
   CustomAuthenticationProvider,
@@ -21,7 +19,6 @@ import {
   type MicrosoftClient,
   type MicrosoftGraphClient,
 } from "./integrations/microsoft/client"
-import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
 import { CustomServiceAuthProvider } from "./integrations/microsoft/utils"
 import { scopes } from "./integrations/microsoft/config"
 import { MicrosoftEntraId } from "arctic"
@@ -204,19 +201,21 @@ export const retryWithBackoff = async <T>(
       retries < MAX_RETRIES
     ) {
       if (authClient instanceof OAuth2Client) {
-        if (!IsGoogleApp(app)) {
+        if (IsGoogleApp(app)) {
+          Logger.info(`401 encountered, refreshing OAuth access token...`)
+          const { credentials } = await authClient?.refreshAccessToken()!
+          authClient?.setCredentials(credentials)
+          return retryWithBackoff(
+            fn,
+            context,
+            app,
+            retries + 1,
+            authClient,
+          )
+        }
+        else {
           throw new Error("Provided AppType is not google")
         }
-        Logger.info(
-          `401 encountered with google api, refreshing OAuth access token...`,
-        )
-       const refreshResult = await authClient.refreshAccessToken()
-       if (!refreshResult?.credentials) {
-         throw new Error("Failed to refresh Google OAuth access token")
-       }
-       const { credentials } = refreshResult
-        authClient.setCredentials(credentials)
-        return retryWithBackoff(fn, context, app, retries + 1, authClient)
       } else if (IsMicrosoftApp(app)) {
         if (authClient.refreshToken) {
           // OAuth/Delegated authentication

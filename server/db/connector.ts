@@ -37,7 +37,6 @@ import { syncJobs, syncHistory } from "@/db/schema"
 import { scopes } from "@/integrations/microsoft/config"
 import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
 import { date } from "zod"
-import { todo } from "node:test"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (

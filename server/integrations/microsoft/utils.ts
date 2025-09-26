@@ -514,6 +514,7 @@ async function processMicrosoftWord(
 }
 
 // Process Microsoft Excel files
+// TODO: failing for huge excel files
 async function processMicrosoftExcel(
   graphClient: Client,
   excelFiles: DriveItem[],
@@ -576,7 +577,7 @@ async function processMicrosoftExcel(
         owner: "",
         photoLink: "",
         ownerEmail: userEmail,
-        entity: DriveEntity.Sheets,
+        entity: DriveEntity.ExcelSpreadsheet,
         chunks,
         permissions: [],
         mimeType: file.file?.mimeType ?? "",
@@ -623,6 +624,7 @@ export async function processFileContent(
         return wordResults[0]?.chunks || []
 
       case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        //TODO: breaking for huge excel files, response limit reached
         // const excelResults = await processMicrosoftExcel(
         //   graphClient.client,
         //   [file],

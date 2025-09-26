@@ -45,8 +45,6 @@ const submitOAuthForm = async (
   // Map authType to isServiceAuth boolean
   const isServiceAuth = value.authType === "appOnly"
 
-  console.log(isServiceAuth)
-
   const response = isServiceAuth
     ? await api.admin.microsoft.service_account.$post({
         form: {
@@ -476,7 +474,7 @@ export const MicrosoftOAuthTab = ({
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Microsoft OAuth</CardTitle>
+          <CardTitle>Microsoft Auth</CardTitle>
         </CardHeader>
         <CardContent>
           {oauthIntegrationStatus === OAuthIntegrationStatus.OAuthConnected ? (

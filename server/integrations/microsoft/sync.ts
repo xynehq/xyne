@@ -1246,8 +1246,10 @@ const handleSharepointChanges = async (
           deltaToken,
           email,
         )
-      //update with new Link
-      deltaLinks[driveKey] = newDeltaLink
+      if (newDeltaLink !== "") {
+        //update with new Link
+        deltaLinks[driveKey] = newDeltaLink
+      }
 
       // Merge drive stats into overall stats
       stats.added += driveStats.added

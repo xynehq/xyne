@@ -129,7 +129,6 @@ import {
 import { zValidator } from "@hono/zod-validator"
 import { handleSlackChanges } from "@/integrations/slack/sync"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
-import { todo } from "node:test"
 import { ClientSecretCredential } from "@azure/identity"
 import { Client as GraphClient } from "@microsoft/microsoft-graph-client"
 import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client"
@@ -525,7 +524,7 @@ export const AddServiceConnectionMicrosoft = async (c: Context) => {
     if (!connector) {
       throw new ConnectorNotCreated({})
     }
-    handleMicrosoftServiceAccountIngestion(email, connector)
+    await handleMicrosoftServiceAccountIngestion(email, connector)
 
     loggerWithChild({ email: sub }).info(
       `Microsoft service account connector created with ID: ${connector.externalId}`,
