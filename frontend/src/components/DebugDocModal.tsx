@@ -5,8 +5,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { authFetch } from "@/utils/authFetch"
+import { Copy } from "lucide-react"
 import ReactJsonView from "react-json-view"
 
 interface DebugDocModalProps {
@@ -51,6 +53,31 @@ export function DebugDocModal({
   const { toast } = useToast()
   const [vespaData, setVespaData] = useState<KnowledgeBaseFile | null>(null)
   const [loadingVespaData, setLoadingVespaData] = useState(false)
+
+  const handleCopyToClipboard = async () => {
+    if (!vespaData) {
+      toast.error({
+        title: "Error",
+        description: "No data available to copy",
+      })
+      return
+    }
+
+    try {
+      const formattedData = JSON.stringify(vespaData, null, 2)
+      await navigator.clipboard.writeText(formattedData)
+      toast.success({
+        title: "Success",
+        description: "Vespa data copied to clipboard",
+      })
+    } catch (error) {
+      console.error("Error copying to clipboard:", error)
+      toast.error({
+        title: "Error",
+        description: "Failed to copy data to clipboard",
+      })
+    }
+  }
 
   const handleFetchVespaData = async () => {
     if (!documentId) {
@@ -122,9 +149,21 @@ export function DebugDocModal({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-[60vw] w-full max-h-[95vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold">
-            Vespa Document Data - {documentName}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-lg font-semibold">
+              Vespa Document Data - {documentName}
+            </DialogTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyToClipboard}
+              disabled={!vespaData || loadingVespaData}
+              className="flex items-center gap-2 mr-8"
+            >
+              <Copy className="h-4 w-4" />
+              Copy Data
+            </Button>
+          </div>
         </DialogHeader>
         <div className="flex-1 overflow-auto p-4">
           {loadingVespaData ? (
