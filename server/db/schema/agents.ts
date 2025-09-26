@@ -43,6 +43,7 @@ export const agents = pgTable(
       .notNull()
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    via_apiKey: boolean("via_apiKey").notNull().default(false),
   },
   (table) => ({
     agentWorkspaceIdIndex: index("agent_workspace_id_index").on(
@@ -105,6 +106,7 @@ export const selectAgentSchema = createSelectSchema(agents, {
     .optional()
     .default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
+  via_apiKey: z.boolean().default(false).optional(),
 })
 export type SelectAgent = z.infer<typeof selectAgentSchema>
 

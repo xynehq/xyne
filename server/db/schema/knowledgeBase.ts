@@ -37,6 +37,7 @@ export const collections = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
+    via_apiKey: boolean("via_apiKey").notNull().default(false),
   },
   (table) => ({
     // Ensure unique names per owner (excluding soft-deleted items)

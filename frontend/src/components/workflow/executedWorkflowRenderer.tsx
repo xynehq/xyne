@@ -624,7 +624,7 @@ const StepNode: React.FC<NodeProps> = ({
                     if (fields.length > 0) {
                       const fieldDescriptions = fields.map((field: any) => {
                         if (field.type === "file") {
-                          return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                          return `Upload a ${field.name || "file"} in formats such as PDF or DOCX`
                         } else if (field.type === "email") {
                           return `Enter ${field.name || "email address"}`
                         } else if (field.type === "text") {
@@ -646,7 +646,7 @@ const StepNode: React.FC<NodeProps> = ({
                     if (fields.length > 0) {
                       const fieldDescriptions = fields.map((field: any) => {
                         if (field.type === "file") {
-                          return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                          return `Upload a ${field.name || "file"} in formats such as PDF or DOCX`
                         } else if (field.type === "email") {
                           return `Enter ${field.name || "email address"}`
                         } else if (field.type === "text") {
@@ -669,7 +669,7 @@ const StepNode: React.FC<NodeProps> = ({
                     // Show field details when only fields are configured
                     const fieldDescriptions = fields.map((field: any) => {
                       if (field.type === "file") {
-                        return `Upload a ${field.name || "file"} in formats such as PDF, DOCX or JPG`
+                        return `Upload a ${field.name || "file"} in formats such as PDF or DOCX`
                       } else if (field.type === "email") {
                         return `Enter ${field.name || "email address"}`
                       } else if (field.type === "text") {
@@ -693,7 +693,7 @@ const StepNode: React.FC<NodeProps> = ({
                 }
 
                 // Fallback content when no configuration
-                return "Upload a file in formats such as PDF, DOCX, or JPG."
+                return "Upload a file in formats such as PDF or DOCX."
               })()}
             </p>
           </div>

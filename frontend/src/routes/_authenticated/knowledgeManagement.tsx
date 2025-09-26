@@ -42,6 +42,7 @@ import type {
   CollectionItem,
 } from "@/types/knowledgeBase"
 import { api } from "@/api"
+import { UserRole } from "shared/types"
 import DocxViewer from "@/components/DocxViewer"
 import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
@@ -57,6 +58,7 @@ import {
 import ExcelViewer from "@/components/ExcelViewer"
 import CsvViewer from "@/components/CsvViewer"
 import TxtViewer from "@/components/TxtViewer"
+import { DebugDocModal } from "@/components/DebugDocModal"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -330,7 +332,7 @@ const DocumentViewerContainer = memo(
     }, [clearHighlights])
 
     return (
-      <div className="h-full bg-white dark:bg-[#1E1E1E] relative">
+      <div className="h-full bg-white dark:bg-[#1E1E1E] relative overflow-auto">
         {loadingDocument && (
           <div className="absolute inset-0 bg-white/90 dark:bg-[#1E1E1E]/90 z-10 flex items-center justify-center">
             <div className="text-center">
@@ -342,7 +344,7 @@ const DocumentViewerContainer = memo(
           </div>
         )}
         {selectedDocument.content ? (
-          <div className="h-full">{viewerElement}</div>
+          <div className="h-full min-w-fit">{viewerElement}</div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500 dark:text-gray-400">
@@ -420,6 +422,9 @@ function KnowledgeManagementContent() {
 
   // Chat overlay state - only used when isChatHidden is true
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false)
+
+  // Vespa data modal state
+  const [isVespaModalOpen, setIsVespaModalOpen] = useState(false)
 
   // Load upload state from localStorage on mount
   const savedState = loadUploadState()
@@ -514,7 +519,6 @@ function KnowledgeManagementContent() {
     return () => clearTimeout(timeout)
   }, [isUploading])
 
-
   // Check for ongoing uploads on component mount
   useEffect(() => {
     const checkForOngoingUploads = async () => {
@@ -577,97 +581,6 @@ function KnowledgeManagementContent() {
 
     checkForOngoingUploads()
   }, [toast])
-
-  // Periodic check for upload completion while on the page
-  useEffect(() => {
-    if (!isUploading || !uploadingCollectionName) return
-
-    const checkUploadProgress = async () => {
-      try {
-        const response = await api.cl.$get({
-          query: { includeItems: "true" },
-        })
-        if (response.ok) {
-          const data = await response.json()
-          const existingCollection = data.find(
-            (collection: CollectionType) =>
-              collection.name.toLowerCase() ===
-              uploadingCollectionName.toLowerCase(),
-          )
-
-          if (
-            existingCollection &&
-            existingCollection.totalItems >= batchProgress.total
-          ) {
-            // Upload is complete, clear the state
-            setIsUploading(false)
-            setBatchProgress({
-              total: 0,
-              current: 0,
-              batch: 0,
-              totalBatches: 0,
-            })
-            setUploadingCollectionName("")
-            clearUploadState()
-
-            // Refresh collections to show the new one
-
-            const updatedCollections = data.map(
-              (collection: CollectionType & { items?: CollectionItem[] }) => ({
-                id: collection.id,
-                name: collection.name,
-                description: collection.description,
-                files: collection.totalItems || 0,
-                items: buildFileTree(
-                  (collection.items || []).map((item: CollectionItem) => ({
-                    name: item.name,
-                    type: item.type as "file" | "folder",
-                    totalFileCount: item.totalFileCount,
-                    updatedAt: item.updatedAt,
-                    id: item.id,
-                    updatedBy:
-                      item.lastUpdatedByEmail || user?.email || "Unknown",
-                  })),
-                ),
-                isOpen:
-                  collection.name.toLowerCase() ===
-                  uploadingCollectionName.toLowerCase()
-                    ? true
-                    : (collection.items || []).length > 0,
-                lastUpdated: new Date(collection.updatedAt).toLocaleString(
-                  "en-GB",
-                  {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  },
-                ),
-                updatedBy: collection.lastUpdatedByEmail || "Unknown",
-                totalCount: collection.totalItems,
-                isPrivate: collection.isPrivate,
-              }),
-            )
-
-            setCollections(updatedCollections)
-
-            toast.success({
-              title: "Upload Complete",
-              description: `Successfully uploaded ${batchProgress.total} files to "${uploadingCollectionName}".`,
-            })
-          }
-        }
-      } catch (error) {
-        console.error("Error checking upload progress:", error)
-      }
-    }
-
-    // Check every 3 seconds while upload is active
-    const interval = setInterval(checkUploadProgress, 3000)
-
-    return () => clearInterval(interval)
-  }, [isUploading, uploadingCollectionName, batchProgress.total, toast])
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -755,7 +668,8 @@ function KnowledgeManagementContent() {
     ) {
       toast.error({
         title: "Upload Error",
-        description: "Collection name already exists. Please choose a different name.",
+        description:
+          "Collection name already exists. Please choose a different name.",
       })
       return
     }
@@ -783,13 +697,25 @@ function KnowledgeManagementContent() {
         totalBatches: batches.length,
       }))
 
+      let totalSuccessful = 0
+      let totalSkipped = 0
+      let totalFailed = 0
+
       for (let i = 0; i < batches.length; i++) {
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-       await uploadFileBatch(batchFiles, cl.id)
+        const uploadResult = await uploadFileBatch(batchFiles, cl.id)
+
+        // Accumulate results from each batch
+        if (uploadResult.summary) {
+          totalSuccessful += uploadResult.summary.successful || 0
+          totalSkipped += uploadResult.summary.skipped || 0
+          totalFailed += uploadResult.summary.failed || 0
+        }
+
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
@@ -805,7 +731,7 @@ function KnowledgeManagementContent() {
         param: { id: cl.id },
       })
       const items = await itemsResponse.json()
-      
+
       const newCollection: Collection = {
         id: updatedCl.id,
         name: updatedCl.name,
@@ -848,9 +774,32 @@ function KnowledgeManagementContent() {
       })
 
       handleCloseModal()
+
+      // Create detailed success message based on actual upload results
+      let description = `Successfully created knowledge base "${collectionName.trim()}"`
+      const details = []
+      if (totalSuccessful > 0) {
+        details.push(
+          `${totalSuccessful} file${totalSuccessful !== 1 ? "s" : ""} uploaded`,
+        )
+      }
+      if (totalSkipped > 0) {
+        details.push(
+          `${totalSkipped} duplicate${totalSkipped !== 1 ? "s" : ""} skipped`,
+        )
+      }
+      if (totalFailed > 0) {
+        details.push(`${totalFailed} failed`)
+      }
+
+      if (details.length > 0) {
+        description += `: ${details.join(", ")}`
+      }
+      description += "."
+
       toast.success({
         title: "Knowledge Base Created",
-        description: `Successfully created knowledge base "${collectionName.trim()}" with ${selectedFiles.length} files.`,
+        description,
       })
     } catch (error) {
       console.error("Upload failed:", error)
@@ -918,7 +867,10 @@ function KnowledgeManagementContent() {
 
     try {
       // Upload files in batches
-      let successfullyUploadedFiles = 0;
+      let totalSuccessful = 0
+      let totalSkipped = 0
+      let totalFailed = 0
+
       const batches = createBatches(selectedFiles, addingToCollection.name)
       setBatchProgress((prev: typeof batchProgress) => ({
         ...prev,
@@ -931,19 +883,24 @@ function KnowledgeManagementContent() {
           batch: i + 1,
         }))
         const batchFiles = batches[i].map((f) => f.file)
-      const uploadedResult = await uploadFileBatch(
+        const uploadedResult = await uploadFileBatch(
           batchFiles,
           addingToCollection.id,
           targetFolder?.id,
         )
-        successfullyUploadedFiles += uploadedResult.summary.successful;
-        
+
+        // Accumulate results from each batch
+        if (uploadedResult.summary) {
+          totalSuccessful += uploadedResult.summary.successful || 0
+          totalSkipped += uploadedResult.summary.skipped || 0
+          totalFailed += uploadedResult.summary.failed || 0
+        }
+
         setBatchProgress((prev: typeof batchProgress) => ({
           ...prev,
           current: prev.current + batchFiles.length,
         }))
       }
-      
 
       // Refresh the collection by fetching updated data from backend
       const clResponse = await api.cl[":id"].$get({
@@ -990,15 +947,40 @@ function KnowledgeManagementContent() {
 
         return Array.from(collectionsMap.values())
       })
-    successfullyUploadedFiles?
-      toast.success({
-        title: "Files Added",
-        description: `Successfully added ${successfullyUploadedFiles} out of ${selectedFiles.length} files to collection "${addingToCollection.name}".`,
-      }):
-      toast.error({
-        title: "Add Files Failed",
-        description: "Failed to add files to collection. Please try again.",
-      })
+      // Create detailed success message based on actual upload results
+      if (totalSuccessful > 0 || totalSkipped > 0) {
+        let description = `Successfully processed files for collection "${addingToCollection.name}": `
+        const parts = []
+
+        if (totalSuccessful > 0) {
+          parts.push(`${totalSuccessful} uploaded`)
+        }
+        if (totalSkipped > 0) {
+          parts.push(
+            `${totalSkipped} duplicate${totalSkipped !== 1 ? "s" : ""} skipped`,
+          )
+        }
+        if (totalFailed > 0) {
+          parts.push(`${totalFailed} failed`)
+        }
+
+        description += parts.join(", ") + "."
+
+        toast.success({
+          title: "Files Added",
+          description,
+        })
+      } else if (totalFailed > 0) {
+        toast.error({
+          title: "Add Files Failed",
+          description: `${totalFailed} file${totalFailed !== 1 ? "s" : ""} failed to upload. Please try again.`,
+        })
+      } else {
+        toast.error({
+          title: "Add Files Failed",
+          description: "Failed to add files to collection. Please try again.",
+        })
+      }
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
@@ -1172,7 +1154,8 @@ function KnowledgeManagementContent() {
       setDeletingCollection(null)
       toast.success({
         title: "Collection Deleted",
-        description: "Successfully deleted collection and all associated files.",
+        description:
+          "Successfully deleted collection and all associated files.",
       })
     } catch (error) {
       console.error("Delete failed:", error)
@@ -1202,7 +1185,8 @@ function KnowledgeManagementContent() {
     ) {
       toast.warning({
         title: "Preview Not Available",
-        description: "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls,.txt,.tsv and .md files.",
+        description:
+          "Preview is only available for .docx, .pdf, .csv, .xlsx, .xls,.txt,.tsv and .md files.",
       })
       return
     }
@@ -1398,12 +1382,15 @@ function KnowledgeManagementContent() {
         })
 
         if (!chunkContentResponse.ok) {
-          console.error('Failed to fetch chunk content:', chunkContentResponse.status);
+          console.error(
+            "Failed to fetch chunk content:",
+            chunkContentResponse.status,
+          )
           toast.error({
-            title: 'Error',
-            description: 'Failed to load chunk content',
-          });
-          return;
+            title: "Error",
+            description: "Failed to load chunk content",
+          })
+          return
         }
 
         const chunkContent = await chunkContentResponse.json()
@@ -1433,13 +1420,18 @@ function KnowledgeManagementContent() {
           }
         }
       } catch (error) {
-        console.error('Error in handleChunkIndexChange:', error);
+        console.error("Error in handleChunkIndexChange:", error)
         toast.error({
-          title: 'Error',
-          description: 'Failed to process chunk navigation',
-        });
+          title: "Error",
+          description: "Failed to process chunk navigation",
+        })
       }
     }
+  }
+
+  // Handle Vespa data modal opening
+  const handleViewVespaData = () => {
+    setIsVespaModalOpen(true)
   }
 
   return (
@@ -1456,7 +1448,9 @@ function KnowledgeManagementContent() {
             {/* Top section - File tree and Document viewer */}
             <div className="flex flex-1 h-full overflow-hidden">
               {/* Center pane - Document viewer (scrollable) */}
-              <div className="flex-1 flex flex-col bg-white h-full">
+              <div
+                className={`flex-1 flex flex-col bg-white h-full overflow-hidden min-w-0 ${isChatHidden ? "" : "max-w-[calc(100vw-652px)]"}`}
+              >
                 {/* Document header (sticky) */}
                 <div className="h-12 bg-white dark:bg-[#1E1E1E] flex items-center px-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
                   <div className="flex items-center gap-4">
@@ -1474,7 +1468,18 @@ function KnowledgeManagementContent() {
                       </span>
                     </div>
                   </div>
-                  <div className="ml-auto">
+                  <div className="ml-auto flex items-center">
+                    {(user?.role === UserRole.Admin ||
+                      user?.role === UserRole.SuperAdmin) && (
+                      <Button
+                        onClick={handleViewVespaData}
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto"
+                      >
+                        View
+                      </Button>
+                    )}
                     <Button
                       onClick={() =>
                         setIsFileTreeCollapsed(!isFileTreeCollapsed)
@@ -1498,7 +1503,7 @@ function KnowledgeManagementContent() {
                 </div>
 
                 {/* Document content (scrollable) */}
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-auto">
                   <DocumentViewerContainer
                     selectedDocument={selectedDocument}
                     loadingDocument={loadingDocument}
@@ -1506,9 +1511,9 @@ function KnowledgeManagementContent() {
                 </div>
               </div>
 
-              {/* Right pane - Chat component (sticky) or overlay toggle */}
+              {/* Right pane - Chat component (fixed width, no scroll) */}
               {!isChatHidden ? (
-                <div className="flex flex-col bg-white dark:bg-[#1E1E1E] sticky top-0 border-l border-gray-200 dark:border-gray-700 w-[40%]">
+                <div className="w-[600px] min-w-[600px] max-w-[600px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1E1E1E] border-l border-gray-200 dark:border-gray-700 h-full">
                   <DocumentChat
                     key={currentInitialChatId}
                     user={user}
@@ -2171,6 +2176,14 @@ function KnowledgeManagementContent() {
           </div>
         </div>
       )}
+
+      {/* Debug Document Modal */}
+      <DebugDocModal
+        documentId={selectedDocument?.file.id || null}
+        documentName={selectedDocument?.file.name || null}
+        isOpen={isVespaModalOpen}
+        onClose={() => setIsVespaModalOpen(false)}
+      />
     </div>
   )
 }
