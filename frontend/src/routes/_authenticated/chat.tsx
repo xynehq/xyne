@@ -476,7 +476,6 @@ export const ChatPage = ({
   // Modern query transition state
   const [lastUserMessageIndex, setLastUserMessageIndex] = useState(-1)
 
-  // Modern smooth query transition effect
   useEffect(() => {
     if ((isStreaming || retryIsStreaming) && messages.length > 0) {
       // Find the index of the last user message
@@ -516,7 +515,7 @@ export const ChatPage = ({
               })
             }
           }
-        }, 100) // Small delay to ensure DOM is updated
+        }, 100)
       }
     }
   }, [isStreaming, retryIsStreaming, messages.length, lastUserMessageIndex])
@@ -868,7 +867,6 @@ export const ChatPage = ({
     }
   }, [chatId, isStreaming, isSharedChat, queryClient])
 
-  // Track when streaming starts for new queries
   const [streamingStarted, setStreamingStarted] = useState(false)
   const [lastUserMessageCount, setLastUserMessageCount] = useState(0)
 
@@ -975,8 +973,6 @@ export const ChatPage = ({
         ],
       }
     })
-
-    // Let the useEffect handle the scroll positioning when streaming starts
 
     // Use agentIdFromChatBox if provided, otherwise fallback to chatParams.agentId (for initial load)
     const agentIdToUse = agentIdFromChatBox || chatParams.agentId
@@ -1263,10 +1259,9 @@ export const ChatPage = ({
       return
     }
 
-    // Use fast, responsive animation - much shorter duration for better UX
     const startPosition = currentScrollTop
     const distance = scrollDistance
-    const duration = Math.min(300, Math.max(150, Math.abs(distance) * 0.2)) // Much faster: 150-300ms
+    const duration = Math.min(300, Math.max(150, Math.abs(distance) * 0.2))
 
     let startTime: number | null = null
 
