@@ -79,7 +79,6 @@ import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
 import SharedAgent from "@/components/SharedAgent"
 
-
 type CurrentResp = {
   resp: string
   chatId?: string
@@ -270,7 +269,9 @@ function isItemSelectedWithInheritance(
 function AgentComponent() {
   const { agentId } = Route.useSearch()
   const navigate = useNavigate()
-  const [viewMode, setViewMode] = useState<"list" | "create" | "edit" | "viewAgent">("list")
+  const [viewMode, setViewMode] = useState<
+    "list" | "create" | "edit" | "viewAgent"
+  >("list")
   const [allAgentsList, setAllAgentsList] = useState<SelectPublicAgent[]>([])
   const [madeByMeAgentsList, setMadeByMeAgentsList] = useState<
     SelectPublicAgent[]
@@ -279,6 +280,9 @@ function AgentComponent() {
     SelectPublicAgent[]
   >([])
   const [editingAgent, setEditingAgent] = useState<SelectPublicAgent | null>(
+    null,
+  )
+  const [viewingAgent, setViewingAgent] = useState<SelectPublicAgent | null>(
     null,
   )
   const [selectedChatAgentExternalId, setSelectedChatAgentExternalId] =
@@ -749,17 +753,17 @@ function AgentComponent() {
           if (response.ok) {
             const agentData = (await response.json()) as SelectPublicAgent
             setInitialChatAgent(agentData)
-        } else {
+          } else {
+            toast.error({
+              title: "Error",
+              description: `Failed to load agent ${agentId} for chat.`,
+            })
+          }
+        } catch (error) {
           toast.error({
             title: "Error",
-            description: `Failed to load agent ${agentId} for chat.`,
+            description: "An error occurred while loading agent for chat.",
           })
-        }
-      } catch (error) {
-        toast.error({
-          title: "Error",
-          description: "An error occurred while loading agent for chat.",
-        })
           console.error("Fetch initial agent for chat error:", error)
         } finally {
           setIsLoadingInitialAgent(false)
@@ -794,17 +798,17 @@ function AgentComponent() {
         } else if (filter === "sharedToMe") {
           setSharedToMeAgentsList(data)
         }
-        } else {
-          toast.error({
-            title: "Error",
-            description: `Failed to fetch agents (${filter}).`,
-          })
-        }
-      } catch (error) {
+      } else {
         toast.error({
           title: "Error",
-          description: `An error occurred while fetching agents (${filter}).`,
+          description: `Failed to fetch agents (${filter}).`,
         })
+      }
+    } catch (error) {
+      toast.error({
+        title: "Error",
+        description: `An error occurred while fetching agents (${filter}).`,
+      })
       console.error(`Fetch agents error (${filter}):`, error)
     } finally {
       setIsLoadingAgents(false)
@@ -1088,14 +1092,17 @@ function AgentComponent() {
     setViewMode("create")
   }
 
-  const handleEditAgent = (agent: SelectPublicAgent,isShared:boolean) => {
+  const handleEditAgent = (agent: SelectPublicAgent) => {
     resetForm()
     setEditingAgent(agent)
-    setViewMode(isShared ? "viewAgent" : "create")
+    setViewMode("create")
+  }
+  const handleViewAgent = (agent: SelectPublicAgent) => {
+    setViewingAgent(agent)
+    setViewMode("viewAgent")
   }
 
   const allAvailableIntegrations = useMemo(() => {
- 
     const dynamicDataSources: IntegrationSource[] = fetchedDataSources.map(
       (ds) => ({
         id: ds.docId,
@@ -2038,13 +2045,11 @@ function AgentComponent() {
         const selectedItems = selectedItemsInCollection[clId] || new Set()
 
         if (selectedItems.size === 0) {
-     
           result.push({
             ...integration,
             type: "cl",
           })
         } else {
-          
           const itemDetails = selectedItemDetailsInCollection[clId] || {}
 
           selectedItems.forEach((itemId) => {
@@ -2902,36 +2907,42 @@ function AgentComponent() {
                       <>
                         <div className="space-y-0">
                           {paginatedList.map((agent) => {
-                            const isShared= (activeTab === "all" || activeTab === "shared-to-me") &&
-                                sharedToMeAgentsList.some(
-                                  (sharedAgent) =>
-                                    sharedAgent.externalId === agent.externalId,
-                                )
-                          
-                             return (<AgentListItem
-                              key={agent.externalId}
-                              agent={agent}
-                              isFavorite={favoriteAgents.includes(
-                                agent.externalId,
-                              )}
-                              isShared={isShared}
-                              isMadeByMe={madeByMeAgentsList.some(
-                                (madeByMeAgent) =>
-                                  madeByMeAgent.externalId === agent.externalId,
-                              )}
-                              onToggleFavorite={toggleFavorite}
-                              onEdit={() => handleEditAgent(agent,isShared)}
-                              onDelete={() =>
-                                handleDeleteAgent(agent.externalId)
-                              }
-                              onClick={() =>
-                                navigate({
-                                  to: "/",
-                                  search: { agentId: agent.externalId },
-                                })
-                              }
-                            />
-                  )})}
+                            const isShared =
+                              (activeTab === "all" ||
+                                activeTab === "shared-to-me") &&
+                              sharedToMeAgentsList.some(
+                                (sharedAgent) =>
+                                  sharedAgent.externalId === agent.externalId,
+                              )
+
+                            return (
+                              <AgentListItem
+                                key={agent.externalId}
+                                agent={agent}
+                                isFavorite={favoriteAgents.includes(
+                                  agent.externalId,
+                                )}
+                                isShared={isShared}
+                                isMadeByMe={madeByMeAgentsList.some(
+                                  (madeByMeAgent) =>
+                                    madeByMeAgent.externalId ===
+                                    agent.externalId,
+                                )}
+                                onToggleFavorite={toggleFavorite}
+                                onEdit={() => handleEditAgent(agent)}
+                                onView={() => handleViewAgent(agent)}
+                                onDelete={() =>
+                                  handleDeleteAgent(agent.externalId)
+                                }
+                                onClick={() =>
+                                  navigate({
+                                    to: "/",
+                                    search: { agentId: agent.externalId },
+                                  })
+                                }
+                              />
+                            )
+                          })}
                         </div>
                         {totalPages > 1 && (
                           <div className="flex justify-between items-center mt-6">
@@ -2970,12 +2981,12 @@ function AgentComponent() {
                 </div>
               </div>
             </div>
-          ) : viewMode === "viewAgent" ? (
-             <SharedAgent agent={editingAgent}
-             onBack={() => setViewMode("list")}
-             />
-             
-          ) :(
+          ) : viewMode === "viewAgent" && viewingAgent ? (
+            <SharedAgent
+              agent={viewingAgent}
+              onBack={() => setViewMode("list")}
+            />
+          ) : (
             <>
               <div className="flex items-center mb-4 w-full max-w-xl">
                 <Button
@@ -4559,6 +4570,7 @@ interface AgentListItemProps {
   isFavorite: boolean
   onToggleFavorite: (id: string) => void
   onEdit: () => void
+  onView: () => void
   onDelete: () => void
   onClick: () => void
   isShared?: boolean
@@ -4572,6 +4584,7 @@ function AgentListItem({
   isMadeByMe, // Added
   onToggleFavorite,
   onEdit,
+  onView,
   onDelete,
   onClick,
 }: AgentListItemProps): JSX.Element {
@@ -4611,19 +4624,18 @@ function AgentListItem({
       </div>
       <div className="flex items-center gap-3 ml-4 flex-shrink-0">
         {isShared && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEdit()
-              }}
-              className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-              title="View Agent"
-            >
-              <Eye size={16} />
-            </Button>
-
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation()
+              onView()
+            }}
+            className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+            title="View Agent"
+          >
+            <Eye size={16} />
+          </Button>
         )}
         {isMadeByMe && (
           <>
