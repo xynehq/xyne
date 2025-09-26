@@ -1,6 +1,6 @@
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import type {  MicrosoftGraphClient } from "./client"
+import type { MicrosoftGraphClient } from "./client"
 import { downloadFileFromGraph, makeGraphApiCall } from "./client"
 import { Apps, DriveEntity } from "@/shared/types"
 import { chunkDocument } from "@/chunks"
@@ -10,7 +10,7 @@ import type {
   Client,
 } from "@microsoft/microsoft-graph-client"
 import { ClientSecretCredential, type AccessToken } from "@azure/identity"
-import type { DriveItem } from "@microsoft/microsoft-graph-types"
+import type { Permission, DriveItem } from "@microsoft/microsoft-graph-types"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { hashPdfFilename } from "@/utils"
 import type { VespaFileWithDrivePermission } from "@xyne/vespa-ts/types"
@@ -19,6 +19,7 @@ import path from "node:path"
 import { unlink } from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
+import { loggerWithChild } from "."
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 
@@ -274,17 +275,55 @@ export const shouldProcessChange = (change: any): boolean => {
   return true
 }
 
+export async function getFilePermissionsSharepoint(
+  client: MicrosoftGraphClient,
+  fileId: string,
+  driveId: string,
+): Promise<string[]> {
+  const endpoint = `drives/${driveId}/items/${fileId}/permissions`
+
+  try {
+    const response = await makeGraphApiCall(client, endpoint)
+    const permissions: string[] = []
+
+    if (response.value && Array.isArray(response.value)) {
+      const permissionsList = response.value as Permission[]
+      for (const permission of permissionsList) {
+        // Check for individual user permissions
+        if (permission.grantedToV2?.siteUser?.loginName) {
+          const loginName = permission.grantedToV2.siteUser.loginName
+          // Extract email from loginName format: "i:0#.f|membership|email@domain.com"
+          const emailMatch = loginName.match(/\|([^|]+@[^|]+)$/)
+          if (emailMatch && emailMatch[1]) {
+            permissions.push(emailMatch[1])
+          }
+        }
+
+        // For site groups, we could add the group name as a permission identifier
+        // if (permission.grantedToV2?.siteGroup?.displayName) {
+        //   permissions.push(`group:${permission.grantedToV2.siteGroup.displayName}`)
+        // }
+      }
+    }
+
+    // Remove duplicates and return
+    return Array.from(new Set(permissions))
+  } catch (error) {
+    loggerWithChild({ email: "system" }).error(
+      error,
+      `Error fetching SharePoint file permissions for ${fileId}: ${(error as Error).message}`,
+    )
+    return []
+  }
+}
+
 //Get permissions for a file in one-drive or sharepoint
 export async function getFilePermissions(
   client: MicrosoftGraphClient,
   fileId: string,
-  driveId?: string,
 ): Promise<string[]> {
   try {
-    let endpoint: string
-
-    if (driveId) endpoint = `drives/${driveId}/items/${fileId}/permissions`
-    else endpoint = `me/drive/items/${fileId}/permissions`
+    const endpoint = `me/drive/items/${fileId}/permissions`
 
     const response = await makeGraphApiCall(client, endpoint)
 
@@ -445,7 +484,9 @@ async function processMicrosoftWord(
       results.push({
         title: file.name!,
         url: file.webUrl ?? "",
-        app: graphClient.refreshToken? Apps.MicrosoftDrive : Apps.MicrosoftSharepoint,
+        app: graphClient.refreshToken
+          ? Apps.MicrosoftDrive
+          : Apps.MicrosoftSharepoint,
         docId: file.id!,
         parentId: file.parentReference?.id ?? null,
         owner: "",

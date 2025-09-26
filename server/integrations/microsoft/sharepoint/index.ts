@@ -4,7 +4,7 @@ import { DriveEntity, fileSchema } from "@xyne/vespa-ts"
 import { Apps } from "@/shared/types"
 import { loggerWithChild } from ".."
 import { makeGraphApiCall, type MicrosoftGraphClient } from "../client"
-import { getFilePermissions, processFileContent } from "../utils"
+import { getFilePermissionsSharepoint, processFileContent } from "../utils"
 import type { Drive, DriveItem, Site } from "@microsoft/microsoft-graph-types"
 import type { drive_v3 } from "googleapis"
 
@@ -143,57 +143,60 @@ export const processSiteDrives = async (
 
           if (response.value && Array.isArray(response.value)) {
             for (const item of response.value) {
-                try {
-                  const permissions: string[] = await getFilePermissions(
+              try {
+                let permissions: string[] = []
+                if (siteDrive.id) {
+                  permissions = await getFilePermissionsSharepoint(
                     client,
                     item.id,
                     siteDrive.id,
                   )
+                }
 
-                  const fileToBeIngested = {
-                    title: item.name ?? "",
-                    url: item.webUrl ?? "",
-                    app: Apps.MicrosoftSharepoint,
-                    docId: item.id,
-                    parentId: item.parentReference?.id ?? null,
-                    owner: item.createdBy?.user?.displayName ?? userEmail,
-                    photoLink: "",
-                    ownerEmail: userEmail,
-                    entity: DriveEntity.Misc,
-                    chunks: await processFileContent(client, item, userEmail),
-                    permissions,
-                    mimeType: item.file?.mimeType ?? "application/octet-stream",
-                    metadata: JSON.stringify({
-                      size: item.size,
-                      downloadUrl: item["@microsoft.graph.downloadUrl"],
-                      siteId: siteDrive.sharePointIds?.siteId,
-                      driveId: siteDrive.id,
-                      driveName: siteDrive.name,
-                      driveType: siteDrive.driveType,
-                      parentId: item.parentReference?.id ?? "",
-                      parentPath: item.parentReference?.path ?? "/",
-                      eTag: item.eTag ?? "",
-                    }),
-                    createdAt: new Date(item.createdDateTime).getTime(),
-                    updatedAt: new Date(item.lastModifiedDateTime).getTime(),
-                  }
+                const fileToBeIngested = {
+                  title: item.name ?? "",
+                  url: item.webUrl ?? "",
+                  app: Apps.MicrosoftSharepoint,
+                  docId: item.id,
+                  parentId: item.parentReference?.id ?? null,
+                  owner: item.createdBy?.user?.displayName ?? userEmail,
+                  photoLink: "",
+                  ownerEmail: userEmail,
+                  entity: DriveEntity.Misc,
+                  chunks: await processFileContent(client, item, userEmail),
+                  permissions,
+                  mimeType: item.file?.mimeType ?? "application/octet-stream",
+                  metadata: JSON.stringify({
+                    size: item.size,
+                    downloadUrl: item["@microsoft.graph.downloadUrl"],
+                    siteId: siteDrive.sharePointIds?.siteId,
+                    driveId: siteDrive.id,
+                    driveName: siteDrive.name,
+                    driveType: siteDrive.driveType,
+                    parentId: item.parentReference?.id ?? "",
+                    parentPath: item.parentReference?.path ?? "/",
+                    eTag: item.eTag ?? "",
+                  }),
+                  createdAt: new Date(item.createdDateTime).getTime(),
+                  updatedAt: new Date(item.lastModifiedDateTime).getTime(),
+                }
 
-                  await insertWithRetry(fileToBeIngested, fileSchema)
-                  tracker?.updateUserStats(userEmail, StatType.Drive, 1)
-                  driveFileCount++
-                  totalFiles++
+                await insertWithRetry(fileToBeIngested, fileSchema)
+                tracker?.updateUserStats(userEmail, StatType.Drive, 1)
+                driveFileCount++
+                totalFiles++
 
-                  if (driveFileCount % 100 === 0) {
-                    loggerWithChild({ email: userEmail }).info(
-                      `Processed ${driveFileCount} files from drive: ${siteDrive.name}`,
-                    )
-                  }
-                } catch (error) {
-                  loggerWithChild({ email: userEmail }).error(
-                    error,
-                    `Error processing file ${item.id} from drive ${siteDrive.name}: ${(error as Error).message}`,
+                if (driveFileCount % 100 === 0) {
+                  loggerWithChild({ email: userEmail }).info(
+                    `Processed ${driveFileCount} files from drive: ${siteDrive.name}`,
                   )
                 }
+              } catch (error) {
+                loggerWithChild({ email: userEmail }).error(
+                  error,
+                  `Error processing file ${item.id} from drive ${siteDrive.name}: ${(error as Error).message}`,
+                )
+              }
             }
           }
 

@@ -76,7 +76,7 @@ import {
   discoverSiteDrives,
   processSiteDrives,
 } from "./sharepoint"
-import { downloadDir, getFilePermissions, processFileContent } from "./utils"
+import { getFilePermissions, processFileContent } from "./utils"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 
 export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
@@ -1077,13 +1077,4 @@ export const handleMicrosoftOAuthIngestion = async (data: SaaSOAuthJob) => {
       cause: error as Error,
     })
   }
-}
-
-if (process.env.NODE_ENV !== "production") {
-  const init = () => {
-    if (!fs.existsSync(downloadDir)) {
-      fs.mkdirSync(downloadDir, { recursive: true })
-    }
-  }
-  init()
 }
