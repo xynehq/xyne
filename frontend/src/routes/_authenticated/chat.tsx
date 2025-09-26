@@ -144,9 +144,6 @@ import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
-// Smooth Query Transition System - Modern Chat UX
-// This creates the "fresh start" feeling by smoothly positioning new queries at the top
-
 // Utility function to suppress console logs for a specific operation
 function suppressLogs<T>(fn: () => T | Promise<T>): T | Promise<T> {
   const originals = ["error", "warn", "log", "info", "debug"].map((k) => [
@@ -454,15 +451,7 @@ export const ChatPage = ({
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const isAutoScrollingRef = useRef(false)
   const [dots, setDots] = useState("")
-  const [bottomSpace, setBottomSpace] = useState(0) // Space below messages to position query at top
-  
-  // Reset bottom space and message count when starting a new chat
-  useEffect(() => {
-    if (!chatId) {
-      setBottomSpace(0)
-      setLastUserMessageCount(0)
-    }
-  }, [chatId])
+  const [bottomSpace, setBottomSpace] = useState(0)
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
@@ -501,26 +490,29 @@ export const ChatPage = ({
 
       if (latestUserIndex !== -1 && latestUserIndex !== lastUserMessageIndex) {
         setLastUserMessageIndex(latestUserIndex)
-        
+
         // Smooth scroll to position the user's query at the top for a fresh start feeling
         setTimeout(() => {
           const container = messagesContainerRef.current
           if (container) {
             // Find the user message element
-            const userMessageElement = container.querySelector(`[data-index="${latestUserIndex}"]`)
+            const userMessageElement = container.querySelector(
+              `[data-index="${latestUserIndex}"]`,
+            )
             if (userMessageElement) {
               // Calculate scroll position to put the user message near the top with some padding
               const elementRect = userMessageElement.getBoundingClientRect()
               const containerRect = container.getBoundingClientRect()
               const currentScrollTop = container.scrollTop
-              
+
               // Position to scroll to (put user message ~100px from top for comfortable viewing)
-              const targetScrollTop = currentScrollTop + elementRect.top - containerRect.top - 100
-              
+              const targetScrollTop =
+                currentScrollTop + elementRect.top - containerRect.top - 100
+
               // Smooth scroll to the calculated position
               container.scrollTo({
                 top: Math.max(0, targetScrollTop),
-                behavior: 'smooth'
+                behavior: "smooth",
               })
             }
           }
@@ -762,7 +754,7 @@ export const ChatPage = ({
     setShowSources(false)
     setCurrentCitations([])
     setCurrentMessageId(null)
-    
+
     // Reset bottom space and message count for new chats
     if (!isWithChatId || (messages && messages.length === 0)) {
       setBottomSpace(0)
@@ -879,24 +871,30 @@ export const ChatPage = ({
   // Track when streaming starts for new queries
   const [streamingStarted, setStreamingStarted] = useState(false)
   const [lastUserMessageCount, setLastUserMessageCount] = useState(0)
-  
+
   // Detect when streaming starts for a new query and calculate exact space needed
   useEffect(() => {
-    const currentUserMessageCount = messages.filter((msg: any) => msg.messageRole === 'user').length
-    
-    if ((isStreaming || retryIsStreaming) && !streamingStarted && currentUserMessageCount > lastUserMessageCount) {
+    const currentUserMessageCount = messages.filter(
+      (msg: any) => msg.messageRole === "user",
+    ).length
+
+    if (
+      (isStreaming || retryIsStreaming) &&
+      !streamingStarted &&
+      currentUserMessageCount > lastUserMessageCount
+    ) {
       // This is a new query starting (not just continuing to stream)
       setStreamingStarted(true)
       setLastUserMessageCount(currentUserMessageCount)
-      
+
       // Calculate exact space needed ONLY when a new query starts
       setTimeout(() => {
         const container = messagesContainerRef.current
         if (!container) return
-        
+
         // Get viewport height and calculate optimal space
         const containerHeight = container.clientHeight
-        
+
         // Calculate space to push previous content out of view with optimal balance
         let spaceNeeded: number
         if (containerHeight <= 600) {
@@ -909,24 +907,29 @@ export const ChatPage = ({
           // Large screens: sufficient space but not excessive
           spaceNeeded = Math.max(800, Math.min(containerHeight * 1, 980))
         }
-        
+
         setBottomSpace(spaceNeeded)
-        
+
         // Position the latest user message at the top with precise scroll positioning
         setTimeout(() => {
-          const userMessageElements = container.querySelectorAll('[data-message-role="user"]')
+          const userMessageElements = container.querySelectorAll(
+            '[data-message-role="user"]',
+          )
           if (userMessageElements.length > 0) {
-            const lastUserMessage = userMessageElements[userMessageElements.length - 1] as HTMLElement
-            
+            const lastUserMessage = userMessageElements[
+              userMessageElements.length - 1
+            ] as HTMLElement
+
             // Calculate the exact scroll position to place the message at the top
             const containerRect = container.getBoundingClientRect()
             const messageRect = lastUserMessage.getBoundingClientRect()
-            const messageOffsetTop = messageRect.top - containerRect.top + container.scrollTop
-            
+            const messageOffsetTop =
+              messageRect.top - containerRect.top + container.scrollTop
+
             // Scroll to position the message at the top with a small margin
             container.scrollTo({
               top: Math.max(0, messageOffsetTop - 20), // 20px margin from top
-              behavior: 'smooth'
+              behavior: "smooth",
             })
           }
         }, 50)
@@ -936,7 +939,13 @@ export const ChatPage = ({
       // DO NOT reset bottomSpace here - it should persist
       setStreamingStarted(false)
     }
-  }, [isStreaming, retryIsStreaming, streamingStarted, messages, lastUserMessageCount])
+  }, [
+    isStreaming,
+    retryIsStreaming,
+    streamingStarted,
+    messages,
+    lastUserMessageCount,
+  ])
 
   const handleSend = async (
     messageToSend: string,
@@ -2550,34 +2559,37 @@ const VirtualizedMessages = React.forwardRef<
     }, []) // Only run once on mount
 
     // Detect user scrolling and update scroll button visibility
-    const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-      // Skip if we're in the middle of auto-scrolling
-      if (isAutoScrollingRef.current) return
+    const handleScroll = useCallback(
+      (e: React.UIEvent<HTMLDivElement>) => {
+        // Skip if we're in the middle of auto-scrolling
+        if (isAutoScrollingRef.current) return
 
-      const element = e.currentTarget
-      const scrollTop = element.scrollTop
-      const scrollHeight = element.scrollHeight
-      const clientHeight = element.clientHeight
+        const element = e.currentTarget
+        const scrollTop = element.scrollTop
+        const scrollHeight = element.scrollHeight
+        const clientHeight = element.clientHeight
 
-      // Track the scroll position for reference
-      lastScrollTop.current = scrollTop
+        // Track the scroll position for reference
+        lastScrollTop.current = scrollTop
 
-      // Calculate if we're at the bottom with a reasonable threshold
-      const isAtBottom = scrollTop >= scrollHeight - clientHeight - 30
+        // Calculate if we're at the bottom with a reasonable threshold
+        const isAtBottom = scrollTop >= scrollHeight - clientHeight - 30
 
-      // Update scroll button visibility based on position
-      if (isAtBottom) {
-        // User is at bottom, hide scroll to bottom button
-        if (userHasScrolled) {
-          setUserHasScrolled(false)
+        // Update scroll button visibility based on position
+        if (isAtBottom) {
+          // User is at bottom, hide scroll to bottom button
+          if (userHasScrolled) {
+            setUserHasScrolled(false)
+          }
+        } else {
+          // User is not at bottom, show scroll to bottom button
+          if (!userHasScrolled) {
+            setUserHasScrolled(true)
+          }
         }
-      } else {
-        // User is not at bottom, show scroll to bottom button
-        if (!userHasScrolled) {
-          setUserHasScrolled(true)
-        }
-      }
-    }, [userHasScrolled, setUserHasScrolled])
+      },
+      [userHasScrolled, setUserHasScrolled],
+    )
 
     return (
       <div
@@ -2775,7 +2787,7 @@ const VirtualizedMessages = React.forwardRef<
 
           {/* Bottom spacing to position query at top of viewport */}
           {bottomSpace > 0 && (
-            <div 
+            <div
               className="w-full"
               style={{
                 height: `${bottomSpace}px`,
