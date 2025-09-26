@@ -456,7 +456,7 @@ class RIBBIECircularDownloader {
         }
     }
 
-    async processAndIngestPDF(downloadPath: string, userEmail: string, workspaceId: number): Promise<void> {
+    async processAndIngestPDF(downloadPath: string, userEmail: string, workspaceId: number, circular: { href: string, text: string, id: string, department: string }): Promise<void> {
         Logger.info('🔄 Processing PDF for complete Knowledge Base ingestion...');
 
         try {
@@ -559,7 +559,7 @@ class RIBBIECircularDownloader {
                     metadata: JSON.stringify({
                         source: 'RIBBIE-automation',
                         circularNumber: 'Auto-downloaded',
-                        department: 'Reserve Bank of India',
+                        department: 'Payment and Settlement Systems Circulars',
                         subject: 'RIBBIE Circular Document',
                         dateOfIssue: new Date().toISOString().split('T')[0],
                         originalUrl: this.page?.url() || '',
@@ -664,7 +664,7 @@ class RIBBIECircularDownloader {
                             const { downloadPath } = await this.downloadPDF();
 
                             // Process and ingest into Knowledge Base
-                            await this.processAndIngestPDF(downloadPath, userEmail, workspaceId);
+                            await this.processAndIngestPDF(downloadPath, userEmail, workspaceId, circular);
 
                             // Mark as successful
                             allDownloadedFiles.push(downloadPath);
