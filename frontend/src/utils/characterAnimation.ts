@@ -22,7 +22,7 @@ export class CharacterQueue {
     this.options = options
   }
 
-  /*Add a new chunk of text to the animation queue*/
+  /** Add a new chunk of text to the animation queue */
   addChunk(chunk: string): void {
     if (!chunk) return
 
