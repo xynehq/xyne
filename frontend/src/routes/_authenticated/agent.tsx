@@ -52,6 +52,7 @@ import {
   ChevronLeft,
   ChevronRight,
   BookOpen,
+  Eye,
 } from "lucide-react"
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useTheme } from "@/components/ThemeContext"
@@ -76,6 +77,8 @@ import { createAuthEventSource } from "@/hooks/useChatStream"
 import { textToCitationIndex } from "@/utils/chatUtils"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
+import SharedAgent from "@/components/SharedAgent"
+
 
 type CurrentResp = {
   resp: string
@@ -267,7 +270,7 @@ function isItemSelectedWithInheritance(
 function AgentComponent() {
   const { agentId } = Route.useSearch()
   const navigate = useNavigate()
-  const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list")
+  const [viewMode, setViewMode] = useState<"list" | "create" | "edit" | "viewAgent">("list")
   const [allAgentsList, setAllAgentsList] = useState<SelectPublicAgent[]>([])
   const [madeByMeAgentsList, setMadeByMeAgentsList] = useState<
     SelectPublicAgent[]
@@ -1085,13 +1088,14 @@ function AgentComponent() {
     setViewMode("create")
   }
 
-  const handleEditAgent = (agent: SelectPublicAgent) => {
+  const handleEditAgent = (agent: SelectPublicAgent,isShared:boolean) => {
     resetForm()
     setEditingAgent(agent)
-    setViewMode("create")
+    setViewMode(isShared ? "viewAgent" : "create")
   }
 
   const allAvailableIntegrations = useMemo(() => {
+ 
     const dynamicDataSources: IntegrationSource[] = fetchedDataSources.map(
       (ds) => ({
         id: ds.docId,
@@ -1101,7 +1105,6 @@ function AgentComponent() {
         icon: getIcon(Apps.DataSource, "datasource", { w: 16, h: 16, mr: 8 }),
       }),
     )
-
     const collectionSources: IntegrationSource[] = fetchedCollections.map(
       (cl) => ({
         id: `cl_${cl.id}`,
@@ -2026,7 +2029,6 @@ function AgentComponent() {
       }
     }
 
-    // Handle collections
     allAvailableIntegrations.forEach((integration) => {
       if (
         integration.id.startsWith("cl_") &&
@@ -2036,13 +2038,13 @@ function AgentComponent() {
         const selectedItems = selectedItemsInCollection[clId] || new Set()
 
         if (selectedItems.size === 0) {
-          // If no specific items are selected, show the whole CL pill
+     
           result.push({
             ...integration,
             type: "cl",
           })
         } else {
-          // If specific items are selected, show individual file/folder pills
+          
           const itemDetails = selectedItemDetailsInCollection[clId] || {}
 
           selectedItems.forEach((itemId) => {
@@ -2065,7 +2067,7 @@ function AgentComponent() {
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="mr-2 text-gray-700"
+                    className="mr-2 text-blue-600"
                   >
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                   </svg>
@@ -2094,7 +2096,7 @@ function AgentComponent() {
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="mr-2 text-gray-600"
+                    className="mr-2 text-blue-600"
                   >
                     <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
                     <polyline points="13 2 13 9 20 9"></polyline>
@@ -2899,26 +2901,26 @@ function AgentComponent() {
                     return (
                       <>
                         <div className="space-y-0">
-                          {paginatedList.map((agent) => (
-                            <AgentListItem
+                          {paginatedList.map((agent) => {
+                            const isShared= (activeTab === "all" || activeTab === "shared-to-me") &&
+                                sharedToMeAgentsList.some(
+                                  (sharedAgent) =>
+                                    sharedAgent.externalId === agent.externalId,
+                                )
+                          
+                             return (<AgentListItem
                               key={agent.externalId}
                               agent={agent}
                               isFavorite={favoriteAgents.includes(
                                 agent.externalId,
                               )}
-                              isShared={
-                                activeTab === "all" &&
-                                sharedToMeAgentsList.some(
-                                  (sharedAgent) =>
-                                    sharedAgent.externalId === agent.externalId,
-                                )
-                              }
+                              isShared={isShared}
                               isMadeByMe={madeByMeAgentsList.some(
                                 (madeByMeAgent) =>
                                   madeByMeAgent.externalId === agent.externalId,
                               )}
                               onToggleFavorite={toggleFavorite}
-                              onEdit={() => handleEditAgent(agent)}
+                              onEdit={() => handleEditAgent(agent,isShared)}
                               onDelete={() =>
                                 handleDeleteAgent(agent.externalId)
                               }
@@ -2929,7 +2931,7 @@ function AgentComponent() {
                                 })
                               }
                             />
-                          ))}
+                  )})}
                         </div>
                         {totalPages > 1 && (
                           <div className="flex justify-between items-center mt-6">
@@ -2968,7 +2970,12 @@ function AgentComponent() {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : viewMode === "viewAgent" ? (
+             <SharedAgent agent={editingAgent}
+             onBack={() => setViewMode("list")}
+             />
+             
+          ) :(
             <>
               <div className="flex items-center mb-4 w-full max-w-xl">
                 <Button
@@ -4603,6 +4610,21 @@ function AgentListItem({
         </div>
       </div>
       <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+        {isShared && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit()
+              }}
+              className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+              title="View Agent"
+            >
+              <Eye size={16} />
+            </Button>
+
+        )}
         {isMadeByMe && (
           <>
             <Button

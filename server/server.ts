@@ -240,6 +240,7 @@ import {
   GetFileContentApi,
   DownloadFileApi,
   GetChunkContentApi,
+  GetCollectionNameApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -999,6 +1000,7 @@ export const AppRoutes = app
     SearchKnowledgeBaseApi,
   )
   .get("/cl/:clId", GetCollectionApi)
+  .get("cl/:clId/name",GetCollectionNameApi)
   .put("/cl/:clId", UpdateCollectionApi)
   .delete("/cl/:clId", DeleteCollectionApi)
   .get("/cl/:clId/items", ListCollectionItemsApi)
