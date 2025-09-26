@@ -57,6 +57,10 @@ export class CharacterQueue {
     const maxLoops = 100
     let loopCount = 0
 
+    // Aggregate all characters processed during this animation frame
+    let aggregatedText = ""
+    let hasProcessedChars = false
+
     while (
       accumulatedElapsed >= this.options.interval &&
       this.queue.length > 0 &&
@@ -74,14 +78,19 @@ export class CharacterQueue {
       }
 
       if (batchText) {
-        this.displayed += batchText
-        // Notify about the update
-        this.options.onUpdate(this.displayed)
+        aggregatedText += batchText
+        hasProcessedChars = true
       }
 
       // Decrement accumulated elapsed time by the interval
       accumulatedElapsed -= this.options.interval
       loopCount++
+    }
+
+    // Update displayed text once with all aggregated characters and call onUpdate once
+    if (hasProcessedChars) {
+      this.displayed += aggregatedText
+      this.options.onUpdate(this.displayed)
     }
 
     // Update lastCharTime to maintain timing accuracy
