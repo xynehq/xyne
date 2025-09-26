@@ -558,9 +558,9 @@ class RIBBIECircularDownloader {
                     image_chunks_pos: processingResult.image_chunks_pos || [],
                     metadata: JSON.stringify({
                         source: 'RIBBIE-automation',
-                        circularNumber: 'Auto-downloaded',
-                        department: 'Payment and Settlement Systems Circulars',
-                        subject: 'RIBBIE Circular Document',
+                        circularNumber: circular.id,
+                        department: circular.department,
+                        subject: circular.text,
                         dateOfIssue: new Date().toISOString().split('T')[0],
                         originalUrl: this.page?.url() || '',
                         downloadedAt: Date.now(),
@@ -602,8 +602,8 @@ class RIBBIECircularDownloader {
     async testCompleteFlow(): Promise<string[]> {
         try {
             // Hardcode user details (or make them parameters)
-            const userEmail = 'aman.asrani@juspay.in';
-            const workspaceId = 1;
+            const userEmail = `${process.env.RIBBIE_CONFIG_USER_EMAIL}`;
+            const workspaceId = parseInt(process.env.RIBBIE_CONFIG_WORKSPACE_ID ||'1');
             const allDownloadedFiles: string[] = [];
             let totalSuccessfulYears = 0;
             let totalFailedYears = 0;
