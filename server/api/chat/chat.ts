@@ -3125,12 +3125,6 @@ async function* processResultsForAggregatorQuery(
   )
 }
 
-const getAllFinalItems = (itemIds: string[]): VespaSearchResult[] => {
-  // TODO: Implement this function to retrieve VespaSearchResult[] by itemIds
-  // For now returning empty array to avoid compilation errors
-  return []
-}
-
 async function* generateMetadataQueryAnswer(
   input: string,
   messages: Message[],
@@ -3848,7 +3842,7 @@ async function* generateMetadataQueryAnswer(
     // LLM will give indexes of relevant documents that can be answered
     // Use those indexes and check what are the documents that we sent on that index
     // Get that documents and store those documentIds that these are valid and relevant documents
-    let finalItemIds: string[] = []
+    let finalDocIds: string[] = []
     for (
       let iteration = 0;
       iteration < maxIterationsForAggregatorQuery;
@@ -3926,7 +3920,7 @@ async function* generateMetadataQueryAnswer(
         `Number of documents for ${QueryType.SearchWithFilters} = ${items.length}`,
       )
 
-      const itemIds = yield* processResultsForAggregatorQuery(
+      const docIds = yield* processResultsForAggregatorQuery(
         items,
         input,
         userCtx,
@@ -3940,20 +3934,29 @@ async function* generateMetadataQueryAnswer(
         agentPrompt,
         modelId,
       )
-      console.log("itemIds")
-      console.log(itemIds)
-      console.log("itemIds")
-      finalItemIds.push(...itemIds)
+
+      if (docIds.length === 0) {
+        loggerWithChild({ email: email }).info(
+          `LLM found no relevant documents on iteration ${iteration}, stopping further retrieval`,
+        )
+        break
+      }
+
+      console.log("docIds")
+      console.log(docIds)
+      console.log("docIds")
+      finalDocIds.push(...docIds)
     }
-    console.log("finalItemIds")
-    console.log(finalItemIds)
-    console.log("finalItemIds")
-    const allFinalItems = getAllFinalItems(finalItemIds)
-    console.log("allFinalItems")
-    console.log(allFinalItems)
-    console.log("allFinalItems")
+    console.log("finalDocIds")
+    console.log(finalDocIds)
+    console.log("finalDocIds")
+    const allFinalDocs = await GetDocumentsByDocIds(finalDocIds, span!)
+    const finalItems = allFinalDocs.root.children || []
+    console.log("finalItems")
+    console.log(finalItems)
+    console.log("finalItems")
     const answer = yield* processResultsForMetadata(
-      allFinalItems,
+      finalItems,
       input,
       userCtx,
       userMetadata,
