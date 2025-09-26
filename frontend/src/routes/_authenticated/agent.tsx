@@ -66,7 +66,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { toast, useToast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast"
 import { ChatBox, ChatBoxRef } from "@/components/ChatBox"
 import { Card, CardContent } from "@/components/ui/card"
 import { ConfirmModal } from "@/components/ui/confirmModal"
@@ -564,7 +564,7 @@ function AgentComponent() {
 
   const matches = useRouterState({ select: (s) => s.matches })
   const { user, agentWhiteList } = matches[matches.length - 1].context
-  const { toast: showToast } = useToast()
+  const { toast } = useToast()
 
   useEffect(() => {
     if (entitySearchQuery.trim() === "") {
@@ -746,19 +746,17 @@ function AgentComponent() {
           if (response.ok) {
             const agentData = (await response.json()) as SelectPublicAgent
             setInitialChatAgent(agentData)
-          } else {
-            showToast({
-              title: "Error",
-              description: `Failed to load agent ${agentId} for chat.`,
-              variant: "destructive",
-            })
-          }
-        } catch (error) {
-          showToast({
+        } else {
+          toast.error({
             title: "Error",
-            description: "An error occurred while loading agent for chat.",
-            variant: "destructive",
+            description: `Failed to load agent ${agentId} for chat.`,
           })
+        }
+      } catch (error) {
+        toast.error({
+          title: "Error",
+          description: "An error occurred while loading agent for chat.",
+        })
           console.error("Fetch initial agent for chat error:", error)
         } finally {
           setIsLoadingInitialAgent(false)
@@ -769,7 +767,7 @@ function AgentComponent() {
     }
 
     fetchInitialAgentForChat()
-  }, [agentId, showToast])
+  }, [agentId, toast])
 
   // Cleanup EventSource on component unmount to prevent memory leaks
   useEffect(() => {
@@ -793,19 +791,17 @@ function AgentComponent() {
         } else if (filter === "sharedToMe") {
           setSharedToMeAgentsList(data)
         }
-      } else {
-        showToast({
+        } else {
+          toast.error({
+            title: "Error",
+            description: `Failed to fetch agents (${filter}).`,
+          })
+        }
+      } catch (error) {
+        toast.error({
           title: "Error",
-          description: `Failed to fetch agents (${filter}).`,
-          variant: "destructive",
+          description: `An error occurred while fetching agents (${filter}).`,
         })
-      }
-    } catch (error) {
-      showToast({
-        title: "Error",
-        description: `An error occurred while fetching agents (${filter}).`,
-        variant: "destructive",
-      })
       console.error(`Fetch agents error (${filter}):`, error)
     } finally {
       setIsLoadingAgents(false)
@@ -843,10 +839,9 @@ function AgentComponent() {
             const data = await dsResponse.json()
             setFetchedDataSources(data as FetchedDataSource[])
           } else {
-            showToast({
+            toast.error({
               title: "Error",
               description: "Failed to fetch data sources.",
-              variant: "destructive",
             })
             setFetchedDataSources([])
           }
@@ -855,18 +850,16 @@ function AgentComponent() {
             const clData = await clResponse.json()
             setFetchedCollections(clData)
           } else {
-            showToast({
+            toast.error({
               title: "Error",
               description: "Failed to fetch collections.",
-              variant: "destructive",
             })
             setFetchedCollections([])
           }
         } catch (error) {
-          showToast({
+          toast.error({
             title: "Error",
             description: "An error occurred while fetching data sources.",
-            variant: "destructive",
           })
           console.error("Fetch data sources error:", error)
           setFetchedDataSources([])
@@ -878,7 +871,7 @@ function AgentComponent() {
       }
     }
     fetchDataSourcesAsync()
-  }, [viewMode, showToast])
+  }, [viewMode, toast])
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -888,23 +881,21 @@ function AgentComponent() {
           const data = await response.json()
           setUsers(data as User[])
         } else {
-          showToast({
+          toast.error({
             title: "Error",
             description: "Failed to fetch workspace users.",
-            variant: "destructive",
           })
         }
       } catch (error) {
-        showToast({
+        toast.error({
           title: "Error",
           description: "An error occurred while fetching workspace users.",
-          variant: "destructive",
         })
         console.error("Fetch workspace users error:", error)
       }
     }
     loadUsers()
-  }, [showToast])
+  }, [toast])
 
   const handleSelectUser = (user: User) => {
     setSelectedUsers((prev) => [...prev, user])
@@ -926,10 +917,9 @@ function AgentComponent() {
 
   const generatePromptFromRequirements = async (requirements: string) => {
     if (!requirements.trim()) {
-      showToast({
+      toast.error({
         title: "Error",
         description: "Please enter requirements for prompt generation.",
-        variant: "destructive",
       })
       return
     }
@@ -987,13 +977,13 @@ function AgentComponent() {
           try {
             const data = JSON.parse(event.data)
             setAgentPrompt(data.fullPrompt || generatedPrompt)
-            showToast({
+            toast.success({
               title: "Success",
               description: "Prompt generated successfully!",
             })
           } catch (e) {
             console.warn("Could not parse end event data:", e)
-            showToast({
+            toast.success({
               title: "Success",
               description: "Prompt generated successfully!",
             })
@@ -1008,16 +998,14 @@ function AgentComponent() {
         (event) => {
           try {
             const data = JSON.parse(event.data)
-            showToast({
+            toast.error({
               title: "Error",
               description: data.error || "Failed to generate prompt",
-              variant: "destructive",
             })
           } catch (e) {
-            showToast({
+            toast.error({
               title: "Error",
               description: "Failed to generate prompt",
-              variant: "destructive",
             })
           }
           cleanupPromptGenerationEventSource()
@@ -1027,20 +1015,18 @@ function AgentComponent() {
 
       promptGenerationEventSourceRef.current.onerror = (error) => {
         console.error("EventSource error:", error)
-        showToast({
+        toast.error({
           title: "Error",
           description: "Connection error during prompt generation",
-          variant: "destructive",
         })
         cleanupPromptGenerationEventSource()
         setIsGeneratingPrompt(false)
       }
     } catch (error) {
       console.error("Generate prompt error:", error)
-      showToast({
+      toast.error({
         title: "Error",
         description: "Failed to generate prompt",
-        variant: "destructive",
       })
       setIsGeneratingPrompt(false)
     }
@@ -1064,11 +1050,10 @@ function AgentComponent() {
         setShouldHighlightPrompt(false)
       }, 3000)
 
-      showToast({
+      toast.warning({
         title: "Add some requirements first",
         description:
           "Please enter some text describing what you want your agent to do, then click generate.",
-        variant: "default",
       })
     }
   }
@@ -1610,7 +1595,7 @@ function AgentComponent() {
           param: { agentExternalId },
         })
         if (response.ok) {
-          showToast({
+          toast.success({
             title: "Success",
             description: "Agent deleted successfully.",
           })
@@ -1624,17 +1609,15 @@ function AgentComponent() {
           } catch (e) {
             console.error("Failed to parse error response as JSON", e)
           }
-          showToast({
+          toast.error({
             title: "Error",
             description: `Failed to delete agent: ${errorDetail}`,
-            variant: "destructive",
           })
         }
       } catch (error) {
-        showToast({
+        toast.error({
           title: "Error",
           description: "An error occurred while deleting the agent.",
-          variant: "destructive",
         })
         console.error("Delete agent error:", error)
       }
@@ -1789,7 +1772,7 @@ function AgentComponent() {
           json: agentPayload,
         })
         if (response.ok) {
-          showToast({
+          toast.success({
             title: "Success",
             description: "Agent updated successfully.",
           })
@@ -1797,16 +1780,15 @@ function AgentComponent() {
           resetForm()
         } else {
           const errorData = await response.json()
-          showToast({
+          toast.error({
             title: "Error",
             description: `Failed to update agent: ${errorData.message || response.statusText}`,
-            variant: "destructive",
           })
         }
       } else {
         response = await api.agent.create.$post({ json: agentPayload })
         if (response.ok) {
-          showToast({
+          toast.success({
             title: "Success",
             description: "Agent created successfully.",
           })
@@ -1814,19 +1796,17 @@ function AgentComponent() {
           resetForm()
         } else {
           const errorData = await response.json()
-          showToast({
+          toast.error({
             title: "Error",
             description: `Failed to create agent: ${errorData.message || response.statusText}`,
-            variant: "destructive",
           })
         }
       }
     } catch (error) {
       const action = editingAgent ? "updating" : "creating"
-      showToast({
+      toast.error({
         title: "Error",
         description: `An error occurred while ${action} the agent.`,
-        variant: "destructive",
       })
       console.error(`${action} agent error:`, error)
     }

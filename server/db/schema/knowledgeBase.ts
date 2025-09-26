@@ -37,13 +37,14 @@ export const collections = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
+    via_apiKey: boolean("via_apiKey").notNull().default(false),
   },
   (table) => ({
-    // Ensure unique names per workspace (excluding soft-deleted items)
-    uniqueWorkspaceName: uniqueIndex(
-      "unique_workspace_collection_name_not_deleted",
+    // Ensure unique names per owner (excluding soft-deleted items)
+    uniqueOwnerName: uniqueIndex(
+      "unique_owner_collection_name_not_deleted",
     )
-      .on(table.workspaceId, table.name)
+      .on(table.ownerId, table.name)
       .where(sql`${table.deletedAt} IS NULL`),
     // Index for finding collections by owner
     idxOwnerCollections: index("idx_owner_collections").on(table.ownerId),

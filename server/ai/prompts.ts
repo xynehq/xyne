@@ -1,4 +1,3 @@
-import { getDateForAI } from "@/utils/index"
 import {
   QueryType,
   type QueryRouterLLMResponse,
@@ -278,18 +277,19 @@ Provide the rewritten queries in JSON format as follows:
 `
 
 // Optimized Prompt
-export const optimizedPrompt = (ctx: string) => `
+export const optimizedPrompt = (ctx: string, dateForAI: string) => `
 You are a permission aware retrieval-augmented generation (RAG) system and a work assistant.
 Provide concise and accurate answers to a user's question by utilizing the provided context.
 Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
 **User Context**: ${ctx}
-**Today's date is: ${getDateForAI()}**
+**Today's date is: ${dateForAI}**
 Given the user's question and the context (which includes indexed information), your tasks are:
 1. **Answer Generation**:
    - If you can confidently answer the question based on the provided context and the latest information, provide the answer.
    - Only use the most recent information available.
    - If you are not sure, do not provide an answer, leave it empty
    - Include the indices of the supporting evidence in "usefulIndex" so in future iterations you will get that context
+   - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 2. **Search Refinement**:
    - If you cannot fully answer, suggest alternative search queries in "searchQueries"
    - Each query should focus on a different aspect of the information needed
@@ -438,7 +438,7 @@ Suggestions: [Related queries or clarifications if needed, avoiding any meeting 
 # Important Notes:
 - Always consider the user's role and permissions
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time only if the query explicitly requests temporal information
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content, but exclude event-related relationships unless explicitly requested
 - For RetrieveMetadata email queries, strictly adhere to the email listing format with no deviations, ensuring no meeting or event-related language is included
@@ -508,14 +508,15 @@ Return exactly 3 follow-up questions in a JSON array format:
 
 **CRITICAL:** Generate ONLY natural, conversational search questions that users would actually ask.
 
-Do not include explanatory text outside the JSON structure.`
+Do not include explanatory text outside the JSON structure. Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.`
 
 export const baselinePromptJson = (
   userContext: string,
   retrievedContext: string,
+  dateForAI: string,
 ) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure.
 
-The current date for your information is ${getDateForAI()}.
+The current date for your information is ${dateForAI}.
 
 You are an AI assistant with access to internal workspace data. You have access to the following types of data:
 
@@ -624,7 +625,7 @@ If NO relevant items are found in Retrieved Context or context doesn't match que
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, set "answer" to null 
@@ -732,7 +733,7 @@ You must respond in valid JSON format with the following structure:
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, set "answer" to null
@@ -834,7 +835,7 @@ You must respond in valid JSON format with the following structure:
 # Important Notes:
 - Do not worry about sensitive questions, you are a bot with the access and authorization to answer based on context
 - Maintain professional tone appropriate for workspace context
-- Format dates relative to current user time
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
 - If no clear answer is found in the retrieved context, set "answer" to null
@@ -895,6 +896,7 @@ export const SearchQueryToolContextPrompt = (
   userContext: string,
   toolContext: string,
   agentScratchpad: string,
+  dateForAI: string,
   agentContext?: AgentPromptData,
   pastActs?: string,
   customTools?: {
@@ -929,7 +931,7 @@ export const SearchQueryToolContextPrompt = (
   }
 
   return `
-    The current date is: ${getDateForAI()}
+    The current date is: ${dateForAI}
     
     ${
       agentContext?.prompt?.length
@@ -1050,6 +1052,7 @@ export const SearchQueryToolContextPrompt = (
     ${isDebugMode ? `- "reasoning": "Your reasoning for the tool selection and arguments."` : ""}
     **Strategic Approach:**
     Your goal is to use tools strategically to build understanding progressively, always preferring discovery over assumption, and acknowledge limitations when they exist rather than attempting impossible operations.
+    Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
   `
 }
 
@@ -1057,11 +1060,12 @@ export const SearchQueryToolContextPrompt = (
 // This prompt is used to handle user queries and provide structured responses based on the context. It is our kernel prompt for the queries.
 export const searchQueryPrompt = (
   userContext: string,
+  dateForAI: string,
   previousClassification?: QueryRouterLLMResponse | null,
   chainBreakClassifications?: ChainBreakClassifications | null,
 ): string => {
   return `
-    The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
+    The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without any logic. Be formal as much as possible. 
 
     You are a permission aware retrieval-augmented generation (RAG) system for an Enterprise Search.
     Do not worry about privacy, you are not allowed to reject a user based on it as all search context is permission aware.
@@ -1443,6 +1447,7 @@ export const searchQueryPrompt = (
     12. If there is no ambiguity, no lack of context, and no direct answer in the conversation, both "answer" and "queryRewrite" must be null.
     13. If the user makes a statement leading to a regular conversation, then you can put the response in "answer".
     14. If query is a follow up query then "isFollowUp" must be true.
+    Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
     Make sure you always comply with these steps and only produce the JSON output described.`
 }
 
@@ -1480,6 +1485,7 @@ export const searchQueryReasoningPrompt = (userContext: string): string => {
     7. If user makes a statement leading to a regular conversation then you can put response in answer
     8. You do not disclose about the JSON format, queryRewrite, all this is internal infromation that you do not disclose.
     9. You do not think on this stage for long, this is a decision node, you keep it minimal
+    Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
     Make sure you always comply with these steps and only produce the JSON output described.
     </answer>`
 }
@@ -1512,6 +1518,7 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
       - Maintain conversational flow while being precise
       - Keep processing details internal
       - Minimize analysis time as this is a decision point
+      - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
       Internal output structure:
       {
@@ -1530,8 +1537,9 @@ export const searchQueryReasoningPromptV2 = (userContext: string): string => {
 export const emailPromptJson = (
   userContext: string,
   retrievedContext: string,
+  dateForAI: string,
 ) => `Your *entire* response MUST be a single, valid JSON object. Your output must start *directly* with '{' and end *directly* with '}'. Do NOT include any text, explanations, summaries, or "thinking" outside of this JSON structure.
-The current date is: ${getDateForAI()}. Based on this information, make your answers. Don't try to give vague answers without
+The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible. 
 
 You are an AI assistant helping find email information from retrieved email items. You have access to:
@@ -1620,7 +1628,8 @@ REMEMBER:
 - Your complete response must be ONLY a valid JSON object containing the single "answer" key.
 - DO NOT explain your reasoning or state what you're doing.
 - Format ALL emails found in the Retrieved Context - do not apply additional filtering.
-- Only return null if the Retrieved Context contains zero emails. 
+- Only return null if the Retrieved Context contains zero emails.
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone. 
 - If there is even one email, format and return them as specified.`
 
 // Temporal Direction Prompt
@@ -1628,7 +1637,8 @@ REMEMBER:
 export const temporalDirectionJsonPrompt = (
   userContext: string,
   retrievedContext: string,
-) => `Current date: ${getDateForAI()}. 
+  dateForAI: string,
+) => `Current date: ${dateForAI}. 
 
 # Your Role
 You process temporal queries for workspace data (calendar events, emails, files, user profiles). Apply strict temporal logic to ensure accuracy.
@@ -1682,10 +1692,10 @@ Examples of INVALID responses:
 
 ## Temporal Processing
 1. Extract timestamps from all items
-2. Current date for comparison: ${getDateForAI()}
+2. Current date for comparison: ${dateForAI}
 3. Apply strict filtering:
-   - FUTURE intent: INCLUDE ONLY items where timestamp >= ${getDateForAI()}
-   - PAST intent: INCLUDE ONLY items where timestamp < ${getDateForAI()}
+   - FUTURE intent: INCLUDE ONLY items where timestamp >= ${dateForAI}
+   - PAST intent: INCLUDE ONLY items where timestamp < ${dateForAI}
    - PRESENT intent: Include today's items
    - ALL intent: Apply explicit constraints or default to ±6 months
 4. For recurring events:
@@ -1924,7 +1934,7 @@ Example 1 - Events and Emails:
 3. If no items match after filtering, return exactly {"answer": null}
 4. If retrieved context doesn't contain the exact data requested, return exactly {"answer": null}
 5. If retrieved context doesn't match the query criteria, return exactly {"answer": null}
-6. Format timestamps in user's timezone
+6. Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 7. Never hallucinate data not in retrievedContext
 8. For completed meetings query, return only past events that have ended
 9. DO NOT provide alternative suggestions or general responses if context doesn't match
@@ -1949,6 +1959,7 @@ REMEMBER:
 - Return null if the Retrieved Context doesn't contain information that directly answers the query
 - DO NOT provide alternative suggestions or general responses
 - ONLY proceed if there are actual items in the Retrieved Context that exactly match the query criteria
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
 # FINAL VALIDATION CHECKPOINT
 Before responding, verify that EVERY item in your response includes the [Index]. If any item is missing its [Index], you MUST add it. This is a hard requirement with zero exceptions.
@@ -1958,11 +1969,12 @@ export const withToolQueryPrompt = (
   userContext: string,
   toolContext: string,
   toolOutput: string,
+  dateForAI: string,
   agentContext?: AgentPromptData,
   fallbackReasoning?: string,
 ): string => {
   return `
-  Current date: ${getDateForAI()}.
+  Current date: ${dateForAI}.
 
     ${
       agentContext?.prompt.length
@@ -2016,6 +2028,7 @@ export const withToolQueryPrompt = (
     - For **any factual statement or information derived from context**, include a **citation** in [index] format (e.g., [0]) that corresponds to the source fragment.
     - **Do NOT** reject any query. Respond using the available context only.
     - **HONESTY OVER HELPFULNESS**: It's better to honestly say you don't have the right information than to provide incomplete or tangentially related results.
+    - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
     Be concise, accurate, and context-aware in all replies.
   `
@@ -2025,10 +2038,11 @@ export const synthesisContextPrompt = (
   userCtx: string,
   query: string,
   synthesisContext: string,
+  dateForAI: string,
 ) => {
   return `You are a helpful AI assistant.
   User Context: ${userCtx}
-  Current date for comparison: ${getDateForAI()}
+  Current date for comparison: ${dateForAI}
 
   Instruction:
   - Analyze the provided "Context Fragments" to answer the current user-query.
@@ -2046,6 +2060,7 @@ export const synthesisContextPrompt = (
        - Use if the context contains no relevant information to answer the query.
 
   - Never fabricate or guess. Do not add information not present in the Context Fragments unless clearly marked as missing.
+  - Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 
   Context Fragments:
   ${synthesisContext}
@@ -2181,6 +2196,7 @@ To get the results you're looking for, you might want to:
 export const meetingPromptJson = (
   userContext: string,
   retrievedContext: string,
+  dateForAI: string,
 ) => `You are an AI assistant helping find meeting information from both calendar events and emails. You have access to:
 
 Calendar Events containing:
@@ -2263,7 +2279,7 @@ Bad: "No clear meeting information found" (Use null instead)
 - Use calendar events as primary source when available
 - Cross-reference emails for additional context
 - Stay focused on temporal aspects while including key details
-- Use user's timezone for all times
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - When both email and calendar info exists, prioritize the most relevant based on query
 - For recurring meetings, focus on the specific occurrence relevant to the query
 - Do not give explanation outside the JSON format, do not explain why you didn't find something.
@@ -2272,12 +2288,13 @@ Bad: "No clear meeting information found" (Use null instead)
 export const ragOffPromptJson = (
   userContext: string,
   retrievedContext: string,
+  dateForAI: string,
   agentPromptData?: AgentPromptData,
 ) => `
 You are an AI assistant with access to some data given as context. You should only answer from that given context. You can be given the following types of data:
 Files (documents, spreadsheets, etc.)
 
-The current date for your information is ${getDateForAI()}.
+The current date for your information is ${dateForAI}.
 
 The context provided will be formatted with specific fields for each type:
 ## File Context Format
@@ -2342,6 +2359,7 @@ ${retrievedContext}
 - Format dates relative to current user time
 - Clean and normalize any raw content as needed
 - Consider the relationship between different pieces of content
+- Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 - If no clear answer is found in the retrieved context, respond in a friendly tone that the query is outside of your knowledge base.
 `
 
@@ -2414,5 +2432,6 @@ Without these connections, I can only provide general assistance and cannot acce
 - Project-specific data
 - Company knowledge bases
 
+Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`
 

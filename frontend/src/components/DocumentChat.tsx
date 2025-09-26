@@ -692,6 +692,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
   }
 
   // Handle sending messages
+  // Handle sending messages
   const handleSend = async (
     messageToSend: string,
     metadata?: AttachmentMetadata[],
@@ -699,16 +700,17 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[] | null,
     selectedModel?: string,
+    selectedKbItems: string[] = [],
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
     setUserHasScrolled(false)
     setQuery("")
 
-    // Automatically add the document ID to selected sources
-    const sourcesWithDocument = [...selectedSources]
-    if (!sourcesWithDocument.includes(documentId)) {
-      sourcesWithDocument.push(documentId)
+    // Automatically add the document ID to selected Kbitems
+    const kbItemsWithChat = [...selectedKbItems]
+    if (!kbItemsWithChat.includes(documentId)) {
+      kbItemsWithChat.push(documentId)
     }
 
     // Add user message optimistically to React Query cache with display text
@@ -730,12 +732,13 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
     try {
       await startStream(
         messageToSend,
-        sourcesWithDocument, // Use the sources array that includes the document ID
+        [],
         false, // isAgenticMode
         null,
         [],
         metadata,
         selectedModel,
+        kbItemsWithChat,
       )
     } catch (error) {
       // If there's an error, clear the optimistically added message from cache
@@ -769,21 +772,22 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
 
   const handleRetry = async (
     messageId: string,
-    selectedSources: string[] = [],
+    selectedKbItems: string[] = [],
   ) => {
     if (!messageId || isStreaming) return
     setRetryIsStreaming(true)
-    // Automatically add the document ID to selected sources
-    const sourcesWithDocument = [...selectedSources]
-    if (!sourcesWithDocument.includes(documentId)) {
-      sourcesWithDocument.push(documentId)
+    // Automatically add the document ID to selected kbitems
+    const kbItemsWithChat = [...selectedKbItems]
+    if (!kbItemsWithChat.includes(documentId)) {
+      kbItemsWithChat.push(documentId)
     }
     await retryMessage(
       messageId,
       false,
       undefined,
       undefined,
-      sourcesWithDocument,
+      [],
+      kbItemsWithChat,
     )
   }
 

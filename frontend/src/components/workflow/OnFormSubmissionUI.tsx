@@ -37,7 +37,7 @@ export interface FormConfig {
 
 // Only allow specific file types as requested
 const VALID_FILE_TYPES = [
-  "pdf", "docx", "doc", "jpg", "png"
+  "txt", "pdf", "docx", "doc"
 ]
 
 
@@ -70,7 +70,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
         name: field.name || field.label || field.id || "Field",
         placeholder: field.placeholder || "",
         type: "file", // Force all fields to be file type
-        fileTypes: field.filetypes || field.fileTypes || ["pdf", "docx", "doc", "jpg", "png"],
+        fileTypes: field.filetypes || field.fileTypes || ["txt", "pdf", "docx", "doc"],
         required: field.required !== undefined ? field.required : true,
         maxSize: field.maxSize || "",
       }))
@@ -135,7 +135,7 @@ const OnFormSubmissionUI: React.FC<OnFormSubmissionUIProps> = ({
       fields: prev.fields.map(field => ({
         ...field,
         fileTypes: (!field.fileTypes || field.fileTypes.length === 0) 
-          ? ["pdf", "docx", "doc", "jpg", "png"] 
+          ? ["txt", "pdf", "docx", "doc"] 
           : field.fileTypes,
         required: true
       }))

@@ -65,7 +65,7 @@ export const GetDocument = vespa.GetDocument.bind(vespa)
 export const getDocumentOrNull = vespa.getDocumentOrNull.bind(vespa)
 export const UpdateDocument = vespa.UpdateDocument.bind(vespa)
 export const DeleteDocument = vespa.DeleteDocument.bind(vespa)
-
+export const searchCollectionRAG = vespa.searchCollectionRAG.bind(vespa)
 export const searchVespa = async (
   query: string,
   email: string,
@@ -93,18 +93,19 @@ export const searchVespa = async (
     Logger.error({ err: error, email }, "Error fetching Slack connector status")
   }
   try {
-    const authTypeForSyncJobs =
-      process.env.NODE_ENV !== "production"
-        ? AuthType.OAuth
-        : AuthType.ServiceAccount
     const [driveConnector, gmailConnector, calendarConnector] =
       await Promise.all([
-        getAppSyncJobsByEmail(db, Apps.GoogleDrive, authTypeForSyncJobs, email),
-        getAppSyncJobsByEmail(db, Apps.Gmail, authTypeForSyncJobs, email),
+        getAppSyncJobsByEmail(
+          db,
+          Apps.GoogleDrive,
+          config.CurrentAuthType,
+          email,
+        ),
+        getAppSyncJobsByEmail(db, Apps.Gmail, config.CurrentAuthType, email),
         getAppSyncJobsByEmail(
           db,
           Apps.GoogleCalendar,
-          authTypeForSyncJobs,
+          config.CurrentAuthType,
           email,
         ),
       ])
@@ -140,7 +141,7 @@ export const searchVespaAgent = async (
   options: Partial<VespaQueryConfig> = {},
 ) => {
   const driveIds = await extractDriveIds(options, email)
-  const clVespaIds = await extractCollectionVespaIds(options)
+  const processedCollectionSelections = await extractCollectionVespaIds(options)
   return await vespa.searchVespaAgent.bind(vespa)(
     query,
     email,
@@ -150,7 +151,7 @@ export const searchVespaAgent = async (
     {
       ...options,
       driveIds,
-      clVespaIds,
+      processedCollectionSelections,
       recencyDecayRate:
         options.recencyDecayRate || config.defaultRecencyDecayRate,
     },

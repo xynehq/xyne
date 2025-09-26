@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm"
 import { db } from "./client"
 import {
+  apiKeys,
   selectUserSchema,
   selectWorkspaceSchema,
   userPublicSchema,
@@ -19,6 +20,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
 import { Apps, type UserRole } from "@/shared/types"
+import crypto from "crypto"
 
 // Define an interface for the shape of data after processing and before Zod parsing
 interface ProcessedUser
@@ -396,4 +398,108 @@ export const updateUser = async (
   }
 
   return { success: true, message: "User role updated successfully" }
+}
+
+export const updateUserTimezone = async (
+  trx: TxnOrClient,
+  email: string,
+  timeZone: string,
+) => {
+  try {
+    // Validate input parameters
+    if (!email?.trim()) {
+      throw new HTTPException(400, { message: "Email is required" })
+    }
+    if (!timeZone?.trim()) {
+      throw new HTTPException(400, { message: "TimeZone is required" })
+    }
+
+    const result = await trx
+      .update(users)
+      .set({
+        timeZone,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.email, email))
+      .returning({ id: users.id, email: users.email, timeZone: users.timeZone })
+
+    if (!result || result.length === 0) {
+      throw new HTTPException(400, { message: "User not found" })
+    }
+
+    return {
+      success: true,
+      message: "User timezone updated successfully",
+      user: result[0],
+    }
+  } catch (error) {
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    throw new HTTPException(500, {
+      message: "Failed to update user timezone",
+      cause: error instanceof Error ? error.message : "Unknown error",
+    })
+  }
+}
+
+export async function createUserApiKey({
+  db,
+  userId,
+  workspaceId,
+  name,
+  scope,
+}: {
+  db: TxnOrClient
+  userId: string
+  workspaceId: string
+  name: string
+  scope: any
+}): Promise<{
+  success: boolean
+  key?: string
+  apiKey?: any
+  error?: string
+}> {
+  try {
+    // Generate random MD5 hash
+    const md5Hash = crypto.randomBytes(16).toString("hex")
+
+    // Extract first 4 characters for display
+    const keyPrefix = md5Hash.substring(0, 4)
+
+    // Store encrypted API key in database
+    const [inserted] = await db
+      .insert(apiKeys)
+      .values({
+        userId,
+        name,
+        workspaceId,
+        key: md5Hash,
+        keyPrefix: keyPrefix,
+        config: scope,
+      })
+      .returning()
+
+    const config = (inserted.config as any) || {}
+    return {
+      success: true,
+      key: md5Hash,
+      apiKey: {
+        id: inserted.id.toString(),
+        name: inserted.name,
+        key: md5Hash,
+        keyPrefix: keyPrefix,
+        scopes: config.scopes || [],
+        agents: config.agents || [],
+        createdAt: inserted.createdAt.toISOString(),
+      },
+    }
+  } catch (err) {
+    console.error("[createAgentApiKey] Error:", err)
+    return {
+      success: false,
+      error: `Database error while creating API key - ${err}`,
+    }
+  }
 }

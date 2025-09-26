@@ -23,7 +23,7 @@ const TxtViewer: React.FC<TxtViewerProps> = ({ source, className, style }) => {
 
   return (
     <div
-      className={`font-mono text-sm bg-white p-2 border rounded ${className}`}
+      className={`font-mono text-sm bg-background text-foreground p-2 border rounded ${className}`}
       style={{
         display: "flex",
         flexDirection: "column",
