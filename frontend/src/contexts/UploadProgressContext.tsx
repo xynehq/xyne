@@ -27,9 +27,9 @@ export interface UploadTask {
 
 interface UploadProgressContextType {
   currentUpload: UploadTask | null
-  startUpload: (collectionName: string, files: File[], totalBatches: number, isNewCollection: boolean, targetCollectionId?: string) => string
+  startUpload: (collectionName: string, files: { file: File; id: string }[], totalBatches: number, isNewCollection: boolean, targetCollectionId?: string) => string
   updateProgress: (uploadId: string, current: number, batch: number) => void
-  updateFileStatus: (uploadId: string, fileName: string, status: 'pending' | 'uploading' | 'uploaded' | 'failed', error?: string) => void
+  updateFileStatus: (uploadId: string, fileName: string, fileId: string, status: 'pending' | 'uploading' | 'uploaded' | 'failed', error?: string) => void
   finishUpload: (uploadId: string) => void
   cancelUpload: (uploadId: string) => void
   getUploadProgress: (uploadId: string) => UploadTask | null
@@ -52,13 +52,13 @@ interface UploadProgressProviderProps {
 export const UploadProgressProvider: React.FC<UploadProgressProviderProps> = ({ children }) => {
   const [currentUpload, setCurrentUpload] = useState<UploadTask | null>(null)
 
-  const startUpload = useCallback((collectionName: string, files: File[], totalBatches: number, isNewCollection: boolean, targetCollectionId?: string): string => {
+  const startUpload = useCallback((collectionName: string, files: { file: File; id: string }[], totalBatches: number, isNewCollection: boolean, targetCollectionId?: string): string => {
     const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     
     const uploadFiles: UploadFileStatus[] = files.map((file, index) => ({
-      id: `${uploadId}_file_${index}`,
-      name: file.name,
-      size: file.size,
+      id: file.id,
+      name: file.file.name,
+      size: file.file.size,
       status: 'pending'
     }))
     
@@ -96,14 +96,14 @@ export const UploadProgressProvider: React.FC<UploadProgressProviderProps> = ({ 
     })
   }, [])
 
-  const updateFileStatus = useCallback((uploadId: string, fileName: string, status: 'pending' | 'uploading' | 'uploaded' | 'failed', error?: string) => {
+  const updateFileStatus = useCallback((uploadId: string, fileName: string, fileId: string, status: 'pending' | 'uploading' | 'uploaded' | 'failed', error?: string) => {
     setCurrentUpload(prev => {
       if (!prev || prev.id !== uploadId) return prev
       
       return {
         ...prev,
         files: prev.files.map(file => 
-          file.name === fileName 
+          file.name === fileName && file.id === fileId
             ? { ...file, status, error }
             : file
         )

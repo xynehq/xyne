@@ -386,7 +386,7 @@ function KnowledgeManagementContent() {
   const [isVespaModalOpen, setIsVespaModalOpen] = useState(false)
         
   // Use global upload progress context
-  const { currentUpload, startUpload, updateProgress, updateFileStatus, finishUpload, cancelUpload } = useUploadProgress()
+  const { currentUpload, startUpload, updateProgress, updateFileStatus, finishUpload } = useUploadProgress()
   
   // Derived state from global context
   const isUploading = currentUpload?.isUploading || false
@@ -540,7 +540,7 @@ function KnowledgeManagementContent() {
 
     // Start the global upload progress
     const batches = createBatches(selectedFiles, collectionName.trim())
-    const files = selectedFiles.map(f => f.file)
+    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
     const uploadId = startUpload(collectionName.trim(), files, batches.length, true)
 
     // Close the modal immediately after starting upload
@@ -555,29 +555,29 @@ function KnowledgeManagementContent() {
       let totalFailed = 0
 
       for (let i = 0; i < batches.length; i++) {
-        const batchFiles = batches[i].map((f) => f.file)
-        
+        const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
+
         // Mark batch files as uploading
         batchFiles.forEach(file => {
-          updateFileStatus(uploadId, file.name, 'uploading')
+          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
         })
-        
-        const uploadResult = await uploadFileBatch(batchFiles, cl.id)
+
+        const uploadResult = await uploadFileBatch(batchFiles.map((f) => f.file), cl.id)
 
         // Update individual file statuses based on results
         if (uploadResult.results) {
           uploadResult.results.forEach((result: any, index: number) => {
             const file = batchFiles[index]
             if (result.success) {
-              updateFileStatus(uploadId, file.name, 'uploaded')
+              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
             } else {
-              updateFileStatus(uploadId, file.name, 'failed', result.error || 'Upload failed')
+              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
             }
           })
         } else {
           // Fallback: mark all as uploaded if no individual results available
           batchFiles.forEach(file => {
-            updateFileStatus(uploadId, file.name, 'uploaded')
+            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
           })
         }
 
@@ -723,7 +723,7 @@ function KnowledgeManagementContent() {
 
     // Start the global upload progress
     const batches = createBatches(selectedFiles, addingToCollection.name)
-    const files = selectedFiles.map(f => f.file)
+    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
     const uploadId = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
 
     // Close the modal immediately after starting upload
@@ -736,15 +736,15 @@ function KnowledgeManagementContent() {
       let totalFailed = 0
 
       for (let i = 0; i < batches.length; i++) {
-        const batchFiles = batches[i].map((f) => f.file)
-        
+        const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
+
         // Mark batch files as uploading
         batchFiles.forEach(file => {
-          updateFileStatus(uploadId, file.name, 'uploading')
+          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
         })
         
         const uploadedResult = await uploadFileBatch(
-          batchFiles,
+          batchFiles.map(f => f.file),
           addingToCollection.id,
           targetFolder?.id,
         )
@@ -754,15 +754,15 @@ function KnowledgeManagementContent() {
           uploadedResult.results.forEach((result: any, index: number) => {
             const file = batchFiles[index]
             if (result.success) {
-              updateFileStatus(uploadId, file.name, 'uploaded')
+              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
             } else {
-              updateFileStatus(uploadId, file.name, 'failed', result.error || 'Upload failed')
+              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
             }
           })
         } else {
           // Fallback: mark all as uploaded if no individual results available
           batchFiles.forEach(file => {
-            updateFileStatus(uploadId, file.name, 'uploaded')
+            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
           })
         }
 

@@ -17,7 +17,7 @@ export const UploadProgressWidget: React.FC = () => {
   }
 
   const { collectionName, batchProgress } = currentUpload
-  const progressPercentage = Math.round((batchProgress.current / batchProgress.total) * 100)
+  const progressPercentage = batchProgress.total > 0 ? Math.round((batchProgress.current / batchProgress.total) * 100) : 0
 
   const handleCancel = () => {
     setShowCancelModal(true)

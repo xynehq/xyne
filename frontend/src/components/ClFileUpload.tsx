@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, ChangeEvent } from "react"
-import { Upload, File as FileIcon, X, Trash2, FileUp } from "lucide-react"
+import { File as FileIcon, X, FileUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import FileUploadSkeleton from "@/components/FileUploadSkeleton"
 import { FileType, MIME_TYPE_MAPPINGS, EXTENSION_MAPPINGS } from "../../../server/shared/types"
