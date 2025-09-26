@@ -237,7 +237,7 @@ export function useScopedFind(
       
       const root = containerRef.current;
       if (!root) {
-        console.log('No container ref found');
+        if (debug) console.log('No container ref found');
         return false;
       }
       
@@ -269,13 +269,13 @@ export function useScopedFind(
         cleanExpiredCache();
 
         // Generate cache key
-        const cacheKey = generateCacheKey(
-          documentId,
-          chunkIndex,
-        );
+        const canUseCache = !!documentId;
+        const cacheKey = canUseCache
+          ? generateCacheKey(documentId, chunkIndex)
+          : '';
 
-        // Check cache first
-        const cachedEntry = cacheRef.current[cacheKey];
+        // Check cache first (only if safe)
+        const cachedEntry = canUseCache ? cacheRef.current[cacheKey] : undefined;
         let result: HighlightResponse;
 
         if (cachedEntry && (Date.now() - cachedEntry.timestamp) < CACHE_DURATION) {
@@ -304,8 +304,8 @@ export function useScopedFind(
 
           result = await response.json();
           
-          // Only cache successful responses
-          if (result.success) {
+          // Only cache successful responses and only when safe
+          if (result.success && canUseCache) {
             cacheRef.current[cacheKey] = {
               response: result,
               timestamp: Date.now(),
@@ -314,6 +314,8 @@ export function useScopedFind(
             if (debug) {
               console.log('Cached successful result for key:', cacheKey);
             }
+          } else if (result.success && !canUseCache && debug) {
+            console.log('Skipping cache write (no documentId)');
           } else {
             if (debug) {
               console.log('Not caching failed response for key:', cacheKey);
