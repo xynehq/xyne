@@ -25,7 +25,6 @@ import { db } from '@/db/client';
 const KB_STORAGE_ROOT = path.join(process.cwd(), "storage", "kb_files");
 const Logger = getLogger(Subsystem.Integrations)
 class RIBBIECircularDownloader {
-
     private downloadedCircularIds = new Set<string>();
 
     // Add method to check duplicates
@@ -71,7 +70,7 @@ class RIBBIECircularDownloader {
             Logger.info('✅ Successfully loaded RIBBIE circulars page');
 
         } catch (error) {
-             throw new Error(`Failed to load RIBBIE homepage`, { cause: error });
+            throw new Error(`Failed to load RIBBIE homepage`, { cause: error });
         }
     }
 
@@ -115,7 +114,7 @@ class RIBBIECircularDownloader {
             await yearElement.click();
             Logger.info(`✅ Clicked ${targetYear} year link`);
 
-             // Wait for the year section to expand by waiting for a month link to be visible.
+            // Wait for the year section to expand by waiting for a month link to be visible.
             await this.page.waitForSelector(`a[id^="${targetYear}"]`, { timeout: 5000 });
 
         } catch (error) {
@@ -741,5 +740,9 @@ export async function testCompleteFlow(): Promise<void> {
 
 // Run test if this file is executed directly
 if (import.meta.main) {
+    if (!process.env.RIBBIE_ABSOLUTE_PDF_URL || !process.env.RIBBIE_CONFIG_URL || !process.env.RIBBIE_CONFIG_BASE_URL) {
+        throw new Error('Environment variables RIBBIE_ABSOLUTE_PDF_URL, RIBBIE_CONFIG_URL, and RIBBIE_CONFIG_BASE_URL must be set');
+    }
+
     testCompleteFlow().catch(console.error);
 }
