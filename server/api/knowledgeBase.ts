@@ -362,6 +362,41 @@ export const GetCollectionApi = async (c: Context) => {
   }
 }
 
+export const GetCollectionNameApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const collectionId = c.req.param("clId")
+
+  // Get user from database
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
+
+  try {
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
+    }
+
+    
+
+    return c.json({ name: collection.name })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to get Collection: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to get Collection",
+    })
+  }
+}
+
+
 // Update a Collection
 export const UpdateCollectionApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
