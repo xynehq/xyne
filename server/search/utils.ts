@@ -13,9 +13,63 @@ import {
   getAllFolderItems,
   getAllFolderIds,
   getCollectionFilesVespaIds,
+  getAllCollectionAndFolderItems,
+  getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
+import type { SelectAgent } from "@/db/agent"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "search-utils" })
+
+export function removePrefixesFromItemIds(itemIds: string[]): string[] {
+  return itemIds.map((itemId) => {
+    // Remove prefixes: clfd-, clf-, cl-
+    if (itemId.startsWith("clfd-")) {
+      return itemId.substring(5) // Remove 'clfd-'
+    } else if (itemId.startsWith("clf-")) {
+      return itemId.substring(4) // Remove 'clf-'
+    } else if (itemId.startsWith("cl-")) {
+      return itemId.substring(3) // Remove 'cl-'
+    }
+    return itemId // Return as-is if no prefix matches
+  })
+}
+
+export async function getVespaIdsFromPrefixedItemIds(
+  prefixedItemIds: string[],
+): Promise<string[]> {
+  try {
+    // Remove prefixes from itemIds
+    const cleanedItemIds = removePrefixesFromItemIds(prefixedItemIds)
+    // Get their corresponding vespaIds
+    const ids = await getCollectionFoldersItemIds(cleanedItemIds, db)
+    // get all their children db Ids
+    const { fileIds, folderIds } = await getAllCollectionAndFolderItems(
+      ids
+        .map((doc) => doc.vespaDocId)
+        .filter((id): id is string => id !== null),
+      db,
+    )
+
+    // Get vespaIds for all file items
+    const fileVespaIds = await getCollectionFilesVespaIds(fileIds, db)
+    const allVespaIds = fileVespaIds
+      .map((item: any) => item.vespaDocId)
+      .filter(Boolean)
+
+    // Also get vespaIds for folder items
+    if (folderIds.length > 0) {
+      const folderVespaIds = await getCollectionFoldersItemIds(folderIds, db)
+      const folderVespaDocIds = folderVespaIds
+        .map((item: any) => item.vespaDocId)
+        .filter(Boolean)
+      allVespaIds.push(...folderVespaDocIds)
+    }
+    return allVespaIds
+  } catch (error) {
+    Logger.error("Error getting vespaIds from prefixed itemIds:", error)
+    return []
+  }
+}
 
 export async function extractDriveIds(
   options: Partial<VespaQueryConfig>,
@@ -94,7 +148,7 @@ export async function extractCollectionVespaIds(
       if (allSubFolderIds.length > 0) {
         allFolderIds.push(...allSubFolderIds)
       }
-      
+
       if (!result.collectionFolderIds) result.collectionFolderIds = []
       result.collectionFolderIds.push(...allFolderIds)
     }
@@ -108,11 +162,53 @@ export async function extractCollectionVespaIds(
       const vespaDocIds = ids
         .filter((item: any) => item.vespaDocId !== null)
         .map((item: any) => item.vespaDocId!)
-      
+
       if (!result.collectionFileIds) result.collectionFileIds = []
       result.collectionFileIds.push(...vespaDocIds)
     }
   }
-  
+
   return result
+}
+
+export async function validateVespaIdInAgentIntegrations(
+  agentForDb: SelectAgent | null,
+  vespaId: string,
+): Promise<boolean> {
+  if (!agentForDb || !agentForDb.appIntegrations) {
+    return false
+  }
+
+  let itemIds: string[] = []
+
+  if (Array.isArray(agentForDb.appIntegrations)) {
+    itemIds = agentForDb.appIntegrations
+  } else if (typeof agentForDb.appIntegrations === "object") {
+    const knowledgeBaseConfig = agentForDb.appIntegrations["knowledge_base"]
+    if (
+      knowledgeBaseConfig &&
+      typeof knowledgeBaseConfig === "object" &&
+      "itemIds" in knowledgeBaseConfig
+    ) {
+      if (
+        knowledgeBaseConfig.itemIds &&
+        Array.isArray(knowledgeBaseConfig.itemIds)
+      ) {
+        itemIds = knowledgeBaseConfig.itemIds
+      }
+    }
+  }
+
+  if (itemIds.length === 0) {
+    return false
+  }
+
+  try {
+    const allVespaIds = await getVespaIdsFromPrefixedItemIds(itemIds)
+    // Check if the target vespaId exists in the expanded list
+    return allVespaIds.includes(vespaId)
+  } catch (error) {
+    Logger.error("Error during BFS validation:", error)
+    return false
+  }
 }
