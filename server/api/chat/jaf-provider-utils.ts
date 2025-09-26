@@ -88,11 +88,32 @@ export function zodSchemaToJsonSchema(zodSchema: ZodSchema): JsonSchema {
     const objectSchema: JsonSchema = {
       type: "object",
       properties,
-      additionalProperties: false,
     }
 
     if (required.length > 0) {
       objectSchema.required = required
+    }
+
+    let additionalProperties: JsonSchema["additionalProperties"]
+
+    const catchallSchema = getZodType(def.catchall)
+    if (catchallSchema) {
+      const catchallDef = getDefinition(catchallSchema)
+      if (catchallDef?.typeName === "ZodNever") {
+        additionalProperties = false
+      } else {
+        additionalProperties = schemaFromCandidate(catchallSchema)
+      }
+    } else if (def.unknownKeys === "passthrough") {
+      additionalProperties = true
+    } else if (def.unknownKeys === "strict") {
+      additionalProperties = false
+    }
+
+    if (typeof additionalProperties !== "undefined") {
+      objectSchema.additionalProperties = additionalProperties
+    } else {
+      delete objectSchema.additionalProperties
     }
 
     return attachDesc(objectSchema, zodSchema)
@@ -239,16 +260,16 @@ function isZodSchemaRequired(zodSchema: ZodSchema): boolean {
   const def = getDefinition(zodSchema)
   const typeName = typeof def?.typeName === "string" ? def.typeName : undefined
 
-  if (
-    typeName === "ZodOptional" ||
-    typeName === "ZodDefault" ||
-    typeName === "ZodNullable" ||
-    typeName === "ZodNull"
-  ) {
+  if (typeName === "ZodOptional" || typeName === "ZodDefault") {
     return false
   }
 
-  if (typeName === "ZodEffects" || typeName === "ZodBranded" || typeName === "ZodReadonly") {
+  if (
+    typeName === "ZodNullable" ||
+    typeName === "ZodEffects" ||
+    typeName === "ZodBranded" ||
+    typeName === "ZodReadonly"
+  ) {
     const innerType = getZodType(def?.schema) ?? getZodType(def?.type)
     if (innerType) {
       return isZodSchemaRequired(innerType)

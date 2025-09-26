@@ -459,7 +459,6 @@ export const getAISDKProviderByModel = (modelId: Models): ProviderV2 => {
     }
 
     case AIProviders.OpenAI: {
-      console.log("Inside OpenAI provider");
       if (!openaiAISDKProvider) {
         const openAIConfig: Parameters<typeof createOpenAI>[0] = {}
 

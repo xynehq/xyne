@@ -90,7 +90,7 @@ function paramsToZod(
     }
   }
 
-  const looseObject = z.looseObject(shape as unknown as ZodRawShape) as ZodObjectWithRawSchema
+  const looseObject = z.looseObject(shape as unknown as ZodRawShape) as unknown as ZodObjectWithRawSchema
 
   const jsonSchema: JSONSchema7 = {
     type: "object",
@@ -119,10 +119,11 @@ function mcpToolSchemaStringToZodObject(
   try {
     const parsed = JSON.parse(schemaStr)
     const inputSchema = parsed?.inputSchema || parsed?.parameters || parsed
-    const obj = z.looseObject({}) as ZodObjectWithRawSchema
+    const obj = z.looseObject({}) as unknown as ZodObjectWithRawSchema
     obj.__xyne_raw_json_schema = inputSchema
     return toToolSchemaParameters(obj)
-  } catch {
+  } catch (error) {
+    Logger.error({ err: error, schemaStr }, "Failed to parse MCP tool schema string");
     return toToolSchemaParameters(z.looseObject({}))
   }
 }
@@ -201,11 +202,11 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFA
         try {
           const parsed = JSON.parse(t.toolSchema)
           toolDescription = parsed?.description || parsed?.inputSchema?.description
-        } catch {}
+        } catch(error) {
+          Logger.warn({ err: error, toolName }, "Could not parse toolSchema to extract description");
+        }
       }
-      try {
-        Logger.info({ connectorId, toolName, descLen: (toolDescription || "").length }, "[MCP] Registering tool for JAF agent")
-      } catch {}
+      Logger.info({ connectorId, toolName, descLen: (toolDescription || "").length }, "[MCP] Registering tool for JAF agent")
       tools.push({
         schema: {
           name: toolName,
@@ -243,8 +244,8 @@ export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFA
               if (Array.isArray(maybeContexts)) {
                 newFragments = maybeContexts as MinimalAgentFragment[]
               }
-            } catch {
-              // ignore
+            } catch (error) {
+              Logger.warn({ err: error, toolName }, "Could not parse MCP tool response");
             }
 
             return ToolResponse.success(formattedContent, {

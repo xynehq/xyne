@@ -45,6 +45,7 @@
     "@ai-sdk/amazon-bedrock": "^3.0.23",
     "@ai-sdk/google-vertex": "^3.0.29",
     "@ai-sdk/openai": "^2.0.34",
+    "@ai-sdk/provider": "^2.0.0",
     "@anthropic-ai/vertex-sdk": "^0.13.1",
     "@aws-sdk/client-bedrock": "^3.797.0",
     "@aws-sdk/client-bedrock-runtime": "^3.797.0",

@@ -835,8 +835,6 @@ export const MessageWithToolsApi = async (c: Context) => {
       actualModelId = defaultBestModel
     }
 
-    console.log({actualModelId, modelId, selectedModelConfig})
-
     const attachmentMetadata = parseAttachmentMetadata(c)
     const attachmentFileIds = attachmentMetadata.map(
       (m: AttachmentMetadata) => m.fileId,
