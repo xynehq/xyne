@@ -541,7 +541,7 @@ function KnowledgeManagementContent() {
     // Start the global upload progress
     const batches = createBatches(selectedFiles, collectionName.trim())
     const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
-    const uploadId = startUpload(collectionName.trim(), files, batches.length, true)
+    const { uploadId, abortController } = startUpload(collectionName.trim(), files, batches.length, true)
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -553,6 +553,7 @@ function KnowledgeManagementContent() {
       let totalSuccessful = 0
       let totalSkipped = 0
       let totalFailed = 0
+      let processed = 0
 
       for (let i = 0; i < batches.length; i++) {
         const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
@@ -562,7 +563,7 @@ function KnowledgeManagementContent() {
           updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
         })
 
-        const uploadResult = await uploadFileBatch(batchFiles.map((f) => f.file), cl.id)
+        const uploadResult = await uploadFileBatch(batchFiles.map((f) => f.file), cl.id, null, abortController.signal)
 
         // Update individual file statuses based on results
         if (uploadResult.results) {
@@ -589,8 +590,8 @@ function KnowledgeManagementContent() {
         }
 
         // Update progress
-        const newCurrent = (i + 1) * batchFiles.length
-        updateProgress(uploadId, newCurrent, i + 1)
+        processed += batchFiles.length
+        updateProgress(uploadId, processed, i + 1)
       }
 
       // Fetch the updated Collection data from the backend
@@ -674,10 +675,19 @@ function KnowledgeManagementContent() {
       })
     } catch (error) {
       console.error("Upload failed:", error)
-      toast.error({
-        title: "Upload Failed",
-        description: "Failed to create collection. Please try again.",
-      })
+      
+      // Check if the error is due to cancellation
+      if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Upload Cancelled",
+          description: "File upload was cancelled by user.",
+        })
+      } else {
+        toast.error({
+          title: "Upload Failed",
+          description: "Failed to create collection. Please try again.",
+        })
+      }
     } finally {
       finishUpload(uploadId)
     }
@@ -724,7 +734,7 @@ function KnowledgeManagementContent() {
     // Start the global upload progress
     const batches = createBatches(selectedFiles, addingToCollection.name)
     const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
-    const uploadId = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
+    const { uploadId, abortController } = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -734,6 +744,7 @@ function KnowledgeManagementContent() {
       let totalSuccessful = 0
       let totalSkipped = 0
       let totalFailed = 0
+      let processed = 0
 
       for (let i = 0; i < batches.length; i++) {
         const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
@@ -747,6 +758,7 @@ function KnowledgeManagementContent() {
           batchFiles.map(f => f.file),
           addingToCollection.id,
           targetFolder?.id,
+          abortController.signal,
         )
 
         // Update individual file statuses based on results
@@ -774,8 +786,8 @@ function KnowledgeManagementContent() {
         }
 
         // Update progress
-        const newCurrent = (i + 1) * batchFiles.length
-        updateProgress(uploadId, newCurrent, i + 1)
+        processed += batchFiles.length
+        updateProgress(uploadId, processed, i + 1)
       }
 
       // Refresh the collection by fetching updated data from backend
@@ -860,10 +872,19 @@ function KnowledgeManagementContent() {
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
-      toast.error({
-        title: "Add Files Failed",
-        description: "Failed to add files to collection. Please try again.",
-      })
+      
+      // Check if the error is due to cancellation
+      if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Upload Cancelled",
+          description: "File upload was cancelled by user.",
+        })
+      } else {
+        toast.error({
+          title: "Add Files Failed",
+          description: "Failed to add files to collection. Please try again.",
+        })
+      }
     } finally {
       finishUpload(uploadId)
     }

@@ -23,11 +23,12 @@ export interface UploadTask {
   isNewCollection: boolean
   targetCollectionId?: string
   files: UploadFileStatus[]
+  abortController: AbortController
 }
 
 interface UploadProgressContextType {
   currentUpload: UploadTask | null
-  startUpload: (collectionName: string, files: { file: File; id: string }[], totalBatches: number, isNewCollection: boolean, targetCollectionId?: string) => string
+  startUpload: (collectionName: string, files: { file: File; id: string }[], totalBatches: number, isNewCollection: boolean, targetCollectionId?: string) => { uploadId: string; abortController: AbortController }
   updateProgress: (uploadId: string, current: number, batch: number) => void
   updateFileStatus: (uploadId: string, fileName: string, fileId: string, status: 'pending' | 'uploading' | 'uploaded' | 'failed', error?: string) => void
   finishUpload: (uploadId: string) => void
@@ -52,8 +53,9 @@ interface UploadProgressProviderProps {
 export const UploadProgressProvider: React.FC<UploadProgressProviderProps> = ({ children }) => {
   const [currentUpload, setCurrentUpload] = useState<UploadTask | null>(null)
 
-  const startUpload = useCallback((collectionName: string, files: { file: File; id: string }[], totalBatches: number, isNewCollection: boolean, targetCollectionId?: string): string => {
+  const startUpload = useCallback((collectionName: string, files: { file: File; id: string }[], totalBatches: number, isNewCollection: boolean, targetCollectionId?: string): { uploadId: string; abortController: AbortController } => {
     const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const abortController = new AbortController()
     
     const uploadFiles: UploadFileStatus[] = files.map((file, index) => ({
       id: file.id,
@@ -74,11 +76,12 @@ export const UploadProgressProvider: React.FC<UploadProgressProviderProps> = ({ 
       },
       isNewCollection,
       targetCollectionId,
-      files: uploadFiles
+      files: uploadFiles,
+      abortController
     }
     
     setCurrentUpload(newUpload)
-    return uploadId
+    return { uploadId, abortController }
   }, [])
 
   const updateProgress = useCallback((uploadId: string, current: number, batch: number) => {
@@ -121,6 +124,12 @@ export const UploadProgressProvider: React.FC<UploadProgressProviderProps> = ({ 
   const cancelUpload = useCallback((uploadId: string) => {
     setCurrentUpload(prev => {
       if (!prev || prev.id !== uploadId) return prev
+      
+      // Abort all ongoing requests
+      if (prev.abortController) {
+        prev.abortController.abort()
+      }
+      
       return null
     })
   }, [])
