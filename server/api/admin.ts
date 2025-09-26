@@ -56,7 +56,13 @@ import {
 import { z } from "zod"
 import { boss, SaaSQueue } from "@/queue"
 import config from "@/config"
-import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types"
+import {
+  Apps,
+  AuthType,
+  ConnectorStatus,
+  ConnectorType,
+  getDocumentSchema,
+} from "@/shared/types"
 import {
   createOAuthProvider,
   getAppGlobalOAuthProvider,
@@ -97,7 +103,6 @@ import {
   getAgentFeedbackMessages,
   getAgentUserFeedbackMessages,
   getAllUserFeedbackMessages,
-  getWorkspaceApiKeys,
 } from "@/db/sharedAgentUsage"
 import { getPath } from "hono/utils/url"
 import {
@@ -130,6 +135,9 @@ import { Client as GraphClient } from "@microsoft/microsoft-graph-client"
 import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client"
 import { handleMicrosoftServiceAccountIngestion } from "@/integrations/microsoft"
 import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
+import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
+import { GetDocument } from "@/search/vespa"
+import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -1950,45 +1958,6 @@ export const GetAllUserFeedbackMessages = async (c: Context) => {
   }
 }
 
-export const GetWorkspaceApiKeys = async (c: Context) => {
-  let email = ""
-  try {
-    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    email = sub
-
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(
-      db,
-      workspaceExternalId,
-      email,
-    )
-    if (
-      !userAndWorkspace ||
-      !userAndWorkspace.user ||
-      !userAndWorkspace.workspace
-    ) {
-      return c.json({ message: "User or workspace not found" }, 404)
-    }
-    const apiKeys = await getWorkspaceApiKeys({
-      db,
-      userId: userAndWorkspace.user.externalId,
-      workspaceId: userAndWorkspace.workspace.externalId,
-    })
-    return c.json({
-      success: true,
-      data: apiKeys,
-    })
-  } catch (error) {
-    Logger.error(error, "Error fetching agent API keys")
-    return c.json(
-      {
-        success: false,
-        message: getErrorMessage(error),
-      },
-      500,
-    )
-  }
-}
-
 export const ListAllLoggedInUsers = async (c: Context) => {
   try {
     const { workspaceId } = c.get(JwtPayloadKey)
@@ -2127,5 +2096,81 @@ export const HandlePerUserSlackSync = async (c: Context) => {
       },
       500,
     )
+  }
+}
+
+export const GetKbVespaContent = async (c: Context) => {
+  try {
+    const { sub: userEmail } = c.get(JwtPayloadKey)
+
+    const rawData = await c.req.json()
+    const validatedData = getDocumentSchema.parse(rawData)
+    const { docId, schema: rawSchema } = validatedData
+    const validSchemas = [KbItemsSchema]
+    if (!validSchemas.includes(rawSchema)) {
+      throw new HTTPException(400, {
+        message: `Invalid schema type. Expected 'kb_items', got '${rawSchema}'`,
+      })
+    }
+    const collectionFile = await getCollectionFilesVespaIds([docId], db)
+    if (!collectionFile[0]) {
+      throw new HTTPException(404, {
+        message: `Document with id ${docId} not found in the system.`,
+      })
+    }
+    // console.log("Fetched Vespa Doc ID:", vespaDocId)
+    const schema = rawSchema as VespaSchema
+
+    const documentData = await GetDocument(
+      schema,
+      collectionFile[0].vespaDocId!,
+    )
+
+    if (!documentData || !("fields" in documentData) || !documentData.fields) {
+      loggerWithChild({ email: userEmail }).warn(
+        `Document not found or fields missing for docId: ${docId}, schema: ${schema} during delete operation by ${userEmail}`,
+      )
+      throw new HTTPException(404, { message: "Document not found." })
+    }
+
+    const fields = documentData.fields as Record<string, any>
+    let ownerEmail: string
+
+    ownerEmail = fields.createdBy as string
+
+    if (!ownerEmail) {
+      loggerWithChild({ email: userEmail }).error(
+        `Ownership field (createdBy/uploadedBy) missing for document ${docId} of schema ${schema}. Cannot verify ownership for user ${userEmail}.`,
+      )
+      throw new HTTPException(500, {
+        message:
+          "Internal server error: Cannot verify document ownership due to missing data.",
+      })
+    }
+    if (ownerEmail !== userEmail) {
+      loggerWithChild({ email: userEmail }).warn(
+        `User ${userEmail} attempt to access document ${docId} (schema: ${schema}) owned by ${ownerEmail}. Access denied.`,
+      )
+      throw new HTTPException(403, {
+        message:
+          "Forbidden: You do not have permission to access this document.",
+      })
+    }
+    loggerWithChild({ email: userEmail }).info(
+      `User ${userEmail} authorized to access document ${docId} (schema: ${schema}) owned by ${ownerEmail}.`,
+    )
+    return c.json(
+      {
+        success: true,
+        data: fields,
+      },
+      200,
+    )
+  } catch (error) {
+    Logger.error(error, "Error fetching Vespa data for KB document")
+    throw new HTTPException(500, {
+      message:
+        "Unable to fetch document data at this time. Please try again later.",
+    })
   }
 }

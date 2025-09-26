@@ -42,6 +42,7 @@ import type {
   CollectionItem,
 } from "@/types/knowledgeBase"
 import { api } from "@/api"
+import { UserRole } from "shared/types"
 import DocxViewer from "@/components/DocxViewer"
 import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
@@ -57,6 +58,7 @@ import {
 import ExcelViewer from "@/components/ExcelViewer"
 import CsvViewer from "@/components/CsvViewer"
 import TxtViewer from "@/components/TxtViewer"
+import { DebugDocModal } from "@/components/DebugDocModal"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -420,6 +422,9 @@ function KnowledgeManagementContent() {
 
   // Chat overlay state - only used when isChatHidden is true
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false)
+
+  // Vespa data modal state
+  const [isVespaModalOpen, setIsVespaModalOpen] = useState(false)
 
   // Load upload state from localStorage on mount
   const savedState = loadUploadState()
@@ -1424,6 +1429,11 @@ function KnowledgeManagementContent() {
     }
   }
 
+  // Handle Vespa data modal opening
+  const handleViewVespaData = () => {
+    setIsVespaModalOpen(true)
+  }
+
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
       <Sidebar
@@ -1458,7 +1468,18 @@ function KnowledgeManagementContent() {
                       </span>
                     </div>
                   </div>
-                  <div className="ml-auto">
+                  <div className="ml-auto flex items-center">
+                    {(user?.role === UserRole.Admin ||
+                      user?.role === UserRole.SuperAdmin) && (
+                      <Button
+                        onClick={handleViewVespaData}
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto"
+                      >
+                        View
+                      </Button>
+                    )}
                     <Button
                       onClick={() =>
                         setIsFileTreeCollapsed(!isFileTreeCollapsed)
@@ -2155,6 +2176,14 @@ function KnowledgeManagementContent() {
           </div>
         </div>
       )}
+
+      {/* Debug Document Modal */}
+      <DebugDocModal
+        documentId={selectedDocument?.file.id || null}
+        documentName={selectedDocument?.file.name || null}
+        isOpen={isVespaModalOpen}
+        onClose={() => setIsVespaModalOpen(false)}
+      />
     </div>
   )
 }
