@@ -3,6 +3,7 @@ import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client"
 import { retryWithBackoff } from "@/utils"
 import { Apps } from "@/shared/types"
 import { Readable } from "stream"
+import { CustomServiceAuthProvider } from "./utils"
 
 // Simple authentication provider for Microsoft Graph
 // Token refresh is handled at the connector level in server/db/connector.ts
@@ -22,25 +23,46 @@ class CustomAuthProvider implements AuthenticationProvider {
 export interface MicrosoftGraphClient {
   client: Client
   accessToken: string
-  refreshToken: string
+  refreshToken?: string // Only for delegated clients
+  tenantId?: string // Only for service clients
   clientId: string
   clientSecret: string
   betaClient: Client
-  authProvider: CustomAuthProvider
   // Helper methods to get updated tokens after refresh
   getCurrentTokens(): {
     accessToken: string
-    refreshToken: string
+    refreshToken?: string
     expiresAt?: Date
   }
+}
+
+export const updateMicrosoftGraphClient = (
+  graphClient: MicrosoftGraphClient,
+  accessToken: string,
+  refreshToken?: string,
+) => {
+  graphClient.accessToken = accessToken
+  if (refreshToken) graphClient.refreshToken = refreshToken
+
+  const authProvider = new CustomAuthProvider(accessToken)
+
+  graphClient.client = Client.initWithMiddleware({
+    authProvider,
+    defaultVersion: "v1.0",
+  })
+  graphClient.betaClient = Client.initWithMiddleware({
+    authProvider,
+    defaultVersion: "beta",
+  })
 }
 
 // Create Microsoft Graph client similar to Google's pattern
 export const createMicrosoftGraphClient = (
   accessToken: string,
-  refreshToken: string,
   clientId: string,
   clientSecret: string,
+  refreshToken?: string,
+  tenantId?: string,
   tokenExpiresAt?: Date,
 ): MicrosoftGraphClient => {
   const authProvider = new CustomAuthProvider(accessToken)
@@ -58,10 +80,10 @@ export const createMicrosoftGraphClient = (
     client,
     accessToken,
     refreshToken,
+    tenantId,
     clientId,
     clientSecret,
     betaClient,
-    authProvider,
     getCurrentTokens() {
       return {
         accessToken,
@@ -76,15 +98,16 @@ export const createMicrosoftGraphClient = (
 export const makeGraphApiCall = async (
   graphClient: MicrosoftGraphClient,
   endpoint: string,
-  options?: any,
 ): Promise<any> => {
   return retryWithBackoff(
     async () => {
-      const result = await graphClient.client.api(endpoint).get(options)
+      const result = await graphClient.client.api(endpoint).get()
       return result
     },
     `Making Microsoft Graph API call to ${endpoint}`,
     Apps.MicrosoftDrive,
+    1,
+    graphClient,
   )
 }
 export const makeBetaGraphApiCall = async (
@@ -99,6 +122,8 @@ export const makeBetaGraphApiCall = async (
     },
     `Making Microsoft Graph API call to ${endpoint}`,
     Apps.MicrosoftDrive,
+    1,
+    graphClient,
   )
 }
 export const makeGraphApiCallWithHeaders = async (
@@ -121,6 +146,8 @@ export const makeGraphApiCallWithHeaders = async (
     },
     `Making Microsoft Graph API call to ${endpoint} with headers`,
     Apps.MicrosoftDrive,
+    1,
+    graphClient,
   )
 }
 
@@ -148,6 +175,8 @@ export const makePagedGraphApiCall = async (
       },
       `Making paginated Microsoft Graph API call to ${nextLink}`,
       Apps.MicrosoftDrive,
+      1,
+      graphClient,
     )
 
     if (response.value) {
@@ -162,14 +191,17 @@ export const makePagedGraphApiCall = async (
 
 // Download file from Microsoft Graph
 export async function downloadFileFromGraph(
-  graphClient: Client,
+  graphClient: MicrosoftGraphClient,
   fileId: string,
+  driveId?: string,
 ): Promise<Buffer> {
   try {
-    const response = await graphClient
-      .api(`/me/drive/items/${fileId}/content`)
-      .get()
+    let endpoint: string
 
+    if (driveId) endpoint = `drives/${driveId}/items/${fileId}/content`
+    else endpoint = `me/drive/items/${fileId}/content`
+
+    const response = await makeGraphApiCall(graphClient, endpoint)
     return await streamToBuffer(response)
   } catch (error) {
     throw new Error(`Failed to download file ${fileId}: ${error}`)
