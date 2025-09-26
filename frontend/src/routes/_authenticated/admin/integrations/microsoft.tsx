@@ -18,7 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
-import { api, wsClient } from "@/api"
+import { api, getWSClient } from "@/api"
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from "@tanstack/react-form"
 
@@ -468,8 +468,14 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     }
   }, [data, isPending])
 
-  useEffect(() => {
-    let oauthSocket: WebSocket | null = null
+useEffect(() => {
+  let oauthSocket: WebSocket | null = null
+  let isMounted = true
+
+  async function initOAuthSocket() {
+    try {
+      const wsClient = await getWSClient()
+      if (!isMounted) return 
 
     if (!isPending && data && data.length > 0) {
       const oauthConnector = data.find(
@@ -500,8 +506,15 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
         })
       }
     }
+   } catch (err) {
+      console.error("Failed to initialize Microsoft OAuth WebSocket:", err)
+    }
+  }
+
+  initOAuthSocket()
 
     return () => {
+      isMounted = false
       oauthSocket?.close()
     }
   }, [data, isPending])

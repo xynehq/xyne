@@ -122,6 +122,10 @@ export default defineConfig(({ mode }) => {
           ws: true,
           rewriteWsOrigin: true,
         },
+        "/config": {
+          target: env.VITE_API_BASE_URL || "http://localhost:3000",
+          changeOrigin: true,
+        },
       },
     },
     test: {

@@ -18,7 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
-import { api, wsClient } from "@/api"
+import { api, getWSClient } from "@/api"
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from "@tanstack/react-form"
 
@@ -1119,64 +1119,86 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     }
   }, [data, isPending])
 
-  useEffect(() => {
-    let serviceAccountSocket: WebSocket | null = null
-    let oauthSocket: WebSocket | null = null
+useEffect(() => {
+  let isMounted = true
+  let serviceAccountSocket: WebSocket | null = null
+  let oauthSocket: WebSocket | null = null
 
-    if (!isPending && data && data.length > 0) {
-      const serviceAccountConnector = data.find(
-        (c) => c.authType === AuthType.ServiceAccount,
-      )
-      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+  async function initSockets() {
+    try {
+      const wsClient = await getWSClient()
+      if (!isMounted) return // stop if component unmounted before WS client ready
 
-      if (serviceAccountConnector) {
-        serviceAccountSocket = wsClient.ws.$ws({
-          query: { id: serviceAccountConnector.id },
-        })
-        serviceAccountSocket?.addEventListener("open", () => {
-          logger.info(
-            `Service Account WebSocket opened for ${serviceAccountConnector.id}`,
-          )
-        })
-        serviceAccountSocket?.addEventListener("message", (e) => {
-          const data = JSON.parse(e.data)
-          const statusJson = JSON.parse(data.message)
-          setProgress(statusJson.progress ?? 0)
-          setUserStats(statusJson.userStats ?? {})
-          setUpateStatus(data.message)
-        })
-        serviceAccountSocket?.addEventListener("close", (e) => {
-          logger.info("Service Account WebSocket closed")
-          if (e.reason === "Job finished") {
-            setIsIntegratingSA(true)
-          }
-        })
+      if (!isPending && data && data.length > 0) {
+        const serviceAccountConnector = data.find(
+          (c) => c.authType === AuthType.ServiceAccount,
+        )
+        const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+
+        // --- Service Account WebSocket ---
+        if (serviceAccountConnector) {
+          serviceAccountSocket = wsClient.ws.$ws({ query: { id: serviceAccountConnector.id } })
+
+          serviceAccountSocket?.addEventListener("open", () => {
+            logger.info(`Service Account WebSocket opened for ${serviceAccountConnector.id}`)
+          })
+
+          serviceAccountSocket?.addEventListener("message", (e) => {
+            const data = JSON.parse(e.data)
+            const statusJson = JSON.parse(data.message)
+            setProgress(statusJson.progress ?? 0)
+            setUserStats(statusJson.userStats ?? {})
+            setUpateStatus(data.message)
+          })
+
+          serviceAccountSocket?.addEventListener("close", (e) => {
+            logger.info("Service Account WebSocket closed")
+            if (e.reason === "Job finished") {
+              setIsIntegratingSA(true)
+            }
+          })
+          serviceAccountSocket?.addEventListener("error", (err) => {
+            logger.error("Service Account WebSocket error", err)
+          })
+        }
+
+        // --- OAuth WebSocket ---
+        if (oauthConnector) {
+          oauthSocket = wsClient.ws.$ws({ query: { id: oauthConnector.id } })
+
+          oauthSocket?.addEventListener("open", () => {
+            logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
+          })
+
+          oauthSocket?.addEventListener("message", (e) => {
+            const data = JSON.parse(e.data)
+            const statusJson = JSON.parse(data.message)
+            setProgress(statusJson.progress ?? 0)
+            setUserStats(statusJson.userStats ?? {})
+            setUpateStatus(data.message)
+          })
+
+          oauthSocket?.addEventListener("close", (e) => {
+            logger.info("OAuth WebSocket closed")
+            if (e.reason === "Job finished") {
+              setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+            }
+          })
+
+          oauthSocket?.addEventListener("error", (err) => {
+            logger.error("OAuth WebSocket error", err)
+          })
+        }
       }
-
-      if (oauthConnector) {
-        oauthSocket = wsClient.ws.$ws({
-          query: { id: oauthConnector.id },
-        })
-        oauthSocket?.addEventListener("open", () => {
-          logger.info(`OAuth WebSocket opened for ${oauthConnector.id}`)
-        })
-        oauthSocket?.addEventListener("message", (e) => {
-          const data = JSON.parse(e.data)
-          const statusJson = JSON.parse(data.message)
-          setProgress(statusJson.progress ?? 0)
-          setUserStats(statusJson.userStats ?? {})
-          setUpateStatus(data.message)
-        })
-        oauthSocket?.addEventListener("close", (e) => {
-          logger.info("OAuth WebSocket closed")
-          if (e.reason === "Job finished") {
-            setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
-          }
-        })
-      }
+    } catch (err) {
+      console.error("Failed to initialize WebSockets:", err)
     }
+  }
+
+  initSockets()
 
     return () => {
+      isMounted = false
       serviceAccountSocket?.close()
       oauthSocket?.close()
     }

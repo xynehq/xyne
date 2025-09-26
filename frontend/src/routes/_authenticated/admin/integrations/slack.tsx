@@ -40,7 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { wsClient } from "@/api" // ensure wsClient is imported
+import { getWSClient } from "@/api" // ensure wsClient is imported
 
 export const updateConnectorStatus = async (
   connectorId: string,
@@ -790,91 +790,114 @@ export const Slack = ({
   const slackConnector = data?.find(
     (v) => v.app === Apps.Slack && v.authType === AuthType.OAuth,
   )
-  useEffect(() => {
-    let socket: WebSocket | null = null
-    if (!isPending && data && data.length > 0) {
-      const slackConnector = data.find(
-        (v) => v.app === Apps.Slack && v.authType === AuthType.OAuth,
-      )
-      if (slackConnector) {
-        socket = wsClient.ws.$ws({
-          query: {
-            id: slackConnector.id,
-            app: Apps.Slack,
-          },
-        })
-      }
-      socket?.addEventListener("open", () => {
-        console.info("Slack socket opened")
-      })
-      socket?.addEventListener("message", (e) => {
-        if (startTimeRef.current === null) {
-          startTimeRef.current = Date.now()
-        }
-        const dataMsg = JSON.parse(e.data)
-        const statusJson = JSON.parse(dataMsg.message)
-        setSlackProgress(statusJson.progress ?? 0)
-        if (statusJson.IngestionType) {
-          if (statusJson.IngestionType === IngestionType.fullIngestion)
-            setSlackUserNormalIngestionStats((prevStats) => {
-              if (
-                statusJson.userStats &&
-                Object.keys(statusJson.userStats).length > 0
-              ) {
-                return statusJson.userStats
-              }
-              return Object.keys(prevStats).length > 0 ? prevStats : {}
-            })
-          else
-            setSlackUserPartialIngestionStats((prevStats) => {
-              if (
-                statusJson.userStats &&
-                Object.keys(statusJson.userStats).length > 0
-              ) {
-                return statusJson.userStats
-              }
-              return Object.keys(prevStats).length > 0 ? prevStats : {}
-            })
-        }
-        setSlackUserStats((prevStats) => {
-          // If new userStats are provided and are not empty, update the state.
-          if (
-            statusJson.userStats &&
-            Object.keys(statusJson.userStats).length > 0
-          ) {
-            return statusJson.userStats
-          }
-          // Otherwise, if new userStats are empty or missing,
-          // keep the previous stats if they already had data.
-          // If previous stats were also empty, then return an empty object.
-          return Object.keys(prevStats).length > 0 ? prevStats : {}
-        })
-        setIngestionType(
-          statusJson.IngestionType ?? IngestionType.fullIngestion,
-        )
-      })
+useEffect(() => {
+  let isMounted = true
+  let socket: WebSocket | null = null
 
-      socket?.addEventListener("close", (e) => {
-        console.info("Slack WebSocket connection closed", e.reason)
-        if (e.reason === "Job finished") {
-          setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
-          setIsRegularIngestionActive(false)
+  async function initSlackSocket() {
+    try {
+      const wsClient = await getWSClient()
+      if (!isMounted) return
+
+      if (!isPending && data && data.length > 0) {
+        const slackConnector = data.find(
+          (v) => v.app === Apps.Slack && v.authType === AuthType.OAuth,
+        )
+
+        if (slackConnector) {
+          socket = wsClient.ws.$ws({
+            query: {
+              id: slackConnector.id,
+              app: Apps.Slack,
+            },
+          })
+
+          socket?.addEventListener("open", () => {
+            console.info("Slack socket opened")
+          })
+
+          socket?.addEventListener("message", (e) => {
+            if (startTimeRef.current === null) {
+              startTimeRef.current = Date.now()
+            }
+            const dataMsg = JSON.parse(e.data)
+            const statusJson = JSON.parse(dataMsg.message)
+
+            setSlackProgress(statusJson.progress ?? 0)
+
+            if (statusJson.IngestionType) {
+              if (statusJson.IngestionType === IngestionType.fullIngestion)
+                setSlackUserNormalIngestionStats((prevStats) => {
+                  if (
+                    statusJson.userStats &&
+                    Object.keys(statusJson.userStats).length > 0
+                  ) {
+                    return statusJson.userStats
+                  }
+                  return Object.keys(prevStats).length > 0 ? prevStats : {}
+                })
+              else
+                setSlackUserPartialIngestionStats((prevStats) => {
+                  if (
+                    statusJson.userStats &&
+                    Object.keys(statusJson.userStats).length > 0
+                  ) {
+                    return statusJson.userStats
+                  }
+                  return Object.keys(prevStats).length > 0 ? prevStats : {}
+                })
+            }
+
+            setSlackUserStats((prevStats) => {
+              if (
+                statusJson.userStats &&
+                Object.keys(statusJson.userStats).length > 0
+              ) {
+                return statusJson.userStats
+              }
+              return Object.keys(prevStats).length > 0 ? prevStats : {}
+            })
+
+            setIngestionType(
+              statusJson.IngestionType ?? IngestionType.fullIngestion,
+            )
+          })
+
+          socket?.addEventListener("close", (e) => {
+            console.info("Slack WebSocket connection closed", e.reason)
+            if (e.reason === "Job finished") {
+              setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+              setIsRegularIngestionActive(false)
+            }
+          })
+
+          socket?.addEventListener("error", (error) => {
+            console.error("WebSocket error:", error)
+            toast({
+              title: "Connection Error",
+              description: "Lost connection to Slack integration service",
+              variant: "destructive",
+            })
+            setIsRegularIngestionActive(false)
+          })
         }
-      })
-      socket?.addEventListener("error", (error) => {
-        console.error("WebSocket error:", error)
-        toast({
-          title: "Connection Error",
-          description: "Lost connection to Slack integration service",
-          variant: "destructive",
-        })
-        setIsRegularIngestionActive(false)
-      })
+      }
+    } catch (err) {
+      console.error("Failed to initialize Slack WebSocket:", err)
     }
-    return () => {
-      socket?.close()
+  }
+
+  initSlackSocket()
+
+  return () => {
+    isMounted = false
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close(1000, "Client disconnected")
     }
-  }, [data, isPending])
+    socket = null
+  }
+}, [data, isPending])
+
 
   const handleRegularIngestion = async () => {
     if (!slackConnector?.cId) {

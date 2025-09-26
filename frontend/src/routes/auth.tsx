@@ -9,6 +9,7 @@ import xyneLogoSvg from "@/assets/xyne-logo.svg"
 import signinBackgroundPng from "@/assets/signin-background.png"
 import signinCenterImagePng from "@/assets/signin-center-image.png"
 import googleIconSvg from "@/assets/google-icon.svg"
+import { loadConfig } from "@/config"
 
 
 const XyneLogo = () => (
@@ -22,10 +23,20 @@ const XyneLogo = () => (
 )
 
 export default function LoginForm() {
-  const handleGoogleLogin = () => {
-    console.info("User Clicked login with google")
-    const redirectUrl = `${import.meta.env.VITE_API_BASE_URL}/v1/auth/callback`
-    window.location.href = redirectUrl
+  const handleGoogleLogin = async () => {
+    try {
+      console.info("User Clicked login with google")
+      const config = await loadConfig()
+        if (!config) {
+          console.error("Failed to load config")
+          return
+        }
+      const { API_BASE_URL } = config
+      const redirectUrl = `${API_BASE_URL}/v1/auth/callback`
+      window.location.href = redirectUrl
+    } catch (error) {
+    console.error("Failed to load config:", error)
+    }
   }
 
   return (

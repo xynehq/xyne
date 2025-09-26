@@ -1475,6 +1475,16 @@ app.get("/health", async (c) => {
   }
 })
 
+app.get("/config", (c) => {
+  if (!config.apiBaseUrl || !config.wsBaseUrl) {
+    Logger.info("Either API URL or WS base URL is not configured")
+  }
+  return c.json({
+    API_BASE_URL: config.apiBaseUrl,
+    WS_BASE_URL: config.wsBaseUrl,
+  });
+});
+
 // Postgres health check endpoint
 app.get(
   "/health/postgres",
