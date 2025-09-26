@@ -44,14 +44,6 @@ class OrderedWindowFinder {
     if (validTokenCount === 0) {
       return null;
     }
-    
-    // Log which tokens are missing
-    const missingTokens = [];
-    for (let i = 0; i < tokenPositions.length; i++) {
-      if (tokenPositions[i].length === 0) {
-        missingTokens.push(i);
-      }
-    }
 
     const merged: Array<{ pos: number, sentenceId: number }> = [];
     for (let sentenceId = 0; sentenceId < tokenPositions.length; sentenceId++) {
@@ -160,13 +152,13 @@ class OrderedWindowFinder {
   
     public search(text: string): Map<number, number[]> {
       const results = new Map<number, number[]>();
-      let current = this.root;
+      let current: AhoNode | null = this.root;
   
       for (let i = 0; i < text.length; i++) {
         const char = text[i];
         
         while (current !== null && !current.children.has(char)) {
-          current = current.failure!;
+          current = current.failure;
         }
         
         if (current === null) {
@@ -412,15 +404,18 @@ class OrderedWindowFinder {
         
         // Find positions within the window
         const windowPositions = positions.filter(pos => 
-          pos >= bestWindow.start && pos + token.length <= bestWindow.end
+          pos >= bestWindow.start && pos <= bestWindow.end
         );
         
         
         if (windowPositions.length > 0) {
           // Use the first (leftmost) position within the window
           const bestPos = windowPositions[0];
-          const startOrig = normalizedMap[bestPos] || bestPos;
-          const endOrig = normalizedMap[bestPos + token.length] || (bestPos + token.length);
+          const startOrig = normalizedMap[bestPos] ?? bestPos;
+          // Map the last character of the match, then add 1 for exclusive end boundary
+          const lastCharIndex = bestPos + token.length - 1;
+          const lastCharOrig = normalizedMap[lastCharIndex] ?? startOrig + token.length - 1;
+          const endOrig = lastCharOrig + 1;
           
           
           matches.push({
