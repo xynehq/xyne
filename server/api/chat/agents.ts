@@ -79,6 +79,7 @@ import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   AgentReasoningStepType,
   AgentToolName,
+  ApiKeyScopes,
   ChatSSEvents,
   ContextSysthesisState,
   KnowledgeBaseEntity,
@@ -221,6 +222,8 @@ import {
 import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
+import { validateVespaIdInAgentIntegrations } from "@/search/utils"
+import { getAuth, safeGet } from "../agent"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -2817,25 +2820,14 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let email = ""
-  let workspaceId = ""
-  let via_apiKey = false
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   let body
 
   try {
-    let jwtPayload
-    try {
-      jwtPayload = c.get(JwtPayloadKey)
-    } catch (e) {}
-    if (jwtPayload) {
-      email = jwtPayload?.sub
-      workspaceId = jwtPayload?.workspaceId
+    if (!via_apiKey) {
       // @ts-ignore
       body = c.req.valid("query")
     } else {
-      email = c.get("userEmail") ?? ""
-      workspaceId = c.get("workspaceId") ?? ""
-      via_apiKey = true
       // @ts-ignore
       body = c.req.valid("json")
     }
@@ -3532,29 +3524,41 @@ export const AgentMessageApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let email = ""
-  let workspaceId = ""
-  let via_apiKey = false
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   let body
 
   try {
-    let jwtPayload
-    try {
-      jwtPayload = c.get(JwtPayloadKey)
-    } catch (e) {}
-
-    if (jwtPayload) {
-      email = jwtPayload?.sub
-      workspaceId = jwtPayload?.workspaceId
+    if (!via_apiKey) {
       // @ts-ignore
       body = c.req.valid("query")
     } else {
-      // fallback if JwtPayloadKey is not available
-      email = c.get("userEmail") ?? ""
-      workspaceId = c.get("workspaceId") ?? ""
-      via_apiKey = true
       // @ts-ignore
       body = c.req.valid("json")
+      const apiKeyScopes =
+        safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+      const agentAccess =
+        safeGet<{ agents?: string[] }>(c, "config")?.agents || []
+
+      // Check if API key has agent chat scope
+      if (!apiKeyScopes.includes(ApiKeyScopes.AGENT_CHAT)) {
+        return c.json(
+          {
+            message: "API key does not have scope to chat with agents",
+          },
+          403,
+        )
+      }
+
+      // Check agent access: if agentAccess is empty, allow all agents; otherwise check specific access
+      //@ts-ignore
+      if (agentAccess.length > 0 && !agentAccess.includes(body?.agentId)) {
+        return c.json(
+          {
+            message: "API key is not authorized for this agent",
+          },
+          403,
+        )
+      }
     }
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
@@ -3644,8 +3648,9 @@ export const AgentMessageApi = async (c: Context) => {
     }
 
     // Convert friendly model label to actual model value
-    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    let actualModelId: string = modelId || "gemini-2-5-pro"
     if (modelId) {
+      // Ensure we always have a string
       const convertedModelId = getModelValueFromLabel(modelId)
       if (convertedModelId) {
         actualModelId = convertedModelId as string // Can be Models enum or string
@@ -3714,8 +3719,22 @@ export const AgentMessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     let ids
+    let isValidPath: boolean = false
     if (path) {
       ids = await getRecordBypath(path, db)
+      if (ids != null) {
+        // Check if the vespaId exists in the agent's app integrations using our validation function
+        if (!(await validateVespaIdInAgentIntegrations(agentForDb, ids))) {
+          throw new HTTPException(403, {
+            message: `Access denied: The path '${path}' is not accessible through this agent's integrations`,
+          })
+        }
+        isValidPath = Boolean(true)
+      } else {
+        throw new HTTPException(400, {
+          message: `The given path:${path} is not a valid path of collection's folder or file`,
+        })
+      }
     }
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
@@ -3724,8 +3743,10 @@ export const AgentMessageApi = async (c: Context) => {
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
+            collectionFolderIds: [],
           }
     let fileIds = extractedInfo?.fileIds
+    let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
@@ -3943,6 +3964,10 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 imageAttachmentFileIds,
                 agentPromptForLLM,
+                fileIds.length > 0,
+                actualModelId,
+                Boolean(isValidPath),
+                folderIds,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,

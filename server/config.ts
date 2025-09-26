@@ -18,7 +18,6 @@ export const CLUSTER = "my_content"
 if (process.env.NODE_ENV === "production") {
   postgresBaseHost = process.env.DATABASE_HOST!
   vespaBaseHost = process.env.VESPA_HOST!
-  port = 80
   host = process.env.HOST!
   redirectUri = process.env.GOOGLE_PROD_REDIRECT_URI!
 }
