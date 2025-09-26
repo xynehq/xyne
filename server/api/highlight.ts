@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Context } from "hono";
+import sw from 'stopword';
 
 export const highlightSchema = z.object({
   chunkText: z.string().min(1).max(10_000),
@@ -11,22 +12,21 @@ export const highlightSchema = z.object({
   }),
 });
 
-// Custom tokenization with regex and stopword removal
+// Custom tokenization with regex and stopword removal using stopword library
 class TextTokenizer {
-  private static readonly STOPWORDS = new Set([
-    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it', 'its',
-    'of', 'on', 'that', 'the', 'to', 'was', 'will', 'with', 'would', 'you', 'your', 'this', 'these', 'those',
-    'i', 'me', 'my', 'we', 'our', 'us', 'they', 'them', 'their', 'she', 'her', 'his', 'him', 'have', 'had',
-    'do', 'does', 'did', 'can', 'could', 'should', 'would', 'may', 'might', 'must', 'shall', 'will'
-  ]);
-
   public static tokenize(text: string, caseSensitive: boolean = false): string[] {
     const normalized = caseSensitive ? text : text.toLowerCase();
-    return normalized
+    
+    // First, clean and split the text
+    const words = normalized
       .replace(/[^\w\s]/g, ' ')  // Replace punctuation with spaces
       .split(/\s+/)
-      .filter(word => word.length > 0 && !this.STOPWORDS.has(word))
-      .filter(word => word.length > 1); // Remove single characters
+      .filter(word => word.length > 1); // Remove single characters and empty strings
+    
+    // Use stopword library to remove stopwords
+    const filtered = sw.removeStopwords(words);
+    
+    return filtered;
   }
 }
 
@@ -444,4 +444,3 @@ class OrderedWindowFinder {
       }, 500);
     }
   };
-  
