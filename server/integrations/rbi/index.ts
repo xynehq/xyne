@@ -78,18 +78,18 @@ class RBICircularDownloader {
         }
     }
 
-    async clickYearLink(): Promise<void> {
+    async clickYearLink(year: number): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
-
-        console.log(`📅 Looking for year ${RBI_CONFIG.TARGET_YEAR} link...`);
+        const targetYear = year.toString();  // Convert year to string
+        console.log(`📅 Looking for year ${targetYear} link...`);
 
         // More precise selectors based on actual DOM structure
         const yearSelectors = [
-            `#btn${RBI_CONFIG.TARGET_YEAR}`,                     // Most specific: ID selector
-            `a[id="btn${RBI_CONFIG.TARGET_YEAR}"]`,              // ID with tag
-            `text=${RBI_CONFIG.TARGET_YEAR}`,                    // Text content fallback
-            `a:has-text("${RBI_CONFIG.TARGET_YEAR}")`,           // Link containing text
-            `xpath=//a[@id='btn${RBI_CONFIG.TARGET_YEAR}']`      // XPath with ID
+            `#btn${targetYear}`,                     // Most specific: ID selector
+            `a[id="btn${targetYear}"]`,              // ID with tag
+            `text=${targetYear}`,                    // Text content fallback
+            `a:has-text("${targetYear}")`,           // Link containing text
+            `xpath=//a[@id='btn${targetYear}']`      // XPath with ID
         ];
 
         let yearElement = null;
@@ -111,30 +111,30 @@ class RBICircularDownloader {
         }
 
         if (!yearElement) {
-            throw new Error(`Year ${RBI_CONFIG.TARGET_YEAR} link not found with any selector`);
+            throw new Error(`Year ${targetYear} link not found with any selector`);
         }
 
         try {
             await yearElement.click();
-            console.log(`✅ Clicked ${RBI_CONFIG.TARGET_YEAR} year link`);
+            console.log(`✅ Clicked ${targetYear} year link`);
 
             // Wait for year section to expand (important!)
             await this.page.waitForTimeout(2000);
 
         } catch (error) {
-            throw new Error(`Failed to click year ${RBI_CONFIG.TARGET_YEAR}: ${error}`);
+            throw new Error(`Failed to click year ${targetYear}: ${error}`);
         }
     }
 
-    async clickAllMonths(): Promise<void> {
+    async clickAllMonths(year: number): Promise<void> {
         if (!this.page) throw new Error('Page not initialized');
 
-        console.log(`📅 Looking for "All Months" link for year ${RBI_CONFIG.TARGET_YEAR}...`);
+        console.log(`📅 Looking for "All Months" link for year ${year}...`);
 
         // Strategy: Look for "All Months" link 
         const allMonthsSelectors = [
-            `#${RBI_CONFIG.TARGET_YEAR}0`,                        // ID pattern: 20250 for 2025
-            `a[id="${RBI_CONFIG.TARGET_YEAR}0"]`,                 // More specific ID selector
+            `#${year}0`,                        // ID pattern: 20250 for 2025
+            `a[id="${year}0"]`,                 // More specific ID selector
             `text=All Months`,                                    // Direct text match
             `a:has-text("All Months")`,                           // Link containing "All Months"
             `xpath=//a[contains(text(), "All Months")]`,          // XPath fallback
@@ -175,7 +175,7 @@ class RBICircularDownloader {
             throw new Error(`Failed to click "All Months": ${error}`);
         }
     }
-    async getAllCircularsFromTable(): Promise<Array<{ href: string, text: string, id: string }>> {
+    async getAllCircularsFromTable(): Promise<Array<{ href: string, text: string, id: string, department: string }>> {
         if (!this.page) throw new Error('Page not initialized');
 
         console.log('🔍 Getting ALL circular links from the "All Months" table...');
@@ -184,28 +184,76 @@ class RBICircularDownloader {
         await this.page.waitForSelector('table.tablebg', { timeout: 10000 });
         console.log('✅ Found circular table');
 
-        // Get ALL circular links from the table (not just first one)
-        const circularLinks = await this.page.$$eval(
-            'table.tablebg a.link2[href*="Id="]', // All circular detail links
-            (elements) => elements.map((el, index) => ({
-                href: el.getAttribute('href') || '',
-                text: el.textContent?.trim().substring(0, 80) + '...' || `Circular ${index + 1}`,
-                id: el.getAttribute('href')?.match(/Id=(\d+)/)?.[1] || `${index + 1}`
-            }))
+        // Get ALL circular data including department information
+        const allCircularData = await this.page.$$eval(
+            'table.tablebg tr',
+            (rows) => {
+                const results = [];
+
+                // Skip header rows (first 2 rows)
+                for (let i = 2; i < rows.length; i++) {
+                    const row = rows[i];
+                    const cells = row.querySelectorAll('td');
+
+                    // Make sure we have all 5 columns: [Circular Number, Date, Department, Subject, Meant For]
+                    if (cells.length >= 5) {
+                        const linkElement = cells[0].querySelector('a[href*="Id="]');
+
+                        if (linkElement) {
+                            results.push({
+                                href: linkElement.getAttribute('href') || '',
+                                text: linkElement.textContent?.trim().substring(0, 80) + '...' || `Circular ${i - 1}`,
+                                id: linkElement.getAttribute('href')?.match(/Id=(\d+)/)?.[1] || `${i - 1}`,
+                                department: cells[2].textContent?.trim() || '', // Column 2 = Department
+                                date: cells[1].textContent?.trim() || '',      // Column 1 = Date  
+                                subject: cells[3].textContent?.trim() || ''    // Column 3 = Subject
+                            });
+                        }
+                    }
+                }
+
+                return results;
+            }
         );
 
-        console.log(`✅ Found ${circularLinks.length} total circulars in "All Months" table`);
+        console.log(`✅ Found ${allCircularData.length} total circulars in table`);
 
-        // Log first few for verification
-        circularLinks.slice(0, 3).forEach((circular, index) => {
-            console.log(`  ${index + 1}. ${circular.text} (ID: ${circular.id})`);
+        // Apply department filter
+        const targetDepartment = RBI_CONFIG.TARGET_DEPARTMENT;
+        const filteredCirculars = allCircularData.filter(circular => {
+            // Check for exact match or partial match with variations
+            const dept = circular.department.toLowerCase();
+            const target = targetDepartment.toLowerCase();
+
+            // Handle variations in department names
+            return dept.includes('payment and settlement system') ||
+                dept.includes('payment and settlement systems') ||
+                dept === target.toLowerCase();
         });
 
-        if (circularLinks.length > 3) {
-            console.log(`  ... and ${circularLinks.length - 3} more circulars`);
+        console.log(`🎯 Filtered to ${filteredCirculars.length} circulars from "${targetDepartment}"`);
+
+        // Log first few filtered results for verification
+        filteredCirculars.slice(0, 3).forEach((circular, index) => {
+            console.log(`  ${index + 1}. [${circular.department}] ${circular.text}`);
+        });
+
+        if (filteredCirculars.length > 3) {
+            console.log(`  ... and ${filteredCirculars.length - 3} more from ${targetDepartment}`);
         }
 
-        return circularLinks;
+        if (filteredCirculars.length === 0) {
+            console.log(`⚠️ No circulars found for department: ${targetDepartment}`);
+            console.log('📋 Available departments in this year:');
+
+            // Show unique departments for debugging
+            const uniqueDepartments = [...new Set(allCircularData.map(c => c.department))];
+            uniqueDepartments.slice(0, 10).forEach(dept => {
+                console.log(`   - ${dept}`);
+            });
+        }
+
+        return filteredCirculars;
     }
 
     async navigateToCircular(circular: { href: string, text: string, id: string }): Promise<void> {
@@ -356,7 +404,7 @@ class RBICircularDownloader {
 
             // Check if RBI collection exists
             const collections = await getCollectionsByOwner(db, user.id);
-            const rbiCollection = collections.find(c => c.name === 'RBI Circulars');
+            const rbiCollection = collections.find(c => c.name === 'RBI Payment Systems Circulars');
 
             if (rbiCollection) {
                 console.log(`✅ Found existing RBI collection: ${rbiCollection.id}`);
@@ -367,7 +415,7 @@ class RBICircularDownloader {
             const newCollection = await db.transaction(async (tx) => {
                 const vespaDocId = generateCollectionVespaDocId()
                 const collection = await createCollection(tx, {
-                    name: 'RBI Circulars',
+                    name: 'RBI Payment Systems Circulars',
                     description: 'Automated collection of RBI circular documents',
                     workspaceId,
                     ownerId: user.id,
@@ -560,67 +608,117 @@ class RBICircularDownloader {
             // Hardcode user details (or make them parameters)
             const userEmail = 'aman.asrani@juspay.in';
             const workspaceId = 1;
-            const downloadedFiles: string[] = [];
-            let successCount = 0;
-            let errorCount = 0;
+            const allDownloadedFiles: string[] = [];
+            let totalSuccessfulYears = 0;
+            let totalFailedYears = 0;
+            let totalCirculars = 0;
+            let totalSuccessfulCirculars = 0;
 
             await this.initialize();
 
             // Add this type guard right after initialize()
             if (!this.page) throw new Error('Page not initialized after browser setup');
-            await this.navigateToHomePage();
-            await this.clickYearLink();
-            await this.clickAllMonths();
 
-            // NEW: Get ALL circulars from the "All Months" table
-            const allCirculars = await this.getAllCircularsFromTable();
-            console.log(`\n🎯 Starting to download ${allCirculars.length} circulars...`);
+            const years = RBI_CONFIG.TARGET_YEARS;
+            console.log(`🎯 Starting to process ${years.length} years: ${years.join(', ')}`);
 
-            // NEW: Loop through each circular
-            for (let i = 0; i < allCirculars.length; i++) {
-                const circular = allCirculars[i];
-                console.log(`\n📄 Processing ${i + 1}/${allCirculars.length}: ${circular.text}`);
+            // Loop through each year
+            for (let yearIndex = 0; yearIndex < years.length; yearIndex++) {
+                const year = years[yearIndex];
 
                 try {
-                    // Skip if already downloaded (optional optimization)
-                    if (this.isAlreadyDownloaded(circular.id)) {
-                        console.log(`⏭️ Skipping already processed circular ID: ${circular.id}`);
-                        continue;
+                    console.log(`\n📅 Processing year ${year} (${yearIndex + 1}/${years.length})...`);
+
+                    // Navigate to homepage for each year (fresh start)
+                    await this.navigateToHomePage();
+
+                    // Click the specific year
+                    await this.clickYearLink(year);
+
+                    // Click "All Months" for this year
+                    await this.clickAllMonths(year);
+
+                    // Get ALL circulars from the "All Months" table for this year
+                    const allCirculars = await this.getAllCircularsFromTable();
+                    console.log(`🎯 Found ${allCirculars.length} circulars for year ${year}`);
+                    totalCirculars += allCirculars.length;
+
+                    let yearSuccessCount = 0;
+                    let yearErrorCount = 0;
+
+                    // Process each circular for this year
+                    for (let i = 0; i < allCirculars.length; i++) {
+                        const circular = allCirculars[i];
+                        console.log(`\n📄 [${year}] Processing ${i + 1}/${allCirculars.length}: ${circular.text}`);
+                        console.log(`🏢 Department: ${circular.department}`);
+                        console.log(`\n📄 [${year}] Processing ${i + 1}/${allCirculars.length}: ${circular.text}`);
+                        console.log(`🏢 Department: ${circular.department}`);
+
+                        try {
+                            // Skip if already downloaded (optional optimization)
+                            if (this.isAlreadyDownloaded(circular.id)) {
+                                console.log(`⏭️ Skipping already processed circular ID: ${circular.id}`);
+                                continue;
+                            }
+
+                            // Navigate to circular detail page
+                            await this.navigateToCircular(circular);
+
+                            // Download PDF from detail page
+                            const { downloadPath } = await this.downloadPDF();
+
+                            // Process and ingest into Knowledge Base
+                            // await this.processAndIngestPDF(downloadPath, userEmail, workspaceId);
+
+                            // Mark as successful
+                            allDownloadedFiles.push(downloadPath);
+                            this.markAsDownloaded(circular.id);
+                            yearSuccessCount++;
+                            totalSuccessfulCirculars++;
+
+                            console.log(`✅ [${year}] Successfully processed ${i + 1}/${allCirculars.length}: ${downloadPath}`);
+
+                        } catch (circularError) {
+                            yearErrorCount++;
+                            console.error(`❌ [${year}] Failed to process circular ${i + 1}/${allCirculars.length} (${circular.text}):`, circularError);
+
+                            // Continue with next circular instead of failing completely
+                            console.log(`⏭️ Continuing with next circular...`);
+                        }
+
+                        // Small delay between circulars to be respectful to the server
+                        await this.page.waitForTimeout(1000);
                     }
 
-                    // Navigate to circular detail page
-                    await this.navigateToCircular(circular);
+                    // Year summary
+                    totalSuccessfulYears++;
+                    console.log(`\n✅ Year ${year} COMPLETE!`);
+                    console.log(`📊 Year ${year}: ${yearSuccessCount} success, ${yearErrorCount} errors, ${allCirculars.length} total`);
 
-                    // Download PDF from detail page
-                    const { downloadPath } = await this.downloadPDF();
-
-                    // Process and ingest into Knowledge Base
-                    await this.processAndIngestPDF(downloadPath, userEmail, workspaceId);
-
-                    // Mark as successful
-                    downloadedFiles.push(downloadPath);
-                    this.markAsDownloaded(circular.id);
-                    successCount++;
-
-                    console.log(`✅ Successfully processed ${i + 1}/${allCirculars.length}: ${downloadPath}`);
-
-                } catch (circularError) {
-                    errorCount++;
-                    console.error(`❌ Failed to process circular ${i + 1}/${allCirculars.length} (${circular.text}):`, circularError);
-
-                    // Continue with next circular instead of failing completely
-                    console.log(`⏭️ Continuing with next circular...`);
+                } catch (yearError) {
+                    totalFailedYears++;
+                    console.error(`❌ Failed to process year ${year}:`, yearError);
+                    console.log(`⏭️ Continuing with next year...`);
                 }
 
-                // Small delay between circulars to be respectful to the server
-                await this.page.waitForTimeout(2000);
+                // Delay between years
+                if (yearIndex < years.length - 1) {
+                    console.log(`⏳ Waiting 5 seconds before next year...`);
+                    await this.page.waitForTimeout(5000);
+                }
             }
 
-            console.log(`\n🎉 COMPLETE! Downloaded ${successCount} PDFs successfully`);
-            console.log(`📊 Success: ${successCount}, Errors: ${errorCount}, Total: ${allCirculars.length}`);
+            // Final summary
+            console.log(`\n🎉 ALL YEARS COMPLETE!`);
+            console.log(`📊 Final Results:`);
+            console.log(`   Years processed: ${totalSuccessfulYears}/${years.length} successful`);
+            console.log(`   Years failed: ${totalFailedYears}/${years.length}`);
+            console.log(`   Total circulars found: ${totalCirculars}`);
+            console.log(`   Total circulars downloaded: ${totalSuccessfulCirculars}`);
+            console.log(`   Success rate: ${((totalSuccessfulCirculars / totalCirculars) * 100).toFixed(1)}%`);
             console.log(`📁 All PDFs are now searchable in your "RBI Circulars" Knowledge Base collection!`);
 
-            return downloadedFiles;
+            return allDownloadedFiles;
 
         } catch (error) {
             console.error('❌ Automation failed:', error);
