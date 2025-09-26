@@ -389,8 +389,6 @@ export const startStream = async (
       },
     )
     responseQueue.addChunk(event.data)
-
-    notifySubscribers(streamKey)
   })
 
   streamState.es.addEventListener(ChatSSEvents.Reasoning, (event) => {
@@ -1017,30 +1015,6 @@ export const useChatStream = (
         subscriberRef.current()
       }
       notifySubscribers(retryStreamKey)
-
-      const patchResponseContent = (delta: string, isFinal = false) => {
-        if (!chatId) return
-        queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
-          if (!old?.messages) return old
-          return {
-            ...old,
-            messages: old.messages.map((m: any) =>
-              (
-                isError
-                  ? m.externalId === targetMessageId
-                  : m.externalId === messageId && m.messageRole === "assistant"
-              )
-                ? {
-                    ...m,
-                    message: isFinal ? delta : (m.message || "") + delta,
-                    isRetrying: !isFinal,
-                  }
-                : m,
-            ),
-          }
-        })
-      }
-
       const patchReasoningContent = (delta: string) => {
         if (!chatId) return
         queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
@@ -1071,12 +1045,36 @@ export const useChatStream = (
           "response",
           (displayText: string) => {
             streamState.displayPartial = displayText
+            // Update the UI with animated text for retry messages
+            // patchResponseContent(displayText, false)
+            if (chatId) {
+              queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+                if (!old?.messages) return old
+                return {
+                  ...old,
+                  messages: old.messages.map((m: any) =>
+                    (
+                      isError
+                        ? m.externalId === targetMessageId
+                        : m.externalId === messageId &&
+                          m.messageRole === "assistant"
+                    )
+                      ? {
+                          ...m,
+                          message: displayText,
+                          isRetrying: true,
+                        }
+                      : m,
+                  ),
+                }
+              })
+            }
             notifySubscribers(retryStreamKey)
           },
         )
         responseQueue.addChunk(event.data)
 
-        patchResponseContent(event.data)
+        notifySubscribers(retryStreamKey)
       })
 
       eventSource.addEventListener(ChatSSEvents.Reasoning, (event) => {
@@ -1092,18 +1090,34 @@ export const useChatStream = (
         streamState.citationMap = citationMap
         streamState.response = updatedResponse
 
-        // For web search retry: Update character animation to show citation-numbered text immediately
-        if (updatedResponse) {
-          const responseQueue = streamState.animationManager.getQueue(
-            "response",
-            (displayText: string) => {
-              streamState.displayPartial = displayText
-              notifySubscribers(retryStreamKey)
-            },
-          )
-          // Replace the current animation with the citation-numbered text
-          responseQueue.setImmediate(updatedResponse)
+        // Update React Query cache with current animated text AND new citation data
+        if (chatId) {
+          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+            if (!old?.messages) return old
+            return {
+              ...old,
+              messages: old.messages.map((m: any) =>
+                (
+                  isError
+                    ? m.externalId === targetMessageId
+                    : m.externalId === messageId &&
+                      m.messageRole === "assistant"
+                )
+                  ? {
+                      ...m,
+                      message:
+                        streamState.displayPartial || streamState.partial,
+                      sources: contextChunks,
+                      citationMap: citationMap,
+                      isRetrying: true,
+                    }
+                  : m,
+              ),
+            }
+          })
         }
+
+        notifySubscribers(retryStreamKey)
       })
 
       eventSource.addEventListener(ChatSSEvents.AttachmentUpdate, (event) => {
@@ -1151,7 +1165,36 @@ export const useChatStream = (
         // Wait for all character animations to complete before finalizing retry
         await streamState.animationManager.waitForAllAnimationsComplete()
 
-        patchResponseContent(streamState.partial)
+        // Update the retry message with final content and citation data
+        const finalContent = streamState.response || streamState.partial
+        if (chatId) {
+          queryClient.setQueryData(["chatHistory", chatId], (old: any) => {
+            if (!old?.messages) return old
+            return {
+              ...old,
+              messages: old.messages.map((m: any) =>
+                (
+                  isError
+                    ? m.externalId === targetMessageId
+                    : m.externalId === messageId &&
+                      m.messageRole === "assistant"
+                )
+                  ? {
+                      ...m,
+                      message: finalContent,
+                      sources: streamState.sources,
+                      citationMap: streamState.citationMap,
+                      thinking: streamState.thinking,
+                      imageCitations: streamState.imageCitations,
+                      deepResearchSteps: streamState.deepResearchSteps,
+                      isRetrying: false,
+                    }
+                  : m,
+              ),
+            }
+          })
+        }
+
         if (chatId) {
           queryClient.invalidateQueries({ queryKey: ["chatHistory", chatId] })
         }
@@ -1175,6 +1218,7 @@ export const useChatStream = (
           setRetryIsStreaming(false)
         }
         streamState.isRetrying = false
+        streamState.animationManager.cleanup()
         notifySubscribers(retryStreamKey)
         activeStreams.delete(retryStreamKey)
         eventSource.close()
@@ -1186,6 +1230,7 @@ export const useChatStream = (
           setRetryIsStreaming(false)
         }
         streamState.isRetrying = false
+        streamState.animationManager.cleanup()
         notifySubscribers(retryStreamKey)
         activeStreams.delete(retryStreamKey)
         eventSource.close()

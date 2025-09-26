@@ -50,10 +50,18 @@ export class CharacterQueue {
     if (!this.isAnimating) return
 
     const now = performance.now()
-    const elapsed = now - this.lastCharTime
+    let accumulatedElapsed = now - this.lastCharTime
 
-    // Check if enough time has passed for the next batch of characters
-    if (elapsed >= this.options.interval && this.queue.length > 0) {
+    // Process multiple batches if enough time has accumulated
+    // Add safe cap to prevent pathological backlogs
+    const maxLoops = 100
+    let loopCount = 0
+
+    while (
+      accumulatedElapsed >= this.options.interval &&
+      this.queue.length > 0 &&
+      loopCount < maxLoops
+    ) {
       // Process a batch of characters based on batchSize
       const charsToProcess = Math.min(this.options.batchSize, this.queue.length)
       let batchText = ""
@@ -67,12 +75,19 @@ export class CharacterQueue {
 
       if (batchText) {
         this.displayed += batchText
-        this.lastCharTime = now
-
         // Notify about the update
         this.options.onUpdate(this.displayed)
       }
+
+      // Decrement accumulated elapsed time by the interval
+      accumulatedElapsed -= this.options.interval
+      loopCount++
     }
+
+    // Update lastCharTime to maintain timing accuracy
+    // If we have remaining accumulated time, subtract it from now
+    // Otherwise, if we've drained all accumulated time, set to now
+    this.lastCharTime = accumulatedElapsed > 0 ? now - accumulatedElapsed : now
 
     // Continue animation if there are more characters
     if (this.queue.length > 0) {
@@ -125,11 +140,23 @@ export class CharacterQueue {
     this.displayed = text
     this.options.onUpdate(this.displayed)
   }
+
+  /**
+   * Update the callback functions with fresh closures from React re-renders
+   */
+  updateCallbacks(
+    onUpdate: (displayText: string) => void,
+    onComplete?: () => void,
+  ): void {
+    this.options.onUpdate = onUpdate
+    this.options.onComplete = onComplete
+  }
 }
 
 export class CharacterAnimationManager {
   private queues: Map<string, CharacterQueue> = new Map()
   private updateCallbacks: Map<string, (text: string) => void> = new Map()
+  private pendingCompletionResolvers: Array<() => void> = []
 
   getQueue(
     key: string,
@@ -141,12 +168,27 @@ export class CharacterAnimationManager {
   ): CharacterQueue {
     if (!this.queues.has(key)) {
       const queue = new CharacterQueue({
-        interval: options?.interval ?? 1, // 2ms for 1 character per 2ms as requested
-        batchSize: options?.batchSize ?? 3, // 1 character per interval by default
+        interval: options?.interval ?? 1, // 1ms
+        batchSize: options?.batchSize ?? 1, // 3 characters
         onUpdate,
-        onComplete,
+        onComplete: () => {
+          // Call the original onComplete callback
+          onComplete?.()
+          // Check if all animations are complete and resolve any pending promises
+          this.checkAndResolveCompletionPromises()
+        },
       })
       this.queues.set(key, queue)
+      this.updateCallbacks.set(key, onUpdate)
+    } else {
+      // Update existing queue's callbacks with fresh closures from React re-render
+      const queue = this.queues.get(key)!
+      queue.updateCallbacks(onUpdate, () => {
+        // Call the original onComplete callback
+        onComplete?.()
+        // Check if all animations are complete and resolve any pending promises
+        this.checkAndResolveCompletionPromises()
+      })
       this.updateCallbacks.set(key, onUpdate)
     }
     return this.queues.get(key)!
@@ -161,10 +203,14 @@ export class CharacterAnimationManager {
     const queue = this.queues.get(key)
     if (queue) {
       queue.stopAnimation()
+      // Check if all animations are now complete
+      this.checkAndResolveCompletionPromises()
     }
   }
   stopAll(): void {
     this.queues.forEach((queue) => queue.stopAnimation())
+    // After stopping all, resolve any pending completion promises
+    this.resolveAllCompletionPromises()
   }
   cleanupQueue(key: string): void {
     const queue = this.queues.get(key)
@@ -179,6 +225,8 @@ export class CharacterAnimationManager {
     this.queues.forEach((queue) => queue.stopAnimation())
     this.queues.clear()
     this.updateCallbacks.clear()
+    // Resolve any pending completion promises since we're cleaning up
+    this.resolveAllCompletionPromises()
   }
 
   /* Set text immediately for a completed stream*/
@@ -200,8 +248,33 @@ export class CharacterAnimationManager {
     return Array.from(this.queues.values()).some((queue) => queue.isRunning())
   }
 
-  /* Wait for all animations to complete
-   * Returns a Promise that resolves when all character animations are finished*/
+  /**
+   * Check if all animations are complete and resolve pending promises
+   * This is called whenever a queue completes its animation
+   */
+  private checkAndResolveCompletionPromises(): void {
+    if (
+      !this.hasActiveAnimations() &&
+      this.pendingCompletionResolvers.length > 0
+    ) {
+      this.resolveAllCompletionPromises()
+    }
+  }
+
+  /**
+   * Resolve all pending completion promises
+   */
+  private resolveAllCompletionPromises(): void {
+    const resolvers = [...this.pendingCompletionResolvers]
+    this.pendingCompletionResolvers = []
+    resolvers.forEach((resolve) => resolve())
+  }
+
+  /**
+   * Wait for all animations to complete (Event-driven approach)
+   * Returns a Promise that resolves when all character animations are finished
+   * This improved version uses event-driven completion detection instead of polling
+   */
   waitForAllAnimationsComplete(): Promise<void> {
     return new Promise((resolve) => {
       // If no animations are running, resolve immediately
@@ -210,13 +283,8 @@ export class CharacterAnimationManager {
         return
       }
 
-      // Check every 10ms if all animations are complete
-      const checkInterval = setInterval(() => {
-        if (!this.hasActiveAnimations()) {
-          clearInterval(checkInterval)
-          resolve()
-        }
-      }, 10)
+      // Add resolver to pending list - it will be called when all animations complete
+      this.pendingCompletionResolvers.push(resolve)
     })
   }
 }
