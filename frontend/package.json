@@ -13,6 +13,7 @@
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-dialog": "^1.1.11",
     "@radix-ui/react-dropdown-menu": "^2.1.4",
@@ -40,6 +41,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.475.0",
     "mermaid": "^11.6.0",
+    "monaco-editor": "^0.52.2",
     "notion-md-crawler": "^1.0.0",
     "papaparse": "^5.5.3",
     "pdfjs-dist": "5.3.93",
