@@ -639,7 +639,7 @@ export const parseMail = async (
   return { mailData: emailData, insertedAttachmentCount }
 }
 
-const getBody = (payload: any): string => {
+export const getBody = (payload: any): string => {
   let body = ""
 
   if (payload.parts && payload.parts.length > 0) {
