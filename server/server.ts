@@ -213,6 +213,7 @@ import {
   formSubmissionSchema,
   listWorkflowExecutionsQuerySchema,
 } from "@/api/workflow"
+import { GetScriptLanguagesApi } from "@/api/script"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
   handleAttachmentUpload,
@@ -971,6 +972,7 @@ export const AppRoutes = app
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
   .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
+  .get("/workflow/script/languages", GetScriptLanguagesApi)
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
