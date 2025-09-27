@@ -2243,6 +2243,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           return (
                             <div
                               key={citation?.docId}
+                              data-dropdown-value-id={`citation-${citation.docId}`}
                               ref={(el) =>
                                 (referenceItemsRef.current[index] = el)
                               }
@@ -2336,6 +2337,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       return (
                         <div
                           key={result.docId || result.email || index}
+                          data-dropdown-value-id={`reference-${result.docId || result.email || index}`}
                           ref={(el) => (referenceItemsRef.current[index] = el)}
                           className={`p-2 cursor-pointer hover:bg-[#EDF2F7] dark:hover:bg-slate-700 rounded-md ${
                             index === selectedRefIndex
@@ -2384,6 +2386,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     globalResults.length > 0 &&
                     globalResults.length < totalCount && (
                       <button
+                        data-dropdown-value-id="load-more-references"
                         ref={(el) =>
                           (referenceItemsRef.current[
                             enhancedGlobalResults.length
@@ -2788,6 +2791,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           )}
                         </div>
                         <button
+                          data-button-id={`remove-file-${selectedFile.id}`}
                           onClick={() => removeFile(selectedFile.id)}
                           className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
                           disabled={selectedFile.uploading}
@@ -2844,6 +2848,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                             <Check size={12} className="text-green-500" />
                           )}
                           <button
+                            data-button-id={`remove-file-${selectedFile.id}`}
                             onClick={() => removeFile(selectedFile.id)}
                             className="text-gray-400 hover:text-red-500 transition-colors p-1"
                             disabled={selectedFile.uploading}
@@ -2874,6 +2879,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
             <SmartTooltip content="attachment">
               <Attach
+                data-button-id="attach-file"
                 className={`${
                   selectedFiles.length >= MAX_ATTACHMENTS
                     ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
@@ -2912,6 +2918,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   {/* Always show all three capability buttons */}
                   <SmartTooltip content="Reasoning">
                     <button
+                      data-button-id="capability-reasoning"
                       onClick={() => handleCapabilityChange("reasoning")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
                         selectedCapability === "reasoning"
@@ -2925,6 +2932,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                   <SmartTooltip content="Web Search">
                     <button
+                      data-button-id="capability-websearch"
                       onClick={() => handleCapabilityChange("websearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
                         selectedCapability === "websearch"
@@ -2938,6 +2946,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                   <SmartTooltip content="Deep Thinking">
                     <button
+                      data-button-id="capability-deep-research"
                       onClick={() => handleCapabilityChange("deepResearch")}
                       className={`relative z-10 w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${
                         selectedCapability === "deepResearch"
@@ -3582,6 +3591,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
+                    data-button-id="model-selection-dropdown"
                     className="flex items-center gap-1 px-3 py-1 text-xs text-gray-700 dark:text-gray-300 cursor-pointer mr-2 transition-all duration-200"
                     style={{ marginLeft: "auto" }}
                   >
@@ -3754,6 +3764,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                                 return (
                                   <DropdownMenuItem
                                     key={model.labelName}
+                                    data-dropdown-value-id={`model-${model.labelName.toLowerCase().replace(/\s+/g, '-')}`}
                                     onClick={() => {
                                       if (!isDisabled) {
                                         setSelectedModel(model.labelName)
@@ -3858,6 +3869,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
             {(isStreaming || retryIsStreaming) && chatId ? (
               <button
+                data-button-id="stop-streaming"
                 onClick={handleStop}
                 className="flex mr-6 bg-[#464B53] dark:bg-gray-700 text-white dark:text-gray-200 hover:bg-[#5a5f66] dark:hover:bg-gray-600 rounded-full w-[32px] h-[32px] items-center justify-center"
               >
@@ -3865,6 +3877,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               </button>
             ) : (
               <button
+                data-button-id="send-message"
                 disabled={isStreaming || retryIsStreaming || isUploadingFiles}
                 onClick={() => handleSendMessage()}
                 className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
