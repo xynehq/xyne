@@ -140,16 +140,22 @@ export const getName = (app: Apps, entity: Entity): string => {
   ) {
     return "Data-Source"
   } else if (app === Apps.KnowledgeBase) {
-    // Handle all KnowledgeBase entities with fallback for string values
-    if (entity === SystemEntity.SystemInfo) {
-      return "Knowledge-Base"
-    } else if (entity === KnowledgeBaseEntity.File || entity === "file") {
+
+    if (entity === KnowledgeBaseEntity.File) {
       return "KB Files"
-    } else if (entity === KnowledgeBaseEntity.Folder || entity === "folder") {
+    } else if (entity === KnowledgeBaseEntity.Folder) {
       return "KB Folders"
-    } else {
-      // Fallback for any unhandled KnowledgeBase entity
+    } else if (entity === KnowledgeBaseEntity.Collection) {
+      return "KB Collections"
+    } else if (entity === KnowledgeBaseEntity.KnowledgeBase) {
+      return "Knowledge Base"
+    } else if (entity === KnowledgeBaseEntity.Attachment) {
+      return "KB Attachments"
+    } else if (entity === SystemEntity.SystemInfo) {
       return "Knowledge-Base"
+    } else {
+      return "Knowledge Base"
+
     }
   } else if (app === Apps.WebSearch && entity === WebSearchEntity.WebSearch) {
     return "Web Search"
