@@ -212,6 +212,7 @@ import {
 import { getDateForAI } from "@/utils/index"
 import type { User } from "@microsoft/microsoft-graph-types"
 import { getAuth, safeGet } from "../agent"
+import { getChunkCountPerDoc } from "./chunk-selection"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -2014,20 +2015,40 @@ async function* generateAnswerFromGivenContext(
 
   let previousResultsLength = 0
   const combinedSearchResponse: VespaSearchResult[] = []
+  let chunksPerDocument: number[] = []
 
-  if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
-    let results
-    if (isValidPath) {
-      if (folderIds?.length) {
-        results = await searchCollectionRAG(messageText, undefined, folderIds)
-      } else
-        results = await searchCollectionRAG(messageText, fileIds, undefined)
-    } else {
-      results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
-    }
-    if (results.root.children) {
-      combinedSearchResponse.push(...results.root.children)
-    }
+  if (fileIds.length > 0) {
+    // Use intelligent chunk selection to get the best  chunks across all documents
+    const targetChunks = 120
+
+    // Use collection-aware search when sources are selected
+    loggerWithChild({ email: email }).info(
+      `Using collection-aware search for ${fileIds.length} selected sources`,
+    )
+    const collectionSearchSpan = generateAnswerSpan?.startSpan("collection_search")
+    const collectionResults = await searchCollectionRAG(
+      parseMessageText(message), // query
+      fileIds,                   // docIds parameter  
+      undefined,                 // parentDocIds parameter (not needed here)
+      100,                       // limit parameter - get many chunks for intelligent selection
+      0,                         // offset parameter
+      userAlpha,                 // alpha parameter
+    )
+    
+    if (collectionResults?.root?.children && collectionResults.root.children.length > 0) {
+      loggerWithChild({ email: email }).info(
+        `[COLLECTION SEARCH TOTAL] Retrieved ${collectionResults.root.children.length} documents`
+      )
+      combinedSearchResponse.push(...collectionResults.root.children)
+      // Apply intelligent chunk selection based on document relevance and chunk scores
+      chunksPerDocument = await getChunkCountPerDoc(
+        collectionResults.root.children,
+        targetChunks,
+        email,
+        collectionSearchSpan
+      )
+    } 
+    collectionSearchSpan?.end()
   }
 
   loggerWithChild({ email: email }).info(
@@ -2138,7 +2159,7 @@ async function* generateAnswerFromGivenContext(
     let content = answerContextMap(
       v as VespaSearchResults,
       userMetadata,
-      0,
+      i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
       isMsgWithSources,
     )
