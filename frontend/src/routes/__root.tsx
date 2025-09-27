@@ -1,19 +1,23 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router"
+import { useCallNotifications } from "@/services/callNotifications"
+import { IncomingCallModal } from "@/components/IncomingCallModal"
+
+function RootComponent() {
+  const { incomingCall, acceptCall, rejectCall, dismissCall } = useCallNotifications()
+
+  return (
+    <>
+      <Outlet />
+      <IncomingCallModal
+        notification={incomingCall}
+        onAccept={acceptCall}
+        onReject={rejectCall}
+        onDismiss={dismissCall}
+      />
+    </>
+  )
+}
 
 export const Route = createRootRoute({
-  component: () => (
-    <>
-      {/* <div className="p-2 flex gap-2">
-        <Link to="/" className="[&.active]:font-bold">
-          Home
-        </Link>{' '}
-        <Link to="/search" className="[&.active]:font-bold">
-         Search 
-        </Link>
-      </div>
-      <hr /> */}
-      <Outlet />
-      {/* <TanStackRouterDevtools /> */}
-    </>
-  ),
+  component: RootComponent,
 })

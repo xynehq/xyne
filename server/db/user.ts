@@ -229,6 +229,34 @@ export const getUserById = async (
   return parsedRes.data
 }
 
+export const getUsersByWorkspace = async (
+  trx: TxnOrClient,
+  workspaceExternalId: string,
+  externalId?: string,
+): Promise<SelectUser[]> => {
+  const conditions = [
+    eq(users.workspaceExternalId, workspaceExternalId),
+    eq(users.deletedAt, new Date("1970-01-01T00:00:00Z")),
+  ]
+
+  // Add external ID filter if provided
+  if (externalId) {
+    conditions.push(eq(users.externalId, externalId))
+  }
+
+  const resp = await trx
+    .select()
+    .from(users)
+    .where(and(...conditions))
+
+  return resp.map((user) => {
+    const parsedRes = selectUserSchema.safeParse(user)
+    if (!parsedRes.success) {
+      throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
+    }
+    return parsedRes.data
+  })
+}
 // based on user email will perform the join on tables users and sync_jobs which will have same email
 // then for each user we can have max 4 row 1 is for slack other is for google-drive , gmail, google-calendar
 // then we will get the last_ran_on and the user data to frontend
