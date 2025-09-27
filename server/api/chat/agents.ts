@@ -263,13 +263,19 @@ const generateStepSummary = async (
 
     // Use a fast model for summary generation
     const summarySpan = span.startSpan("synthesis_call")
-    const summary = await generateSynthesisBasedOnToolOutput(prompt,dateForAI, "", "", {
-      modelId: (modelId as Models) || defaultFastModel,
-      stream: false,
-      json: true,
-      reasoning: false,
-      messages: [],
-    })
+    const summary = await generateSynthesisBasedOnToolOutput(
+      prompt,
+      dateForAI,
+      "",
+      "",
+      {
+        modelId: (modelId as Models) || defaultFastModel,
+        stream: false,
+        json: true,
+        reasoning: false,
+        messages: [],
+      },
+    )
     summarySpan.setAttribute("model_id", defaultFastModel)
     summarySpan.end()
 
@@ -1081,8 +1087,8 @@ export const MessageWithToolsApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
     initSpan.end()
 
@@ -1785,10 +1791,12 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               planningContext = cleanContext(resolvedContexts?.join("\n"))
               if (chatContexts.length > 0) {
-                planningContext += "\n" + buildContext(chatContexts, 10, userMetadata)
+                planningContext +=
+                  "\n" + buildContext(chatContexts, 10, userMetadata)
               }
               if (threadContexts.length > 0) {
-                planningContext += "\n" + buildContext(threadContexts, 10, userMetadata)
+                planningContext +=
+                  "\n" + buildContext(threadContexts, 10, userMetadata)
               }
 
               gatheredFragments = results.root.children.map(
@@ -2945,8 +2953,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3058,6 +3066,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const allDataSources = await getAllDocumentsForAgent(
             [Apps.DataSource],
             agentForDb?.appIntegrations as string[],
+            400,
+            email,
           )
           dataSourceSpan.end()
           loggerWithChild({ email }).info(
@@ -3335,6 +3345,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const allDataSources = await getAllDocumentsForAgent(
           [Apps.DataSource],
           agentForDb?.appIntegrations as string[],
+          400,
+          email,
         )
         dataSourceSpan.end()
         loggerWithChild({ email }).info(
@@ -3741,8 +3753,8 @@ export const AgentMessageApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")

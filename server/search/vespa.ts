@@ -19,6 +19,7 @@ import {
   userSchema,
   type Entity,
   type VespaQueryConfig,
+  type VespaSchema,
 } from "@xyne/vespa-ts/types"
 import { db } from "@/db/client"
 import { getConnectorByAppAndEmailId } from "@/db/connector"
@@ -50,7 +51,7 @@ const AllSources = [
   // Not adding datasource or datasource_file to AllSources by default,
   // as they are for a specific app functionality.
   // dataSourceFileSchema and collection file schemas are intentionally excluded from search
-]
+] as VespaSchema[]
 const dependencies: VespaDependencies = {
   logger: Logger,
   config: vespaConfig,
@@ -120,15 +121,15 @@ export const searchVespa = async (
       "Error fetching Google sync jobs status",
     )
   }
-
+  console.log(app, entity, "from xyne")
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
     recencyDecayRate:
       options.recencyDecayRate || config.defaultRecencyDecayRate,
-    isSlackConnected,
-    isDriveConnected,
-    isGmailConnected,
-    isCalendarConnected,
+    isSlackConnected: true,
+    isDriveConnected: true,
+    isGmailConnected: true,
+    isCalendarConnected: true,
   })
 }
 
