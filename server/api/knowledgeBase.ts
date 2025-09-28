@@ -9,7 +9,7 @@ import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { Subsystem, UploadStatus, ProcessingJobType } from "@/types"
+import { Subsystem, UploadStatus, ProcessingJobType, type TxnOrClient } from "@/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
 import { db } from "@/db/client"
@@ -171,7 +171,7 @@ export const CreateCollectionApi = async (c: Context) => {
 
     // Atomic operation: Create collection and queue job
     let collection: any
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Create collection in database
       collection = await createCollection(tx, collectionData)
 
@@ -417,7 +417,7 @@ export const DeleteCollectionApi = async (c: Context) => {
     let deletedFoldersCount = 0
     const deletedItemIds: string[] = []
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Collect item IDs for agent cleanup (with proper prefixes)
       for (const item of collectionItemsToDelete) {
         if (item.type === "file") {
@@ -632,7 +632,7 @@ export const CreateFolderApi = async (c: Context) => {
 
     // Atomic operation: Create folder and queue job
     let folder: any
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Create folder in database
       folder = await createFolder(
         tx,
@@ -782,7 +782,7 @@ async function ensureFolderPath(
 
     // Atomic operation: Create auto-folder and queue job
     let newFolder: any
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Create folder in database
       newFolder = await createFolder(
         tx,
@@ -1129,7 +1129,7 @@ export const UploadFilesApi = async (c: Context) => {
 
         // Atomic operation: Create file record and queue job
         let item: any
-        await db.transaction(async (tx) => {
+        await db.transaction(async (tx: TxnOrClient) => {
           // Create file record in database with 'pending' status
           item = await createFileItem(
             tx,
@@ -1319,7 +1319,7 @@ export const DeleteItemApi = async (c: Context) => {
     let deletedFoldersCount = 0
     const deletedItemIds: string[] = []
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Collect item IDs for agent cleanup (with proper prefixes)
       for (const itemToDelete of itemsToDelete) {
         if (itemToDelete.type === "file") {
