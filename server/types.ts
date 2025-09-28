@@ -19,6 +19,12 @@ import type {
   PeopleEntity,
 } from "@xyne/vespa-ts/types"
 
+export enum ProcessingJobType {
+  FILE = 'file',
+  COLLECTION = 'collection',
+  FOLDER = 'folder'
+}
+
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
 
@@ -319,6 +325,13 @@ export enum SyncCron {
   // Perform a full data sync by fetching everything and
   // applying filters like modifiedAt/updatedAt internally.
   FullSync = "FullSync",
+}
+
+export enum UploadStatus {
+  PENDING = "pending",
+  PROCESSING = "processing",
+  COMPLETED = "completed", 
+  FAILED = "failed",
 }
 
 // history id was getting removed if we just use union

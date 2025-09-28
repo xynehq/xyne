@@ -5,7 +5,7 @@ import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Queue)
 
-const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
+const url = config.getDatabaseUrl()
 export const boss = new PgBoss({
   connectionString: url,
   monitorStateIntervalMinutes: 10,

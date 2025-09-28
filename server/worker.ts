@@ -1,9 +1,9 @@
 import { getLogger } from "@/logger"
-import { Subsystem } from "@/types"
+import { Subsystem, UploadStatus, ProcessingJobType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { boss } from "@/queue"
 import { FileProcessingQueue } from "@/queue/api-server-queue"
-import { processFileJob, type FileProcessingJob } from "@/queue/fileProcessor"
+import { processJob, type ProcessingJob } from "@/queue/fileProcessor"
 import { db } from "@/db/client"
 import { collectionItems } from "@/db/schema"
 import { eq } from "drizzle-orm"
@@ -16,64 +16,67 @@ export const initFileProcessingWorker = async () => {
   
   await boss.work(FileProcessingQueue, async ([job]) => {
       try {
-        const fileId = (job.data as FileProcessingJob).fileId
-        Logger.info(`Processingsss file: ${fileId}`)
+        const jobData = job.data as ProcessingJob
+        const jobType = jobData.type || ProcessingJobType.FILE
         
-        // Get file info from database
-        const fileItem = await db
-          .select({ name: collectionItems.name })
-          .from(collectionItems)
-          .where(eq(collectionItems.id, fileId))
-          .limit(1)
+        Logger.info(`Processing ${jobType} job: ${JSON.stringify(jobData)}`)
         
-        const fileName = fileItem[0]?.name || 'Unknown'
+        // For file jobs, update status to processing (collections and folders don't need status updates)
+        if (jobType === ProcessingJobType.FILE) {
+          const fileId = (jobData as any).fileId
+          
+          // Get file info from database
+          const fileItem = await db
+            .select({ name: collectionItems.name })
+            .from(collectionItems)
+            .where(eq(collectionItems.id, fileId))
+            .limit(1)
+          
+          const fileName = fileItem[0]?.name || 'Unknown'
+          
+          // Update status to 'processing'
+          await db
+            .update(collectionItems)
+            .set({ 
+              uploadStatus: UploadStatus.PROCESSING,
+              statusMessage: `Processing file: ${fileName}`,
+              updatedAt: new Date()
+            })
+            .where(eq(collectionItems.id, fileId))
+        }
         
-        // Update status to 'processing'
-        await db
-          .update(collectionItems)
-          .set({ 
-            uploadStatus: 'processing',
-            statusMessage: `Processing file: ${fileName}`,
-            updatedAt: new Date()
-          })
-          .where(eq(collectionItems.id, fileId))
+        // Process the job using the unified processor
+        await processJob(job as { data: ProcessingJob })
         
-        // Process the file
-        await processFileJob(job as { data: FileProcessingJob })
+        // For file jobs, update status to completed
+        if (jobType === ProcessingJobType.FILE) {
+          const fileId = (jobData as any).fileId
+          
+          await db
+            .update(collectionItems)
+            .set({ 
+              uploadStatus: UploadStatus.COMPLETED,
+              statusMessage: 'File processed successfully',
+              updatedAt: new Date()
+            })
+            .where(eq(collectionItems.id, fileId))
+        }
         
-        // Update status to 'completed'
-        await db
-          .update(collectionItems)
-          .set({ 
-            uploadStatus: 'completed',
-            statusMessage: 'File processed successfully',
-            updatedAt: new Date()
-          })
-          .where(eq(collectionItems.id, fileId))
-        
-        Logger.info(`✅ File ${fileId} processed successfully`)
+        Logger.info(`✅ ${jobType} job processed successfully`)
         
       } catch (error) {
-        const fileId = (job.data as FileProcessingJob).fileId
+        const jobData = job.data as ProcessingJob
+        const jobType = jobData.type || ProcessingJobType.FILE
         const errorMessage = getErrorMessage(error)
-        Logger.error(error, `❌ File ${fileId} failed: ${errorMessage}`)
+        Logger.error(error, `❌ ${jobType} job failed: ${errorMessage}`)
         
-        // Update status to 'failed' - pg-boss will handle retries automatically
-        // This will only run on the final failure (after all retries exhausted)
-        await db
-          .update(collectionItems)
-          .set({ 
-            uploadStatus: 'failed',
-            statusMessage: `Processing failed: ${errorMessage}`,
-            updatedAt: new Date()
-          })
-          .where(eq(collectionItems.id, fileId))
+        // Let processFileJob manage status updates; just rethrow for pg-boss retries
         
         // Re-throw to let pg-boss handle the retry logic
         throw error
       }
     }
   )
-  
+
   Logger.info("File processing worker initialized successfully")
 }

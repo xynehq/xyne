@@ -9,7 +9,7 @@ import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { Subsystem } from "@/types"
+import { Subsystem, UploadStatus, ProcessingJobType } from "@/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
 import { db } from "@/db/client"
@@ -38,11 +38,11 @@ import {
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"
-import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
+import type { CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
-import { insert, DeleteDocument, GetDocument } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
+import { DeleteDocument, GetDocument } from "@/search/vespa"
+import { KbItemsSchema } from "@xyne/vespa-ts/types"
 import { boss, FileProcessingQueue } from "@/queue/api-server-queue"
 import crypto from "crypto"
 import {
@@ -169,12 +169,20 @@ export const CreateCollectionApi = async (c: Context) => {
       `Creating Collection with data: ${JSON.stringify(collectionData)}`,
     )
 
-    // Use transaction to ensure both database and Vespa operations succeed together
-    const collection = await db.transaction(async (tx) => {
-      const createdCollection = await createCollection(tx, collectionData)
+    // Atomic operation: Create collection and queue job
+    let collection: any
+    await db.transaction(async (tx) => {
+      // Create collection in database
+      collection = await createCollection(tx, collectionData)
 
-      // Note: Collection indexing in Vespa removed - only files are indexed by worker
-      return createdCollection
+      // Submit to processing queue for async Vespa insertion
+      await boss.send(FileProcessingQueue, { 
+        collectionId: collection.id, 
+        type: ProcessingJobType.COLLECTION 
+      }, {
+        retryLimit: 3,
+        expireInHours: 12
+      })
     })
     loggerWithChild({ email: userEmail }).info(
       `Created Collection: ${collection.id} for user ${userEmail}`,
@@ -622,9 +630,11 @@ export const CreateFolderApi = async (c: Context) => {
       version: "1.0",
     }
 
-    // Use transaction to ensure both folder creation and Vespa insertion succeed together
-    const folder = await db.transaction(async (tx) => {
-      const createdFolder = await createFolder(
+    // Atomic operation: Create folder and queue job
+    let folder: any
+    await db.transaction(async (tx) => {
+      // Create folder in database
+      folder = await createFolder(
         tx,
         collectionId,
         validatedData.parentId || null,
@@ -634,36 +644,14 @@ export const CreateFolderApi = async (c: Context) => {
         user.email,
       )
 
-      // Use the vespaDocId from the folder record (generated in createFolder)
-      const vespaDoc = {
-        docId: createdFolder.vespaDocId!,
-        clId: collectionId,
-        itemId: createdFolder.id,
-        app: Apps.KnowledgeBase as const,
-        fileName: validatedData.name,
-        entity: KnowledgeBaseEntity.Folder,
-        description: folderMetadata.description || "",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          tags: folderMetadata.tags || [],
-        }),
-        createdBy: user.email,
-        duration: 0,
-        mimeType: "folder",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: validatedData.parentId || null,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
-      return createdFolder
+      // Submit to processing queue for async Vespa insertion
+      await boss.send(FileProcessingQueue, { 
+        folderId: folder.id, 
+        type: ProcessingJobType.FOLDER 
+      }, {
+        retryLimit: 3,
+        expireInHours: 12
+      })
     })
 
     loggerWithChild({ email: userEmail }).info(
@@ -792,9 +780,11 @@ async function ensureFolderPath(
       autoCreatedReason: "folder_structure_from_file_path",
     }
 
-    // Use transaction to ensure both folder creation and Vespa insertion succeed together
-    const newFolder = await db.transaction(async (tx: any) => {
-      const createdFolder = await createFolder(
+    // Atomic operation: Create auto-folder and queue job
+    let newFolder: any
+    await db.transaction(async (tx) => {
+      // Create folder in database
+      newFolder = await createFolder(
         tx,
         collectionId,
         parentId,
@@ -802,37 +792,14 @@ async function ensureFolderPath(
         autoCreatedFolderMetadata,
       )
 
-      // Use the vespaDocId from the newly created folder (no duplication!)
-      const vespaDoc = {
-        docId: createdFolder.vespaDocId!, // Use the ID generated by createFolder
-        clId: collectionId,
-        itemId: createdFolder.id,
-        fileName: folderName,
-        app: Apps.KnowledgeBase as const,
-        entity: KnowledgeBaseEntity.Folder,
-        description: "Auto-created during file upload",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          autoCreated: true,
-          originalPath: pathParts.join("/"),
-        }),
-        createdBy: "system",
-        duration: 0,
-        mimeType: "folder",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: parentId,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
-      return createdFolder
+      // Submit to processing queue for async Vespa insertion
+      await boss.send(FileProcessingQueue, { 
+        folderId: newFolder.id, 
+        type: ProcessingJobType.FOLDER 
+      }, {
+        retryLimit: 3,
+        expireInHours: 12
+      })
     })
 
     currentFolderId = newFolder.id
@@ -1160,37 +1127,41 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
-        // Create file record in database with 'pending' status
-        const item = await createFileItem(
-          db,
-          collectionId,
-          targetParentId,
-          fileName,
-          vespaDocId,
-          fileName,
-          storagePath,
-          storageKey,
-          file.type || "application/octet-stream",
-          file.size,
-          checksum,
-          {
-            originalPath: filePath,
-            folderStructure: pathParts.join("/"),
-            originalFileName:
-              originalFileName !== fileName ? originalFileName : undefined,
-            wasOverwritten:
-              existingFile &&
-              duplicateStrategy === DuplicateStrategy.OVERWRITE,
-          },
-          user.id,
-          user.email,
-          `File uploaded successfully, queued for processing` // Initial status message
-        )
+        // Atomic operation: Create file record and queue job
+        let item: any
+        await db.transaction(async (tx) => {
+          // Create file record in database with 'pending' status
+          item = await createFileItem(
+            tx,
+            collectionId,
+            targetParentId,
+            fileName,
+            vespaDocId,
+            fileName,
+            storagePath,
+            storageKey,
+            file.type || "application/octet-stream",
+            file.size,
+            checksum,
+            {
+              originalPath: filePath,
+              folderStructure: pathParts.join("/"),
+              originalFileName:
+                originalFileName !== fileName ? originalFileName : undefined,
+              wasOverwritten:
+                existingFile &&
+                duplicateStrategy === DuplicateStrategy.OVERWRITE,
+            },
+            user.id,
+            user.email,
+            `File uploaded successfully, queued for processing` // Initial status message
+          )
 
-        // Submit to processing queue for async processing  
-        const jobId = await boss.send(FileProcessingQueue, { fileId: item.id }, {
-          retryLimit: 3,
-          expireInHours: 12
+          // Submit to processing queue for async processing  
+          await boss.send(FileProcessingQueue, { fileId: item.id, type: ProcessingJobType.FILE }, {
+            retryLimit: 3,
+            expireInHours: 12
+          })
         })
 
         uploadResults.push({
@@ -1204,7 +1175,7 @@ export const UploadFilesApi = async (c: Context) => {
               ? `File uploaded as "${fileName}" (renamed to avoid duplicate) - queued for processing`
               : "File uploaded successfully - queued for processing",
           wasRenamed: fileName !== originalFileName,
-          uploadStatus: 'pending', // Indicate it's pending processing
+          uploadStatus: UploadStatus.PENDING, // Indicate it's pending processing
         })
 
         loggerWithChild({ email: userEmail }).info(
