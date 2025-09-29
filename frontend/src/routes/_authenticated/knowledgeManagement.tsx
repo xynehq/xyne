@@ -48,9 +48,9 @@ import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
 import { DocumentChat } from "@/components/DocumentChat"
 import { authFetch } from "@/utils/authFetch"
-import { generateUUID } from "@/utils/chatUtils"
+import { generateUUID } from "@/utils/chatUtils.tsx"
 import { useScopedFind } from "@/hooks/useScopedFind"
-import { PersistentMap } from "@/utils/chatUtils"
+import { PersistentMap } from "@/utils/chatUtils.tsx"
 import {
   DocumentOperationsProvider,
   useDocumentOperations,
