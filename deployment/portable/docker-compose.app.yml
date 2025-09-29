@@ -23,6 +23,7 @@ services:
       context: ../..
       dockerfile: Dockerfile
     user: "${DOCKER_UID}:${DOCKER_GID}"
+    privileged: true
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
       - "3001:3001"
