@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - main 
-      - release_test_pat
-      - release_test
+      - release_test_pat_sim
 
 
 jobs:
