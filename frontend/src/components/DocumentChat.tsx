@@ -573,6 +573,7 @@ import React, {
       agentIdFromChatBox?: string | null,
       toolsList?: ToolsListItem[] | null,
       selectedModel?: string,
+      isFollowUp: boolean = false,
       selectedKbItems: string[] = [],
     ) => {
       if (!messageToSend || isStreaming || retryIsStreaming) return
@@ -611,6 +612,7 @@ import React, {
           [],
           metadata,
           selectedModel,
+          isFollowUp,
           kbItemsWithChat,
         )
       } catch (error) {

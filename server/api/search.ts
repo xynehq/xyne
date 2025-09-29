@@ -238,6 +238,10 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
+  isFollowUp: z.string().optional().transform((val) => {
+    if (!val) return false
+    return val.toLowerCase() === "true"
+  }),
 })
 export type MessageReqType = z.infer<typeof messageSchema>
 

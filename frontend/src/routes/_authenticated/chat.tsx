@@ -789,6 +789,7 @@ export const ChatPage = ({
         chatParams.agentId,
         chatParams.toolsList,
         chatParams.selectedModel, // Use selectedModel from URL params
+        false, // isFollowup = false for initial query
       )
       hasHandledQueryParam.current = true
       router.navigate({
@@ -950,6 +951,7 @@ export const ChatPage = ({
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[],
     selectedModel?: string,
+    isFollowUp?: boolean,
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
 
@@ -984,6 +986,7 @@ export const ChatPage = ({
         toolsList,
         metadata,
         selectedModel,
+        isFollowUp,
       )
     } catch (error) {
       // If there's an error, clear the optimistically added message from cache

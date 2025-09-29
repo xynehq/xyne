@@ -152,7 +152,7 @@ import {
   updateChatTrace,
 } from "@/db/chatTrace"
 import type { AttachmentMetadata } from "@/shared/types"
-import { storeAttachmentMetadata } from "@/db/attachment"
+import { getAttachmentsByMessageId, storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
@@ -937,6 +937,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       selectedModelConfig,
       toolsList,
       agentId,
+      isFollowUp,
     }: MessageReqType = body
 
     // Parse the model configuration JSON
@@ -1040,6 +1041,70 @@ export const MessageWithToolsApi = async (c: Context) => {
     loggerWithChild({ email: email }).info(
       `Total attachment files received: ${attachmentFileIds.length}`,
     )
+
+    // Handle isFollowUp functionality - get context from previous user message
+    if (isFollowUp && chatId) {
+      loggerWithChild({ email: email }).info(
+        "isFollowUp is true, getting context from previous user message",
+      )
+      
+      try {
+        // Get all messages from the chat
+        const allMessages = await getChatMessagesWithAuth(db, chatId, email)
+        
+        // Find the last user message
+        const userMessages = allMessages.filter(msg => msg.messageRole === MessageRole.User)
+        
+        if (userMessages.length > 0) {
+          const lastUserMessage = userMessages[userMessages.length - 1]
+          
+          // Get and add fileIds from the previous user message
+          const prevFileIds = Array.isArray(lastUserMessage.fileIds) ? lastUserMessage.fileIds : []
+          if (prevFileIds.length > 0) {
+            loggerWithChild({ email: email }).info(
+              `Found ${prevFileIds.length} fileIds from previous user message: ${JSON.stringify(prevFileIds)}`,
+            )
+            fileIds = [...fileIds, ...prevFileIds]
+          }
+          
+          // Get attachments from the previous user message
+          const prevAttachments = await getAttachmentsByMessageId(db, lastUserMessage.externalId, email)
+          if (prevAttachments.length > 0) {
+            loggerWithChild({ email: email }).info(
+              `Found ${prevAttachments.length} attachments from previous user message`,
+            )
+
+            // Add all previous attachments to attachmentMetadata
+            attachmentMetadata.push(...prevAttachments)
+
+            // Add image attachment fileIds
+            const prevImageAttachmentFileIds = prevAttachments
+              .filter((m) => m.isImage)
+              .map((m) => m.fileId)
+            
+            if (prevImageAttachmentFileIds.length > 0) {
+              imageAttachmentFileIds.push(...prevImageAttachmentFileIds)
+            }
+            
+            // Add non-image attachment fileIds
+            const prevNonImageAttachmentFileIds = prevAttachments
+              .filter((m) => !m.isImage)
+              .map((m) => m.fileId)
+            
+            if (prevNonImageAttachmentFileIds.length > 0) {
+              fileIds = [...fileIds, ...prevNonImageAttachmentFileIds]
+            }
+          }
+        }
+      } catch (error) {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Error getting context from previous user message for isFollowUp: ${getErrorMessage(error)}`,
+        )
+        // Continue execution even if we can't get previous context
+      }
+    }
+    
     const hasReferencedContext = fileIds && fileIds.length > 0
     contextExtractionSpan.setAttribute("file_ids_count", fileIds?.length || 0)
     contextExtractionSpan.setAttribute(
@@ -3579,6 +3644,7 @@ export const AgentMessageApi = async (c: Context) => {
       agentPromptPayload,
       streamOff,
       path,
+      isFollowUp,
     }: MessageReqType = body
 
     // Parse selectedModelConfig JSON to extract individual values
@@ -3665,6 +3731,71 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
 
+    let fileIds: string[] = []
+
+    // Handle isFollowUp functionality - get context from previous user message
+    if (isFollowUp && chatId) {
+      loggerWithChild({ email: email }).info(
+        "isFollowUp is true, getting context from previous user message",
+      )
+      
+      try {
+        // Get all messages from the chat
+        const allMessages = await getChatMessagesWithAuth(db, chatId, email)
+        
+        // Find the last user message
+        const userMessages = allMessages.filter(msg => msg.messageRole === MessageRole.User)
+        
+        if (userMessages.length > 0) {
+          const lastUserMessage = userMessages[userMessages.length - 1]
+          
+          // Get and add fileIds from the previous user message
+          const prevFileIds = Array.isArray(lastUserMessage.fileIds) ? lastUserMessage.fileIds : []
+          if (prevFileIds.length > 0) {
+            loggerWithChild({ email: email }).info(
+              `Found ${prevFileIds.length} fileIds from previous user message: ${JSON.stringify(prevFileIds)}`,
+            )
+            fileIds = [...fileIds, ...prevFileIds]
+          }
+          
+          // Get attachments from the previous user message
+          const prevAttachments = await getAttachmentsByMessageId(db, lastUserMessage.externalId, email)
+          if (prevAttachments.length > 0) {
+            loggerWithChild({ email: email }).info(
+              `Found ${prevAttachments.length} attachments from previous user message`,
+            )
+
+            // Add all previous attachments to attachmentMetadata
+            attachmentMetadata.push(...prevAttachments)
+            
+            // Add image attachment fileIds
+            const prevImageAttachmentFileIds = prevAttachments
+              .filter((m) => m.isImage)
+              .map((m) => m.fileId)
+            
+            if (prevImageAttachmentFileIds.length > 0) {
+              imageAttachmentFileIds.push(...prevImageAttachmentFileIds)
+            }
+            
+            // Add non-image attachment fileIds
+            const prevNonImageAttachmentFileIds = prevAttachments
+              .filter((m) => !m.isImage)
+              .map((m) => m.fileId)
+            
+            if (prevNonImageAttachmentFileIds.length > 0) {
+              fileIds = [...fileIds, ...prevNonImageAttachmentFileIds]
+            }
+          }
+        }
+      } catch (error) {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Error getting context from previous user message for isFollowUp: ${getErrorMessage(error)}`,
+        )
+        // Continue execution even if we can't get previous context
+      }
+    }
+
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -3703,7 +3834,7 @@ export const AgentMessageApi = async (c: Context) => {
       if (
         config.ragOffFeature &&
         agentForDb.isRagOn === false &&
-        !(attachmentMetadata && attachmentMetadata.length > 0)
+        !((attachmentMetadata && attachmentMetadata.length > 0) || (fileIds && fileIds.length > 0))
       ) {
         return AgentMessageApiRagOff(c)
       }
@@ -3745,7 +3876,7 @@ export const AgentMessageApi = async (c: Context) => {
             fileIds: [],
             collectionFolderIds: [],
           }
-    let fileIds = extractedInfo?.fileIds
+    fileIds = extractedInfo?.fileIds
     let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]

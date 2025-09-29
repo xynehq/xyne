@@ -258,6 +258,7 @@ export const startStream = async (
   setChatId?: (chatId: string) => void,
   selectedModel?: string,
   selectedKbItems: string[] = [],
+  isFollowUp: boolean = false,
 ): Promise<void> => {
   if (!messageToSend) return
 
@@ -334,6 +335,8 @@ export const startStream = async (
   if (agentIdToUse) {
     url.searchParams.append("agentId", agentIdToUse)
   }
+
+  url.searchParams.append("isFollowUp", isFollowUp ? "true" : "false")
 
   // Create EventSource with auth handling
   let eventSource: EventSource
@@ -751,6 +754,7 @@ export const useChatStream = (
       toolsList?: ToolsListItem[],
       metadata?: AttachmentMetadata[],
       selectedModel?: string,
+      isFollowUp: boolean = false,
       selectedKbItems: string[] = [],
     ) => {
       const streamKey = currentStreamKey
@@ -770,6 +774,7 @@ export const useChatStream = (
         setChatId,
         selectedModel,
         selectedKbItems,
+        isFollowUp,
       )
 
       setStreamInfo(getStreamState(streamKey))
