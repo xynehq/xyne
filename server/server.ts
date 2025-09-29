@@ -21,9 +21,8 @@ import {
   chatTitleSchema,
   GetDriveItem,
   GetDriveItemsByDocIds,
-  HighlightApi,
-  highlightSchema,
 } from "@/api/search"
+import { HighlightApi, highlightSchema } from "@/api/highlight"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -42,6 +41,7 @@ import {
   deleteUserDataSchema,
   ingestMoreChannelSchema,
   startSlackIngestionSchema,
+  microsoftServiceSchema,
   UserRoleChangeSchema,
 } from "@/types"
 import {
@@ -74,6 +74,7 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
+  AddServiceConnectionMicrosoft,
   UpdateUser,
   HandlePerUserSlackSync,
   HandlePerUserGoogleWorkSpaceSync,
@@ -1057,6 +1058,11 @@ export const AppRoutes = app
     "/oauth/create",
     zValidator("form", createOAuthProvider),
     CreateOAuthProvider,
+  )
+  .post(
+    "/microsoft/service_account",
+    zValidator("form", microsoftServiceSchema),
+    AddServiceConnectionMicrosoft,
   )
   .post(
     "/slack/ingest_more_channel",

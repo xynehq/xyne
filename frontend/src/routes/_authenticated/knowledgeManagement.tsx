@@ -48,9 +48,9 @@ import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
 import { DocumentChat } from "@/components/DocumentChat"
 import { authFetch } from "@/utils/authFetch"
-import { generateUUID } from "@/utils/chatUtils"
+import { generateUUID } from "@/utils/chatUtils.tsx"
 import { useScopedFind } from "@/hooks/useScopedFind"
-import { PersistentMap } from "@/utils/chatUtils"
+import { PersistentMap } from "@/utils/chatUtils.tsx"
 import {
   DocumentOperationsProvider,
   useDocumentOperations,
@@ -58,6 +58,7 @@ import {
 import ExcelViewer from "@/components/ExcelViewer"
 import CsvViewer from "@/components/CsvViewer"
 import TxtViewer from "@/components/TxtViewer"
+import { useUploadProgress } from "@/contexts/UploadProgressContext"
 import { DebugDocModal } from "@/components/DebugDocModal"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
@@ -82,49 +83,6 @@ interface Collection {
   isPrivate?: boolean
 }
 
-// Helper functions for localStorage
-const UPLOAD_STATE_KEY = "knowledgeManagement_uploadState"
-
-const saveUploadState = (state: {
-  isUploading: boolean
-  batchProgress: {
-    total: number
-    current: number
-    batch: number
-    totalBatches: number
-  }
-  uploadingCollectionName: string
-}) => {
-  try {
-    localStorage.setItem(UPLOAD_STATE_KEY, JSON.stringify(state))
-  } catch (error) {
-    console.error("Failed to save upload state:", error)
-  }
-}
-
-const loadUploadState = () => {
-  try {
-    const saved = localStorage.getItem(UPLOAD_STATE_KEY)
-    if (saved) {
-      return JSON.parse(saved)
-    }
-  } catch (error) {
-    console.error("Failed to load upload state:", error)
-  }
-  return {
-    isUploading: false,
-    batchProgress: { total: 0, current: 0, batch: 0, totalBatches: 0 },
-    uploadingCollectionName: "",
-  }
-}
-
-const clearUploadState = () => {
-  try {
-    localStorage.removeItem(UPLOAD_STATE_KEY)
-  } catch (error) {
-    console.error("Failed to clear upload state:", error)
-  }
-}
 
 // Memoized Document Viewer Container to prevent re-renders on sidebar resize
 const DocumentViewerContainer = memo(
@@ -290,12 +248,14 @@ const DocumentViewerContainer = memo(
     ])
 
     const { highlightText, clearHighlights, scrollToMatch } =
-      useScopedFind(containerRef)
+      useScopedFind(containerRef, {
+        documentId: selectedDocument?.file.id,
+      })
 
     // Expose the highlight functions via the document operations ref
     useEffect(() => {
       if (documentOperationsRef?.current) {
-        documentOperationsRef.current.highlightText = async (text: string) => {
+        documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number) => {
           if (!containerRef.current) {
             const container = document.querySelector(
               '[data-container-ref="true"]',
@@ -308,7 +268,7 @@ const DocumentViewerContainer = memo(
           }
 
           try {
-            const success = await highlightText(text)
+            const success = await highlightText(text, chunkIndex)
             return success
           } catch (error) {
             console.error("Error calling highlightText:", error)
@@ -423,16 +383,20 @@ function KnowledgeManagementContent() {
   // Chat overlay state - only used when isChatHidden is true
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false)
 
+   
   // Vespa data modal state
   const [isVespaModalOpen, setIsVespaModalOpen] = useState(false)
+        
+  // Use global upload progress context
+  const { currentUpload, startUpload, updateProgress, updateFileStatus, finishUpload } = useUploadProgress()
+  
+  // Derived state from global context
+  const isUploading = currentUpload?.isUploading || false
+  const batchProgress = currentUpload?.batchProgress || { total: 0, current: 0, batch: 0, totalBatches: 0 }
+  const uploadingCollectionName = currentUpload?.collectionName || ""
+  const isNewCollectionUpload = currentUpload?.isNewCollection || false
+  const targetCollectionId = currentUpload?.targetCollectionId
 
-  // Load upload state from localStorage on mount
-  const savedState = loadUploadState()
-  const [isUploading, setIsUploading] = useState(savedState.isUploading)
-  const [batchProgress, setBatchProgress] = useState(savedState.batchProgress)
-  const [uploadingCollectionName, setUploadingCollectionName] = useState(
-    savedState.uploadingCollectionName,
-  )
 
   // Zoom detection for chat component
   useEffect(() => {
@@ -482,105 +446,7 @@ function KnowledgeManagementContent() {
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
 
-  // Save upload state to localStorage whenever it changes
-  useEffect(() => {
-    saveUploadState({
-      isUploading,
-      batchProgress,
-      uploadingCollectionName,
-    })
-  }, [isUploading, batchProgress, uploadingCollectionName])
 
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      // Only clear if upload is not active
-      if (!isUploading) {
-        clearUploadState()
-      }
-    }
-  }, [isUploading])
-
-  // Fallback: Clear upload state if it's been "uploading" for too long
-  useEffect(() => {
-    if (!isUploading) return
-
-    // If upload state has been active for more than 10 minutes, clear it
-    const timeout = setTimeout(
-      () => {
-        setIsUploading(false)
-        setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
-        setUploadingCollectionName("")
-        clearUploadState()
-      },
-      10 * 60 * 1000,
-    ) // 10 minutes
-
-    return () => clearTimeout(timeout)
-  }, [isUploading])
-
-  // Check for ongoing uploads on component mount
-  useEffect(() => {
-    const checkForOngoingUploads = async () => {
-      const savedState = loadUploadState()
-      if (savedState.isUploading && savedState.uploadingCollectionName) {
-        // If there's an ongoing upload, check if it's actually complete
-
-        // Check if the collection exists and has files
-        try {
-          const response = await api.cl.$get({
-            query: { includeItems: "true" },
-          })
-          if (response.ok) {
-            const data = await response.json()
-            const existingCollection = data.find(
-              (collection: CollectionType) =>
-                collection.name.toLowerCase() ===
-                savedState.uploadingCollectionName.toLowerCase(),
-            )
-
-            if (
-              existingCollection &&
-              existingCollection.totalItems >= savedState.batchProgress.total
-            ) {
-              // Upload appears to be complete, clear the state
-              setIsUploading(false)
-              setBatchProgress({
-                total: 0,
-                current: 0,
-                batch: 0,
-                totalBatches: 0,
-              })
-              setUploadingCollectionName("")
-              clearUploadState()
-
-              // Show completion toast
-              toast.success({
-                title: "Upload Complete",
-                description: `Upload of ${savedState.batchProgress.total} files to "${savedState.uploadingCollectionName}" completed while you were away.`,
-              })
-            }
-          }
-        } catch (error) {
-          console.error("Error checking upload status:", error)
-          // If we can't check, clear the state after a timeout to avoid infinite skeleton
-          setTimeout(() => {
-            setIsUploading(false)
-            setBatchProgress({
-              total: 0,
-              current: 0,
-              batch: 0,
-              totalBatches: 0,
-            })
-            setUploadingCollectionName("")
-            clearUploadState()
-          }, 5000)
-        }
-      }
-    }
-
-    checkForOngoingUploads()
-  }, [toast])
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -674,14 +540,10 @@ function KnowledgeManagementContent() {
       return
     }
 
-    setIsUploading(true)
-    setUploadingCollectionName(collectionName.trim())
-    setBatchProgress({
-      total: selectedFiles.length,
-      current: 0,
-      batch: 0,
-      totalBatches: 0,
-    })
+    // Start the global upload progress
+    const batches = createBatches(selectedFiles, collectionName.trim())
+    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
+    const { uploadId, abortController } = startUpload(collectionName.trim(), files, batches.length, true)
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -690,24 +552,37 @@ function KnowledgeManagementContent() {
       // First create the collection
       const cl = await createCollection(collectionName.trim(), "")
 
-      // Then upload files in batches
-      const batches = createBatches(selectedFiles, collectionName.trim())
-      setBatchProgress((prev: typeof batchProgress) => ({
-        ...prev,
-        totalBatches: batches.length,
-      }))
-
       let totalSuccessful = 0
       let totalSkipped = 0
       let totalFailed = 0
+      let processed = 0
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress((prev: typeof batchProgress) => ({
-          ...prev,
-          batch: i + 1,
-        }))
-        const batchFiles = batches[i].map((f) => f.file)
-        const uploadResult = await uploadFileBatch(batchFiles, cl.id)
+        const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
+
+        // Mark batch files as uploading
+        batchFiles.forEach(file => {
+          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
+        })
+
+        const uploadResult = await uploadFileBatch(batchFiles.map((f) => f.file), cl.id, null, abortController.signal)
+
+        // Update individual file statuses based on results
+        if (uploadResult.results) {
+          uploadResult.results.forEach((result: any, index: number) => {
+            const file = batchFiles[index]
+            if (result.success) {
+              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+            } else {
+              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
+            }
+          })
+        } else {
+          // Fallback: mark all as uploaded if no individual results available
+          batchFiles.forEach(file => {
+            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+          })
+        }
 
         // Accumulate results from each batch
         if (uploadResult.summary) {
@@ -716,10 +591,9 @@ function KnowledgeManagementContent() {
           totalFailed += uploadResult.summary.failed || 0
         }
 
-        setBatchProgress((prev: typeof batchProgress) => ({
-          ...prev,
-          current: prev.current + batchFiles.length,
-        }))
+        // Update progress
+        processed += batchFiles.length
+        updateProgress(uploadId, processed, i + 1)
       }
 
       // Fetch the updated Collection data from the backend
@@ -803,15 +677,21 @@ function KnowledgeManagementContent() {
       })
     } catch (error) {
       console.error("Upload failed:", error)
-      toast.error({
-        title: "Upload Failed",
-        description: "Failed to create collection. Please try again.",
-      })
+      
+      // Check if the error is due to cancellation
+      if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Upload Cancelled",
+          description: "File upload was cancelled by user.",
+        })
+      } else {
+        toast.error({
+          title: "Upload Failed",
+          description: "Failed to create collection. Please try again.",
+        })
+      }
     } finally {
-      setIsUploading(false)
-      setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
-      setUploadingCollectionName("")
-      clearUploadState()
+      finishUpload(uploadId)
     }
   }
 
@@ -853,14 +733,10 @@ function KnowledgeManagementContent() {
       return
     }
 
-    setIsUploading(true)
-    setUploadingCollectionName(addingToCollection.name)
-    setBatchProgress({
-      total: selectedFiles.length,
-      current: 0,
-      batch: 0,
-      totalBatches: 0,
-    })
+    // Start the global upload progress
+    const batches = createBatches(selectedFiles, addingToCollection.name)
+    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
+    const { uploadId, abortController } = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -870,24 +746,39 @@ function KnowledgeManagementContent() {
       let totalSuccessful = 0
       let totalSkipped = 0
       let totalFailed = 0
-
-      const batches = createBatches(selectedFiles, addingToCollection.name)
-      setBatchProgress((prev: typeof batchProgress) => ({
-        ...prev,
-        totalBatches: batches.length,
-      }))
+      let processed = 0
 
       for (let i = 0; i < batches.length; i++) {
-        setBatchProgress((prev: typeof batchProgress) => ({
-          ...prev,
-          batch: i + 1,
-        }))
-        const batchFiles = batches[i].map((f) => f.file)
+        const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
+
+        // Mark batch files as uploading
+        batchFiles.forEach(file => {
+          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
+        })
+        
         const uploadedResult = await uploadFileBatch(
-          batchFiles,
+          batchFiles.map(f => f.file),
           addingToCollection.id,
           targetFolder?.id,
+          abortController.signal,
         )
+
+        // Update individual file statuses based on results
+        if (uploadedResult.results) {
+          uploadedResult.results.forEach((result: any, index: number) => {
+            const file = batchFiles[index]
+            if (result.success) {
+              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+            } else {
+              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
+            }
+          })
+        } else {
+          // Fallback: mark all as uploaded if no individual results available
+          batchFiles.forEach(file => {
+            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+          })
+        }
 
         // Accumulate results from each batch
         if (uploadedResult.summary) {
@@ -896,10 +787,9 @@ function KnowledgeManagementContent() {
           totalFailed += uploadedResult.summary.failed || 0
         }
 
-        setBatchProgress((prev: typeof batchProgress) => ({
-          ...prev,
-          current: prev.current + batchFiles.length,
-        }))
+        // Update progress
+        processed += batchFiles.length
+        updateProgress(uploadId, processed, i + 1)
       }
 
       // Refresh the collection by fetching updated data from backend
@@ -984,22 +874,27 @@ function KnowledgeManagementContent() {
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
-      toast.error({
-        title: "Add Files Failed",
-        description: "Failed to add files to collection. Please try again.",
-      })
+      
+      // Check if the error is due to cancellation
+      if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Upload Cancelled",
+          description: "File upload was cancelled by user.",
+        })
+      } else {
+        toast.error({
+          title: "Add Files Failed",
+          description: "Failed to add files to collection. Please try again.",
+        })
+      }
     } finally {
-      setIsUploading(false)
-      setBatchProgress({ total: 0, current: 0, batch: 0, totalBatches: 0 })
-      setUploadingCollectionName("")
-      clearUploadState()
+      finishUpload(uploadId)
     }
   }
 
   const handleDeleteItem = async () => {
     if (!deletingItem) return
 
-    setIsUploading(true)
     try {
       // Find the item to delete based on the path
       const itemToDelete = findItemByPath(
@@ -1066,7 +961,6 @@ function KnowledgeManagementContent() {
       })
     } finally {
       setDeletingItem(null)
-      setIsUploading(false)
     }
   }
 
@@ -1141,8 +1035,6 @@ function KnowledgeManagementContent() {
   const handleDeleteCollection = async () => {
     if (!deletingCollection) return
 
-    setIsUploading(true)
-
     try {
       // Delete the collection
       await deleteCollection(deletingCollection.id)
@@ -1163,8 +1055,6 @@ function KnowledgeManagementContent() {
         title: "Delete Failed",
         description: "Failed to delete collection. Please try again.",
       })
-    } finally {
-      setIsUploading(false)
     }
   }
 
@@ -1409,6 +1299,7 @@ function KnowledgeManagementContent() {
             try {
               await documentOperationsRef.current.highlightText(
                 chunkContent.chunkContent,
+                newChunkIndex
               )
             } catch (error) {
               console.error(
@@ -1734,8 +1625,8 @@ function KnowledgeManagementContent() {
                 </div>
               </div>
               <div className="mt-12">
-                {/* Show skeleton loader when uploading */}
-                {isUploading && batchProgress.total > 0 && (
+                {/* Show skeleton loader when uploading to NEW collection */}
+                {isUploading && batchProgress.total > 0 && isNewCollectionUpload && (
                   <div className="mb-8">
                     <div className="flex justify-between items-center mb-4">
                       <div className="flex items-center gap-2">
@@ -1756,6 +1647,7 @@ function KnowledgeManagementContent() {
                       processedFiles={batchProgress.current}
                       currentBatch={batchProgress.batch}
                       totalBatches={batchProgress.totalBatches}
+                      showHeaders={true}
                     />
                   </div>
                 )}
@@ -1988,6 +1880,19 @@ function KnowledgeManagementContent() {
                             }
                           }}
                         />
+                        {/* Show skeleton for existing collection uploads */}
+                        {isUploading && 
+                         !isNewCollectionUpload && 
+                         targetCollectionId === collection.id && 
+                         batchProgress.total > 0 && (
+                          <FileUploadSkeleton
+                            totalFiles={batchProgress.total}
+                            processedFiles={batchProgress.current}
+                            currentBatch={batchProgress.batch}
+                            totalBatches={batchProgress.totalBatches}
+                            showHeaders={false}
+                          />
+                        )}
                       </>
                     )}
                   </div>
@@ -2105,8 +2010,8 @@ function KnowledgeManagementContent() {
         </div>
       )}
       {(showNewCollection || addingToCollection) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl w-[90%] max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-2">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-end pt-24 pr-24 z-50">
+          <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl w-[90%] max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-2">
             <div className="pb-1">
               <div className="flex justify-between items-center">
                 <h2 className="pl-2  font-medium text-gray-400 dark:text-gray-200 font-mono">
@@ -2132,12 +2037,12 @@ function KnowledgeManagementContent() {
                   >
                     {addingToCollection
                       ? "Adding to collection"
-                      : "Collection title"}
+                      : "Collection name"}
                   </label>
                   <Input
                     id="collectionName"
                     type="text"
-                    placeholder="Enter collection title"
+                    placeholder="Enter collection name"
                     value={collectionName}
                     onChange={(e) => setCollectionName(e.target.value)}
                     className="w-full text-xl placeholder:text-gray-400 placeholder:opacity-60 dark:placeholder:text-gray-500 dark:placeholder:opacity-50 !outline-none !focus:outline-none !focus:ring-0 !focus:shadow-none !bg-transparent !px-0 !shadow-none !ring-0 border-0 border-b border-gray-300 dark:border-gray-600 focus:border-b focus:border-gray-400 dark:focus:border-gray-500 !rounded-none"
@@ -2239,8 +2144,8 @@ const createBatches = (
   collectionName: string,
 ): FileUploadSelectedFile[][] => {
   const BATCH_CONFIG = {
-    MAX_PAYLOAD_SIZE: 45 * 1024 * 1024,
-    MAX_FILES_PER_BATCH: 50,
+    MAX_PAYLOAD_SIZE: 5 * 1024 * 1024,
+    MAX_FILES_PER_BATCH: 5,
   }
   const batches: FileUploadSelectedFile[][] = []
   let currentBatch: FileUploadSelectedFile[] = []

@@ -11,7 +11,11 @@ import {
   type SelectConnector,
   type SelectOAuthProvider,
 } from "./schema"
-import type { OAuthCredentials, TxnOrClient } from "@/types" // ConnectorType removed
+import type {
+  MicrosoftServiceCredentials,
+  OAuthCredentials,
+  TxnOrClient,
+} from "@/types" // ConnectorType removed
 import { Subsystem } from "@/types"
 import { and, eq } from "drizzle-orm"
 import { Apps, AuthType, ConnectorStatus, ConnectorType } from "@/shared/types" // ConnectorType added
@@ -31,6 +35,8 @@ import { getOAuthProviderByConnectorId } from "@/db/oauthProvider"
 import { getErrorMessage } from "@/utils"
 import { syncJobs, syncHistory } from "@/db/schema"
 import { scopes } from "@/integrations/microsoft/config"
+import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
+import { date } from "zod"
 const Logger = getLogger(Subsystem.Db).child({ module: "connector" })
 
 export const insertConnector = async (
@@ -157,17 +163,15 @@ export const getConnector = async (
   }
 }
 
-const IsTokenExpired = (
+const IsExpired = (
   app: Apps,
-  oauthCredentials: OAuthCredentials,
+  expiresAt: Date,
   bufferInSeconds: number,
 ): boolean => {
   if (IsGoogleApp(app) || IsMicrosoftApp(app)) {
-    const tokens = oauthCredentials.data
     const now: Date = new Date()
-    // make the type as Date, currently the date is stringified
-    const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime()
     const currentTime = now.getTime()
+    const expirationTime = new Date(expiresAt).getTime()
     return currentTime + bufferInSeconds * 1000 > expirationTime
   }
   return false
@@ -207,9 +211,9 @@ export const getOAuthConnectorWithCredentials = async (
   // google tokens have expiry of 1 hour
   // 5 minutes before expiry we refresh them
   if (
-    IsTokenExpired(
+    IsExpired(
       oauthRes.app,
-      oauthRes.oauthCredentials as OAuthCredentials,
+      (oauthRes.oauthCredentials as OAuthCredentials).data.accessTokenExpiresAt,
       5 * 60,
     )
   ) {
@@ -297,6 +301,69 @@ export const getOAuthConnectorWithCredentials = async (
     }
   }
   return oauthRes
+}
+
+export const getMicrosoftAuthConnectorWithCredentials = async (
+  trx: TxnOrClient,
+  connectorId: number,
+): Promise<SelectConnector> => {
+  const res = await trx
+    .select()
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, connectorId),
+        eq(connectors.authType, AuthType.ServiceAccount),
+      ),
+    )
+    .limit(1)
+
+  if (!res.length) {
+    throw new NoOauthConnectorFound({
+      message: `Could not get the oauth connector with id:  ${connectorId}`,
+    })
+  }
+
+  let authRes: SelectConnector = selectConnectorSchema.parse(res[0])
+
+  if (!authRes.credentials) {
+    throw new MissingOauthConnectorCredentialsError({})
+  }
+  // parse the string
+  const credentials: MicrosoftServiceCredentials = JSON.parse(
+    authRes.credentials as string,
+  )
+
+  if (IsExpired(authRes.app, new Date(credentials.expires_at), 5 * 60)) {
+    // token is expired. We should get new tokens
+    // update it in place
+    if (IsMicrosoftApp(authRes.app)) {
+      const authProvider = new CustomServiceAuthProvider(
+        credentials.tenantId,
+        credentials.clientId,
+        credentials.clientSecret,
+      )
+
+      const accessToken = await authProvider.getAccessTokenWithExpiry()
+      credentials.access_token = accessToken.token
+      credentials.expires_at = new Date(
+        accessToken.expiresOnTimestamp,
+      ).toISOString()
+
+      authRes = await updateConnector(trx, authRes.id, {
+        credentials: JSON.stringify(credentials),
+      })
+      Logger.info(`Microsoft connector successfully updated: ${authRes.id}`)
+    } else {
+      Logger.error(
+        `Token has to refresh but ${authRes.app} app not yet supported`,
+      )
+      throw new Error(
+        `Token has to refresh but ${authRes.app} app not yet supported`,
+      )
+    }
+  }
+  return authRes
 }
 
 export const getConnectorByExternalId = async (

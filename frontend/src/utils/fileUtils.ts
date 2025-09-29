@@ -206,6 +206,7 @@ export const uploadFileBatch = async (
   files: File[],
   collectionId: string,
   parentId?: string | null,
+  abortSignal?: AbortSignal,
 ): Promise<any> => {
   const formData = new FormData()
 
@@ -228,6 +229,7 @@ export const uploadFileBatch = async (
       {
         method: "POST",
         body: formData,
+        signal: abortSignal,
       },
     )
 
