@@ -2294,7 +2294,9 @@ export const getSheetsListFromOneSpreadsheet = async (
 
         const sheetDataToBeIngested = {
           title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
-          url: spreadsheet.webViewLink ?? "",
+          url: sheet?.sheetId 
+            ? `https://docs.google.com/spreadsheets/d/${spreadsheet.id}/edit#gid=${sheet.sheetId}`
+            : spreadsheet.webViewLink ?? "",
           app: Apps.GoogleDrive,
           // TODO Document it eveyrwhere
           // Combining spreadsheetId and sheetIndex as single spreadsheet can have multiple sheets inside it
