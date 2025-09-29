@@ -224,6 +224,7 @@ import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
+import { applyFollowUpContext } from "@/utils/parseAttachment"
 const {
   JwtPayloadKey,
   chatHistoryPageSize,
@@ -1044,58 +1045,15 @@ export const MessageWithToolsApi = async (c: Context) => {
 
     // Handle isFollowUp functionality - get context from previous user message
     if (isFollowUp && chatId) {
-      loggerWithChild({ email: email }).info(
-        "isFollowUp is true, getting context from previous user message",
-      )
-      
       try {
-        // Get all messages from the chat
-        const allMessages = await getChatMessagesWithAuth(db, chatId, email)
+        const updatedContext = await applyFollowUpContext(
+          chatId,
+          email
+        )
         
-        // Find the last user message
-        const userMessages = allMessages.filter(msg => msg.messageRole === MessageRole.User)
-        
-        if (userMessages.length > 0) {
-          const lastUserMessage = userMessages[userMessages.length - 1]
-          
-          // Get and add fileIds from the previous user message
-          const prevFileIds = Array.isArray(lastUserMessage.fileIds) ? lastUserMessage.fileIds : []
-          if (prevFileIds.length > 0) {
-            loggerWithChild({ email: email }).info(
-              `Found ${prevFileIds.length} fileIds from previous user message: ${JSON.stringify(prevFileIds)}`,
-            )
-            fileIds = [...fileIds, ...prevFileIds]
-          }
-          
-          // Get attachments from the previous user message
-          const prevAttachments = await getAttachmentsByMessageId(db, lastUserMessage.externalId, email)
-          if (prevAttachments.length > 0) {
-            loggerWithChild({ email: email }).info(
-              `Found ${prevAttachments.length} attachments from previous user message`,
-            )
-
-            // Add all previous attachments to attachmentMetadata
-            attachmentMetadata.push(...prevAttachments)
-
-            // Add image attachment fileIds
-            const prevImageAttachmentFileIds = prevAttachments
-              .filter((m) => m.isImage)
-              .map((m) => m.fileId)
-            
-            if (prevImageAttachmentFileIds.length > 0) {
-              imageAttachmentFileIds.push(...prevImageAttachmentFileIds)
-            }
-            
-            // Add non-image attachment fileIds
-            const prevNonImageAttachmentFileIds = prevAttachments
-              .filter((m) => !m.isImage)
-              .map((m) => m.fileId)
-            
-            if (prevNonImageAttachmentFileIds.length > 0) {
-              fileIds = [...fileIds, ...prevNonImageAttachmentFileIds]
-            }
-          }
-        }
+        fileIds = [...fileIds, ...updatedContext.fileIds]
+        imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
+        attachmentMetadata.push(...updatedContext.attachmentMetadata)
       } catch (error) {
         loggerWithChild({ email: email }).error(
           error,
@@ -3735,58 +3693,15 @@ export const AgentMessageApi = async (c: Context) => {
 
     // Handle isFollowUp functionality - get context from previous user message
     if (isFollowUp && chatId) {
-      loggerWithChild({ email: email }).info(
-        "isFollowUp is true, getting context from previous user message",
-      )
-      
       try {
-        // Get all messages from the chat
-        const allMessages = await getChatMessagesWithAuth(db, chatId, email)
-        
-        // Find the last user message
-        const userMessages = allMessages.filter(msg => msg.messageRole === MessageRole.User)
-        
-        if (userMessages.length > 0) {
-          const lastUserMessage = userMessages[userMessages.length - 1]
-          
-          // Get and add fileIds from the previous user message
-          const prevFileIds = Array.isArray(lastUserMessage.fileIds) ? lastUserMessage.fileIds : []
-          if (prevFileIds.length > 0) {
-            loggerWithChild({ email: email }).info(
-              `Found ${prevFileIds.length} fileIds from previous user message: ${JSON.stringify(prevFileIds)}`,
-            )
-            fileIds = [...fileIds, ...prevFileIds]
-          }
-          
-          // Get attachments from the previous user message
-          const prevAttachments = await getAttachmentsByMessageId(db, lastUserMessage.externalId, email)
-          if (prevAttachments.length > 0) {
-            loggerWithChild({ email: email }).info(
-              `Found ${prevAttachments.length} attachments from previous user message`,
-            )
+        const updatedContext = await applyFollowUpContext(
+          chatId,
+          email
+        )
 
-            // Add all previous attachments to attachmentMetadata
-            attachmentMetadata.push(...prevAttachments)
-            
-            // Add image attachment fileIds
-            const prevImageAttachmentFileIds = prevAttachments
-              .filter((m) => m.isImage)
-              .map((m) => m.fileId)
-            
-            if (prevImageAttachmentFileIds.length > 0) {
-              imageAttachmentFileIds.push(...prevImageAttachmentFileIds)
-            }
-            
-            // Add non-image attachment fileIds
-            const prevNonImageAttachmentFileIds = prevAttachments
-              .filter((m) => !m.isImage)
-              .map((m) => m.fileId)
-            
-            if (prevNonImageAttachmentFileIds.length > 0) {
-              fileIds = [...fileIds, ...prevNonImageAttachmentFileIds]
-            }
-          }
-        }
+        fileIds = updatedContext.fileIds
+        imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
+        attachmentMetadata.push(...updatedContext.attachmentMetadata)
       } catch (error) {
         loggerWithChild({ email: email }).error(
           error,
@@ -3876,7 +3791,7 @@ export const AgentMessageApi = async (c: Context) => {
             fileIds: [],
             collectionFolderIds: [],
           }
-    fileIds = extractedInfo?.fileIds
+    fileIds = [...fileIds, ...(extractedInfo?.fileIds ?? [])]
     let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
