@@ -277,9 +277,10 @@ const fetchUserSpreadsheets = async (jwtClient: any, userEmail: string, limit: n
 
 // Process all sheets within a spreadsheet
 const processSpreadsheetSheets = async (
-  spreadsheet: any,
+  spreadsheet: drive_v3.Schema$File,
   userEmail: string,
-  sheetsClient: any,
+  sheetsClient: sheets_v4.Sheets,
+  jwtClient: any,
   processedDocIds: Map<string, boolean>,
   progressLogger?: { logProgress: (processed: number, updated: number, skipped: number, error: number, userEmail?: string) => void }
 ): Promise<{ processed: number; updated: number; skipped: number; error: number }> => {
@@ -293,7 +294,7 @@ const processSpreadsheetSheets = async (
     Logger.info(`Processing spreadsheet: ${spreadsheet.name} (${spreadsheetId}) for user: ${userEmail}`)
 
     // Get spreadsheet details to fetch individual sheets
-    const spreadsheetDetails = await getSpreadsheet(sheetsClient, spreadsheetId, sheetsClient.auth, userEmail)
+    const spreadsheetDetails = await getSpreadsheet(sheetsClient, spreadsheetId!, jwtClient, userEmail)
     
     if (!spreadsheetDetails || !spreadsheetDetails.data.sheets) {
       Logger.warn(`Could not fetch spreadsheet details for: ${spreadsheetId}`)
@@ -339,7 +340,7 @@ const processSpreadsheetSheets = async (
         // Construct the new URL with the correct sheet ID
         const newUrl = sheetId 
           ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}`
-          : spreadsheet.webViewLink ?? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`
+          : spreadsheet.webViewLink ?? ""
         
         // Check if URL needs updating
         const currentUrl = vespaSheetData.url || ""
@@ -428,12 +429,13 @@ const processUserSheetUrls = async (
     // Step 2: Process each spreadsheet and its sheets
     const sheetLimit = pLimit(SPREADSHEET_CONCURRENCY_LIMIT)
     
-    const sheetPromises = googleSheets.slice(0, 100).map(spreadsheet => // Limit to 100 spreadsheets
+    const sheetPromises = googleSheets.map(spreadsheet =>
       sheetLimit(async () => {
         return await processSpreadsheetSheets(
           spreadsheet,
           userEmail,
           sheetsClient,
+          jwtClient,
           processedDocIds,
           progressLogger
         )
