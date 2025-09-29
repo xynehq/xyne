@@ -29,7 +29,7 @@ const {
 } = config
 import OpenAI from "openai"
 import { getLogger } from "@/logger"
-import { MessageRole, Subsystem } from "@/types"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { parse } from "partial-json"
 
@@ -99,6 +99,11 @@ import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
 import { VertexAiProvider, VertexProvider } from "@/ai/provider/vertex_ai"
+import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
+import { createOpenAI } from "@ai-sdk/openai"
+import { createVertex } from "@ai-sdk/google-vertex"
+import { createVertexAnthropic } from "@ai-sdk/google-vertex/anthropic"
+import type { ProviderV2 } from "@ai-sdk/provider"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -116,6 +121,7 @@ import {
 } from "../agentPrompts"
 import { is } from "drizzle-orm"
 import type { ToolDefinition } from "@/api/chat/mapper"
+import { getDateForAI } from "@/utils/index"
 
 const Logger = getLogger(Subsystem.AI)
 
@@ -208,6 +214,8 @@ let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
 let vertexProvider: LLMProvider | null = null
+let bedrockAISDKProvider: ProviderV2 | null = null
+let openaiAISDKProvider: ProviderV2 | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -407,6 +415,116 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
     throw new Error("Invalid provider")
   }
   return provider
+}
+
+export const getAISDKProviderByModel = (modelId: Models): ProviderV2 => {
+  const providerType = ModelToProviderMap[modelId]
+    ? ModelToProviderMap[modelId]
+    : OllamaModel
+      ? AIProviders.Ollama
+      : TogetherAIModel
+        ? AIProviders.Together
+        : FireworksAIModel
+          ? AIProviders.Fireworks
+          : GeminiAIModel
+            ? AIProviders.GoogleAI
+            : VertexProjectId && VertexRegion
+              ? AIProviders.VertexAI
+              : null
+
+  switch (providerType) {
+    case AIProviders.VertexAI: {
+      if (!VertexProjectId || !VertexRegion) {
+        throw new Error("Vertex AI project or region not configured")
+      }
+
+      const isGeminiModel = modelId.toString().toLowerCase().includes("gemini")
+
+      const baseConfig = {
+        project: VertexProjectId,
+        location: VertexRegion,
+      }
+
+      if (isGeminiModel) {
+        Logger.info(
+          `Created Vertex AI SDK provider for model ${modelId} using Google backend`,
+        )
+        return createVertex(baseConfig)
+      }
+
+      Logger.info(
+        `Created Vertex AI SDK provider for model ${modelId} using Anthropic backend`,
+      )
+      return createVertexAnthropic(baseConfig)
+    }
+
+    case AIProviders.OpenAI: {
+      if (!openaiAISDKProvider) {
+        const openAIConfig: Parameters<typeof createOpenAI>[0] = {}
+
+        if (OpenAIKey) {
+          openAIConfig.apiKey = OpenAIKey
+        }
+
+        if (aiProviderBaseUrl) {
+          openAIConfig.baseURL = aiProviderBaseUrl
+        }
+
+        Logger.info(
+          `Initialized OpenAI AI SDK provider for model ${modelId} using base URL ${openAIConfig.baseURL ?? "https://api.openai.com/v1"}`,
+        )
+
+        openaiAISDKProvider = Object.keys(openAIConfig).length
+          ? createOpenAI(openAIConfig)
+          : createOpenAI()
+      }
+
+      if (!openaiAISDKProvider) {
+        throw new Error("Failed to initialize OpenAI AI SDK provider")
+      }
+
+      return openaiAISDKProvider
+    }
+
+    case AIProviders.AwsBedrock: {
+      if (!bedrockAISDKProvider) {
+        const region = process.env["AWS_REGION"] || "us-west-2"
+        const sessionToken = process.env["AWS_SESSION_TOKEN"]
+
+        const bedrockConfig: Parameters<typeof createAmazonBedrock>[0] = {
+          region,
+        }
+
+        if (AwsAccessKey) {
+          bedrockConfig.accessKeyId = AwsAccessKey
+        }
+
+        if (AwsSecretKey) {
+          bedrockConfig.secretAccessKey = AwsSecretKey
+        }
+
+        if (sessionToken) {
+          bedrockConfig.sessionToken = sessionToken
+        }
+
+        Logger.info(
+          `Initialized Amazon Bedrock AI SDK provider for model ${modelId} in region ${region}`,
+        )
+        bedrockAISDKProvider = createAmazonBedrock(bedrockConfig)
+      }
+
+      if (!bedrockAISDKProvider) {
+        throw new Error("Failed to initialize Amazon Bedrock AI SDK provider")
+      }
+
+      return bedrockAISDKProvider
+    }
+
+    default:
+      throw new Error(
+        `AI SDK provider not available for provider type: ${providerType ?? "unknown"}`,
+      )
+  }
 }
 
 export const askQuestion = (
@@ -945,6 +1063,7 @@ export const answerOrSearch = (
   userQuery: string,
   context: string,
   userCtx: string,
+  dateForAI: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
   try {
@@ -954,10 +1073,11 @@ export const answerOrSearch = (
     if (!isAgentPromptEmpty(params.agentPrompt)) {
       params.systemPrompt = agentOptimizedPrompt(
         userCtx,
+        dateForAI,
         parseAgentPrompt(params.agentPrompt),
       )
     } else {
-      params.systemPrompt = optimizedPrompt(userCtx)
+      params.systemPrompt = optimizedPrompt(userCtx, dateForAI)
     }
     params.json = true
 
@@ -1072,6 +1192,7 @@ export const baselineRAG = async (
 export const baselineRAGJson = async (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
 ): Promise<{ output: AnswerResponse; cost: number }> => {
@@ -1083,9 +1204,10 @@ export const baselineRAGJson = async (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
+      dateForAI
     )
   } else {
-    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx)
+    params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx, dateForAI)
   }
   params.json = true
   const baseMessage = {
@@ -1122,6 +1244,7 @@ const indexToCitation = (text: string): string => {
 export const baselineRAGJsonStream = (
   userQuery: string,
   userCtx: string,
+  userMetadata: UserMetadataType,
   retrievedCtx: string,
   params: ModelParams,
   specificFiles?: boolean,
@@ -1142,6 +1265,7 @@ export const baselineRAGJsonStream = (
     if (isMsgWithSources) {
       params.systemPrompt = agentBaselineFileContextPromptJson(
         userCtx,
+        userMetadata.dateForAI,
         retrievedCtx,
       )
     } else if (!isAgentPromptEmpty(params.agentPrompt)) {
@@ -1178,11 +1302,13 @@ export const baselineRAGJsonStream = (
         userCtx,
         indexToCitation(retrievedCtx),
         parseAgentPrompt(params.agentPrompt),
+        userMetadata.dateForAI,
       )
     } else {
       params.systemPrompt = baselinePromptJson(
         userCtx,
         indexToCitation(retrievedCtx),
+        userMetadata.dateForAI,
       )
     }
   }
@@ -1207,6 +1333,7 @@ export const baselineRAGJsonStream = (
 export const baselineRAGOffJsonStream = (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
   agentPrompt: string,
@@ -1220,6 +1347,7 @@ export const baselineRAGOffJsonStream = (
   params.systemPrompt = ragOffPromptJson(
     userCtx,
     retrievedCtx,
+    dateForAI,
     parseAgentPrompt(agentPrompt),
   )
   params.json = true
@@ -1246,6 +1374,7 @@ export const baselineRAGOffJsonStream = (
 export const temporalPromptJsonStream = (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
@@ -1257,9 +1386,10 @@ export const temporalPromptJsonStream = (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
+      dateForAI
     )
   } else {
-    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx)
+    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx, dateForAI)
   }
   params.json = true
   const baseMessage = {
@@ -1280,6 +1410,7 @@ export const temporalPromptJsonStream = (
 export const mailPromptJsonStream = (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
@@ -1295,6 +1426,7 @@ export const mailPromptJsonStream = (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
+      dateForAI,
     )
   } else if (defaultReasoning) {
     if (!isAgentPromptEmpty(params.agentPrompt)) {
@@ -1310,7 +1442,7 @@ export const mailPromptJsonStream = (
       )
     }
   } else {
-    params.systemPrompt = emailPromptJson(userCtx, retrievedCtx)
+    params.systemPrompt = emailPromptJson(userCtx, retrievedCtx, dateForAI)
   }
   params.json = true
   const baseMessage = {
@@ -1331,13 +1463,14 @@ export const mailPromptJsonStream = (
 export const meetingPromptJsonStream = (
   userQuery: string,
   userCtx: string,
+  dateForAI: string,
   retrievedCtx: string,
   params: ModelParams,
 ): AsyncIterableIterator<ConverseResponse> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
-  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx)
+  params.systemPrompt = meetingPromptJson(userCtx, retrievedCtx, dateForAI)
   params.json = true // Set to true to ensure JSON response
   const baseMessage = {
     role: ConversationRole.USER,
@@ -1464,12 +1597,14 @@ export async function generateToolSelectionOutput(
   reasoning?: string | null
 } | null> {
   params.json = true
+  const dateForAI = getDateForAI({userTimeZone: "Asia/Kolkata"})
 
   let defaultReasoning = isReasoning
   params.systemPrompt = SearchQueryToolContextPrompt(
     userContext,
     toolContext,
     initialPlanning,
+    dateForAI,
     parseAgentPrompt(agentContext),
     pastActions,
     tools,
@@ -1509,6 +1644,7 @@ export async function generateToolSelectionOutput(
 export function generateSearchQueryOrAnswerFromConversation(
   currentMessage: string,
   userContext: string,
+  userMetadata: UserMetadataType,
   params: ModelParams,
   toolContext?: string,
   previousClassification?: QueryRouterLLMResponse | null,
@@ -1526,11 +1662,13 @@ export function generateSearchQueryOrAnswerFromConversation(
   } else if (!isAgentPromptEmpty(params.agentPrompt)) {
     params.systemPrompt = agentSearchQueryPrompt(
       userContext,
+      userMetadata.dateForAI,
       parseAgentPrompt(params.agentPrompt),
     )
   } else {
     params.systemPrompt = searchQueryPrompt(
       userContext,
+      userMetadata.dateForAI,
       previousClassification,
       chainBreakClassifications,
     )
@@ -1555,6 +1693,7 @@ export function generateSearchQueryOrAnswerFromConversation(
 export function generateAnswerBasedOnToolOutput(
   currentMessage: string,
   userContext: string,
+  dateForAI: string,
   params: ModelParams,
   toolContext: string,
   toolOutput: string,
@@ -1568,6 +1707,7 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      dateForAI,
       parsedAgentPrompt,
       fallbackReasoning,
     )
@@ -1577,6 +1717,7 @@ export function generateAnswerBasedOnToolOutput(
       userContext,
       toolContext,
       toolOutput,
+      dateForAI,
       undefined,
       fallbackReasoning,
     )
@@ -1600,6 +1741,7 @@ export function generateAnswerBasedOnToolOutput(
 
 export function generateSynthesisBasedOnToolOutput(
   userCtx: string,
+  dateForAI: string,
   currentMessage: string,
   gatheredFragments: string,
   params: ModelParams,
@@ -1611,6 +1753,7 @@ export function generateSynthesisBasedOnToolOutput(
     userCtx,
     currentMessage,
     gatheredFragments,
+    dateForAI
   )
 
   const baseMessage = {

@@ -10,7 +10,6 @@ import {
   Moon,
   LogOut,
   ExternalLink,
-  Key,
   BarChart3,
   BookOpen,
   Workflow,
@@ -330,17 +329,6 @@ export const Sidebar = ({
               <img src={Logo} alt="Logo" />
             </DropdownMenuTrigger>
             <DropdownMenuContent className="ml-2">
-              <DropdownMenuItem
-                key={"api-key"}
-                role="button"
-                className="flex text-[14px] py-[8px] px-[10px] hover:bg-[#EBEFF2] items-center"
-                onClick={() => {
-                  router.navigate({ to: "/api-key" })
-                }}
-              >
-                <Key size={16} />
-                <span>API Key</span>
-              </DropdownMenuItem>
               <DropdownMenuItem
                 key={"xyne"}
                 role="button"

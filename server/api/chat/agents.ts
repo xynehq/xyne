@@ -2,7 +2,6 @@ import {
   answerContextMap,
   answerContextMapFromFragments,
   cleanContext,
-  constructToolContext,
   userContext,
 } from "@/ai/context"
 import {
@@ -10,23 +9,13 @@ import {
   generateConsolidatedStepSummaryPromptJson,
 } from "@/ai/agentPrompts"
 import {
-  // baselineRAGIterationJsonStream,
-  baselineRAGJsonStream,
   generateSearchQueryOrAnswerFromConversation,
   jsonParseLLMOutput,
-  mailPromptJsonStream,
-  temporalPromptJsonStream,
-  queryRewriter,
-  generateAnswerBasedOnToolOutput,
-  meetingPromptJsonStream,
-  generateToolSelectionOutput,
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
 } from "@/ai/provider"
 import {
-  getConnectorByExternalId,
-  getConnectorByApp,
   getConnectorById,
 } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -47,12 +36,8 @@ import {
   type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
-  type UserQuery,
 } from "@/ai/types"
 import {
-  deleteMessagesByChatId,
-  getChatByExternalId,
-  getPublicChats,
   insertChat,
   updateChatByExternalIdWithAuth,
   updateMessageByExternalId,
@@ -60,110 +45,74 @@ import {
 import { db } from "@/db/client"
 import {
   insertMessage,
-  getMessageByExternalId,
-  getChatMessagesBefore,
-  updateMessage,
   getChatMessagesWithAuth,
 } from "@/db/message"
-import { getToolsByConnectorId, syncConnectorTools } from "@/db/tool"
+import { getToolsByConnectorId } from "@/db/tool"
 import {
-  selectPublicChatSchema,
-  selectPublicMessagesSchema,
-  messageFeedbackEnum,
   type SelectChat,
   type SelectMessage,
-  selectMessageSchema,
 } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   AgentReasoningStepType,
-  AgentToolName,
+  ApiKeyScopes,
   ChatSSEvents,
   ContextSysthesisState,
   KnowledgeBaseEntity,
-  OpenAIError,
-  XyneTools,
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
 import {
   MessageRole,
   Subsystem,
-  MCPClientConfig,
-  MCPClientStdioConfig,
+  type UserMetadataType,
 } from "@/types"
 import {
-  delay,
   getErrorMessage,
-  getRelativeTime,
-  interpretDateFromReturnedTemporalValue,
   splitGroupedCitationsWithSpaces,
 } from "@/utils"
 import {
-  ToolResultContentBlock,
   type ConversationRole,
   type Message,
 } from "@aws-sdk/client-bedrock-runtime"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
-import { streamSSE, type SSEStreamingApi } from "hono/streaming" // Import SSEStreamingApi
+import { streamSSE } from "hono/streaming" // Import SSEStreamingApi
 import { z } from "zod"
-import type { chatSchema, MessageRetryReqType } from "@/api/search"
-import { getTracer, type Span, type Tracer } from "@/tracer"
+import { getTracer, type Tracer } from "@/tracer"
 import {
-  searchVespa,
-  searchVespaInFiles,
-  getItems,
   GetDocumentsByDocIds,
   getDocumentOrNull,
-  searchVespaThroughAgent,
-  searchVespaAgent,
-  SearchVespaThreads,
   getAllDocumentsForAgent,
   searchSlackInVespa,
 } from "@/search/vespa"
 import {
   Apps,
-  CalendarEntity,
-  chatMessageSchema,
   chatUserSchema,
   chatContainerSchema,
-  dataSourceFileSchema,
-  DriveEntity,
-  entitySchema,
-  eventSchema,
-  fileSchema,
-  GooglePeopleEntity,
-  mailAttachmentSchema,
-  MailEntity,
-  mailSchema,
-  SystemEntity,
-  VespaSearchResultsSchema,
+  VespaChatContainerSearchSchema,
+  VespaChatUserSchema,
   type VespaSearchResult,
   type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import {
   insertChatTrace,
-  deleteChatTracesByChatExternalId,
-  updateChatTrace,
 } from "@/db/chatTrace"
 import type { AttachmentMetadata } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
-  getAgentByExternalId,
   getAgentByExternalIdWithPermissionCheck,
   type SelectAgent,
 } from "@/db/agent"
-import { selectToolSchema, type SelectTool } from "@/db/schema/McpConnectors"
 import { activeStreams } from "./stream"
 import {
   ragPipelineConfig,
   RagPipelineStages,
-  type AgentTool,
+  type Citation,
   type ImageCitation,
   type MinimalAgentFragment,
 } from "./types"
@@ -171,7 +120,6 @@ import {
   convertReasoningStepToText,
   extractFileIdsFromMessage,
   extractImageFileNames,
-  flattenObject,
   getCitationToImage,
   handleError,
   isMessageWithContext,
@@ -185,7 +133,6 @@ import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   buildContext,
   buildUserQuery,
-  cleanBuffer,
   getThreadContext,
   isContextSelected,
   UnderstandMessageAndAnswer,
@@ -199,13 +146,11 @@ import {
   generateTraceId,
   getTextContent,
   type Agent as JAFAgent,
-  type Tool as JAFTool,
   type Message as JAFMessage,
   type RunConfig as JAFRunConfig,
   type RunState as JAFRunState,
   type RunResult as JAFRunResult,
   type TraceEvent as JAFTraceEvent,
-  type JAFError,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -217,29 +162,42 @@ import {
   buildToolsOverview,
   buildContextSection,
 } from "@/api/chat/jaf-adapter"
-import { internalTools, mapGithubToolResponse } from "@/api/chat/mapper"
 import { getRecordBypath } from "@/db/knowledgeBase"
+import { getDateForAI } from "@/utils/index"
+import { validateVespaIdInAgentIntegrations } from "@/search/utils"
+import { getAuth, safeGet } from "../agent"
 const {
   JwtPayloadKey,
-  chatHistoryPageSize,
   defaultBestModel,
   defaultFastModel,
   maxDefaultSummary,
-  chatPageSize,
   isReasoning,
-  fastModelReasoning,
   StartThinkingToken,
   EndThinkingToken,
   maxValidLinks,
-  maxUserRequestCount,
 } = config
 const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+type ChatContainerFields = z.infer<typeof VespaChatContainerSearchSchema>
+type ChatUserFields = z.infer<typeof VespaChatUserSchema>
+
+const isChatContainerFields = (
+  value: unknown,
+): value is ChatContainerFields =>
+  isRecord(value) && VespaChatContainerSearchSchema.safeParse(value).success
+
+const isChatUserFields = (value: unknown): value is ChatUserFields =>
+  isRecord(value) && VespaChatUserSchema.safeParse(value).success
 
 // Generate AI summary for agent reasoning steps
 const generateStepSummary = async (
   step: AgentReasoningStep,
   userQuery: string,
+  dateForAI: string,
   contextInfo?: string,
   modelId?: string,
 ): Promise<string> => {
@@ -260,7 +218,7 @@ const generateStepSummary = async (
 
     // Use a fast model for summary generation
     const summarySpan = span.startSpan("synthesis_call")
-    const summary = await generateSynthesisBasedOnToolOutput(prompt, "", "", {
+    const summary = await generateSynthesisBasedOnToolOutput(prompt,dateForAI, "", "", {
       modelId: (modelId as Models) || defaultFastModel,
       stream: false,
       json: true,
@@ -395,7 +353,14 @@ const checkAndYieldCitationsForAgent = async function* (
   results: MinimalAgentFragment[],
   yieldedImageCitations?: Map<number, Set<number>>,
   email: string = "",
-) {
+): AsyncGenerator<
+  {
+    citation?: { index: number; item: Citation }
+    imageCitation?: ImageCitation
+  },
+  void,
+  unknown
+> {
   const tracer = getTracer("chat")
   const span = tracer.startSpan("checkAndYieldCitationsForAgent")
 
@@ -565,148 +530,13 @@ const checkAndYieldCitationsForAgent = async function* (
 const vespaResultToMinimalAgentFragment = (
   child: VespaSearchResult,
   idx: number,
+  userMetadata: UserMetadataType,
 ): MinimalAgentFragment => ({
   id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
-  content: answerContextMap(child as VespaSearchResults, 0, true),
+  content: answerContextMap(child as VespaSearchResults, userMetadata, 0, true),
   source: searchToCitation(child as VespaSearchResults),
   confidence: 1.0,
 })
-
-async function* getToolContinuationIterator(
-  message: string,
-  userCtx: string,
-  toolsPrompt: string,
-  toolOutput: string,
-  results: MinimalAgentFragment[],
-  agentPrompt?: string,
-  messages: Message[] = [],
-  fallbackReasoning?: string,
-  attachmentFileIds?: string[],
-  email?: string,
-  modelId?: string,
-): AsyncIterableIterator<
-  ConverseResponse & {
-    citation?: { index: number; item: any }
-    imageCitation?: ImageCitation
-  }
-> {
-  const context = answerContextMapFromFragments(results, maxDefaultSummary)
-  const { imageFileNames } = extractImageFileNames(
-    context,
-    results.map(
-      (v) =>
-        ({
-          fields: {
-            docId: v.source.docId,
-            title: v.source.title,
-            url: v.source.url,
-          },
-        }) as any,
-    ),
-  )
-  const finalImageFileNames = imageFileNames || []
-
-  if (attachmentFileIds?.length) {
-    finalImageFileNames.push(
-      ...attachmentFileIds.map((fileid, index) => `${index}_${fileid}_${0}`),
-    )
-  }
-
-  const continuationIterator = generateAnswerBasedOnToolOutput(
-    message,
-    userCtx,
-    {
-      modelId: (modelId as Models) || defaultBestModel,
-      stream: true,
-      json: true,
-      reasoning: false,
-      messages,
-      imageFileNames: finalImageFileNames,
-    },
-    toolsPrompt,
-    context ?? "",
-    agentPrompt,
-    fallbackReasoning,
-  )
-
-  // const previousResultsLength = 0 // todo fix this
-  let buffer = ""
-  let currentAnswer = ""
-  let parsed = { answer: "" }
-  let thinking = ""
-  let reasoning = config.isReasoning
-  let yieldedCitations = new Set<number>()
-  let yieldedImageCitations = new Map<number, Set<number>>()
-  const ANSWER_TOKEN = '"answer":'
-
-  for await (const chunk of continuationIterator) {
-    if (chunk.text) {
-      // if (reasoning) {
-      //   if (thinking && !chunk.text.includes(EndThinkingToken)) {
-      //     thinking += chunk.text
-      //     yield* checkAndYieldCitationsForAgent(
-      //       thinking,
-      //       yieldedCitations,
-      //       results,
-      //       previousResultsLength,
-      //     )
-      //     yield { text: chunk.text, reasoning }
-      //   } else {
-      //     // first time
-      //     const startThinkingIndex = chunk.text.indexOf(StartThinkingToken)
-      //     if (
-      //       startThinkingIndex !== -1 &&
-      //       chunk.text.trim().length > StartThinkingToken.length
-      //     ) {
-      //       let token = chunk.text.slice(
-      //         startThinkingIndex + StartThinkingToken.length,
-      //       )
-      //       if (chunk.text.includes(EndThinkingToken)) {
-      //         token = chunk.text.split(EndThinkingToken)[0]
-      //         thinking += token
-      //       } else {
-      //         thinking += token
-      //       }
-      //       yield* checkAndYieldCitationsForAgent(
-      //         thinking,
-      //         yieldedCitations,
-      //         results,
-      //         previousResultsLength,
-      //       )
-      //       yield { text: token, reasoning }
-      //     }
-      //   }
-      // }
-      // if (reasoning && chunk.text.includes(EndThinkingToken)) {
-      //   reasoning = false
-      //   chunk.text = chunk.text.split(EndThinkingToken)[1].trim()
-      // }
-      // if (!reasoning) {
-      buffer += chunk.text
-      try {
-        yield { text: chunk.text }
-
-        yield* checkAndYieldCitationsForAgent(
-          buffer,
-          yieldedCitations,
-          results,
-          yieldedImageCitations,
-          email ?? "",
-        )
-      } catch (e) {
-        Logger.error(`Error parsing LLM output: ${e}`)
-        continue
-      }
-    }
-
-    if (chunk.cost) {
-      yield { cost: chunk.cost }
-    }
-    if (chunk.metadata?.usage) {
-      yield { metadata: { usage: chunk.metadata.usage } }
-    }
-  }
-}
 
 type SynthesisResponse = {
   synthesisState:
@@ -718,6 +548,7 @@ type SynthesisResponse = {
 
 async function performSynthesis(
   ctx: any,
+  dateForAI: string,
   message: string,
   planningContext: string,
   gatheredFragments: MinimalAgentFragment[],
@@ -755,6 +586,7 @@ async function performSynthesis(
     const synthesisSpan = span.startSpan("synthesis_llm_call")
     const synthesisResponse = await generateSynthesisBasedOnToolOutput(
       ctx,
+      dateForAI,
       message,
       planningContext,
       {
@@ -902,8 +734,6 @@ export const MessageWithToolsApi = async (c: Context) => {
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("MessageWithToolsApi")
 
-  let stream: any
-  let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
   let isDebugMode = config.isDebugMode
@@ -934,9 +764,17 @@ export const MessageWithToolsApi = async (c: Context) => {
     let enableWebSearch = false
     let isDeepResearchEnabled = false
 
+    type ModelConfig = {
+      model?: string
+      reasoning?: boolean
+      websearch?: boolean
+      deepResearch?: boolean
+      capabilities?: string[] | { [key: string]: boolean }
+    }
+
     if (selectedModelConfig) {
       try {
-        const modelConfig = JSON.parse(selectedModelConfig)
+        const modelConfig = JSON.parse(selectedModelConfig) as ModelConfig
         modelId = modelConfig.model || null
 
         // Handle new direct boolean format
@@ -1007,8 +845,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
       .map((m) => m.fileId)
-    const agentPromptValue = agentId && isCuid(agentId) ? agentId : undefined
-    // const userRequestsReasoning = isReasoningEnabled // Addressed: Will be used below
     let attachmentStorageError: Error | null = null
 
     const contextExtractionSpan = initSpan.startSpan("context_extraction")
@@ -1072,6 +908,9 @@ export const MessageWithToolsApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
     initSpan.end()
 
@@ -1240,7 +1079,6 @@ export const MessageWithToolsApi = async (c: Context) => {
     return streamSSE(c, async (stream) => {
       // Store MCP clients for cleanup to prevent memory leaks
       const mcpClients: Client[] = []
-      let finalReasoningLogString = ""
       let structuredReasoningSteps: AgentReasoningStep[] = [] // For structured reasoning steps
       // Track steps per iteration for limiting display
       let currentIterationSteps = 0
@@ -1299,6 +1137,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const aiGeneratedSummary = await generateStepSummary(
           reasoningStep,
           userQuery,
+          dateForAI,
           undefined,
           actualModelId || undefined,
         )
@@ -1360,6 +1199,7 @@ export const MessageWithToolsApi = async (c: Context) => {
           // Use the selected model or fallback to fast model for summary generation
           const summaryResult = await generateSynthesisBasedOnToolOutput(
             prompt,
+            dateForAI,
             "",
             "",
             {
@@ -1489,16 +1329,10 @@ export const MessageWithToolsApi = async (c: Context) => {
         loggerWithChild({ email: sub }).info(
           "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
         )
-        const finalToolsList: Record<
-          string,
-          {
-            tools: SelectTool[]
-            client: Client
-          }
-        > = {}
-        const maxIterations = 10
+        const finalToolsList: JAFinalToolsList = {}
+        type FinalToolsEntry = JAFinalToolsList[string]
+        type AdapterTool = FinalToolsEntry["tools"][number]
         let iterationCount = 0
-        let answered = false
         let isCustomMCP = false
         await logAndStreamReasoning({
           type: AgentReasoningStepType.LogMessage,
@@ -1626,59 +1460,35 @@ export const MessageWithToolsApi = async (c: Context) => {
               return isIncluded
             })
 
-            finalToolsList[connector.id] = {
-              tools: filteredTools,
-              client: client,
-            }
-            // Fetch all available tools from the client
-            // TODO: look in the DB. cache logic has to be discussed.
-            // const respone = await client.listTools()
-            // const clientTools = response.tools
+            const formattedTools: FinalToolsEntry["tools"] = filteredTools.map(
+              (tool): AdapterTool => ({
+                toolName: tool.toolName,
+                toolSchema: tool.toolSchema,
+                description: tool.description ?? undefined,
+              }),
+            )
 
-            // // Update tool definitions in the database for future use
-            // await syncConnectorTools(
-            //   db,
-            //   workspace.id,
-            //   connector.id,
-            //   clientTools.map((tool) => ({
-            //     toolName: tool.name,
-            //     toolSchema: JSON.stringify(tool),
-            //     description: tool.description,
-            //   })),
-            // )
-            // // Create a map for quick lookup
-            // const toolSchemaMap = new Map(
-            //   clientTools.map((tool) => [tool.name, JSON.stringify(tool)]),
-            // )
-            // // Filter to only the requested tools, or use all tools if toolNames is empty
-            // const filteredTools = []
-            // if (toolNames.length === 0) {
-            //   // If toolNames is empty, add all tools
-            //   for (const [toolName, schema] of toolSchemaMap.entries()) {
-            //     filteredTools.push({
-            //       name: toolName,
-            //       schema: schema || "",
-            //     })
-            //   }
-            // } else {
-            //   // Otherwise, filter to only the requested tools
-            //   for (const toolName of toolNames) {
-            //     if (toolSchemaMap.has(toolName)) {
-            //       filteredTools.push({
-            //         name: toolName,
-            //         schema: toolSchemaMap.get(toolName) || "",
-            //       })
-            //     } else {
-            //       Logger.info(
-            //         `[MessageWithToolsApi] Tool schema not found for ${connectorId}:${toolName}.`,
-            //       )
-            //     }
-            //   }
-            // }
-            // finalToolsList[connectorId] = {
-            //   tools: filteredTools,
-            //   client: client,
-            // }
+            if (formattedTools.length === 0) {
+              continue
+            }
+
+            const wrappedClient: FinalToolsEntry["client"] = {
+              callTool: async ({ name, arguments: toolArguments }) => {
+                if (isRecord(toolArguments)) {
+                  return client.callTool({
+                    name,
+                    arguments: toolArguments,
+                  })
+                }
+                return client.callTool({ name })
+              },
+              close: () => client.close(),
+            }
+
+            finalToolsList[String(connector.id)] = {
+              tools: formattedTools,
+              client: wrappedClient,
+            }
           }
         }
         // ====== JAF-based agent loop starts here (replaces manual loop) ======
@@ -1686,10 +1496,10 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         // Prepare streaming state holders
         let answer = ""
-        const citations: any[] = []
-        const imageCitations: any[] = []
+        const citations: Citation[] = []
+        const imageCitations: ImageCitation[] = []
         const citationMap: Record<number, number> = {}
-        const citationValues: Record<number, string> = {}
+        const citationValues: Record<number, Citation> = {}
         let gatheredFragments: MinimalAgentFragment[] = []
         let planningContext = ""
         let parseSynthesisResult = null
@@ -1710,21 +1520,23 @@ export const MessageWithToolsApi = async (c: Context) => {
                 async (v, i) => {
                   let content = answerContextMap(
                     v as VespaSearchResults,
+                    userMetadata,
                     0,
                     true,
                   )
-                  if (
-                    v.fields &&
-                    "sddocname" in v.fields &&
-                    v.fields.sddocname === chatContainerSchema &&
-                    (v.fields as any).creator
-                  ) {
+                  const chatContainerFields =
+                    isChatContainerFields(v.fields) &&
+                    v.fields.sddocname === chatContainerSchema
+                      ? v.fields
+                      : undefined
+
+                  if (chatContainerFields?.creator) {
                     const creator = await getDocumentOrNull(
                       chatUserSchema,
-                      (v.fields as any).creator,
+                      chatContainerFields.creator,
                     )
-                    if (creator) {
-                      content += `\nCreator: ${(creator.fields as any).name}`
+                    if (creator && isChatUserFields(creator.fields)) {
+                      content += `\nCreator: ${creator.fields.name}`
                     }
                   }
                   return `Index ${i + 1} \n ${content}`
@@ -1738,12 +1550,13 @@ export const MessageWithToolsApi = async (c: Context) => {
               const threadContexts: VespaSearchResult[] = []
               if (results?.root?.children) {
                 for (const v of results.root.children) {
-                  if (
-                    v.fields &&
-                    "sddocname" in v.fields &&
+                  const chatContainerFields =
+                    isChatContainerFields(v.fields) &&
                     v.fields.sddocname === chatContainerSchema
-                  ) {
-                    const channelId = (v.fields as any).docId
+                      ? v.fields
+                      : undefined
+                  if (chatContainerFields) {
+                    const channelId = chatContainerFields.docId
 
                     if (channelId) {
                       const searchResults = await searchSlackInVespa(
@@ -1771,32 +1584,33 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               planningContext = cleanContext(resolvedContexts?.join("\n"))
               if (chatContexts.length > 0) {
-                planningContext += "\n" + buildContext(chatContexts, 10)
+                planningContext += "\n" + buildContext(chatContexts, 10, userMetadata)
               }
               if (threadContexts.length > 0) {
-                planningContext += "\n" + buildContext(threadContexts, 10)
+                planningContext += "\n" + buildContext(threadContexts, 10, userMetadata)
               }
 
               gatheredFragments = results.root.children.map(
                 (child: VespaSearchResult, idx) =>
-                  vespaResultToMinimalAgentFragment(child, idx),
+                  vespaResultToMinimalAgentFragment(child, idx, userMetadata),
               )
               if (chatContexts.length > 0) {
                 gatheredFragments.push(
                   ...chatContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx),
+                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
                   ),
                 )
               }
               if (threadContexts.length > 0) {
                 gatheredFragments.push(
                   ...threadContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx),
+                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
                   ),
                 )
               }
               const parseSynthesisOutput = await performSynthesis(
                 ctx,
+                dateForAI,
                 message,
                 planningContext,
                 gatheredFragments,
@@ -1851,11 +1665,8 @@ export const MessageWithToolsApi = async (c: Context) => {
           agentPrompt: agentPromptForLLM,
           userMessage: message,
         }
-        const internalJAFTools: JAFTool<any, JAFAdapterCtx>[] =
-          buildInternalJAFTools()
-        const mcpJAFTools: JAFTool<any, JAFAdapterCtx>[] = buildMCPJAFTools(
-          finalToolsList as unknown as JAFinalToolsList,
-        )
+        const internalJAFTools = buildInternalJAFTools()
+        const mcpJAFTools = buildMCPJAFTools(finalToolsList)
         const allJAFTools = [...internalJAFTools, ...mcpJAFTools]
         toolsCompositionSpan.setAttribute(
           "internal_tools_count",
@@ -1869,7 +1680,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         toolsCompositionSpan.end()
 
         // Build dynamic instructions that include tools + current context fragments
-        const agentInstructions = (_state: any) => {
+        const agentInstructions = () => {
           const toolOverview = buildToolsOverview(allJAFTools)
           const contextSection = buildContextSection(gatheredFragments)
           const agentSection = agentPromptForLLM
@@ -1906,7 +1717,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 
         const jafAgent: JAFAgent<JAFAdapterCtx, string> = {
           name: "xyne-agent",
-          instructions: () => agentInstructions(null),
+          instructions: () => agentInstructions(),
           tools: allJAFTools,
           modelConfig: { name: defaultBestModel as unknown as string },
         }
@@ -2134,7 +1945,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                   email ?? "",
                 )) {
                   if (cit.citation) {
-                    const { index, item } = cit.citation as any
+                    const { index, item } = cit.citation
                     citations.push(item)
                     citationMap[index] = citations.length - 1
                     await stream.writeSSE({
@@ -2434,8 +2245,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                           .filter(
                             (msg) =>
                               msg.role === "tool" ||
-                              (msg as any).tool_calls ||
-                              (msg as any).tool_call_id,
+                              msg.tool_calls ||
+                              msg.tool_call_id,
                           )
                           .map(
                             (msg, index) =>
@@ -2515,8 +2326,8 @@ export const MessageWithToolsApi = async (c: Context) => {
                             Array.isArray(fallbackResponse.contexts)
                           ) {
                             fallbackResponse.contexts.forEach(
-                              (context: any, index: number) => {
-                                citations.push(context)
+                              (context) => {
+                                citations.push(context.source)
                                 citationMap[citations.length] =
                                   citations.length - 1
                               },
@@ -2685,6 +2496,7 @@ export const MessageWithToolsApi = async (c: Context) => {
 async function* nonRagIterator(
   message: string,
   userCtx: string,
+  dateForAI: string,
   context: string,
   results: MinimalAgentFragment[],
   agentPrompt?: string,
@@ -2695,13 +2507,14 @@ async function* nonRagIterator(
   modelId?: string,
 ): AsyncIterableIterator<
   ConverseResponse & {
-    citation?: { index: number; item: any }
+    citation?: { index: number; item: Citation }
     imageCitation?: ImageCitation
   }
 > {
   const ragOffIterator = baselineRAGOffJsonStream(
     message,
     userCtx,
+    dateForAI,
     context,
     {
       modelId: (modelId as Models) || defaultBestModel,
@@ -2800,25 +2613,14 @@ export const AgentMessageApiRagOff = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let email = ""
-  let workspaceId = ""
-  let via_apiKey = false
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   let body
 
   try {
-    let jwtPayload
-    try {
-      jwtPayload = c.get(JwtPayloadKey)
-    } catch (e) {}
-    if (jwtPayload) {
-      email = jwtPayload?.sub
-      workspaceId = jwtPayload?.workspaceId
+    if (!via_apiKey) {
       // @ts-ignore
       body = c.req.valid("query")
     } else {
-      email = c.get("userEmail") ?? ""
-      workspaceId = c.get("workspaceId") ?? ""
-      via_apiKey = true
       // @ts-ignore
       body = c.req.valid("json")
     }
@@ -2927,6 +2729,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3074,7 +2879,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             if (allChunks?.root?.children) {
               const startIndex = 0
               fragments = allChunks.root.children.map((child, idx) =>
-                vespaResultToMinimalAgentFragment(child, idx),
+                vespaResultToMinimalAgentFragment(child, idx, userMetadata),
               )
               context = answerContextMapFromFragments(
                 fragments,
@@ -3103,6 +2908,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const ragOffIterator = nonRagIterator(
             message,
             ctx,
+            dateForAI,
             context,
             fragments,
             agentPromptForLLM,
@@ -3113,10 +2919,10 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             actualModelId || undefined,
           )
           let answer = ""
-          let citations: any[] = []
-          let imageCitations: any[] = []
+          let citations: Citation[] = []
+          let imageCitations: ImageCitation[] = []
           let citationMap: Record<number, number> = {}
-          let citationValues: Record<number, any> = {}
+          let citationValues: Record<number, Citation> = {}
           let thinking = ""
           let reasoning = isReasoningEnabled
           for await (const chunk of ragOffIterator) {
@@ -3341,7 +3147,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
           if (allChunks?.root?.children) {
             fragments = allChunks.root.children.map((child, idx) =>
-              vespaResultToMinimalAgentFragment(child, idx),
+              vespaResultToMinimalAgentFragment(child, idx, userMetadata),
             )
             context = answerContextMapFromFragments(
               fragments,
@@ -3373,8 +3179,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const finalizeAndRespond = async (params: {
           answer: string
           thinking: string
-          citations: any[]
-          imageCitations: any[]
+          citations: Citation[]
+          imageCitations: ImageCitation[]
           citationMap: Record<number, number>
           costArr: number[]
           tokenArr: { inputTokens: number; outputTokens: number }[]
@@ -3420,6 +3226,7 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const ragOffIterator = nonRagIterator(
           message,
           ctx,
+          dateForAI,
           context,
           fragments,
           agentPromptForLLM,
@@ -3510,29 +3317,41 @@ export const AgentMessageApi = async (c: Context) => {
   let chat: SelectChat
   let assistantMessageId: string | null = null
   let streamKey: string | null = null
-  let email = ""
-  let workspaceId = ""
-  let via_apiKey = false
+  const { email, workspaceExternalId: workspaceId, via_apiKey } = getAuth(c)
   let body
 
   try {
-    let jwtPayload
-    try {
-      jwtPayload = c.get(JwtPayloadKey)
-    } catch (e) {}
-
-    if (jwtPayload) {
-      email = jwtPayload?.sub
-      workspaceId = jwtPayload?.workspaceId
+    if (!via_apiKey) {
       // @ts-ignore
       body = c.req.valid("query")
     } else {
-      // fallback if JwtPayloadKey is not available
-      email = c.get("userEmail") ?? ""
-      workspaceId = c.get("workspaceId") ?? ""
-      via_apiKey = true
       // @ts-ignore
       body = c.req.valid("json")
+      const apiKeyScopes =
+        safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+      const agentAccess =
+        safeGet<{ agents?: string[] }>(c, "config")?.agents || []
+
+      // Check if API key has agent chat scope
+      if (!apiKeyScopes.includes(ApiKeyScopes.AGENT_CHAT)) {
+        return c.json(
+          {
+            message: "API key does not have scope to chat with agents",
+          },
+          403,
+        )
+      }
+
+      // Check agent access: if agentAccess is empty, allow all agents; otherwise check specific access
+      //@ts-ignore
+      if (agentAccess.length > 0 && !agentAccess.includes(body?.agentId)) {
+        return c.json(
+          {
+            message: "API key is not authorized for this agent",
+          },
+          403,
+        )
+      }
     }
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
@@ -3622,8 +3441,9 @@ export const AgentMessageApi = async (c: Context) => {
     }
 
     // Convert friendly model label to actual model value
-    let actualModelId: string = modelId || "gemini-2-5-pro" // Ensure we always have a string
+    let actualModelId: string = modelId || "gemini-2-5-pro"
     if (modelId) {
+      // Ensure we always have a string
       const convertedModelId = getModelValueFromLabel(modelId)
       if (convertedModelId) {
         actualModelId = convertedModelId as string // Can be Models enum or string
@@ -3692,8 +3512,22 @@ export const AgentMessageApi = async (c: Context) => {
     message = decodeURIComponent(message)
     rootSpan.setAttribute("message", message)
     let ids
+    let isValidPath: boolean = false
     if (path) {
       ids = await getRecordBypath(path, db)
+      if (ids != null) {
+        // Check if the vespaId exists in the agent's app integrations using our validation function
+        if (!(await validateVespaIdInAgentIntegrations(agentForDb, ids))) {
+          throw new HTTPException(403, {
+            message: `Access denied: The path '${path}' is not accessible through this agent's integrations`,
+          })
+        }
+        isValidPath = Boolean(true)
+      } else {
+        throw new HTTPException(400, {
+          message: `The given path:${path} is not a valid path of collection's folder or file`,
+        })
+      }
     }
     const isMsgWithContext = isMessageWithContext(message)
     const extractedInfo =
@@ -3702,8 +3536,10 @@ export const AgentMessageApi = async (c: Context) => {
         : {
             totalValidFileIdsFromLinkCount: 0,
             fileIds: [],
+            collectionFolderIds: [],
           }
     let fileIds = extractedInfo?.fileIds
+    let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
@@ -3718,6 +3554,9 @@ export const AgentMessageApi = async (c: Context) => {
     const costArr: number[] = []
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
+    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3889,8 +3728,8 @@ export const AgentMessageApi = async (c: Context) => {
                 "User has selected some context with query, answering only based on that given context",
               )
               let answer = ""
-              let citations = []
-              let imageCitations: any = []
+              let citations: Citation[] = []
+              let imageCitations: ImageCitation[] = []
               let citationMap: Record<number, number> = {}
               let thinking = ""
               let reasoning =
@@ -3909,6 +3748,7 @@ export const AgentMessageApi = async (c: Context) => {
               const iterator = UnderstandMessageAndAnswerForGivenContext(
                 email,
                 ctx,
+                userMetadata,
                 message,
                 0.5,
                 fileIds,
@@ -3917,6 +3757,10 @@ export const AgentMessageApi = async (c: Context) => {
                 [],
                 imageAttachmentFileIds,
                 agentPromptForLLM,
+                fileIds.length > 0,
+                actualModelId,
+                Boolean(isValidPath),
+                folderIds,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -3929,7 +3773,7 @@ export const AgentMessageApi = async (c: Context) => {
               citations = []
               imageCitations = []
               citationMap = {}
-              let citationValues: Record<number, string> = {}
+              let citationValues: Record<number, Citation> = {}
               let count = 0
               for await (const chunk of iterator) {
                 if (stream.closed) {
@@ -4222,6 +4066,7 @@ export const AgentMessageApi = async (c: Context) => {
                   generateSearchQueryOrAnswerFromConversation(
                     message,
                     ctx,
+                    userMetadata,
                     {
                       modelId:
                         ragPipelineConfig[RagPipelineStages.AnswerOrSearch]
@@ -4246,8 +4091,8 @@ export const AgentMessageApi = async (c: Context) => {
               // leads to [NaN] in the answer
               let currentAnswer = ""
               let answer = ""
-              let citations = []
-              let imageCitations: any = []
+              let citations: Citation[] = []
+              let imageCitations: ImageCitation[] = []
               let citationMap: Record<number, number> = {}
               let queryFilters = {
                 apps: [],
@@ -4449,6 +4294,7 @@ export const AgentMessageApi = async (c: Context) => {
                 const iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,
+                  userMetadata,
                   message,
                   classification,
                   limitedMessages,
@@ -4467,7 +4313,7 @@ export const AgentMessageApi = async (c: Context) => {
                 reasoning = isReasoning && userRequestsReasoning
                 citations = []
                 citationMap = {}
-                let citationValues: Record<number, string> = {}
+                let citationValues: Record<number, Citation> = {}
                 for await (const chunk of iterator) {
                   if (stream.closed) {
                     Logger.info(
@@ -4833,8 +4679,8 @@ export const AgentMessageApi = async (c: Context) => {
         const finalizeAndRespond = async (params: {
           answer: string
           thinking: string
-          citations: any[]
-          imageCitations: any[]
+          citations: Citation[]
+          imageCitations: ImageCitation[]
           citationMap: Record<number, number>
           costArr: number[]
           tokenArr: { inputTokens: number; outputTokens: number }[]
@@ -4902,6 +4748,7 @@ export const AgentMessageApi = async (c: Context) => {
           const iterator = UnderstandMessageAndAnswerForGivenContext(
             email,
             ctx,
+            userMetadata,
             message,
             0.5,
             fileIds,
@@ -5058,14 +4905,14 @@ async function collectIterator<
     reasoning?: boolean
     cost?: number
     metadata?: { usage?: { inputTokens: number; outputTokens: number } }
-    citation?: { index: number; item: any }
-    imageCitation?: any
+    citation?: { index: number; item: Citation }
+    imageCitation?: ImageCitation
   },
 >(iterator: AsyncIterable<TChunk>, opts?: { maxBytes?: number }) {
   let answer = ""
   let thinking = ""
-  let citations: any[] = []
-  let imageCitations: any[] = []
+  let citations: Citation[] = []
+  let imageCitations: ImageCitation[] = []
   let citationMap: Record<number, number> = {}
   let costArr: number[] = []
   let tokenArr: { inputTokens: number; outputTokens: number }[] = []

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
+// import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,7 +73,7 @@ import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { createAuthEventSource } from "@/hooks/useChatStream"
-import { textToCitationIndex } from "@/utils/chatUtils"
+import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
 
@@ -746,17 +746,17 @@ function AgentComponent() {
           if (response.ok) {
             const agentData = (await response.json()) as SelectPublicAgent
             setInitialChatAgent(agentData)
-        } else {
+          } else {
+            toast.error({
+              title: "Error",
+              description: `Failed to load agent ${agentId} for chat.`,
+            })
+          }
+        } catch (error) {
           toast.error({
             title: "Error",
-            description: `Failed to load agent ${agentId} for chat.`,
+            description: "An error occurred while loading agent for chat.",
           })
-        }
-      } catch (error) {
-        toast.error({
-          title: "Error",
-          description: "An error occurred while loading agent for chat.",
-        })
           console.error("Fetch initial agent for chat error:", error)
         } finally {
           setIsLoadingInitialAgent(false)
@@ -791,17 +791,17 @@ function AgentComponent() {
         } else if (filter === "sharedToMe") {
           setSharedToMeAgentsList(data)
         }
-        } else {
-          toast.error({
-            title: "Error",
-            description: `Failed to fetch agents (${filter}).`,
-          })
-        }
-      } catch (error) {
+      } else {
         toast.error({
           title: "Error",
-          description: `An error occurred while fetching agents (${filter}).`,
+          description: `Failed to fetch agents (${filter}).`,
         })
+      }
+    } catch (error) {
+      toast.error({
+        title: "Error",
+        description: `An error occurred while fetching agents (${filter}).`,
+      })
       console.error(`Fetch agents error (${filter}):`, error)
     } finally {
       setIsLoadingAgents(false)
@@ -3129,7 +3129,7 @@ function AgentComponent() {
                         Select knowledge sources for your agent.
                       </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    {/* <div className="flex items-center gap-3">
                       <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                         RAG
                       </Label>
@@ -3138,7 +3138,7 @@ function AgentComponent() {
                         onCheckedChange={setIsRagOn}
                         id="rag-toggle"
                       />
-                    </div>
+                    </div> */}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
                     {currentSelectedIntegrationObjects.length === 0 && (

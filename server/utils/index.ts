@@ -1,12 +1,17 @@
 import type { Cost } from "@/ai/types"
 
-export function getDateForAI() {
+export function getDateForAI({
+  userTimeZone,
+}: { userTimeZone: string }): string {
   const today = new Date()
   const day = today.getDate()
   const year = today.getFullYear()
 
-  const monthOptions: Intl.DateTimeFormatOptions = { month: "long" }
-  const monthName = today.toLocaleDateString("en-US", monthOptions) // "en-US" is common for full month names
+  const options: Intl.DateTimeFormatOptions = {
+    month: "long",
+    timeZone: userTimeZone || "Asia/Kolkata",
+  } // or dynamically detect user's tz
+  const monthName = today.toLocaleDateString("en-US", options) // "en-US" is common for full month names
 
   let daySuffix = "th"
   if (day === 1 || day === 21 || day === 31) {
