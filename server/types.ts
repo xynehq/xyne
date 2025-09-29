@@ -225,6 +225,13 @@ export const createOAuthProvider = z
     }
   })
 
+export const microsoftServiceSchema = z.object({
+  clientId: z.string(),
+  clientSecret: z.string(),
+  tenantId: z.string(),
+  app: z.nativeEnum(Apps),
+})
+
 export const deleteConnectorSchema = z.object({
   connectorId: z.string(),
 })
@@ -285,6 +292,7 @@ export const deleteUserDataSchema = z.object({
 export type DeleteUserDataPayload = z.infer<typeof deleteUserDataSchema>
 
 export type OAuthProvider = z.infer<typeof createOAuthProvider>
+export type microsoftService = z.infer<typeof microsoftServiceSchema>
 
 export type SaaSJob = {
   connectorId: number
@@ -373,6 +381,11 @@ const MicrosoftCalendarDeltaTokenSchema = z.object({
   calendarDeltaToken: z.string(),
   lastSyncedAt: z.coerce.date(),
 })
+const MicrosoftSharepointDeltaTokenSchema = z.object({
+  type: z.literal("microsoftSharepointDeltaTokens"),
+  deltaLinks: z.record(z.string(), z.string()).optional(),
+  lastSyncedAt: z.coerce.date(),
+})
 
 const ChangeTokenSchema = z.discriminatedUnion("type", [
   DefaultTokenSchema,
@@ -382,6 +395,7 @@ const ChangeTokenSchema = z.discriminatedUnion("type", [
   MicrosoftDriveDeltaTokenSchema,
   MicrosoftOutlookDeltaTokenSchema,
   MicrosoftCalendarDeltaTokenSchema,
+  MicrosoftSharepointDeltaTokenSchema,
 ])
 
 // Define UpdatedAtVal schema
@@ -442,6 +456,15 @@ export type GoogleClient = JWT | OAuth2Client
 export type GoogleServiceAccount = {
   client_email: string
   private_key: string
+}
+
+export type MicrosoftServiceCredentials = {
+  tenantId: string
+  clientId: string
+  clientSecret: string
+  scopes: string[]
+  access_token: string
+  expires_at: string
 }
 
 export enum MessageTypes {
