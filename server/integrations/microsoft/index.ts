@@ -829,6 +829,7 @@ export const handleMicrosoftServiceAccountIngestion = async (
       credentials.access_token,
       credentials.clientId,
       credentials.clientSecret,
+      undefined,
       credentials.tenantId,
     )
 

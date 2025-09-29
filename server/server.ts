@@ -21,9 +21,8 @@ import {
   chatTitleSchema,
   GetDriveItem,
   GetDriveItemsByDocIds,
-  HighlightApi,
-  highlightSchema,
 } from "@/api/search"
+import { HighlightApi, highlightSchema } from "@/api/highlight"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
