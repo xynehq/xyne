@@ -1,60 +1,9 @@
 import { useState, useCallback, useRef, ChangeEvent } from "react"
-import { File as FileIcon, X, FileUp } from "lucide-react"
+import { X, FileUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import FileUploadSkeleton from "@/components/FileUploadSkeleton"
-import { FileType, MIME_TYPE_MAPPINGS, EXTENSION_MAPPINGS } from "../../../server/shared/types"
 import { isValidFile } from "../../../server/shared/fileUtils"
-
-// SVG icon imports
-import TextIcon from "@/assets/collectionIcons/text.svg"
-import ImageIcon from "@/assets/collectionIcons/image.svg"
-import PdfIcon from "@/assets/collectionIcons/pdf.svg"
-import DocumentIcon from "@/assets/collectionIcons/document.svg"
-import SpreadsheetIcon from "@/assets/collectionIcons/spreadsheet.svg"
-import PresentationIcon from "@/assets/collectionIcons/ppt.svg"
-
-// Helper function to determine FileType from a file
-const getFileType = (file: File): FileType => {
-  // First check by MIME type
-  for (const [fileType, mimeTypes] of Object.entries(MIME_TYPE_MAPPINGS)) {
-    if ((mimeTypes as readonly string[]).includes(file.type)) {
-      return fileType as FileType
-    }
-  }
-
-  // Fallback to extension checking
-  const fileName = file.name.toLowerCase()
-  for (const [fileType, extensions] of Object.entries(EXTENSION_MAPPINGS)) {
-    if ((extensions as readonly string[]).some(ext => fileName.endsWith(ext))) {
-      return fileType as FileType
-    }
-  }
-
-  // Default fallback
-  return FileType.FILE
-}
-
-// Icon mapping from FileType to SVG component
-const getFileIcon = (file: File) => {
-  const fileType = getFileType(file)
-  
-  switch (fileType) {
-    case FileType.TEXT:
-      return <img src={TextIcon} alt="Text file" className="w-8 h-8" />
-    case FileType.IMAGE:
-      return <img src={ImageIcon} alt="Image file" className="w-8 h-8" />
-    case FileType.PDF:
-      return <img src={PdfIcon} alt="PDF file" className="w-8 h-8" />
-    case FileType.DOCUMENT:
-      return <img src={DocumentIcon} alt="Document file" className="w-8 h-8" />
-    case FileType.SPREADSHEET:
-      return <img src={SpreadsheetIcon} alt="Spreadsheet file" className="w-8 h-8" />
-    case FileType.PRESENTATION:
-      return <img src={PresentationIcon} alt="Presentation file" className="w-8 h-8" />
-    default:
-      return <FileIcon className="w-8 h-8 text-gray-500" />
-  }
-}
+import { getFileIcon } from "@/lib/common"
 
 export interface SelectedFile {
   file: File
