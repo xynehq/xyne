@@ -152,7 +152,7 @@ import {
   updateChatTrace,
 } from "@/db/chatTrace"
 import type { AttachmentMetadata } from "@/shared/types"
-import { getAttachmentsByMessageId, storeAttachmentMetadata } from "@/db/attachment"
+import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
 import {
@@ -1010,11 +1010,8 @@ export const MessageWithToolsApi = async (c: Context) => {
       actualModelId = defaultBestModel
     }
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const attachmentFileIds = attachmentMetadata.map(
-      (m: AttachmentMetadata) => m.fileId,
-    )
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
@@ -1040,7 +1037,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       extractedInfo?.totalValidFileIdsFromLinkCount
     loggerWithChild({ email: email }).info(`Extracted ${fileIds} extractedInfo`)
     loggerWithChild({ email: email }).info(
-      `Total attachment files received: ${attachmentFileIds.length}`,
+      `Total attachment files received: ${attachmentMetadata.length}`,
     )
 
     // Handle isFollowUp functionality - get context from previous user message
@@ -1054,6 +1051,12 @@ export const MessageWithToolsApi = async (c: Context) => {
         fileIds = [...fileIds, ...updatedContext.fileIds]
         imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
         attachmentMetadata.push(...updatedContext.attachmentMetadata)
+
+        // Dedup
+        fileIds = Array.from(new Set(fileIds))
+        imageAttachmentFileIds = Array.from(new Set(imageAttachmentFileIds))
+        let byId = new Map(attachmentMetadata.map(a => [a.fileId, a]))
+        attachmentMetadata = Array.from(byId.values())
       } catch (error) {
         loggerWithChild({ email: email }).error(
           error,
@@ -3586,8 +3589,8 @@ export const AgentMessageApi = async (c: Context) => {
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
@@ -3702,6 +3705,12 @@ export const AgentMessageApi = async (c: Context) => {
         fileIds = updatedContext.fileIds
         imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
         attachmentMetadata.push(...updatedContext.attachmentMetadata)
+
+        // Dedup
+        fileIds = Array.from(new Set(fileIds))
+        imageAttachmentFileIds = Array.from(new Set(imageAttachmentFileIds))
+        let byId = new Map(attachmentMetadata.map(a => [a.fileId, a]))
+        attachmentMetadata = Array.from(byId.values())
       } catch (error) {
         loggerWithChild({ email: email }).error(
           error,

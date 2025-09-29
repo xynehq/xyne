@@ -4196,8 +4196,8 @@ export const MessageApi = async (c: Context) => {
       return MessageWithToolsApi(c)
     }
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
@@ -4294,6 +4294,12 @@ export const MessageApi = async (c: Context) => {
         fileIds = [...fileIds, ...updatedContext.fileIds]
         imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
         attachmentMetadata.push(...updatedContext.attachmentMetadata)
+
+        // Dedup
+        fileIds = Array.from(new Set(fileIds))
+        imageAttachmentFileIds = Array.from(new Set(imageAttachmentFileIds))
+        let byId = new Map(attachmentMetadata.map(a => [a.fileId, a]))
+        attachmentMetadata = Array.from(byId.values())
       } catch (error) {
         loggerWithChild({ email: email }).error(
           error,

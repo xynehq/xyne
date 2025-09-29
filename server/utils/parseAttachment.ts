@@ -112,7 +112,7 @@ export async function applyFollowUpContext(
     const prevFileIds = Array.isArray(lastUserMessage.fileIds) ? lastUserMessage.fileIds : []
     if (prevFileIds.length > 0) {
       logger.info(
-        `Found ${prevFileIds.length} fileIds from previous user message: ${JSON.stringify(prevFileIds)}`
+        `Found ${prevFileIds.length} fileIds from previous user message`
       )
       newContext.fileIds.push(...prevFileIds)
     }
