@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 /**
- * Simple migration script to update status fields for existing collections and collection_items
- * Processes in batches of 100 records at a time
+ * Knowledge Base File Status Migration using proper Drizzle ORM patterns
+ * Updates existing collections and collection_items with default status fields
  */
 
-import { drizzle } from "drizzle-orm/postgres-js"
-import postgres from "postgres"
-import { sql } from "drizzle-orm"
+import { db } from "@/db/client"
+import { collections, collectionItems } from "@/db/schema"
+import { eq, sql } from "drizzle-orm"
+import { UploadStatus } from "@/types"
+import type { TxnOrClient } from "@/types"
 
 const BATCH_SIZE = 100
 
-// Database connection
-const connection = postgres(process.env.DATABASE_URL!)
-const db = drizzle(connection)
-
-async function migrateCollectionItems() {
+async function migrateCollectionItems(trx: TxnOrClient = db) {
   console.log("🔄 Starting collection_items migration...")
 
   let totalUpdated = 0
@@ -24,41 +22,44 @@ async function migrateCollectionItems() {
     batchCount++
     console.log(`Processing collection_items batch ${batchCount}...`)
 
-    // Update batch of collection_items
-    const result = await db.execute(sql`
-      UPDATE collection_items 
-      SET 
-        status_message = CASE 
-          WHEN status_message IS NULL OR status_message = '' 
+    // Update batch of collection_items using Drizzle schema
+    const result = await trx
+      .update(collectionItems)
+      .set({
+        statusMessage: sql`CASE 
+          WHEN ${collectionItems.statusMessage} IS NULL OR ${collectionItems.statusMessage} = '' 
           THEN 'Successfully uploaded' 
-          ELSE status_message 
-        END,
-        upload_status = CASE 
-          WHEN upload_status IS NULL OR upload_status = '' 
-          THEN 'completed' 
-          ELSE upload_status 
-        END,
-        retry_count = CASE 
-          WHEN retry_count IS NULL 
+          ELSE ${collectionItems.statusMessage} 
+        END`,
+        uploadStatus: sql`CASE 
+          WHEN ${collectionItems.uploadStatus} IS NULL OR ${collectionItems.uploadStatus} = '' 
+          THEN ${UploadStatus.COMPLETED} 
+          ELSE ${collectionItems.uploadStatus} 
+        END`,
+        retryCount: sql`CASE 
+          WHEN ${collectionItems.retryCount} IS NULL 
           THEN 0 
-          ELSE retry_count 
-        END,
-        updated_at = NOW()
-      WHERE id IN (
-        SELECT id FROM collection_items 
-        WHERE deleted_at IS NULL 
-          AND (
-            status_message IS NULL 
-            OR status_message = '' 
-            OR upload_status IS NULL 
-            OR upload_status = ''
-            OR retry_count IS NULL
-          )
-        LIMIT ${BATCH_SIZE}
+          ELSE ${collectionItems.retryCount} 
+        END`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(
+        sql`${collectionItems.id} IN (
+          SELECT id FROM ${collectionItems} 
+          WHERE ${collectionItems.deletedAt} IS NULL 
+            AND (
+              ${collectionItems.statusMessage} IS NULL 
+              OR ${collectionItems.statusMessage} = '' 
+              OR ${collectionItems.uploadStatus} IS NULL 
+              OR ${collectionItems.uploadStatus} = ''
+              OR ${collectionItems.retryCount} IS NULL
+            )
+          LIMIT ${BATCH_SIZE}
+        )`
       )
-    `)
+      .returning({ id: collectionItems.id })
 
-    const updatedRows = result.count || 0
+    const updatedRows = result.length
     totalUpdated += updatedRows
 
     console.log(`Batch ${batchCount}: Updated ${updatedRows} collection_items`)
@@ -78,7 +79,7 @@ async function migrateCollectionItems() {
   return totalUpdated
 }
 
-async function migrateCollections() {
+async function migrateCollections(trx: TxnOrClient = db) {
   console.log("🔄 Starting collections migration...")
 
   let totalUpdated = 0
@@ -88,41 +89,44 @@ async function migrateCollections() {
     batchCount++
     console.log(`Processing collections batch ${batchCount}...`)
 
-    // Update batch of collections
-    const result = await db.execute(sql`
-      UPDATE collections 
-      SET 
-        status_message = CASE 
-          WHEN status_message IS NULL OR status_message = '' 
+    // Update batch of collections using Drizzle schema
+    const result = await trx
+      .update(collections)
+      .set({
+        statusMessage: sql`CASE 
+          WHEN ${collections.statusMessage} IS NULL OR ${collections.statusMessage} = '' 
           THEN 'Collection created successfully' 
-          ELSE status_message 
-        END,
-        upload_status = CASE 
-          WHEN upload_status IS NULL OR upload_status = '' 
-          THEN 'completed' 
-          ELSE upload_status 
-        END,
-        retry_count = CASE 
-          WHEN retry_count IS NULL 
+          ELSE ${collections.statusMessage} 
+        END`,
+        uploadStatus: sql`CASE 
+          WHEN ${collections.uploadStatus} IS NULL OR ${collections.uploadStatus} = '' 
+          THEN ${UploadStatus.COMPLETED} 
+          ELSE ${collections.uploadStatus} 
+        END`,
+        retryCount: sql`CASE 
+          WHEN ${collections.retryCount} IS NULL 
           THEN 0 
-          ELSE retry_count 
-        END,
-        updated_at = NOW()
-      WHERE id IN (
-        SELECT id FROM collections 
-        WHERE deleted_at IS NULL 
-          AND (
-            status_message IS NULL 
-            OR status_message = '' 
-            OR upload_status IS NULL 
-            OR upload_status = ''
-            OR retry_count IS NULL
-          )
-        LIMIT ${BATCH_SIZE}
+          ELSE ${collections.retryCount} 
+        END`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(
+        sql`${collections.id} IN (
+          SELECT id FROM ${collections} 
+          WHERE ${collections.deletedAt} IS NULL 
+            AND (
+              ${collections.statusMessage} IS NULL 
+              OR ${collections.statusMessage} = '' 
+              OR ${collections.uploadStatus} IS NULL 
+              OR ${collections.uploadStatus} = ''
+              OR ${collections.retryCount} IS NULL
+            )
+          LIMIT ${BATCH_SIZE}
+        )`
       )
-    `)
+      .returning({ id: collections.id })
 
-    const updatedRows = result.count || 0
+    const updatedRows = result.length
     totalUpdated += updatedRows
 
     console.log(`Batch ${batchCount}: Updated ${updatedRows} collections`)
@@ -142,39 +146,41 @@ async function migrateCollections() {
   return totalUpdated
 }
 
-async function showStatus() {
+async function showStatus(trx: TxnOrClient = db) {
   console.log("📋 Checking current status...")
 
-  // Check collection_items needing migration
-  const itemsResult = await db.execute(sql`
-    SELECT COUNT(*) as count 
-    FROM collection_items 
-    WHERE deleted_at IS NULL 
-      AND (
-        status_message IS NULL 
-        OR status_message = '' 
-        OR upload_status IS NULL 
-        OR upload_status = ''
-        OR retry_count IS NULL
-      )
-  `)
+  // Check collection_items needing migration using Drizzle schema
+  const [itemsResult] = await trx
+    .select({ count: sql<number>`count(*)` })
+    .from(collectionItems)
+    .where(
+      sql`${collectionItems.deletedAt} IS NULL 
+        AND (
+          ${collectionItems.statusMessage} IS NULL 
+          OR ${collectionItems.statusMessage} = '' 
+          OR ${collectionItems.uploadStatus} IS NULL 
+          OR ${collectionItems.uploadStatus} = ''
+          OR ${collectionItems.retryCount} IS NULL
+        )`
+    )
 
-  // Check collections needing migration
-  const collectionsResult = await db.execute(sql`
-    SELECT COUNT(*) as count 
-    FROM collections 
-    WHERE deleted_at IS NULL 
-      AND (
-        status_message IS NULL 
-        OR status_message = '' 
-        OR upload_status IS NULL 
-        OR upload_status = ''
-        OR retry_count IS NULL
-      )
-  `)
+  // Check collections needing migration using Drizzle schema
+  const [collectionsResult] = await trx
+    .select({ count: sql<number>`count(*)` })
+    .from(collections)
+    .where(
+      sql`${collections.deletedAt} IS NULL 
+        AND (
+          ${collections.statusMessage} IS NULL 
+          OR ${collections.statusMessage} = '' 
+          OR ${collections.uploadStatus} IS NULL 
+          OR ${collections.uploadStatus} = ''
+          OR ${collections.retryCount} IS NULL
+        )`
+    )
 
-  const itemsCount = itemsResult[0]?.count || 0
-  const collectionsCount = collectionsResult[0]?.count || 0
+  const itemsCount = itemsResult?.count || 0
+  const collectionsCount = collectionsResult?.count || 0
 
   console.log(`📊 Records needing migration:`)
   console.log(`   - Collection items: ${itemsCount}`)
@@ -221,13 +227,59 @@ async function main() {
       console.log(`   - Collections: ${finalStatus.collectionsCount}`)
     }
 
-    await connection.end()
     process.exit(0)
   } catch (error) {
     console.error("❌ Migration failed:", error)
-    await connection.end()
     process.exit(1)
   }
+}
+
+/**
+ * Update a specific collection's status fields
+ */
+export async function updateCollectionStatus(
+  collectionId: string,
+  updates: {
+    statusMessage?: string
+    uploadStatus?: UploadStatus
+    retryCount?: number
+  },
+  trx: TxnOrClient = db
+) {
+  const [result] = await trx
+    .update(collections)
+    .set({
+      ...updates,
+      updatedAt: sql`NOW()`,
+    })
+    .where(eq(collections.id, collectionId))
+    .returning()
+
+  return result
+}
+
+/**
+ * Update a specific collection item's status fields
+ */
+export async function updateCollectionItemStatus(
+  itemId: string,
+  updates: {
+    statusMessage?: string
+    uploadStatus?: UploadStatus
+    retryCount?: number
+  },
+  trx: TxnOrClient = db
+) {
+  const [result] = await trx
+    .update(collectionItems)
+    .set({
+      ...updates,
+      updatedAt: sql`NOW()`,
+    })
+    .where(eq(collectionItems.id, itemId))
+    .returning()
+
+  return result
 }
 
 // Run the migration
