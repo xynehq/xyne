@@ -27,6 +27,7 @@ import {
   Maximize2,
   Minimize2,
   Share2,
+  ArrowDown,
 } from "lucide-react"
 import {
   useEffect,
@@ -448,7 +449,9 @@ export const ChatPage = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const chatBoxRef = useRef<ChatBoxRef>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
+  const isAutoScrollingRef = useRef(false)
   const [dots, setDots] = useState("")
+  const [bottomSpace, setBottomSpace] = useState(0)
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
@@ -469,6 +472,51 @@ export const ChatPage = ({
     type: MessageFeedback
   } | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [lastUserMessageIndex, setLastUserMessageIndex] = useState(-1)
+
+  useEffect(() => {
+    if ((isStreaming || retryIsStreaming) && messages.length > 0) {
+      // Find the index of the last user message
+      let latestUserIndex = -1
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].messageRole === "user") {
+          latestUserIndex = i
+          break
+        }
+      }
+
+      if (latestUserIndex !== -1 && latestUserIndex !== lastUserMessageIndex) {
+        setLastUserMessageIndex(latestUserIndex)
+
+        // Smooth scroll to position the user's query at the top for a fresh start feeling
+        setTimeout(() => {
+          const container = messagesContainerRef.current
+          if (container) {
+            // Find the user message element
+            const userMessageElement = container.querySelector(
+              `[data-index="${latestUserIndex}"]`,
+            )
+            if (userMessageElement) {
+              // Calculate scroll position to put the user message near the top with some padding
+              const elementRect = userMessageElement.getBoundingClientRect()
+              const containerRect = container.getBoundingClientRect()
+              const currentScrollTop = container.scrollTop
+
+              // Position to scroll to (put user message ~100px from top for comfortable viewing)
+              const targetScrollTop =
+                currentScrollTop + elementRect.top - containerRect.top - 100
+
+              // Smooth scroll to the calculated position
+              container.scrollTo({
+                top: Math.max(0, targetScrollTop),
+                behavior: "smooth",
+              })
+            }
+          }
+        }, 100)
+      }
+    }
+  }, [isStreaming, retryIsStreaming, messages.length, lastUserMessageIndex])
 
   // Add state for citation preview
   const [isCitationPreviewOpen, setIsCitationPreviewOpen] = useState(false)
@@ -703,6 +751,12 @@ export const ChatPage = ({
     setShowSources(false)
     setCurrentCitations([])
     setCurrentMessageId(null)
+
+    // Reset bottom space and message count for new chats
+    if (!isWithChatId || (messages && messages.length === 0)) {
+      setBottomSpace(0)
+      setLastUserMessageCount(0)
+    }
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
@@ -810,6 +864,84 @@ export const ChatPage = ({
         })
     }
   }, [chatId, isStreaming, isSharedChat, queryClient])
+
+  const [streamingStarted, setStreamingStarted] = useState(false)
+  const [lastUserMessageCount, setLastUserMessageCount] = useState(0)
+
+  // Detect when streaming starts for a new query and calculate exact space needed
+  useEffect(() => {
+    const currentUserMessageCount = messages.filter(
+      (msg: any) => msg.messageRole === "user",
+    ).length
+
+    if (
+      (isStreaming || retryIsStreaming) &&
+      !streamingStarted &&
+      currentUserMessageCount > lastUserMessageCount
+    ) {
+      // This is a new query starting (not just continuing to stream)
+      setStreamingStarted(true)
+      setLastUserMessageCount(currentUserMessageCount)
+
+      // Calculate exact space needed ONLY when a new query starts
+      setTimeout(() => {
+        const container = messagesContainerRef.current
+        if (!container) return
+
+        // Get viewport height and calculate optimal space
+        const containerHeight = container.clientHeight
+
+        // Calculate space to push previous content out of view with optimal balance
+        let spaceNeeded: number
+        if (containerHeight <= 600) {
+          // Small screens: balanced space
+          spaceNeeded = Math.max(300, containerHeight * 0.65)
+        } else if (containerHeight <= 900) {
+          // Medium screens: good separation without excess
+          spaceNeeded = Math.max(400, containerHeight * 0.72)
+        } else {
+          // Large screens: sufficient space but not excessive
+          spaceNeeded = Math.max(800, Math.min(containerHeight * 1, 980))
+        }
+
+        setBottomSpace(spaceNeeded)
+
+        // Position the latest user message at the top with precise scroll positioning
+        setTimeout(() => {
+          const userMessageElements = container.querySelectorAll(
+            '[data-message-role="user"]',
+          )
+          if (userMessageElements.length > 0) {
+            const lastUserMessage = userMessageElements[
+              userMessageElements.length - 1
+            ] as HTMLElement
+
+            // Calculate the exact scroll position to place the message at the top
+            const containerRect = container.getBoundingClientRect()
+            const messageRect = lastUserMessage.getBoundingClientRect()
+            const messageOffsetTop =
+              messageRect.top - containerRect.top + container.scrollTop
+
+            // Scroll to position the message at the top with a small margin
+            container.scrollTo({
+              top: Math.max(0, messageOffsetTop - 20), // 20px margin from top
+              behavior: "smooth",
+            })
+          }
+        }, 50)
+      }, 100)
+    } else if (!isStreaming && !retryIsStreaming && streamingStarted) {
+      // Reset streaming started flag when streaming completes
+      // DO NOT reset bottomSpace here - it should persist
+      setStreamingStarted(false)
+    }
+  }, [
+    isStreaming,
+    retryIsStreaming,
+    streamingStarted,
+    messages,
+    lastUserMessageCount,
+  ])
 
   const handleSend = async (
     messageToSend: string,
@@ -1064,25 +1196,28 @@ export const ChatPage = ({
   }
 
   // Handler for citation clicks - moved before conditional returns
-  const handleCitationClick = useCallback((citation: Citation, fromSources: boolean = false) => {
-    if (!citation || !citation.clId || !citation.itemId) {
-      // For citations without clId or itemId, open as regular link
-      if (citation.url) {
-        window.open(citation.url, "_blank", "noopener,noreferrer")
+  const handleCitationClick = useCallback(
+    (citation: Citation, fromSources: boolean = false) => {
+      if (!citation || !citation.clId || !citation.itemId) {
+        // For citations without clId or itemId, open as regular link
+        if (citation.url) {
+          window.open(citation.url, "_blank", "noopener,noreferrer")
+        }
+        return
       }
-      return
-    }
-    setSelectedCitation(citation)
-    setIsCitationPreviewOpen(true)
-    setCameFromSources(fromSources)
-    // Only close sources panel when opening citation preview, but preserve state for back navigation
-    setShowSources(false)
-    if (!fromSources) {
-      // Clear sources state when coming from inline citations
-      setCurrentCitations([])
-      setCurrentMessageId(null)
-    }
-  }, [])
+      setSelectedCitation(citation)
+      setIsCitationPreviewOpen(true)
+      setCameFromSources(fromSources)
+      // Only close sources panel when opening citation preview, but preserve state for back navigation
+      setShowSources(false)
+      if (!fromSources) {
+        // Clear sources state when coming from inline citations
+        setCurrentCitations([])
+        setCurrentMessageId(null)
+      }
+    },
+    [],
+  )
 
   // Memoized callback for closing citation preview - moved before conditional returns
   const handleCloseCitationPreview = useCallback(() => {
@@ -1104,23 +1239,72 @@ export const ChatPage = ({
 
   const scrollToBottom = () => {
     const container = messagesContainerRef.current
-    if (!container || userHasScrolled) return
+    if (!container) return
 
-    // For virtualized messages, we need to scroll to the bottom differently
-    // Use the container's scrollTop instead of virtualizer when possible
-    container.scrollTop = container.scrollHeight
+    // Set flag to indicate we're auto-scrolling
+    isAutoScrollingRef.current = true
 
-    // Also reset userHasScrolled since we're programmatically scrolling
+    // Check if we need to scroll significantly
+    const currentScrollTop = container.scrollTop
+    const targetScrollTop = container.scrollHeight - container.clientHeight
+    const scrollDistance = targetScrollTop - currentScrollTop
+
+    // If already at bottom or close to it, just jump to bottom instantly
+    if (Math.abs(scrollDistance) < 50) {
+      container.scrollTop = targetScrollTop
+      isAutoScrollingRef.current = false
+      setUserHasScrolled(false)
+      return
+    }
+
+    const startPosition = currentScrollTop
+    const distance = scrollDistance
+    const duration = Math.min(300, Math.max(150, Math.abs(distance) * 0.2))
+
+    let startTime: number | null = null
+
+    const animateScroll = (currentTime: number) => {
+      if (startTime === null) startTime = currentTime
+      const timeElapsed = currentTime - startTime
+      const progress = Math.min(timeElapsed / duration, 1)
+
+      // Easing function for smooth deceleration (ease-out-cubic)
+      const easeOutCubic = 1 - Math.pow(1 - progress, 3)
+
+      container.scrollTop = startPosition + distance * easeOutCubic
+
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll)
+      } else {
+        // Animation complete, reset flag
+        isAutoScrollingRef.current = false
+      }
+    }
+
+    requestAnimationFrame(animateScroll)
+
+    // Reset userHasScrolled since we're programmatically scrolling
     setUserHasScrolled(false)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
-    if (!container || userHasScrolled) return
+    if (!container || userHasScrolled || isAutoScrollingRef.current) return
 
-    // For virtualized content, ensure we scroll to actual bottom
-    container.scrollTop = container.scrollHeight
-  }, [messages, partial, userHasScrolled]) // Added userHasScrolled to dependencies
+    // Only auto-scroll if we're close to the bottom (within 100px)
+    // This prevents the effect from interfering with manual scrolling
+    const isNearBottom =
+      container.scrollTop >=
+      container.scrollHeight - container.clientHeight - 100
+
+    if (isNearBottom) {
+      // Only auto-scroll for non-streaming content to avoid interference during streaming
+      if (!isStreaming && !retryIsStreaming) {
+        // For non-streaming content, scroll instantly
+        container.scrollTop = container.scrollHeight
+      }
+    }
+  }, [messages, partial, userHasScrolled, isStreaming, retryIsStreaming]) // Added streaming states to dependencies
 
   if ((data?.error || historyLoading) && !isSharedChat) {
     return (
@@ -1341,6 +1525,9 @@ export const ChatPage = ({
                 setIsCitationPreviewOpen={setIsCitationPreviewOpen}
                 setSelectedCitation={setSelectedCitation}
                 chatBoxRef={chatBoxRef}
+                isAutoScrollingRef={isAutoScrollingRef}
+                partial={partial}
+                bottomSpace={bottomSpace}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -1354,6 +1541,23 @@ export const ChatPage = ({
                   />
                 </div>
               )}
+
+              {/* Scroll to Bottom Button */}
+              {userHasScrolled && !isSharedChat && (
+                <div className="fixed bottom-32 right-1/2 transform translate-x-1/2 z-30">
+                  <button
+                    onClick={scrollToBottom}
+                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full p-2 shadow-lg hover:shadow-xl transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    title="Scroll to bottom"
+                  >
+                    <ArrowDown
+                      size={18}
+                      className="text-gray-600 dark:text-gray-300"
+                    />
+                  </button>
+                </div>
+              )}
+
               {!isSharedChat && (
                 <div
                   className={`sticky bottom-0 w-full flex ${isCitationPreviewOpen ? "px-3" : "justify-center"} bg-white dark:bg-[#1E1E1E] pt-2`}
@@ -2235,6 +2439,9 @@ interface VirtualizedMessagesProps {
   setIsCitationPreviewOpen: (open: boolean) => void
   setSelectedCitation: (citation: Citation | null) => void
   chatBoxRef: React.RefObject<ChatBoxRef>
+  isAutoScrollingRef: React.MutableRefObject<boolean>
+  partial: string
+  bottomSpace: number
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -2274,6 +2481,9 @@ const VirtualizedMessages = React.forwardRef<
       setIsCitationPreviewOpen,
       setSelectedCitation,
       chatBoxRef,
+      isAutoScrollingRef,
+      partial,
+      bottomSpace,
     },
     ref,
   ) => {
@@ -2341,29 +2551,37 @@ const VirtualizedMessages = React.forwardRef<
       }
     }, []) // Only run once on mount
 
-    // Detect user scrolling - improved logic to prevent conflicts
+    // Detect user scrolling and update scroll button visibility
     const handleScroll = useCallback(
       (e: React.UIEvent<HTMLDivElement>) => {
+        // Skip if we're in the middle of auto-scrolling
+        if (isAutoScrollingRef.current) return
+
         const element = e.currentTarget
         const scrollTop = element.scrollTop
         const scrollHeight = element.scrollHeight
         const clientHeight = element.clientHeight
 
-        // Calculate if we're at the bottom with a reasonable threshold
-        const isAtBottom = scrollTop >= scrollHeight - clientHeight - 50
-
-        // Update user scroll state based on position
-        if (isAtBottom) {
-          // User is at bottom, allow auto-scroll
-          setUserHasScrolled(false)
-        } else if (scrollTop < lastScrollTop.current) {
-          // User scrolled up, disable auto-scroll
-          setUserHasScrolled(true)
-        }
-
+        // Track the scroll position for reference
         lastScrollTop.current = scrollTop
+
+        // Calculate if we're at the bottom with a reasonable threshold
+        const isAtBottom = scrollTop >= scrollHeight - clientHeight - 30
+
+        // Update scroll button visibility based on position
+        if (isAtBottom) {
+          // User is at bottom, hide scroll to bottom button
+          if (userHasScrolled) {
+            setUserHasScrolled(false)
+          }
+        } else {
+          // User is not at bottom, show scroll to bottom button
+          if (!userHasScrolled) {
+            setUserHasScrolled(true)
+          }
+        }
       },
-      [setUserHasScrolled],
+      [userHasScrolled, setUserHasScrolled],
     )
 
     return (
@@ -2378,7 +2596,7 @@ const VirtualizedMessages = React.forwardRef<
             ;(ref as any).current = node
           }
         }}
-        className={`h-full w-full overflow-auto flex flex-col ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
+        className={`h-full w-full overflow-auto flex flex-col scroll-smooth ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
         onScroll={handleScroll}
         style={{
           height: "100%",
@@ -2412,6 +2630,8 @@ const VirtualizedMessages = React.forwardRef<
                 <div
                   key={virtualItem.key}
                   data-index={virtualItem.index}
+                  data-message-role={message.messageRole}
+                  data-message-id={message.externalId}
                   ref={rowVirtualizer.measureElement}
                   style={{
                     position: "absolute",
@@ -2550,7 +2770,6 @@ const VirtualizedMessages = React.forwardRef<
                           chatBoxRef.current?.sendMessage(question)
                         }}
                         isStreaming={isStreaming || retryIsStreaming}
-                        onQuestionsLoaded={scrollToBottom}
                       />
                     )}
                   </Fragment>
@@ -2558,6 +2777,16 @@ const VirtualizedMessages = React.forwardRef<
               )
             })}
           </div>
+
+          {/* Bottom spacing to position query at top of viewport */}
+          {bottomSpace > 0 && (
+            <div
+              className="w-full"
+              style={{
+                height: `${bottomSpace}px`,
+              }}
+            />
+          )}
         </div>
       </div>
     )
@@ -2782,7 +3011,9 @@ export const ChatMessage = ({
                     onMouseDown={() => setIsCopied(true)}
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
-                      navigator.clipboard.writeText(cleanCitationsFromResponse(message))
+                      navigator.clipboard.writeText(
+                        cleanCitationsFromResponse(message),
+                      )
                     }
                   />
                   {/* Retry button temporarily hidden */}
