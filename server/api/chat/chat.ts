@@ -3164,7 +3164,6 @@ async function* generateMetadataQueryAnswer(
   const count = classification.filters.count
   const direction = classification.direction as string
   const isGenericItemFetch = classification.type === QueryType.GetItems
-  // todo change this
   const isAggregatorQuery = classification.type === QueryType.AggregatorQuery
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
@@ -3803,8 +3802,7 @@ async function* generateMetadataQueryAnswer(
         return answer
       }
     }
-  } else if (isAggregatorQuery) {
-    console.log("Entered inside isAggregatorQuery...")
+  } else if (isAggregatorQuery && classification.filterQuery) {
     const pageSizeForAggregatorQuery = 40
     const maxIterationsForAggregatorQuery = 10
     // Specific metadata retrieval
@@ -3819,7 +3817,7 @@ async function* generateMetadataQueryAnswer(
     )
 
     const { filterQuery } = classification
-    const query = filterQuery!
+    const query = filterQuery
     const rankProfile =
       sortDirection === "desc"
         ? SearchModes.GlobalSorted
@@ -3945,21 +3943,12 @@ async function* generateMetadataQueryAnswer(
         break
       }
 
-      console.log("docIds")
-      console.log(docIds)
-      console.log("docIds")
       finalDocIds.push(...docIds)
     }
-    console.log("finalDocIds")
-    console.log(finalDocIds)
-    console.log("finalDocIds")
     let finalItems: VespaSearchResult[] = []
     if (finalDocIds.length !== 0) {
       const allFinalDocs = await GetDocumentsByDocIds(finalDocIds, span!)
       finalItems = allFinalDocs.root.children || []
-      console.log("finalItems")
-      console.log(finalItems)
-      console.log("finalItems")
     }
     const answer = yield* processResultsForMetadata(
       finalItems,
@@ -3975,10 +3964,6 @@ async function* generateMetadataQueryAnswer(
       agentPrompt,
       modelId,
     )
-
-    console.log("answer")
-    console.log(answer)
-    console.log("answer")
 
     if (answer == null) {
       yield { text: METADATA_FALLBACK_TO_RAG }
@@ -5452,10 +5437,6 @@ export const MessageApi = async (c: Context) => {
                 intent: intent || {},
               },
             } as QueryRouterLLMResponse
-
-            console.log("classification")
-            console.log(classification)
-            console.log("classification")
 
             if (parsed.answer === null || parsed.answer === "") {
               const ragSpan = streamSpan.startSpan("rag_processing")

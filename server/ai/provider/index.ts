@@ -2166,9 +2166,6 @@ export const aggregatorQueryJsonStream = (
 
   // Build structured context from raw items and their chunks
   const structuredContext = buildStructuredContextFromItems(items, userMetadata)
-  console.log("Structured Context")
-  console.log(structuredContext)
-  console.log("Structured Context")
 
   params.systemPrompt = aggregatorQueryPrompt(
     userCtx,
