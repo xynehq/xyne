@@ -5,7 +5,8 @@ on:
     branches:
       - main 
       - release_test_pat
-      
+      - release_test
+
 
 jobs:
   release:
