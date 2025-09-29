@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef, ChangeEvent } from "react"
-import { Upload, Folder, File as FileIcon, X, Trash2 } from "lucide-react"
+import { X, FileUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import FileUploadSkeleton from "@/components/FileUploadSkeleton"
+import { isValidFile } from "../../../server/shared/fileUtils"
+import { getFileIcon } from "@/lib/common"
 
 export interface SelectedFile {
   file: File
@@ -233,154 +235,180 @@ const CollectionFileUpload = ({
 
   return (
     <div className="w-full">
-      <div
-        className="relative transition-colors flex flex-col items-center justify-center"
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-      >
-        <div
-          className={`border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg p-8 w-full mx-auto h-72 min-h-72 flex flex-col items-center justify-center transition-colors relative bg-gray-50 dark:bg-slate-800 ${
-            isDragging
-              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10"
-              : isUploading
-                ? "cursor-not-allowed"
-                : "cursor-pointer hover:border-gray-400 dark:hover:border-gray-500"
-          }`}
-          onClick={!isUploading ? handleFileClick : undefined}
+      {/* Buttons above the upload area */}
+      <div className="flex items-center gap-4 mb-4">
+        <Button
+          onClick={(e) => {
+            e.stopPropagation()
+            handleFileClick()
+          }}
+          variant="outline"
+          disabled={isUploading}
+          className="flex-1 rounded-full text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {selectedFiles.length > 0 && (
-            <Button
-              onClick={(e) => {
-                e.stopPropagation()
-                onRemoveAllFiles()
-              }}
-              className="absolute top-2 right-5 flex items-center space-x-1 bg-gray-800 dark:bg-slate-600 hover:bg-gray-900 dark:hover:bg-slate-500 text-white dark:text-gray-200 h-9 px-3"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Clear All</span>
-            </Button>
-          )}
+          ADD FILES
+        </Button>
+        <Button
+          onClick={(e) => {
+            e.stopPropagation()
+            handleFolderClick()
+          }}
+          variant="outline"
+          disabled={isUploading}
+          className="flex-1 rounded-full text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          UPLOAD LARGE FOLDER
+        </Button>
+      </div>
 
-          <div className="flex flex-col items-center justify-center w-full h-full">
-            {selectedFiles.length === 0 ? (
+      {/* Show drag & drop area only when no files are selected */}
+      {selectedFiles.length === 0 && (
+        <div
+          className="relative transition-colors flex flex-col items-center justify-center"
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          <div
+            className={`border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg p-8 w-full mx-auto h-80 min-h-80 flex flex-col items-center justify-center transition-colors relative bg-gray-50 dark:bg-slate-800 ${
+              isDragging
+                ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10"
+                : isUploading
+                  ? "cursor-not-allowed"
+                  : "hover:border-gray-400 dark:hover:border-gray-500"
+            }`}
+          >
+            <div className="flex flex-col items-center justify-center w-full h-full">
               <div className="flex flex-col items-center justify-center h-full w-full text-center">
-                <Upload className="w-16 h-16 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+                <div className="w-20 h-20 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileUp className="w-10 h-10 text-gray-600 dark:text-gray-400" />
+                </div>
                 <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Drag & drop files or folders here
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  or click to select files
+                  or use the buttons above to select files
                 </p>
               </div>
-            ) : (
-              <div className="h-full w-full flex flex-col items-center justify-center">
-                <div
-                  className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 w-full overflow-y-auto p-4 h-full"
-                  style={{ maxHeight: "calc(100% - 60px)" }}
-                >
-                  {selectedFiles.map((selectedFile) => (
-                    <div key={selectedFile.id} className="relative group">
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-1.5 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors hover:shadow-sm flex flex-col items-center justify-between min-h-[70px]">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onRemoveFile(selectedFile.id)
-                          }}
-                          className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 dark:bg-slate-600 text-white dark:text-gray-200 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black dark:hover:bg-slate-500"
-                          title="Remove file"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-
-                        <div className="flex flex-col items-center justify-center w-full">
-                          <FileIcon className="w-8 h-8 text-gray-500" />
-                          <div className="w-full text-center mt-1">
-                            <p
-                              className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-full px-1"
-                              title={selectedFile.file.name}
-                            >
-                              {selectedFile.file.name.length > 16
-                                ? `${selectedFile.file.name.substring(
-                                    0,
-                                    13,
-                                  )}...`
-                                : selectedFile.file.name}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {(selectedFile.file.size / 1024).toFixed(2)} KB
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            </div>
           </div>
+        </div>
+      )}
 
-          <div className="flex justify-between items-center w-full mt-4 px-2 absolute bottom-4 left-0 right-0">
-            <div className="flex items-center space-x-2 ml-4">
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        multiple
+        onChange={handleFileChange}
+      />
+      <input
+        type="file"
+        ref={folderInputRef}
+        className="hidden"
+        multiple
+        {...{
+          directory: "",
+          webkitdirectory: "",
+        }}
+        onChange={handleFolderChange}
+      />
+
+      {/* Upload Queue Section - only show when files are selected */}
+      {selectedFiles.length > 0 && (
+        <div className="mt-6">
+          <div className="bg-white dark:bg-slate-800 rounded-lg overflow-hidden h-80 flex flex-col">
+            {/* Header */}
+            <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-700 flex-shrink-0">
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 font-mono uppercase tracking-wider">
+                UPLOAD QUEUE
+              </h3>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {selectedFiles.length} file{selectedFiles.length !== 1 ? "s" : ""}
+              </span>
               <Button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleFolderClick()
-                }}
-                variant="outline"
-                disabled={isUploading}
-                className="flex items-center space-x-2 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={onRemoveAllFiles}
+                variant="ghost"
+                size="sm"
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 px-2 py-1 h-auto"
               >
-                <Folder className="w-4 h-4" />
-                <span>Select Folder</span>
+                <X className="w-3 h-3 mr-1" />
+                Clear All
               </Button>
             </div>
 
-            {selectedFiles.length > 0 && (
-              <div className="text-sm text-gray-600 dark:text-gray-400 mr-4">
-                {selectedFiles.length} file
-                {selectedFiles.length !== 1 ? "s" : ""} selected
-              </div>
-            )}
+            {/* File List - scrollable with fixed height */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {selectedFiles.map((selectedFile, index) => {
+                const isSupported = isValidFile(selectedFile.file)
+                
+                return (
+                  <div
+                    key={selectedFile.id}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors group"
+                  >
+                    {/* File Icon */}
+                    <div className="flex-shrink-0">
+                      {getFileIcon(selectedFile.file)}
+                    </div>
 
-            <Button
-              onClick={(e) => {
-                e.stopPropagation()
-                onUpload()
-              }}
-              disabled={
-                selectedFiles.length === 0 ||
-                isUploading ||
-                !collectionName.trim()
-              }
-              className="flex items-center space-x-2 mr-4 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Upload className="w-4 h-4" />
-              <span>{isUploading ? "Uploading..." : "Upload"}</span>
-            </Button>
+                    {/* File Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate" title={selectedFile.file.name}>
+                          {selectedFile.file.name}
+                        </p>
+                      </div>
+                      {!isSupported && (
+                        <p className="text-xs font-medium text-red-600 dark:text-red-400">
+                          UNSUPPORTED FORMAT
+                        </p>
+                      )}
+                      {isSupported && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {(selectedFile.file.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Remove Button */}
+                    <div className="flex-shrink-0">
+                      <Button
+                        onClick={() => onRemoveFile(selectedFile.id)}
+                        variant="ghost"
+                        size="sm"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 h-auto"
+                        title="Remove file"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Upload Button - sticks to bottom */}
+            <div className="px-4 pt-4 pb-2 flex-shrink-0">
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onUpload()
+                }}
+                disabled={
+                  selectedFiles.length === 0 ||
+                  isUploading ||
+                  !collectionName.trim()
+                }
+                className="w-full bg-slate-800 hover:bg-slate-700 dark:bg-slate-600 dark:hover:bg-slate-500 text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-full h-10 text-sm font-medium"
+              >
+                {isUploading ? "Uploading..." : "UPLOAD ITEMS"}
+              </Button>
+            </div>
           </div>
         </div>
-
-        <input
-          type="file"
-          ref={fileInputRef}
-          className="hidden"
-          multiple
-          onChange={handleFileChange}
-        />
-        <input
-          type="file"
-          ref={folderInputRef}
-          className="hidden"
-          multiple
-          {...{
-            directory: "",
-            webkitdirectory: "",
-          }}
-          onChange={handleFolderChange}
-        />
-      </div>
+      )}
     </div>
   )
 }
