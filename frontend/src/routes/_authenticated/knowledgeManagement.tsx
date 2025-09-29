@@ -290,12 +290,14 @@ const DocumentViewerContainer = memo(
     ])
 
     const { highlightText, clearHighlights, scrollToMatch } =
-      useScopedFind(containerRef)
+      useScopedFind(containerRef, {
+        documentId: selectedDocument?.file.id,
+      })
 
     // Expose the highlight functions via the document operations ref
     useEffect(() => {
       if (documentOperationsRef?.current) {
-        documentOperationsRef.current.highlightText = async (text: string) => {
+        documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number) => {
           if (!containerRef.current) {
             const container = document.querySelector(
               '[data-container-ref="true"]',
@@ -308,7 +310,7 @@ const DocumentViewerContainer = memo(
           }
 
           try {
-            const success = await highlightText(text)
+            const success = await highlightText(text, chunkIndex)
             return success
           } catch (error) {
             console.error("Error calling highlightText:", error)
@@ -1409,6 +1411,7 @@ function KnowledgeManagementContent() {
             try {
               await documentOperationsRef.current.highlightText(
                 chunkContent.chunkContent,
+                newChunkIndex
               )
             } catch (error) {
               console.error(
@@ -1475,9 +1478,9 @@ function KnowledgeManagementContent() {
                         onClick={handleViewVespaData}
                         variant="ghost"
                         size="sm"
-                        className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto"
+                        className="flex items-center gap-6 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 h-auto border-2"
                       >
-                        View
+                        Raw view
                       </Button>
                     )}
                     <Button
