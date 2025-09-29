@@ -83,7 +83,7 @@ import {
   GetKbVespaContent,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
-import { init as initQueue } from "@/queue"
+import { initApiServerQueue } from "@/queue/api-server-queue"
 import { createBunWebSocket } from "hono/bun"
 import type { ServerWebSocket } from "bun"
 import { googleAuth } from "@hono/oauth-providers/google"
@@ -1520,6 +1520,9 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
+  // Initialize API server queue (only FileProcessingQueue, no workers)
+  await initApiServerQueue()
+  
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
