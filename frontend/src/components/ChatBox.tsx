@@ -14,7 +14,7 @@ import {
   Layers,
   Square,
   ChevronDown,
-  // Infinity,
+  Infinity,
   Check,
   Link,
   Search,
@@ -368,7 +368,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       chatId,
       agentIdFromChatData, // Destructure new prop
       user, // Destructure user prop
-      // setIsAgenticMode,
+      setIsAgenticMode,
       isAgenticMode = false,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
@@ -951,14 +951,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
         if (files.length > 0) {
-                        // Check attachment limit before processing
-                        if (selectedFiles.length >= MAX_ATTACHMENTS) {
-                          toast.error({
-                            title: "Attachment limit reached",
-                            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-                          })
-                          return
-                        }
+          // Check attachment limit before processing
+          if (selectedFiles.length >= MAX_ATTACHMENTS) {
+            toast.error({
+              title: "Attachment limit reached",
+              description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+            })
+            return
+          }
           processFiles(files)
         }
       },
@@ -2419,7 +2419,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
-                Ask a question {hideButtons ? "" : "or type @ to search your apps"}
+                Ask a question{" "}
+                {hideButtons ? "" : "or type @ to search your apps"}
               </div>
             )}
             <div
@@ -2680,7 +2681,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault() // Always prevent default for Enter (unless Shift+Enter)
-                  
+
                   if (
                     query.trim().length > 0 &&
                     !isStreaming &&
@@ -3555,27 +3556,29 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {/* {showAdvancedOptions && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIsAgenticMode(!isAgenticMode)
-                }}
-                disabled={selectedAgent ? !selectedAgent.isRagOn : false}
-                className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px] disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                <Infinity
-                  size={14}
-                  strokeWidth={2.4}
-                  className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
-                />
-                <span
-                  className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+            {showAdvancedOptions &&
+              (user?.role === UserRole.Admin ||
+                user?.role === UserRole.SuperAdmin) && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setIsAgenticMode(!isAgenticMode)
+                  }}
+                  disabled={selectedAgent ? !selectedAgent.isRagOn : false}
+                  className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px] disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  Agent
-                </span>
-              </button>
-            )} */}
+                  <Infinity
+                    size={14}
+                    strokeWidth={2.4}
+                    className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
+                  />
+                  <span
+                    className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+                  >
+                    Agent
+                  </span>
+                </button>
+              )}
 
             {/* Model Selection Dropdown */}
             {(showAdvancedOptions || hideButtons) && (
