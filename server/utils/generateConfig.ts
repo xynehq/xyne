@@ -21,7 +21,7 @@ export const generateConfigFile = () => {
       WS_BASE_URL: wsBaseUrl,
     }
 
-    const inlineScript = `<script>window.CONFIG = ${JSON.stringify(configContent, null, 2)};</script>\n`
+    const inlineScript = `<script>window.___CONFIG = ${JSON.stringify(configContent, null, 2)};</script>\n`
 
     const indexHtmlPath = resolve(__dirname, "../dist/index.html")
     if (!existsSync(indexHtmlPath)) {
@@ -32,7 +32,7 @@ export const generateConfigFile = () => {
     let indexHtml = readFileSync(indexHtmlPath, "utf8")
 
     // Only add the script if it doesn't already exist
-    if (!indexHtml.includes("window.CONFIG")) {
+    if (!indexHtml.includes("window.___CONFIG")) {
       // Add the inline script before the closing </head>
       indexHtml = indexHtml.replace(
         /<\/head>/,
@@ -40,10 +40,10 @@ export const generateConfigFile = () => {
       )
 
       writeFileSync(indexHtmlPath, indexHtml, "utf8")
-      Logger.info("Injected window.CONFIG inline script into index.html")
+      Logger.info("Injected window.___CONFIG inline script into index.html")
       Logger.info(`Config content: ${JSON.stringify(configContent, null, 2)}`)
     } else {
-      Logger.info("window.CONFIG script already exists in index.html, skipping injection")
+      Logger.info("window.___CONFIG script already exists in index.html, skipping injection")
     }
   } catch (error) {
     Logger.error("Failed to inject config into index.html:", error)

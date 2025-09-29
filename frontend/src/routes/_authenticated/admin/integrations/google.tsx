@@ -18,7 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Apps, AuthType, ConnectorStatus, UserRole } from "shared/types"
-import { api, getWSClient } from "@/api"
+import { api, wsClient } from "@/api"
 import { toast, useToast } from "@/hooks/use-toast"
 import { useForm } from "@tanstack/react-form"
 
@@ -1130,7 +1130,6 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
       const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
 
       if (serviceAccountConnector) {
-         const wsClient = getWSClient() //
         serviceAccountSocket = wsClient.ws.$ws({
           query: { id: serviceAccountConnector.id },
         })
@@ -1155,7 +1154,6 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
       }
 
       if (oauthConnector) {
-         const wsClient = getWSClient() //
         oauthSocket = wsClient.ws.$ws({
           query: { id: oauthConnector.id },
         })

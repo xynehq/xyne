@@ -8,30 +8,6 @@ import fs from "fs"
 import { viteStaticCopy } from "vite-plugin-static-copy"
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite"
 
-// 🔹 Add this helper plugin at the top
-function injectDevConfig() {
-  return {
-    name: "inject-dev-config",
-    transformIndexHtml(html: string) {
-      if (process.env.NODE_ENV === "development") {
-        return html.replace(
-          "</head>",
-          `
-          <script>
-            window.CONFIG = {
-              API_BASE_URL: "${process.env.VITE_API_BASE_URL || "http://localhost:3000"}",
-              WS_BASE_URL: "${process.env.VITE_WS_BASE_URL || "ws://localhost:3000"}"
-            }
-          </script>
-          </head>
-        `,
-        )
-      }
-      return html
-    },
-  }
-}
-
 export default defineConfig(({ mode }) => {
   // Load environment variables from .env.production if in production mode,
   // otherwise fall back to .env.default.
@@ -117,7 +93,6 @@ export default defineConfig(({ mode }) => {
           },
         ],
       }),
-      injectDevConfig(), // 👈 Added here
     ],
     optimizeDeps: {
       exclude: ["zod"],
@@ -142,12 +117,22 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
         "/ws": {
-          target: env.VITE_WS_BASE_URL || "ws://localhost:3000",
+          target: env.VITE_WS_BASE_URL || "ws://127.0.0.1:3000",
           ws: true,
+          changeOrigin: true,
           rewriteWsOrigin: true,
         },
-        "/config": {
-          target: env.VITE_API_BASE_URL || "http://localhost:3000",
+        // OAuth endpoints
+        "/v1/auth/callback": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
+          changeOrigin: true,
+        },
+        "/oauth/start": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
+          changeOrigin: true,
+        },
+        "/oauth/success": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
           changeOrigin: true,
         },
       },

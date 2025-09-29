@@ -20,22 +20,17 @@ export class OAuthModal {
     // this.connectorId = config.connectorId;
     this.width = width || 600
     this.height = height || 700
-    if (typeof window === "undefined") {
-      this.config = { API_BASE_URL: "", WS_BASE_URL: "" }
-    }else{
-      this.config = (window as any).CONFIG
-    }
   }
 
   public startAuth(app: Apps) {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       try {
         if (!this.config) {
           throw new Error("Failed to load config")
         }
 
-        const authUrl = `${this.config.API_BASE_URL}/oauth/start`
-        this.successUrl = `${this.config.API_BASE_URL}/oauth/success`
+        const authUrl = `/oauth/start`
+        this.successUrl = `/oauth/success`
         //clientLog({currentApp: app}, 'Starting OAuth')
         this.logger.info({ currentApp: app }, "Starting OAuth")
         this.openAuthWindow(`${authUrl}?app=${app}`)

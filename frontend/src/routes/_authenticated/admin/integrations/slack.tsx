@@ -40,7 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { getWSClient } from "@/api" // ensure wsClient is imported
+import { wsClient } from "@/api" 
 
 export const updateConnectorStatus = async (
   connectorId: string,
@@ -797,7 +797,6 @@ export const Slack = ({
         (v) => v.app === Apps.Slack && v.authType === AuthType.OAuth,
       )
       if (slackConnector) {
-        const wsClient = getWSClient() //
         socket = wsClient.ws.$ws({
           query: {
             id: slackConnector.id,
