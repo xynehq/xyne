@@ -51,6 +51,7 @@
     "@aws-sdk/client-bedrock": "^3.797.0",
     "@aws-sdk/client-bedrock-runtime": "^3.797.0",
     "@aws-sdk/client-ses": "^3.879.0",
+    "@azure/identity": "^4.12.0",
     "@azure/msal-node": "^3.7.3",
     "@google-cloud/vertexai": "^1.10.0",
     "@google/genai": "^1.9.0",

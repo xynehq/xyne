@@ -13,7 +13,7 @@ import SearchIcon from "@/assets/search.svg?react"
 import XyneIcon from "@/assets/assistant-logo.svg?react"
 import SvgIcon from "@/assets/mcp.svg?react"
 import ExpandIcon from "@/assets/expand-text-input.svg?react"
-import { textToCitationIndex } from "@/utils/chatUtils"
+import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 
 // Simple hash function to generate stable IDs from content
 const generateStableId = (content: string, index: number): number => {
