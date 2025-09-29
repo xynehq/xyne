@@ -55,7 +55,6 @@ import {
   getEventStartTime,
   getJoiningLink,
   insertContact,
-  loggerWithChild,
 } from "./index"
 import { MAX_ONEDRIVE_FILE_SIZE, skipMailExistCheck } from "./config"
 import {
@@ -63,6 +62,7 @@ import {
   MicrosoftMimeType,
   microsoftMimeTypeMap,
   processFileContent,
+  loggerWithChild,
   type OneDriveFile,
 } from "./utils"
 import { chunkDocument } from "@/chunks"

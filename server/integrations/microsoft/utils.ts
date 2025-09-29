@@ -1,4 +1,4 @@
-import { getLogger } from "@/logger"
+import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import type { MicrosoftGraphClient } from "./client"
 import { downloadFileFromGraph, makeGraphApiCall } from "./client"
@@ -19,7 +19,10 @@ import path from "node:path"
 import { unlink } from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf"
-import { loggerWithChild } from "."
+
+export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
+  module: "microsoft",
+})
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
 

@@ -3,7 +3,6 @@ import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client"
 import { retryWithBackoff } from "@/utils"
 import { Apps } from "@/shared/types"
 import { Readable } from "stream"
-import { CustomServiceAuthProvider } from "./utils"
 
 // Simple authentication provider for Microsoft Graph
 // Token refresh is handled at the connector level in server/db/connector.ts

@@ -76,12 +76,8 @@ import {
   discoverSiteDrives,
   processSiteDrives,
 } from "./sharepoint"
-import { getFilePermissions, processFileContent } from "./utils"
+import { getFilePermissions, processFileContent, loggerWithChild } from "./utils"
 const Logger = getLogger(Subsystem.Integrations).child({ module: "microsoft" })
-
-export const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
-  module: "microsoft",
-})
 
 export const getTextFromEventDescription = (description: string): string => {
   return htmlToText(description, { wordwrap: 130 })
