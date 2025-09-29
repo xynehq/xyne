@@ -21,6 +21,7 @@ export const createWorkflowTemplate = async (
   trx: TxnOrClient,
   data: {
     name: string
+    workspaceId: number
     description?: string
     version?: string
     config?: any
@@ -32,6 +33,7 @@ export const createWorkflowTemplate = async (
     .insert(workflowTemplate)
     .values({
       name: data.name,
+      workspaceId: data.workspaceId,
       description: data.description,
       version: data.version || "1.0.0",
       config: data.config || {},
@@ -58,10 +60,12 @@ export const getWorkflowTemplateById = async (
 
 export const getAllWorkflowTemplates = async (
   trx: TxnOrClient,
+  workspaceId: number,
 ): Promise<SelectWorkflowTemplate[]> => {
   const templates = await trx
     .select()
     .from(workflowTemplate)
+    .where(eq(workflowTemplate.workspaceId, workspaceId))
     .orderBy(desc(workflowTemplate.createdAt))
 
   return templates as SelectWorkflowTemplate[]
@@ -89,6 +93,7 @@ export const createWorkflowStepTemplate = async (
   trx: TxnOrClient,
   data: {
     workflowTemplateId: string
+    workspaceId: number
     name: string
     description?: string
     type: StepType
@@ -104,6 +109,7 @@ export const createWorkflowStepTemplate = async (
     .insert(workflowStepTemplate)
     .values({
       workflowTemplateId: data.workflowTemplateId,
+      workspaceId: data.workspaceId,
       name: data.name,
       description: data.description,
       type: data.type,
@@ -137,6 +143,7 @@ export const createWorkflowExecution = async (
   trx: TxnOrClient,
   data: {
     workflowTemplateId: string
+    workspaceId: number
     name: string
     description?: string
     createdBy?: string
@@ -147,6 +154,7 @@ export const createWorkflowExecution = async (
     .insert(workflowExecution)
     .values({
       workflowTemplateId: data.workflowTemplateId,
+      workspaceId: data.workspaceId,
       name: data.name,
       description: data.description,
       createdBy: data.createdBy,
@@ -172,10 +180,12 @@ export const getWorkflowExecutionById = async (
 
 export const getAllWorkflowExecutions = async (
   trx: TxnOrClient,
+  workspaceId: number,
 ): Promise<SelectWorkflowExecution[]> => {
   const executions = await trx
     .select()
     .from(workflowExecution)
+    .where(eq(workflowExecution.workspaceId, workspaceId))
     .orderBy(desc(workflowExecution.createdAt))
 
   return executions as SelectWorkflowExecution[]
@@ -204,6 +214,7 @@ export const createWorkflowStepExecution = async (
   data: {
     workflowExecutionId: string
     workflowStepTemplateId: string
+    workspaceId: number
     name: string
     type: StepType
     parentStepId?: string
@@ -219,6 +230,7 @@ export const createWorkflowStepExecution = async (
     .values({
       workflowExecutionId: data.workflowExecutionId,
       workflowStepTemplateId: data.workflowStepTemplateId,
+      workspaceId: data.workspaceId,
       name: data.name,
       type: data.type,
       parentStepId: data.parentStepId,
