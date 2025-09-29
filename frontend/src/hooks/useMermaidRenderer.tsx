@@ -714,7 +714,7 @@ const MermaidCodeComponent = ({
   // Enhanced inline detection - fallback if inline prop is not set correctly
   const isActuallyInline =
     inline ||
-    (!className && !codeString.includes("\n") && codeString.trim().length > 0)
+    (!className && !codeContent.includes("\n") && codeString.trim().length > 0)
 
   // For regular code blocks, render as plain text without boxing
   if (!isActuallyInline) {
