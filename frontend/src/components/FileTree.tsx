@@ -55,6 +55,40 @@ const truncateEmail = (email: string, maxLength: number = 20): string => {
   return email.substring(0, maxLength - 3) + "..."
 }
 
+// Reusable upload status indicator component
+const UploadStatusIndicator = ({ 
+  uploadStatus, 
+  statusMessage 
+}: { 
+  uploadStatus: string
+  statusMessage?: string 
+}) => {
+  return (
+    <div className="flex-shrink-0">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              {uploadStatus === "completed" && (
+                <Check size={14} className="text-green-600 dark:text-green-400" />
+              )}
+              {(uploadStatus === "processing" || uploadStatus === "pending") && (
+                <Loader2 size={14} className="text-black dark:text-white animate-spin" />
+              )}
+              {uploadStatus === "failed" && (
+                <AlertOctagon size={14} className="text-red-500" />
+              )}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{statusMessage || uploadStatus}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  )
+}
+
 interface FileTreeProps {
   items: FileNode[]
   onAddFiles: (node: FileNode, path: string) => void
@@ -147,28 +181,10 @@ const FileNodeComponent = ({
               </span>
               {/* Upload status indicator for folders */}
               {node.uploadStatus && (
-                <div className="flex-shrink-0">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div>
-                          {node.uploadStatus === "completed" && (
-                            <Check size={14} className="text-green-600 dark:text-green-400" />
-                          )}
-                          {(node.uploadStatus === "processing" || node.uploadStatus === "pending") && (
-                            <Loader2 size={14} className="text-black dark:text-white animate-spin" />
-                          )}
-                          {node.uploadStatus === "failed" && (
-                            <AlertOctagon size={14} className="text-red-500" />
-                          )}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{node.statusMessage || node.uploadStatus}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+                <UploadStatusIndicator
+                  uploadStatus={node.uploadStatus}
+                  statusMessage={node.statusMessage}
+                />
               )}
             </div>
           ) : (
@@ -185,28 +201,10 @@ const FileNodeComponent = ({
               </span>
               {/* Upload status indicator */}
               {node.uploadStatus && (
-                <div className="flex-shrink-0">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div>
-                          {node.uploadStatus === "completed" && (
-                            <Check size={14} className="text-green-600 dark:text-green-400" />
-                          )}
-                          {(node.uploadStatus === "processing" || node.uploadStatus === "pending") && (
-                            <Loader2 size={14} className="text-black dark:text-white animate-spin" />
-                          )}
-                          {node.uploadStatus === "failed" && (
-                            <AlertOctagon size={14} className="text-red-500" />
-                          )}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{node.statusMessage }</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+                <UploadStatusIndicator
+                  uploadStatus={node.uploadStatus}
+                  statusMessage={node.statusMessage}
+                />
               )}
             </div>
           )}
@@ -235,7 +233,7 @@ const FileNodeComponent = ({
                   }}
                 />
               )}
-              {(node.retryCount ?? 0) == 4 && onRetry && (
+              {(node.retryCount ?? 0) > 3 && onRetry && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>

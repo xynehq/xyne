@@ -11,6 +11,12 @@ interface Position {
   y: number
 }
 
+// Widget layout constants
+const WIDGET_PADDING = 6
+const WIDGET_WIDTH = 480
+const WIDGET_HEIGHT_COLLAPSED = 150
+const WIDGET_HEIGHT_EXPANDED = 400
+
 export const UploadProgressWidget: React.FC = () => {
   const { currentUpload, cancelUpload } = useUploadProgress()
   const [isExpanded, setIsExpanded] = useState(false)
@@ -19,12 +25,9 @@ export const UploadProgressWidget: React.FC = () => {
   
   // Drag functionality state
   const [position, setPosition] = useState<Position>(() => {
-    const padding = 6
-    const widgetWidth = 480
-    const widgetHeight = 150 // collapsed height
     return {
-      x: window.innerWidth - widgetWidth - padding,
-      y: window.innerHeight - widgetHeight - padding
+      x: window.innerWidth - WIDGET_WIDTH - WIDGET_PADDING,
+      y: window.innerHeight - WIDGET_HEIGHT_COLLAPSED - WIDGET_PADDING
     }
   })
   const [isDragging, setIsDragging] = useState(false)
@@ -50,16 +53,14 @@ export const UploadProgressWidget: React.FC = () => {
       const newX = e.clientX - dragOffset.x
       const newY = e.clientY - dragOffset.y
 
-      // Constrain to screen bounds with 6px padding
-      const padding = 6
-      const widgetWidth = 480
-      const widgetHeight = isExpanded ? 400 : 150
-      const maxX = window.innerWidth - widgetWidth - padding
-      const maxY = window.innerHeight - widgetHeight - padding
+      // Constrain to screen bounds with padding
+      const widgetHeight = isExpanded ? WIDGET_HEIGHT_EXPANDED : WIDGET_HEIGHT_COLLAPSED
+      const maxX = window.innerWidth - WIDGET_WIDTH - WIDGET_PADDING
+      const maxY = window.innerHeight - widgetHeight - WIDGET_PADDING
 
       setPosition({
-        x: Math.max(padding, Math.min(newX, maxX)),
-        y: Math.max(padding, Math.min(newY, maxY))
+        x: Math.max(WIDGET_PADDING, Math.min(newX, maxX)),
+        y: Math.max(WIDGET_PADDING, Math.min(newY, maxY))
       })
     }
 
@@ -80,15 +81,13 @@ export const UploadProgressWidget: React.FC = () => {
 
   // Adjust position when widget expands/collapses to prevent overflow
   useEffect(() => {
-    const padding = 6
-    const widgetWidth = 480
-    const widgetHeight = isExpanded ? 400 : 150
-    const maxX = window.innerWidth - widgetWidth - padding
-    const maxY = window.innerHeight - widgetHeight - padding
+    const widgetHeight = isExpanded ? WIDGET_HEIGHT_EXPANDED : WIDGET_HEIGHT_COLLAPSED
+    const maxX = window.innerWidth - WIDGET_WIDTH - WIDGET_PADDING
+    const maxY = window.innerHeight - widgetHeight - WIDGET_PADDING
 
     setPosition(currentPos => ({
-      x: Math.max(padding, Math.min(currentPos.x, maxX)),
-      y: Math.max(padding, Math.min(currentPos.y, maxY))
+      x: Math.max(WIDGET_PADDING, Math.min(currentPos.x, maxX)),
+      y: Math.max(WIDGET_PADDING, Math.min(currentPos.y, maxY))
     }))
   }, [isExpanded])
 
@@ -113,10 +112,11 @@ export const UploadProgressWidget: React.FC = () => {
       {/* Main Upload Widget */}
       <div 
         ref={widgetRef}
-        className="fixed z-50 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-lg w-[480px] cursor-move select-none"
+        className="fixed z-50 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-3xl shadow-lg cursor-move select-none"
         style={{
           left: `${position.x}px`,
           top: `${position.y}px`,
+          width: `${WIDGET_WIDTH}px`,
           cursor: isDragging ? 'grabbing' : 'grab'
         }}
         onMouseDown={handleMouseDown}

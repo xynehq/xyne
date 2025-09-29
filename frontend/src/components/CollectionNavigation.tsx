@@ -56,9 +56,25 @@ interface CollectionNavigationProps {
 }
 
 // Helper function to check if an item should be non-selectable based on upload status
-function isItemNonSelectable(item: any): boolean {
+function isItemNonSelectable(item: { uploadStatus?: string }): boolean {
   const uploadStatus = item.uploadStatus
   return uploadStatus === "pending" || uploadStatus === "processing" || uploadStatus === "failed"
+}
+
+// Reusable indexing tooltip component
+const IndexingTooltip = () => {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <AlertOctagon className="w-4 h-4 ml-2 text-gray-500" />
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Indexing is in progress</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
 }
 
 // Utility function to check if an item is selected either directly or through parent inheritance
@@ -305,18 +321,7 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                             Selected
                           </span>
                         )}
-                        {isNonSelectable && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <AlertOctagon className="w-4 h-4 ml-2 text-gray-500" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Indexing is in progress</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
+                        {isNonSelectable && <IndexingTooltip />}
                       </div>
                       {result.collectionName &&
                         result.type !== "collection" && (
@@ -600,18 +605,7 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                   <span className={`truncate flex-1 ${isNonSelectable ? "text-gray-400 dark:text-gray-500" : "text-gray-700 dark:text-gray-200"}`}>
                     {item.name}
                   </span>
-                  {isNonSelectable && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <AlertOctagon className="w-4 h-4 ml-2 text-gray-500" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Indexing is in progress</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
+                  {isNonSelectable && <IndexingTooltip />}
                   {item.type === "folder" && !isNonSelectable && (
                     <ChevronRight className="h-4 w-4 text-gray-400 ml-2" />
                   )}

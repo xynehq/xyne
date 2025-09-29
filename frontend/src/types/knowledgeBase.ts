@@ -1,4 +1,4 @@
-import { UploadStatus } from "@/server/shared/types"
+import { UploadStatus } from "shared/types"
 
 export interface Collection {
   id: string
