@@ -3116,14 +3116,6 @@ async function* processResultsForAggregatorQuery(
   agentContext?: string,
   modelId?: string,
 ) {
-  if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
-    chunksCount = config.maxGoogleDriveSummary
-    loggerWithChild({ email: email ?? "" }).info(
-      `Google Drive, Chunk size: ${chunksCount}`,
-    )
-    span?.setAttribute("Google Drive, chunk_size", chunksCount)
-  }
-
   const streamOptions = {
     stream: true,
     modelId: modelId ? (modelId as Models) : defaultBestModel,
@@ -3836,11 +3828,11 @@ async function* generateMetadataQueryAnswer(
     let resolvedIntent = {} as Intent
     if (intent && Object.keys(intent).length > 0) {
       loggerWithChild({ email: email }).info(
-        `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+        `[AggregatorQuery] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
       resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
       loggerWithChild({ email: email }).info(
-        `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+        `[AggregatorQuery] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
     }
 
@@ -3853,16 +3845,6 @@ async function* generateMetadataQueryAnswer(
       intent: resolvedIntent,
     }
 
-    // MaxIterations should be 10
-    // On every iteration, make an LLM call asking it if query the user asked can be satisfied
-    // with the documents that has been retrieved now with current retrieved results
-    // Till it starts giving that every result is non relevant, don't stop the iteration
-    // Once it says all results are non relevant, then we can confirm it has retrieved
-    // all relevant documents and now there are no more to retrieve, basically it has answered completely
-
-    // LLM will give indexes of relevant documents that can be answered
-    // Use those indexes and check what are the documents that we sent on that index
-    // Get that documents and store those documentIds that these are valid and relevant documents
     let finalDocIds: string[] = []
     for (
       let iteration = 0;
