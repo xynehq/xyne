@@ -283,6 +283,52 @@ export const modelDetailsMap: Record<
       },
     },
   },
+  [Models.Vertex_Claude_3_5_Sonnet]:{
+    name: "vertex-claude-3-5-sonnet",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.003,
+        pricePerThousandOutputTokens: 0.015,
+      },
+    },
+  },
+  [Models.Vertex_Claude_3_7_Sonnet]:{
+    name: "vertex-claude-3-7-sonnet",
+    cost: {
+      onDemand: {
+        pricePerThousandInputTokens: 0.003,
+        pricePerThousandOutputTokens: 0.015,
+      },
+    },
+  },
+  [Models.Vertex_Claude_Sonnet_4]:{
+    name:"vertex-claude-sonnet-4",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens: 0.003,
+        pricePerThousandOutputTokens: 0.015,
+      }
+    }
+  },
+  [Models.Vertex_Gemini_2_5_Flash]:{
+    name:"vertex-gemini-2-5-flash",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens: 0.0003,
+        pricePerThousandOutputTokens: 0.0025,
+      }
+    }
+  },
+  [Models.Vertex_Gemini_2_5_Pro]:{
+    name:"vertex-gemini-2-5-pro",
+    cost:{
+      onDemand:{
+        pricePerThousandInputTokens:0.00125,
+        pricePerThousandOutputTokens:0.01
+      }
+    }
+  }
+
 }
 
 export const ModelToProviderMap: Record<Models, AIProviders> = {

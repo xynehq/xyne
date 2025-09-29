@@ -8,6 +8,7 @@ import { getLogger } from "@/logger"
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import {
   AIProviders,
+  Models,
   type ConverseResponse,
   type ModelParams,
   type WebSearchSource,
@@ -16,6 +17,9 @@ import BaseProvider, { findImageByName, regex } from "@/ai/provider/base"
 import { Subsystem } from "@/types"
 import config from "@/config"
 import { createLabeledImageContent } from "../utils"
+import { calculateCost } from "@/utils/index"
+import { modelDetailsMap } from "../mappers"
+import { updateMessage } from "@/db/message"
 
 const { MAX_IMAGE_SIZE_BYTES } = config
 
@@ -124,6 +128,18 @@ export class VertexAiProvider extends BaseProvider {
     this.client = client
     this.provider = provider
   }
+  private mapApiModelIdToMapperModel(apiModelId: string): Models | null {
+  const newapiModelId=apiModelId.split('@')[0].toLowerCase();
+  const modelMapping:Record<string,Models>={
+     'claude-sonnet-4':Models.Vertex_Claude_Sonnet_4,
+     'claude-3-7-sonnet':Models.Vertex_Claude_3_7_Sonnet,
+     'claude-3-5-sonnet':Models.Vertex_Claude_3_5_Sonnet,
+     'gemini-2.5-pro':Models.Vertex_Gemini_2_5_Pro,
+     'gemini-2.5-flash':Models.Vertex_Gemini_2_5_Flash,
+  }
+  return modelMapping[newapiModelId] || null
+
+}
 
   async converse(
     messages: Message[],
@@ -191,8 +207,15 @@ export class VertexAiProvider extends BaseProvider {
           },
         }))
       const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-      const cost = 0
-
+      const mapperModelId=this.mapApiModelIdToMapperModel(modelId);
+      const cost = usage.input_tokens && usage.output_tokens && mapperModelId ? calculateCost(
+        {
+          inputTokens:usage.input_tokens,
+          outputTokens:usage.output_tokens
+        },
+        modelDetailsMap[mapperModelId].cost.onDemand
+      ):0
+  
       return { text, cost, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }
     } catch (error) {
       Logger.error(`VertexAI Anthropic request failed:`, error)
@@ -292,7 +315,16 @@ export class VertexAiProvider extends BaseProvider {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         }
-        const cost = 0 //TODO :  explitly set cost to 0 for now
+        const mapperModelId=this.mapApiModelIdToMapperModel(modelId); 
+    
+        const cost = usage.inputTokens && usage.outputTokens && mapperModelId ? calculateCost(
+          {
+            inputTokens:usage.inputTokens,
+            outputTokens:usage.outputTokens
+          },
+          modelDetailsMap[mapperModelId].cost.onDemand,
+        ):0 
+  
         yield {
           text: "",
           cost,
@@ -389,8 +421,17 @@ export class VertexAiProvider extends BaseProvider {
         .filter((part: any) => part.text)
         .map((part: any) => part.text)
         .join("")
-
-      const cost = 0
+      const usasageMetadata=response.response.usageMetadata || {}
+      const inputTokens=usasageMetadata.promptTokenCount || 0
+      const outputTokens=usasageMetadata.candidatesTokenCount || 0
+      const mapperModelId=this.mapApiModelIdToMapperModel(modelId);
+      const cost = inputTokens && outputTokens && mapperModelId ? calculateCost(
+        {
+          inputTokens,
+          outputTokens,
+        },
+        modelDetailsMap[mapperModelId].cost.onDemand,
+      ):0;
 
       let sources: WebSearchSource[] = []
       const groundingMetadata =
@@ -536,11 +577,26 @@ export class VertexAiProvider extends BaseProvider {
             .map((part: any) => part.text)
           chunkText += textParts.join("")
         }
+        let totalInputTokens=0
+        let totalOutputTokens=0
+        const usasageMetadata=chunk.usageMetadata;
+        if(usasageMetadata){
+          totalInputTokens=usasageMetadata.promptTokenCount || 0
+          totalOutputTokens=usasageMetadata.candidatesTokenCount || 0
+        }
 
         if (chunkText) {
+          const mapperModelId=this.mapApiModelIdToMapperModel(modelParams.modelId); 
+          const cost =totalInputTokens && totalOutputTokens  && mapperModelId? calculateCost(
+            {
+              inputTokens:totalInputTokens,
+              outputTokens:totalOutputTokens
+            },
+            modelDetailsMap[mapperModelId].cost.onDemand
+          ):0
           yield {
             text: chunkText,
-            cost: 0,
+            cost,
             sources:
               accumulatedSources.length > 0 ? accumulatedSources : undefined,
             groundingSupports:
