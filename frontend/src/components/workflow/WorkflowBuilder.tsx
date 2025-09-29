@@ -1,6 +1,7 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
 import { Bot, Mail, Plus } from "lucide-react"
 import { PlusButton } from "./PlusButton"
+import {  FileText } from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -140,13 +141,11 @@ import {
   ManualTriggerIcon,
   AppEventIcon,
   ScheduleIcon,
-  FormSubmissionIcon,
   WorkflowExecutionIcon,
   ChatMessageIcon,
   HelpIcon,
   TemplatesIcon,
   AddIcon,
-  FormDocumentIcon,
 } from "./WorkflowIcons"
 import {
   workflowExecutionsAPI,
@@ -154,6 +153,7 @@ import {
 import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
+import { ScriptSidebar } from "../ScriptSidebar"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import ReviewExecutionUI from "./ReviewExecutionUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
@@ -558,7 +558,7 @@ const StepNode: React.FC<NodeProps> = ({
                 borderRadius: "4.8px",
               }}
             >
-              <FormDocumentIcon width={16} height={16} />
+              <FileText size={16} />
             </div>
 
             <h3
@@ -913,6 +913,176 @@ const StepNode: React.FC<NodeProps> = ({
                 </div>
               )}
             </>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // Special rendering for script nodes and steps with script tools
+  const hasScriptTool = tools && tools.length > 0 && tools[0].type === "script"
+  if (step.type === "script" || hasScriptTool) {
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Green code icon with background */}
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+              }}
+            >
+              <svg
+                width={16}
+                height={16}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#10B981"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="16 18 22 12 16 6"></polyline>
+                <polyline points="8 6 2 12 8 18"></polyline>
+              </svg>
+            </div>
+
+            <h3
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+              }}
+            >
+              {(() => {
+                // First try to get name from workflow_tools[index].val.language
+                if (hasScriptTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.language) {
+                  const language = (tools[0].val as any).language
+                  return `${language.charAt(0).toUpperCase() + language.slice(1)} Script`
+                }
+                
+                // Try to get name from workflow_tools[index].value.language
+                if (hasScriptTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.language) {
+                  const language = (tools[0] as any).value.language
+                  return `${language.charAt(0).toUpperCase() + language.slice(1)} Script`
+                }
+                
+                // Fallback to existing logic
+                return step.name || "Script"
+              })()}
+            </h3>
+          </div>
+
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
+
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {(() => {
+                // First try to get description from workflow_tools[index].val.description
+                if (hasScriptTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+                
+                // Try to get description from workflow_tools[index].value.description
+                if (hasScriptTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+                
+                // Generate description based on language
+                if (hasScriptTool && tools?.[0] && ((tools[0] as any)?.value?.language || (tools[0] as any)?.val?.language)) {
+                  const language = (tools[0] as any)?.value?.language || (tools[0] as any)?.val?.language
+                  return `Execute ${language} script with custom code`
+                }
+                
+                // Fallback to step description or default
+                return step.description || "Execute custom script code"
+              })()}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+
+          {/* Add Next Step Button */}
+          {hasNext && (
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                console.log("Plus button clicked for node:", id)
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
+              }}
+            >
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                style={{
+                  width: "28px",
+                  height: "28px",
+                }}
+              >
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+            </div>
           )}
         </div>
       </>
@@ -1504,7 +1674,7 @@ const TriggersSidebar = ({
       name: "On Form Submission",
       description:
         "Generate webforms in Xyne and pass their responses to the workflow",
-      icon: <FormSubmissionIcon width={20} height={20} />,
+      icon: <FileText size={20} />,
       enabled: true,
     },
     {
@@ -1766,6 +1936,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [showEmailConfigUI, setShowEmailConfigUI] = useState(false)
   const [showOnFormSubmissionUI, setShowOnFormSubmissionUI] = useState(false)
   const [showReviewExecutionUI, setShowReviewExecutionUI] = useState(false)
+  const [showScriptConfigUI, setShowScriptConfigUI] = useState(false)
   const [selectedNodeForNext, setSelectedNodeForNext] = useState<string | null>(
     null,
   )
@@ -1776,6 +1947,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     null,
   )
   const [selectedEmailNodeId, setSelectedEmailNodeId] = useState<string | null>(
+    null,
+  )
+  const [selectedScriptNodeId, setSelectedScriptNodeId] = useState<string | null>(
     null,
   )
   const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
@@ -2375,11 +2549,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
       setShowReviewExecutionUI(false)
+      setShowScriptConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
       setSelectedFormNodeId(null)
       setSelectedReviewStepId(null)
+      setSelectedScriptNodeId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -2412,6 +2588,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open Review execution sidebar
           setSelectedReviewStepId(step.id)
           setShowReviewExecutionUI(true)
+          break
+        case "script":
+          // Open Script config sidebar
+          setSelectedScriptNodeId(node.id)
+          setShowScriptConfigUI(true)
+          console.log("📜 Opening script config sidebar")
           break
 
         default:
@@ -2613,6 +2795,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowScriptConfigUI(false)
       
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
@@ -2628,6 +2811,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowScriptConfigUI(false)
       
       // Open Triggers sidebar
       setShowTriggersSidebar(true)
@@ -2987,6 +3171,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             smartFitWorkflow()
           }, 50)
         }
+
+      }
+
+
+        
+
+    } else if (actionId === "run_script") {
+      // When Run Script is selected from WhatHappensNextUI, keep it visible in background
+      if (selectedNodeForNext) {
+        // Keep selectedNodeForNext for later node creation on save
+        setSelectedScriptNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowScriptConfigUI(true)
+        // Note: Keep WhatHappensNextUI visible in background (z-40)
+        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
     }
   }, [selectedNodeForNext, nodes, nodeCounter, setNodes, setEdges, setNodeCounter, smartFitWorkflow])
@@ -4151,6 +4349,184 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           }}
           builder={builder && !selectedTemplate}
         />
+        {/* Script Config Sidebar */}
+        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && (
+          <ScriptSidebar
+            isOpen={showScriptConfigUI}
+            onClose={() => {
+              setShowScriptConfigUI(false)
+              setSelectedScriptNodeId(null)
+              setSelectedNodeForNext(null)
+              setNodes((prevNodes) => 
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+            }}
+            onBack={() => {
+              setShowScriptConfigUI(false)
+              
+              // If we're in creation mode (pending), go back to the "What Happens Next" menu
+              if (selectedScriptNodeId === "pending" && selectedNodeForNext) {
+                // Ensure WhatHappensNextUI is visible when we go back
+                setShowWhatHappensNextUI(true)
+                setSelectedScriptNodeId(null)
+              } else {
+                // If we're editing an existing node, just close the sidebar
+                setSelectedScriptNodeId(null)
+                setSelectedNodeForNext(null)
+                // Clear all node selections when sidebar closes
+                setNodes((prevNodes) => 
+                  prevNodes.map(node => ({ ...node, selected: false }))
+                )
+                setSelectedNodes([])
+              }
+            }}
+            showBackButton={selectedScriptNodeId === "pending"}
+            onCodeSaved={(language: string, code: string) => {
+              console.log("Script code saved:", { language, code })
+            }}
+            zIndex={50}
+            selectedNodeId={selectedScriptNodeId}
+            selectedTemplate={selectedTemplate}
+            initialData={
+              selectedScriptNodeId
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedScriptNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    const tool = tools && tools.length > 0 ? tools[0] : undefined
+                    console.log("WorkflowBuilder: Passing script tool data to sidebar:", {
+                      nodeId: selectedScriptNodeId,
+                      node: node,
+                      tools: tools,
+                      tool: tool
+                    })
+                    return tool
+                  })()
+                : undefined
+            }
+            onStepCreated={(stepData) => {
+              console.log("Script step created:", stepData)
+              
+              // Create visual step below the selected node
+              if (selectedNodeForNext && stepData) {
+                const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+                if (sourceNode) {
+                  const newNodeId = `step-${nodeCounter}`
+                  
+                  // Create new node positioned below the source node
+                  const newNode = {
+                    id: newNodeId,
+                    type: "stepNode",
+                    position: {
+                      x: 400, // Consistent X position for perfect straight line alignment
+                      y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+                    },
+                    data: {
+                      step: {
+                        id: newNodeId,
+                        name: stepData.name,
+                        description: stepData.description,
+                        type: stepData.type,
+                        status: "pending",
+                        contents: [],
+                        config: stepData.tool?.value || {},
+                      },
+                      tools: stepData.tool ? [stepData.tool] : [],
+                      isActive: false,
+                      isCompleted: false,
+                      hasNext: true, // Show + button on new step
+                    },
+                    draggable: true,
+                  }
+
+                  // Create edge connecting source to new node
+                  const newEdge = {
+                    id: `${selectedNodeForNext}-${newNodeId}`,
+                    source: selectedNodeForNext,
+                    target: newNodeId,
+                    type: "smoothstep",
+                    animated: false,
+                    style: {
+                      stroke: "#D1D5DB",
+                      strokeWidth: 2,
+                    },
+                    markerEnd: {
+                      type: "arrowclosed" as const,
+                      color: "#D1D5DB",
+                    },
+                    sourceHandle: "bottom",
+                    targetHandle: "top",
+                  }
+
+                  // Update nodes and edges
+                  setNodes((prevNodes) => [...prevNodes, newNode])
+                  setEdges((prevEdges) => [...prevEdges, newEdge])
+                  setNodeCounter((prev) => prev + 1)
+
+                  // Remove hasNext from source node since it now has a next step
+                  setNodes((prevNodes) =>
+                    prevNodes.map((node) =>
+                      node.id === selectedNodeForNext
+                        ? {
+                            ...node,
+                            data: {
+                              ...node.data,
+                              hasNext: false,
+                            },
+                          }
+                        : node,
+                    ),
+                  )
+                }
+              }
+            }}
+            onToolUpdated={(nodeId, updatedTool) => {
+              console.log("Script tool updated for node:", nodeId, updatedTool)
+              
+              // Update the React Flow node data with the updated tool
+              setNodes((prevNodes) =>
+                prevNodes.map((node) => {
+                  if (node.id === nodeId) {
+                    const currentTools = (node.data?.tools as any[]) || []
+                    
+                    // For script tools, always update the first tool since there should only be one
+                    // This handles cases where tool IDs might not match or be missing
+                    let updatedTools
+                    if (updatedTool.type === "script" && currentTools.length > 0) {
+                      updatedTools = [updatedTool] // Replace the first (and likely only) script tool
+                    } else {
+                      // Fallback to ID matching for other tool types
+                      updatedTools = currentTools.map((tool) => 
+                        tool.id === updatedTool.id ? updatedTool : tool
+                      )
+                      
+                      // If no tool was updated by ID matching, replace the first tool
+                      if (updatedTools.every(tool => tool !== updatedTool) && currentTools.length > 0) {
+                        updatedTools[0] = updatedTool
+                      }
+                    }
+                    
+                    console.log("Updating node data:", {
+                      nodeId,
+                      currentTools,
+                      updatedTools,
+                      updatedTool
+                    })
+                    
+                    return {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        tools: updatedTools,
+                      },
+                    }
+                  }
+                  return node
+                }),
+              )
+            }}
+          />
+        )}
       </div>
 
       {/* Execution Result Modal */}

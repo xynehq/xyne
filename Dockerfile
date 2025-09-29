@@ -50,11 +50,26 @@ RUN apt-get update && apt-get install -y \
     libpixman-1-dev \
     libfontconfig1-dev \
     libfreetype6-dev \
+    python3 python3-pip nodejs npm r-base-core r-base-dev \
+    build-essential libcurl4-openssl-dev libssl-dev libxml2-dev \
+    jq bubblewrap \
     && wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz \
     && tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz \
     && mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/ \
     && rm -rf vespa-cli_8.453.24_linux_amd64 vespa-cli_8.453.24_linux_amd64.tar.gz \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+
+
+# Copy and install language requirements
+COPY requirements.txt /usr/src/app/
+COPY global-packages.json /usr/src/app/
+COPY requirements.R /usr/src/app/
+
+# Install language packages
+RUN python3 -m pip install --break-system-packages -r /usr/src/app/requirements.txt
+RUN npm install -g $(cat /usr/src/app/global-packages.json | jq -r '.dependencies | keys[]')
+RUN Rscript /usr/src/app/requirements.R
 
 
 # Copy data restoration script and make it executable
@@ -76,6 +91,7 @@ RUN mkdir -p downloads vespa-data vespa-logs uploads migrations
 # Copy and setup startup script
 COPY start.sh /usr/src/app/start.sh
 RUN chmod +x /usr/src/app/start.sh
+RUN chmod u+s $(which bwrap)
 
 USER bun
 

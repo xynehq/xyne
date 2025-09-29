@@ -23,8 +23,9 @@ services:
       context: ../..
       dockerfile: Dockerfile
     user: "${DOCKER_UID}:${DOCKER_GID}"
+    privileged: true
     ports:
-      - "3000:80"
+      - "${PORT:-3000}:${PORT:-3000}"
       - "3001:3001"
     depends_on:
       app-storage-init:
@@ -39,7 +40,6 @@ services:
       - NODE_ENV=production
       - DATABASE_HOST=xyne-db
       - VESPA_HOST=vespa
-      - HOST=http://localhost
     volumes:
       # Application data volumes
       - ${XYNE_DATA_DIR:-./data}/app-uploads:/usr/src/app/server/storage
@@ -53,7 +53,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/health"]
       interval: 30s
       timeout: 10s
       retries: 3

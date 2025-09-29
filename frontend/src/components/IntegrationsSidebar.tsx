@@ -5,7 +5,7 @@ import GoogleSvg from "@/assets/google-logo.svg"
 import GithubSvg from "@/assets/github.svg"
 import microsoftSvg from "@/assets/microsoft.svg"
 import { useLocation, useRouter } from "@tanstack/react-router"
-import { Upload } from "lucide-react"
+import { Upload, Key } from "lucide-react"
 
 export const IntegrationsSidebar = ({
   role,
@@ -102,6 +102,19 @@ export const IntegrationsSidebar = ({
                 </span>
               </li>
             )}
+            <li
+              className={`group flex justify-between items-center ${location.pathname.includes("/integrations/apiKey") ? "bg-[#EBEFF2] dark:bg-slate-700" : ""} hover:bg-[#EBEFF2] dark:hover:bg-slate-700 rounded-[6px] pt-[8px] pb-[8px] ml-[8px] mr-[8px] cursor-pointer`}
+              onClick={() => {
+                router.navigate({
+                  to: "/integrations/apiKey",
+                })
+              }}
+            >
+              <Key className="w-4 h-4 ml-[8px] dark:text-gray-300" />
+              <span className="text-[14px] dark:text-gray-200 pl-[10px] pr-[10px] truncate cursor-pointer flex-grow max-w-[250px]">
+                API Keys
+              </span>
+            </li>
           </ul>
         </div>
       </div>

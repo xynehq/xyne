@@ -59,6 +59,7 @@ import path from "path"
 import {
   getAllCollectionAndFolderItems,
   getCollectionFilesVespaIds,
+  getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
 import { db } from "@/db/client"
 import { get } from "http"
@@ -516,17 +517,22 @@ export const extractFileIdsFromMessage = async (
   fileIds: string[]
   threadIds: string[]
   webSearchResults?: { title: string; url: string }[]
+  collectionFolderIds?: string[]
 }> => {
   const fileIds: string[] = []
   const threadIds: string[] = []
   const driveItem: string[] = []
   const collectionFolderIds: string[] = []
+  const collectionIds: string[] = []
   const webSearchResults: { title: string; url: string }[] = []
+
   if (pathRefId) {
     collectionFolderIds.push(pathRefId)
   }
+
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
+
   try {
     const jsonMessage = JSON.parse(message) as UserQuery
     for (const obj of jsonMessage) {
@@ -652,24 +658,37 @@ export const extractFileIdsFromMessage = async (
     }
   }
 
-  const collectionFileIds = await getAllCollectionAndFolderItems(
+  const collectionitems = await getAllCollectionAndFolderItems(
     collectionFolderIds,
     db,
   )
+  const collectionPgFileIds = collectionitems.fileIds
+  const collectionPgFolderIds = collectionitems.folderIds
 
   if (collectionFolderIds.length > 0) {
-    const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
-    const vespaIds = ids
+    const ids = await getCollectionFilesVespaIds(collectionPgFileIds, db)
+    const vespaFileIds = ids
       .filter((item) => item.vespaDocId !== null)
       .map((item) => item.vespaDocId!)
-    fileIds.push(...vespaIds)
+    fileIds.push(...vespaFileIds)
+    const folderVespaIds = await getCollectionFoldersItemIds(
+      collectionPgFolderIds,
+      db,
+    )
+
+    const vespaFolderIds = folderVespaIds
+      .filter((item) => item.id !== null)
+      .map((item) => item.id!)
+    collectionIds.push(...vespaFolderIds)
   }
 
+  // Ensure we always return the same structure
   return {
     totalValidFileIdsFromLinkCount,
     fileIds: fileIds.filter(Boolean),
     threadIds: threadIds.filter(Boolean),
     webSearchResults,
+    collectionFolderIds: collectionIds.filter(Boolean),
   }
 }
 

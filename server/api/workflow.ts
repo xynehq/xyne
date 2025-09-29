@@ -86,6 +86,7 @@ import { getActualNameFromEnum } from "@/ai/modelConfig"
 import { getProviderByModel } from "@/ai/provider"
 import { Models } from "@/ai/types"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
+import { executeScript, ScriptLanguage } from "@/workflowScriptExecutorTool"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -756,7 +757,6 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       executionResults = await executeWorkflowChain(
         execution.id,
         rootStepExecution.id,
-        tools,
         {},
       )
     }
@@ -944,7 +944,6 @@ const executeAutomatedWorkflowSteps = async (
           executionResults = await executeWorkflowChain(
             executionId,
             nextStep.id,
-            allTools,
             executionResults,
           )
         } catch (stepError) {
@@ -1021,7 +1020,6 @@ const executeAutomatedWorkflowSteps = async (
 const executeWorkflowChain = async (
   executionId: string,
   currentStepId: string,
-  tools: any[],
   previousResults: any,
 ) => {
   try {
@@ -1056,10 +1054,17 @@ const executeWorkflowChain = async (
       return previousResults
     }
 
-    const tool = tools.find((t) => t.id === toolId)
-    if (!tool) {
+    // Fetch the current tool data from database to get latest updates
+    const toolFromDb = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolId))
+    
+    if (!toolFromDb || toolFromDb.length === 0) {
       return previousResults
     }
+
+    const tool = toolFromDb[0]
 
     // Execute the tool
     const toolResult = await executeWorkflowTool(tool, previousResults, executionId)
@@ -1236,7 +1241,6 @@ const executeWorkflowChain = async (
           await executeWorkflowChain(
             executionId,
             nextStep.id,
-            tools,
             updatedResults,
           )
         }
@@ -1638,7 +1642,6 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
     console.log("Step execution updated successfully")
 
     // Continue workflow execution - execute next automated steps
-    const tools = await db.select().from(workflowTool)
     const stepName = stepExecution.name || "unknown_step"
     const currentResults: Record<string, any> = {}
     currentResults[stepName] = {
@@ -1672,7 +1675,6 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
           await executeWorkflowChain(
             stepExecution.workflowExecutionId,
             nextStep.id,
-            tools,
             currentResults,
           )
         }
@@ -1824,7 +1826,7 @@ else:
 const extractContentFromPath = (
   previousStepResults: any,
   contentPath: string,
-): string => {
+): string | null => {
   try {
 
     if (!contentPath.startsWith("input.")) {
@@ -1834,7 +1836,7 @@ const extractContentFromPath = (
     // Get all step keys
     const stepKeys = Object.keys(previousStepResults)
     if (stepKeys.length === 0) {
-      return "No previous steps available"
+      return null
     }
 
     const propertyPath = contentPath.slice(6) // Remove "input."
@@ -1853,7 +1855,7 @@ const extractContentFromPath = (
           target = target[part]
         } else {
           Logger.debug(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
-          return `Property '${part}' not found in any step result. Available steps: ${stepKeys.join(", ")}`
+          return null
         }
       }
 
@@ -1865,9 +1867,9 @@ const extractContentFromPath = (
       }
     }
 
-    return `No content found for path '${contentPath}' in any step. Available steps: ${stepKeys.join(", ")}`
+    return null
   } catch (error) {
-    return `Error: ${error instanceof Error ? error.message : String(error)}`
+    return null
   }
 }
 
@@ -1936,11 +1938,11 @@ const executeWorkflowTool = async (
 
       case "python_script":
         // Execute actual Python script from database using unified function
-        const scriptContent =
+        const pythonScriptContent =
           typeof tool.value === "string" ? tool.value : tool.value?.script
         const config = tool.config
 
-        if (!scriptContent) {
+        if (!pythonScriptContent) {
           return {
             status: "error",
             result: { error: "No script content found in tool value" },
@@ -1949,7 +1951,7 @@ const executeWorkflowTool = async (
 
         // Use unified Python execution function
         return await executePythonScript(
-          scriptContent,
+          pythonScriptContent,
           previousStepResults,
           config,
           "python_script",
@@ -1957,14 +1959,18 @@ const executeWorkflowTool = async (
 
       case "email":
         // Enhanced email tool using config for recipients and configurable path for content extraction
-
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
-        const subject = emailConfig.subject || "Workflow Results"
+        
         const contentType = emailConfig.content_type || "html"
-        Logger.debug(`DEBUG - Email tool config details: toEmail=${JSON.stringify(toEmail)}, fromEmail=${fromEmail}, subject=${subject}, contentType=${contentType}`)
+        const [execution] = await db
+          .select()
+          .from(workflowExecution)
+          .where(eq(workflowExecution.id, executionId))
 
+        const workflowName = execution?.name || "Unknown Workflow"
+        const subject = emailConfig.subject || `Results of Workflow: ${workflowName}`
         // New configurable content path feature
         const contentPath =
           emailConfig.content_path || emailConfig.content_source_path
@@ -1974,17 +1980,24 @@ const executeWorkflowTool = async (
 
           if (contentPath) {
             // Extract content using configurable path
-            emailBody = extractContentFromPath(previousStepResults, contentPath)
+            emailBody = extractContentFromPath(previousStepResults, contentPath) || ""
+          }
 
-            if (!emailBody) {
-              emailBody = `No content found at path: ${contentPath}`
-            }
-          } else {
-            // Fallback to extracting from response.aiOutput path
-            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
-            if (!emailBody) {
-              emailBody = "No content available from previous step"
-            }
+          // Try fallback paths if contentPath failed or wasn't provided
+          if (!emailBody) {
+            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput") || ""
+          }
+
+          if (!emailBody) {
+            emailBody = extractContentFromPath(previousStepResults, "input.output.body") || ""
+          }
+
+          if (!emailBody) {
+            emailBody = extractContentFromPath(previousStepResults, "input.output") || ""
+          }
+
+          if (!emailBody) {
+            emailBody = "No content available from previous step"
           }
 
           // Wrap plain text in HTML if content type is HTML
@@ -2004,7 +2017,7 @@ const executeWorkflowTool = async (
 <body>
     <div class="content">
         <div class="header">
-            <h2>🤖 Workflow Results</h2>
+            <h2>🤖 Results of Workflow: ${workflowName} </h2>
             <p>Generated on: ${new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"})}</p>
         </div>
         <div class="body-content">
@@ -2223,6 +2236,104 @@ const executeWorkflowTool = async (
           }
         }
 
+      case "script":
+        // Execute script using unified script executor
+        const scriptContent = tool.value.script
+        const scriptConfig = tool.value.config
+        const language = tool.value.language
+        Logger.info(`Executing script in language: ${language}`)
+        if (!scriptContent) {
+          return {
+            status: "error",
+            result: { error: "No script content found in tool value" },
+          }
+        }
+
+        // Map language string to ScriptLanguage enum
+        let scriptLanguage: ScriptLanguage
+        switch (language.toLowerCase()) {
+          case "python":
+            scriptLanguage = ScriptLanguage.Python
+            break
+          case "javascript":
+          case "js":
+            scriptLanguage = ScriptLanguage.JavaScript
+            break
+          case "r":
+            scriptLanguage = ScriptLanguage.R
+            break
+          default:
+            return {
+              status: "error",
+              result: { error: `Unsupported script language: ${language}` },
+            }
+        }
+        try {
+          // Extract the latest step's result for script input
+          let scriptInput = previousStepResults
+          
+          // If we have structured step results, extract the latest step's output
+          if (previousStepResults && typeof previousStepResults === 'object') {
+            const stepKeys = Object.keys(previousStepResults)
+            if (stepKeys.length > 0) {
+              const latestStepKey = stepKeys[stepKeys.length - 1]
+              const latestStep = previousStepResults[latestStepKey]
+              
+              // Use the latest step's result as the script input
+              if (latestStep?.result) {
+                scriptInput = latestStep.result
+                Logger.info(`Using latest step '${latestStepKey}' result as script input`)
+              } else if (latestStep?.formSubmission) {
+                // For form steps, use the form data
+                scriptInput = latestStep.formSubmission
+                Logger.info(`Using latest step '${latestStepKey}' form data as script input`)
+              } else {
+                Logger.warn(`Latest step '${latestStepKey}' has no result or formData, using full object`)
+                scriptInput = previousStepResults
+              }
+            }
+          }
+          
+          const executionResult = await executeScript({
+            type: "complete",
+            language: scriptLanguage,
+            script: scriptContent,
+            input: scriptInput,
+            config: scriptConfig,
+          })
+
+          if (executionResult.success) {
+            return {
+              status: "success",
+              result: {
+                output: executionResult.output,
+                consoleLogs: executionResult.consoleLogs,
+                language: language,
+                exitCode: executionResult.exitCode,
+                processedAt: new Date().toISOString(),
+              },
+            }
+          } else {
+            return {
+              status: "error",
+              result: {
+                error: executionResult.error || "Script execution failed",
+                consoleLogs: executionResult.consoleLogs,
+                language: language,
+                exitCode: executionResult.exitCode,
+              },
+            }
+          }
+        } catch (error) {
+          return {
+            status: "error",
+            result: {
+              error: "Script execution failed",
+              message: error instanceof Error ? error.message : String(error),
+              language: language,
+            },
+          }
+        }
 
       default:
         return {
@@ -2445,6 +2556,12 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       // Map frontend tool ID to backend tool ID
       if (tool.id) {
         toolIdMap.set(tool.id, createdTool.id)
+      } else {
+        // For tools without frontend IDs, create a temporary mapping based on type and content
+        const tempId = `${tool.type}_${JSON.stringify(tool.value || {}).slice(0, 50)}`
+        toolIdMap.set(tempId, createdTool.id)
+        // Also store the original tool reference for matching
+        tool._tempId = tempId
       }
     }
 
@@ -2515,15 +2632,24 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       if (correspondingNode?.data?.tools) {
         for (const tool of correspondingNode.data.tools) {
           if (tool.id && toolIdMap.has(tool.id)) {
-            stepToolIds.push(toolIdMap.get(tool.id)!)
+            // Tool has an ID and we have a mapping
+            const backendId = toolIdMap.get(tool.id)!
+            stepToolIds.push(backendId)
           } else {
-            // Find tool by type and config if no ID mapping
-            const matchingTool = createdTools.find(t =>
-              t.type === tool.type &&
-              JSON.stringify(t.value) === JSON.stringify(tool.value || {})
-            )
-            if (matchingTool) {
-              stepToolIds.push(matchingTool.id)
+            // Try to find by temporary ID for tools without frontend IDs
+            const tempId = `${tool.type}_${JSON.stringify(tool.value || {}).slice(0, 50)}`
+            if (toolIdMap.has(tempId)) {
+              const backendId = toolIdMap.get(tempId)!
+              stepToolIds.push(backendId)
+            } else {
+              // Fallback: Find tool by exact type and value match
+              const matchingTool = createdTools.find(t => 
+                t.type === tool.type && 
+                JSON.stringify(t.value) === JSON.stringify(tool.value || {})
+              )
+              if (matchingTool) {
+                stepToolIds.push(matchingTool.id)
+              }
             }
           }
         }

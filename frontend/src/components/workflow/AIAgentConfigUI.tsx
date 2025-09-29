@@ -106,8 +106,9 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
           if (response.ok) {
             const data = await response.json()
             if (data.success && data.data && Array.isArray(data.data)) {
-              
-              const enumValues = data.data.map((model: any) => model.enumValue)
+              const enumValues = data.data
+                .filter((model: any) => model.modelType==="gemini")
+                .map((model: any) => model.enumValue)
               setModels(enumValues)
               setModelsLoaded(true)
             }
@@ -337,61 +338,23 @@ Always strive for excellence and helpfulness in your responses while adhering to
       }`}
     >
       {/* Header */}
-      <div
-        className="flex items-center border-b"
-        style={{
-          display: "flex",
-          padding: "20px",
-          alignItems: "center",
-          gap: "10px",
-          alignSelf: "stretch",
-          borderBottom: "1px solid var(--gray-300, #E4E6E7)",
-        }}
-      >
+      <div className="flex items-center border-b px-6 py-5 gap-3">
         {showBackButton && (
           <button
             onClick={onBack}
-            className="flex items-center justify-center"
-            style={{
-              width: "24px",
-              height: "24px",
-              padding: "0",
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-            }}
+            className="flex items-center justify-center w-6 h-6 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           </button>
         )}
 
-        <h2
-          className="flex-1 text-gray-900 dark:text-gray-100"
-          style={{
-            alignSelf: "stretch",
-            fontFamily: "Inter",
-            fontSize: "16px",
-            fontStyle: "normal",
-            fontWeight: "600",
-            lineHeight: "normal",
-            letterSpacing: "-0.16px",
-            textTransform: "capitalize",
-          }}
-        >
+        <h2 className="flex-1 text-gray-900 dark:text-gray-100 font-semibold text-base">
           AI Agent
         </h2>
 
         <button
           onClick={onClose || onBack}
-          className="flex items-center justify-center"
-          style={{
-            width: "24px",
-            height: "24px",
-            padding: "0",
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-          }}
+          className="flex items-center justify-center w-6 h-6 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
         >
           <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
