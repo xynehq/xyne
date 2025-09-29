@@ -6,7 +6,6 @@ on:
       - main 
       - release_test_pat_sim
 
-
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -37,6 +36,6 @@ jobs:
         working-directory: ./server
         env:
           HUSKY: 0
-          GITHUB_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secre
           GH_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
         run: bunx semantic-release --no-ci
