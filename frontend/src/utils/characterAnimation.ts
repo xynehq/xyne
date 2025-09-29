@@ -147,11 +147,19 @@ export class CharacterQueue {
    * Set the entire text immediately (for completed streams)
    */
   setImmediate(text: string): void {
+    // Detect if there was work in flight before clearing
+    const hadWorkInFlight = this.queue.length > 0 || this.isAnimating
+
     // Stop animation without flushing queue and clear all state
     this.stopAnimation(false)
     this.queue = []
     this.displayed = text
     this.options.onUpdate(this.displayed)
+
+    // If there was work in flight, signal completion to resolve any pending waits
+    if (hadWorkInFlight) {
+      this.options.onComplete?.()
+    }
   }
 
   /**
