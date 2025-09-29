@@ -35,7 +35,7 @@ import {
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
 } from "@/db/schema/workflows"
-import { getUserAndWorkspaceByEmail } from "@/db/user"
+import { getUserByEmail } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
 import {
@@ -85,6 +85,7 @@ import { getActualNameFromEnum } from "@/ai/modelConfig"
 import { getProviderByModel } from "@/ai/provider"
 import { Models } from "@/ai/types"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
+import { NoUserFound } from "@/errors"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -136,7 +137,17 @@ const extractAttachmentIds = (formData: Record<string, any>): {
 // List all workflow templates with root step details
 export const ListWorkflowTemplatesApi = async (c: Context) => {
   try {
-    const templates = await db.select().from(workflowTemplate)
+    const {sub, workspaceId} = c.get(JwtPayloadKey)
+    const email = sub
+    const userRes = await getUserByEmail(db, email)
+    if (!userRes || !userRes.length) {
+      throw new NoUserFound({})
+    }
+    const [user] = userRes
+    const templates = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.workspaceId, user.workspaceId))
 
     // Get step templates and root step details for each workflow
     const templatesWithSteps = await Promise.all(
@@ -243,7 +254,6 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
 // Execute workflow template with root step input
 export const ExecuteWorkflowWithInputApi = async (c: Context) => {
   let email: string = ""
-  let workspaceId: string = ""
   let via_apiKey = false
   try {
     let jwtPayload
@@ -255,22 +265,20 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     if (jwtPayload?.sub && jwtPayload?.workspaceId) {
       email = jwtPayload.sub
-      workspaceId = jwtPayload.workspaceId
       via_apiKey = false
 
     } else {
       // Try API key context
       email = c.get("userEmail")
-      workspaceId = c.get("workspaceId")
       via_apiKey = true
     }
 
     // Get user ID for agent creation
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, email)
-    const userId = userAndWorkspace.user.id
-    const workspaceInternalId = userAndWorkspace.workspace.id
+    const userRes = await getUserByEmail(db, email)
+    const [user] = userRes
+    const userId = user.id
 
-    Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${workspaceInternalId}`)
+    Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}`)
 
     const templateId = c.req.param("templateId")
     const contentType = c.req.header("content-type") || ""
@@ -410,6 +418,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .insert(workflowExecution)
       .values({
         workflowTemplateId: template[0].id,
+        workspaceId: user.workspaceId,
         createdBy: "api",
         name:
           requestData.name ||
@@ -420,7 +429,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           ...requestData.metadata,
           executionContext: {
             userEmail: email,
-            workspaceId: workspaceId,
+            workspaceId: user.workspaceId,
           }
         },
         status: WorkflowStatus.ACTIVE,
@@ -437,6 +446,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Create step executions for all template steps
     const stepExecutionsData = steps.map((step) => ({
       workflowExecutionId: execution.id,
+      workspaceId: user.workspaceId,
       workflowStepTemplateId: step.id,
       name: step.name,
       type: step.type,
@@ -520,7 +530,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                       if (key === JwtPayloadKey) {
                         return {
                           sub: email,
-                          workspaceId: workspaceId
+                          workspaceId: user.workspaceId 
                         }
                       }
                       return undefined
@@ -575,6 +585,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         .insert(toolExecution)
         .values({
           workflowToolId: rootStepTool.id,
+          workspaceId: user.workspaceId,
           workflowExecutionId: execution.id,
           status: ToolExecutionStatus.COMPLETED,
           result: {
@@ -703,6 +714,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       .insert(workflowExecution)
       .values({
         workflowTemplateId: template[0].id,
+        workspaceId: template[0].workspaceId,
         createdBy: "demo",
         name:
           requestData.name ||
@@ -718,6 +730,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     // Create step executions for all template steps
     const stepExecutionsData = steps.map((step) => ({
       workflowExecutionId: execution.id,
+      workspaceId: execution.workspaceId,
       workflowStepTemplateId: step.id,
       name: step.name,
       type: step.type,
@@ -1074,6 +1087,7 @@ const executeWorkflowChain = async (
           .insert(toolExecution)
           .values({
             workflowToolId: tool.id,
+            workspaceId: step.workspaceId,
             workflowExecutionId: executionId,
             status: "failed",
             result: toolResult.result,
@@ -1088,6 +1102,7 @@ const executeWorkflowChain = async (
           .insert(toolExecution)
           .values({
             workflowToolId: tool.id,
+            workspaceId: step.workspaceId,
             workflowExecutionId: executionId,
             status: "failed",
             result: {
@@ -1135,6 +1150,7 @@ const executeWorkflowChain = async (
         .insert(toolExecution)
         .values({
           workflowToolId: tool.id,
+          workspaceId: step.workspaceId,
           workflowExecutionId: executionId,
           status: ToolExecutionStatus.COMPLETED,
           result: toolResult.result,
@@ -1158,6 +1174,7 @@ const executeWorkflowChain = async (
           .insert(toolExecution)
           .values({
             workflowToolId: tool.id,
+            workspaceId: step.workspaceId,
             workflowExecutionId: executionId,
             status: ToolExecutionStatus.COMPLETED,
             result: {
@@ -1180,6 +1197,7 @@ const executeWorkflowChain = async (
           .insert(toolExecution)
           .values({
             workflowToolId: tool.id,
+            workspaceId: step.workspaceId,
             workflowExecutionId: executionId,
             status: ToolExecutionStatus.COMPLETED,
             result: {
@@ -1600,6 +1618,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       .insert(toolExecution)
       .values({
         workflowToolId: formTool.id,
+        workspaceId: stepExecution.workspaceId,
         workflowExecutionId: stepExecution.workflowExecutionId,
         status: WorkflowStatus.COMPLETED,
         result: {
@@ -2258,12 +2277,35 @@ export const ListWorkflowToolsApi = async (c: Context) => {
 // Create workflow template
 export const CreateWorkflowTemplateApi = async (c: Context) => {
   try {
+    let jwtPayload
+    let email
+    let via_apiKey
+    try {
+      jwtPayload = c.get(JwtPayloadKey)
+    } catch (e) {
+      Logger.info("No JWT payload found in context")
+    }
+
+    if (jwtPayload?.sub && jwtPayload?.workspaceId) {
+      email = jwtPayload.sub
+      via_apiKey = false
+
+    } else {
+      // Try API key context
+      email = c.get("userEmail")
+      via_apiKey = true
+    }
+
+    // Get user ID for agent creation
+    const userRes = await getUserByEmail(db, email)
+    const [user] = userRes
     const requestData = await c.req.json()
 
     const [template] = await db
       .insert(workflowTemplate)
       .values({
         name: requestData.name,
+        workspaceId: user.workspaceId,
         description: requestData.description,
         version: requestData.version || "1.0.0",
         status: "draft",
@@ -2289,27 +2331,31 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
   try {
 
     let jwtPayload
+    let email
+    let via_apiKey
     try {
       jwtPayload = c.get(JwtPayloadKey)
     } catch (e) {
       Logger.info("No JWT payload found in context")
     }
 
-    const userEmail = jwtPayload?.sub
-    if (!userEmail) {
-      throw new HTTPException(401, { message: "Unauthorized - no user email" })
-    }
+    if (jwtPayload?.sub) {
+      email = jwtPayload.sub
+      via_apiKey = false
 
-    // Get workspace ID from JWT payload
-    const workspaceId = jwtPayload?.workspaceId
-    if (!workspaceId) {
-      throw new HTTPException(400, { message: "No workspace ID in token" })
+    } else {
+      // Try API key context
+      email = c.get("userEmail")
+      via_apiKey = true
     }
 
     // Get user ID for agent creation
-    const userAndWorkspace = await getUserAndWorkspaceByEmail(db, workspaceId, userEmail)
-    const userId = userAndWorkspace.user.id
-    const workspaceInternalId = userAndWorkspace.workspace.id
+    const userRes = await getUserByEmail(db, email)
+    const [user] = userRes
+    
+    console.log("naa dhaanda pooole: ",user.workspaceId, via_apiKey)
+    // Get user ID for agent creation
+    const userId = user.id
 
     const requestData = await c.req.json()
    
@@ -2318,6 +2364,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       .insert(workflowTemplate)
       .values({
         name: requestData.name,
+        workspaceId: user.workspaceId,
         description: requestData.description,
         version: requestData.version || "1.0.0",
         status: "draft",
@@ -2394,7 +2441,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
 
           // Create the agent using createAgentForWorkflow
-          const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, workspaceInternalId)
+          const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, user.workspaceId)
 
           Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
 
@@ -2461,6 +2508,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         .insert(workflowStepTemplate)
         .values({
           workflowTemplateId: templateId,
+          workspaceId: user.workspaceId,
           name: stepData.name,
           description: stepData.description || "",
           type: stepData.type === "form_submission" || stepData.type === "manual" ? "manual" : "automated",
@@ -2611,12 +2659,35 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 // Create workflow execution
 export const CreateWorkflowExecutionApi = async (c: Context) => {
   try {
+    let jwtPayload
+    let email
+    let via_apiKey
+    try {
+      jwtPayload = c.get(JwtPayloadKey)
+    } catch (e) {
+      Logger.info("No JWT payload found in context")
+    }
+
+    if (jwtPayload?.sub && jwtPayload?.workspaceId) {
+      email = jwtPayload.sub
+      via_apiKey = false
+
+    } else {
+      // Try API key context
+      email = c.get("userEmail")
+      via_apiKey = true
+    }
+
+    // Get user ID for agent creation
+    const userRes = await getUserByEmail(db, email)
+    const [user] = userRes
     const requestData = await c.req.json()
 
     const [execution] = await db
       .insert(workflowExecution)
       .values({
         workflowTemplateId: requestData.workflowTemplateId,
+        workspaceId: user.workspaceId,
         name: requestData.name,
         description: requestData.description,
         metadata: requestData.metadata || {},
@@ -2958,6 +3029,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       .insert(workflowStepTemplate)
       .values({
         workflowTemplateId: templateId,
+        workspaceId: template.workspaceId,
         name: requestData.stepName,
         description: requestData.stepDescription || `Step ${stepOrder}`,
         type: requestData.stepType || "automated",
