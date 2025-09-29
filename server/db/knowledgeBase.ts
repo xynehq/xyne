@@ -464,6 +464,7 @@ export const createFileItem = async (
   metadata: any = {},
   userId?: number,
   userEmail?: string,
+  statusMessage?: string,
 ): Promise<CollectionItem> => {
   // Get the collection to ensure it exists and get workspace info
   const collection = await getCollectionById(trx, collectionId)
@@ -515,6 +516,7 @@ export const createFileItem = async (
     uploadedByEmail: userEmail,
     lastUpdatedById: userId,
     lastUpdatedByEmail: userEmail,
+    statusMessage,
     metadata,
   })
 
@@ -574,7 +576,8 @@ export const getAllCollectionAndFolderItems = async (
   parentIds: string[],
   trx: TxnOrClient,
 ) => {
-  const result: string[] = []
+  const fileIds: string[] = []
+  const folderIds: string[] = []
   type Q = { itemId: string }
   const queue: Q[] = []
 
@@ -611,7 +614,10 @@ export const getAllCollectionAndFolderItems = async (
             isNull(collectionItems.deletedAt),
           ),
         )
-      if (folder) queue.push({ itemId: folder.id })
+      if (folder) {
+        queue.push({ itemId: folder.id })
+        folderIds.push(folder.id)
+      }
     } else if (input.startsWith("clf-")) {
       const fileid = await trx
         .select({ id: collectionItems.id })
@@ -622,7 +628,7 @@ export const getAllCollectionAndFolderItems = async (
             isNull(collectionItems.deletedAt),
           ),
         )
-      if (fileid.length) result.push(fileid[0].id)
+      if (fileid.length) fileIds.push(fileid[0].id)
     } else {
       // Assume it's a DB item id (UUID)
       queue.push({ itemId: input })
@@ -644,18 +650,19 @@ export const getAllCollectionAndFolderItems = async (
     if (children.length === 0) {
       // If no children: either this is a file leaf or an invalid id; only push if it's a file
       const node = await getCollectionItemById(trx, itemId)
-      if (node && node.type === "file") result.push(itemId)
+      if (node && node.type === "file") fileIds.push(itemId)
       continue
     }
     for (const child of children) {
       if (child.type === "folder") {
+        folderIds.push(child.id)
         queue.push({ itemId: child.id })
       } else if (child.type === "file") {
-        result.push(child.id)
+        fileIds.push(child.id)
       }
     }
   }
-  return result
+  return { fileIds, folderIds }
 }
 
 // Keep the old function for backward compatibility
@@ -664,7 +671,7 @@ export const getAllFolderItems = async (
   trx: TxnOrClient,
 ) => {
   const res = []
-  let queue = [...parentIds];
+  let queue = [...parentIds]
   while (queue.length > 0) {
     const curr = queue.shift()!
 
@@ -690,15 +697,15 @@ export const getAllFolderIds = async (
   trx: TxnOrClient,
 ) => {
   const res = []
-  let queue = [...parentIds];
+  let queue = [...parentIds]
   while (queue.length > 0) {
     const curr = queue.shift()!
 
     const resp = await getParentItems(curr, trx)
     for (const item of resp) {
       if (item.type == "folder") {
-        res.push(item.id) 
-        queue.push(item.id) 
+        res.push(item.id)
+        queue.push(item.id)
       }
     }
   }
@@ -722,6 +729,30 @@ export const getCollectionFilesVespaIds = async (
       and(
         inArray(collectionItems.id, collectionFileIds),
         eq(collectionItems.type, "file"),
+        isNull(collectionItems.deletedAt),
+      ),
+    )
+
+  return resp
+}
+
+export const getCollectionFoldersItemIds = async (
+  collectionFoldersIds: string[],
+  trx: TxnOrClient,
+) => {
+  const resp = await trx
+    .select({
+      id: collectionItems.id,
+      vespaDocId: collectionItems.vespaDocId,
+      originalName: collectionItems.originalName,
+      mimeType: collectionItems.mimeType,
+      fileSize: collectionItems.fileSize,
+    })
+    .from(collectionItems)
+    .where(
+      and(
+        inArray(collectionItems.id, collectionFoldersIds),
+        eq(collectionItems.type, "folder"),
         isNull(collectionItems.deletedAt),
       ),
     )

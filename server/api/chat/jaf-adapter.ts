@@ -1,10 +1,14 @@
-import { z } from "zod"
+import { z, type ZodRawShape, type ZodType } from "zod"
+import type { JSONSchema7 } from "json-schema"
 import type { Tool } from "@xynehq/jaf"
 import { ToolResponse } from "@xynehq/jaf"
 import type { MinimalAgentFragment } from "./types"
 import { agentTools } from "./tools"
-import type { AgentTool } from "./types"
 import { answerContextMapFromFragments } from "@/ai/context"
+import { getLogger } from "@/logger"
+import { Subsystem } from "@/types"
+
+const Logger = getLogger(Subsystem.Chat).child({ module: "jaf-adapter" })
 
 export type JAFAdapterCtx = {
   email: string
@@ -19,172 +23,113 @@ type AgentToolParameter = {
   required: boolean
 }
 
+type ToolSchemaParameters = Tool<unknown, JAFAdapterCtx>["schema"]["parameters"]
+
+const toToolSchemaParameters = (schema: ZodType): ToolSchemaParameters =>
+  schema as unknown as ToolSchemaParameters
+
 function paramsToZod(
   parameters: Record<string, AgentToolParameter>,
-): z.ZodObject<any> {
-  const shape: Record<string, z.ZodTypeAny> = {}
-  for (const [key, spec] of Object.entries(parameters || {})) {
-    let schema: z.ZodTypeAny
-    switch ((spec.type || "string").toLowerCase()) {
-      case "string":
-        schema = z.string()
-        break
-      case "number":
-        schema = z.number()
-        break
-      case "boolean":
-        schema = z.boolean()
-        break
-      case "array":
-        schema = z.array(z.any())
-        break
-      case "object":
-        // Ensure top-level parameter properties that are objects are valid JSON Schema objects
-        schema = z.object({}).passthrough()
-        break
-      default:
-        schema = z.any()
-    }
-    if (!spec.required) schema = schema.optional()
-    shape[key] = schema.describe(spec.description || "")
+): ToolSchemaParameters {
+  if (!parameters || Object.keys(parameters).length === 0) {
+    return toToolSchemaParameters(z.looseObject({}))
   }
-  return z.object(shape)
+
+  const shape: Record<string, ZodType> = {}
+  const jsonProperties: NonNullable<JSONSchema7["properties"]> = {}
+  const requiredKeys: string[] = []
+
+  for (const [key, spec] of Object.entries(parameters)) {
+    const normalizedType = (spec.type || "string").toLowerCase()
+
+    let schema: ZodType
+    let jsonSchema: JSONSchema7
+
+    switch (normalizedType) {
+      case "string": {
+        schema = z.string()
+        jsonSchema = { type: "string" }
+        break
+      }
+      case "number": {
+        schema = z.number()
+        jsonSchema = { type: "number" }
+        break
+      }
+      case "boolean": {
+        schema = z.boolean()
+        jsonSchema = { type: "boolean" }
+        break
+      }
+      case "array": {
+        schema = z.array(z.unknown())
+        jsonSchema = { type: "array", items: {} }
+        break
+      }
+      case "object": {
+        schema = z.looseObject({})
+        jsonSchema = { type: "object" }
+        break
+      }
+      default: {
+        schema = z.unknown()
+        jsonSchema = {}
+        break
+      }
+    }
+
+    const described = schema.describe(spec.description || "")
+    shape[key] = spec.required ? described : described.optional()
+
+    if (spec.description) {
+      jsonSchema.description = spec.description
+    }
+    jsonProperties[key] = jsonSchema
+    if (spec.required) {
+      requiredKeys.push(key)
+    }
+  }
+
+  const looseObject = z.looseObject(shape as unknown as ZodRawShape) as unknown as ZodObjectWithRawSchema
+
+  const jsonSchema: JSONSchema7 = {
+    type: "object",
+    properties: jsonProperties,
+    additionalProperties: false,
+  }
+  if (requiredKeys.length > 0) {
+    jsonSchema.required = requiredKeys
+  }
+
+  looseObject.__xyne_raw_json_schema = jsonSchema
+
+  return toToolSchemaParameters(looseObject)
 }
 
-// --- MCP JSON Schema -> Zod conversion ---
-// Accepts MCP tool schema JSON (string) and attempts to construct a Zod object
-// for the function parameters. If parsing fails, returns a permissive object.
-function jsonSchemaToZod(schema: any): z.ZodTypeAny {
-  if (!schema || typeof schema !== "object") return z.any()
-
-  const t = schema.type
-  if (Array.isArray(t)) {
-    // Prefer object if available, else union
-    if (t.includes("object"))
-      return jsonSchemaToZod({ ...schema, type: "object" })
-    const opts = t.map((tt) => jsonSchemaToZod({ ...schema, type: tt }))
-    if (opts.length >= 2) {
-      const [a, b, ...rest] = opts
-      return z.union([a, b, ...rest] as [
-        z.ZodTypeAny,
-        z.ZodTypeAny,
-        ...z.ZodTypeAny[],
-      ])
-    }
-    return opts[0] ?? z.any()
-  }
-
-  switch (t) {
-    case "string": {
-      if (Array.isArray(schema.enum) && schema.enum.length) {
-        const literals = schema.enum
-        // z.enum only supports string enums; fallback to union otherwise
-        if (literals.every((v: any) => typeof v === "string")) {
-          return z.enum(literals as [string, ...string[]])
-        }
-        return z.union(literals.map((v: any) => z.literal(v)))
-      }
-      return z.string()
-    }
-    case "integer":
-      return z.number().int()
-    case "number":
-      return z.number()
-    case "boolean":
-      return z.boolean()
-    case "null":
-      return z.null()
-    case "array": {
-      const items = schema.items ? jsonSchemaToZod(schema.items) : z.any()
-      return z.array(items)
-    }
-    case "object": {
-      const props = schema.properties || {}
-      const required: string[] = Array.isArray(schema.required)
-        ? schema.required
-        : []
-      const shape: Record<string, z.ZodTypeAny> = {}
-      for (const [key, propSchema] of Object.entries<any>(props)) {
-        const zodProp = jsonSchemaToZod(propSchema)
-        shape[key] = required.includes(key) ? zodProp : zodProp.optional()
-      }
-      // Allow additional properties to pass through to the tool call
-      let obj: z.ZodObject = z.object(shape)
-      if (schema.additionalProperties) {
-        // If additionalProperties is a schema, try to honor it; else allow any
-        if (typeof schema.additionalProperties === "object") {
-          obj = obj.catchall(jsonSchemaToZod(schema.additionalProperties))
-        } else {
-          obj = obj.catchall(z.any())
-        }
-      } else {
-        obj = obj.passthrough()
-      }
-      return obj
-    }
-    default:
-      // Handle combinators if present
-      if (Array.isArray(schema.anyOf)) {
-        const opts = schema.anyOf.map((s: any) => jsonSchemaToZod(s))
-        if (opts.length >= 2) {
-          const [a, b, ...rest] = opts
-          return z.union([a, b, ...rest] as [
-            z.ZodTypeAny,
-            z.ZodTypeAny,
-            ...z.ZodTypeAny[],
-          ])
-        }
-        return opts[0] ?? z.any()
-      }
-      if (Array.isArray(schema.oneOf)) {
-        const opts = schema.oneOf.map((s: any) => jsonSchemaToZod(s))
-        if (opts.length >= 2) {
-          const [a, b, ...rest] = opts
-          return z.union([a, b, ...rest] as [
-            z.ZodTypeAny,
-            z.ZodTypeAny,
-            ...z.ZodTypeAny[],
-          ])
-        }
-        return opts[0] ?? z.any()
-      }
-      if (Array.isArray(schema.allOf)) {
-        // Approximate allOf via intersection; zod doesn't have variadic intersection, fold it
-        const parts = schema.allOf.map((s: any) => jsonSchemaToZod(s))
-        if (!parts.length) return z.any()
-        if (parts.length === 1) return parts[0]
-        let acc: z.ZodTypeAny = parts[0] as z.ZodTypeAny
-        for (let i = 1; i < parts.length; i++) {
-          acc = z.intersection(acc, parts[i])
-        }
-        return acc
-      }
-      return z.any()
-  }
+type ZodObjectWithRawSchema = ZodType & {
+  __xyne_raw_json_schema?: unknown
 }
 
 function mcpToolSchemaStringToZodObject(
   schemaStr?: string | null,
-): z.ZodType<any> {
-  if (!schemaStr) return z.object({}).passthrough()
+): ToolSchemaParameters {
+  // Simplified and safe: bypass JSON->Zod conversion to avoid recursive $defs hangs.
+  // Attach the raw JSON schema so downstream provider can use it directly.
+  if (!schemaStr) return toToolSchemaParameters(z.looseObject({}))
   try {
     const parsed = JSON.parse(schemaStr)
-    // Some MCP servers store the whole tool object with inputSchema inside
     const inputSchema = parsed?.inputSchema || parsed?.parameters || parsed
-    const zod = jsonSchemaToZod(inputSchema)
-    // Ensure top-level is an object; Gemini/Vertex requires parameters to be OBJECT
-    if (zod instanceof z.ZodObject) {
-      return zod as z.ZodType<any>
-    }
-    // Fallback: wrap in an object under a generic key
-    return z.object({ input: zod }).passthrough()
-  } catch {
-    return z.object({}).passthrough()
+    const obj = z.looseObject({}) as unknown as ZodObjectWithRawSchema
+    obj.__xyne_raw_json_schema = inputSchema
+    return toToolSchemaParameters(obj)
+  } catch (error) {
+    Logger.error({ err: error, schemaStr }, "Failed to parse MCP tool schema string");
+    return toToolSchemaParameters(z.looseObject({}))
   }
 }
 
-export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
-  const tools: Tool<any, JAFAdapterCtx>[] = []
+export function buildInternalJAFTools(): Tool<unknown, JAFAdapterCtx>[] {
+  const tools: Tool<unknown, JAFAdapterCtx>[] = []
   for (const [name, at] of Object.entries(agentTools)) {
     // Skip the fallbackTool as it's no longer needed
     if (name === "fall_back" || name === "get_user_info") {
@@ -195,7 +140,7 @@ export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
       schema: {
         name,
         description: at.description,
-        parameters: paramsToZod(at.parameters || {}) as any,
+        parameters: paramsToZod(at.parameters || {})
       },
       async execute(args, context) {
         try {
@@ -215,11 +160,11 @@ export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
             toolName: name,
             contexts,
           })
-        } catch (err: any) {
-          return ToolResponse.error(
-            "EXECUTION_FAILED",
-            `Internal tool ${name} failed: ${err?.message || String(err)}`,
-          )
+        } catch (err) { 
+           return ToolResponse.error( 
+             "EXECUTION_FAILED", 
+              `Internal tool ${name} failed: ${err instanceof Error ? err.message : String(err)}`, 
+            ) 
         }
       },
     })
@@ -228,31 +173,46 @@ export function buildInternalJAFTools(): Tool<any, JAFAdapterCtx>[] {
 }
 
 export type MCPToolClient = {
-  callTool: (args: { name: string; arguments: any }) => Promise<any>
+  callTool: (args: { name: string; arguments: unknown }) => Promise<unknown>
   close?: () => Promise<void>
+}
+
+interface MCPToolItem {
+  toolName: string
+  toolSchema?: string | null
+  description?: string
 }
 
 export type FinalToolsList = Record<
   string,
   {
-    tools: Array<{ toolName: string; toolSchema?: string | null }>
+    tools: Array<MCPToolItem>
     client: MCPToolClient
   }
 >
 
-export function buildMCPJAFTools(
-  finalTools: FinalToolsList,
-): Tool<any, JAFAdapterCtx>[] {
-  const tools: Tool<any, JAFAdapterCtx>[] = []
+export function buildMCPJAFTools(finalTools: FinalToolsList): Tool<unknown, JAFAdapterCtx>[] {
+  const tools: Tool<unknown, JAFAdapterCtx>[] = []
   for (const [connectorId, info] of Object.entries(finalTools)) {
     for (const t of info.tools) {
       const toolName = t.toolName
+      // Prefer DB description; else try schema description; fallback to generic
+      let toolDescription: string | undefined = t.description || undefined
+      if (!toolDescription && t.toolSchema) {
+        try {
+          const parsed = JSON.parse(t.toolSchema)
+          toolDescription = parsed?.description || parsed?.inputSchema?.description
+        } catch(error) {
+          Logger.warn({ err: error, toolName }, "Could not parse toolSchema to extract description");
+        }
+      }
+      Logger.info({ connectorId, toolName, descLen: (toolDescription || "").length }, "[MCP] Registering tool for JAF agent")
       tools.push({
         schema: {
           name: toolName,
-          description: `MCP tool from connector ${connectorId}`,
+          description: toolDescription || `MCP tool from connector ${connectorId}`,
           // Parse MCP tool JSON schema; ensure an OBJECT at top-level for Vertex/Gemini
-          parameters: mcpToolSchemaStringToZodObject(t.toolSchema) as any,
+          parameters: mcpToolSchemaStringToZodObject(t.toolSchema),
         },
         async execute(args, context) {
           try {
@@ -265,20 +225,27 @@ export function buildMCPJAFTools(
 
             // Best-effort parse of MCP response content
             try {
-              const content = mcpResp?.content?.[0]?.text
+              interface MCPResponse {
+                content?: Array<{ text?: string }>
+                metadata?: { contexts?: unknown }
+                contexts?: unknown
+                data?: { contexts?: unknown }
+              }
+              const resp = mcpResp as MCPResponse
+              const content = resp?.content?.[0]?.text
               if (typeof content === "string" && content.trim().length > 0) {
                 formattedContent = content
               }
               // Opportunistically forward contexts if MCP server provides them
               const maybeContexts =
-                mcpResp?.metadata?.contexts ??
-                mcpResp?.contexts ??
-                mcpResp?.data?.contexts
+                resp?.metadata?.contexts ??
+                resp?.contexts ??
+                resp?.data?.contexts
               if (Array.isArray(maybeContexts)) {
                 newFragments = maybeContexts as MinimalAgentFragment[]
               }
-            } catch {
-              // ignore
+            } catch (error) {
+              Logger.warn({ err: error, toolName }, "Could not parse MCP tool response");
             }
 
             return ToolResponse.success(formattedContent, {
@@ -286,12 +253,8 @@ export function buildMCPJAFTools(
               contexts: newFragments,
               connectorId,
             })
-          } catch (err: any) {
-            return ToolResponse.error(
-              "EXECUTION_FAILED",
-              `MCP tool ${toolName} failed: ${err?.message || String(err)}`,
-              { connectorId },
-            )
+          } catch (err) {
+            return ToolResponse.error("EXECUTION_FAILED", `MCP tool ${toolName} failed: ${err instanceof Error ? err.message : String(err)}`, { connectorId })
           }
         },
       })
@@ -300,7 +263,7 @@ export function buildMCPJAFTools(
   return tools
 }
 
-export function buildToolsOverview(tools: Tool<any, any>[]): string {
+export function buildToolsOverview<A = unknown, Ctx = unknown>(tools: Tool<A, Ctx>[]): string {
   if (!tools || tools.length === 0) return "No tools available."
   return tools
     .map((t, idx) => `  ${idx + 1}. ${t.schema.name}: ${t.schema.description}`)
