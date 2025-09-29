@@ -15,6 +15,8 @@ import {
   type CollectionItem,
 } from "@/db/schema"
 import { and, eq, isNull, ilike, or, desc, asc } from "drizzle-orm"
+import { getAuth, safeGet } from "../agent"
+import { ApiKeyScopes } from "@/shared/types"
 
 const { JwtPayloadKey } = config
 const loggerWithChild = getLoggerWithChild(Subsystem.Api)
@@ -81,7 +83,18 @@ export interface SearchKnowledgeBaseResponse {
  * when Vespa search is not available due to permissions
  */
 export const SearchKnowledgeBaseApi = async (c: Context) => {
-  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const { email: userEmail, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.SEARCH_COLLECTION)) {
+      return c.json(
+        { message: "API key does not have scope to search collections" },
+        403,
+      )
+    }
+  }
 
   // Get user from database
   const users = await getUserByEmail(db, userEmail)

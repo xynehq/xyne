@@ -575,13 +575,19 @@ const constructCollectionFileContext = (
   if ((!maxSummaryChunks && !isSelectedFiles) || isMsgWithSources) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
-
   let chunks: ScoredChunk[] = []
   if (fields.matchfeatures && fields.chunks_summary) {
     const summaryStrings = fields.chunks_summary.map((c) =>
       typeof c === "string" ? c : c.chunk,
     )
-    chunks = getSortedScoredChunks(fields.matchfeatures, summaryStrings)
+    if (!maxSummaryChunks) {
+      maxSummaryChunks = 10
+    }
+    chunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      summaryStrings,
+      maxSummaryChunks,
+    )
   } else if (fields.chunks_summary) {
     chunks =
       fields.chunks_summary?.map((chunk, idx) => ({
