@@ -1,4 +1,4 @@
-name: Release
+name: semantic-release-versioning
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write    # so semantic-release can push commits + tags
+      contents: write    # semantic-release still needs these
       issues: write
       pull-requests: write
 
@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # semantic-release needs full history + tags
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -29,21 +30,11 @@ jobs:
         working-directory: ./server
         run: bun install
 
-      # NEW STEP: Get GitHub App Token
-      - name: Get GitHub App Token
-        id: github-app-token
-        uses: tibdex/github-app-token@v2
-        with:
-          app_id: ${{ secrets.XYNE_RELEASE_APP_ID }}
-          private_key: ${{ secrets.XYNE_RELEASE_APP_SECRET }}
-          installation_retrieval_mode: "repository"
-          installation_retrieval_payload: ${{ github.repository }}
 
       - name: Run semantic-release
         working-directory: ./server
         env:
           HUSKY: 0
-          # CHANGED: Use GitHub App token instead of default GITHUB_TOKEN
-          GITHUB_TOKEN: ${{ steps.github-app-token.outputs.token }}
-          GH_TOKEN: ${{ steps.github-app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
         run: bunx semantic-release --no-ci
