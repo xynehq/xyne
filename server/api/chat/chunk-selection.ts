@@ -65,36 +65,110 @@ export async function getChunkCountPerDoc(
     // Calculate chunks per document based on proportional relevance
     const chunksAllocation = new Array(documentRelevances.length).fill(0)
     let remainingChunks = topN
-    
-    for (const docRelevance of sortedDocuments) {
-      if (remainingChunks <= 0) break
-      
-      // Calculate proportion of chunks this document should get
-      const relevanceProportion = docRelevance.relevanceScore / totalRelevance
-      const chunksForThisDoc = Math.round(remainingChunks * relevanceProportion)
-      
-      // Ensure we don't exceed remaining chunks
-      const actualChunksToTake = Math.min(remainingChunks, Math.min(chunksForThisDoc, docRelevance.chunksLength))
-      
-      // Assign chunks to the original position in the array
-      chunksAllocation[docRelevance.index] = actualChunksToTake
-      remainingChunks -= actualChunksToTake
-      
+
+    // We'll work on the sorted list but write results back to original indices.
+    // Iteratively re-proportion among docs that still have remaining capacity.
+    let round = 1
+    while (remainingChunks > 0) {
       loggerWithChild({ email }).info(
-        `Document ${docRelevance.docId}: relevance=${docRelevance.relevanceScore.toFixed(3)}, ` +
-        `proportion=${relevanceProportion.toFixed(3)}, allocated=${actualChunksToTake} chunks, chunksLength: ${docRelevance.chunksLength}`
+        `Allocation Round ${round}, remainingChunks= ${remainingChunks}`
       )
-    }
-    
-    // If we still have remaining chunks to allocate (due to rounding), 
-    // distribute them to documents with the highest relevance scores
-    if (remainingChunks > 0) {
-      for (const docRelevance of sortedDocuments) {
-        if (remainingChunks <= 0) break
-        const leftToAllocate = Math.min(remainingChunks, docRelevance.chunksLength - chunksAllocation[docRelevance.index])
-        chunksAllocation[docRelevance.index] += leftToAllocate
-        remainingChunks -= leftToAllocate
+      // Active docs = those that still have capacity left
+      const active = sortedDocuments.filter(d => chunksAllocation[d.index] < d.chunksLength)
+
+      if (active.length === 0) break
+      loggerWithChild({ email }).info(
+        `Active docs: ${active.map(d => `${d.docId}(allocation= ${chunksAllocation[d.index]}, capacity= ${d.chunksLength}, relevance= ${d.relevanceScore.toFixed(3)})`).join(", ")}`
+      )
+
+      // Sum relevance over active docs
+      let sumActiveRel = active.reduce((s, d) => s + d.relevanceScore, 0)
+      loggerWithChild({ email }).info(
+        `Sum active relevance for round ${round}: ${sumActiveRel.toFixed(3)}`
+      )
+
+      // If all remaining active docs have zero relevance, fall back to equal distribution among active (respecting caps)
+      if (sumActiveRel === 0) {
+        loggerWithChild({ email }).warn(
+          `All active docs have zero relevance, falling back to equal distribution among ${active.length} docs`
+        )
+        let assignedThisRound = 0
+        for (const d of active) {
+          if (remainingChunks <= 0) break
+          const capLeft = d.chunksLength - chunksAllocation[d.index]
+          if (capLeft <= 0) continue
+          const take = Math.min(1, capLeft, remainingChunks)
+          chunksAllocation[d.index] += take
+          remainingChunks -= take
+          assignedThisRound += take
+        }
+        if (assignedThisRound === 0) break // no progress possible
+        continue
       }
+
+      // First pass: floor of proportional ideal, capped by capacity
+      const floorAdds: Record<number, number> = {}
+      let sumFloors = 0
+      const fracs: Array<{ idx: number; frac: number; rel: number; capLeft: number }> = []
+
+      for (const d of active) {
+        const idx = d.index
+        const capLeft = d.chunksLength - chunksAllocation[idx]
+        if (capLeft <= 0) continue
+
+        const ideal = (remainingChunks * d.relevanceScore) / sumActiveRel
+        const floored = Math.min(capLeft, Math.floor(ideal))
+        floorAdds[idx] = floored
+        sumFloors += floored
+        // const frac = Math.max(0, Math.min(capLeft - floored, ideal - floored))
+        // if (capLeft - floored > 0) {
+        //   fracs.push({ idx, frac, rel: d.relevanceScore, capLeft })
+        // }
+
+        loggerWithChild({ email }).info(
+          `Doc ${d.docId}: idealAllocation=${ideal.toFixed(3)}, floor=${floored}, chunksLeft=${capLeft}` //frac=${frac.toFixed(3)}
+        )
+      }
+
+      let leftover = remainingChunks - sumFloors
+
+      // Second pass: distribute leftover 1-by-1 by largest fractional parts (tie-break by higher relevance)
+      // if (leftover > 0 && fracs.length > 0) {
+      //   fracs.sort((a, b) => {
+      //     if (b.frac !== a.frac) return b.frac - a.frac
+      //     return b.rel - a.rel
+      //   })
+      //   loggerWithChild({ email }).info(
+      //     `Remainder before distribution: sumFloors=${sumFloors}, leftover=${leftover}. Fractional order: ${fracs.map(f => `docIdx=${f.idx}, frac=${f.frac.toFixed(3)}, rel=${f.rel.toFixed(3)}`).join("; ")}`
+      //   )
+      //   for (let i = 0; i < fracs.length && leftover > 0; i++) {
+      //     const { idx, capLeft } = fracs[i]
+      //     if ((floorAdds[idx] ?? 0) < capLeft) {
+      //       floorAdds[idx] = (floorAdds[idx] ?? 0) + 1
+      //       leftover -= 1
+      //       loggerWithChild({ email }).info(`--> 1 extra chunk given to docIndex=${idx}`)
+      //     }
+      //   }
+      // }
+
+      const assignedThisRound = remainingChunks - Math.max(0, leftover)
+      if (assignedThisRound <= 0) break // avoid infinite loop if nothing could be assigned
+
+      // Finalize this round's assignments
+      for (const d of active) {
+        const idx = d.index
+        if (floorAdds[idx]) {
+          chunksAllocation[idx] += floorAdds[idx]
+          loggerWithChild({ email }).info(
+            `Allotted ${floorAdds[idx]} chunks to ${d.docId}, new total=${chunksAllocation[idx]}`
+          )
+        }
+      }
+      remainingChunks -= assignedThisRound
+      loggerWithChild({ email }).info(
+        `Round ${round} complete: totalAssigned=${assignedThisRound}, stillRemaining=${remainingChunks}`
+      )
+      round++
     }
     
     mainSpan?.setAttribute("total_documents", documentRelevances.length)
@@ -107,7 +181,7 @@ export async function getChunkCountPerDoc(
     )
     
     return chunksAllocation
-  } catch (error) {
+} catch (error) {
     mainSpan?.setAttribute("error", getErrorMessage(error))
     mainSpan?.end()
     loggerWithChild({ email }).error(
