@@ -31,6 +31,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate",
     "migrate:kb": "bun run scripts/backfillclFd.ts",
+    "migrate:google-sheet": "bun run scripts/updateSheetUrls.ts",
     "dev": "bun run --watch server.ts",
     "dev:sync": "bun run --watch sync-server.ts",
     "build": "bunx --bun vite build",
