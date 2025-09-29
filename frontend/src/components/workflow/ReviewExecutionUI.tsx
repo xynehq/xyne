@@ -12,6 +12,7 @@ interface ReviewExecutionUIProps {
   reviewContent?: any
   previousStepResult?: any
   onReviewSubmitted?: () => void // Callback to restart polling
+  builder?: boolean // true for execution mode, false for template mode
 }
 
 const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
@@ -23,6 +24,7 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
   reviewContent,
   previousStepResult,
   onReviewSubmitted,
+  builder = true,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -157,32 +159,33 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
   if (!isVisible) return null
 
   return (
-    <div className="fixed inset-y-0 right-0 w-96 bg-white dark:bg-gray-900 shadow-xl border-l border-gray-200 dark:border-gray-700 z-50 flex flex-col">
+    <div
+      className={`fixed top-[80px] right-0 h-[calc(100vh-80px)] bg-white dark:bg-gray-900 border-l border-slate-200 dark:border-gray-700 flex flex-col overflow-hidden z-50 ${
+        isVisible ? "translate-x-0 w-[380px]" : "translate-x-full w-0"
+      }`}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={onBack}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
+      <div className="px-6 pt-5 pb-4 border-b border-slate-200 dark:border-gray-700">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 tracking-wider uppercase">
+            REVIEW STEP
+          </div>
           {onClose && (
             <button
               onClick={onClose}
               className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             </button>
           )}
         </div>
-        <div className="text-sm text-slate-500 leading-5 font-normal">
+        <div className="text-sm text-slate-500 dark:text-gray-400 leading-5 font-normal">
           {stepName}
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      {!builder && <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* Status */}
         <div className="flex items-start space-x-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
           {getStatusIcon()}
@@ -220,10 +223,19 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
-      {/* Action Buttons */}
-      {submissionStatus === 'pending' && (
+      {/* Template Mode - Show informational text */}
+      {builder && (
+        <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+          <div className="text-center text-sm text-gray-600 dark:text-gray-400">
+            This is a manual step and will require approval from user
+          </div>
+        </div>
+      )}
+
+      {/* Execution Mode - Show action buttons */}
+      {!builder && submissionStatus === 'pending' && (
         <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
           <div className="space-y-3">
             <Button
@@ -266,8 +278,8 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
         </div>
       )}
 
-      {/* Success State */}
-      {(submissionStatus === 'approved' || submissionStatus === 'rejected') && (
+      {/* Success State - Only show in execution mode */}
+      {builder && (submissionStatus === 'approved' || submissionStatus === 'rejected') && (
         <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
           <div className="text-center">
             <div className="text-sm text-gray-600 dark:text-gray-400">

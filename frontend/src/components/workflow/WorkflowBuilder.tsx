@@ -1,5 +1,6 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
-import { Bot, Mail } from "lucide-react"
+import { Bot, Mail, Plus } from "lucide-react"
+import { PlusButton } from "./PlusButton"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -114,7 +115,7 @@ interface WorkflowTemplate {
     parentStepId: string | null
     prevStepIds: string[]
     nextStepIds: string[]
-    toolExecIds: string[]
+    toolExecId: string[]
     timeEstimate: number
     metadata: any
     completedBy: string | null
@@ -273,63 +274,7 @@ const StepNode: React.FC<NodeProps> = ({
               <Bot width={20} height={20} color="#2563EB" />
             </div>
 
-            {/* ReactFlow Handles - invisible but functional */}
-            <Handle
-              type="target"
-              position={Position.Top}
-              id="top"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            <Handle
-              type="source"
-              position={Position.Bottom}
-              id="bottom"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            {/* Bottom center connection point - visual only */}
-            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-            </div>
-
-            {/* Add Next Step Button for unconfigured AI Agent */}
-            {hasNext && (
-              <div
-                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-                style={{ top: "calc(100% + 8px)" }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  const event = new CustomEvent("openWhatHappensNext", {
-                    detail: { nodeId: id },
-                  })
-                  window.dispatchEvent(event)
-                }}
-              >
-                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-                <div
-                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                  style={{
-                    width: "28px",
-                    height: "28px",
-                  }}
-                >
-                  <svg
-                    className="w-4 h-4 text-white"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                </div>
-              </div>
-            )}
+            <PlusButton hasNext={hasNext} nodeId={id} isConnectable={isConnectable} showHandles={true} />
           </div>
         </>
       )
@@ -422,63 +367,7 @@ const StepNode: React.FC<NodeProps> = ({
             </p>
           </div>
 
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
+          <PlusButton hasNext={hasNext} nodeId={id} isConnectable={isConnectable} showHandles={true} />
         </div>
       </>
     )
@@ -537,63 +426,7 @@ const StepNode: React.FC<NodeProps> = ({
               <Mail width={20} height={20} color="#7C3AED" />
             </div>
 
-            {/* ReactFlow Handles - invisible but functional */}
-            <Handle
-              type="target"
-              position={Position.Top}
-              id="top"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            <Handle
-              type="source"
-              position={Position.Bottom}
-              id="bottom"
-              isConnectable={isConnectable}
-              className="opacity-0"
-            />
-
-            {/* Bottom center connection point - visual only */}
-            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-            </div>
-
-            {/* Add Next Step Button for unconfigured Email */}
-            {hasNext && (
-              <div
-                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-                style={{ top: "calc(100% + 8px)" }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  const event = new CustomEvent("openWhatHappensNext", {
-                    detail: { nodeId: id },
-                  })
-                  window.dispatchEvent(event)
-                }}
-              >
-                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-                <div
-                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                  style={{
-                    width: "28px",
-                    height: "28px",
-                  }}
-                >
-                  <svg
-                    className="w-4 h-4 text-white"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                </div>
-              </div>
-            )}
+            <PlusButton hasNext={hasNext} nodeId={id} isConnectable={isConnectable} showHandles={true} />
           </div>
         </>
       )
@@ -686,63 +519,7 @@ const StepNode: React.FC<NodeProps> = ({
             </p>
           </div>
 
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
+          <PlusButton hasNext={hasNext} nodeId={id} isConnectable={isConnectable} showHandles={true} />
         </div>
       </>
     )
@@ -936,63 +713,7 @@ const StepNode: React.FC<NodeProps> = ({
             </p>
           </div>
 
-          {/* ReactFlow Handles - invisible but functional */}
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="top"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="bottom"
-            isConnectable={isConnectable}
-            className="opacity-0"
-          />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
-            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
-          </div>
-
-          {/* Add Next Step Button */}
-          {hasNext && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
-              <div
-                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
-                style={{
-                  width: "28px",
-                  height: "28px",
-                }}
-              >
-                <svg
-                  className="w-4 h-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
-          )}
+          <PlusButton hasNext={hasNext} nodeId={id} isConnectable={isConnectable} showHandles={true} />
         </div>
       </>
     )
@@ -1097,7 +818,7 @@ const StepNode: React.FC<NodeProps> = ({
             </p>
           </div>
 
-          {/* ReactFlow Handles - invisible but functional */}
+          {/* ReactFlow Handles for Review Node - positioned to align with grey dot */}
           <Handle
             type="target"
             position={Position.Top}
@@ -1105,40 +826,93 @@ const StepNode: React.FC<NodeProps> = ({
             isConnectable={isConnectable}
             className="opacity-0"
           />
+          {/* ReactFlow handles for approved and rejected paths */}
           <Handle
             type="source"
             position={Position.Bottom}
-            id="bottom"
+            id="approved"
             isConnectable={isConnectable}
             className="opacity-0"
+            style={{ left: '25%', transform: 'translateX(-50%)', bottom: '-6px' }}
           />
-
-          {/* Bottom center connection point - visual only */}
-          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="rejected"
+            isConnectable={isConnectable}
+            className="opacity-0"
+            style={{ left: '75%', transform: 'translateX(-50%)', bottom: '-6px' }}
+          />
+          {/* Bottom connection points for review step */}
+          {/* Approved path dot - at 25% from left */}
+          <div className="absolute -bottom-1.5 left-1/4 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+          
+          {/* Rejected path dot - at 75% from left */}
+          <div className="absolute -bottom-1.5 left-3/4 transform -translate-x-1/2">
             <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
           </div>
 
-          {/* Add Next Step Button */}
-          {hasNext && !isAwaitingReview && (
-            <div
-              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
-              style={{ top: "calc(100% + 8px)" }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const event = new CustomEvent("openWhatHappensNext", {
-                  detail: { nodeId: id },
-                })
-                window.dispatchEvent(event)
-              }}
-            >
-              <div className="bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              </div>
-            </div>
+          {/* Conditional Plus Buttons for Review Steps */}
+          {!isAwaitingReview && (
+            <>
+              {/* Approved path plus button - positioned at 25% */}
+              {!(data.approvedPathUsed) && (
+                <div className="absolute left-1/4 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+                  style={{ top: "calc(100% + 8px)" }}>
+                  <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+                  <div
+                    className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                    style={{
+                      width: "28px",
+                      height: "28px",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      const event = new CustomEvent("openWhatHappensNext", {
+                        detail: { nodeId: id, reviewPath: "approved" },
+                      })
+                      window.dispatchEvent(event)
+                    }}
+                  >
+                    <Plus className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 font-medium px-2 py-1 bg-gray-50 dark:bg-gray-900/30 rounded mt-2">
+                    Approved
+                  </div>
+                </div>
+              )}
+
+              {/* Rejected path plus button - positioned at 75% */}
+              {!(data.rejectedPathUsed) && (
+                <div className="absolute left-3/4 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+                  style={{ top: "calc(100% + 8px)" }}>
+                  <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+                  <div
+                    className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                    style={{
+                      width: "28px",
+                      height: "28px",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      const event = new CustomEvent("openWhatHappensNext", {
+                        detail: { nodeId: id, reviewPath: "rejected" },
+                      })
+                      window.dispatchEvent(event)
+                    }}
+                  >
+                    <Plus className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 font-medium px-2 py-1 bg-gray-50 dark:bg-gray-900/30 rounded mt-2">
+                    Rejected
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </>
@@ -1995,6 +1769,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedNodeForNext, setSelectedNodeForNext] = useState<string | null>(
     null,
   )
+  const [selectedReviewPath, setSelectedReviewPath] = useState<string | null>(
+    null,
+  )
   const [selectedAgentNodeId, setSelectedAgentNodeId] = useState<string | null>(
     null,
   )
@@ -2178,8 +1955,94 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       }) : []
 
-      // Create nodes from steps in top-down layout
-      const templateNodes: Node[] = sortedSteps.map((step: any, index: number) => {
+      // Simple Parent-Based DFS Algorithm
+      const performSimpleDFS = (steps: any[]) => {
+        // Get the root step ID from template
+        const rootStepId = templateToUse.rootWorkflowStepTemplateId
+        console.log('Simple DFS - Root step ID:', rootStepId)
+        
+        if (!rootStepId) {
+          console.error('No rootWorkflowStepTemplateId found in template')
+          return new Map()
+        }
+        
+        const nodePositions = new Map()
+        const visited = new Set()
+        
+        // Simple DFS with parent-based positioning
+        const dfs = (nodeId: string, parentX: number, parentY: number, siblingIds: string[] = [], myIndex: number = 0) => {
+          // Skip if already visited
+          if (visited.has(nodeId)) return
+          visited.add(nodeId)
+          
+          // Calculate position: center children around parent
+          let x = parentX
+          if (siblingIds.length > 1) {
+            // Center multiple children around parent
+            const totalWidth = (siblingIds.length - 1) * 500
+            const startX = parentX - (totalWidth / 2)
+            x = startX + (myIndex * 500)
+          }
+          const y = parentY + 250
+          
+          // Store position
+          nodePositions.set(nodeId, { x, y })
+          console.log(`Positioning ${nodeId}: (${x}, ${y}) - index: ${myIndex}/${siblingIds.length}`)
+          
+          // Find the current node
+          const currentNode = steps.find(s => s.id === nodeId)
+          if (!currentNode) {
+            console.log(`Node ${nodeId} not found in steps`)
+            return
+          }
+          
+          // Get nextStepIds for this node
+          const nextStepIds = currentNode.nextStepIds || []
+          
+          // Recurse for each child
+          if (nextStepIds.length > 0) {
+            console.log(`Node ${nodeId} has ${nextStepIds.length} children:`, nextStepIds)
+            nextStepIds.forEach((childId: string, index: number) => {
+              console.log(`Recursing into child ${index}: ${childId}`)
+              dfs(childId, x, y, nextStepIds, index)
+            })
+          } else {
+            console.log(`Node ${nodeId} is a leaf node`)
+          }
+        }
+        
+        // Start with root at (400, 100)
+        console.log(`Starting simple DFS from root: ${rootStepId}`)
+        nodePositions.set(rootStepId, { x: 400, y: 100 })
+        
+        // Start DFS for root's children
+        const rootNode = steps.find(s => s.id === rootStepId)
+        if (rootNode?.nextStepIds) {
+          rootNode.nextStepIds.forEach((childId: string, index: number) => {
+            dfs(childId, 400, 100, rootNode.nextStepIds, index)
+          })
+        }
+        
+        return nodePositions
+      }
+      
+      const nodePositions = performSimpleDFS(sortedSteps)
+
+      // Calculate positions using simple parent-based algorithm
+      const calculatePosition = (step: any) => {
+        const position = nodePositions.get(step.id)
+        if (position) {
+          console.log(`Final position for ${step.id}: (${position.x}, ${position.y})`)
+          return position
+        }
+        
+        // Fallback for nodes not found in DFS (shouldn't happen)
+        console.warn(`Node ${step.id} not found in DFS positions, using fallback`)
+        return { x: 400, y: 100 }
+      }
+
+      // Create nodes from steps with DFS-based layout
+      const templateNodes: Node[] = sortedSteps.map((step: any) => {
         // Find associated tools for this step
         let stepTools = []
         let toolExecutions: any[] = []
@@ -2214,13 +2077,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         const isLastStep = !step.nextStepIds || step.nextStepIds.length === 0
         const hasNextFlag = isLastStep
 
+        // Check if this is a review step and set path usage flags
+        let approvedPathUsed = false
+        let rejectedPathUsed = false
+        if (step.type === "manual" && stepTools.length > 0 && stepTools[0].type === "review") {
+          const reviewTool = stepTools[0]
+          const config = reviewTool.config || {}
+          approvedPathUsed = !!config.approved
+          rejectedPathUsed = !!config.rejected
+        }
+
+        const position = calculatePosition(step)
+        
         return {
           id: step.id,
           type: "stepNode",
-          position: {
-            x: 400, // Consistent X position for perfect vertical straight line alignment
-            y: 100 + index * 250, // Increased spacing for better visual separation while maintaining straight lines
-          },
+          position,
           data: {
             step: {
               id: step.id,
@@ -2238,6 +2110,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             isActive: isExecution && step.status === "running",
             isCompleted: isExecution && step.status === "completed",
             hasNext: hasNextFlag, // Show plus button on last step
+            approvedPathUsed,
+            rejectedPathUsed,
           },
           draggable: true,
         }
@@ -2257,6 +2131,52 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             )
             if (targetStepExecution) {
               targetStepId = targetStepExecution.id
+            }
+          }
+
+          // Determine sourceHandle based on step configuration
+          let sourceHandle = "bottom"
+          let edgeLabel = undefined
+          let labelStyle = undefined
+          let labelBgStyle = undefined
+          
+          // Check if source is a review step with approved/rejected paths
+          if (step.type === "manual") {
+            // Get tools for this step from workflow_tools (only for templates, not executions)
+            const stepTools = !isExecution && (step as any).toolIds && templateToUse.workflow_tools
+              ? templateToUse.workflow_tools.filter((tool) =>
+                  (step as any).toolIds.includes(tool.id)
+                ) 
+              : []
+            
+            if (stepTools.length > 0 && stepTools[0].type === "review") {
+              const reviewTool = stepTools[0]
+              const config = reviewTool.config || {}
+              
+              if (config.approved === targetStepId) {
+                sourceHandle = "approved"
+                edgeLabel = "Approved"
+              } else if (config.rejected === targetStepId) {
+                sourceHandle = "rejected"
+                edgeLabel = "Rejected"
+              }
+            }
+            
+            // Add label styling for review paths
+            if (edgeLabel) {
+              labelStyle = { 
+                fill: '#6B7280', 
+                fontWeight: 600, 
+                fontSize: '12px',
+                fontFamily: 'Inter, system-ui, sans-serif'
+              }
+              labelBgStyle = { 
+                fill: '#FFFFFF', 
+                fillOpacity: 0.9,
+                stroke: '#E5E7EB',
+                strokeWidth: 1,
+                rx: 4
+              }
             }
           }
 
@@ -2280,8 +2200,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               type: "arrowclosed",
               color: "#D1D5DB",
             },
-            sourceHandle: "bottom",
+            sourceHandle: sourceHandle,
             targetHandle: "top",
+            label: edgeLabel,
+            labelStyle: labelStyle,
+            labelBgStyle: labelBgStyle,
           } as any)
         })
       })
@@ -2290,6 +2213,58 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setEdges(templateEdges)
       setNodeCounter((stepsData?.length || 0) + 1)
       setShowEmptyCanvas(false)
+
+      // // Fix existing edges for review steps - update sourceHandle based on node configuration
+      // setTimeout(() => {
+      //   setEdges((prevEdges) => 
+      //     prevEdges.map((edge) => {
+      //       const sourceNode = templateNodes.find(n => n.id === edge.source)
+      //       if (sourceNode && sourceNode.data && sourceNode.data.step && sourceNode.data.step.type === "review") {
+      //         // Check if target is connected via approved or rejected path
+      //         if (sourceNode.data.approved === edge.target) {
+      //           return {
+      //             ...edge,
+      //             sourceHandle: "approved",
+      //             label: "Approved",
+      //             labelStyle: { 
+      //               fill: '#6B7280', 
+      //               fontWeight: 600, 
+      //               fontSize: '12px',
+      //               fontFamily: 'Inter, system-ui, sans-serif'
+      //             },
+      //             labelBgStyle: { 
+      //               fill: '#FFFFFF', 
+      //               fillOpacity: 0.9,
+      //               stroke: '#E5E7EB',
+      //               strokeWidth: 1,
+      //               rx: 4
+      //             }
+      //           }
+      //         } else if (sourceNode.data.rejected === edge.target) {
+      //           return {
+      //             ...edge,
+      //             sourceHandle: "rejected",
+      //             label: "Rejected",
+      //             labelStyle: { 
+      //               fill: '#6B7280', 
+      //               fontWeight: 600, 
+      //               fontSize: '12px',
+      //               fontFamily: 'Inter, system-ui, sans-serif'
+      //             },
+      //             labelBgStyle: { 
+      //               fill: '#FFFFFF', 
+      //               fillOpacity: 0.9,
+      //               stroke: '#E5E7EB',
+      //               strokeWidth: 1,
+      //               rx: 4
+      //             }
+      //           }
+      //         }
+      //       }
+      //       return edge
+      //     })
+      //   )
+      // }, 100)
       
       // Initialize current workflow name with template name
       if (!currentWorkflowName && templateToUse.name) {
@@ -2631,7 +2606,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   // Listen for custom events from StepNode + icons
   useEffect(() => {
     const handleOpenWhatHappensNext = (event: CustomEvent) => {
-      const { nodeId } = event.detail
+      const { nodeId, reviewPath } = event.detail
 
       // Close all other sidebars when What Happens Next opens
       setShowTriggersSidebar(false)
@@ -2642,6 +2617,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
       setShowWhatHappensNextUI(true)
+      
+      // Store the review path for conditional step creation
+      setSelectedReviewPath(reviewPath || null)
     }
 
     const handleOpenTriggersSidebar = (event: CustomEvent) => {
@@ -2926,8 +2904,92 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         // Note: Keep WhatHappensNextUI visible in background (z-40)
         // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
+    } else if (actionId === "review") {
+      // When Review is selected from WhatHappensNextUI, create the review step directly
+      if (selectedNodeForNext) {
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        if (sourceNode) {
+          const newNodeId = `review-${nodeCounter}`
+          
+          // Create the review tool
+          const reviewTool = {
+            id: `tool-${newNodeId}`,
+            type: "review",
+            value: {
+              title: "Review Step",
+              description: "Please review the previous step and either approve or reject it"
+            },
+            config: {
+              review_options: ["approved", "rejected"],
+              approved: null, // UUID of step connected to approved path
+              rejected: null  // UUID of step connected to rejected path
+            }
+          }
+          
+          // Create new review node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: "Review Step",
+                description: "Manual review step for approval/rejection",
+                type: "manual",
+                status: "pending",
+                contents: [],
+                config: reviewTool.config,
+              },
+              tools: [reviewTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+              approvedPathUsed: false, // Initialize path tracking flags
+              rejectedPathUsed: false,
+            },
+            draggable: true,
+          }
+
+          // Create edge connecting source to new node
+          const newEdge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#94a3b8",
+              strokeWidth: 2,
+            },
+          }
+
+          // Add the new node and edge, and update source node to remove plus button
+          setNodes((prevNodes) => 
+            prevNodes.map(node => 
+              node.id === selectedNodeForNext 
+                ? { ...node, data: { ...node.data, hasNext: false } }
+                : node
+            ).concat(newNode)
+          )
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Close WhatHappensNextUI and clear selection
+          setShowWhatHappensNextUI(false)
+          setSelectedNodeForNext(null)
+
+          // Auto-fit the workflow to show the new step
+          setTimeout(() => {
+            smartFitWorkflow()
+          }, 50)
+        }
+      }
     }
-  }, [selectedNodeForNext])
+  }, [selectedNodeForNext, nodes, nodeCounter, setNodes, setEdges, setNodeCounter, smartFitWorkflow])
 
   const handleAIAgentConfigBack = useCallback(() => {
     setShowAIAgentConfigUI(false)
@@ -3027,8 +3089,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               type: "arrowclosed" as const,
               color: "#D1D5DB",
             },
-            sourceHandle: "bottom",
+            sourceHandle: selectedReviewPath === "approved" ? "approved" : selectedReviewPath === "rejected" ? "rejected" : "bottom",
             targetHandle: "top",
+            label: selectedReviewPath === "approved" ? "Approved" : selectedReviewPath === "rejected" ? "Rejected" : undefined,
+            labelStyle: selectedReviewPath ? { 
+              fill: '#6B7280', 
+              fontWeight: 600, 
+              fontSize: '12px',
+              fontFamily: 'Inter, system-ui, sans-serif'
+            } : undefined,
+            labelBgStyle: selectedReviewPath ? { 
+              fill: '#FFFFFF', 
+              fillOpacity: 0.9,
+              stroke: '#E5E7EB',
+              strokeWidth: 1,
+              rx: 4
+            } : undefined,
           } as any
 
           // Update nodes and edges
@@ -3036,7 +3112,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setEdges((prevEdges) => [...prevEdges, newEdge])
           setNodeCounter((prev) => prev + 1)
 
-          // Remove hasNext from source node since it now has a next step
+          // Mark the appropriate review path as used if this was from a review step
           setNodes((prevNodes) =>
             prevNodes.map((node) =>
               node.id === selectedNodeForNext
@@ -3045,6 +3121,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                     data: {
                       ...node.data,
                       hasNext: false,
+                      // Mark review path as used
+                      ...(selectedReviewPath === "approved" ? { approvedPathUsed: true } : {}),
+                      ...(selectedReviewPath === "rejected" ? { rejectedPathUsed: true } : {}),
+                      // Update tool config if this is a review step
+                      tools: (node.data.tools && Array.isArray(node.data.tools)) ? node.data.tools.map((tool: any) => 
+                        tool.type === "review" ? {
+                          ...tool,
+                          config: {
+                            ...tool.config,
+                            ...(selectedReviewPath === "approved" ? { approved: newNodeId } : {}),
+                            ...(selectedReviewPath === "rejected" ? { rejected: newNodeId } : {}),
+                          }
+                        } : tool
+                      ) : node.data.tools,
                     },
                     selected: false, // Deselect source node
                   }
@@ -3106,8 +3196,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setSelectedAgentNodeId(null)
       setSelectedNodeForNext(null)
+      setSelectedReviewPath(null)
     },
-    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
+    [selectedAgentNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow, selectedReviewPath],
   )
 
   const handleEmailConfigBack = useCallback(() => {
@@ -3202,8 +3293,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               type: "arrowclosed" as const,
               color: "#D1D5DB",
             },
-            sourceHandle: "bottom",
+            sourceHandle: selectedReviewPath === "approved" ? "approved" : selectedReviewPath === "rejected" ? "rejected" : "bottom",
             targetHandle: "top",
+            label: selectedReviewPath === "approved" ? "Approved" : selectedReviewPath === "rejected" ? "Rejected" : undefined,
+            labelStyle: selectedReviewPath ? { 
+              fill: '#6B7280', 
+              fontWeight: 600, 
+              fontSize: '12px',
+              fontFamily: 'Inter, system-ui, sans-serif'
+            } : undefined,
+            labelBgStyle: selectedReviewPath ? { 
+              fill: '#FFFFFF', 
+              fillOpacity: 0.9,
+              stroke: '#E5E7EB',
+              strokeWidth: 1,
+              rx: 4
+            } : undefined,
           } as any
 
           // Update nodes and edges
@@ -3211,7 +3316,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setEdges((prevEdges) => [...prevEdges, newEdge])
           setNodeCounter((prev) => prev + 1)
 
-          // Remove hasNext from source node since it now has a next step
+          // Mark the appropriate review path as used if this was from a review step
           setNodes((prevNodes) =>
             prevNodes.map((node) =>
               node.id === selectedNodeForNext
@@ -3220,6 +3325,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                     data: {
                       ...node.data,
                       hasNext: false,
+                      // Mark review path as used
+                      ...(selectedReviewPath === "approved" ? { approvedPathUsed: true } : {}),
+                      ...(selectedReviewPath === "rejected" ? { rejectedPathUsed: true } : {}),
+                      // Update tool config if this is a review step
+                      tools: (node.data.tools && Array.isArray(node.data.tools)) ? node.data.tools.map((tool: any) => 
+                        tool.type === "review" ? {
+                          ...tool,
+                          config: {
+                            ...tool.config,
+                            ...(selectedReviewPath === "approved" ? { approved: newNodeId } : {}),
+                            ...(selectedReviewPath === "rejected" ? { rejected: newNodeId } : {}),
+                          }
+                        } : tool
+                      ) : node.data.tools,
                     },
                     selected: false, // Deselect source node
                   }
@@ -3277,8 +3396,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowEmailConfigUI(false)
       setSelectedEmailNodeId(null)
       setSelectedNodeForNext(null)
+      setSelectedReviewPath(null)
     },
-    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
+    [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow, selectedReviewPath],
   )
 
   const handleOnFormSubmissionBack = useCallback(() => {
@@ -3745,6 +3865,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               isVisible={showWhatHappensNextUI}
               onClose={() => {
                 setShowWhatHappensNextUI(false)
+                setSelectedReviewPath(null)
                 // Don't clear selectedNodeForNext here since it's needed for node creation
                 // Only clear it when AI Agent/Email config is actually cancelled
                 // Clear all node selections when sidebar closes
@@ -3774,6 +3895,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                   : undefined
               }
               selectedTemplate={selectedTemplate}
+              reviewPath={selectedReviewPath}
               onStepCreated={(stepData) => {
                 // Create visual step below the selected node
                 if (selectedNodeForNext && stepData) {
@@ -3822,8 +3944,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                         type: "arrowclosed" as const,
                         color: "#D1D5DB",
                       },
-                      sourceHandle: "bottom",
+                      sourceHandle: selectedReviewPath === "approved" ? "approved" : selectedReviewPath === "rejected" ? "rejected" : "bottom",
                       targetHandle: "top",
+                      label: selectedReviewPath === "approved" ? "Approved" : selectedReviewPath === "rejected" ? "Rejected" : undefined,
+                      labelStyle: selectedReviewPath ? { 
+                        fill: '#6B7280', 
+                        fontWeight: 600, 
+                        fontSize: '12px',
+                        fontFamily: 'Inter, system-ui, sans-serif'
+                      } : undefined,
+                      labelBgStyle: selectedReviewPath ? { 
+                        fill: '#FFFFFF', 
+                        fillOpacity: 0.9,
+                        stroke: '#E5E7EB',
+                        strokeWidth: 1,
+                        rx: 4
+                      } : undefined,
                     }
 
                     // Update nodes and edges
@@ -3831,7 +3967,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                     setEdges((prevEdges) => [...prevEdges, newEdge])
                     setNodeCounter((prev) => prev + 1)
 
-                    // Remove hasNext from source node since it now has a next step
+                    // Mark the appropriate review path as used if this was from a review step
                     setNodes((prevNodes) =>
                       prevNodes.map((node) =>
                         node.id === selectedNodeForNext
@@ -3840,6 +3976,20 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                               data: {
                                 ...node.data,
                                 hasNext: false,
+                                // Mark review path as used
+                                ...(selectedReviewPath === "approved" ? { approvedPathUsed: true } : {}),
+                                ...(selectedReviewPath === "rejected" ? { rejectedPathUsed: true } : {}),
+                                // Update tool config if this is a review step
+                                tools: (node.data.tools && Array.isArray(node.data.tools)) ? node.data.tools.map((tool: any) => 
+                                  tool.type === "review" ? {
+                                    ...tool,
+                                    config: {
+                                      ...tool.config,
+                                      ...(selectedReviewPath === "approved" ? { approved: newNodeId } : {}),
+                                      ...(selectedReviewPath === "rejected" ? { rejected: newNodeId } : {}),
+                                    }
+                                  } : tool
+                                ) : node.data.tools,
                               },
                             }
                           : node,
@@ -3999,6 +4149,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             // Restart workflow polling after review submission
             console.log("Review submitted, workflow will continue")
           }}
+          builder={builder && !selectedTemplate}
         />
       </div>
 

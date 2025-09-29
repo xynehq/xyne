@@ -22,6 +22,7 @@ interface WhatHappensNextUIProps {
   toolType?: string
   toolData?: any
   selectedTemplate?: any // For API calls
+  reviewPath?: string | null // Track which review path (approved/rejected) was selected
   onStepCreated?: (stepData: any) => void // Callback after step creation
 }
 
@@ -41,6 +42,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
   toolType,
   toolData,
   selectedTemplate,
+  reviewPath,
   onStepCreated,
 }) => {
   // State for different tool configurations
@@ -230,6 +232,20 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
             <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
+        {/* Review Path Indicator */}
+        {reviewPath && (
+          <div className="mt-2 text-xs text-slate-500 dark:text-gray-400 leading-5 font-normal">
+            Adding step for {" "}
+            <span className={`font-medium px-2 py-1 rounded ${
+              reviewPath === "approved" 
+                ? "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+            }`}>
+              {reviewPath}
+            </span>
+            {" "} path from review step
+          </div>
+        )}
       </div>
 
       {/* Conditional Content Based on Tool Type */}
