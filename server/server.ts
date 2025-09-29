@@ -271,7 +271,6 @@ import {
   ServiceName,
   type HealthStatusResponse,
 } from "@/health/type"
-import { generateConfigFile } from "@/utils/generateConfig"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -1502,9 +1501,6 @@ internalMetricRouter.get("/metrics", async (c) => {
 init().catch((error) => {
   throw new InitialisationError({ cause: error })
 })
-
-// Generate config file for frontend
-generateConfigFile()
 
 const errorHandler = (error: Error) => {
   // Added Error type

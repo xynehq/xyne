@@ -9,8 +9,6 @@ let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
-let apiBaseUrl = process.env.API_BASE_URL || `http://localhost:${port}`
-let wsBaseUrl = process.env.WS_BASE_URL || `ws://localhost:${port}`
 let postOauthRedirect = "/"
 
 // Vespa configuration constants
@@ -184,8 +182,6 @@ export default {
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
-  apiBaseUrl,
-  wsBaseUrl,
   // Google OAuth Client ID
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
