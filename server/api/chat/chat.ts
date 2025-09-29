@@ -3920,7 +3920,7 @@ async function* generateMetadataQueryAnswer(
       iterationSpan?.end()
 
       loggerWithChild({ email: email }).info(
-        `Number of documents for ${QueryType.SearchWithFilters} = ${items.length}`,
+        `Number of documents for ${QueryType.AggregatorQuery} = ${items.length}`,
       )
 
       const docIds = yield* processResultsForAggregatorQuery(
@@ -3953,11 +3953,14 @@ async function* generateMetadataQueryAnswer(
     console.log("finalDocIds")
     console.log(finalDocIds)
     console.log("finalDocIds")
-    const allFinalDocs = await GetDocumentsByDocIds(finalDocIds, span!)
-    const finalItems = allFinalDocs.root.children || []
-    console.log("finalItems")
-    console.log(finalItems)
-    console.log("finalItems")
+    let finalItems: VespaSearchResult[] = []
+    if (finalDocIds.length !== 0) {
+      const allFinalDocs = await GetDocumentsByDocIds(finalDocIds, span!)
+      finalItems = allFinalDocs.root.children || []
+      console.log("finalItems")
+      console.log(finalItems)
+      console.log("finalItems")
+    }
     const answer = yield* processResultsForMetadata(
       finalItems,
       input,
