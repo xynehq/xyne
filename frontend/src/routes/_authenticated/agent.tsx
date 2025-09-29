@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
+// import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +31,6 @@ import {
   SlackEntity,
   AgentPromptPayload,
   DEFAULT_TEST_AGENT_ID,
-  UserRole,
 } from "shared/types"
 import {
   ChevronDown,
@@ -3130,9 +3129,7 @@ function AgentComponent() {
                         Select knowledge sources for your agent.
                       </p>
                     </div>
-                    {(user?.role === UserRole.Admin ||
-                      user?.role === UserRole.SuperAdmin) && (
-                      <div className="flex items-center gap-3">
+                    {/* <div className="flex items-center gap-3">
                         <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                           RAG
                         </Label>
@@ -3141,8 +3138,7 @@ function AgentComponent() {
                           onCheckedChange={setIsRagOn}
                           id="rag-toggle"
                         />
-                      </div>
-                    )}
+                      </div> */}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
                     {currentSelectedIntegrationObjects.length === 0 && (
