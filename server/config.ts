@@ -11,17 +11,7 @@ let host = process.env.HOST || "http://localhost:3000"
 
 // Centralized database URL construction
 function getDatabaseUrl(): string {
-  if (process.env.DATABASE_URL) {
-    return process.env.DATABASE_URL
-  }
-  
-  const DATABASE_HOST = process.env.DATABASE_HOST || "xyne-db"
-  const DATABASE_PORT = process.env.DATABASE_PORT || "5432"
-  const DATABASE_USER = process.env.DATABASE_USER || "xyne"
-  const DATABASE_PASSWORD = process.env.DATABASE_PASSWORD || "xyne"
-  const DATABASE_NAME = process.env.DATABASE_NAME || "xyne"
-  
-  return `postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@${DATABASE_HOST}:${DATABASE_PORT}/${DATABASE_NAME}`
+    return process.env.DATABASE_URL || `$`
 }
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"

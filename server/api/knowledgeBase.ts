@@ -169,20 +169,18 @@ export const CreateCollectionApi = async (c: Context) => {
       `Creating Collection with data: ${JSON.stringify(collectionData)}`,
     )
 
-    // Atomic operation: Create collection and queue job
-    let collection: any
-    await db.transaction(async (tx: TxnOrClient) => {
-      // Create collection in database
-      collection = await createCollection(tx, collectionData)
+    // Create collection in database first
+    const collection = await db.transaction(async (tx: TxnOrClient) => {
+      return await createCollection(tx, collectionData)
+    })
 
-      // Submit to processing queue for async Vespa insertion
-      await boss.send(FileProcessingQueue, { 
-        collectionId: collection.id, 
-        type: ProcessingJobType.COLLECTION 
-      }, {
-        retryLimit: 3,
-        expireInHours: 12
-      })
+    // Queue after transaction commits to avoid race condition
+    await boss.send(FileProcessingQueue, { 
+      collectionId: collection.id, 
+      type: ProcessingJobType.COLLECTION 
+    }, {
+      retryLimit: 3,
+      expireInHours: 12
     })
     loggerWithChild({ email: userEmail }).info(
       `Created Collection: ${collection.id} for user ${userEmail}`,
@@ -630,11 +628,9 @@ export const CreateFolderApi = async (c: Context) => {
       version: "1.0",
     }
 
-    // Atomic operation: Create folder and queue job
-    let folder: any
-    await db.transaction(async (tx: TxnOrClient) => {
-      // Create folder in database
-      folder = await createFolder(
+    // Create folder in database first
+    const folder = await db.transaction(async (tx: TxnOrClient) => {
+      return await createFolder(
         tx,
         collectionId,
         validatedData.parentId || null,
@@ -643,15 +639,15 @@ export const CreateFolderApi = async (c: Context) => {
         user.id,
         user.email,
       )
+    })
 
-      // Submit to processing queue for async Vespa insertion
-      await boss.send(FileProcessingQueue, { 
-        folderId: folder.id, 
-        type: ProcessingJobType.FOLDER 
-      }, {
-        retryLimit: 3,
-        expireInHours: 12
-      })
+    // Queue after transaction commits to avoid race condition
+    await boss.send(FileProcessingQueue, { 
+      folderId: folder.id, 
+      type: ProcessingJobType.FOLDER 
+    }, {
+      retryLimit: 3,
+      expireInHours: 12
     })
 
     loggerWithChild({ email: userEmail }).info(
@@ -780,26 +776,24 @@ async function ensureFolderPath(
       autoCreatedReason: "folder_structure_from_file_path",
     }
 
-    // Atomic operation: Create auto-folder and queue job
-    let newFolder: any
-    await db.transaction(async (tx: TxnOrClient) => {
-      // Create folder in database
-      newFolder = await createFolder(
+    // Create auto-folder in database first
+    const newFolder = await db.transaction(async (tx: TxnOrClient) => {
+      return await createFolder(
         tx,
         collectionId,
         parentId,
         folderName,
         autoCreatedFolderMetadata,
       )
+    })
 
-      // Submit to processing queue for async Vespa insertion
-      await boss.send(FileProcessingQueue, { 
-        folderId: newFolder.id, 
-        type: ProcessingJobType.FOLDER 
-      }, {
-        retryLimit: 3,
-        expireInHours: 12
-      })
+    // Queue after transaction commits to avoid race condition
+    await boss.send(FileProcessingQueue, { 
+      folderId: newFolder.id, 
+      type: ProcessingJobType.FOLDER 
+    }, {
+      retryLimit: 3,
+      expireInHours: 12
     })
 
     currentFolderId = newFolder.id
@@ -1127,11 +1121,9 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
-        // Atomic operation: Create file record and queue job
-        let item: any
-        await db.transaction(async (tx: TxnOrClient) => {
-          // Create file record in database with 'pending' status
-          item = await createFileItem(
+        // Create file record in database first
+        const item = await db.transaction(async (tx: TxnOrClient) => {
+          return await createFileItem(
             tx,
             collectionId,
             targetParentId,
@@ -1156,12 +1148,12 @@ export const UploadFilesApi = async (c: Context) => {
             user.email,
             `File uploaded successfully, queued for processing` // Initial status message
           )
+        })
 
-          // Submit to processing queue for async processing  
-          await boss.send(FileProcessingQueue, { fileId: item.id, type: ProcessingJobType.FILE }, {
-            retryLimit: 3,
-            expireInHours: 12
-          })
+        // Queue after transaction commits to avoid race condition
+        await boss.send(FileProcessingQueue, { fileId: item.id, type: ProcessingJobType.FILE }, {
+          retryLimit: 3,
+          expireInHours: 12
         })
 
         uploadResults.push({
