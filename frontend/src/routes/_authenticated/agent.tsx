@@ -2721,7 +2721,7 @@ function AgentComponent() {
               <div className="w-full max-w-3xl mx-auto px-4 pt-0 pb-6">
                 <div className="flex flex-col space-y-6">
                   <div className="flex justify-between items-center">
-                    <h1 className="text-4xl tracking-wider font-display text-gray-700 dark:text-gray-100">
+                    <h1 className="text-[32px] tracking-wider font-display text-gray-700 dark:text-gray-100">
                       AGENTS
                     </h1>
                     <div className="flex items-center gap-4 ">

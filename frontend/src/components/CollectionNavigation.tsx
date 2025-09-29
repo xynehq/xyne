@@ -1,7 +1,13 @@
 import React from "react"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, AlertOctagon } from "lucide-react"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { api } from "@/api"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface CollectionNavigationProps {
   navigationPath: Array<{
@@ -47,6 +53,12 @@ interface CollectionNavigationProps {
   }>
   toggleIntegrationSelection: (integrationId: string) => void
   navigateToCl: (clId: string, clName: string) => Promise<void>
+}
+
+// Helper function to check if an item should be non-selectable based on upload status
+function isItemNonSelectable(item: any): boolean {
+  const uploadStatus = item.uploadStatus
+  return uploadStatus === "pending" || uploadStatus === "processing" || uploadStatus === "failed"
 }
 
 // Utility function to check if an item is selected either directly or through parent inheritance
@@ -198,10 +210,14 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                       )
 
                 const isInherited = isSelected && !isDirectlySelected
+                const isNonSelectable = isItemNonSelectable(result)
 
                 const handleResultSelect = () => {
                   // Don't allow selection changes for inherited items
                   if (isInherited) return
+                  
+                  // For non-selectable items, prevent all interactions (no navigation or selection)
+                  if (isNonSelectable) return
 
                   if (result.type === "collection") {
                     // Toggle collection selection
@@ -262,25 +278,25 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                 return (
                   <div
                     key={result.id}
-                    onClick={isInherited ? undefined : handleResultSelect}
+                    onClick={isInherited || isNonSelectable ? undefined : handleResultSelect}
                     className={`flex items-center px-4 py-2 text-sm ${
-                      isInherited
-                        ? "cursor-default opacity-75"
+                      isInherited || isNonSelectable
+                        ? "cursor-not-allowed opacity-50"
                         : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
                     }`}
                   >
                     <input
                       type="checkbox"
                       checked={isSelected || false}
-                      disabled={isInherited}
+                      disabled={isInherited || isNonSelectable}
                       onChange={() => {}}
-                      className={`w-4 h-4 mr-3 ${isInherited ? "opacity-60" : ""}`}
+                      className={`w-4 h-4 mr-3 ${isInherited || isNonSelectable ? "opacity-60" : ""}`}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center">
-                        <span className="text-gray-700 dark:text-gray-200 truncate">
-                          {result.name}
-                        </span>
+                      <span className={`truncate ${isNonSelectable ? "text-gray-400 dark:text-gray-500" : "text-gray-700 dark:text-gray-200"}`}>
+                        {result.name}
+                      </span>
                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
                           {result.type}
                         </span>
@@ -288,6 +304,18 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                           <span className="text-xs text-blue-600 dark:text-blue-400 ml-2 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded">
                             Selected
                           </span>
+                        )}
+                        {isNonSelectable && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <AlertOctagon className="w-4 h-4 ml-2 text-gray-500" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Indexing is in progress</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         )}
                       </div>
                       {result.collectionName &&
@@ -370,13 +398,20 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                 Loading...
               </div>
             ) : currentItems.length > 0 ? (
-              currentItems.map((item: any) => (
+              currentItems.map((item: any) => {
+                const isNonSelectable = isItemNonSelectable(item)
+                
+                return (
                 <div
                   key={item.id}
-                  className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                  className={`flex items-center px-4 py-2 text-sm ${
+                    isNonSelectable 
+                      ? "cursor-not-allowed opacity-50" 
+                      : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
                   onClick={() => {
-                    if (item.type === "folder") {
-                      // When navigating to a folder, if it's selected, auto-select all children
+                    if (item.type === "folder" && !isNonSelectable) {
+                      // Only allow navigation to folder if it's selectable
                       navigateToFolder(item.id, item.name)
                     }
                   }}
@@ -425,7 +460,7 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                       isSelected || isInheritedFromParent,
                     )
                     const isDisabled: boolean = Boolean(
-                      isInheritedFromParent && !isSelected,
+                      (isInheritedFromParent && !isSelected) || isNonSelectable,
                     )
 
                     return (
@@ -435,7 +470,7 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                         disabled={isDisabled}
                         onChange={(e) => {
                           e.stopPropagation()
-                          if (isDisabled) return // Prevent changes if inherited from parent
+                          if (isDisabled) return // Prevent changes if inherited from parent or non-selectable
 
                           const isCurrentlySelected = selectedSet.has(item.id)
 
@@ -557,19 +592,32 @@ export const CollectionNavigation: React.FC<CollectionNavigationProps> = ({
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="mr-2 text-gray-800"
+                      className={`mr-2 ${isNonSelectable ? "text-gray-400" : "text-gray-800"}`}
                     >
                       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                     </svg>
                   )}
-                  <span className="text-gray-700 dark:text-gray-200 truncate flex-1">
+                  <span className={`truncate flex-1 ${isNonSelectable ? "text-gray-400 dark:text-gray-500" : "text-gray-700 dark:text-gray-200"}`}>
                     {item.name}
                   </span>
-                  {item.type === "folder" && (
+                  {isNonSelectable && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <AlertOctagon className="w-4 h-4 ml-2 text-gray-500" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Indexing is in progress</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {item.type === "folder" && !isNonSelectable && (
                     <ChevronRight className="h-4 w-4 text-gray-400 ml-2" />
                   )}
                 </div>
-              ))
+                )
+              })
             ) : (
               <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
                 No items found

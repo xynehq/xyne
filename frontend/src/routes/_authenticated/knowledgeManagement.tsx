@@ -42,7 +42,7 @@ import type {
   CollectionItem,
 } from "@/types/knowledgeBase"
 import { api } from "@/api"
-import { UserRole } from "shared/types"
+import { UploadStatus, UserRole } from "shared/types"
 import DocxViewer from "@/components/DocxViewer"
 import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
@@ -473,6 +473,9 @@ function KnowledgeManagementContent() {
                     id: item.id,
                     updatedBy:
                       item.lastUpdatedByEmail || user?.email || "Unknown",
+                    uploadStatus: item.uploadStatus as UploadStatus,
+                    statusMessage: item.statusMessage,
+                    retryCount: item.retryCount,
                   })),
                 ),
                 isOpen: (collection.items || []).length > 0, // Open if has items
@@ -627,6 +630,9 @@ function KnowledgeManagementContent() {
             updatedAt: item.updatedAt,
             id: item.id,
             updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+            uploadStatus: item.uploadStatus as UploadStatus,
+            statusMessage: item.statusMessage,
+            retryCount: item.retryCount,
           })),
         ),
         isOpen: true,
@@ -821,6 +827,9 @@ function KnowledgeManagementContent() {
               updatedAt: item.updatedAt,
               id: item.id,
               updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+              uploadStatus: item.uploadStatus as UploadStatus,
+              statusMessage: item.statusMessage,
+              retryCount: item.retryCount,
             })),
           ),
           lastUpdated: new Date(updatedCl.updatedAt).toLocaleString("en-GB", {
@@ -931,6 +940,9 @@ function KnowledgeManagementContent() {
                   id: item.id,
                   updatedBy:
                     item.lastUpdatedByEmail || user?.email || "Unknown",
+                  uploadStatus: item.uploadStatus as UploadStatus,
+                  statusMessage: item.statusMessage,
+                  retryCount: item.retryCount,
                 })),
               ),
               lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
@@ -1450,7 +1462,7 @@ function KnowledgeManagementContent() {
                 />
 
                 {/* Chat overlay panel */}
-                <div className="relative bg-white dark:bg-[#1E1E1E] w-[50%] max-w-[50%] max-w-[90vw] h-full shadow-2xl transform transition-transform duration-300 ease-in-out">
+                <div className="relative bg-white dark:bg-[#1E1E1E] w-[50%] max-w-[90vw] h-full shadow-2xl transform transition-transform duration-300 ease-in-out">
                   {/* Close button */}
                   <div className="absolute top-2 right-4 z-10">
                     <Button
@@ -1548,6 +1560,9 @@ function KnowledgeManagementContent() {
                                             item.lastUpdatedByEmail ||
                                             user?.email ||
                                             "Unknown",
+                                          uploadStatus: item.uploadStatus as UploadStatus,
+                                          statusMessage: item.statusMessage,
+                                          retryCount: item.retryCount,
                                           isOpen: false,
                                           children:
                                             item.type === "folder"
@@ -1607,7 +1622,7 @@ function KnowledgeManagementContent() {
           <div className="p-4 md:py-4 md:px-8">
             <div className="w-full max-w-7xl mx-auto">
               <div className="flex justify-between items-center mt-6">
-                <h1 className="text-[26px] font-display text-gray-700 dark:text-gray-100 tracking-wider">
+                <h1 className="text-[32px] font-display text-gray-700 dark:text-gray-100 tracking-wider">
                   KNOWLEDGE MANAGEMENT
                 </h1>
                 <div className="flex items-center gap-4">
@@ -1679,6 +1694,9 @@ function KnowledgeManagementContent() {
                                   item.lastUpdatedByEmail ||
                                   user?.email ||
                                   "Unknown",
+                                uploadStatus: item.uploadStatus as UploadStatus,
+                                statusMessage: item.statusMessage,
+                                retryCount: item.retryCount,
                               })),
                             )
                           } else {
@@ -1802,6 +1820,9 @@ function KnowledgeManagementContent() {
                               }
                             }
                           }}
+                          onRetry={(node, path) => {
+                            // TODO: Implement retry logic here
+                          }}
                           onToggle={async (node) => {
                             if (node.type !== "folder") return
 
@@ -1846,6 +1867,9 @@ function KnowledgeManagementContent() {
                                                 item.lastUpdatedByEmail ||
                                                 user?.email ||
                                                 "Unknown",
+                                              uploadStatus: item.uploadStatus as UploadStatus,
+                                              statusMessage: item.statusMessage,
+                                              retryCount: item.retryCount,
                                               isOpen: false,
                                               children:
                                                 item.type === "folder"

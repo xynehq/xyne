@@ -7,6 +7,10 @@ import {
   Plus,
   Download,
   Trash2,
+  Check,
+  Loader2,
+  AlertOctagon,
+  RotateCcw,
 } from "lucide-react"
 import {
   Tooltip,
@@ -58,6 +62,7 @@ interface FileTreeProps {
   onToggle: (node: FileNode) => void
   onFileClick: (node: FileNode) => void
   onDownload?: (node: FileNode, path: string) => void
+  onRetry?: (node: FileNode, path: string) => void
 }
 
 const FileTree = ({
@@ -67,6 +72,7 @@ const FileTree = ({
   onToggle,
   onFileClick,
   onDownload,
+  onRetry,
 }: FileTreeProps) => {
   return (
     <div className="mt-2">
@@ -79,6 +85,7 @@ const FileTree = ({
           onToggle={onToggle}
           onFileClick={onFileClick}
           onDownload={onDownload}
+          onRetry={onRetry}
         />
       ))}
     </div>
@@ -94,6 +101,7 @@ const FileNodeComponent = ({
   onToggle,
   onFileClick,
   onDownload,
+  onRetry,
 }: {
   node: FileNode
   level?: number
@@ -103,6 +111,7 @@ const FileNodeComponent = ({
   onToggle: (node: FileNode) => void
   onFileClick: (node: FileNode) => void
   onDownload?: (node: FileNode, path: string) => void
+  onRetry?: (node: FileNode, path: string) => void
 }) => {
   const [isHovered, setIsHovered] = useState(false)
 
@@ -136,6 +145,31 @@ const FileNodeComponent = ({
               >
                 {node.name}
               </span>
+              {/* Upload status indicator for folders */}
+              {node.uploadStatus && (
+                <div className="flex-shrink-0">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>
+                          {node.uploadStatus === "completed" && (
+                            <Check size={14} className="text-green-600 dark:text-green-400" />
+                          )}
+                          {(node.uploadStatus === "processing" || node.uploadStatus === "pending") && (
+                            <Loader2 size={14} className="text-black dark:text-white animate-spin" />
+                          )}
+                          {node.uploadStatus === "failed" && (
+                            <AlertOctagon size={14} className="text-red-500" />
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{node.statusMessage || node.uploadStatus}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
             </div>
           ) : (
             <div
@@ -149,6 +183,31 @@ const FileNodeComponent = ({
               >
                 {node.name}
               </span>
+              {/* Upload status indicator */}
+              {node.uploadStatus && (
+                <div className="flex-shrink-0">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>
+                          {node.uploadStatus === "completed" && (
+                            <Check size={14} className="text-green-600 dark:text-green-400" />
+                          )}
+                          {(node.uploadStatus === "processing" || node.uploadStatus === "pending") && (
+                            <Loader2 size={14} className="text-black dark:text-white animate-spin" />
+                          )}
+                          {node.uploadStatus === "failed" && (
+                            <AlertOctagon size={14} className="text-red-500" />
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{node.statusMessage }</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -175,6 +234,26 @@ const FileNodeComponent = ({
                     onDownload(node, currentPath)
                   }}
                 />
+              )}
+              {(node.retryCount ?? 0) == 4 && onRetry && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <RotateCcw
+                        size={16}
+                        className="cursor-pointer text-gray-700 dark:text-gray-200 flex-shrink-0"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          onRetry(node, currentPath)
+                        }}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Retry</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
               <Trash2
                 size={16}
@@ -238,6 +317,7 @@ const FileNodeComponent = ({
               onToggle={onToggle}
               onFileClick={onFileClick}
               onDownload={onDownload}
+              onRetry={onRetry}
             />
           ))}
         </div>

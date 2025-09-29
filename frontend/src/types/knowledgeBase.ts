@@ -1,3 +1,5 @@
+import { UploadStatus } from "@/server/shared/types"
+
 export interface Collection {
   id: string
   workspaceId: number
@@ -55,6 +57,9 @@ export interface CollectionItem {
   updatedBy?: string
   isOpen?: boolean
   children?: CollectionItem[]
+  uploadStatus?: UploadStatus
+  statusMessage?: string
+  retryCount?: number
 }
 
 // Type alias for files

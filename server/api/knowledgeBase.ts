@@ -9,7 +9,7 @@ import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { Subsystem, UploadStatus, ProcessingJobType, type TxnOrClient } from "@/types"
+import { Subsystem, ProcessingJobType, type TxnOrClient } from "@/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
 import { db } from "@/db/client"
@@ -50,7 +50,7 @@ import {
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
-import { ApiKeyScopes } from "@/shared/types"
+import { ApiKeyScopes, UploadStatus } from "@/shared/types"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
