@@ -145,9 +145,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
 
     Logger.info(`Processing file: ${file.fileName} at ${file.storagePath}`)
 
-    // Read file from disk
+    // Check required fields
     if (!file.storagePath) {
       throw new Error(`No storage path for file: ${fileId}`)
+    }
+    
+    if (!file.vespaDocId) {
+      throw new Error(`No vespaDocId for file: ${fileId}`)
     }
     
     const fileBuffer = await readFile(file.storagePath)
@@ -168,7 +172,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       : file.collectionName + targetPath + file.fileName
     
     const vespaDoc = {
-      docId: file.vespaDocId!,
+      docId: file.vespaDocId,
       clId: file.collectionId,
       itemId: file.id,
       fileName: vespaFileName,
@@ -253,6 +257,16 @@ async function processCollectionJob(jobData: CollectionProcessingJob, startTime:
   
   try {
     Logger.info(`Processing collection Vespa insertion: ${collectionId}`)
+    
+    // Update status to processing
+    await db
+      .update(collections)
+      .set({ 
+        uploadStatus: UploadStatus.PROCESSING,
+        statusMessage: `Processing collection: ${col.name}`,
+        updatedAt: new Date()
+      })
+      .where(eq(collections.id, collectionId))
     
     // Create Vespa document for collection
     const vespaDoc = {
@@ -344,9 +358,24 @@ async function processFolderJob(jobData: FolderProcessingJob, startTime: number)
   try {
     Logger.info(`Processing folder Vespa insertion: ${folderId}`)
     
+    // Check required fields
+    if (!fol.vespaDocId) {
+      throw new Error(`No vespaDocId for folder: ${folderId}`)
+    }
+    
+    // Update status to processing
+    await db
+      .update(collectionItems)
+      .set({ 
+        uploadStatus: UploadStatus.PROCESSING,
+        statusMessage: `Processing folder: ${fol.name}`,
+        updatedAt: new Date()
+      })
+      .where(eq(collectionItems.id, folderId))
+    
     // Create Vespa document for folder
     const vespaDoc = {
-      docId: fol.vespaDocId!,
+      docId: fol.vespaDocId,
       clId: fol.collectionId,
       itemId: fol.id,
       app: Apps.KnowledgeBase as const,
