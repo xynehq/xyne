@@ -2143,7 +2143,7 @@ const buildStructuredContextFromItems = (
 
       // Add document index and docId to the context
       const documentIndex = index + 1
-      const docId = item.fields?.docId || "Unknown"
+      const docId = item?.fields?.docId || ""
 
       return `Document Index: ${documentIndex}
       Doc ID: ${docId}

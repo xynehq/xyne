@@ -2481,7 +2481,7 @@ export const aggregatorQueryPrompt = (
 The current date for your information is ${dateForAI}. 
 
 You are an AI assistant with access to internal workspace data. Your task is to decide whether the user's input query can be answered using ONLY the items provided in the Retrieved Context. 
-- If so, return the docIds of the specific documents(docIds) from that context that would help answer the query. 
+- If so, return the docIds of the specific documents from that context that would help answer the query. 
 - If not, return an empty array. 
 
 You have access to the following types of data: 

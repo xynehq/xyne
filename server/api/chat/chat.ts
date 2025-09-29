@@ -717,7 +717,6 @@ export async function* processIteratorForAggregatorQueries(
   }
 > {
   let buffer = ""
-  let currentDocIds: string[] = []
   let parsed: AggregatorParsed = { docIds: null }
 
   // token we require before attempting to parse a final JSON object
@@ -750,7 +749,6 @@ export async function* processIteratorForAggregatorQueries(
           if (newOnes.length > 0) {
             yield { docIds: newOnes }
           }
-          currentDocIds = docIds
         } else if ((parsed as any)?.docIds === null) {
           // If model explicitly outputs null or incomplete JSON, keep waiting
           // Do nothing; continue accumulating
@@ -3107,12 +3105,7 @@ async function* processResultsForAggregatorQuery(
   input: string,
   userCtx: string,
   userMetadata: UserMetadataType,
-  app: Apps[] | null,
-  entity: any,
-  chunksCount: number | undefined,
   userRequestsReasoning?: boolean,
-  span?: Span,
-  email?: string,
   agentContext?: string,
   modelId?: string,
 ) {
@@ -3926,12 +3919,7 @@ async function* generateMetadataQueryAnswer(
         input,
         userCtx,
         userMetadata,
-        apps,
-        entities,
-        undefined,
         userRequestsReasoning,
-        span,
-        email,
         agentPrompt,
         modelId,
       )
