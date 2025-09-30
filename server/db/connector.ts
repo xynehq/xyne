@@ -163,12 +163,28 @@ export const getConnector = async (
   }
 }
 
+const IsTokenExpired = (
+  app: Apps,
+  oauthCredentials: OAuthCredentials,
+  bufferInSeconds: number,
+): boolean => {
+  if (IsGoogleApp(app) || IsMicrosoftApp(app)) {
+    const tokens = oauthCredentials.data
+    const now: Date = new Date()
+    // make the type as Date, currently the date is stringified
+    const expirationTime = new Date(tokens.accessTokenExpiresAt).getTime()
+    const currentTime = now.getTime()
+    return currentTime + bufferInSeconds * 1000 > expirationTime
+  }
+  return false
+}
+
 const IsExpired = (
   app: Apps,
   expiresAt: Date,
   bufferInSeconds: number,
 ): boolean => {
-  if (IsGoogleApp(app) || IsMicrosoftApp(app)) {
+  if (IsMicrosoftApp(app)) {
     const now: Date = new Date()
     const currentTime = now.getTime()
     const expirationTime = new Date(expiresAt).getTime()
@@ -211,9 +227,9 @@ export const getOAuthConnectorWithCredentials = async (
   // google tokens have expiry of 1 hour
   // 5 minutes before expiry we refresh them
   if (
-    IsExpired(
+    IsTokenExpired(
       oauthRes.app,
-      (oauthRes.oauthCredentials as OAuthCredentials).data.accessTokenExpiresAt,
+      oauthRes.oauthCredentials as OAuthCredentials,
       5 * 60,
     )
   ) {
