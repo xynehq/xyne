@@ -482,6 +482,9 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExecution.id, execution.id))
 
+    // Update step statuses to activate steps that are ready
+    await updateDownstreamStepStatuses(execution.id)
+
     // Process file uploads and create tool execution
     let toolExecutionRecord = null
     let processedFormData = { ...requestData.rootStepInput }
@@ -1030,6 +1033,144 @@ const executeAutomatedWorkflowSteps = async (
 }
 
 // Execute workflow chain - automatically execute steps in sequence
+// Function to send email notifications when review steps become active
+const sendReviewNotificationIfNeeded = async (step: any) => {
+  try {
+    // Check if this step is a manual step (which could be a review step)
+    if (step.type !== StepType.MANUAL) {
+      return
+    }
+
+    // Get the step template to find the associated tools
+    const stepTemplate = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.id, step.workflowStepTemplateId))
+
+    if (!stepTemplate || stepTemplate.length === 0) {
+      return
+    }
+
+    const toolIds = stepTemplate[0].toolIds || []
+    if (toolIds.length === 0) {
+      return
+    }
+
+    // Get the tools for this step
+    const tools = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolIds[0])) // Assuming first tool is the primary tool
+
+    if (!tools || tools.length === 0) {
+      return
+    }
+
+    const tool = tools[0]
+
+    // Check if this is a review tool with email configuration
+    if (tool.type === ToolType.REVIEW && tool.config) {
+      const reviewConfig = tool.config as any
+      const emailAddresses = reviewConfig.email_addresses || []
+      const emailMessage = reviewConfig.email_message || ""
+
+      if (emailAddresses.length > 0 && emailMessage) {
+        const { emailService } = await import("@/services/emailService")
+
+        // Get workflow execution info for email context
+        const [execution] = await db
+          .select()
+          .from(workflowExecution)
+          .where(eq(workflowExecution.id, step.workflowExecutionId))
+
+        const workflowName = execution?.name || "Unknown Workflow"
+        const subject = `Review Required: ${workflowName} - ${step.name}`
+
+        // Send email to all configured addresses
+        const emailPromises = emailAddresses.map(async (email: string) => {
+          try {
+            const emailSent = await emailService.sendEmail({
+              to: email,
+              subject: subject,
+              body: emailMessage,
+              contentType: "text",
+            })
+
+            if (emailSent) {
+              Logger.info(`✅ Review activation email sent to: ${email} for step: ${step.name}`)
+            } else {
+              Logger.warn(`⚠️  Failed to send review activation email to: ${email}`)
+            }
+
+            return { email, success: emailSent }
+          } catch (emailError) {
+            Logger.error(`❌ Error sending review activation email to ${email}:`, emailError)
+            return { email, success: false, error: emailError }
+          }
+        })
+
+        const emailResults = await Promise.all(emailPromises)
+        const successfulEmails = emailResults.filter(result => result.success).length
+
+        Logger.info(`📧 Review activation emails sent: ${successfulEmails}/${emailAddresses.length} for step: ${step.name}`)
+      }
+    }
+  } catch (error) {
+    Logger.error(error, `Failed to send review notification for step: ${step.name}`)
+  }
+}
+
+// Function to update downstream step statuses when their prerequisites are met
+const updateDownstreamStepStatuses = async (executionId: string) => {
+  try {
+    // Get all step executions for this workflow
+    const allSteps = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+    // Find steps that are in DRAFT status and check if they can be activated
+    const draftSteps = allSteps.filter(step => step.status === WorkflowStatus.DRAFT)
+    
+    for (const step of draftSteps) {
+      const prevStepIds = step.prevStepIds || []
+      
+      if (prevStepIds.length === 0) {
+        // Root step - should be active if not already completed
+        if (step.status === WorkflowStatus.DRAFT) {
+          await db
+            .update(workflowStepExecution)
+            .set({ status: WorkflowStatus.ACTIVE })
+            .where(eq(workflowStepExecution.id, step.id))
+
+          // Check if this is a review step and send email notifications
+          await sendReviewNotificationIfNeeded(step)
+        }
+      } else {
+        // Check if all previous steps are completed
+        const prevSteps = allSteps.filter(s => 
+          prevStepIds.includes(s.workflowStepTemplateId)
+        )
+        
+        const allPrevStepsCompleted = prevSteps.length > 0 && 
+          prevSteps.every(s => s.status === WorkflowStatus.COMPLETED)
+        
+        if (allPrevStepsCompleted && step.status === WorkflowStatus.DRAFT) {
+          await db
+            .update(workflowStepExecution)
+            .set({ status: WorkflowStatus.ACTIVE })
+            .where(eq(workflowStepExecution.id, step.id))
+
+          // Check if this is a review step and send email notifications
+          await sendReviewNotificationIfNeeded(step)
+        }
+      }
+    }
+  } catch (error) {
+    Logger.error(error, "Failed to update downstream step statuses")
+  }
+}
+
 const executeWorkflowChain = async (
   executionId: string,
   currentStepId: string,
@@ -1225,6 +1366,9 @@ const executeWorkflowChain = async (
         toolExecIds: [toolExecutionRecord.id],
       })
       .where(eq(workflowStepExecution.id, currentStepId))
+
+    // Update status of downstream steps that can now be activated
+    await updateDownstreamStepStatuses(executionId)
 
     // Store results for next step
     const updatedResults = {
@@ -3572,6 +3716,9 @@ export const CompleteWorkflowStepExecutionApi = async (c: Context) => {
       .where(eq(workflowStepExecution.id, stepId))
       .returning()
 
+    // Update status of downstream steps that can now be activated
+    await updateDownstreamStepStatuses(currentStep.workflowExecutionId)
+
     return c.json({
       success: true,
       data: stepExecution,
@@ -3726,6 +3873,9 @@ export const ReviewWorkflowStepApi = async (c: Context) => {
       })
       .where(eq(workflowStepExecution.id, stepId))
       .returning()
+
+    // Update status of downstream steps that can now be activated
+    await updateDownstreamStepStatuses(currentStep.workflowExecutionId)
 
     // Continue workflow execution - execute the next step based on decision
     const tools = await db.select().from(workflowTool)
@@ -3894,6 +4044,9 @@ export const TriggerWorkflowStepApi = async (c: Context) => {
       })
       .where(eq(workflowStepExecution.id, stepId))
       .returning()
+
+    // Update status of downstream steps that can now be activated
+    await updateDownstreamStepStatuses(currentStep.workflowExecutionId)
 
     // Continue workflow execution with next steps
     const nextStepIds = currentStep.nextStepIds || []
