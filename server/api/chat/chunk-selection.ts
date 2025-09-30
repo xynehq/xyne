@@ -2,8 +2,8 @@ import { getLogger, getLoggerWithChild } from "@/logger"
 import { Subsystem } from "@/types"
 import { getErrorMessage } from "@/utils"
 import type { Span } from "@/tracer"
+import type { VespaSearchResult } from "@xyne/vespa-ts"
 
-const Logger = getLogger(Subsystem.Chat)
 const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
 
 /**
@@ -11,7 +11,7 @@ const loggerWithChild = getLoggerWithChild(Subsystem.Chat)
  * Returns an array where each index corresponds to a document in searchResults
  */
 export async function getChunkCountPerDoc(
-  searchResults: any[],
+  searchResults: VespaSearchResult[],
   topN: number,
   email: string,
   span?: Span
@@ -29,7 +29,7 @@ export async function getChunkCountPerDoc(
 
     // Extract document relevance scores from search results
     const documentRelevances = searchResults.map((result, index) => {
-      const fields = result?.fields || {}
+      const fields = result?.fields || {} as any
       const docId = fields.docId || `doc_${index}`
       const textChunks = fields.chunks_summary || fields.chunks || []
       const chunksLength = (Array.isArray(textChunks) ? textChunks.length : 0)
@@ -50,7 +50,7 @@ export async function getChunkCountPerDoc(
       loggerWithChild({ email }).warn("Total relevance is 0, falling back to equal distribution")
       // Fallback: distribute chunks equally if no relevance scores
       const chunksPerDoc = Math.ceil(topN / documentRelevances.length)
-      const result = documentRelevances.map(() => chunksPerDoc)
+      const result = documentRelevances.map((dr) => Math.min(chunksPerDoc, dr.chunksLength))
       
       mainSpan?.setAttribute("fallback_used", true)
       mainSpan?.setAttribute("chunks_per_doc", chunksPerDoc)
@@ -120,10 +120,6 @@ export async function getChunkCountPerDoc(
         const floored = Math.min(capLeft, Math.floor(ideal))
         floorAdds[idx] = floored
         sumFloors += floored
-        // const frac = Math.max(0, Math.min(capLeft - floored, ideal - floored))
-        // if (capLeft - floored > 0) {
-        //   fracs.push({ idx, frac, rel: d.relevanceScore, capLeft })
-        // }
 
         loggerWithChild({ email }).info(
           `Doc ${d.docId}: idealAllocation=${ideal.toFixed(3)}, floor=${floored}, chunksLeft=${capLeft}` //frac=${frac.toFixed(3)}
@@ -131,25 +127,6 @@ export async function getChunkCountPerDoc(
       }
 
       let leftover = remainingChunks - sumFloors
-
-      // Second pass: distribute leftover 1-by-1 by largest fractional parts (tie-break by higher relevance)
-      // if (leftover > 0 && fracs.length > 0) {
-      //   fracs.sort((a, b) => {
-      //     if (b.frac !== a.frac) return b.frac - a.frac
-      //     return b.rel - a.rel
-      //   })
-      //   loggerWithChild({ email }).info(
-      //     `Remainder before distribution: sumFloors=${sumFloors}, leftover=${leftover}. Fractional order: ${fracs.map(f => `docIdx=${f.idx}, frac=${f.frac.toFixed(3)}, rel=${f.rel.toFixed(3)}`).join("; ")}`
-      //   )
-      //   for (let i = 0; i < fracs.length && leftover > 0; i++) {
-      //     const { idx, capLeft } = fracs[i]
-      //     if ((floorAdds[idx] ?? 0) < capLeft) {
-      //       floorAdds[idx] = (floorAdds[idx] ?? 0) + 1
-      //       leftover -= 1
-      //       loggerWithChild({ email }).info(`--> 1 extra chunk given to docIndex=${idx}`)
-      //     }
-      //   }
-      // }
 
       const assignedThisRound = remainingChunks - Math.max(0, leftover)
       if (assignedThisRound <= 0) break // avoid infinite loop if nothing could be assigned
