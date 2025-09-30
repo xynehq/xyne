@@ -536,6 +536,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [initialLoadComplete, setInitialLoadComplete] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
     const [uploadingFilesCount, setUploadingFilesCount] = useState(0)
+    const uploadCompleteResolver = useRef<(() => void) | null>(null);
 
     // Model selection state
     const [availableModels, setAvailableModels] = useState<
@@ -787,66 +788,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // File upload utility functions
 
-    const  processFiles = useCallback(
-      (files: FileList | File[]) => {
-        // Check attachment limit
-        if (selectedFiles.length >= MAX_ATTACHMENTS) {
-          toast.error({
-            title: "Attachment limit reached",
-            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-          })
-          return
-        }
-
-        const validFiles = validateAndDeduplicateFiles(files, toast)
-        if (validFiles.length === 0) return
-
-        // Check if adding these files would exceed the limit
-        const remainingSlots = MAX_ATTACHMENTS - selectedFiles.length
-        const filesToAdd = validFiles.slice(0, remainingSlots)
-
-        if (filesToAdd.length < validFiles.length) {
-          toast.warning({
-            title: "Some files skipped",
-            description: `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
-          })
-        }
-
-        const newFiles: SelectedFile[] = filesToAdd.map((file) => ({
-          file,
-          id: generateFileId(),
-          uploading: false,
-          preview: createImagePreview(file),
-          fileType: getFileType({ type: file.type, name: file.name }),
-        }))
-
-       let filesToBeUploaded:SelectedFile[]=[];
-        setSelectedFiles((prev) => {
-          const existingFileNames = new Set(prev.map((f) => f.file.name))
-          const filteredNewFiles = newFiles.filter(
-            (f) => !existingFileNames.has(f.file.name),
-          )
-         
-          const filteredCount = newFiles.length - filteredNewFiles.length
-          if (filteredCount > 0) {
-            toast.warning({
-              title: "Files already selected",
-              description: `${filteredCount} file(s) were already selected and skipped.`,
-            })
-          }
-          filesToBeUploaded=filteredNewFiles;
-          return [...prev, ...filteredNewFiles]
-        })
-       uploadFiles(filesToBeUploaded);
-      },
-      [selectedFiles.length],
-    )
+    
 
     const uploadFiles = useCallback(
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
 
-        setUploadingFilesCount((prev)=> prev+files.length)
+        setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
 
         // Set all files to uploading state
@@ -890,7 +838,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             } else {
               throw new Error("No document ID returned from upload")
             }
-          
           } catch (error) {
             const errorMessage =
               error instanceof Error ? error.message : "Upload failed"
@@ -906,9 +853,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               description: `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
             })
             return null
-          }
-          finally{
-            setUploadingFilesCount((prev) => prev - 1);
+          } finally {
+            setUploadingFilesCount((prev) => prev - 1)
           }
         })
 
@@ -921,6 +867,66 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         return uploadedMetadata
       },
       [toast],
+    )
+  useEffect(() => {
+  if (uploadingFilesCount === 0 && uploadCompleteResolver.current) {
+    uploadCompleteResolver.current();
+    uploadCompleteResolver.current = null;
+  }
+}, [uploadingFilesCount]);
+const processFiles = useCallback(
+      (files: FileList | File[]) => {
+        // Check attachment limit
+        if (selectedFiles.length >= MAX_ATTACHMENTS) {
+          toast.error({
+            title: "Attachment limit reached",
+            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+          })
+          return
+        }
+
+        const validFiles = validateAndDeduplicateFiles(files, toast)
+        if (validFiles.length === 0) return
+
+        // Check if adding these files would exceed the limit
+        const remainingSlots = MAX_ATTACHMENTS - selectedFiles.length
+        const filesToAdd = validFiles.slice(0, remainingSlots)
+
+        if (filesToAdd.length < validFiles.length) {
+          toast.warning({
+            title: "Some files skipped",
+            description: `Only ${filesToAdd.length} of ${validFiles.length} files were added due to attachment limit.`,
+          })
+        }
+
+        const newFiles: SelectedFile[] = filesToAdd.map((file) => ({
+          file,
+          id: generateFileId(),
+          uploading: false,
+          preview: createImagePreview(file),
+          fileType: getFileType({ type: file.type, name: file.name }),
+        }))
+
+        let filesToBeUploaded: SelectedFile[] = []
+        setSelectedFiles((prev) => {
+          const existingFileNames = new Set(prev.map((f) => f.file.name))
+          const filteredNewFiles = newFiles.filter(
+            (f) => !existingFileNames.has(f.file.name),
+          )
+
+          const filteredCount = newFiles.length - filteredNewFiles.length
+          if (filteredCount > 0) {
+            toast.warning({
+              title: "Files already selected",
+              description: `${filteredCount} file(s) were already selected and skipped.`,
+            })
+          }
+          filesToBeUploaded = filteredNewFiles
+          return [...prev, ...filteredNewFiles]
+        })
+        uploadFiles(filesToBeUploaded)
+      },
+      [selectedFiles.length, uploadFiles, toast],
     )
 
     const getExtension = (file: File) => {
@@ -953,14 +959,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
         if (files.length > 0) {
-                        // Check attachment limit before processing
-                        if (selectedFiles.length >= MAX_ATTACHMENTS) {
-                          toast.error({
-                            title: "Attachment limit reached",
-                            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-                          })
-                          return
-                        }
+          // Check attachment limit before processing
+          if (selectedFiles.length >= MAX_ATTACHMENTS) {
+            toast.error({
+              title: "Attachment limit reached",
+              description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+            })
+            return
+          }
           processFiles(files)
         }
       },
@@ -1984,24 +1990,19 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       // Handle Attachments Metadata
       let attachmentsMetadata: AttachmentMetadata[] = []
       if (selectedFiles.length > 0) {
-  if (uploadingFilesCount > 0) {
-    await new Promise<void>((resolve) => {
-      const interval = setInterval(() => {
-        if (uploadingFilesCount === 0) {
-          clearInterval(interval)
-          resolve()
-        }
-      }, 100)
-    })
-  }
-  const alreadyUploadedMetadata = selectedFiles
-    .map((f) => f.metadata)
-    .filter((m): m is AttachmentMetadata => !!m)
-
-  attachmentsMetadata = alreadyUploadedMetadata
  
-}
-      
+    if (uploadingFilesCount > 0) {
+      await new Promise<void>((resolve) => {
+        uploadCompleteResolver.current = resolve;
+      });
+    }
+     const alreadyUploadedMetadata = selectedFiles
+      .map((f) => f.metadata)
+      .filter((m): m is AttachmentMetadata => !!m);
+
+    attachmentsMetadata = alreadyUploadedMetadata;
+    console.log("attachments", attachmentsMetadata);
+  }
 
       // Replace data-doc-id and data-reference-id with mailId
       const tempDiv = document.createElement("div")
@@ -2422,7 +2423,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
-                Ask a question {hideButtons ? "" : "or type @ to search your apps"}
+                Ask a question{" "}
+                {hideButtons ? "" : "or type @ to search your apps"}
               </div>
             )}
             <div
@@ -2683,12 +2685,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault() // Always prevent default for Enter (unless Shift+Enter)
-                  
+
                   if (
                     query.trim().length > 0 &&
                     !isStreaming &&
                     !retryIsStreaming &&
-                    uploadingFilesCount ===0
+                    uploadingFilesCount === 0
                   ) {
                     handleSendMessage()
                   }
@@ -3868,7 +3870,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               </button>
             ) : (
               <button
-                disabled={isStreaming || retryIsStreaming || uploadingFilesCount > 0}
+                disabled={
+                  isStreaming || retryIsStreaming || uploadingFilesCount > 0
+                }
                 onClick={() => handleSendMessage()}
                 className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
               >
