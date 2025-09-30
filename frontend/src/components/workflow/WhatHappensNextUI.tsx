@@ -8,6 +8,7 @@ import {
   Users,
   ChevronRight,
   X,
+  Play,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -177,6 +178,12 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
         </svg>
       ),},
     {
+      id: "trigger",
+      name: "Manual Trigger",
+      description: "Add a manual trigger step to pause and wait for user action",
+      icon: <Play className="w-5 h-5" />,
+    },
+    {
       id: "run_script",
       name: "Run Script/Code",
       description: "Run code or scripts",
@@ -295,8 +302,8 @@ print('Hello, World!')"
             <div
               key={action.id}
               onClick={() => {
-                if (action.id === "ai_agent" || action.id === "email" || action.id === "review" ||action.id === "run_script") {
-                  // For AI Agent, Email, and Review, trigger custom event to open respective ConfigUI
+                if (action.id === "ai_agent" || action.id === "email" || action.id === "review" || action.id === "run_script" || action.id === "trigger") {
+                  // For AI Agent, Email, Review, Run Script, and Trigger, trigger custom event to open respective ConfigUI
                   onSelectAction(action.id)
                   onClose() // Close WhatHappensNextUI
                 } else {

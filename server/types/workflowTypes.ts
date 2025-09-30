@@ -23,6 +23,7 @@ export enum ToolType {
   EMAIL = "email",
   AI_AGENT = "ai_agent",
   REVIEW = "review",
+  TRIGGER = "trigger",
 }
 
 export enum ToolExecutionStatus {

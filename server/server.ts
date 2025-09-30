@@ -199,6 +199,7 @@ import {
   UpdateWorkflowStepExecutionApi,
   CompleteWorkflowStepExecutionApi,
   ReviewWorkflowStepApi,
+  TriggerWorkflowStepApi,
   SubmitFormStepApi,
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
@@ -974,6 +975,7 @@ export const AppRoutes = app
     zValidator("json", reviewSubmissionSchema),
     ReviewWorkflowStepApi,
   )
+  .post("/workflow/steps/:stepId/trigger", TriggerWorkflowStepApi)
   .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)

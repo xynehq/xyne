@@ -1,7 +1,11 @@
 import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, X, CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { ArrowLeft, X, CheckCircle, XCircle, Clock, AlertTriangle, Trash2, CornerDownLeft } from "lucide-react"
 import { api } from "../../api"
+import { workflowToolsAPI } from "./api/ApiHandlers"
 
 interface ReviewExecutionUIProps {
   isVisible: boolean
@@ -12,7 +16,16 @@ interface ReviewExecutionUIProps {
   reviewContent?: any
   previousStepResult?: any
   onReviewSubmitted?: () => void // Callback to restart polling
-  builder?: boolean // true for execution mode, false for template mode
+  builder?: boolean // true for builder mode (email config), false for execution mode (approve/reject buttons)
+  onSave?: (config: ReviewEmailConfig) => void // Callback to save email configuration
+  stepData?: any // Step data for loading existing configuration
+  toolId?: string // Tool ID for API updates
+  toolData?: any // Tool data for loading existing configuration
+}
+
+interface ReviewEmailConfig {
+  email_addresses: string[]
+  email_message: string
 }
 
 const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
@@ -25,21 +38,44 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
   previousStepResult,
   onReviewSubmitted,
   builder = true,
+  onSave,
+  stepData,
+  toolId,
+  toolData,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submissionStatus, setSubmissionStatus] = useState<'pending' | 'approved' | 'rejected' | 'error'>('pending')
 
+  // Email configuration state (for builder mode)
+  const [emailConfig, setEmailConfig] = useState<ReviewEmailConfig>({
+    email_addresses: [],
+    email_message: "",
+  })
+  const [newEmailAddress, setNewEmailAddress] = useState("")
+  const [emailValidationError, setEmailValidationError] = useState<string | null>(null)
+  const [isEmailValid, setIsEmailValid] = useState<boolean>(false)
+
+  // Email validation regex
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
+
   const handleReviewDecision = async (decision: 'approved' | 'rejected') => {
+    console.log("🔍 Review decision clicked:", { decision, stepExecutionId })
     setIsSubmitting(true)
     setSubmitError(null)
 
     try {
-      const response = await api.post(`/api/v1/workflow/steps/${stepExecutionId}/review`, {
-        input: decision
+      console.log("🔍 Making API call to:", `/api/v1/workflow/steps/${stepExecutionId}/review`)
+      const response = await api.workflow.steps[":stepId"].review.$post({
+        param: { stepId: stepExecutionId },
+        json: { input: decision }
       })
+      console.log("🔍 API response:", response)
+      
+      const data = await response.json()
+      console.log("🔍 API response data:", data)
 
-      if (response.data.success) {
+      if (data.success) {
         setSubmissionStatus(decision)
         
         // Call the callback to restart workflow polling
@@ -54,7 +90,8 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
           }
         }, 2000)
       } else {
-        throw new Error(response.data.message || 'Failed to submit review')
+        console.log("🔍 API returned error:", data)
+        throw new Error(data.error?.message || data.message || 'Failed to submit review')
       }
     } catch (error: any) {
       console.error('Error submitting review:', error)
@@ -64,6 +101,163 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
       setIsSubmitting(false)
     }
   }
+
+  // Email validation function (for builder mode)
+  const validateEmail = (email: string): { isValid: boolean; error: string | null } => {
+    if (!email.trim()) {
+      return { isValid: false, error: null }
+    }
+    
+    if (email.length > 254) {
+      return { isValid: false, error: "Email address is too long (max 254 characters)" }
+    }
+    
+    if (!emailRegex.test(email)) {
+      return { isValid: false, error: "Please enter a valid email address" }
+    }
+    
+    // Check for consecutive dots
+    if (email.includes('..')) {
+      return { isValid: false, error: "Email cannot contain consecutive dots" }
+    }
+    
+    // Check if email starts or ends with dot
+    const [localPart] = email.split('@')
+    if (localPart.startsWith('.') || localPart.endsWith('.')) {
+      return { isValid: false, error: "Email cannot start or end with a dot" }
+    }
+    
+    return { isValid: true, error: null }
+  }
+
+  // Handle email input change with validation
+  const handleEmailInputChange = (value: string) => {
+    setNewEmailAddress(value)
+    const validation = validateEmail(value)
+    setIsEmailValid(validation.isValid)
+    setEmailValidationError(validation.error)
+  }
+
+  // Add email address to the list
+  const handleAddEmail = () => {
+    const validation = validateEmail(newEmailAddress)
+    
+    if (!validation.isValid) {
+      setEmailValidationError(validation.error || "Please enter a valid email address")
+      setIsEmailValid(false)
+      return
+    }
+    
+    if (emailConfig.email_addresses.includes(newEmailAddress.toLowerCase())) {
+      setEmailValidationError("This email address is already added")
+      setIsEmailValid(false)
+      return
+    }
+    
+    // Add the email (normalize to lowercase for consistency)
+    setEmailConfig((prev) => ({
+      ...prev,
+      email_addresses: [...prev.email_addresses, newEmailAddress.toLowerCase()],
+    }))
+    
+    // Reset input and validation state
+    setNewEmailAddress("")
+    setEmailValidationError(null)
+    setIsEmailValid(false)
+  }
+
+  // Remove email address from the list
+  const handleRemoveEmail = (emailToRemove: string) => {
+    setEmailConfig((prev) => ({
+      ...prev,
+      email_addresses: prev.email_addresses.filter((email) => email !== emailToRemove),
+    }))
+  }
+
+  // Handle Enter key press for adding email
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      handleAddEmail()
+    }
+  }
+
+  // Save email configuration (for builder mode)
+  const handleSaveEmailConfig = async () => {
+    console.log("handleSaveEmailConfig called with:", {
+      toolId,
+      builder,
+      emailConfig,
+      toolData,
+      onSave: !!onSave
+    })
+
+    try {
+      // If we have a toolId, update the tool via API
+      if (toolId) {
+        console.log("Making API call to update tool...")
+        const updatedToolData = {
+          type: "review",
+          value: emailConfig,
+          config: {
+            ...toolData?.config,
+            email_addresses: emailConfig.email_addresses,
+            email_message: emailConfig.email_message,
+          },
+        }
+
+        await workflowToolsAPI.updateTool(toolId, updatedToolData)
+        console.log("Review tool updated successfully")
+      } else {
+        console.log("API call skipped:", {
+          reason: "No toolId provided"
+        })
+      }
+
+      // Call the parent save handler
+      if (onSave) {
+        console.log("Calling parent onSave handler...")
+        onSave(emailConfig)
+      } else {
+        console.log("No onSave handler provided")
+      }
+    } catch (error) {
+      console.error("Failed to save review configuration:", error)
+      // Still call the parent handler even if API call fails
+      if (onSave) {
+        onSave(emailConfig)
+      }
+    }
+  }
+
+  // Load existing configuration when component becomes visible
+  React.useEffect(() => {
+    if (isVisible && builder) {
+      // Try to load from toolData first, then stepData, otherwise use defaults
+      let existingConfig = null
+      
+      if (toolData?.config) {
+        existingConfig = toolData.config
+      } else if (toolData?.value) {
+        existingConfig = toolData.value
+      } else if (stepData?.data?.tools?.[0]?.config) {
+        existingConfig = stepData.data.tools[0].config
+      }
+      
+      if (existingConfig) {
+        setEmailConfig({
+          email_addresses: existingConfig.email_addresses || [],
+          email_message: existingConfig.email_message || "",
+        })
+      } else {
+        // Reset to defaults for new review step
+        setEmailConfig({
+          email_addresses: [],
+          email_message: "",
+        })
+      }
+    }
+  }, [isVisible, builder, stepData, toolData])
 
   const renderReviewContent = () => {
     if (!previousStepResult) {
@@ -225,11 +419,160 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
         )}
       </div>}
 
-      {/* Template Mode - Show informational text */}
+      {/* Template Mode - Show email configuration */}
       {builder && (
-        <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-          <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-            This is a manual step and will require approval from user
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Email Message */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="email-message"
+              className="text-sm font-medium text-slate-700 dark:text-gray-300"
+            >
+              Email Message
+            </Label>
+            <Textarea
+              id="email-message"
+              value={emailConfig.email_message}
+              onChange={(e) =>
+                setEmailConfig((prev) => ({
+                  ...prev,
+                  email_message: e.target.value,
+                }))
+              }
+              placeholder="Enter the email message to send to reviewers..."
+              className="w-full min-h-[120px] dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600"
+              rows={5}
+            />
+            <p className="text-xs text-slate-500 dark:text-gray-400">
+              This message will be sent to reviewers when the review step is activated
+            </p>
+          </div>
+
+          {/* Add Email Address */}
+          <div className="space-y-2">
+            <Label
+              htmlFor="add-reviewer-email"
+              className="text-sm font-medium text-slate-700 dark:text-gray-300"
+            >
+              Add Reviewer Email Address
+            </Label>
+            <div className="relative">
+              <Input
+                id="add-reviewer-email"
+                value={newEmailAddress}
+                onChange={(e) => handleEmailInputChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Enter reviewer email address"
+                className={`w-full pr-16 dark:bg-gray-800 dark:text-gray-300 ${
+                  emailValidationError
+                    ? "border-red-500 dark:border-red-400 focus:border-red-500 dark:focus:border-red-400"
+                    : isEmailValid && newEmailAddress
+                    ? "border-green-500 dark:border-green-400 focus:border-green-500 dark:focus:border-green-400"
+                    : "dark:border-gray-600"
+                }`}
+              />
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div className="flex items-center justify-center w-6 h-6">
+                  {emailValidationError ? (
+                    <AlertTriangle className="w-4 h-4 text-red-500 dark:text-red-400" />
+                  ) : isEmailValid && newEmailAddress ? (
+                    <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400" />
+                  ) : (
+                    <CornerDownLeft className="w-4 h-4 text-slate-400 dark:text-gray-500" />
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Email validation feedback */}
+            {emailValidationError && (
+              <div className="flex items-center gap-2 mt-2">
+                <AlertTriangle className="w-4 h-4 text-red-500 dark:text-red-400 flex-shrink-0" />
+                <p className="text-sm text-red-600 dark:text-red-400">
+                  {emailValidationError}
+                </p>
+              </div>
+            )}
+            
+            {isEmailValid && newEmailAddress && !emailValidationError && (
+              <div className="flex items-center gap-2 mt-2">
+                <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 flex-shrink-0" />
+                <p className="text-sm text-green-600 dark:text-green-400">
+                  Valid email address
+                </p>
+              </div>
+            )}
+
+            {/* Added Email Addresses */}
+            {emailConfig.email_addresses.length > 0 && (
+              <div className="space-y-2 mt-4">
+                <p className="text-sm font-medium text-slate-700 dark:text-gray-300">
+                  Reviewers ({emailConfig.email_addresses.length})
+                </p>
+                {emailConfig.email_addresses.map((email, index) => {
+                  // Generate avatar color based on email
+                  const avatarColors = [
+                    "bg-yellow-400",
+                    "bg-pink-500",
+                    "bg-blue-500",
+                    "bg-green-500",
+                    "bg-purple-500",
+                    "bg-red-500",
+                    "bg-orange-500",
+                    "bg-teal-500",
+                  ]
+                  const colorIndex = email.charCodeAt(0) % avatarColors.length
+                  const avatarColor = avatarColors[colorIndex]
+
+                  // Get first letter of email for avatar
+                  const firstLetter = email.charAt(0).toUpperCase()
+
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-8 h-8 ${avatarColor} rounded-full flex items-center justify-center text-white font-medium text-sm`}
+                        >
+                          {firstLetter}
+                        </div>
+                        <div className="text-sm font-medium text-slate-900 dark:text-gray-300">
+                          {email}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveEmail(email)}
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          
+          {/* Save Button */}
+          <div className="pt-4">
+            {emailConfig.email_addresses.length === 0 && (
+              <p className="text-xs text-slate-500 dark:text-gray-400 mb-2 text-center">
+                Add at least one reviewer email address to enable save
+              </p>
+            )}
+            <Button
+              onClick={handleSaveEmailConfig}
+              disabled={emailConfig.email_addresses.length === 0}
+              className={`w-full rounded-full shadow-none ${
+                emailConfig.email_addresses.length === 0
+                  ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800"
+                  : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white"
+              }`}
+            >
+              Save Configuration
+            </Button>
           </div>
         </div>
       )}
@@ -279,7 +622,7 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
       )}
 
       {/* Success State - Only show in execution mode */}
-      {builder && (submissionStatus === 'approved' || submissionStatus === 'rejected') && (
+      {!builder && (submissionStatus === 'approved' || submissionStatus === 'rejected') && (
         <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
           <div className="text-center">
             <div className="text-sm text-gray-600 dark:text-gray-400">

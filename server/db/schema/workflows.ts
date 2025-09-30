@@ -393,7 +393,6 @@ export const formSubmissionSchema = z.object({
 })
 
 export const reviewSubmissionSchema = z.object({
-  stepId: z.string().uuid(),
   input: z.enum(["approved", "rejected"]),
 })
 

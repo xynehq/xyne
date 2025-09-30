@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
-import { Bot, Mail, Plus } from "lucide-react"
+import { Bot, Mail, Plus, Play, Clock } from "lucide-react"
 import { PlusButton } from "./PlusButton"
 import {  FileText } from "lucide-react"
 import {
@@ -156,10 +156,17 @@ import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import { ScriptSidebar } from "../ScriptSidebar"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import ReviewExecutionUI from "./ReviewExecutionUI"
+import TriggerExecutionUI from "./TriggerExecutionUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
 import ConfirmationPopup from "../ui/ConfirmationPopup"
+
+// Import the ReviewEmailConfig type
+type ReviewEmailConfig = {
+  email_addresses: string[]
+  email_message: string
+}
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -913,6 +920,108 @@ const StepNode: React.FC<NodeProps> = ({
                 </div>
               )}
             </>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // Special rendering for trigger nodes and steps with trigger tools
+  const hasTriggerTool = tools && tools.length > 0 && tools[0].type === "trigger"
+  if (step.type === "trigger" || hasTriggerTool) {
+    const isAwaitingTrigger = step.status === "active" && step.type === "trigger"
+    
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : isAwaitingTrigger
+              ? "border-orange-400 dark:border-orange-300" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Play/trigger icon with background */}
+            <div 
+              className={`w-10 h-10 flex items-center justify-center rounded-lg ${
+                isAwaitingTrigger 
+                  ? "bg-orange-500" 
+                  : "bg-blue-500"
+              }`}
+            >
+              <Play className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div 
+                className={`text-base font-semibold truncate ${
+                  isAwaitingTrigger 
+                    ? "text-orange-900 dark:text-orange-100" 
+                    : "text-gray-900 dark:text-gray-100"
+                }`}
+              >
+                {step.name || "Manual Trigger"}
+              </div>
+              <div 
+                className={`text-sm truncate ${
+                  isAwaitingTrigger 
+                    ? "text-orange-700 dark:text-orange-200" 
+                    : "text-gray-600 dark:text-gray-400"
+                }`}
+              >
+                {step.description || "Manual trigger step"}
+              </div>
+            </div>
+          </div>
+
+          {/* Status indicator for awaiting trigger */}
+          {isAwaitingTrigger && (
+            <div className="px-4 mb-3">
+              <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                <Clock className="w-4 h-4 text-orange-500" />
+                <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                  Waiting for trigger
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ReactFlow Handles */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+          {/* Bottom center connection point */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+
+          {/* PlusButton for adding next step (only if not awaiting trigger) */}
+          {!isAwaitingTrigger && (
+            <PlusButton
+              hasNext={data.hasNext}
+              nodeId={data.id}
+              isConnectable={isConnectable}
+              showHandles={false}
+            />
           )}
         </div>
       </>
@@ -1683,7 +1792,7 @@ const TriggersSidebar = ({
       description:
         "Runs the flow when triggered manually. Good for getting started quickly",
       icon: <ManualTriggerIcon width={20} height={20} />,
-      enabled: false,
+      enabled: true,
     },
     {
       id: "app_event",
@@ -1936,6 +2045,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [showEmailConfigUI, setShowEmailConfigUI] = useState(false)
   const [showOnFormSubmissionUI, setShowOnFormSubmissionUI] = useState(false)
   const [showReviewExecutionUI, setShowReviewExecutionUI] = useState(false)
+  const [showTriggerExecutionUI, setShowTriggerExecutionUI] = useState(false)
   const [showScriptConfigUI, setShowScriptConfigUI] = useState(false)
   const [selectedNodeForNext, setSelectedNodeForNext] = useState<string | null>(
     null,
@@ -1956,6 +2066,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     null,
   )
   const [selectedReviewStepId, setSelectedReviewStepId] = useState<string | null>(
+    null,
+  )
+  const [selectedTriggerStepId, setSelectedTriggerStepId] = useState<string | null>(
     null,
   )
   const [zoomLevel, setZoomLevel] = useState(100)
@@ -2549,12 +2662,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
       setShowReviewExecutionUI(false)
+      setShowTriggerExecutionUI(false)
       setShowScriptConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
       setSelectedFormNodeId(null)
       setSelectedReviewStepId(null)
+      setSelectedTriggerStepId(null)
       setSelectedScriptNodeId(null)
 
       // Handle different tool types
@@ -2588,6 +2703,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open Review execution sidebar
           setSelectedReviewStepId(step.id)
           setShowReviewExecutionUI(true)
+          break
+        case "trigger":
+          // Open Trigger execution sidebar (only in execution mode)
+          if (!builder) {
+            setSelectedTriggerStepId(step.id)
+            setShowTriggerExecutionUI(true)
+          }
+          // In builder mode, trigger nodes should not open any sidebar
           break
         case "script":
           // Open Script config sidebar
@@ -3062,10 +3185,55 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         setTimeout(() => {
           zoomTo(1)
         }, 50)
+      } else if (triggerId === "manual") {
+        // Create a manual trigger node directly
+        setShowTriggersSidebar(false)
+        
+        // Create the trigger tool
+        const triggerTool = {
+          id: "tool-1",
+          type: "trigger",
+          value: {
+            title: "Manual Trigger",
+            description: "Click trigger button to continue workflow execution"
+          },
+          config: {}
+        }
+        
+        // Create new trigger node
+        const triggerNode: Node = {
+          id: "1",
+          type: "stepNode",
+          position: { x: 400, y: 100 },
+          data: {
+            id: "1", // Add id for PlusButton compatibility
+            step: {
+              id: "1",
+              name: "Manual Trigger",
+              status: "pending",
+              contents: [],
+              type: "trigger",
+              prevStepIds: [],
+            },
+            tools: [triggerTool],
+            isActive: false,
+            isCompleted: false,
+            hasNext: true,
+          },
+          draggable: true,
+        }
+
+        // Update the existing trigger selector node to be the actual trigger node
+        setNodes([triggerNode])
+        setShowEmptyCanvas(false)
+        setZoomLevel(100)
+        setTimeout(() => {
+          zoomTo(1)
+        }, 50)
       }
       // Handle other triggers here as needed
     },
-    [zoomTo],
+    [zoomTo, setNodes],
   )
 
 
@@ -3187,7 +3355,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
     }
-  }, [selectedNodeForNext, nodes, nodeCounter, setNodes, setEdges, setNodeCounter, smartFitWorkflow])
+  }, [selectedNodeForNext, nodes, nodeCounter, setNodes, setEdges, setNodeCounter, smartFitWorkflow, zoomTo])
 
   const handleAIAgentConfigBack = useCallback(() => {
     setShowAIAgentConfigUI(false)
@@ -3211,11 +3379,44 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   const handleAIAgentConfigSave = useCallback(
     (agentConfig: AIAgentConfig) => {
+      console.log(`handleAIAgentConfigSave called:`, {
+        selectedAgentNodeId,
+        selectedNodeForNext,
+        agentConfig
+      })
+      
       if (selectedAgentNodeId === "pending" && selectedNodeForNext) {
         // Create new AI Agent node when saving configuration
         const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
         if (sourceNode) {
           const newNodeId = `ai-agent-${nodeCounter}`
+          
+          // Check if the source node is a review step and determine the connection path
+          let sourceHandle = "bottom"
+          let edgeLabel = undefined
+          let reviewPath = null
+          
+          if (sourceNode?.data?.tools && Array.isArray(sourceNode.data.tools)) {
+            const reviewTool = sourceNode.data.tools.find((tool: any) => tool.type === "review")
+            if (reviewTool) {
+              // This is a review step - determine which path to use based on current usage
+              const config = reviewTool.config || {}
+              console.log("Found review step with config:", config)
+              
+              // Use approved path if it's not used, otherwise use rejected path
+              if (!config.approved) {
+                sourceHandle = "approved"
+                edgeLabel = "Approved"
+                reviewPath = "approved"
+              } else if (!config.rejected) {
+                sourceHandle = "rejected" 
+                edgeLabel = "Rejected"
+                reviewPath = "rejected"
+              } else {
+                console.warn("Both approved and rejected paths are already used for review step:", selectedNodeForNext)
+              }
+            }
+          }
           
           // Use description as-is without model information
           const formattedDescription = agentConfig.description
@@ -3287,16 +3488,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               type: "arrowclosed" as const,
               color: "#D1D5DB",
             },
-            sourceHandle: selectedReviewPath === "approved" ? "approved" : selectedReviewPath === "rejected" ? "rejected" : "bottom",
+            sourceHandle: sourceHandle,
             targetHandle: "top",
-            label: selectedReviewPath === "approved" ? "Approved" : selectedReviewPath === "rejected" ? "Rejected" : undefined,
-            labelStyle: selectedReviewPath ? { 
+            label: edgeLabel,
+            labelStyle: edgeLabel ? { 
               fill: '#6B7280', 
               fontWeight: 600, 
               fontSize: '12px',
               fontFamily: 'Inter, system-ui, sans-serif'
             } : undefined,
-            labelBgStyle: selectedReviewPath ? { 
+            labelBgStyle: edgeLabel ? { 
               fill: '#FFFFFF', 
               fillOpacity: 0.9,
               stroke: '#E5E7EB',
@@ -3310,37 +3511,57 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setEdges((prevEdges) => [...prevEdges, newEdge])
           setNodeCounter((prev) => prev + 1)
 
-          // Mark the appropriate review path as used if this was from a review step
-          setNodes((prevNodes) =>
-            prevNodes.map((node) =>
-              node.id === selectedNodeForNext
-                ? {
-                    ...node,
-                    data: {
-                      ...node.data,
-                      hasNext: false,
-                      // Mark review path as used
-                      ...(selectedReviewPath === "approved" ? { approvedPathUsed: true } : {}),
-                      ...(selectedReviewPath === "rejected" ? { rejectedPathUsed: true } : {}),
-                      // Update tool config if this is a review step
-                      tools: (node.data.tools && Array.isArray(node.data.tools)) ? node.data.tools.map((tool: any) => 
-                        tool.type === "review" ? {
-                          ...tool,
-                          config: {
-                            ...tool.config,
-                            ...(selectedReviewPath === "approved" ? { approved: newNodeId } : {}),
-                            ...(selectedReviewPath === "rejected" ? { rejected: newNodeId } : {}),
-                          }
-                        } : tool
-                      ) : node.data.tools,
-                    },
-                    selected: false, // Deselect source node
-                  }
-                : node.id === newNodeId
-                  ? node // Keep new node selected
-                  : { ...node, selected: false }, // Deselect all other nodes
-            ),
-          )
+          // Update the review step's config if this was from a review step
+          if (reviewPath) {
+            setNodes((prevNodes) =>
+              prevNodes.map((node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false,
+                        // Mark review path as used
+                        ...(reviewPath === "approved" ? { approvedPathUsed: true } : {}),
+                        ...(reviewPath === "rejected" ? { rejectedPathUsed: true } : {}),
+                        // Update tool config if this is a review step
+                        tools: (node.data.tools && Array.isArray(node.data.tools)) ? node.data.tools.map((tool: any) => 
+                          tool.type === "review" ? {
+                            ...tool,
+                            config: {
+                              ...tool.config,
+                              ...(reviewPath === "approved" ? { approved: newNodeId } : {}),
+                              ...(reviewPath === "rejected" ? { rejected: newNodeId } : {}),
+                            }
+                          } : tool
+                        ) : node.data.tools,
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
+              ),
+            )
+          } else {
+            // If not from a review step, still need to update hasNext for source node
+            setNodes((prevNodes) =>
+              prevNodes.map((node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false, // Remove plus button from source node
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
+              ),
+            )
+          }
         }
       } else if (selectedAgentNodeId && selectedAgentNodeId !== "pending") {
         // Update existing AI Agent node with the configuration
@@ -3427,6 +3648,33 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         if (sourceNode) {
           const newNodeId = `email-${nodeCounter}`
           
+          // Check if the source node is a review step and determine the connection path
+          let sourceHandle = "bottom"
+          let edgeLabel = undefined
+          let reviewPath = null
+          
+          if (sourceNode?.data?.tools && Array.isArray(sourceNode.data.tools)) {
+            const reviewTool = sourceNode.data.tools.find((tool: any) => tool.type === "review")
+            if (reviewTool) {
+              // This is a review step - determine which path to use based on current usage
+              const config = reviewTool.config || {}
+              console.log("Found review step with config:", config)
+              
+              // Use approved path if it's not used, otherwise use rejected path
+              if (!config.approved) {
+                sourceHandle = "approved"
+                edgeLabel = "Approved"
+                reviewPath = "approved"
+              } else if (!config.rejected) {
+                sourceHandle = "rejected" 
+                edgeLabel = "Rejected"
+                reviewPath = "rejected"
+              } else {
+                console.warn("Both approved and rejected paths are already used for review step:", selectedNodeForNext)
+              }
+            }
+          }
+          
           // Create the tool object for Email
           const emailTool = {
             id: `tool-${newNodeId}`,
@@ -3491,16 +3739,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               type: "arrowclosed" as const,
               color: "#D1D5DB",
             },
-            sourceHandle: selectedReviewPath === "approved" ? "approved" : selectedReviewPath === "rejected" ? "rejected" : "bottom",
+            sourceHandle: sourceHandle,
             targetHandle: "top",
-            label: selectedReviewPath === "approved" ? "Approved" : selectedReviewPath === "rejected" ? "Rejected" : undefined,
-            labelStyle: selectedReviewPath ? { 
+            label: edgeLabel,
+            labelStyle: edgeLabel ? { 
               fill: '#6B7280', 
               fontWeight: 600, 
               fontSize: '12px',
               fontFamily: 'Inter, system-ui, sans-serif'
             } : undefined,
-            labelBgStyle: selectedReviewPath ? { 
+            labelBgStyle: edgeLabel ? { 
               fill: '#FFFFFF', 
               fillOpacity: 0.9,
               stroke: '#E5E7EB',
@@ -3514,37 +3762,57 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setEdges((prevEdges) => [...prevEdges, newEdge])
           setNodeCounter((prev) => prev + 1)
 
-          // Mark the appropriate review path as used if this was from a review step
-          setNodes((prevNodes) =>
-            prevNodes.map((node) =>
-              node.id === selectedNodeForNext
-                ? {
-                    ...node,
-                    data: {
-                      ...node.data,
-                      hasNext: false,
-                      // Mark review path as used
-                      ...(selectedReviewPath === "approved" ? { approvedPathUsed: true } : {}),
-                      ...(selectedReviewPath === "rejected" ? { rejectedPathUsed: true } : {}),
-                      // Update tool config if this is a review step
-                      tools: (node.data.tools && Array.isArray(node.data.tools)) ? node.data.tools.map((tool: any) => 
-                        tool.type === "review" ? {
-                          ...tool,
-                          config: {
-                            ...tool.config,
-                            ...(selectedReviewPath === "approved" ? { approved: newNodeId } : {}),
-                            ...(selectedReviewPath === "rejected" ? { rejected: newNodeId } : {}),
-                          }
-                        } : tool
-                      ) : node.data.tools,
-                    },
-                    selected: false, // Deselect source node
-                  }
-                : node.id === newNodeId
-                  ? node // Keep new node selected
-                  : { ...node, selected: false }, // Deselect all other nodes
-            ),
-          )
+          // Update the review step's config if this was from a review step
+          if (reviewPath) {
+            setNodes((prevNodes) =>
+              prevNodes.map((node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false,
+                        // Mark review path as used
+                        ...(reviewPath === "approved" ? { approvedPathUsed: true } : {}),
+                        ...(reviewPath === "rejected" ? { rejectedPathUsed: true } : {}),
+                        // Update tool config if this is a review step
+                        tools: (node.data.tools && Array.isArray(node.data.tools)) ? node.data.tools.map((tool: any) => 
+                          tool.type === "review" ? {
+                            ...tool,
+                            config: {
+                              ...tool.config,
+                              ...(reviewPath === "approved" ? { approved: newNodeId } : {}),
+                              ...(reviewPath === "rejected" ? { rejected: newNodeId } : {}),
+                            }
+                          } : tool
+                        ) : node.data.tools,
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
+              ),
+            )
+          } else {
+            // If not from a review step, still need to update hasNext for source node
+            setNodes((prevNodes) =>
+              prevNodes.map((node) =>
+                node.id === selectedNodeForNext
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        hasNext: false, // Remove plus button from source node
+                      },
+                      selected: false, // Deselect source node
+                    }
+                  : node.id === newNodeId
+                    ? node // Keep new node selected
+                    : { ...node, selected: false }, // Deselect all other nodes
+              ),
+            )
+          }
         }
       } else if (selectedEmailNodeId && selectedEmailNodeId !== "pending") {
         // Update existing Email node with the configuration
@@ -3597,6 +3865,61 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setSelectedReviewPath(null)
     },
     [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow, selectedReviewPath],
+  )
+
+  const handleReviewConfigSave = useCallback(
+    (emailConfig: ReviewEmailConfig) => {
+      console.log(`handleReviewConfigSave called:`, {
+        selectedReviewStepId,
+        emailConfig,
+      })
+
+      if (selectedReviewStepId) {
+        // Update existing review step's tool configuration
+        const updatedNodes = nodes.map((node) => {
+          if (node.id === selectedReviewStepId || 
+              (node.data?.step && (node.data.step as any).id === selectedReviewStepId)) {
+            console.log("Updating review node:", node.id, "with email config:", emailConfig)
+            
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                tools: node.data?.tools?.map((tool: any) => {
+                  if (tool.type === "review") {
+                    return {
+                      ...tool,
+                      config: {
+                        ...tool.config,
+                        email_addresses: emailConfig.email_addresses,
+                        email_message: emailConfig.email_message,
+                      }
+                    }
+                  }
+                  return tool
+                }) || [{
+                  type: "review",
+                  config: {
+                    email_addresses: emailConfig.email_addresses,
+                    email_message: emailConfig.email_message,
+                  }
+                }]
+              }
+            }
+          }
+          return node
+        })
+
+        setNodes(updatedNodes)
+        
+        // Close the sidebar
+        setShowReviewExecutionUI(false)
+        setSelectedReviewStepId(null)
+        
+        console.log("Review configuration saved successfully")
+      }
+    },
+    [selectedReviewStepId, nodes, setNodes],
   )
 
   const handleOnFormSubmissionBack = useCallback(() => {
@@ -4347,8 +4670,65 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             // Restart workflow polling after review submission
             console.log("Review submitted, workflow will continue")
           }}
-          builder={builder && !selectedTemplate}
+          builder={true}
+          onSave={(emailConfig) => {
+            // Handle saving review email configuration
+            handleReviewConfigSave(emailConfig)
+          }}
+          stepData={
+            selectedReviewStepId
+              ? (() => {
+                  const node = nodes.find((n) => {
+                    const step = n.data?.step as { id?: string }
+                    return step?.id === selectedReviewStepId
+                  })
+                  return node
+                })()
+              : null
+          }
+          toolData={
+            selectedReviewStepId
+              ? (() => {
+                  const node = nodes.find((n) => {
+                    const step = n.data?.step as { id?: string }
+                    return step?.id === selectedReviewStepId
+                  })
+                  const tools = node?.data?.tools as Tool[] | undefined
+                  return tools && tools.length > 0 ? tools[0] : undefined
+                })()
+              : undefined
+          }
+          toolId={selectedReviewStepId ? getToolIdFromStepId(selectedReviewStepId) : undefined}
         />
+
+        {/* Trigger Execution Sidebar */}
+        <TriggerExecutionUI
+          isVisible={showTriggerExecutionUI}
+          onBack={() => setShowTriggerExecutionUI(false)}
+          onClose={() => {
+            setShowTriggerExecutionUI(false)
+            setSelectedTriggerStepId(null)
+          }}
+          stepExecutionId={selectedTriggerStepId || ""}
+          stepName={
+            selectedTriggerStepId
+              ? (() => {
+                  const node = nodes.find((n) => {
+                    const step = n.data?.step as { id?: string; name?: string }
+                    return step?.id === selectedTriggerStepId
+                  })
+                  const step = node?.data?.step as { name?: string }
+                  return step?.name || "Trigger Step"
+                })()
+              : "Trigger Step"
+          }
+          builder={true}
+          onTriggerSubmitted={() => {
+            // Restart workflow polling after trigger submission
+            console.log("Trigger submitted, workflow will continue")
+          }}
+        />
+
         {/* Script Config Sidebar */}
         {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && (
           <ScriptSidebar
@@ -4413,6 +4793,33 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 if (sourceNode) {
                   const newNodeId = `step-${nodeCounter}`
                   
+                  // Check if the source node is a review step and determine the connection path
+                  let sourceHandle = "bottom"
+                  let edgeLabel = undefined
+                  let reviewPath = null
+                  
+                  if (sourceNode?.data?.tools && Array.isArray(sourceNode.data.tools)) {
+                    const reviewTool = sourceNode.data.tools.find((tool: any) => tool.type === "review")
+                    if (reviewTool) {
+                      // This is a review step - determine which path to use based on current usage
+                      const config = reviewTool.config || {}
+                      console.log("Found review step with config:", config)
+                      
+                      // Use approved path if it's not used, otherwise use rejected path
+                      if (!config.approved) {
+                        sourceHandle = "approved"
+                        edgeLabel = "Approved"
+                        reviewPath = "approved"
+                      } else if (!config.rejected) {
+                        sourceHandle = "rejected" 
+                        edgeLabel = "Rejected"
+                        reviewPath = "rejected"
+                      } else {
+                        console.warn("Both approved and rejected paths are already used for review step:", selectedNodeForNext)
+                      }
+                    }
+                  }
+                  
                   // Create new node positioned below the source node
                   const newNode = {
                     id: newNodeId,
@@ -4454,8 +4861,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                       type: "arrowclosed" as const,
                       color: "#D1D5DB",
                     },
-                    sourceHandle: "bottom",
+                    sourceHandle: sourceHandle,
                     targetHandle: "top",
+                    label: edgeLabel,
+                    labelStyle: edgeLabel ? { 
+                      fill: '#6B7280', 
+                      fontWeight: 600, 
+                      fontSize: '12px',
+                      fontFamily: 'Inter, system-ui, sans-serif'
+                    } : undefined,
+                    labelBgStyle: edgeLabel ? { 
+                      fill: '#FFFFFF', 
+                      fillOpacity: 0.9,
+                      stroke: '#E5E7EB',
+                      strokeWidth: 1,
+                      rx: 4
+                    } : undefined,
                   }
 
                   // Update nodes and edges
@@ -4463,20 +4884,51 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                   setEdges((prevEdges) => [...prevEdges, newEdge])
                   setNodeCounter((prev) => prev + 1)
 
-                  // Remove hasNext from source node since it now has a next step
-                  setNodes((prevNodes) =>
-                    prevNodes.map((node) =>
-                      node.id === selectedNodeForNext
-                        ? {
-                            ...node,
-                            data: {
-                              ...node.data,
-                              hasNext: false,
-                            },
-                          }
-                        : node,
-                    ),
-                  )
+                  // Update the review step's config if this was from a review step
+                  if (reviewPath) {
+                    setNodes((prevNodes) =>
+                      prevNodes.map((node) =>
+                        node.id === selectedNodeForNext
+                          ? {
+                              ...node,
+                              data: {
+                                ...node.data,
+                                hasNext: false,
+                                // Mark review path as used
+                                ...(reviewPath === "approved" ? { approvedPathUsed: true } : {}),
+                                ...(reviewPath === "rejected" ? { rejectedPathUsed: true } : {}),
+                                // Update tool config if this is a review step
+                                tools: (node.data.tools && Array.isArray(node.data.tools)) ? node.data.tools.map((tool: any) => 
+                                  tool.type === "review" ? {
+                                    ...tool,
+                                    config: {
+                                      ...tool.config,
+                                      ...(reviewPath === "approved" ? { approved: newNodeId } : {}),
+                                      ...(reviewPath === "rejected" ? { rejected: newNodeId } : {}),
+                                    }
+                                  } : tool
+                                ) : node.data.tools,
+                              },
+                            }
+                          : node,
+                      ),
+                    )
+                  } else {
+                    // Remove hasNext from source node since it now has a next step
+                    setNodes((prevNodes) =>
+                      prevNodes.map((node) =>
+                        node.id === selectedNodeForNext
+                          ? {
+                              ...node,
+                              data: {
+                                ...node.data,
+                                hasNext: false,
+                              },
+                            }
+                          : node,
+                      ),
+                    )
+                  }
                 }
               }
             }}

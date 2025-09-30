@@ -1,5 +1,7 @@
 import React, { useCallback, useState, useEffect } from "react"
 import { Bot, Mail, Settings, X, FileTextIcon , FileText, Code} from "lucide-react"
+import ReviewExecutionUI from "./ReviewExecutionUI"
+import TriggerExecutionUI from "./TriggerExecutionUI"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -1863,6 +1865,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedResult, setSelectedResult] = useState<any>(null)
   const [showExecutionSidebar, setShowExecutionSidebar] = useState(false)
   const [selectedExecutionNode, setSelectedExecutionNode] = useState<any>(null)
+  const [showReviewExecutionUI, setShowReviewExecutionUI] = useState(false)
+  const [showTriggerExecutionUI, setShowTriggerExecutionUI] = useState(false)
+  const [selectedReviewStepId, setSelectedReviewStepId] = useState<string | null>(null)
+  const [selectedTriggerStepId, setSelectedTriggerStepId] = useState<string | null>(null)
+  const [reviewPreviousStepResult, setReviewPreviousStepResult] = useState<any>(null)
   // Cleanup polling on component unmount
   const [pollingInterval] = useState<NodeJS.Timeout | null>(null)
 
@@ -2120,12 +2127,64 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Check if this is an execution workflow node
       const isExecution = (step as any).isExecution
 
-
-      // Close execution sidebar first
+      // Close all sidebars first
       setShowExecutionSidebar(false)
+      setShowReviewExecutionUI(false)
+      setShowTriggerExecutionUI(false)
+      setSelectedReviewStepId(null)
+      setSelectedTriggerStepId(null)
 
-      // Show execution sidebar for execution workflows
+      // Handle execution workflows
       if (isExecution) {
+        // Check for trigger step first (trigger steps might also come as "manual" type)
+        if (step.type === "trigger" || (step.type === "manual" && step.name === "Manual Trigger")) {
+          console.log("🔍 Trigger execution node clicked:", { stepId: step.id, stepType: step.type, stepName: step.name })
+          setSelectedTriggerStepId(step.id)
+          setShowTriggerExecutionUI(true)
+          return
+        }
+
+        // Check for review step
+        if (step.type === "review" || (step.type === "manual" && step.name === "Review Step")) {
+          console.log("🔍 Review execution node clicked:", { stepId: step.id, stepType: step.type, stepName: step.name })
+          
+          // Extract previous step result for review content
+          let previousStepResult = null
+          if (selectedTemplate?.stepExecutions && step.prevStepIds && step.prevStepIds.length > 0) {
+            const prevStepId = step.prevStepIds[0] // Get the first previous step
+            const prevStep = selectedTemplate.stepExecutions.find(s => s.workflowStepTemplateId === prevStepId)
+            
+            if (prevStep && selectedTemplate.toolExecutions) {
+              // Find tool executions for the previous step
+              const prevStepToolExecs = selectedTemplate.toolExecutions.filter(
+                tool => prevStep.toolExecIds.includes(tool.id)
+              )
+              
+              if (prevStepToolExecs.length > 0) {
+                // Get the result from the most recent completed tool execution
+                const completedTools = prevStepToolExecs.filter(tool => tool.result)
+                if (completedTools.length > 0) {
+                  previousStepResult = completedTools[completedTools.length - 1].result
+                }
+              }
+              
+              // Fallback: check if the previous step has form submission data
+              if (!previousStepResult && prevStep.metadata?.formSubmission) {
+                previousStepResult = {
+                  formData: prevStep.metadata.formSubmission
+                }
+              }
+            }
+          }
+          
+          console.log("🔍 Previous step result for review:", previousStepResult)
+          setReviewPreviousStepResult(previousStepResult)
+          setSelectedReviewStepId(step.id)
+          setShowReviewExecutionUI(true)
+          return
+        }
+
+        // Default execution sidebar for other steps
         setSelectedExecutionNode({ step, tools, node })
         setShowExecutionSidebar(true)
         return
@@ -2301,6 +2360,42 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           workflowData={selectedTemplate}
           onClose={() => setShowExecutionSidebar(false)}
           onResultClick={handleResultClick}
+        />
+
+        {/* Review Execution Sidebar */}
+        <ReviewExecutionUI
+          isVisible={showReviewExecutionUI}
+          onBack={() => setShowReviewExecutionUI(false)}
+          onClose={() => {
+            setShowReviewExecutionUI(false)
+            setSelectedReviewStepId(null)
+            setReviewPreviousStepResult(null)
+          }}
+          stepExecutionId={selectedReviewStepId || ""}
+          stepName="Review Step"
+          builder={false} // Always execution mode in this component
+          previousStepResult={reviewPreviousStepResult}
+          onReviewSubmitted={() => {
+            console.log("Review submitted, workflow will continue")
+            // Could add workflow refresh logic here if needed
+          }}
+        />
+
+        {/* Trigger Execution Sidebar */}
+        <TriggerExecutionUI
+          isVisible={showTriggerExecutionUI}
+          onBack={() => setShowTriggerExecutionUI(false)}
+          onClose={() => {
+            setShowTriggerExecutionUI(false)
+            setSelectedTriggerStepId(null)
+          }}
+          stepExecutionId={selectedTriggerStepId || ""}
+          stepName="Manual Trigger"
+          builder={false} // Always execution mode in this component
+          onTriggerSubmitted={() => {
+            console.log("Trigger submitted, workflow will continue")
+            // Could add workflow refresh logic here if needed
+          }}
         />
 
 
