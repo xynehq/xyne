@@ -208,18 +208,7 @@ export class VertexAiProvider extends BaseProvider {
     this.client = client
     this.provider = provider
   }
-  private mapApiModelIdToMapperModel(apiModelId: string): Models | null {
-  const newapiModelId=apiModelId.split('@')[0].toLowerCase();
-  const modelMapping:Record<string,Models>={
-     'claude-sonnet-4':Models.Vertex_Claude_Sonnet_4,
-     'claude-3-7-sonnet':Models.Vertex_Claude_3_7_Sonnet,
-     'claude-3-5-sonnet':Models.Vertex_Claude_3_5_Sonnet,
-     'gemini-2.5-pro':Models.Vertex_Gemini_2_5_Pro,
-     'gemini-2.5-flash':Models.Vertex_Gemini_2_5_Flash,
-  }
-  return modelMapping[newapiModelId] || null
-
-}
+  
 
   async converse(
     messages: Message[],
@@ -290,15 +279,14 @@ export class VertexAiProvider extends BaseProvider {
           },
         }))
       const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-      const mapperModelId=this.mapApiModelIdToMapperModel(modelId);
-      const cost = usage.input_tokens && usage.output_tokens && mapperModelId ? calculateCost(
+      const cost = (usage.input_tokens || usage.output_tokens) && modelId ? calculateCost(
         {
-          inputTokens:usage.input_tokens,
-          outputTokens:usage.output_tokens
+          inputTokens: usage.input_tokens,
+          outputTokens: usage.output_tokens
         },
-        modelDetailsMap[mapperModelId].cost.onDemand
+        modelDetailsMap[modelId].cost.onDemand
       ):0
-  
+    
       return { text, cost, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }
     } catch (error) {
       Logger.error(`VertexAI Anthropic request failed:`, error)
@@ -401,16 +389,16 @@ export class VertexAiProvider extends BaseProvider {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         }
-        const mapperModelId=this.mapApiModelIdToMapperModel(modelId); 
+        
     
-        const cost = usage.inputTokens && usage.outputTokens && mapperModelId ? calculateCost(
+        const cost = (usage.inputTokens || usage.outputTokens) && modelId ? calculateCost(
           {
             inputTokens:usage.inputTokens,
             outputTokens:usage.outputTokens
           },
-          modelDetailsMap[mapperModelId].cost.onDemand,
+          modelDetailsMap[modelId].cost.onDemand,
         ):0 
-  
+     
         yield {
           text: "",
           cost,
@@ -508,18 +496,18 @@ export class VertexAiProvider extends BaseProvider {
         .filter((part: any) => part.text)
         .map((part: any) => part.text)
         .join("")
-      const usasageMetadata=response.response.usageMetadata || {}
-      const inputTokens=usasageMetadata.promptTokenCount || 0
-      const outputTokens=usasageMetadata.candidatesTokenCount || 0
-      const mapperModelId=this.mapApiModelIdToMapperModel(modelId);
-      const cost = inputTokens && outputTokens && mapperModelId ? calculateCost(
+      const usageMetadata = response.response.usageMetadata || {}
+      const inputTokens = usageMetadata.promptTokenCount || 0
+      const outputTokens = usageMetadata.candidatesTokenCount || 0
+
+      const cost = (inputTokens || outputTokens ) && modelId ? calculateCost(
         {
           inputTokens,
           outputTokens,
         },
-        modelDetailsMap[mapperModelId].cost.onDemand,
+        modelDetailsMap[modelId].cost.onDemand,
       ):0;
-
+   
       let sources: WebSearchSource[] = []
       const groundingMetadata =
         response.response.candidates?.[0]?.groundingMetadata
@@ -655,15 +643,23 @@ export class VertexAiProvider extends BaseProvider {
             .map((part: any) => part.text)
           chunkText += textParts.join("")
         }
-        let totalInputTokens=0
-        let totalOutputTokens=0
-        const usasageMetadata=chunk.usageMetadata;
-        if(usasageMetadata){
-          totalInputTokens=usasageMetadata.promptTokenCount || 0
-          totalOutputTokens=usasageMetadata.candidatesTokenCount || 0
+        let totalInputTokens = 0
+        let totalOutputTokens = 0
+        const usageMetadata = chunk.usageMetadata;
+        if (usageMetadata) {
+          totalInputTokens = usageMetadata.promptTokenCount || 0
+          totalOutputTokens = usageMetadata.candidatesTokenCount || 0
         }
 
         if (chunkText) {
+          const cost = (totalInputTokens || totalOutputTokens) && modelParams.modelId ? calculateCost(
+            {
+              inputTokens:totalInputTokens,
+              outputTokens:totalOutputTokens
+            },
+            modelDetailsMap[modelParams.modelId].cost.onDemand
+          ):0
+         
           aggregatedText += chunkText
           yield {
             text: chunkText,
