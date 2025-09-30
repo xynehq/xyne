@@ -18,7 +18,7 @@ import { createAgentSchema } from "@/api/agent"
 import type { CreateAgentPayload } from "@/api/agent"
 import { insertAgent } from "@/db/agent" 
 import { getDateForAI } from "@/utils/index"
-import { CreatedVia } from "@/db/schema"
+import { AgentCreationSource } from "@/db/schema"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -524,7 +524,7 @@ export const createAgentForWorkflow = async (
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
       docIds: validatedBody.docIds,
-      createdVia: CreatedVia.WORKFLOW,
+      creation_source: AgentCreationSource.WORKFLOW,
     }
 
     const newAgent = await db.transaction(async (tx) => {
