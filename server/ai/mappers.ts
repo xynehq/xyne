@@ -1,5 +1,10 @@
 import { AIProviders, Models, type Cost } from "@/ai/types"
+import { MODEL_CONFIGURATIONS } from "./modelConfig";
+import { get } from "http";
 
+const getActualModelName=(model:Models):string=>{
+  return MODEL_CONFIGURATIONS[model]?.actualName || model;
+}
 export const modelDetailsMap: Record<
   string,
   { name: string; cost: { onDemand: Cost; batch?: Cost } }
@@ -283,7 +288,7 @@ export const modelDetailsMap: Record<
       },
     },
   },
-  [Models.Vertex_Claude_3_5_Sonnet]:{
+  [getActualModelName(Models.Vertex_Claude_3_5_Sonnet)]: {
     name: "vertex-claude-3-5-sonnet",
     cost: {
       onDemand: {
@@ -292,7 +297,7 @@ export const modelDetailsMap: Record<
       },
     },
   },
-  [Models.Vertex_Claude_3_7_Sonnet]:{
+  [getActualModelName(Models.Vertex_Claude_3_7_Sonnet)]: {
     name: "vertex-claude-3-7-sonnet",
     cost: {
       onDemand: {
@@ -301,7 +306,7 @@ export const modelDetailsMap: Record<
       },
     },
   },
-  [Models.Vertex_Claude_Sonnet_4]:{
+  [getActualModelName(Models.Vertex_Claude_Sonnet_4)]:{
     name:"vertex-claude-sonnet-4",
     cost:{
       onDemand:{
@@ -310,7 +315,7 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [Models.Vertex_Gemini_2_5_Flash]:{
+  [getActualModelName(Models.Vertex_Gemini_2_5_Flash)]:{
     name:"vertex-gemini-2-5-flash",
     cost:{
       onDemand:{
@@ -319,7 +324,7 @@ export const modelDetailsMap: Record<
       }
     }
   },
-  [Models.Vertex_Gemini_2_5_Pro]:{
+  [getActualModelName(Models.Vertex_Gemini_2_5_Pro)]:{
     name:"vertex-gemini-2-5-pro",
     cost:{
       onDemand:{
