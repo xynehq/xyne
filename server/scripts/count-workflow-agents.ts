@@ -5,13 +5,14 @@ import { and, eq, isNull, desc, count, sql } from "drizzle-orm"
 import { AgentCreationSource } from "@/db/schema"
 
 export const countWorkflowAgents = async () => {
-  console.log("🔍 Counting workflow agents...")
+  console.log("🔍 Counting workflow agents which is marked as direct...")
 
   const result = await db
     .select({ count: count() })
     .from(agents)
     .where(
       and(
+        eq(agents.creation_source, AgentCreationSource.DIRECT),
         eq(agents.isPublic, false),
         eq(agents.appIntegrations, sql`'[]'::jsonb`),
         eq(agents.allowWebSearch, false),
