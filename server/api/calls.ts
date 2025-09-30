@@ -152,6 +152,7 @@ export const InitiateCallApi = async (c: Context) => {
       },
       callType: validatedData.callType,
       targetToken,
+      livekitUrl: LIVEKIT_URL,
       timestamp: Date.now(),
     }
 
@@ -320,6 +321,7 @@ export const InviteToCallApi = async (c: Context) => {
       },
       callType: validatedData.callType,
       targetToken,
+      livekitUrl: LIVEKIT_URL,
       timestamp: Date.now(),
     }
 
