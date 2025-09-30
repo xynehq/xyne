@@ -26,7 +26,6 @@ export const createWorkflowTool = async (
       type: data.type,
       value: data.value,
       config: data.config || {},
-      createdBy: data.createdBy,
     })
     .returning()
 
@@ -108,6 +107,8 @@ export const createToolExecution = async (
   trx: TxnOrClient,
   data: {
     workflowToolId: string
+    userId: number
+    workspaceId: number
     workflowExecutionId: string
     status?: ToolExecutionStatus
     result?: any
@@ -117,6 +118,8 @@ export const createToolExecution = async (
     .insert(toolExecution)
     .values({
       workflowToolId: data.workflowToolId,
+      workspaceId: data.workspaceId,
+      userId: data.userId,
       workflowExecutionId: data.workflowExecutionId,
       status: data.status || ToolExecutionStatus.PENDING,
       result: data.result,

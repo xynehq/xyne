@@ -263,9 +263,6 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     if (!userRes || !userRes.length) {
       throw new NoUserFound({})
     }
-    if (!userRes?.length) {
-      throw new NoUserFound({ message: `User with email ${email} not found.` })
-    }
     const [user] = userRes
     const userId = user.id
 
@@ -2283,9 +2280,6 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
     if (!userRes || !userRes.length) {
       throw new NoUserFound({})
     }
-    if (!userRes?.length) {
-      throw new NoUserFound({ message: `User with email ${email} not found.` })
-    }
     const [user] = userRes
     const requestData = await c.req.json()
 
@@ -2322,9 +2316,6 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
       throw new NoUserFound({})
-    }
-    if (!userRes?.length) {
-      throw new NoUserFound({ message: `User with email ${email} not found.` })
     }
     const [user] = userRes
     
@@ -2638,9 +2629,6 @@ export const CreateWorkflowExecutionApi = async (c: Context) => {
     const userRes = await getUserByEmail(db, email)
     if (!userRes || !userRes.length) {
       throw new NoUserFound({})
-    }
-    if (!userRes?.length) {
-      throw new NoUserFound({ message: `User with email ${email} not found.` })
     }
     const [user] = userRes
     const requestData = await c.req.json()
