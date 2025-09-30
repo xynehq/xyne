@@ -1,7 +1,7 @@
 import { isValidFile, isImageFile } from "shared/fileUtils"
 import { SelectedFile } from "@/components/ClFileUpload"
 import { authFetch } from "./authFetch"
-import { FileType, MIME_TYPE_MAPPINGS, EXTENSION_MAPPINGS } from "shared/types"
+import { FileType, MIME_TYPE_MAPPINGS, EXTENSION_MAPPINGS, UploadStatus } from "shared/types"
 
 // Generate unique ID for files
 export const generateFileId = () => Math.random().toString(36).substring(2, 9)
@@ -140,6 +140,9 @@ export interface FileNode {
   lastUpdated?: string
   updatedBy?: string
   isOpen?: boolean
+  uploadStatus?: UploadStatus
+  statusMessage?: string
+  retryCount?: number
 }
 
 export const buildFileTree = (
@@ -150,6 +153,9 @@ export const buildFileTree = (
     totalFileCount?: number
     updatedAt?: string
     updatedBy?: string
+    uploadStatus?: UploadStatus
+    statusMessage?: string
+    retryCount?: number
   }[],
 ): FileNode[] => {
   const root: FileNode = {
@@ -180,6 +186,9 @@ export const buildFileTree = (
           files: file.totalFileCount,
           lastUpdated: file.updatedAt,
           updatedBy: file.updatedBy,
+          uploadStatus: file.uploadStatus,
+          statusMessage: file.statusMessage,
+          retryCount: file.retryCount,
         }
         if (!currentNode.children) {
           currentNode.children = []
