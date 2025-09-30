@@ -55,8 +55,7 @@ export const previewAgentsToUpdate = async () => {
 
   console.log(`🎯 Found ${agentsToUpdate.length} agents to update:`) // ADD THIS LINE
   agentsToUpdate.forEach((agent, index) => {
-    console.log(`${index + 1}. ${agent.name} (${agent.externalId}) - Current: ${agent.creation_source} - Created: 
-  ${agent.createdAt}`)
+    console.log(`${index + 1}. ${agent.name} (${agent.externalId}) - Current: ${agent.creation_source} - Created: ${agent.createdAt}`)
   })
 
   return agentsToUpdate
