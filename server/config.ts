@@ -48,6 +48,10 @@ let VertexRegion = ""
 let VertexAIModel = ""
 let aiProviderBaseUrl = ""
 let isReasoning = false
+
+// File processing worker configuration
+let fileProcessingWorkerThreads = parseInt(process.env.FILE_PROCESSING_WORKER_THREADS || "1", 10)
+let fileProcessingTeamSize = parseInt(process.env.FILE_PROCESSING_TEAM_SIZE || "1", 10)
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
@@ -220,4 +224,6 @@ export default {
   defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
   CurrentAuthType,
   getDatabaseUrl,
+  fileProcessingWorkerThreads,
+  fileProcessingTeamSize,
 }

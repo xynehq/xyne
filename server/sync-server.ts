@@ -49,26 +49,58 @@ app.get("/status", (c) => {
 export const initSyncServer = async () => {
   Logger.info("Initializing Sync Server")
   
-  // Start file processing worker in separate thread
-  const fileProcessingWorker = new Worker(path.join(__dirname, "fileProcessingWorker.ts"))
+  // Start multiple file processing workers in separate threads
+  const workerThreads: Worker[] = []
+  const workerCount = config.fileProcessingWorkerThreads
   
-  fileProcessingWorker.on("message", (message) => {
-    if (message.status === "initialized") {
-      Logger.info("File processing worker thread initialized successfully")
-    } else if (message.status === "error") {
-      Logger.error(`File processing worker thread failed: ${message.error}`)
-    }
-  })
+  Logger.info(`Starting ${workerCount} file processing worker threads...`)
   
-  fileProcessingWorker.on("error", (error) => {
-    Logger.error(error, "File processing worker thread error")
-  })
-  
-  fileProcessingWorker.on("exit", (code) => {
-    if (code !== 0) {
-      Logger.error(`File processing worker thread exited with code ${code}`)
-    }
-  })
+  for (let i = 0; i < workerCount; i++) {
+    const fileProcessingWorker = new Worker(path.join(__dirname, "fileProcessingWorker.ts"))
+    workerThreads.push(fileProcessingWorker)
+    
+    fileProcessingWorker.on("message", (message) => {
+      if (message.status === "initialized") {
+        Logger.info(`File processing worker thread ${i + 1} initialized successfully`)
+      } else if (message.status === "error") {
+        Logger.error(`File processing worker thread ${i + 1} failed: ${message.error}`)
+      }
+    })
+    
+    fileProcessingWorker.on("error", (error) => {
+      Logger.error(error, `File processing worker thread ${i + 1} error`)
+    })
+    
+    fileProcessingWorker.on("exit", (code) => {
+      if (code !== 0) {
+        Logger.error(`File processing worker thread ${i + 1} exited with code ${code}`)
+        
+        // Restart worker thread if it crashes
+        Logger.info(`Restarting file processing worker thread ${i + 1}...`)
+        const newWorker = new Worker(path.join(__dirname, "fileProcessingWorker.ts"))
+        workerThreads[i] = newWorker
+        
+        // Re-attach event listeners for the new worker
+        newWorker.on("message", (message) => {
+          if (message.status === "initialized") {
+            Logger.info(`File processing worker thread ${i + 1} restarted and initialized successfully`)
+          } else if (message.status === "error") {
+            Logger.error(`File processing worker thread ${i + 1} failed: ${message.error}`)
+          }
+        })
+        
+        newWorker.on("error", (error) => {
+          Logger.error(error, `File processing worker thread ${i + 1} error`)
+        })
+        
+        newWorker.on("exit", (code) => {
+          if (code !== 0) {
+            Logger.error(`File processing worker thread ${i + 1} exited with code ${code}`)
+          }
+        })
+      }
+    })
+  }
   
   // Initialize the queue system in background - don't await (excluding file processing)
   initQueue()
