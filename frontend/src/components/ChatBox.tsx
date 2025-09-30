@@ -536,7 +536,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [initialLoadComplete, setInitialLoadComplete] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
     const [uploadingFilesCount, setUploadingFilesCount] = useState(0)
-    const uploadCompleteResolver = useRef<(() => void) | null>(null);
+    const uploadCompleteResolver = useRef<(() => void) | null>(null)
 
     // Model selection state
     const [availableModels, setAvailableModels] = useState<
@@ -788,8 +788,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // File upload utility functions
 
-    
-
     const uploadFiles = useCallback(
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
@@ -868,13 +866,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       },
       [toast],
     )
-  useEffect(() => {
-  if (uploadingFilesCount === 0 && uploadCompleteResolver.current) {
-    uploadCompleteResolver.current();
-    uploadCompleteResolver.current = null;
-  }
-}, [uploadingFilesCount]);
-const processFiles = useCallback(
+    useEffect(() => {
+      if (uploadingFilesCount === 0 && uploadCompleteResolver.current) {
+        uploadCompleteResolver.current()
+        uploadCompleteResolver.current = null
+      }
+    }, [uploadingFilesCount])
+    const processFiles = useCallback(
       (files: FileList | File[]) => {
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
@@ -1990,19 +1988,17 @@ const processFiles = useCallback(
       // Handle Attachments Metadata
       let attachmentsMetadata: AttachmentMetadata[] = []
       if (selectedFiles.length > 0) {
- 
-    if (uploadingFilesCount > 0) {
-      await new Promise<void>((resolve) => {
-        uploadCompleteResolver.current = resolve;
-      });
-    }
-     const alreadyUploadedMetadata = selectedFiles
-      .map((f) => f.metadata)
-      .filter((m): m is AttachmentMetadata => !!m);
+        if (uploadingFilesCount > 0) {
+          await new Promise<void>((resolve) => {
+            uploadCompleteResolver.current = resolve
+          })
+        }
+        const alreadyUploadedMetadata = selectedFiles
+          .map((f) => f.metadata)
+          .filter((m): m is AttachmentMetadata => !!m)
 
-    attachmentsMetadata = alreadyUploadedMetadata;
-    console.log("attachments", attachmentsMetadata);
-  }
+        attachmentsMetadata = alreadyUploadedMetadata
+      }
 
       // Replace data-doc-id and data-reference-id with mailId
       const tempDiv = document.createElement("div")
