@@ -2,7 +2,6 @@ import { getErrorMessage } from "@/utils"
 import { chunkDocument } from "@/chunks"
 // import { extractTextAndImagesWithChunksFromPDF } from "@/pdf
 
-import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
@@ -15,6 +14,7 @@ import {
   isDocxFile,
   isPptxFile,
 } from "@/integrations/dataSource/config"
+import { getLogger, Subsystem } from "@/logger"
 
 export interface ProcessingResult {
   chunks: string[]
@@ -26,6 +26,8 @@ export interface ProcessingResult {
 }
 
 export class FileProcessorService {
+  private static logger = getLogger(Subsystem.Ingest)
+
   static async processFile(
     buffer: Buffer,
     mimeType: string,
@@ -44,22 +46,10 @@ export class FileProcessorService {
     try {
       if (baseMimeType === "application/pdf") {
         // Redirect PDF processing to OCR
-        console.log(`🔄 PDF Processing via OCR - File: ${fileName}, Size: ${buffer.length} bytes, VespaDocId: ${vespaDocId}`)
         const result = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
+
         
-        console.log(`📊 OCR Processing Results for ${fileName}:`)
-        console.log(`  - Text chunks: ${result.chunks.length}`)
-        console.log(`  - Image chunks: ${result.image_chunks.length}`)
-        console.log(`  - Text chunk metadata:`, result.chunks_pos)
-        console.log(`  - Image chunk metadata:`, result.image_chunks_pos)
-        
-        // Return the OCR result directly - it already has all 6 fields
-        console.log(`🔄 OCR result includes new format with chunks_map and image_chunks_map`)
-        console.log(`  - chunks_pos (number[]): [${result.chunks_pos.join(', ')}]`)
-        console.log(`  - image_chunks_pos (number[]): [${result.image_chunks_pos.join(', ')}]`)
-        console.log(`  - chunks_map length: ${result.chunks_map.length}`)
-        console.log(`  - image_chunks_map length: ${result.image_chunks_map.length}`)
-        
+
         return result
       } else if (isDocxFile(baseMimeType)) {
         // Process DOCX
@@ -151,9 +141,7 @@ export class FileProcessorService {
         }
       }
     } catch (error) {
-      console.warn(
-        `Failed to process file content for ${fileName}: ${getErrorMessage(error)}`,
-      )
+      
       // Create basic chunk on processing error
       chunks = [
         `File: ${fileName}, Type: ${baseMimeType}, Size: ${buffer.length} bytes`,
@@ -164,13 +152,13 @@ export class FileProcessorService {
     // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
     const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
       chunk_index: index,
-      page_number: 0, // Default to page 0 for non-PDF files
+      page_number: -1, // Default to page -1 for non-PDF files
       block_labels: ["text"], // Default block label
     }));
-    
+
     const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
       chunk_index: chunks.length + index, // Continue indexing after text chunks
-      page_number: 0, // Default to page 0 for non-PDF files
+      page_number: -1, // Default to page -1 for non-PDF files
       block_labels: ["image"], // Default block label
     }));
 
