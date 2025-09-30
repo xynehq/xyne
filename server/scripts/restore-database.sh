@@ -12,18 +12,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKUP_DIR="${SCRIPT_DIR}/db-backups"
-DB_NAME="xyne"
-DB_USER="xyne"
-DB_PASSWORD="xyne"
-DB_HOST="localhost"
-DB_PORT="5432"
-
-# Docker container name (if using Docker)
-DOCKER_CONTAINER="xyne-db"
-
 # Function to print colored output
 print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -41,23 +29,109 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_DIR="${SCRIPT_DIR}/db-backups"
+
+# Load environment variables from server/.env
+SERVER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [ -f "${SERVER_DIR}/.env" ]; then
+    print_info "Loading environment variables from ${SERVER_DIR}/.env"
+    set -o allexport
+    source "${SERVER_DIR}/.env"
+    set +o allexport
+    print_info "Environment variables loaded successfully"
+else
+    print_warning "No .env file found at ${SERVER_DIR}/.env"
+fi
+
+# Parse DATABASE_URL or construct it from individual components
+if [ -n "${DATABASE_URL:-}" ]; then
+    print_info "Using DATABASE_URL from environment"
+    print_info "DATABASE_URL: ${DATABASE_URL}"
+    
+    # Parse DATABASE_URL (format: postgresql://user:password@host:port/database)
+    # Remove the protocol part
+    DB_URL_NO_PROTOCOL="${DATABASE_URL#postgresql://}"
+    
+    # Extract user and password
+    USER_PASS="${DB_URL_NO_PROTOCOL%%@*}"
+    DB_USER="${USER_PASS%%:*}"
+    DB_PASSWORD="${USER_PASS#*:}"
+    
+    # Extract host, port, and database
+    HOST_PORT_DB="${DB_URL_NO_PROTOCOL#*@}"
+    HOST_PORT="${HOST_PORT_DB%%/*}"
+    DB_NAME="${HOST_PORT_DB#*/}"
+    
+    DB_HOST="${HOST_PORT%%:*}"
+    DB_PORT="${HOST_PORT#*:}"
+    
+else
+    print_warning "DATABASE_URL not found, using individual environment variables with fallbacks"
+    # Database configuration with fallbacks
+    DB_NAME="${DATABASE_NAME:-xyne}"
+    DB_USER="${DATABASE_USER:-xyne}"
+    DB_PASSWORD="${DATABASE_PASSWORD:-xyne}"
+    DB_HOST="${DATABASE_HOST:-localhost}"
+    DB_PORT="${DATABASE_PORT:-5432}"
+fi
+
+# Print loaded configuration
+print_info "Database configuration:"
+print_info "  DB_NAME: $DB_NAME"
+print_info "  DB_USER: $DB_USER"
+print_info "  DB_HOST: $DB_HOST"
+print_info "  DB_PORT: $DB_PORT"
+print_info "  DB_PASSWORD: [REDACTED]"
+
+# Docker container name (if using Docker)
+DOCKER_CONTAINER="${DATABASE_HOST:-xyne-db}"
+
+# Cache Docker availability to avoid repeated checks
+DOCKER_AVAILABLE=""
+
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
+
 # Function to check if Docker container is running
 check_docker_container() {
-    if docker ps --format "table {{.Names}}" | grep -q "^${DOCKER_CONTAINER}$"; then
+    # Use cached result if available
+    if [ "$DOCKER_AVAILABLE" = "yes" ]; then
+        return 0
+    elif [ "$DOCKER_AVAILABLE" = "no" ]; then
+        return 1
+    fi
+    
+    print_info "Checking if Docker container '$DOCKER_CONTAINER' is running..."
+    
+    # Use a more reliable Docker check
+    if docker ps --filter "name=^${DOCKER_CONTAINER}$" --filter "status=running" --format "{{.Names}}" | grep -q "^${DOCKER_CONTAINER}$"; then
+        print_info "Docker container '$DOCKER_CONTAINER' found and running"
+        DOCKER_AVAILABLE="yes"
         return 0
     else
+        print_warning "Docker container '$DOCKER_CONTAINER' not found or not running"
+        DOCKER_AVAILABLE="no"
         return 1
     fi
 }
 
 # Function to check if PostgreSQL is accessible locally
 check_local_postgres() {
+    print_info "Checking if local PostgreSQL is accessible..."
     if command -v pg_isready &> /dev/null; then
         if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" &> /dev/null; then
+            print_info "Local PostgreSQL is accessible"
             return 0
+        else
+            print_warning "Local PostgreSQL is not accessible"
+            return 1
         fi
+    else
+        print_warning "pg_isready command not found"
+        return 1
     fi
-    return 1
 }
 
 # Function to list available backups
