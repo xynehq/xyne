@@ -109,6 +109,12 @@ import { OAuthCallback } from "@/api/oauth"
 import { deleteCookieByEnv, setCookieByEnv } from "@/utils"
 import { getLogger, LogMiddleware } from "@/logger"
 import { Subsystem } from "@/types"
+import {
+  GetUserWorkspaceInfo,
+  GenerateUserApiKey,
+  GetUserApiKeys,
+  DeleteUserApiKey,
+} from "@/api/auth"
 import { SearchWorkspaceUsersApi, searchUsersSchema } from "@/api/users"
 import {
   InitiateCallApi,
@@ -121,12 +127,6 @@ import {
   endCallSchema,
   inviteToCallSchema,
 } from "@/api/calls"
-import {
-  GetUserWorkspaceInfo,
-  GenerateUserApiKey,
-  GetUserApiKeys,
-  DeleteUserApiKey,
-} from "@/api/auth"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
