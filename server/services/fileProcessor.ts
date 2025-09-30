@@ -5,6 +5,8 @@ import { chunkDocument } from "@/chunks"
 import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
+import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
+import { type ChunkMetadata } from "@/types"
 import * as XLSX from "xlsx"
 import {
   getBaseMimeType,
@@ -19,6 +21,8 @@ export interface ProcessingResult {
   chunks_pos: number[]
   image_chunks: string[]
   image_chunks_pos: number[]
+  chunks_map: ChunkMetadata[]
+  image_chunks_map: ChunkMetadata[]
 }
 
 export class FileProcessorService {
@@ -39,15 +43,24 @@ export class FileProcessorService {
 
     try {
       if (baseMimeType === "application/pdf") {
-        // Process PDF
-        const result = await extractTextAndImagesWithChunksFromPDFviaGemini(
-          new Uint8Array(buffer),
-          vespaDocId,
-        )
-        chunks = result.text_chunks
-        chunks_pos = result.text_chunk_pos
-        image_chunks = result.image_chunks || []
-        image_chunks_pos = result.image_chunk_pos || []
+        // Redirect PDF processing to OCR
+        console.log(`🔄 PDF Processing via OCR - File: ${fileName}, Size: ${buffer.length} bytes, VespaDocId: ${vespaDocId}`)
+        const result = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
+        
+        console.log(`📊 OCR Processing Results for ${fileName}:`)
+        console.log(`  - Text chunks: ${result.chunks.length}`)
+        console.log(`  - Image chunks: ${result.image_chunks.length}`)
+        console.log(`  - Text chunk metadata:`, result.chunks_pos)
+        console.log(`  - Image chunk metadata:`, result.image_chunks_pos)
+        
+        // Return the OCR result directly - it already has all 6 fields
+        console.log(`🔄 OCR result includes new format with chunks_map and image_chunks_map`)
+        console.log(`  - chunks_pos (number[]): [${result.chunks_pos.join(', ')}]`)
+        console.log(`  - image_chunks_pos (number[]): [${result.image_chunks_pos.join(', ')}]`)
+        console.log(`  - chunks_map length: ${result.chunks_map.length}`)
+        console.log(`  - image_chunks_map length: ${result.image_chunks_map.length}`)
+        
+        return result
       } else if (isDocxFile(baseMimeType)) {
         // Process DOCX
         const result = await extractTextAndImagesWithChunksFromDocx(
@@ -148,11 +161,26 @@ export class FileProcessorService {
       chunks_pos = [0]
     }
 
+    // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
+    const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
+      chunk_index: index,
+      page_number: 0, // Default to page 0 for non-PDF files
+      block_labels: ["text"], // Default block label
+    }));
+    
+    const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
+      chunk_index: chunks.length + index, // Continue indexing after text chunks
+      page_number: 0, // Default to page 0 for non-PDF files
+      block_labels: ["image"], // Default block label
+    }));
+
     return {
       chunks,
       chunks_pos,
       image_chunks,
       image_chunks_pos,
+      chunks_map,
+      image_chunks_map,
     }
   }
 }

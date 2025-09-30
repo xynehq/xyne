@@ -200,6 +200,8 @@ export const CreateCollectionApi = async (c: Context) => {
         image_chunks: [],
         chunks_pos: [],
         image_chunks_pos: [],
+        chunks_map: [],
+        image_chunks_map: [],
         metadata: JSON.stringify({
           version: "1.0",
           lastModified: Date.now(),
@@ -711,6 +713,8 @@ export const CreateFolderApi = async (c: Context) => {
         image_chunks: [],
         chunks_pos: [],
         image_chunks_pos: [],
+        chunks_map: [],
+        image_chunks_map: [],
         metadata: JSON.stringify({
           version: "1.0",
           lastModified: Date.now(),
@@ -879,6 +883,8 @@ async function ensureFolderPath(
         image_chunks: [],
         chunks_pos: [],
         image_chunks_pos: [],
+        chunks_map: [],
+        image_chunks_map: [],
         metadata: JSON.stringify({
           version: "1.0",
           lastModified: Date.now(),
@@ -1234,6 +1240,7 @@ export const UploadFilesApi = async (c: Context) => {
         await writeFile(storagePath, new Uint8Array(buffer))
 
         // Process file using the service
+        console.log(`🚀 KB Upload - Processing file: ${fileName}, Type: ${file.type}, Size: ${buffer.length} bytes`)
         const processingResult = await FileProcessorService.processFile(
           buffer,
           file.type || "text/plain",
@@ -1242,8 +1249,20 @@ export const UploadFilesApi = async (c: Context) => {
           storagePath,
         )
 
-        const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
+        const { chunks, chunks_pos, image_chunks, image_chunks_pos, chunks_map, image_chunks_map } =
           processingResult
+          
+        console.log(`📤 KB Upload Results for ${fileName}:`)
+        console.log(`  - Total chunks: ${chunks.length}`)
+        console.log(`  - Total image chunks: ${image_chunks.length}`)
+        console.log(`  - chunks_pos received: [${chunks_pos.join(', ')}]`)
+        console.log(`  - image_chunks_pos received: [${image_chunks_pos.join(', ')}]`)
+        console.log(`  - chunks_map length: ${chunks_map.length}`)
+        console.log(`  - image_chunks_map length: ${image_chunks_map.length}`)
+        console.log(`  - First few chunks:`, chunks.slice(0, 2))
+        if (image_chunks.length > 0) {
+          console.log(`  - First image chunk:`, image_chunks[0].substring(0, 100) + '...')
+        }
 
         // Use transaction for atomic file creation AND Vespa insertion
         const item = await db.transaction(async (tx) => {
@@ -1289,6 +1308,8 @@ export const UploadFilesApi = async (c: Context) => {
             chunks_pos: chunks_pos,
             image_chunks: image_chunks,
             image_chunks_pos: image_chunks_pos,
+            chunks_map: chunks_map,
+            image_chunks_map: image_chunks_map,
             metadata: JSON.stringify({
               originalFileName: file.name,
               uploadedBy: user.email,
@@ -1681,8 +1702,25 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Document missing chunk data" })
     }
 
+    // Handle both legacy number[] format and new ChunkMetadata[] format
     const index = resp.fields.chunks_pos.findIndex(
-      (pos: number) => pos === chunkIndex,
+      (pos: any) => {
+        // If it's a number (legacy format), compare directly
+        if (typeof pos === 'number') {
+          return pos === chunkIndex;
+        }
+        // If it's a ChunkMetadata object, compare the index field
+        if (typeof pos === 'object') {
+          if (pos.chunk_index !== undefined) {
+            return pos.chunk_index === chunkIndex;
+          }else{
+            loggerWithChild({ email: userEmail }).warn(
+            `Unexpected chunk position object format: ${JSON.stringify(pos)}`
+          );
+          }
+        }
+        return false;
+      }
     )
     if (index === -1) {
       throw new HTTPException(404, { message: "Chunk index not found" })
