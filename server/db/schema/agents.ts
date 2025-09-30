@@ -54,7 +54,7 @@ export const agents = pgTable(
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     via_apiKey: boolean("via_apiKey").notNull().default(false),
-    createdVia: createdViaEnum("created_via").default("default").notNull(),
+    createdVia: createdViaEnum("created_via").default(CreatedVia.DEFAULT).notNull(),
   },
   (table) => ({
     agentWorkspaceIdIndex: index("agent_workspace_id_index").on(
