@@ -15,6 +15,8 @@ export const createWorkflowTool = async (
   trx: TxnOrClient,
   data: {
     type: ToolType
+    workspaceId: number,
+    userId: number,
     value?: string | number | Record<string, any>
     config?: Record<string, any>
     createdBy?: string
@@ -24,6 +26,8 @@ export const createWorkflowTool = async (
     .insert(workflowTool)
     .values({
       type: data.type,
+      workspaceId: data.workspaceId,
+      userId: data.userId,
       value: data.value,
       config: data.config || {},
     })

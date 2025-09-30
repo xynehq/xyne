@@ -2433,6 +2433,8 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         .insert(workflowTool)
         .values({
           type: tool.type,
+          workspaceId: user.workspaceId,
+          userId: user.id,
           value: processedValue,
           config: processedConfig,
         })
@@ -2757,12 +2759,15 @@ export const ListWorkflowExecutionsApi = async (c: Context) => {
 // Create workflow tool
 export const CreateWorkflowToolApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const requestData = await c.req.json()
 
     const [tool] = await db
       .insert(workflowTool)
       .values({
         type: requestData.type,
+        workspaceId: user.workspaceId,
+        userId: user.id,
         value: requestData.value,
         config: requestData.config || {},
       })
@@ -2953,6 +2958,8 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       .insert(workflowTool)
       .values({
         type: requestData.tool.type,
+        workspaceId: user.workspaceId,
+        userId: user.id,
         value: requestData.tool.value,
         config: requestData.tool.config || {},
       })

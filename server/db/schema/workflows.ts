@@ -110,6 +110,12 @@ export const workflowStepTemplate = pgTable("workflow_step_template", {
 // 3. Workflow Tools Table (renamed from workflow_tools)
 export const workflowTool = pgTable("workflow_tool", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
+  workspaceId: integer("workspace_id")
+    .notNull()
+    .references(() => workspaces.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   type: toolTypeEnum("type").notNull(),
   value: jsonb("value"), // Can store string, number, or object based on tool type
   config: jsonb("config").default({}),
