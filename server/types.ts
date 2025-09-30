@@ -335,12 +335,6 @@ export enum SyncCron {
   FullSync = "FullSync",
 }
 
-export enum UploadStatus {
-  PENDING = "pending",
-  PROCESSING = "processing",
-  COMPLETED = "completed", 
-  FAILED = "failed",
-}
 
 // history id was getting removed if we just use union
 // and do parse of selectSyncJobSchema

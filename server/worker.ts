@@ -1,5 +1,5 @@
 import { getLogger } from "@/logger"
-import { Subsystem, UploadStatus, ProcessingJobType } from "@/types"
+import { Subsystem, ProcessingJobType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { boss } from "@/queue"
 import { FileProcessingQueue } from "@/queue/api-server-queue"
@@ -7,6 +7,7 @@ import { processJob, type ProcessingJob } from "@/queue/fileProcessor"
 import { db } from "@/db/client"
 import { collectionItems } from "@/db/schema"
 import { eq } from "drizzle-orm"
+import { UploadStatus } from "@/shared/types"
 
 const Logger = getLogger(Subsystem.Queue)
 

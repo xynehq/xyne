@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
-import { UploadStatus } from "@/types"
+import { UploadStatus } from "@/shared/types"
 import { workspaces } from "./workspaces"
 
 // Collections table - stores collections within the knowledge base feature
