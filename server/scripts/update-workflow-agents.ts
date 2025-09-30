@@ -2,10 +2,16 @@ import { db } from "@/db/client"
 import { agents } from "@/db/schema"
 import { and, eq, isNull, desc, count, sql } from "drizzle-orm"
 import { AgentCreationSource } from "@/db/schema"
-
+import { countWorkflowAgents } from "./count-workflow-agents"
 
 export const updateWorkflowAgents = async () => {
       console.log("🔄 Updating workflow agents from DIRECT to WORKFLOW...")
+
+      const existingCount = await countWorkflowAgents()
+      if (existingCount === 0) {
+          console.log("✅ No workflow agents to update.")
+          return
+      }
 
       const result = await db
           .update(agents)
@@ -25,7 +31,7 @@ export const updateWorkflowAgents = async () => {
               )
           )
 
-      console.log(`✅ Updated agents from DIRECT to WORKFLOW`)
+      console.log(`✅ Updated agents ${existingCount} from DIRECT to WORKFLOW`)
       return result
   }
 
