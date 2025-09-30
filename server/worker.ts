@@ -1,5 +1,5 @@
 import { getLogger } from "@/logger"
-import { Subsystem, UploadStatus, ProcessingJobType } from "@/types"
+import { Subsystem, ProcessingJobType } from "@/types"
 import { getErrorMessage } from "@/utils"
 import { boss } from "@/queue"
 import { FileProcessingQueue } from "@/queue/api-server-queue"
@@ -7,14 +7,20 @@ import { processJob, type ProcessingJob } from "@/queue/fileProcessor"
 import { db } from "@/db/client"
 import { collectionItems } from "@/db/schema"
 import { eq } from "drizzle-orm"
+import { UploadStatus } from "@/shared/types"
+import config from "@/config"
 
 const Logger = getLogger(Subsystem.Queue)
 
 // File processing worker using boss.work() - non-blocking and event-driven
 export const initFileProcessingWorker = async () => {
   Logger.info("Initializing file processing worker...")
+  Logger.info(`Using batch size of ${config.fileProcessingTeamSize} for concurrent file processing`)
   
-  await boss.work(FileProcessingQueue, async ([job]) => {
+  // Use batchSize to process multiple jobs concurrently
+  await boss.work(FileProcessingQueue, { batchSize: config.fileProcessingTeamSize }, async (jobs) => {
+    // Process all jobs in parallel using Promise.all
+    const jobPromises = jobs.map(async (job) => {
       try {
         const jobData = job.data as ProcessingJob
         const jobType = jobData.type || ProcessingJobType.FILE
@@ -70,13 +76,14 @@ export const initFileProcessingWorker = async () => {
         const errorMessage = getErrorMessage(error)
         Logger.error(error, `❌ ${jobType} job failed: ${errorMessage}`)
         
-        // Let processFileJob manage status updates; just rethrow for pg-boss retries
-        
         // Re-throw to let pg-boss handle the retry logic
         throw error
       }
-    }
-  )
+    })
+
+    // Wait for all jobs in the batch to complete
+    await Promise.all(jobPromises)
+  })
 
   Logger.info("File processing worker initialized successfully")
 }

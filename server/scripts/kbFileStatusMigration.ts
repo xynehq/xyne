@@ -7,7 +7,7 @@
 import { db } from "@/db/client"
 import { collections, collectionItems } from "@/db/schema"
 import { eq, sql } from "drizzle-orm"
-import { UploadStatus } from "@/types"
+import { UploadStatus } from "@/shared/types"
 import type { TxnOrClient } from "@/types"
 
 const BATCH_SIZE = 100

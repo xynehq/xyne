@@ -1,6 +1,12 @@
 import { drizzle } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
 import { sql } from "drizzle-orm"
+import { config } from "dotenv"
+import path from "path"
+
+// Load environment variables from parent directory
+const envPath = path.join(__dirname, "..", ".env")
+config({ path: envPath })
 
 // Database connection
 const connectionString = process.env.DATABASE_URL

@@ -15,14 +15,6 @@ NC='\033[0m' # No Color
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_DIR="${SCRIPT_DIR}/db-backups"
-DB_NAME="xyne"
-DB_USER="xyne"
-DB_PASSWORD="xyne"
-DB_HOST="localhost"
-DB_PORT="5432"
-
-# Docker container name (if using Docker)
-DOCKER_CONTAINER="xyne-db"
 
 # Function to print colored output
 print_info() {
@@ -41,23 +33,75 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Load environment variables from .env file
+ENV_FILE="${SCRIPT_DIR}/../.env"
+if [ -f "$ENV_FILE" ]; then
+    print_info "Loading database configuration from $ENV_FILE"
+    # Source the .env file to properly handle quoted values
+    set -a  # Automatically export all variables
+    source "$ENV_FILE"
+    set +a  # Stop automatically exporting
+    print_info "Found database variables in .env file"
+else
+    print_error ".env file not found at $ENV_FILE"
+    exit 1
+fi
+
+# Fallback to default values if not set in .env
+DB_NAME="${DB_NAME:-xyne}"
+DB_USER="${DB_USER:-xyne}"
+DB_PASSWORD="${DB_PASSWORD:-xyne}"
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+
+
+# Docker container name (if using Docker)
+DOCKER_CONTAINER="${DATABASE_HOST:-xyne-db}"
+
+# Cache Docker availability to avoid repeated checks
+DOCKER_AVAILABLE=""
+
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
+
 # Function to check if Docker container is running
 check_docker_container() {
-    if docker ps --format "table {{.Names}}" | grep -q "^${DOCKER_CONTAINER}$"; then
+    # Use cached result if available
+    if [ "$DOCKER_AVAILABLE" = "yes" ]; then
+        return 0
+    elif [ "$DOCKER_AVAILABLE" = "no" ]; then
+        return 1
+    fi
+    
+    print_info "Checking if Docker container '$DOCKER_CONTAINER' is running..."
+    
+    # Use a more reliable Docker check
+    if docker ps --filter "name=^${DOCKER_CONTAINER}$" --filter "status=running" --format "{{.Names}}" | grep -q "^${DOCKER_CONTAINER}$"; then
+        print_info "Docker container '$DOCKER_CONTAINER' found and running"
+        DOCKER_AVAILABLE="yes"
         return 0
     else
+        print_warning "Docker container '$DOCKER_CONTAINER' not found or not running"
+        DOCKER_AVAILABLE="no"
         return 1
     fi
 }
 
 # Function to check if PostgreSQL is accessible locally
 check_local_postgres() {
+    print_info "Checking if local PostgreSQL is accessible..."
     if command -v pg_isready &> /dev/null; then
         if pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" &> /dev/null; then
+            print_info "Local PostgreSQL is accessible"
             return 0
+        else
+            print_warning "Local PostgreSQL is not accessible"
+            return 1
         fi
+    else
+        print_warning "pg_isready command not found"
+        return 1
     fi
-    return 1
 }
 
 # Function to list available backups
