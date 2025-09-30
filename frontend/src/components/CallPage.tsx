@@ -25,7 +25,7 @@ export default function CallPage() {
   const room = urlParams.get("room") || ""
   const token = urlParams.get("token") || ""
   const callType = urlParams.get("type") || "video"
-  const urlServerUrl = urlParams.get("serverUrl")
+  const LiveKitServerUrl = urlParams.get("serverUrl")
 
   const [isCallEnded, setIsCallEnded] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
@@ -34,7 +34,7 @@ export default function CallPage() {
   const [joinError, setJoinError] = useState<string | null>(null)
   const [actualToken, setActualToken] = useState(token)
   const [isCopying, setIsCopying] = useState(false)
-  const [serverUrl, setServerUrl] = useState(urlServerUrl)
+  const [serverUrl, setServerUrl] = useState(LiveKitServerUrl)
   const { toast } = useToast()
 
   // Generate the shareable call link (without token for security)
