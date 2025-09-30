@@ -17,14 +17,14 @@ import { workspaces } from "./workspaces"
 import { users } from "./users"
 
 
-  export enum CreatedVia {
-    DEFAULT = "default",
-    WORKFLOW = "workflow"
-  }
-    export const createdViaEnum = pgEnum(
-    "created_via",
-    Object.values(CreatedVia) as [string, ...string[]]
-  )
+export enum CreatedVia {
+  DEFAULT = "default",
+  WORKFLOW = "workflow"
+}
+export const createdViaEnum = pgEnum(
+  "created_via",
+  Object.values(CreatedVia) as [string, ...string[]]
+)
 // Agents Table
 export const agents = pgTable(
   "agents",
