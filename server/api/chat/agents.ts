@@ -118,7 +118,6 @@ import {
   getItems,
   GetDocumentsByDocIds,
   getDocumentOrNull,
-  searchVespaThroughAgent,
   searchVespaAgent,
   SearchVespaThreads,
   getAllDocumentsForAgent,

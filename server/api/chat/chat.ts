@@ -95,7 +95,6 @@ import {
   GetDocumentsByDocIds,
   searchSlackInVespa,
   getDocumentOrNull,
-  searchVespaThroughAgent,
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,

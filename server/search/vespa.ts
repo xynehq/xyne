@@ -200,7 +200,6 @@ export const GetRandomDocument = vespa.GetRandomDocument.bind(vespa)
 export const HybridDefaultProfile = vespa.HybridDefaultProfile.bind(vespa)
 
 export const GetDocumentsByDocIds = vespa.GetDocumentsByDocIds.bind(vespa)
-export const searchVespaThroughAgent = vespa.searchVespaThroughAgent.bind(vespa)
 export const searchSlackInVespa = vespa.searchSlackInVespa.bind(vespa)
 
 export const getAllDocumentsForAgent = vespa.getAllDocumentsForAgent.bind(vespa)
