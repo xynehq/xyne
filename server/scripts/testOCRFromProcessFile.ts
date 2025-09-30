@@ -19,7 +19,10 @@ async function loadEnvFile(envPath: string): Promise<EnvMap> {
       const key = trimmed.slice(0, eq).trim()
       let val = trimmed.slice(eq + 1).trim()
       // Strip surrounding quotes if present
-      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
         val = val.slice(1, -1)
       }
       map[key] = val
@@ -39,7 +42,11 @@ async function loadEnvFile(envPath: string): Promise<EnvMap> {
 function resolvePdfPath(args: string[], envs: EnvMap): string {
   // Priority: CLI arg -> TEST_PDF_PATH -> PDF_PATH
   const cli = args[0]
-  const fromEnv = envs["TEST_PDF_PATH"] || envs["PDF_PATH"] || process.env.TEST_PDF_PATH || process.env.PDF_PATH
+  const fromEnv =
+    envs["TEST_PDF_PATH"] ||
+    envs["PDF_PATH"] ||
+    process.env.TEST_PDF_PATH ||
+    process.env.PDF_PATH
   const p = cli || fromEnv || DEFAULT_TEST_PDF
   return path.resolve(p)
 }
@@ -70,11 +77,7 @@ async function main() {
   const vespaDocId = "test-docid-ocr"
 
   console.log("\nCalling OCR-backed extractor...")
-  const result = await chunkByOCRFromBuffer(
-    buffer,
-    fileName,
-    vespaDocId,
-  )
+  const result = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
 
   // Extract results from ProcessingResult
   const chunks = result.chunks
@@ -103,7 +106,9 @@ async function main() {
     const chunk = chunks[i]
     const pos = chunks_pos[i]
     const metadata = chunks_map[i]
-    console.log(`\n[${i}] pos=${pos} page=${metadata?.page_number} labels=${metadata?.block_labels?.join(',')}`)
+    console.log(
+      `\n[${i}] pos=${pos} page=${metadata?.page_number} labels=${metadata?.block_labels?.join(",")}`,
+    )
     console.log(chunk.substring(0, 200) + (chunk.length > 200 ? "..." : ""))
   }
 
@@ -113,7 +118,9 @@ async function main() {
       const chunk = image_chunks[i]
       const pos = image_chunks_pos[i]
       const metadata = image_chunks_map[i]
-      console.log(`\n[${i}] pos=${pos} page=${metadata?.page_number} labels=${metadata?.block_labels?.join(',')}`)
+      console.log(
+        `\n[${i}] pos=${pos} page=${metadata?.page_number} labels=${metadata?.block_labels?.join(",")}`,
+      )
       console.log(chunk)
     }
   }
