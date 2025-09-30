@@ -464,6 +464,7 @@ export const createFileItem = async (
   metadata: any = {},
   userId?: number,
   userEmail?: string,
+  statusMessage?: string,
 ): Promise<CollectionItem> => {
   // Get the collection to ensure it exists and get workspace info
   const collection = await getCollectionById(trx, collectionId)
@@ -515,6 +516,7 @@ export const createFileItem = async (
     uploadedByEmail: userEmail,
     lastUpdatedById: userId,
     lastUpdatedByEmail: userEmail,
+    statusMessage,
     metadata,
   })
 

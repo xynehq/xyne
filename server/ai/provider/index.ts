@@ -99,6 +99,11 @@ import { FireworksProvider } from "@/ai/provider/fireworks"
 import { GoogleGenAI } from "@google/genai"
 import { GeminiAIProvider } from "@/ai/provider/gemini"
 import { VertexAiProvider, VertexProvider } from "@/ai/provider/vertex_ai"
+import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
+import { createOpenAI } from "@ai-sdk/openai"
+import { createVertex } from "@ai-sdk/google-vertex"
+import { createVertexAnthropic } from "@ai-sdk/google-vertex/anthropic"
+import type { ProviderV2 } from "@ai-sdk/provider"
 import {
   agentAnalyzeInitialResultsOrRewriteSystemPrompt,
   agentAnalyzeInitialResultsOrRewriteV2SystemPrompt,
@@ -209,6 +214,8 @@ let togetherProvider: LLMProvider | null = null
 let fireworksProvider: LLMProvider | null = null
 let geminiProvider: LLMProvider | null = null
 let vertexProvider: LLMProvider | null = null
+let bedrockAISDKProvider: ProviderV2 | null = null
+let openaiAISDKProvider: ProviderV2 | null = null
 
 const initializeProviders = (): void => {
   if (providersInitialized) return
@@ -408,6 +415,116 @@ export const getProviderByModel = (modelId: Models): LLMProvider => {
     throw new Error("Invalid provider")
   }
   return provider
+}
+
+export const getAISDKProviderByModel = (modelId: Models): ProviderV2 => {
+  const providerType = ModelToProviderMap[modelId]
+    ? ModelToProviderMap[modelId]
+    : OllamaModel
+      ? AIProviders.Ollama
+      : TogetherAIModel
+        ? AIProviders.Together
+        : FireworksAIModel
+          ? AIProviders.Fireworks
+          : GeminiAIModel
+            ? AIProviders.GoogleAI
+            : VertexProjectId && VertexRegion
+              ? AIProviders.VertexAI
+              : null
+
+  switch (providerType) {
+    case AIProviders.VertexAI: {
+      if (!VertexProjectId || !VertexRegion) {
+        throw new Error("Vertex AI project or region not configured")
+      }
+
+      const isGeminiModel = modelId.toString().toLowerCase().includes("gemini")
+
+      const baseConfig = {
+        project: VertexProjectId,
+        location: VertexRegion,
+      }
+
+      if (isGeminiModel) {
+        Logger.info(
+          `Created Vertex AI SDK provider for model ${modelId} using Google backend`,
+        )
+        return createVertex(baseConfig)
+      }
+
+      Logger.info(
+        `Created Vertex AI SDK provider for model ${modelId} using Anthropic backend`,
+      )
+      return createVertexAnthropic(baseConfig)
+    }
+
+    case AIProviders.OpenAI: {
+      if (!openaiAISDKProvider) {
+        const openAIConfig: Parameters<typeof createOpenAI>[0] = {}
+
+        if (OpenAIKey) {
+          openAIConfig.apiKey = OpenAIKey
+        }
+
+        if (aiProviderBaseUrl) {
+          openAIConfig.baseURL = aiProviderBaseUrl
+        }
+
+        Logger.info(
+          `Initialized OpenAI AI SDK provider for model ${modelId} using base URL ${openAIConfig.baseURL ?? "https://api.openai.com/v1"}`,
+        )
+
+        openaiAISDKProvider = Object.keys(openAIConfig).length
+          ? createOpenAI(openAIConfig)
+          : createOpenAI()
+      }
+
+      if (!openaiAISDKProvider) {
+        throw new Error("Failed to initialize OpenAI AI SDK provider")
+      }
+
+      return openaiAISDKProvider
+    }
+
+    case AIProviders.AwsBedrock: {
+      if (!bedrockAISDKProvider) {
+        const region = process.env["AWS_REGION"] || "us-west-2"
+        const sessionToken = process.env["AWS_SESSION_TOKEN"]
+
+        const bedrockConfig: Parameters<typeof createAmazonBedrock>[0] = {
+          region,
+        }
+
+        if (AwsAccessKey) {
+          bedrockConfig.accessKeyId = AwsAccessKey
+        }
+
+        if (AwsSecretKey) {
+          bedrockConfig.secretAccessKey = AwsSecretKey
+        }
+
+        if (sessionToken) {
+          bedrockConfig.sessionToken = sessionToken
+        }
+
+        Logger.info(
+          `Initialized Amazon Bedrock AI SDK provider for model ${modelId} in region ${region}`,
+        )
+        bedrockAISDKProvider = createAmazonBedrock(bedrockConfig)
+      }
+
+      if (!bedrockAISDKProvider) {
+        throw new Error("Failed to initialize Amazon Bedrock AI SDK provider")
+      }
+
+      return bedrockAISDKProvider
+    }
+
+    default:
+      throw new Error(
+        `AI SDK provider not available for provider type: ${providerType ?? "unknown"}`,
+      )
+  }
 }
 
 export const askQuestion = (
