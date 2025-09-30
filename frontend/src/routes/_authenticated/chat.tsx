@@ -1,6 +1,5 @@
 import MarkdownPreview from "@uiw/react-markdown-preview"
 import DOMPurify from "dompurify"
-import { getCodeString } from "rehype-rewrite"
 import { api } from "@/api"
 import { Sidebar } from "@/components/Sidebar"
 import {
@@ -22,11 +21,8 @@ import {
   RefreshCw,
   ZoomIn,
   ZoomOut,
-  Plus,
-  Minus,
-  Maximize2,
-  Minimize2,
   Share2,
+  ArrowDown,
 } from "lucide-react"
 import {
   useEffect,
@@ -42,44 +38,9 @@ import {
   useControls,
 } from "react-zoom-pan-pinch"
 import { useTheme } from "@/components/ThemeContext"
-import mermaid from "mermaid"
 import { Pill } from "@/components/Pill"
-// Initialize mermaid with secure configuration to prevent syntax errors
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "default",
-  securityLevel: "strict",
-  fontFamily: "monospace",
-  logLevel: "fatal", // Minimize mermaid console logs
-  suppressErrorRendering: true, // Suppress error rendering if available
-  flowchart: {
-    useMaxWidth: true,
-  },
-  sequence: {
-    useMaxWidth: true,
-  },
-  gantt: {
-    useMaxWidth: true,
-  },
-  journey: {
-    useMaxWidth: true,
-  },
-  class: {
-    useMaxWidth: true,
-  },
-  state: {
-    useMaxWidth: true,
-  },
-  er: {
-    useMaxWidth: true,
-  },
-  pie: {
-    useMaxWidth: true,
-  },
-  gitGraph: {
-    useMaxWidth: true,
-  },
-})
+import { MermaidCodeWrapper } from "@/hooks/useMermaidRenderer"
+
 import {
   SelectPublicMessage,
   Citation,
@@ -139,89 +100,13 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { CitationPreview } from "@/components/CitationPreview"
 import { createCitationLink } from "@/components/CitationLink"
 import { createPortal } from "react-dom"
-import { cleanCitationsFromResponse, processMessage } from "@/utils/chatUtils"
+import {
+  cleanCitationsFromResponse,
+  processMessage,
+  createTableComponents,
+} from "@/utils/chatUtils.tsx"
 
 export const THINKING_PLACEHOLDER = "Thinking"
-
-// Utility function to suppress console logs for a specific operation
-function suppressLogs<T>(fn: () => T | Promise<T>): T | Promise<T> {
-  const originals = ["error", "warn", "log", "info", "debug"].map((k) => [
-    k,
-    (console as any)[k],
-  ])
-  originals.forEach(([k]) => ((console as any)[k] = () => {}))
-  try {
-    const result = fn()
-    if (result instanceof Promise) {
-      return result.finally(() => {
-        originals.forEach(([k, v]) => ((console as any)[k] = v))
-      })
-    } else {
-      originals.forEach(([k, v]) => ((console as any)[k] = v))
-      return result
-    }
-  } catch (error) {
-    originals.forEach(([k, v]) => ((console as any)[k] = v))
-    throw error
-  }
-}
-
-// Extract table components to avoid duplication
-const createTableComponents = () => ({
-  table: ({ node, ...props }: any) => (
-    <div className="overflow-x-auto max-w-full my-2">
-      <table
-        style={{
-          borderCollapse: "collapse",
-          borderStyle: "hidden",
-          tableLayout: "auto",
-          minWidth: "100%",
-          maxWidth: "none",
-        }}
-        className="w-auto dark:bg-slate-800"
-        {...props}
-      />
-    </div>
-  ),
-  th: ({ node, ...props }: any) => (
-    <th
-      style={{
-        border: "none",
-        padding: "8px 12px",
-        textAlign: "left",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "300px",
-        minWidth: "100px",
-        whiteSpace: "normal",
-      }}
-      className="dark:text-white font-semibold"
-      {...props}
-    />
-  ),
-  td: ({ node, ...props }: any) => (
-    <td
-      style={{
-        border: "none",
-        padding: "8px 12px",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "300px",
-        minWidth: "100px",
-        whiteSpace: "normal",
-      }}
-      className="border-t border-gray-100 dark:border-gray-800 dark:text-white"
-      {...props}
-    />
-  ),
-  tr: ({ node, ...props }: any) => (
-    <tr
-      style={{ border: "none" }}
-      className="bg-white dark:bg-[#1E1E1E]"
-      {...props}
-    />
-  ),
-})
 
 // Mapping from source ID to app/entity object
 // const sourceIdToAppEntityMap: Record<string, { app: string; entity?: string }> =
@@ -448,7 +333,9 @@ export const ChatPage = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const chatBoxRef = useRef<ChatBoxRef>(null)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
+  const isAutoScrollingRef = useRef(false)
   const [dots, setDots] = useState("")
+  const [bottomSpace, setBottomSpace] = useState(0)
   const [showSources, setShowSources] = useState(false)
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([])
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null)
@@ -469,6 +356,51 @@ export const ChatPage = ({
     type: MessageFeedback
   } | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [lastUserMessageIndex, setLastUserMessageIndex] = useState(-1)
+
+  useEffect(() => {
+    if ((isStreaming || retryIsStreaming) && messages.length > 0) {
+      // Find the index of the last user message
+      let latestUserIndex = -1
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].messageRole === "user") {
+          latestUserIndex = i
+          break
+        }
+      }
+
+      if (latestUserIndex !== -1 && latestUserIndex !== lastUserMessageIndex) {
+        setLastUserMessageIndex(latestUserIndex)
+
+        // Smooth scroll to position the user's query at the top for a fresh start feeling
+        setTimeout(() => {
+          const container = messagesContainerRef.current
+          if (container) {
+            // Find the user message element
+            const userMessageElement = container.querySelector(
+              `[data-index="${latestUserIndex}"]`,
+            )
+            if (userMessageElement) {
+              // Calculate scroll position to put the user message near the top with some padding
+              const elementRect = userMessageElement.getBoundingClientRect()
+              const containerRect = container.getBoundingClientRect()
+              const currentScrollTop = container.scrollTop
+
+              // Position to scroll to (put user message ~100px from top for comfortable viewing)
+              const targetScrollTop =
+                currentScrollTop + elementRect.top - containerRect.top - 100
+
+              // Smooth scroll to the calculated position
+              container.scrollTo({
+                top: Math.max(0, targetScrollTop),
+                behavior: "smooth",
+              })
+            }
+          }
+        }, 100)
+      }
+    }
+  }, [isStreaming, retryIsStreaming, messages.length, lastUserMessageIndex])
 
   // Add state for citation preview
   const [isCitationPreviewOpen, setIsCitationPreviewOpen] = useState(false)
@@ -703,6 +635,12 @@ export const ChatPage = ({
     setShowSources(false)
     setCurrentCitations([])
     setCurrentMessageId(null)
+
+    // Reset bottom space and message count for new chats
+    if (!isWithChatId || (messages && messages.length === 0)) {
+      setBottomSpace(0)
+      setLastUserMessageCount(0)
+    }
   }, [
     data?.chat?.isBookmarked,
     data?.chat?.title,
@@ -810,6 +748,84 @@ export const ChatPage = ({
         })
     }
   }, [chatId, isStreaming, isSharedChat, queryClient])
+
+  const [streamingStarted, setStreamingStarted] = useState(false)
+  const [lastUserMessageCount, setLastUserMessageCount] = useState(0)
+
+  // Detect when streaming starts for a new query and calculate exact space needed
+  useEffect(() => {
+    const currentUserMessageCount = messages.filter(
+      (msg: any) => msg.messageRole === "user",
+    ).length
+
+    if (
+      (isStreaming || retryIsStreaming) &&
+      !streamingStarted &&
+      currentUserMessageCount > lastUserMessageCount
+    ) {
+      // This is a new query starting (not just continuing to stream)
+      setStreamingStarted(true)
+      setLastUserMessageCount(currentUserMessageCount)
+
+      // Calculate exact space needed ONLY when a new query starts
+      setTimeout(() => {
+        const container = messagesContainerRef.current
+        if (!container) return
+
+        // Get viewport height and calculate optimal space
+        const containerHeight = container.clientHeight
+
+        // Calculate space to push previous content out of view with optimal balance
+        let spaceNeeded: number
+        if (containerHeight <= 600) {
+          // Small screens: balanced space
+          spaceNeeded = Math.max(300, containerHeight * 0.65)
+        } else if (containerHeight <= 900) {
+          // Medium screens: good separation without excess
+          spaceNeeded = Math.max(400, containerHeight * 0.72)
+        } else {
+          // Large screens: sufficient space but not excessive
+          spaceNeeded = Math.max(800, Math.min(containerHeight * 1, 980))
+        }
+
+        setBottomSpace(spaceNeeded)
+
+        // Position the latest user message at the top with precise scroll positioning
+        setTimeout(() => {
+          const userMessageElements = container.querySelectorAll(
+            '[data-message-role="user"]',
+          )
+          if (userMessageElements.length > 0) {
+            const lastUserMessage = userMessageElements[
+              userMessageElements.length - 1
+            ] as HTMLElement
+
+            // Calculate the exact scroll position to place the message at the top
+            const containerRect = container.getBoundingClientRect()
+            const messageRect = lastUserMessage.getBoundingClientRect()
+            const messageOffsetTop =
+              messageRect.top - containerRect.top + container.scrollTop
+
+            // Scroll to position the message at the top with a small margin
+            container.scrollTo({
+              top: Math.max(0, messageOffsetTop - 20), // 20px margin from top
+              behavior: "smooth",
+            })
+          }
+        }, 50)
+      }, 100)
+    } else if (!isStreaming && !retryIsStreaming && streamingStarted) {
+      // Reset streaming started flag when streaming completes
+      // DO NOT reset bottomSpace here - it should persist
+      setStreamingStarted(false)
+    }
+  }, [
+    isStreaming,
+    retryIsStreaming,
+    streamingStarted,
+    messages,
+    lastUserMessageCount,
+  ])
 
   const handleSend = async (
     messageToSend: string,
@@ -1064,25 +1080,28 @@ export const ChatPage = ({
   }
 
   // Handler for citation clicks - moved before conditional returns
-  const handleCitationClick = useCallback((citation: Citation, fromSources: boolean = false) => {
-    if (!citation || !citation.clId || !citation.itemId) {
-      // For citations without clId or itemId, open as regular link
-      if (citation.url) {
-        window.open(citation.url, "_blank", "noopener,noreferrer")
+  const handleCitationClick = useCallback(
+    (citation: Citation, fromSources: boolean = false) => {
+      if (!citation || !citation.clId || !citation.itemId) {
+        // For citations without clId or itemId, open as regular link
+        if (citation.url) {
+          window.open(citation.url, "_blank", "noopener,noreferrer")
+        }
+        return
       }
-      return
-    }
-    setSelectedCitation(citation)
-    setIsCitationPreviewOpen(true)
-    setCameFromSources(fromSources)
-    // Only close sources panel when opening citation preview, but preserve state for back navigation
-    setShowSources(false)
-    if (!fromSources) {
-      // Clear sources state when coming from inline citations
-      setCurrentCitations([])
-      setCurrentMessageId(null)
-    }
-  }, [])
+      setSelectedCitation(citation)
+      setIsCitationPreviewOpen(true)
+      setCameFromSources(fromSources)
+      // Only close sources panel when opening citation preview, but preserve state for back navigation
+      setShowSources(false)
+      if (!fromSources) {
+        // Clear sources state when coming from inline citations
+        setCurrentCitations([])
+        setCurrentMessageId(null)
+      }
+    },
+    [],
+  )
 
   // Memoized callback for closing citation preview - moved before conditional returns
   const handleCloseCitationPreview = useCallback(() => {
@@ -1104,23 +1123,72 @@ export const ChatPage = ({
 
   const scrollToBottom = () => {
     const container = messagesContainerRef.current
-    if (!container || userHasScrolled) return
+    if (!container) return
 
-    // For virtualized messages, we need to scroll to the bottom differently
-    // Use the container's scrollTop instead of virtualizer when possible
-    container.scrollTop = container.scrollHeight
+    // Set flag to indicate we're auto-scrolling
+    isAutoScrollingRef.current = true
 
-    // Also reset userHasScrolled since we're programmatically scrolling
+    // Check if we need to scroll significantly
+    const currentScrollTop = container.scrollTop
+    const targetScrollTop = container.scrollHeight - container.clientHeight
+    const scrollDistance = targetScrollTop - currentScrollTop
+
+    // If already at bottom or close to it, just jump to bottom instantly
+    if (Math.abs(scrollDistance) < 50) {
+      container.scrollTop = targetScrollTop
+      isAutoScrollingRef.current = false
+      setUserHasScrolled(false)
+      return
+    }
+
+    const startPosition = currentScrollTop
+    const distance = scrollDistance
+    const duration = Math.min(300, Math.max(150, Math.abs(distance) * 0.2))
+
+    let startTime: number | null = null
+
+    const animateScroll = (currentTime: number) => {
+      if (startTime === null) startTime = currentTime
+      const timeElapsed = currentTime - startTime
+      const progress = Math.min(timeElapsed / duration, 1)
+
+      // Easing function for smooth deceleration (ease-out-cubic)
+      const easeOutCubic = 1 - Math.pow(1 - progress, 3)
+
+      container.scrollTop = startPosition + distance * easeOutCubic
+
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll)
+      } else {
+        // Animation complete, reset flag
+        isAutoScrollingRef.current = false
+      }
+    }
+
+    requestAnimationFrame(animateScroll)
+
+    // Reset userHasScrolled since we're programmatically scrolling
     setUserHasScrolled(false)
   }
 
   useEffect(() => {
     const container = messagesContainerRef.current
-    if (!container || userHasScrolled) return
+    if (!container || userHasScrolled || isAutoScrollingRef.current) return
 
-    // For virtualized content, ensure we scroll to actual bottom
-    container.scrollTop = container.scrollHeight
-  }, [messages, partial, userHasScrolled]) // Added userHasScrolled to dependencies
+    // Only auto-scroll if we're close to the bottom (within 100px)
+    // This prevents the effect from interfering with manual scrolling
+    const isNearBottom =
+      container.scrollTop >=
+      container.scrollHeight - container.clientHeight - 100
+
+    if (isNearBottom) {
+      // Only auto-scroll for non-streaming content to avoid interference during streaming
+      if (!isStreaming && !retryIsStreaming) {
+        // For non-streaming content, scroll instantly
+        container.scrollTop = container.scrollHeight
+      }
+    }
+  }, [messages, partial, userHasScrolled, isStreaming, retryIsStreaming]) // Added streaming states to dependencies
 
   if ((data?.error || historyLoading) && !isSharedChat) {
     return (
@@ -1341,6 +1409,9 @@ export const ChatPage = ({
                 setIsCitationPreviewOpen={setIsCitationPreviewOpen}
                 setSelectedCitation={setSelectedCitation}
                 chatBoxRef={chatBoxRef}
+                isAutoScrollingRef={isAutoScrollingRef}
+                partial={partial}
+                bottomSpace={bottomSpace}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -1354,6 +1425,23 @@ export const ChatPage = ({
                   />
                 </div>
               )}
+
+              {/* Scroll to Bottom Button */}
+              {userHasScrolled && !isSharedChat && (
+                <div className="fixed bottom-32 right-1/2 transform translate-x-1/2 z-30">
+                  <button
+                    onClick={scrollToBottom}
+                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full p-2 shadow-lg hover:shadow-xl transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    title="Scroll to bottom"
+                  >
+                    <ArrowDown
+                      size={18}
+                      className="text-gray-600 dark:text-gray-300"
+                    />
+                  </button>
+                </div>
+              )}
+
               {!isSharedChat && (
                 <div
                   className={`sticky bottom-0 w-full flex ${isCitationPreviewOpen ? "px-3" : "justify-center"} bg-white dark:bg-[#1E1E1E] pt-2`}
@@ -1760,443 +1848,6 @@ export const ImageCitationComponent: React.FC<ImageCitationComponentProps> = ({
   )
 }
 
-const randomid = () => parseInt(String(Math.random() * 1e15), 10).toString(36)
-const Code = ({
-  inline,
-  children,
-  className,
-  ...props
-}: {
-  inline?: boolean
-  children?: React.ReactNode
-  className?: string
-  node?: any
-}) => {
-  const demoid = useRef(`dome${randomid()}`)
-  const [container, setContainer] = useState<HTMLElement | null>(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [containerHeight, setContainerHeight] = useState(600)
-  const isMermaid =
-    className && /^language-mermaid/.test(className.toLocaleLowerCase())
-
-  // Debug logging for inline code detection
-  const codeString =
-    typeof children === "string" ? children : String(children || "")
-
-  let codeContent = ""
-  if (props.node && props.node.children && props.node.children.length > 0) {
-    codeContent = getCodeString(props.node.children)
-  } else if (typeof children === "string") {
-    codeContent = children
-  } else if (
-    Array.isArray(children) &&
-    children.length > 0 &&
-    typeof children[0] === "string"
-  ) {
-    // Fallback for cases where children might still be an array with a single string
-    codeContent = children[0]
-  }
-
-  // State for managing mermaid validation and rendering
-  const [lastValidMermaid, setLastValidMermaid] = useState<string>("")
-  const mermaidRenderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Function to validate if mermaid syntax looks complete
-  const isMermaidSyntaxValid = async (code: string): Promise<boolean> => {
-    if (!code || code.trim() === "") return false
-
-    const trimmedCode = code.trim()
-
-    const mermaidPatterns = [
-      /^graph\s+(TD|TB|BT|RL|LR)\s*\n/i,
-      /^flowchart\s+(TD|TB|BT|RL|LR)\s*\n/i,
-      /^sequenceDiagram\s*\n/i,
-      /^classDiagram\s*\n/i,
-      /^stateDiagram\s*\n/i,
-      /^stateDiagram-v2\s*\n/i,
-      /^erDiagram\s*\n/i,
-      /^journey\s*\n/i,
-      /^gantt\s*\n/i,
-      /^pie\s*\n/i,
-      /^gitgraph\s*\n/i,
-      /^mindmap\s*\n/i,
-      /^timeline\s*\n/i,
-
-      // Additional or experimental diagram types
-      /^zenuml\s*\n/i,
-      /^quadrantChart\s*\n/i,
-      /^requirementDiagram\s*\n/i,
-      /^userJourney\s*\n/i,
-
-      // Optional aliasing/loose matching for future compatibility
-      /^flowchart\s*\n/i,
-      /^graph\s*\n/i,
-    ]
-
-    // Check if it starts with a valid mermaid diagram type
-    const hasValidStart = mermaidPatterns.some((pattern) =>
-      pattern.test(trimmedCode),
-    )
-    if (!hasValidStart) return false
-
-    // Try to parse with mermaid to validate syntax
-    try {
-      // Use scoped console suppression to avoid global hijacking
-      return await suppressLogs(async () => {
-        await mermaid.parse(trimmedCode)
-        return true
-      })
-    } catch (error) {
-      // Invalid syntax
-      return false
-    }
-  }
-
-  // Debounced function to validate and render mermaid
-  const debouncedMermaidRender = useCallback(
-    async (code: string) => {
-      if (!container || !isMermaid) return
-
-      // Clear any existing timeout
-      if (mermaidRenderTimeoutRef.current) {
-        clearTimeout(mermaidRenderTimeoutRef.current)
-      }
-
-      // If code is empty, clear the container
-      if (!code || code.trim() === "") {
-        container.innerHTML = ""
-        setLastValidMermaid("")
-        return
-      }
-
-      // Check if syntax looks valid (async now)
-      const isValid = await isMermaidSyntaxValid(code)
-      if (!isValid) {
-        // If we have a previous valid render, keep showing it
-        if (lastValidMermaid) {
-          return
-        } else {
-          // Show loading state for incomplete syntax
-          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-          <div>Mermaid Chart..</div>
-          <div style="margin-top: 10px; font-size: 12px;">Streaming mermaid</div>
-        </div>`
-          return
-        }
-      }
-
-      // Debounce the actual rendering to avoid too many rapid attempts
-      mermaidRenderTimeoutRef.current = setTimeout(async () => {
-        try {
-          // Additional safety: validate the code before rendering
-          if (!code || code.trim().length === 0) {
-            container.innerHTML = ""
-            setLastValidMermaid("")
-            return
-          }
-
-          // Sanitize the code to prevent potential issues
-          const sanitizedCode = code
-            .replace(/javascript:/gi, "") // Remove javascript: protocols
-            .replace(/data:/gi, "") // Remove data: protocols
-            .replace(/<script[^>]*>.*?<\/script>/gis, "") // Remove script tags
-            .trim()
-
-          if (!sanitizedCode) {
-            container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-            <div>📊 Mermaid Diagram</div>
-            <div style="margin-top: 10px; font-size: 12px; color: #999;">Invalid diagram content</div>
-          </div>`
-            return
-          }
-
-          // Use scoped console suppression during rendering
-          try {
-            await suppressLogs(async () => {
-              // Render with additional error boundary
-              const { svg } = await mermaid.render(
-                demoid.current,
-                sanitizedCode,
-              )
-
-              // Validate that we got valid SVG
-              if (!svg || !svg.includes("<svg")) {
-                throw new Error("Invalid SVG generated")
-              }
-
-              container.innerHTML = svg
-              setLastValidMermaid(sanitizedCode)
-            })
-          } catch (error: any) {
-            // Completely suppress all error details from users
-
-            // Always gracefully handle any mermaid errors by either:
-            // 1. Keeping the last valid diagram if we have one
-            // 2. Showing a loading/placeholder state if no valid diagram exists
-            // 3. Never showing syntax error messages to users
-
-            if (lastValidMermaid) {
-              // Keep showing the last valid diagram - don't change anything
-              return
-            } else {
-              // Show a generic processing state instead of error details
-              container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-              <div>📊 Mermaid Diagram</div>
-              <div style="margin-top: 10px; font-size: 12px; color: #999;">Processing diagram content...</div>
-            </div>`
-            }
-          }
-        } catch (outerError: any) {
-          // Final fallback error handling
-          container.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; font-family: monospace;">
-          <div>📊 Mermaid Diagram</div>
-          <div style="margin-top: 10px; font-size: 12px; color: #999;">Unable to render diagram</div>
-        </div>`
-        }
-      }, 300)
-    },
-    [container, isMermaid, lastValidMermaid],
-  )
-
-  useEffect(() => {
-    debouncedMermaidRender(codeContent)
-
-    // Cleanup timeout on unmount
-    return () => {
-      if (mermaidRenderTimeoutRef.current) {
-        clearTimeout(mermaidRenderTimeoutRef.current)
-      }
-    }
-  }, [debouncedMermaidRender, codeContent])
-
-  const refElement = useCallback((node: HTMLElement | null) => {
-    if (node !== null) {
-      setContainer(node)
-    }
-  }, [])
-
-  const handleFullscreen = () => {
-    setIsFullscreen(!isFullscreen)
-  }
-
-  const adjustHeight = (delta: number) => {
-    setContainerHeight((prev) => Math.max(200, Math.min(1200, prev + delta)))
-  }
-
-  const MermaidControls = () => {
-    const { zoomIn, zoomOut, resetTransform, centerView } = useControls()
-    const buttonBaseClass =
-      "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-1.5 shadow-md z-10 transition-colors"
-    const iconSize = 12
-
-    const handleResetAndCenter = () => {
-      resetTransform()
-      // Small delay to ensure reset is complete before centering
-      setTimeout(() => {
-        centerView()
-      }, 10)
-    }
-
-    return (
-      <div className="absolute top-2 left-2 flex space-x-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <button
-          onClick={() => zoomIn()}
-          className={`${buttonBaseClass} rounded-l-md`}
-          title="Zoom In"
-        >
-          <ZoomIn size={iconSize} />
-        </button>
-        <button
-          onClick={() => zoomOut()}
-          className={`${buttonBaseClass}`}
-          title="Zoom Out"
-        >
-          <ZoomOut size={iconSize} />
-        </button>
-        <button
-          onClick={handleResetAndCenter}
-          className={`${buttonBaseClass}`}
-          title="Reset View"
-        >
-          <RefreshCw size={iconSize} />
-        </button>
-        <button
-          onClick={() => adjustHeight(-100)}
-          className={`${buttonBaseClass}`}
-          title="Decrease Height"
-        >
-          <Minus size={iconSize} />
-        </button>
-        <button
-          onClick={() => adjustHeight(100)}
-          className={`${buttonBaseClass}`}
-          title="Increase Height"
-        >
-          <Plus size={iconSize} />
-        </button>
-        <button
-          onClick={handleFullscreen}
-          className={`${buttonBaseClass} rounded-r-md`}
-          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-        >
-          {isFullscreen ? (
-            <Minimize2 size={iconSize} />
-          ) : (
-            <Maximize2 size={iconSize} />
-          )}
-        </button>
-      </div>
-    )
-  }
-
-  if (isMermaid) {
-    const containerStyle = isFullscreen
-      ? {
-          position: "fixed" as const,
-          top: 0,
-          left: 0,
-          width: "100vw",
-          height: "100vh",
-          backgroundColor: "rgba(113, 109, 109, 0.95)",
-          zIndex: 9999,
-        }
-      : {
-          width: "100%",
-          height: `${containerHeight}px`,
-          minHeight: "200px",
-          maxHeight: "1200px",
-        }
-
-    // Transform wrapper configuration for different view modes
-    const transformConfig = isFullscreen
-      ? {
-          initialScale: 2,
-          minScale: 0.5,
-          maxScale: 10,
-          limitToBounds: true,
-          centerOnInit: true,
-          centerZoomedOut: true,
-          doubleClick: { disabled: true },
-          wheel: { step: 0.1 },
-          panning: { velocityDisabled: true },
-        }
-      : {
-          initialScale: 1.5,
-          minScale: 0.5,
-          maxScale: 7,
-          limitToBounds: true,
-          centerOnInit: true,
-          centerZoomedOut: true,
-          doubleClick: { disabled: true },
-          wheel: { step: 0.1 },
-          panning: { velocityDisabled: true },
-        }
-
-    return (
-      <div
-        className={`group relative mb-6 overflow-hidden ${isFullscreen ? "" : "w-full"}`}
-        style={isFullscreen ? containerStyle : undefined}
-      >
-        <TransformWrapper
-          key={`mermaid-transform-${isFullscreen ? "fullscreen" : "normal"}`}
-          initialScale={transformConfig.initialScale}
-          minScale={transformConfig.minScale}
-          maxScale={transformConfig.maxScale}
-          limitToBounds={transformConfig.limitToBounds}
-          centerOnInit={transformConfig.centerOnInit}
-          centerZoomedOut={transformConfig.centerZoomedOut}
-          doubleClick={transformConfig.doubleClick}
-          wheel={transformConfig.wheel}
-          panning={transformConfig.panning}
-        >
-          <TransformComponent
-            wrapperStyle={{
-              width: "100%",
-              height: isFullscreen ? "100vh" : `${containerHeight}px`,
-              cursor: "grab",
-              backgroundColor: isFullscreen ? "transparent" : "transparent",
-            }}
-            contentStyle={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <div style={{ display: "inline-block" }}>
-              <code id={demoid.current} style={{ display: "none" }} />
-              <code
-                ref={refElement}
-                data-name="mermaid"
-                className={`mermaid ${className || ""}`}
-                style={{
-                  display: "inline-block",
-                  backgroundColor: "transparent",
-                }}
-              />
-            </div>
-          </TransformComponent>
-          <MermaidControls />
-        </TransformWrapper>
-        {isFullscreen && (
-          <button
-            onClick={handleFullscreen}
-            className="absolute top-4 right-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-2 rounded-full shadow-lg z-10 transition-colors"
-            title="Exit Fullscreen"
-          >
-            <X size={16} />
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  // Enhanced inline detection - fallback if inline prop is not set correctly
-  const isActuallyInline =
-    inline ||
-    (!className && !codeString.includes("\n") && codeString.trim().length > 0)
-
-  // For regular code blocks, render as plain text without boxing
-  if (!isActuallyInline) {
-    return (
-      <pre
-        className="text-sm block w-full my-2 font-mono"
-        style={{
-          whiteSpace: "pre-wrap",
-          overflowWrap: "break-word",
-          wordBreak: "break-word",
-          maxWidth: "100%",
-          color: "inherit",
-          background: "none",
-          border: "none",
-          padding: 0,
-          margin: 0,
-        }}
-      >
-        <code style={{ background: "none", color: "inherit" }}>{children}</code>
-      </pre>
-    )
-  }
-
-  return (
-    <code
-      className={`${className || ""} font-mono bg-gray-100 dark:bg-gray-800 rounded-md px-2 py-1 text-xs`}
-      style={{
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        maxWidth: "100%",
-        color: "inherit",
-        display: "inline",
-        fontSize: "0.75rem",
-        verticalAlign: "baseline",
-      }}
-    >
-      {children}
-    </code>
-  )
-}
-
 // Virtualized Messages Component
 interface VirtualizedMessagesProps {
   messages: SelectPublicMessage[]
@@ -2235,6 +1886,9 @@ interface VirtualizedMessagesProps {
   setIsCitationPreviewOpen: (open: boolean) => void
   setSelectedCitation: (citation: Citation | null) => void
   chatBoxRef: React.RefObject<ChatBoxRef>
+  isAutoScrollingRef: React.MutableRefObject<boolean>
+  partial: string
+  bottomSpace: number
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -2274,6 +1928,9 @@ const VirtualizedMessages = React.forwardRef<
       setIsCitationPreviewOpen,
       setSelectedCitation,
       chatBoxRef,
+      isAutoScrollingRef,
+      partial,
+      bottomSpace,
     },
     ref,
   ) => {
@@ -2341,29 +1998,37 @@ const VirtualizedMessages = React.forwardRef<
       }
     }, []) // Only run once on mount
 
-    // Detect user scrolling - improved logic to prevent conflicts
+    // Detect user scrolling and update scroll button visibility
     const handleScroll = useCallback(
       (e: React.UIEvent<HTMLDivElement>) => {
+        // Skip if we're in the middle of auto-scrolling
+        if (isAutoScrollingRef.current) return
+
         const element = e.currentTarget
         const scrollTop = element.scrollTop
         const scrollHeight = element.scrollHeight
         const clientHeight = element.clientHeight
 
-        // Calculate if we're at the bottom with a reasonable threshold
-        const isAtBottom = scrollTop >= scrollHeight - clientHeight - 50
-
-        // Update user scroll state based on position
-        if (isAtBottom) {
-          // User is at bottom, allow auto-scroll
-          setUserHasScrolled(false)
-        } else if (scrollTop < lastScrollTop.current) {
-          // User scrolled up, disable auto-scroll
-          setUserHasScrolled(true)
-        }
-
+        // Track the scroll position for reference
         lastScrollTop.current = scrollTop
+
+        // Calculate if we're at the bottom with a reasonable threshold
+        const isAtBottom = scrollTop >= scrollHeight - clientHeight - 30
+
+        // Update scroll button visibility based on position
+        if (isAtBottom) {
+          // User is at bottom, hide scroll to bottom button
+          if (userHasScrolled) {
+            setUserHasScrolled(false)
+          }
+        } else {
+          // User is not at bottom, show scroll to bottom button
+          if (!userHasScrolled) {
+            setUserHasScrolled(true)
+          }
+        }
       },
-      [setUserHasScrolled],
+      [userHasScrolled, setUserHasScrolled],
     )
 
     return (
@@ -2378,7 +2043,7 @@ const VirtualizedMessages = React.forwardRef<
             ;(ref as any).current = node
           }
         }}
-        className={`h-full w-full overflow-auto flex flex-col ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
+        className={`h-full w-full overflow-auto flex flex-col scroll-smooth ${isCitationPreviewOpen ? "items-start" : "items-center"}`}
         onScroll={handleScroll}
         style={{
           height: "100%",
@@ -2412,6 +2077,8 @@ const VirtualizedMessages = React.forwardRef<
                 <div
                   key={virtualItem.key}
                   data-index={virtualItem.index}
+                  data-message-role={message.messageRole}
+                  data-message-id={message.externalId}
                   ref={rowVirtualizer.measureElement}
                   style={{
                     position: "absolute",
@@ -2550,7 +2217,6 @@ const VirtualizedMessages = React.forwardRef<
                           chatBoxRef.current?.sendMessage(question)
                         }}
                         isStreaming={isStreaming || retryIsStreaming}
-                        onQuestionsLoaded={scrollToBottom}
                       />
                     )}
                   </Fragment>
@@ -2558,6 +2224,16 @@ const VirtualizedMessages = React.forwardRef<
               )
             })}
           </div>
+
+          {/* Bottom spacing to position query at top of viewport */}
+          {bottomSpace > 0 && (
+            <div
+              className="w-full"
+              style={{
+                height: `${bottomSpace}px`,
+              }}
+            />
+          )}
         </div>
       </div>
     )
@@ -2678,6 +2354,7 @@ export const ChatMessage = ({
                   </div>
                 ) : message !== "" ? (
                   <MarkdownPreview
+                    key={`markdown-${messageId || "unknown"}`}
                     source={processMessage(message, citationMap, citationUrls)}
                     wrapperElement={{
                       "data-color-mode": theme,
@@ -2693,7 +2370,7 @@ export const ChatMessage = ({
                     }}
                     components={{
                       a: createCitationLink(citations, onCitationClick),
-                      code: Code,
+                      code: MermaidCodeWrapper,
                       img: ({ src, alt, ...props }: any) => {
                         if (src?.startsWith("image-citation:")) {
                           const citationKey = src.replace("image-citation:", "")
@@ -2782,7 +2459,9 @@ export const ChatMessage = ({
                     onMouseDown={() => setIsCopied(true)}
                     onMouseUp={() => setIsCopied(false)}
                     onClick={() =>
-                      navigator.clipboard.writeText(cleanCitationsFromResponse(message))
+                      navigator.clipboard.writeText(
+                        cleanCitationsFromResponse(message),
+                      )
                     }
                   />
                   {/* Retry button temporarily hidden */}

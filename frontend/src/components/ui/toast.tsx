@@ -67,6 +67,7 @@ const Toast = React.forwardRef<
     <ToastPrimitives.Root
       ref={ref}
       className={cn(toastVariants({ variant }), className)}
+      duration={10000}
       {...props}
     >
       <div className="flex items-start space-x-3 flex-1">
