@@ -132,12 +132,14 @@ export const getUserAccessibleAgents = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
+      createdVia: agents.createdVia,
     })
     .from(agents)
     .leftJoin(userAgentPermissions, eq(agents.id, userAgentPermissions.agentId))
     .where(
       and(
         eq(agents.workspaceId, workspaceId),
+        eq(agents.createdVia, "default"),
         isNull(agents.deletedAt),
         or(
           // User has explicit permission to the agent
@@ -178,6 +180,7 @@ export const getAgentsMadeByMe = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
+      createdVia: agents.createdVia,
     })
     .from(agents)
     .innerJoin(
@@ -187,6 +190,7 @@ export const getAgentsMadeByMe = async (
     .where(
       and(
         eq(agents.workspaceId, workspaceId),
+        eq(agents.createdVia, "default"),
         isNull(agents.deletedAt),
         eq(userAgentPermissions.userId, userId),
         eq(userAgentPermissions.role, UserAgentRole.Owner),
@@ -223,6 +227,7 @@ export const getAgentsSharedToMe = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
+      createdVia: agents.createdVia,
     })
     .from(agents)
     .innerJoin(
@@ -233,6 +238,7 @@ export const getAgentsSharedToMe = async (
       and(
         eq(agents.workspaceId, workspaceId),
         isNull(agents.deletedAt),
+        eq(agents.createdVia, "default"),
         eq(userAgentPermissions.userId, userId),
         eq(userAgentPermissions.role, UserAgentRole.Shared),
       ),
