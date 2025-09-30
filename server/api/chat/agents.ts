@@ -4,6 +4,7 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
+ import { CreatedVia } from "@/db/schema"
 import {
   generateAgentStepSummaryPromptJson,
   generateConsolidatedStepSummaryPromptJson,
@@ -310,6 +311,7 @@ const createMockAgentFromFormData = (
       externalId: `test-agent-${Date.now()}`,
       workspaceId: workspace.id,
       allowWebSearch: formData.allowWebSearch || null,
+      createdVia: CreatedVia.DEFAULT,
     }
 
     const agentPromptForLLM = JSON.stringify(agentForDb)
