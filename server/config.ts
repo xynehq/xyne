@@ -186,7 +186,6 @@ export default {
   aiProviderBaseUrl,
   redirectUri,
   postOauthRedirect,
-  // Google OAuth Client ID
   // update user query session time
   userQueryUpdateInterval: 60 * 1000, // 1 minute
   defaultBestModel,

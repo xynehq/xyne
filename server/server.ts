@@ -1481,7 +1481,6 @@ app.get("/health", async (c) => {
   }
 })
 
-
 // Postgres health check endpoint
 app.get(
   "/health/postgres",

@@ -83,7 +83,6 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
     if (!isPending && data && data.length > 0) {
       const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
       if (oauthConnector) {
-        
         socket = wsClient.ws.$ws({
           query: { id: oauthConnector.id },
         })

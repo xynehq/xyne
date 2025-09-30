@@ -10,7 +10,6 @@ export class OAuthModal {
   private completed = false // Flag to prevent multiple resolve/reject calls
   private logger = console
   private successUrl: string = ""
-  private config: { API_BASE_URL: string, WS_BASE_URL: string } = { API_BASE_URL: "", WS_BASE_URL: "" }
 
   constructor(
     // connectorId: string;
@@ -25,10 +24,6 @@ export class OAuthModal {
   public startAuth(app: Apps) {
     return new Promise((resolve, reject) => {
       try {
-        if (!this.config) {
-          throw new Error("Failed to load config")
-        }
-
         const authUrl = `/oauth/start`
         this.successUrl = `/oauth/success`
         //clientLog({currentApp: app}, 'Starting OAuth')

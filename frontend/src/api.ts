@@ -1,5 +1,5 @@
 import { hc } from "hono/client"
-import type { AppType, WebSocketApp } from "shared/types"
+import type { WebSocketApp, AppType } from "shared/types"
 import { authFetch } from "./utils/authFetch"
 
 export const api = hc<AppType>("/api/v1", { fetch: authFetch })

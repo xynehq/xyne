@@ -23,7 +23,6 @@ export default defineConfig(({ mode }) => {
     TZ: process.env.TZ,
     ...env,
   }
-
   return {
     plugins: [
       TanStackRouterVite({

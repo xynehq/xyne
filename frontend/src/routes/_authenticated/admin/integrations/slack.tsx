@@ -40,7 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { wsClient } from "@/api" 
+import { wsClient } from "@/api" // ensure wsClient is imported
 
 export const updateConnectorStatus = async (
   connectorId: string,
