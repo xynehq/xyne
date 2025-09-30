@@ -12,6 +12,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_DIR="${SCRIPT_DIR}/db-backups"
+
 # Function to print colored output
 print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -29,61 +33,27 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKUP_DIR="${SCRIPT_DIR}/db-backups"
-
-# Load environment variables from server/.env
-SERVER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-if [ -f "${SERVER_DIR}/.env" ]; then
-    print_info "Loading environment variables from ${SERVER_DIR}/.env"
-    set -o allexport
-    source "${SERVER_DIR}/.env"
-    set +o allexport
-    print_info "Environment variables loaded successfully"
+# Load environment variables from .env file
+ENV_FILE="${SCRIPT_DIR}/../.env"
+if [ -f "$ENV_FILE" ]; then
+    print_info "Loading database configuration from $ENV_FILE"
+    # Source the .env file to properly handle quoted values
+    set -a  # Automatically export all variables
+    source "$ENV_FILE"
+    set +a  # Stop automatically exporting
+    print_info "Found database variables in .env file"
 else
-    print_warning "No .env file found at ${SERVER_DIR}/.env"
+    print_error ".env file not found at $ENV_FILE"
+    exit 1
 fi
 
-# Parse DATABASE_URL or construct it from individual components
-if [ -n "${DATABASE_URL:-}" ]; then
-    print_info "Using DATABASE_URL from environment"
-    print_info "DATABASE_URL: ${DATABASE_URL}"
-    
-    # Parse DATABASE_URL (format: postgresql://user:password@host:port/database)
-    # Remove the protocol part
-    DB_URL_NO_PROTOCOL="${DATABASE_URL#postgresql://}"
-    
-    # Extract user and password
-    USER_PASS="${DB_URL_NO_PROTOCOL%%@*}"
-    DB_USER="${USER_PASS%%:*}"
-    DB_PASSWORD="${USER_PASS#*:}"
-    
-    # Extract host, port, and database
-    HOST_PORT_DB="${DB_URL_NO_PROTOCOL#*@}"
-    HOST_PORT="${HOST_PORT_DB%%/*}"
-    DB_NAME="${HOST_PORT_DB#*/}"
-    
-    DB_HOST="${HOST_PORT%%:*}"
-    DB_PORT="${HOST_PORT#*:}"
-    
-else
-    print_warning "DATABASE_URL not found, using individual environment variables with fallbacks"
-    # Database configuration with fallbacks
-    DB_NAME="${DATABASE_NAME:-xyne}"
-    DB_USER="${DATABASE_USER:-xyne}"
-    DB_PASSWORD="${DATABASE_PASSWORD:-xyne}"
-    DB_HOST="${DATABASE_HOST:-localhost}"
-    DB_PORT="${DATABASE_PORT:-5432}"
-fi
+# Fallback to default values if not set in .env
+DB_NAME="${DB_NAME:-xyne}"
+DB_USER="${DB_USER:-xyne}"
+DB_PASSWORD="${DB_PASSWORD:-xyne}"
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
 
-# Print loaded configuration
-print_info "Database configuration:"
-print_info "  DB_NAME: $DB_NAME"
-print_info "  DB_USER: $DB_USER"
-print_info "  DB_HOST: $DB_HOST"
-print_info "  DB_PORT: $DB_PORT"
-print_info "  DB_PASSWORD: [REDACTED]"
 
 # Docker container name (if using Docker)
 DOCKER_CONTAINER="${DATABASE_HOST:-xyne-db}"
