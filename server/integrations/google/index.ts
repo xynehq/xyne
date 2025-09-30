@@ -863,6 +863,14 @@ export const handleGoogleOAuthIngestion = async (data: SaaSOAuthJob) => {
   // const data: SaaSOAuthJob = job.data as SaaSOAuthJob
   const logger = loggerWithChild({ email: data.email })
   try {
+    // Update status to Connecting when ingestion starts
+    await db
+      .update(connectors)
+      .set({
+        status: ConnectorStatus.Connecting,
+      })
+      .where(eq(connectors.id, data.connectorId))
+
     // we will first fetch the change token
     // and poll the changes in a new Cron Job
     const connector: SelectConnector = await getOAuthConnectorWithCredentials(

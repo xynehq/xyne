@@ -566,6 +566,9 @@ export const ingestMoreChannelSchema = z.object({
 export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
 })
+export const startGoogleIngestionSchema = z.object({
+  connectorId: z.string(),
+})
 
 export type EntityType =
   | DriveEntity

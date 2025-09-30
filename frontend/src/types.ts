@@ -51,6 +51,7 @@ export enum OAuthIntegrationStatus {
   Provider = "Provider", // yet to create provider
   OAuth = "OAuth", // provider created but OAuth not yet connected
   OAuthConnecting = "OAuthConnecting",
+  OAuthReadyForIngestion = "OAuthReadyForIngestion", // OAuth completed, ready to start ingestion
   OAuthConnected = "OAuthConnected",
   OAuthPaused = "OAuthPaused",
 }

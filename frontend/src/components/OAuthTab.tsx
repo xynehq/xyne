@@ -11,11 +11,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Apps, UserRole } from "shared/types"
 import { LoaderContent } from "@/lib/common"
 import { OAuthIntegrationStatus } from "@/types"
 import { X } from "lucide-react"
 import { ConfirmModal } from "@/components/ui/confirmModal"
+import { api } from "@/api"
+import { toast } from "@/hooks/use-toast"
+import { getErrorMessage } from "@/lib/utils"
 
 interface OAuthTabProps {
   isPending: boolean
@@ -24,6 +28,7 @@ interface OAuthTabProps {
   updateStatus: string
   handleDelete: () => void
   userRole: UserRole
+  connectorId?: string
 }
 
 const OAuthTab = ({
@@ -33,12 +38,14 @@ const OAuthTab = ({
   updateStatus,
   handleDelete,
   userRole,
+  connectorId,
 }: OAuthTabProps) => {
   const [modalState, setModalState] = useState<{
     open: boolean
     title: string
     description: string
   }>({ open: false, title: "", description: "" })
+  const [isStartingIngestion, setIsStartingIngestion] = useState(false)
 
   const handleConfirmDelete = () => {
     handleDelete()
@@ -57,6 +64,50 @@ const OAuthTab = ({
       ...prev,
       ...value,
     }))
+  }
+
+  const handleStartIngestion = async () => {
+    if (!connectorId) {
+      toast({
+        title: "Error",
+        description: "Connector ID not found",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsStartingIngestion(true)
+    try {
+      // Role-based API routing
+      const isAdmin =
+        userRole === UserRole.Admin || userRole === UserRole.SuperAdmin
+
+      const response = isAdmin
+        ? await api.admin.google.start_ingestion.$post({
+            json: { connectorId },
+          })
+        : await api.google.start_ingestion.$post({
+            json: { connectorId },
+          })
+
+      if (response.ok) {
+        toast({
+          title: "Ingestion Started",
+          description: "Data ingestion has been initiated successfully",
+        })
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
+      } else {
+        throw new Error("Failed to start ingestion")
+      }
+    } catch (error) {
+      toast({
+        title: "Failed to Start Ingestion",
+        description: `Error: ${getErrorMessage(error)}`,
+        variant: "destructive",
+      })
+    } finally {
+      setIsStartingIngestion(false)
+    }
   }
 
   return (
@@ -82,6 +133,24 @@ const OAuthTab = ({
               setOAuthIntegrationStatus={setOAuthIntegrationStatus}
               text="Connect with Google OAuth"
             />
+          </CardContent>
+        </Card>
+      ) : oauthIntegrationStatus ===
+        OAuthIntegrationStatus.OAuthReadyForIngestion ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Google OAuth</CardTitle>
+            <CardDescription>
+              OAuth authentication completed. Ready to start data ingestion.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={handleStartIngestion}
+              disabled={isStartingIngestion}
+            >
+              {isStartingIngestion ? "Starting..." : "Start Ingestion"}
+            </Button>
           </CardContent>
         </Card>
       ) : (

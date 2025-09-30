@@ -696,17 +696,33 @@ const SlackOAuthTab = ({
                 </div>
               )}
             </div>
+          ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuthReadyForIngestion ? (
+            // If OAuth completed and ready for ingestion, show the Start Ingestion button
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                OAuth authentication completed. Ready to start data ingestion.
+              </p>
+              <Button
+                onClick={handleRegularIngestion}
+                disabled={isRegularIngestionActive}
+                className="w-full"
+              >
+                {isRegularIngestionActive ? "Starting..." : "Start Ingestion"}
+              </Button>
+            </div>
           ) : oauthIntegrationStatus ===
-              OAuthIntegrationStatus.OAuthConnected ||
-            oauthIntegrationStatus ===
-              OAuthIntegrationStatus.OAuthConnecting ? (
-            // If connected or connecting, show the Start Ingestion button
+              OAuthIntegrationStatus.OAuthConnected ? (
+            // If connected, show the Start Ingestion button
             <Button
               onClick={handleRegularIngestion}
               disabled={isRegularIngestionActive}
             >
               {isRegularIngestionActive ? "Ingesting..." : "Start Ingestion"}
             </Button>
+          ) : oauthIntegrationStatus ===
+              OAuthIntegrationStatus.OAuthConnecting ? (
+            // If connecting, show connecting status (same as Google)
+            "Connecting"
           ) : null}
         </CardContent>
       </Card>
@@ -775,6 +791,8 @@ export const Slack = ({
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+      } else if (connector?.status === ConnectorStatus.Authenticated) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthReadyForIngestion)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
       } else if (connector?.status === ConnectorStatus.Paused) {
@@ -1005,7 +1023,9 @@ export const Slack = ({
                 {oauthIntegrationStatus ===
                   OAuthIntegrationStatus.OAuthConnecting ||
                 oauthIntegrationStatus ===
-                  OAuthIntegrationStatus.OAuthConnected ? (
+                  OAuthIntegrationStatus.OAuthConnected ||
+                oauthIntegrationStatus ===
+                  OAuthIntegrationStatus.OAuthReadyForIngestion ? (
                   <ManualIngestionForm
                     connectorId={slackConnector?.cId}
                     isManualIngestionActive={isManualIngestionActive}

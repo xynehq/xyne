@@ -110,7 +110,10 @@ import {
   ConnectorNotCreated,
   NoUserFound,
 } from "@/errors"
-import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
+import {
+  handleGoogleOAuthIngestion,
+  handleGoogleServiceAccountIngestion,
+} from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
 import { ServiceAccountIngestMoreUsers } from "@/integrations/google"
 import { handleSlackChannelIngestion } from "@/integrations/slack/channelIngest"
@@ -1494,6 +1497,61 @@ export const StartSlackIngestionApi = async (c: Context) => {
   }
 }
 
+export const StartGoogleIngestionApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  // @ts-ignore - Assuming payload is validated by zValidator
+  const payload = c.req.valid("json") as { connectorId: string }
+  console.log(`printing the payload`)
+  console.log(payload)
+  try {
+    const userRes = await getUserByEmail(db, sub)
+    if (!userRes || !userRes.length) {
+      loggerWithChild({ email: sub }).error(
+        { sub },
+        "No user found for sub in StartGoogleIngestionApi",
+      )
+      throw new NoUserFound({})
+    }
+    const [user] = userRes
+
+    const connector = await getConnectorByExternalId(
+      db,
+      payload.connectorId,
+      user.id,
+    )
+    if (!connector) {
+      throw new HTTPException(404, { message: "Connector not found" })
+    }
+
+    // Call the main Google ingestion function
+    handleGoogleOAuthIngestion({
+      connectorId: connector.id,
+      app: connector.app as Apps,
+      externalId: connector.externalId,
+      authType: connector.authType as AuthType,
+      email: sub,
+    }).catch((error) => {
+      loggerWithChild({ email: sub }).error(
+        error,
+        `Background Google ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+      )
+    })
+
+    return c.json({
+      success: true,
+      message: "Regular Google ingestion started.",
+    })
+  } catch (error: any) {
+    loggerWithChild({ email: sub }).error(
+      error,
+      `Error starting regular Google ingestion: ${getErrorMessage(error)}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: `Failed to start regular Google ingestion: ${getErrorMessage(error)}`,
+    })
+  }
+}
 export const IngestMoreChannelApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   // @ts-ignore

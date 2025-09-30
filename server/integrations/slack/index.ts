@@ -789,6 +789,14 @@ export const handleSlackIngestion = async (data: SaaSOAuthJob) => {
       db,
       data.connectorId,
     )
+    // change the status of connector to connecting 
+    // before update the status is authenticated
+    await db
+    .update(connectors)
+    .set({
+      status: ConnectorStatus.Connecting,
+    })
+    .where(eq(connectors.id, data.connectorId))
 
     // Initialize ingestion state
     const initialState: SlackOAuthIngestionState = {
