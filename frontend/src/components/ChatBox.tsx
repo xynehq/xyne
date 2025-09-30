@@ -905,7 +905,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           fileType: getFileType({ type: file.type, name: file.name }),
         }))
 
-       
         setSelectedFiles((prev) => {
           const existingFileNames = new Set(prev.map((f) => f.file.name))
           const filteredNewFiles = newFiles.filter(
@@ -923,7 +922,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         })
 
         const filesToUpload = newFiles.filter(
-          (f) => !selectedFiles.some(existing => existing.file.name === f.file.name)
+          (f) =>
+            !selectedFiles.some(
+              (existing) => existing.file.name === f.file.name,
+            ),
         )
         uploadFiles(filesToUpload)
       },
@@ -1994,7 +1996,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         if (uploadingFilesCount > 0) {
           await new Promise<void>((resolve) => {
             uploadCompleteResolver.current = resolve
+            if(uploadingFilesCount==0){
+              resolve();
+              uploadCompleteResolver.current=null
+            }
           })
+
         }
         const alreadyUploadedMetadata = selectedFiles
           .map((f) => f.metadata)
