@@ -86,6 +86,7 @@ import { getProviderByModel } from "@/ai/provider"
 import { Models } from "@/ai/types"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
 import { NoUserFound } from "@/errors"
+import { userAgentLeaderboardQuerySchema } from "./admin"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -408,8 +409,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .insert(workflowExecution)
       .values({
         workflowTemplateId: template[0].id,
+        userId: userId,
         workspaceId: user.workspaceId,
-        createdBy: "api",
         name:
           requestData.name ||
           `${template[0].name} - ${new Date().toLocaleDateString()}`,
@@ -436,6 +437,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     // Create step executions for all template steps
     const stepExecutionsData = steps.map((step) => ({
       workflowExecutionId: execution.id,
+      userId,
       workspaceId: user.workspaceId,
       workflowStepTemplateId: step.id,
       name: step.name,
@@ -575,6 +577,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         .insert(toolExecution)
         .values({
           workflowToolId: rootStepTool.id,
+          userId,
           workspaceId: user.workspaceId,
           workflowExecutionId: execution.id,
           status: ToolExecutionStatus.COMPLETED,
@@ -704,8 +707,8 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       .insert(workflowExecution)
       .values({
         workflowTemplateId: template[0].id,
+        userId: template[0].userId,
         workspaceId: template[0].workspaceId,
-        createdBy: "demo",
         name:
           requestData.name ||
           `${template[0].name} - ${new Date().toLocaleDateString()}`,
@@ -720,6 +723,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     // Create step executions for all template steps
     const stepExecutionsData = steps.map((step) => ({
       workflowExecutionId: execution.id,
+      userId: template[0].userId,
       workspaceId: execution.workspaceId,
       workflowStepTemplateId: step.id,
       name: step.name,
@@ -1077,6 +1081,7 @@ const executeWorkflowChain = async (
           .insert(toolExecution)
           .values({
             workflowToolId: tool.id,
+            userId: step.userId,
             workspaceId: step.workspaceId,
             workflowExecutionId: executionId,
             status: "failed",
@@ -1092,6 +1097,7 @@ const executeWorkflowChain = async (
           .insert(toolExecution)
           .values({
             workflowToolId: tool.id,
+            userId: step.userId,
             workspaceId: step.workspaceId,
             workflowExecutionId: executionId,
             status: "failed",
@@ -1140,6 +1146,7 @@ const executeWorkflowChain = async (
         .insert(toolExecution)
         .values({
           workflowToolId: tool.id,
+          userId: step.userId,
           workspaceId: step.workspaceId,
           workflowExecutionId: executionId,
           status: ToolExecutionStatus.COMPLETED,
@@ -1164,6 +1171,7 @@ const executeWorkflowChain = async (
           .insert(toolExecution)
           .values({
             workflowToolId: tool.id,
+            userId: step.userId,
             workspaceId: step.workspaceId,
             workflowExecutionId: executionId,
             status: ToolExecutionStatus.COMPLETED,
@@ -1187,6 +1195,7 @@ const executeWorkflowChain = async (
           .insert(toolExecution)
           .values({
             workflowToolId: tool.id,
+            userId: step.userId,
             workspaceId: step.workspaceId,
             workflowExecutionId: executionId,
             status: ToolExecutionStatus.COMPLETED,
@@ -1608,6 +1617,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       .insert(toolExecution)
       .values({
         workflowToolId: formTool.id,
+        userId: stepExecution.userId,
         workspaceId: stepExecution.workspaceId,
         workflowExecutionId: stepExecution.workflowExecutionId,
         status: WorkflowStatus.COMPLETED,
@@ -2283,12 +2293,12 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
       .insert(workflowTemplate)
       .values({
         name: requestData.name,
+        userId: user.id,
         workspaceId: user.workspaceId,
         description: requestData.description,
         version: requestData.version || "1.0.0",
         status: "draft",
         config: requestData.config || {},
-        createdBy: "demo",
       })
       .returning()
 
@@ -2328,12 +2338,12 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       .insert(workflowTemplate)
       .values({
         name: requestData.name,
+        userId: user.id,
         workspaceId: user.workspaceId,
         description: requestData.description,
         version: requestData.version || "1.0.0",
         status: "draft",
         config: requestData.config || {},
-        createdBy: "demo",
       })
       .returning()
 
@@ -2440,7 +2450,6 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           type: tool.type,
           value: processedValue,
           config: processedConfig,
-          createdBy: "demo",
         })
         .returning()
 
@@ -2472,6 +2481,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         .insert(workflowStepTemplate)
         .values({
           workflowTemplateId: templateId,
+          userId: user.id,
           workspaceId: user.workspaceId,
           name: stepData.name,
           description: stepData.description || "",
@@ -2639,12 +2649,12 @@ export const CreateWorkflowExecutionApi = async (c: Context) => {
       .insert(workflowExecution)
       .values({
         workflowTemplateId: requestData.workflowTemplateId,
+        userId: user.id,
         workspaceId: user.workspaceId,
         name: requestData.name,
         description: requestData.description,
         metadata: requestData.metadata || {},
         status: "draft",
-        createdBy: "demo",
       })
       .returning()
 
@@ -2774,7 +2784,6 @@ export const CreateWorkflowToolApi = async (c: Context) => {
         type: requestData.type,
         value: requestData.value,
         config: requestData.config || {},
-        createdBy: "demo",
       })
       .returning()
 
@@ -2960,7 +2969,6 @@ export const AddStepToWorkflowApi = async (c: Context) => {
         type: requestData.tool.type,
         value: requestData.tool.value,
         config: requestData.tool.config || {},
-        createdBy: "api",
       })
       .returning()
 
@@ -2981,6 +2989,7 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       .insert(workflowStepTemplate)
       .values({
         workflowTemplateId: templateId,
+        userId: template.userId, 
         workspaceId: template.workspaceId,
         name: requestData.stepName,
         description: requestData.stepDescription || `Step ${stepOrder}`,

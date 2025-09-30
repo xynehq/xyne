@@ -18,6 +18,7 @@ import {
   ToolExecutionStatus,
 } from "@/types/workflowTypes"
 import { workspaces } from "./workspaces"
+import { users } from "./users"
 
 // Custom UUID array type for PostgreSQL
 export const uuidArray = customType<{
@@ -64,11 +65,13 @@ export const workflowTemplate = pgTable("workflow_template", {
   workspaceId: integer("workspace_id")
     .notNull()
     .references(() => workspaces.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   description: text("description"),
   version: text("version").notNull().default("1.0.0"),
   status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
   config: jsonb("config").default({}),
-  createdBy: text("created_by"),
   rootWorkflowStepTemplateId: uuid("root_workflow_step_template_id"), // UUID reference
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -88,6 +91,9 @@ export const workflowStepTemplate = pgTable("workflow_step_template", {
   workflowTemplateId: uuid("workflow_template_id")
     .notNull()
     .references(() => workflowTemplate.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   name: text("name").notNull(),
   description: text("description"),
   type: stepTypeEnum("type").notNull().default(StepType.AUTOMATED),
@@ -113,7 +119,6 @@ export const workflowTool = pgTable("workflow_tool", {
   type: toolTypeEnum("type").notNull(),
   value: jsonb("value"), // Can store string, number, or object based on tool type
   config: jsonb("config").default({}),
-  createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
@@ -126,6 +131,9 @@ export const workflowTool = pgTable("workflow_tool", {
 // 4. Workflow Executions Table (renamed from workflow_executions)
 export const workflowExecution = pgTable("workflow_execution", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   workspaceId: integer("workspace_id")
     .notNull()
     .references(() => workspaces.id),
@@ -137,7 +145,6 @@ export const workflowExecution = pgTable("workflow_execution", {
   status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
   metadata: jsonb("metadata").default({}),
   rootWorkflowStepExeId: uuid("root_workflow_step_exe_id"), // UUID reference
-  createdBy: text("created_by"),
   completedBy: text("completed_by"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -152,6 +159,9 @@ export const workflowExecution = pgTable("workflow_execution", {
 // 5. Workflow Step Executions Table (renamed from workflow_step_executions)
 export const workflowStepExecution = pgTable("workflow_step_execution", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   workspaceId: integer("workspace_id")
     .notNull()
     .references(() => workspaces.id),
@@ -184,6 +194,9 @@ export const workflowStepExecution = pgTable("workflow_step_execution", {
 // 6. Tool Executions Table (renamed from workflow_tool_executions)
 export const toolExecution = pgTable("tool_execution", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   workspaceId: integer("workspace_id")
     .notNull()
     .references(() => workspaces.id),
@@ -259,20 +272,13 @@ export type InsertWorkflowStepExecution = z.infer<
 export type InsertToolExecution = z.infer<typeof insertToolExecutionSchema>
 
 // Public schemas (for API responses)
-export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema.omit({
-  createdBy: true,
-})
-
+export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema
 export const publicWorkflowExecutionSchema = selectWorkflowExecutionSchema.omit(
   {
-    createdBy: true,
     completedBy: true,
   },
 )
-
-export const publicWorkflowToolSchema = selectWorkflowToolSchema.omit({
-  createdBy: true,
-})
+export const publicWorkflowToolSchema = selectWorkflowToolSchema
 
 export type PublicWorkflowTemplate = z.infer<
   typeof publicWorkflowTemplateSchema

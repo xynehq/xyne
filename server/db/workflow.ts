@@ -21,6 +21,7 @@ export const createWorkflowTemplate = async (
   trx: TxnOrClient,
   data: {
     name: string
+    userId: number
     workspaceId: number
     description?: string
     version?: string
@@ -33,11 +34,11 @@ export const createWorkflowTemplate = async (
     .insert(workflowTemplate)
     .values({
       name: data.name,
+      userId: data.userId,
       workspaceId: data.workspaceId,
       description: data.description,
       version: data.version || "1.0.0",
       config: data.config || {},
-      createdBy: data.createdBy,
       rootWorkflowStepTemplateId: data.rootWorkflowStepTemplateId,
     })
     .returning()
@@ -95,6 +96,7 @@ export const createWorkflowStepTemplate = async (
     workflowTemplateId: string
     workspaceId: number
     name: string
+    userId: number
     description?: string
     type: StepType
     parentStepId?: string
@@ -109,6 +111,7 @@ export const createWorkflowStepTemplate = async (
     .insert(workflowStepTemplate)
     .values({
       workflowTemplateId: data.workflowTemplateId,
+      userId: data.userId,
       workspaceId: data.workspaceId,
       name: data.name,
       description: data.description,
@@ -144,6 +147,7 @@ export const createWorkflowExecution = async (
   data: {
     workflowTemplateId: string
     workspaceId: number
+    userId: number
     name: string
     description?: string
     createdBy?: string
@@ -154,10 +158,10 @@ export const createWorkflowExecution = async (
     .insert(workflowExecution)
     .values({
       workflowTemplateId: data.workflowTemplateId,
+      userId: data.userId,
       workspaceId: data.workspaceId,
       name: data.name,
       description: data.description,
-      createdBy: data.createdBy,
       metadata: data.metadata || {},
     })
     .returning()
@@ -215,6 +219,7 @@ export const createWorkflowStepExecution = async (
     workflowExecutionId: string
     workflowStepTemplateId: string
     workspaceId: number
+    userId: number
     name: string
     type: StepType
     parentStepId?: string
@@ -231,6 +236,7 @@ export const createWorkflowStepExecution = async (
       workflowExecutionId: data.workflowExecutionId,
       workflowStepTemplateId: data.workflowStepTemplateId,
       workspaceId: data.workspaceId,
+      userId: data.userId,
       name: data.name,
       type: data.type,
       parentStepId: data.parentStepId,
