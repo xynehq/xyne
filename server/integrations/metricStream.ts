@@ -5,6 +5,15 @@ import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Server).child({ module: "metricStream" })
 
+// Lazy-loaded sync-server function to avoid circular dependencies
+let syncServerModule: any = null
+const getSyncServerModule = async () => {
+  if (!syncServerModule) {
+    syncServerModule = await import("../sync-server")
+  }
+  return syncServerModule
+}
+
 export const wsConnections = new Map()
 
 export const closeWs = (connectorId: string) => {
@@ -25,8 +34,7 @@ const sendWebsocketMessageViaSyncServerWS = async (
   connectorId: string,
 ) => {
   try {
-    // Import the sync-server function dynamically to avoid circular dependencies
-    const { sendWebsocketMessageToMainServer } = await import("../sync-server")
+    const { sendWebsocketMessageToMainServer } = await getSyncServerModule()
     sendWebsocketMessageToMainServer(message, connectorId)
   } catch (error) {
     Logger.error(

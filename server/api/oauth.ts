@@ -144,13 +144,8 @@ export const OAuthCallback = async (c: Context) => {
     }
 
     if (IsGoogleApp(app)) {
-      // Start ingestion in the background, but catch any errors it might throw later
-      // handleGoogleOAuthIngestion(SaasJobPayload).catch((error) => {
-      //   loggerWithChild({ email: email }).error(
-      //     error,
-      //     `Background Google OAuth ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
-      //   )
-      // })
+      // moved the ingestion logic to sync-server , once the user will click on start ingestion
+      // ingestion will start on sync-server
     } else if (IsMicrosoftApp(app)) {
       handleMicrosoftOAuthIngestion(SaasJobPayload).catch((error) => {
         loggerWithChild({ email: email }).error(

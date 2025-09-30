@@ -298,7 +298,7 @@ const postOauthRedirect = config.postOauthRedirect
 const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
 const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET!
 
-const AccessTokenCookieName = "access-token"
+const AccessTokenCookieName = config.AccessTokenCookie
 const RefreshTokenCookieName = "refresh-token"
 
 const Logger = getLogger(Subsystem.Server)

@@ -98,7 +98,7 @@ export const sendWebsocketMessageToMainServer = (
 
 // JWT Authentication middleware
 const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
-const AccessTokenCookieName = "access-token"
+const AccessTokenCookieName = config.AccessTokenCookie
 const { JwtPayloadKey } = config
 
 const AuthMiddleware = jwt({

@@ -1501,8 +1501,6 @@ export const StartGoogleIngestionApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   // @ts-ignore - Assuming payload is validated by zValidator
   const payload = c.req.valid("json") as { connectorId: string }
-  console.log(`printing the payload`)
-  console.log(payload)
   try {
     const userRes = await getUserByEmail(db, sub)
     if (!userRes || !userRes.length) {
