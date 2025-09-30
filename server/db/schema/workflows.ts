@@ -85,15 +85,9 @@ export const workflowTemplate = pgTable("workflow_template", {
 // 2. Workflow Step Templates Table (renamed from workflow_step_templates)
 export const workflowStepTemplate = pgTable("workflow_step_template", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
-  workspaceId: integer("workspace_id")
-    .notNull()
-    .references(() => workspaces.id),
   workflowTemplateId: uuid("workflow_template_id")
     .notNull()
     .references(() => workflowTemplate.id),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id),
   name: text("name").notNull(),
   description: text("description"),
   type: stepTypeEnum("type").notNull().default(StepType.AUTOMATED),
@@ -159,12 +153,6 @@ export const workflowExecution = pgTable("workflow_execution", {
 // 5. Workflow Step Executions Table (renamed from workflow_step_executions)
 export const workflowStepExecution = pgTable("workflow_step_execution", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id),
-  workspaceId: integer("workspace_id")
-    .notNull()
-    .references(() => workspaces.id),
   workflowExecutionId: uuid("workflow_execution_id")
     .notNull()
     .references(() => workflowExecution.id),
@@ -194,12 +182,6 @@ export const workflowStepExecution = pgTable("workflow_step_execution", {
 // 6. Tool Executions Table (renamed from workflow_tool_executions)
 export const toolExecution = pgTable("tool_execution", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id),
-  workspaceId: integer("workspace_id")
-    .notNull()
-    .references(() => workspaces.id),
   workflowToolId: uuid("workflow_tool_id") // Renamed from toolId
     .notNull()
     .references(() => workflowTool.id),
