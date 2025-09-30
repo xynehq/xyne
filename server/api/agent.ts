@@ -25,7 +25,7 @@ import config from "@/config"
 import { HTTPException } from "hono/http-exception"
 import { getErrorMessage } from "@/utils"
 import { selectPublicAgentSchema } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, isNull, and } from "drizzle-orm"
 import { users } from "@/db/schema"
 import { ApiKeyScopes, UserAgentRole } from "@/shared/types"
 import { getCollectionItemById } from "@/db/knowledgeBase"
@@ -492,7 +492,7 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
       return c.json({ message: "User or workspace not found" }, 404)
     }
 
-    // Get all users in the workspace
+    // Get all users in the workspace (excluding deleted users)
     const workspaceUsers = await db
       .select({
         id: users.externalId, // Use externalId instead of internal id
@@ -501,7 +501,12 @@ export const GetWorkspaceUsersApi = async (c: Context) => {
         photoLink: users.photoLink,
       })
       .from(users)
-      .where(eq(users.workspaceId, userAndWorkspace.workspace.id))
+      .where(
+        and(
+          eq(users.workspaceId, userAndWorkspace.workspace.id),
+          isNull(users.deletedAt)
+        )
+      )
 
     return c.json(workspaceUsers)
   } catch (error) {

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq, isNull, sql } from "drizzle-orm"
 import { db } from "./client"
 import {
   apiKeys,
@@ -236,7 +236,7 @@ export const getUsersByWorkspace = async (
 ): Promise<SelectUser[]> => {
   const conditions = [
     eq(users.workspaceExternalId, workspaceExternalId),
-    eq(users.deletedAt, new Date("1970-01-01T00:00:00Z")),
+    isNull(users.deletedAt),
   ]
 
   // Add external ID filter if provided
