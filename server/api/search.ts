@@ -296,7 +296,13 @@ export const SearchApi = async (c: Context) => {
     debug,
     agentId,
     // @ts-ignore
-  } = c.req.valid("query")
+  } = c.req.valid("query") as z.infer<typeof searchQuerySchema>
+   if(!entity && app==Apps.GoogleDrive){
+      
+      entity = Object.values(DriveEntity);
+   }
+  
+  
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const timestampRange = getTimestamp(lastUpdated)
@@ -498,6 +504,7 @@ export const SearchApi = async (c: Context) => {
     }
     ;[groupCount, results] = await Promise.all(tasks)
   } else {
+   
     results = await searchVespa(decodedQuery, email, app, entity, {
       alpha: userAlpha,
       limit: page,
