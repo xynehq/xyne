@@ -35,7 +35,7 @@ import {
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
 } from "@/db/schema/workflows"
-import { getUserByEmail } from "@/db/user"
+import { getUserByEmail, getUserFromJWT } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
 import {
@@ -137,13 +137,10 @@ const extractAttachmentIds = (formData: Record<string, any>): {
 // List all workflow templates with root step details
 export const ListWorkflowTemplatesApi = async (c: Context) => {
   try {
-    const {sub, workspaceId} = c.get(JwtPayloadKey)
-    const email = sub
-    const userRes = await getUserByEmail(db, email)
-    if (!userRes || !userRes.length) {
-      throw new NoUserFound({})
-    }
-    const [user] = userRes
+    const user = await getUserFromJWT(
+      db,
+      c.get(JwtPayloadKey)
+    )
     const templates = await db
       .select()
       .from(workflowTemplate)
@@ -256,13 +253,10 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
   let email: string = ""
   let via_apiKey = false
   try {
-    const {sub, workspaceId} = c.get(JwtPayloadKey)
-    const email = sub
-    const userRes = await getUserByEmail(db, email)
-    if (!userRes || !userRes.length) {
-      throw new NoUserFound({})
-    }
-    const [user] = userRes
+    const user = await getUserFromJWT(
+      db,
+      c.get(JwtPayloadKey)
+    )
     const userId = user.id
 
     Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}`)
@@ -2255,13 +2249,10 @@ export const ListWorkflowToolsApi = async (c: Context) => {
 // Create workflow template
 export const CreateWorkflowTemplateApi = async (c: Context) => {
   try {
-    const {sub, workspaceId} = c.get(JwtPayloadKey)
-    const email = sub
-    const userRes = await getUserByEmail(db, email)
-    if (!userRes || !userRes.length) {
-      throw new NoUserFound({})
-    }
-    const [user] = userRes
+    const user = await getUserFromJWT(
+      db,
+      c.get(JwtPayloadKey)
+    )
     const requestData = await c.req.json()
 
     const [template] = await db
@@ -2292,13 +2283,10 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
 // Create complex workflow template from frontend workflow builder
 export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
   try {
-    const {sub, workspaceId} = c.get(JwtPayloadKey)
-    const email = sub
-    const userRes = await getUserByEmail(db, email)
-    if (!userRes || !userRes.length) {
-      throw new NoUserFound({})
-    }
-    const [user] = userRes
+    const user = await getUserFromJWT(
+      db,
+      c.get(JwtPayloadKey)
+    )
     
     // Get user ID for agent creation
     const userId = user.id
@@ -2603,13 +2591,10 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
 // Create workflow execution
 export const CreateWorkflowExecutionApi = async (c: Context) => {
   try {
-    const {sub, workspaceId} = c.get(JwtPayloadKey)
-    const email = sub
-    const userRes = await getUserByEmail(db, email)
-    if (!userRes || !userRes.length) {
-      throw new NoUserFound({})
-    }
-    const [user] = userRes
+    const user = await getUserFromJWT(
+      db,
+      c.get(JwtPayloadKey)
+    )
     const requestData = await c.req.json()
 
     const [execution] = await db

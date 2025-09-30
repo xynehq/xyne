@@ -21,6 +21,7 @@ import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
 import { Apps, type UserRole } from "@/shared/types"
 import crypto from "crypto"
+import { NoUserFound } from "@/errors"
 
 // Define an interface for the shape of data after processing and before Zod parsing
 interface ProcessedUser
@@ -441,6 +442,20 @@ export const updateUserTimezone = async (
       cause: error instanceof Error ? error.message : "Unknown error",
     })
   }
+}
+
+export const getUserFromJWT = async (
+  db: TxnOrClient,
+  jwtPayload: { sub: string; workspaceId: string }
+): Promise<SelectUser> => {
+  const email = jwtPayload.sub
+  const userRes = await getUserByEmail(db, email)
+  
+  if (!userRes?.length) {
+    throw new NoUserFound({ message: `User with email ${email} not found.` })
+  }
+  
+  return userRes[0]
 }
 
 export async function createUserApiKey({
