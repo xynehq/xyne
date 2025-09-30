@@ -85,7 +85,6 @@ import { getActualNameFromEnum } from "@/ai/modelConfig"
 import { getProviderByModel } from "@/ai/provider"
 import { Models } from "@/ai/types"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
-import { NoUserFound } from "@/errors"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -144,7 +143,10 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
     const templates = await db
       .select()
       .from(workflowTemplate)
-      .where(eq(workflowTemplate.workspaceId, user.workspaceId))
+      .where(and(
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        eq(workflowTemplate.userId, user.id),
+      ))
 
     // Get step templates and root step details for each workflow
     const templatesWithSteps = await Promise.all(
@@ -207,12 +209,20 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
 // Get specific workflow template
 export const GetWorkflowTemplateApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(
+      db,
+      c.get(JwtPayloadKey)
+    )
     const templateId = c.req.param("templateId")
 
     const template = await db
       .select()
       .from(workflowTemplate)
-      .where(eq(workflowTemplate.id, templateId))
+      .where(and(
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        eq(workflowTemplate.userId, user.id),
+        eq(workflowTemplate.id, templateId),
+      ))
 
     if (!template || template.length === 0) {
       throw new HTTPException(404, { message: "Workflow template not found" })
@@ -253,10 +263,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
   let email: string = ""
   let via_apiKey = false
   try {
-    const user = await getUserFromJWT(
-      db,
-      c.get(JwtPayloadKey)
-    )
+    const user = await getUserFromJWT(db,c.get(JwtPayloadKey))
     const userId = user.id
 
     Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}`)
@@ -301,8 +308,11 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     const template = await db
       .select()
       .from(workflowTemplate)
-      .where(eq(workflowTemplate.id, templateId))
-
+      .where(and(
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        eq(workflowTemplate.userId, user.id),
+        eq(workflowTemplate.id, templateId),
+      ))
     if (!template || template.length === 0) {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
@@ -666,6 +676,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 // Execute workflow template
 export const ExecuteWorkflowTemplateApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
@@ -673,7 +684,11 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     const template = await db
       .select()
       .from(workflowTemplate)
-      .where(eq(workflowTemplate.id, templateId))
+      .where(and(
+        eq(workflowTemplate.id, templateId),
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        eq(workflowTemplate.userId, user.id),
+      ))
 
     if (!template || template.length === 0) {
       throw new HTTPException(404, { message: "Workflow template not found" })
@@ -1275,6 +1290,7 @@ const executeWorkflowChain = async (
 // Get workflow execution status (lightweight for polling)
 export const GetWorkflowExecutionStatusApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const executionId = c.req.param("executionId")
 
     // Get only the status field for maximum performance
@@ -1283,7 +1299,11 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
         status: workflowExecution.status,
       })
       .from(workflowExecution)
-      .where(eq(workflowExecution.id, executionId))
+      .where(and(
+        eq(workflowExecution.workspaceId, user.workspaceId),
+        eq(workflowExecution.userId, user.id),
+        eq(workflowExecution.id, executionId),
+      ))
 
     if (!execution || execution.length === 0) {
       throw new HTTPException(404, { message: "Workflow execution not found" })
@@ -1304,13 +1324,18 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
 // Get workflow execution
 export const GetWorkflowExecutionApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const executionId = c.req.param("executionId")
 
     // Get execution directly by ID
     const execution = await db
       .select()
       .from(workflowExecution)
-      .where(eq(workflowExecution.id, executionId))
+      .where(and(
+        eq(workflowExecution.userId, user.id),
+        eq(workflowExecution.workspaceId, user.workspaceId),
+        eq(workflowExecution.id, executionId),
+      ))
 
     if (!execution || execution.length === 0) {
       throw new HTTPException(404, { message: "Workflow execution not found" })
@@ -2625,6 +2650,7 @@ export const CreateWorkflowExecutionApi = async (c: Context) => {
 // List workflow executions with filters, pagination, and sorting
 export const ListWorkflowExecutionsApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const query = listWorkflowExecutionsQuerySchema.parse({
       id: c.req.query("id"),
       name: c.req.query("name"),
@@ -2635,7 +2661,10 @@ export const ListWorkflowExecutionsApi = async (c: Context) => {
     })
 
     // Build where conditions
-    const whereConditions = []
+    const whereConditions = [
+      eq(workflowExecution.workspaceId, user.workspaceId),
+      eq(workflowExecution.userId, user.id)
+    ]
 
     // Filter by ID (exact match)
     if (query.id) {
@@ -2899,6 +2928,7 @@ export const DeleteWorkflowToolApi = async (c: Context) => {
 // Add step with tool to workflow template
 export const AddStepToWorkflowApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
@@ -2906,7 +2936,11 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     const [template] = await db
       .select()
       .from(workflowTemplate)
-      .where(eq(workflowTemplate.id, templateId))
+      .where(and(
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        eq(workflowTemplate.userId, user.id),
+        eq(workflowTemplate.id, templateId),
+      ))
 
     if (!template) {
       throw new HTTPException(404, {
@@ -3048,6 +3082,7 @@ function getStepIcon(toolType: string): string {
 // Delete workflow step template API
 export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const stepId = c.req.param("stepId")
 
     // 1. Check if step exists and get its details
@@ -3068,7 +3103,11 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     const [template] = await db
       .select()
       .from(workflowTemplate)
-      .where(eq(workflowTemplate.id, templateId))
+      .where(and(
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        eq(workflowTemplate.userId, user.id),
+        eq(workflowTemplate.id, templateId),
+      ))
 
     if (!template) {
       throw new HTTPException(404, {
