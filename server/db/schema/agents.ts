@@ -9,12 +9,22 @@ import {
   boolean,
   index,
   uniqueIndex,
+  pgEnum
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { workspaces } from "./workspaces"
 import { users } from "./users"
 
+
+  export enum CreatedVia {
+    DEFAULT = "default",
+    WORKFLOW = "workflow"
+  }
+    export const createdViaEnum = pgEnum(
+    "created_via",
+    Object.values(CreatedVia) as [string, ...string[]]
+  )
 // Agents Table
 export const agents = pgTable(
   "agents",
@@ -44,6 +54,7 @@ export const agents = pgTable(
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     via_apiKey: boolean("via_apiKey").notNull().default(false),
+    createdVia: createdViaEnum("created_via").default("default").notNull(),
   },
   (table) => ({
     agentWorkspaceIdIndex: index("agent_workspace_id_index").on(
