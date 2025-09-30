@@ -133,7 +133,6 @@ export const getUserAccessibleAgents = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
-      // creation_source: agents.creation_source,
     })
     .from(agents)
     .leftJoin(userAgentPermissions, eq(agents.id, userAgentPermissions.agentId))
@@ -181,7 +180,6 @@ export const getAgentsMadeByMe = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
-      creation_source: agents.creation_source,
     })
     .from(agents)
     .innerJoin(
@@ -228,7 +226,6 @@ export const getAgentsSharedToMe = async (
       docIds: agents.docIds,
       createdAt: agents.createdAt,
       updatedAt: agents.updatedAt,
-      creation_source: agents.creation_source,
     })
     .from(agents)
     .innerJoin(
