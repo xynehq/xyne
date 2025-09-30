@@ -535,7 +535,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     } | null>(null)
     const [initialLoadComplete, setInitialLoadComplete] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
-    const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+    const [uploadingFilesCount, setUploadingFilesCount] = useState(0)
 
     // Model selection state
     const [availableModels, setAvailableModels] = useState<
@@ -787,7 +787,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // File upload utility functions
 
-    const processFiles = useCallback(
+    const  processFiles = useCallback(
       (files: FileList | File[]) => {
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
@@ -820,12 +820,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           fileType: getFileType({ type: file.type, name: file.name }),
         }))
 
+       let filesToBeUploaded:SelectedFile[]=[];
         setSelectedFiles((prev) => {
           const existingFileNames = new Set(prev.map((f) => f.file.name))
           const filteredNewFiles = newFiles.filter(
             (f) => !existingFileNames.has(f.file.name),
           )
-
+         
           const filteredCount = newFiles.length - filteredNewFiles.length
           if (filteredCount > 0) {
             toast.warning({
@@ -833,9 +834,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               description: `${filteredCount} file(s) were already selected and skipped.`,
             })
           }
-
+          filesToBeUploaded=filteredNewFiles;
           return [...prev, ...filteredNewFiles]
         })
+       uploadFiles(filesToBeUploaded);
       },
       [selectedFiles.length],
     )
@@ -844,7 +846,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
 
-        setIsUploadingFiles(true)
+        setUploadingFilesCount((prev)=> prev+files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
 
         // Set all files to uploading state
@@ -860,8 +862,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           try {
             const formData = new FormData()
             formData.append("attachment", selectedFile.file)
-
-            // Use the new attachment upload endpoint
             const response = await authFetch(
               "/api/v1/files/upload-attachment",
               {
@@ -890,6 +890,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             } else {
               throw new Error("No document ID returned from upload")
             }
+          
           } catch (error) {
             const errorMessage =
               error instanceof Error ? error.message : "Upload failed"
@@ -906,6 +907,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             })
             return null
           }
+          finally{
+            setUploadingFilesCount((prev) => prev - 1);
+          }
         })
 
         const results = await Promise.all(uploadPromises)
@@ -914,8 +918,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             (metadata): metadata is AttachmentMetadata => metadata !== null,
           ),
         )
-
-        setIsUploadingFiles(false)
         return uploadedMetadata
       },
       [toast],
@@ -1982,23 +1984,24 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       // Handle Attachments Metadata
       let attachmentsMetadata: AttachmentMetadata[] = []
       if (selectedFiles.length > 0) {
-        const filesToUpload = selectedFiles.filter(
-          (f) => !f.metadata && !f.uploading,
-        )
-        const alreadyUploadedMetadata = selectedFiles
-          .map((f) => f.metadata)
-          .filter((m): m is AttachmentMetadata => !!m)
-
-        if (filesToUpload.length > 0) {
-          const newUploadedMetadata = await uploadFiles(filesToUpload)
-          attachmentsMetadata = [
-            ...alreadyUploadedMetadata,
-            ...newUploadedMetadata,
-          ]
-        } else {
-          attachmentsMetadata = alreadyUploadedMetadata
+  if (uploadingFilesCount > 0) {
+    await new Promise<void>((resolve) => {
+      const interval = setInterval(() => {
+        if (uploadingFilesCount === 0) {
+          clearInterval(interval)
+          resolve()
         }
-      }
+      }, 100)
+    })
+  }
+  const alreadyUploadedMetadata = selectedFiles
+    .map((f) => f.metadata)
+    .filter((m): m is AttachmentMetadata => !!m)
+
+  attachmentsMetadata = alreadyUploadedMetadata
+ 
+}
+      
 
       // Replace data-doc-id and data-reference-id with mailId
       const tempDiv = document.createElement("div")
@@ -2685,7 +2688,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     query.trim().length > 0 &&
                     !isStreaming &&
                     !retryIsStreaming &&
-                    !isUploadingFiles
+                    uploadingFilesCount ===0
                   ) {
                     handleSendMessage()
                   }
@@ -2856,7 +2859,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   </div>
                 ))}
               </div>
-              {isUploadingFiles && (
+              {uploadingFilesCount > 0 && (
                 <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                   <Loader2 size={12} className="animate-spin" />
                   Uploading files...
@@ -3865,11 +3868,11 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               </button>
             ) : (
               <button
-                disabled={isStreaming || retryIsStreaming || isUploadingFiles}
+                disabled={isStreaming || retryIsStreaming || uploadingFilesCount > 0}
                 onClick={() => handleSendMessage()}
                 className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
               >
-                {isUploadingFiles ? (
+                {uploadingFilesCount > 0 ? (
                   <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <ArrowRight
