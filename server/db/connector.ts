@@ -184,13 +184,10 @@ const IsExpired = (
   expiresAt: Date,
   bufferInSeconds: number,
 ): boolean => {
-  if (IsMicrosoftApp(app)) {
-    const now: Date = new Date()
-    const currentTime = now.getTime()
-    const expirationTime = new Date(expiresAt).getTime()
-    return currentTime + bufferInSeconds * 1000 > expirationTime
-  }
-  return false
+  const now: Date = new Date()
+  const currentTime = now.getTime()
+  const expirationTime = new Date(expiresAt).getTime()
+  return currentTime + bufferInSeconds * 1000 > expirationTime
 }
 
 // this method ensures that if it retuns the connector then the access token will always be valid
