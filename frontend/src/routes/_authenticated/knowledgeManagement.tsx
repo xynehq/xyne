@@ -512,6 +512,124 @@ function KnowledgeManagementContent() {
     fetchCollections()
   }, [toast, user?.email])
 
+  // Poll for upload status updates
+  const [isPolling, setIsPolling] = useState(false)
+
+  useEffect(() => {
+    if (collections.length === 0) return
+
+    const pollInterval = 5000 
+
+    const pollStatuses = async () => {
+      try {
+        const collectionIds = collections.map((c) => c.id)
+        const response = await api.cl["poll-status"].$post({
+          json: { collectionIds },
+        })
+
+        if (response.ok) {
+          const data = (await response.json()) as {
+            items: Array<{
+              id: string
+              uploadStatus: UploadStatus
+              statusMessage: string | null
+              retryCount: number
+              collectionId: string
+            }>
+          }
+          const statusMap = new Map(
+            data.items.map((item) => [
+              item.id,
+              {
+                uploadStatus: item.uploadStatus,
+                statusMessage: item.statusMessage,
+                retryCount: item.retryCount,
+              },
+            ]),
+          )
+
+          // Check if any files are still processing or pending
+          const hasProcessingFiles = data.items.some(
+            (item) => item.uploadStatus === UploadStatus.PROCESSING ||
+                     item.uploadStatus === UploadStatus.PENDING
+          )
+
+          // Update collections with new statuses
+          setCollections((prevCollections) =>
+            prevCollections.map((collection) => {
+              // Recursively update file tree with new statuses
+              const updateItemStatuses = (items: FileNode[]): FileNode[] => {
+                return items.map((item) => {
+                  const statusUpdate = item.id ? statusMap.get(item.id) : null
+                  return {
+                    ...item,
+                    uploadStatus: statusUpdate?.uploadStatus ?? item.uploadStatus,
+                    statusMessage: statusUpdate?.statusMessage ?? item.statusMessage,
+                    retryCount: statusUpdate?.retryCount ?? item.retryCount,
+                    children: item.children
+                      ? updateItemStatuses(item.children)
+                      : undefined,
+                  }
+                })
+              }
+
+              return {
+                ...collection,
+                items: updateItemStatuses(collection.items),
+              }
+            }),
+          )
+
+          // Stop polling if no files are processing or pending
+          if (!hasProcessingFiles) {
+            setIsPolling(false)
+          }
+        }
+      } catch (error) {
+        // Silently fail polling - don't show errors to user
+        console.error("Failed to poll collection statuses:", error)
+      }
+    }
+
+    if (isPolling) {
+      console.log("Polling active")
+      const intervalId = setInterval(pollStatuses, pollInterval)
+      pollStatuses() // Poll immediately
+
+      return () => {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isPolling, collections.length])
+
+  // Start polling when collections change and have processing files
+  useEffect(() => {
+    if (collections.length === 0) return
+
+    const hasProcessingFiles = collections.some((collection) => {
+      const checkItems = (items: FileNode[]): boolean => {
+        return items.some(
+          (item) => {
+            console.log(`Checking file: ${item.name}, status: ${item.uploadStatus}`)
+            return (
+              item.uploadStatus === UploadStatus.PROCESSING ||
+              item.uploadStatus === UploadStatus.PENDING ||
+              (item.children && checkItems(item.children))
+            )
+          }
+        )
+      }
+      return checkItems(collection.items)
+    })
+
+    console.log(`hasProcessingFiles: ${hasProcessingFiles}, isPolling: ${isPolling}`)
+
+    if (hasProcessingFiles && !isPolling) {
+      console.log("Starting polling: Files in processing state detected")
+      setIsPolling(true)
+    }
+  }, [collections, isPolling])
+
   const handleCloseModal = () => {
     setShowNewCollection(false)
     setAddingToCollection(null)
