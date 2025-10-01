@@ -380,13 +380,17 @@ function AgentComponent() {
     folderName: string,
   ) => {
     
-    const isAlreadyInPath=navigationPath.some(item => item.id === folderId);
-    if(!isAlreadyInPath){
-    setNavigationPath((prev) => [
-      ...prev,
-      { id: folderId, name: folderName, type: "drive-folder" },
-    ])
-  }
+    
+    setNavigationPath((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].id === folderId) {
+        return prev;
+      }
+      return [
+        ...prev,
+        { id: folderId, name: folderName, type: "drive-folder" },
+      ];
+    });
+  
     setIsLoadingItems(true)
     try {
       const response = await api.search.driveitem.$post({
