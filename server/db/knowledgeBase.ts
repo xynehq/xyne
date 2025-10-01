@@ -837,96 +837,61 @@ export const updateParentStatus = async (
 ) => {
   if (!parentId) return
 
-  if (isCollection) {
-    // Parent is a collection - check all root-level items
-    const children = await trx
-      .select({ uploadStatus: collectionItems.uploadStatus })
-      .from(collectionItems)
-      .where(
-        and(
-          eq(collectionItems.collectionId, parentId),
-          isNull(collectionItems.parentId),
-          isNull(collectionItems.deletedAt),
-        ),
-      )
+  // Fetch children based on parent type
+  const children = await trx
+    .select({ uploadStatus: collectionItems.uploadStatus })
+    .from(collectionItems)
+    .where(
+      and(
+        isCollection
+          ? eq(collectionItems.collectionId, parentId)
+          : eq(collectionItems.parentId, parentId),
+        isCollection ? isNull(collectionItems.parentId) : sql`true`,
+        isNull(collectionItems.deletedAt),
+      ),
+    )
 
-    if (children.length === 0) {
-      // No children, mark collection as completed
-      await trx
-        .update(collections)
-        .set({
-          uploadStatus: UploadStatus.COMPLETED,
-          statusMessage: "Successfully processed collection",
-          updatedAt: sql`NOW()`,
-        })
-        .where(eq(collections.id, parentId))
-      return
+  // Determine parent type name for logging
+  const parentType = isCollection ? "collection" : "folder"
+
+  // Handle case where parent has no children
+  if (children.length === 0) {
+    const updateData = {
+      uploadStatus: UploadStatus.COMPLETED,
+      statusMessage: `Successfully processed ${parentType}`,
+      updatedAt: sql`NOW()`,
     }
 
-    // Count completed and failed children
-    const completedCount = children.filter(
-      (c) => c.uploadStatus === UploadStatus.COMPLETED,
-    ).length
-    const failedCount = children.filter(
-      (c) => c.uploadStatus === UploadStatus.FAILED,
-    ).length
-
-    // Update if all children are either completed or failed
-    if (completedCount + failedCount === children.length) {
-      await trx
-        .update(collections)
-        .set({
-          uploadStatus: UploadStatus.COMPLETED,
-          statusMessage: `Successfully processed collection: ${completedCount} completed, ${failedCount} failed`,
-          updatedAt: sql`NOW()`,
-        })
-        .where(eq(collections.id, parentId))
+    if (isCollection) {
+      await trx.update(collections).set(updateData).where(eq(collections.id, parentId))
+    } else {
+      await trx.update(collectionItems).set(updateData).where(eq(collectionItems.id, parentId))
     }
-  } else {
-    // Parent is a folder - check all direct children
-    const children = await trx
-      .select({ uploadStatus: collectionItems.uploadStatus })
-      .from(collectionItems)
-      .where(
-        and(
-          eq(collectionItems.parentId, parentId),
-          isNull(collectionItems.deletedAt),
-        ),
-      )
+    return
+  }
 
-    if (children.length === 0) {
-      // No children, mark folder as completed
-      await trx
-        .update(collectionItems)
-        .set({
-          uploadStatus: UploadStatus.COMPLETED,
-          statusMessage: "Successfully processed folder",
-          updatedAt: sql`NOW()`,
-        })
-        .where(eq(collectionItems.id, parentId))
-      return
+  // Count completed and failed children
+  const completedCount = children.filter(
+    (c) => c.uploadStatus === UploadStatus.COMPLETED,
+  ).length
+  const failedCount = children.filter(
+    (c) => c.uploadStatus === UploadStatus.FAILED,
+  ).length
+
+  // Update if all children are either completed or failed
+  if (completedCount + failedCount === children.length) {
+    const updateData = {
+      uploadStatus: UploadStatus.COMPLETED,
+      statusMessage: `Successfully processed ${parentType}: ${completedCount} completed, ${failedCount} failed`,
+      updatedAt: sql`NOW()`,
     }
 
-    // Count completed and failed children
-    const completedCount = children.filter(
-      (c) => c.uploadStatus === UploadStatus.COMPLETED,
-    ).length
-    const failedCount = children.filter(
-      (c) => c.uploadStatus === UploadStatus.FAILED,
-    ).length
+    if (isCollection) {
+      await trx.update(collections).set(updateData).where(eq(collections.id, parentId))
+    } else {
+      await trx.update(collectionItems).set(updateData).where(eq(collectionItems.id, parentId))
 
-    // Update if all children are either completed or failed
-    if (completedCount + failedCount === children.length) {
-      await trx
-        .update(collectionItems)
-        .set({
-          uploadStatus: UploadStatus.COMPLETED,
-          statusMessage: `Successfully processed folder: ${completedCount} completed, ${failedCount} failed`,
-          updatedAt: sql`NOW()`,
-        })
-        .where(eq(collectionItems.id, parentId))
-
-      // Now check if this folder's parent needs to be updated
+      // For folders, recursively check the parent folder/collection
       const [folder] = await trx
         .select({
           parentId: collectionItems.parentId,
@@ -936,13 +901,12 @@ export const updateParentStatus = async (
         .where(eq(collectionItems.id, parentId))
 
       if (folder) {
-        if (folder.parentId) {
-          // Has a parent folder, check it
-          await updateParentStatus(trx, folder.parentId, false)
-        } else {
-          // No parent folder, check the collection
-          await updateParentStatus(trx, folder.collectionId, true)
-        }
+        // Recursively update parent (either another folder or the collection)
+        await updateParentStatus(
+          trx,
+          folder.parentId || folder.collectionId,
+          !folder.parentId, // isCollection = true if no parentId
+        )
       }
     }
   }
