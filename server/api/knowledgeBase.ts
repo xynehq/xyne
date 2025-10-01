@@ -1596,7 +1596,7 @@ export const GetChunkContentApi = async (c: Context) => {
         return pos === chunkIndex
       }
       // If it's a ChunkMetadata object, compare the index field
-      if (typeof pos === "object") {
+      if (typeof pos === "object" && pos !== null) {
         if (pos.chunk_index !== undefined) {
           return pos.chunk_index === chunkIndex
         } else {

@@ -162,7 +162,7 @@ export class FileProcessorService {
     }));
 
     const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
-      chunk_index: chunks.length + index, // Continue indexing after text chunks
+      chunk_index: index, // Local indexing for image chunks array
       page_number: -1, // Default to page -1 for non-PDF files
       block_labels: ["image"], // Default block label
     }));
