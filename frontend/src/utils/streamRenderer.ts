@@ -189,8 +189,8 @@ export class CharacterAnimationManager {
   ): CharacterQueue {
     if (!this.queues.has(key)) {
       const queue = new CharacterQueue({
-        interval: options?.interval ?? 6, // 1ms
-        batchSize: options?.batchSize ?? 1, // 3 characters
+        interval: options?.interval ?? 6, // 6ms
+        batchSize: options?.batchSize ?? 1, // 1 character
         onUpdate,
         onComplete: () => {
           // Call the original onComplete callback

@@ -11,7 +11,7 @@ import {
 } from "shared/types"
 import { toast } from "@/hooks/use-toast"
 import { ToolsListItem } from "@/types"
-import { CharacterAnimationManager } from "@/utils/characterAnimation"
+import { CharacterAnimationManager } from "@/utils/streamRenderer"
 
 interface DeepResearchStep {
   id: string
@@ -1106,7 +1106,7 @@ export const useChatStream = (
                   ? {
                       ...m,
                       message:
-                        streamState.displayPartial || streamState.partial,
+                        streamState.displayPartial ?? streamState.partial,
                       sources: contextChunks,
                       citationMap: citationMap,
                       isRetrying: true,
