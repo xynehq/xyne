@@ -9,7 +9,7 @@ import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { getLogger, getLoggerWithChild } from "@/logger"
-import { Subsystem } from "@/types"
+import { Subsystem, ProcessingJobType, type TxnOrClient } from "@/types"
 import config from "@/config"
 import { getErrorMessage } from "@/utils"
 import { db } from "@/db/client"
@@ -38,19 +38,19 @@ import {
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"
-import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
+import type { CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
-import { insert, DeleteDocument, GetDocument } from "@/search/vespa"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
-import crypto from "crypto"
-import { FileProcessorService } from "@/services/fileProcessor"
+import { DeleteDocument, GetDocument } from "@/search/vespa"
+import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
+import { boss, FileProcessingQueue } from "@/queue/api-server-queue"
+import * as crypto from "crypto"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
-import { ApiKeyScopes } from "@/shared/types"
+import { ApiKeyScopes, UploadStatus } from "@/shared/types"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
@@ -183,40 +183,23 @@ export const CreateCollectionApi = async (c: Context) => {
       `Creating Collection with data: ${JSON.stringify(collectionData)}`,
     )
 
-    // Use transaction to ensure both database and Vespa operations succeed together
-    const collection = await db.transaction(async (tx) => {
-      const createdCollection = await createCollection(tx, collectionData)
-
-      const vespaDoc = {
-        docId: vespaDocId,
-        clId: createdCollection.id,
-        itemId: createdCollection.id,
-        fileName: validatedData.name,
-        app: Apps.KnowledgeBase as const,
-        entity: KnowledgeBaseEntity.Collection,
-        description: validatedData.description || "",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          ...validatedData.metadata,
-        }),
-        createdBy: user.email,
-        duration: 0,
-        mimeType: "knowledge_base",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: null,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
-      return createdCollection
+    // Create collection in database first
+    const collection = await db.transaction(async (tx: TxnOrClient) => {
+      return await createCollection(tx, collectionData)
     })
+
+    // Queue after transaction commits to avoid race condition
+    await boss.send(
+      FileProcessingQueue,
+      {
+        collectionId: collection.id,
+        type: ProcessingJobType.COLLECTION,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
     loggerWithChild({ email: userEmail }).info(
       `Created Collection: ${collection.id} for user ${userEmail}`,
     )
@@ -472,7 +455,7 @@ export const DeleteCollectionApi = async (c: Context) => {
     let deletedFoldersCount = 0
     const deletedItemIds: string[] = []
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Collect item IDs for agent cleanup (with proper prefixes)
       for (const item of collectionItemsToDelete) {
         if (item.type === "file") {
@@ -685,9 +668,9 @@ export const CreateFolderApi = async (c: Context) => {
       version: "1.0",
     }
 
-    // Use transaction to ensure both folder creation and Vespa insertion succeed together
-    const folder = await db.transaction(async (tx) => {
-      const createdFolder = await createFolder(
+    // Create folder in database first
+    const folder = await db.transaction(async (tx: TxnOrClient) => {
+      return await createFolder(
         tx,
         collectionId,
         validatedData.parentId || null,
@@ -696,38 +679,20 @@ export const CreateFolderApi = async (c: Context) => {
         user.id,
         user.email,
       )
-
-      // Use the vespaDocId from the folder record (generated in createFolder)
-      const vespaDoc = {
-        docId: createdFolder.vespaDocId!,
-        clId: collectionId,
-        itemId: createdFolder.id,
-        app: Apps.KnowledgeBase as const,
-        fileName: validatedData.name,
-        entity: KnowledgeBaseEntity.Folder,
-        description: folderMetadata.description || "",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          tags: folderMetadata.tags || [],
-        }),
-        createdBy: user.email,
-        duration: 0,
-        mimeType: "folder",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: validatedData.parentId || null,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
-      return createdFolder
     })
+
+    // Queue after transaction commits to avoid race condition
+    await boss.send(
+      FileProcessingQueue,
+      {
+        folderId: folder.id,
+        type: ProcessingJobType.FOLDER,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
 
     loggerWithChild({ email: userEmail }).info(
       `Created folder: ${folder.id} in Collection: ${collectionId} with Vespa doc: ${folder.vespaDocId}`,
@@ -794,11 +759,11 @@ const uploadSessions = new Map<
 // Clean up old sessions (older than 1 hour)
 setInterval(() => {
   const now = Date.now()
-  for (const [sessionId, session] of uploadSessions.entries()) {
+  uploadSessions.forEach((session, sessionId) => {
     if (now - session.createdAt > 3600000) {
       uploadSessions.delete(sessionId)
     }
-  }
+  })
 }, 300000) // Run every 5 minutes
 
 // Helper function to ensure folder exists or create it
@@ -855,48 +820,29 @@ async function ensureFolderPath(
       autoCreatedReason: "folder_structure_from_file_path",
     }
 
-    // Use transaction to ensure both folder creation and Vespa insertion succeed together
-    const newFolder = await db.transaction(async (tx: any) => {
-      const createdFolder = await createFolder(
+    // Create auto-folder in database first
+    const newFolder = await db.transaction(async (tx: TxnOrClient) => {
+      return await createFolder(
         tx,
         collectionId,
         parentId,
         folderName,
         autoCreatedFolderMetadata,
       )
-
-      // Use the vespaDocId from the newly created folder (no duplication!)
-      const vespaDoc = {
-        docId: createdFolder.vespaDocId!, // Use the ID generated by createFolder
-        clId: collectionId,
-        itemId: createdFolder.id,
-        fileName: folderName,
-        app: Apps.KnowledgeBase as const,
-        entity: KnowledgeBaseEntity.Folder,
-        description: "Auto-created during file upload",
-        storagePath: "",
-        chunks: [],
-        image_chunks: [],
-        chunks_pos: [],
-        image_chunks_pos: [],
-        metadata: JSON.stringify({
-          version: "1.0",
-          lastModified: Date.now(),
-          autoCreated: true,
-          originalPath: pathParts.join("/"),
-        }),
-        createdBy: "system",
-        duration: 0,
-        mimeType: "folder",
-        fileSize: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        clFd: parentId,
-      }
-
-      await insert(vespaDoc, KbItemsSchema)
-      return createdFolder
     })
+
+    // Queue after transaction commits to avoid race condition
+    await boss.send(
+      FileProcessingQueue,
+      {
+        folderId: newFolder.id,
+        type: ProcessingJobType.FOLDER,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
 
     currentFolderId = newFolder.id
 
@@ -1041,6 +987,7 @@ export const UploadFilesApi = async (c: Context) => {
       duplicateId?: string
       isIdentical?: boolean
       wasRenamed?: boolean
+      uploadStatus?: string // Add uploadStatus field
     }
 
     const uploadResults: UploadResult[] = []
@@ -1087,7 +1034,6 @@ export const UploadFilesApi = async (c: Context) => {
         // Parse the file path to extract folder structure
         const pathParts = filePath.split("/").filter((part) => part.length > 0)
         const originalFileName = pathParts.pop() || file.name // Get the actual filename
-       
 
         // Skip if the filename is a system file (in case it comes from path)
         if (
@@ -1233,21 +1179,9 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
-        // Process file using the service
-        const processingResult = await FileProcessorService.processFile(
-          buffer,
-          file.type || "text/plain",
-          fileName,
-          vespaDocId,
-          storagePath,
-        )
-
-        const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
-          processingResult
-
-        // Use transaction for atomic file creation AND Vespa insertion
-        const item = await db.transaction(async (tx) => {
-          const createdItem = await createFileItem(
+        // Create file record in database first
+        const item = await db.transaction(async (tx: TxnOrClient) => {
+          return await createFileItem(
             tx,
             collectionId,
             targetParentId,
@@ -1270,45 +1204,19 @@ export const UploadFilesApi = async (c: Context) => {
             },
             user.id,
             user.email,
+            `File uploaded successfully, queued for processing`, // Initial status message
           )
-
-          // Create Vespa document within the same transaction
-          const vespaDoc = {
-            docId: vespaDocId,
-            clId: collectionId,
-            itemId: createdItem.id,
-            fileName:
-              targetPath === "/"
-                ? collection?.name + targetPath + filePath
-                : collection?.name + targetPath + fileName,
-            app: Apps.KnowledgeBase as const,
-            entity: KnowledgeBaseEntity.File, // Always "file" for files being uploaded
-            description: "", // Default description for uploaded files
-            storagePath: storagePath,
-            chunks: chunks,
-            chunks_pos: chunks_pos,
-            image_chunks: image_chunks,
-            image_chunks_pos: image_chunks_pos,
-            metadata: JSON.stringify({
-              originalFileName: file.name,
-              uploadedBy: user.email,
-              chunksCount: chunks.length,
-              imageChunksCount: image_chunks.length,
-              processingMethod: getBaseMimeType(file.type || "text/plain"),
-              lastModified: Date.now(),
-            }),
-            createdBy: user.email,
-            duration: 0,
-            mimeType: getBaseMimeType(file.type || "text/plain"),
-            fileSize: file.size,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            clFd: targetParentId,
-          }
-
-          await insert(vespaDoc, KbItemsSchema)
-          return createdItem
         })
+
+        // Queue after transaction commits to avoid race condition
+        await boss.send(
+          FileProcessingQueue,
+          { fileId: item.id, type: ProcessingJobType.FILE },
+          {
+            retryLimit: 3,
+            expireInHours: 12,
+          },
+        )
 
         uploadResults.push({
           success: true,
@@ -1318,9 +1226,10 @@ export const UploadFilesApi = async (c: Context) => {
           parentId: targetParentId,
           message:
             fileName !== originalFileName
-              ? `File uploaded as "${fileName}" (renamed to avoid duplicate)`
-              : "File uploaded successfully",
+              ? `File uploaded as "${fileName}" (renamed to avoid duplicate) - queued for processing`
+              : "File uploaded successfully - queued for processing",
           wasRenamed: fileName !== originalFileName,
+          uploadStatus: UploadStatus.PENDING, // Indicate it's pending processing
         })
 
         loggerWithChild({ email: userEmail }).info(
@@ -1338,11 +1247,10 @@ export const UploadFilesApi = async (c: Context) => {
           try {
             await unlink(storagePath)
           } catch (err) {
-           loggerWithChild({ email: userEmail,  }).error(
-            error,
-              `Failed to clean up storage file`
-            );
-
+            loggerWithChild({ email: userEmail }).error(
+              error,
+              `Failed to clean up storage file`,
+            )
           }
         }
 
@@ -1475,7 +1383,7 @@ export const DeleteItemApi = async (c: Context) => {
     let deletedFoldersCount = 0
     const deletedItemIds: string[] = []
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: TxnOrClient) => {
       // Collect item IDs for agent cleanup (with proper prefixes)
       for (const itemToDelete of itemsToDelete) {
         if (itemToDelete.type === "file") {
@@ -1681,9 +1589,24 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Document missing chunk data" })
     }
 
-    const index = resp.fields.chunks_pos.findIndex(
-      (pos: number) => pos === chunkIndex,
-    )
+    // Handle both legacy number[] format and new ChunkMetadata[] format
+    const index = resp.fields.chunks_pos.findIndex((pos: number | ChunkMetadata) => {
+      // If it's a number (legacy format), compare directly
+      if (typeof pos === "number") {
+        return pos === chunkIndex
+      }
+      // If it's a ChunkMetadata object, compare the index field
+      if (typeof pos === "object" && pos !== null) {
+        if (pos.chunk_index !== undefined) {
+          return pos.chunk_index === chunkIndex
+        } else {
+          loggerWithChild({ email: userEmail }).warn(
+            `Unexpected chunk position object format: ${JSON.stringify(pos)}`,
+          )
+        }
+      }
+      return false
+    })
     if (index === -1) {
       throw new HTTPException(404, { message: "Chunk index not found" })
     }

@@ -4,6 +4,7 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
+ import { AgentCreationSource } from "@/db/schema"
 import {
   generateAgentStepSummaryPromptJson,
   generateConsolidatedStepSummaryPromptJson,
@@ -121,6 +122,7 @@ import {
   convertReasoningStepToText,
   extractFileIdsFromMessage,
   extractImageFileNames,
+  extractItemIdsFromPath,
   getCitationToImage,
   handleError,
   isMessageWithContext,
@@ -312,6 +314,7 @@ const createMockAgentFromFormData = (
       externalId: `test-agent-${Date.now()}`,
       workspaceId: workspace.id,
       allowWebSearch: formData.allowWebSearch || null,
+      creation_source: AgentCreationSource.DIRECT,
     }
 
     const agentPromptForLLM = JSON.stringify(agentForDb)
@@ -3557,17 +3560,17 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
     const isMsgWithContext = isMessageWithContext(message)
-    let fileIds: string[] = []
-    const extractedInfo =
-      isMsgWithContext || (path && ids)
-        ? await extractFileIdsFromMessage(message, email, ids)
-        : {
-            totalValidFileIdsFromLinkCount: 0,
-            fileIds: [],
-            collectionFolderIds: [],
-          }
-    fileIds = [...fileIds, ...(extractedInfo?.fileIds ?? [])]
-    let folderIds = extractedInfo?.collectionFolderIds
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message, email)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+          collectionFolderIds: [],
+        }
+    const pathExtractedInfo = isValidPath
+      ? await extractItemIdsFromPath(ids ?? "")
+      : { collectionFileIds: [], collectionFolderIds: [], collectionIds: [] }
+    let fileIds = extractedInfo?.fileIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
@@ -3810,9 +3813,6 @@ export const AgentMessageApi = async (c: Context) => {
                 imageAttachmentFileIds,
                 agentPromptForLLM,
                 fileIds.length > 0,
-                actualModelId,
-                Boolean(isValidPath),
-                folderIds,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -4354,6 +4354,8 @@ export const AgentMessageApi = async (c: Context) => {
                   userRequestsReasoning,
                   understandSpan,
                   agentPromptForLLM,
+                  actualModelId,
+                  pathExtractedInfo,
                 )
                 stream.writeSSE({
                   event: ChatSSEvents.Start,

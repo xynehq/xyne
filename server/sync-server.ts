@@ -6,6 +6,8 @@ import { Subsystem } from "@/types"
 import { InitialisationError } from "@/errors"
 import metricRegister from "@/metrics/sharedRegistry"
 import { isSlackEnabled, startSocketMode } from "@/integrations/slack/client"
+import { Worker } from "worker_threads"
+import path from "path"
 
 const Logger = getLogger(Subsystem.SyncServer)
 
@@ -46,8 +48,69 @@ app.get("/status", (c) => {
 
 export const initSyncServer = async () => {
   Logger.info("Initializing Sync Server")
-  // Initialize the queue system
-  await initQueue()
+  
+  // Start multiple file processing workers in separate threads
+  const workerThreads: Worker[] = []
+  const workerCount = config.fileProcessingWorkerThreads
+  
+  Logger.info(`Starting ${workerCount} file processing worker threads...`)
+  
+  for (let i = 0; i < workerCount; i++) {
+    const fileProcessingWorker = new Worker(path.join(__dirname, "fileProcessingWorker.ts"))
+    workerThreads.push(fileProcessingWorker)
+    
+    fileProcessingWorker.on("message", (message) => {
+      if (message.status === "initialized") {
+        Logger.info(`File processing worker thread ${i + 1} initialized successfully`)
+      } else if (message.status === "error") {
+        Logger.error(`File processing worker thread ${i + 1} failed: ${message.error}`)
+      }
+    })
+    
+    fileProcessingWorker.on("error", (error) => {
+      Logger.error(error, `File processing worker thread ${i + 1} error`)
+    })
+    
+    fileProcessingWorker.on("exit", (code) => {
+      if (code !== 0) {
+        Logger.error(`File processing worker thread ${i + 1} exited with code ${code}`)
+        
+        // Restart worker thread if it crashes
+        Logger.info(`Restarting file processing worker thread ${i + 1}...`)
+        const newWorker = new Worker(path.join(__dirname, "fileProcessingWorker.ts"))
+        workerThreads[i] = newWorker
+        
+        // Re-attach event listeners for the new worker
+        newWorker.on("message", (message) => {
+          if (message.status === "initialized") {
+            Logger.info(`File processing worker thread ${i + 1} restarted and initialized successfully`)
+          } else if (message.status === "error") {
+            Logger.error(`File processing worker thread ${i + 1} failed: ${message.error}`)
+          }
+        })
+        
+        newWorker.on("error", (error) => {
+          Logger.error(error, `File processing worker thread ${i + 1} error`)
+        })
+        
+        newWorker.on("exit", (code) => {
+          if (code !== 0) {
+            Logger.error(`File processing worker thread ${i + 1} exited with code ${code}`)
+          }
+        })
+      }
+    })
+  }
+  
+  // Initialize the queue system in background - don't await (excluding file processing)
+  initQueue()
+    .then(() => {
+      Logger.info("Queue system initialized successfully")
+    })
+    .catch((error) => {
+      Logger.error(error, "Failed to initialize queue system")
+    })
+    
   Logger.info("Sync Server initialization completed")
 }
 

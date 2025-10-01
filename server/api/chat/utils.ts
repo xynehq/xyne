@@ -63,6 +63,8 @@ import {
   getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
 import { db } from "@/db/client"
+import { collections, collectionItems } from "@/db/schema"
+import { and, eq, isNull } from "drizzle-orm"
 import { get } from "http"
 
 // Follow-up context types and utilities
@@ -767,7 +769,84 @@ export const extractFileIdsFromMessage = async (
     collectionFolderIds: collectionIds.filter(Boolean),
   }
 }
+export const extractItemIdsFromPath = async (
+  pathRefId: string,
+): Promise<{
+  collectionFileIds: string[]
+  collectionFolderIds: string[]
+  collectionIds: string[]
+}> => {
+  const collectionFileIds: string[] = []
+  const collectionFolderIds: string[] = []
+  const collectionIds: string[] = []
 
+  // If pathRefId is empty string, return empty object
+  if (!pathRefId || pathRefId === "") {
+    return {
+      collectionFileIds,
+      collectionFolderIds,
+      collectionIds,
+    }
+  }
+
+  const vespaId = String(pathRefId)
+
+  try {
+    // Check prefix and do respective DB call
+    if (vespaId.startsWith("clf-") || vespaId.startsWith("clfd-")) {
+      // Collection file/folder prefix - extract ID and query collectionItems with type verification
+      const isFile = vespaId.startsWith("clf-")
+      const expectedType = isFile ? "file" : "folder"
+      const [item] = await db
+        .select({ id: collectionItems.id, type: collectionItems.type })
+        .from(collectionItems)
+        .where(
+          and(
+            eq(collectionItems.vespaDocId, vespaId),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
+
+      // Verify the item exists and type matches the prefix
+      if (item && item.type === expectedType) {
+        if (isFile) {
+          collectionFileIds.push(`clf-${item.id}`) // Keep the original prefixed ID
+        } else {
+          collectionFolderIds.push(`clfd-${item.id}`) // Keep the original prefixed ID
+        }
+      }
+    } else if (vespaId.startsWith("cl-")) {
+      // Collection prefix - extract ID and query collections table
+      const [collection] = await db
+        .select({ id: collections.id })
+        .from(collections)
+        .where(
+          and(
+            eq(collections.vespaDocId, vespaId),
+            isNull(collections.deletedAt),
+          ),
+        )
+
+      if (collection) {
+        collectionIds.push(`cl-${collection.id}`) // Keep the original prefixed ID
+      }
+    } else {
+    }
+  } catch (error) {
+    // Log error but don't throw - return empty arrays
+    getLoggerWithChild(Subsystem.Chat)().error(
+      `Error extracting item IDs from pathRefId: ${vespaId}`,
+      error,
+    )
+  }
+
+  // Ensure we always return the same structure
+  return {
+    collectionFileIds,
+    collectionFolderIds,
+    collectionIds,
+  }
+}
 export const handleError = (error: any) => {
   let errorMessage = "Something went wrong. Please try again."
   if (error?.code === OpenAIError.RateLimitError) {

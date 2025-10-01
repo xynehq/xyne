@@ -6,8 +6,6 @@ import react from "@vitejs/plugin-react"
 import svgr from "vite-plugin-svgr"
 import fs from "fs"
 import { viteStaticCopy } from "vite-plugin-static-copy"
-
-// import viteReact from '@vitejs/plugin-react'
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite"
 
 export default defineConfig(({ mode }) => {
@@ -118,9 +116,23 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
         "/ws": {
-          target: env.VITE_WS_BASE_URL || "ws://localhost:3000",
+          target: env.VITE_WS_BASE_URL || "ws://127.0.0.1:3000",
           ws: true,
+          changeOrigin: true,
           rewriteWsOrigin: true,
+        },
+        // OAuth endpoints
+        "/v1/auth/callback": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
+          changeOrigin: true,
+        },
+        "/oauth/start": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
+          changeOrigin: true,
+        },
+        "/oauth/success": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3000",
+          changeOrigin: true,
         },
       },
     },
