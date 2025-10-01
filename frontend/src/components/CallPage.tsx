@@ -19,15 +19,13 @@ import { UserPlus, Share2, Copy } from "lucide-react"
 import { api } from "@/api"
 import { useToast } from "@/hooks/use-toast"
 
-const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || "ws://localhost:7880"
-
 export default function CallPage() {
   // Get parameters from URL
   const urlParams = new URLSearchParams(window.location.search)
   const room = urlParams.get("room") || ""
   const token = urlParams.get("token") || ""
   const callType = urlParams.get("type") || "video"
-  const urlServerUrl = urlParams.get("serverUrl")
+  const LiveKitServerUrl = urlParams.get("serverUrl")
 
   const [isCallEnded, setIsCallEnded] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
@@ -36,7 +34,7 @@ export default function CallPage() {
   const [joinError, setJoinError] = useState<string | null>(null)
   const [actualToken, setActualToken] = useState(token)
   const [isCopying, setIsCopying] = useState(false)
-  const [serverUrl, setServerUrl] = useState(urlServerUrl || LIVEKIT_URL)
+  const [serverUrl, setServerUrl] = useState(LiveKitServerUrl)
   const { toast } = useToast()
 
   // Generate the shareable call link (without token for security)
@@ -185,19 +183,29 @@ export default function CallPage() {
     <div className="h-screen bg-gray-900 relative overflow-hidden">
       {/* Call Interface */}
       <div className="h-full relative overflow-hidden">
-        <LiveKitRoom
-          video={callType === "video"}
-          audio={true}
-          token={actualToken}
-          serverUrl={serverUrl}
-          // Use the default LiveKit styles
-          data-lk-theme="default"
-          style={{ height: "100%", overflow: "hidden" }}
-          onDisconnected={handleDisconnect}
-        >
-          {/* LiveKit provides a complete VideoConference component */}
-          <VideoConference chatMessageFormatter={formatChatMessageLinks} />
-        </LiveKitRoom>
+        {actualToken && serverUrl ? (
+          <LiveKitRoom
+            video={callType === "video"}
+            audio={true}
+            token={actualToken}
+            serverUrl={serverUrl}
+            // Use the default LiveKit styles
+            data-lk-theme="default"
+            style={{ height: "100%", overflow: "hidden" }}
+            onDisconnected={handleDisconnect}
+          >
+            {/* LiveKit provides a complete VideoConference component */}
+            <VideoConference chatMessageFormatter={formatChatMessageLinks} />
+          </LiveKitRoom>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center text-white">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+              <p>Connecting to call...</p>
+              {isJoining && <p className="text-sm mt-2">Joining room...</p>}
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons - Bottom Left */}
         <div className="absolute bottom-4 left-4 flex gap-4 z-50">
