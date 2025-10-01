@@ -2,20 +2,111 @@ import { Hono } from "hono"
 import { init as initQueue } from "@/queue"
 import config from "@/config"
 import { getLogger, LogMiddleware } from "@/logger"
-import { Subsystem } from "@/types"
+import { startGoogleIngestionSchema, Subsystem } from "@/types"
 import { InitialisationError } from "@/errors"
 import metricRegister from "@/metrics/sharedRegistry"
 import { isSlackEnabled, startSocketMode } from "@/integrations/slack/client"
+import { jwt } from "hono/jwt"
+import { zValidator } from "@hono/zod-validator"
+import {
+  IngestMoreChannelApi,
+  StartSlackIngestionApi,
+  ServiceAccountIngestMoreUsersApi,
+  HandlePerUserSlackSync,
+  HandlePerUserGoogleWorkSpaceSync,
+  StartGoogleIngestionApi,
+} from "@/api/admin"
+import {
+  ingestMoreChannelSchema,
+  startSlackIngestionSchema,
+  serviceAccountIngestMoreSchema,
+} from "@/types"
+import { db } from "@/db/client"
+import { getUserByEmail } from "@/db/user"
+import type { JwtVariables } from "hono/jwt"
+import type { Context, Next } from "hono"
+import WebSocket from "ws"
 import { Worker } from "worker_threads"
 import path from "path"
 
 const Logger = getLogger(Subsystem.SyncServer)
 
-const app = new Hono()
+const app = new Hono<{ Variables: JwtVariables }>()
 
 const honoMiddlewareLogger = LogMiddleware(Subsystem.SyncServer)
 
-// Add logging middleware
+// WebSocket connection to main server for forwarding stats
+let mainServerWebSocket: WebSocket | null = null
+
+const connectToMainServer = () => {
+  const mainServerUrl = `ws://localhost:${config.port}/internal/sync-websocket`
+  const authSecret = process.env.METRICS_SECRET
+  mainServerWebSocket = new WebSocket(mainServerUrl, {
+    headers: {
+      Authorization: `Bearer ${authSecret}`,
+    },
+  })
+
+  mainServerWebSocket.on("open", () => {})
+
+  mainServerWebSocket.on("error", (error) => {
+    Logger.error(error, "WebSocket connection to main server failed")
+    mainServerWebSocket = null
+    // Retry connection after 5 seconds
+    setTimeout(connectToMainServer, 5000)
+  })
+
+  mainServerWebSocket.on("close", () => {
+    mainServerWebSocket = null
+    // Retry connection after 5 seconds
+    setTimeout(connectToMainServer, 5000)
+  })
+}
+
+// Function to send WebSocket message to main server
+export const sendWebsocketMessageToMainServer = (
+  message: string,
+  connectorId: string,
+) => {
+  if (
+    mainServerWebSocket &&
+    mainServerWebSocket.readyState === WebSocket.OPEN
+  ) {
+    try {
+      mainServerWebSocket.send(JSON.stringify({ message, connectorId }))
+    } catch (error) {
+      Logger.error(
+        error,
+        `Failed to send WebSocket message for connector ${connectorId} - message lost`,
+      )
+    }
+  } else {
+    Logger.warn(
+      `Cannot send WebSocket message - connection not available for connector ${connectorId}. Connection state: ${mainServerWebSocket?.readyState || "null"}. Message lost.`,
+    )
+
+    // Try to reconnect if connection is not available
+    if (
+      !mainServerWebSocket ||
+      mainServerWebSocket.readyState === WebSocket.CLOSED
+    ) {
+      Logger.info("Attempting to reconnect to main server...")
+      connectToMainServer()
+    }
+  }
+}
+
+// JWT Authentication middleware
+const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET!
+const AccessTokenCookieName = config.AccessTokenCookie
+const { JwtPayloadKey } = config
+
+const AuthMiddleware = jwt({
+  secret: accessTokenSecret,
+  cookie: AccessTokenCookieName,
+})
+
+// Add logging middleware to all routes
 app.use("*", honoMiddlewareLogger)
 
 // Health check endpoint
@@ -46,8 +137,41 @@ app.get("/status", (c) => {
   })
 })
 
+// // Protected ingestion API routes - require JWT authentication
+app.use("*", AuthMiddleware)
+
+// Slack ingestion APIs
+app.post(
+  "/slack/ingest_more_channel",
+  zValidator("json", ingestMoreChannelSchema),
+  IngestMoreChannelApi,
+)
+
+app.post(
+  "/slack/start_ingestion",
+  zValidator("json", startSlackIngestionSchema),
+  StartSlackIngestionApi,
+)
+
+// Google Workspace APIs
+app.post(
+  "/google/service_account/ingest_more",
+  zValidator("json", serviceAccountIngestMoreSchema),
+  ServiceAccountIngestMoreUsersApi,
+)
+
+app.post(
+  "/google/start_ingestion",
+  zValidator("json", startGoogleIngestionSchema),
+  StartGoogleIngestionApi,
+)
+// Sync APIs
+app.post("/syncSlackByMail", HandlePerUserSlackSync)
+app.post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
+
 export const initSyncServer = async () => {
   Logger.info("Initializing Sync Server")
+
   
   // Start multiple file processing workers in separate threads
   const workerThreads: Worker[] = []
@@ -110,7 +234,10 @@ export const initSyncServer = async () => {
     .catch((error) => {
       Logger.error(error, "Failed to initialize queue system")
     })
-    
+
+  // Connect to main server WebSocket
+  connectToMainServer()
+
   Logger.info("Sync Server initialization completed")
 }
 
