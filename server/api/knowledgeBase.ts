@@ -42,9 +42,9 @@ import type { CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { DeleteDocument, GetDocument } from "@/search/vespa"
-import { KbItemsSchema } from "@xyne/vespa-ts/types"
+import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
 import { boss, FileProcessingQueue } from "@/queue/api-server-queue"
-import crypto from "crypto"
+import * as crypto from "crypto"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
@@ -111,7 +111,7 @@ function getStoragePath(
   collectionId: string,
   storageKey: string,
   fileName: string,
-): string {  
+): string {
   const date = new Date()
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -189,13 +189,17 @@ export const CreateCollectionApi = async (c: Context) => {
     })
 
     // Queue after transaction commits to avoid race condition
-    await boss.send(FileProcessingQueue, { 
-      collectionId: collection.id, 
-      type: ProcessingJobType.COLLECTION 
-    }, {
-      retryLimit: 3,
-      expireInHours: 12
-    })
+    await boss.send(
+      FileProcessingQueue,
+      {
+        collectionId: collection.id,
+        type: ProcessingJobType.COLLECTION,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
     loggerWithChild({ email: userEmail }).info(
       `Created Collection: ${collection.id} for user ${userEmail}`,
     )
@@ -678,13 +682,17 @@ export const CreateFolderApi = async (c: Context) => {
     })
 
     // Queue after transaction commits to avoid race condition
-    await boss.send(FileProcessingQueue, { 
-      folderId: folder.id, 
-      type: ProcessingJobType.FOLDER 
-    }, {
-      retryLimit: 3,
-      expireInHours: 12
-    })
+    await boss.send(
+      FileProcessingQueue,
+      {
+        folderId: folder.id,
+        type: ProcessingJobType.FOLDER,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
 
     loggerWithChild({ email: userEmail }).info(
       `Created folder: ${folder.id} in Collection: ${collectionId} with Vespa doc: ${folder.vespaDocId}`,
@@ -751,11 +759,11 @@ const uploadSessions = new Map<
 // Clean up old sessions (older than 1 hour)
 setInterval(() => {
   const now = Date.now()
-  for (const [sessionId, session] of uploadSessions.entries()) {
+  uploadSessions.forEach((session, sessionId) => {
     if (now - session.createdAt > 3600000) {
       uploadSessions.delete(sessionId)
     }
-  }
+  })
 }, 300000) // Run every 5 minutes
 
 // Helper function to ensure folder exists or create it
@@ -824,13 +832,17 @@ async function ensureFolderPath(
     })
 
     // Queue after transaction commits to avoid race condition
-    await boss.send(FileProcessingQueue, { 
-      folderId: newFolder.id, 
-      type: ProcessingJobType.FOLDER 
-    }, {
-      retryLimit: 3,
-      expireInHours: 12
-    })
+    await boss.send(
+      FileProcessingQueue,
+      {
+        folderId: newFolder.id,
+        type: ProcessingJobType.FOLDER,
+      },
+      {
+        retryLimit: 3,
+        expireInHours: 12,
+      },
+    )
 
     currentFolderId = newFolder.id
 
@@ -1022,7 +1034,6 @@ export const UploadFilesApi = async (c: Context) => {
         // Parse the file path to extract folder structure
         const pathParts = filePath.split("/").filter((part) => part.length > 0)
         const originalFileName = pathParts.pop() || file.name // Get the actual filename
-        
 
         // Skip if the filename is a system file (in case it comes from path)
         if (
@@ -1193,15 +1204,19 @@ export const UploadFilesApi = async (c: Context) => {
             },
             user.id,
             user.email,
-            `File uploaded successfully, queued for processing` // Initial status message
+            `File uploaded successfully, queued for processing`, // Initial status message
           )
         })
 
         // Queue after transaction commits to avoid race condition
-        await boss.send(FileProcessingQueue, { fileId: item.id, type: ProcessingJobType.FILE }, {
-          retryLimit: 3,
-          expireInHours: 12
-        })
+        await boss.send(
+          FileProcessingQueue,
+          { fileId: item.id, type: ProcessingJobType.FILE },
+          {
+            retryLimit: 3,
+            expireInHours: 12,
+          },
+        )
 
         uploadResults.push({
           success: true,
@@ -1232,11 +1247,10 @@ export const UploadFilesApi = async (c: Context) => {
           try {
             await unlink(storagePath)
           } catch (err) {
-           loggerWithChild({ email: userEmail,  }).error(
-            error,
-              `Failed to clean up storage file`
-            );
-
+            loggerWithChild({ email: userEmail }).error(
+              error,
+              `Failed to clean up storage file`,
+            )
           }
         }
 
@@ -1575,9 +1589,24 @@ export const GetChunkContentApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Document missing chunk data" })
     }
 
-    const index = resp.fields.chunks_pos.findIndex(
-      (pos: number) => pos === chunkIndex,
-    )
+    // Handle both legacy number[] format and new ChunkMetadata[] format
+    const index = resp.fields.chunks_pos.findIndex((pos: number | ChunkMetadata) => {
+      // If it's a number (legacy format), compare directly
+      if (typeof pos === "number") {
+        return pos === chunkIndex
+      }
+      // If it's a ChunkMetadata object, compare the index field
+      if (typeof pos === "object" && pos !== null) {
+        if (pos.chunk_index !== undefined) {
+          return pos.chunk_index === chunkIndex
+        } else {
+          loggerWithChild({ email: userEmail }).warn(
+            `Unexpected chunk position object format: ${JSON.stringify(pos)}`,
+          )
+        }
+      }
+      return false
+    })
     if (index === -1) {
       throw new HTTPException(404, { message: "Chunk index not found" })
     }

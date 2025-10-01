@@ -217,6 +217,8 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       chunks_pos: processingResult.chunks_pos,
       image_chunks: processingResult.image_chunks,
       image_chunks_pos: processingResult.image_chunks_pos,
+      chunks_map: processingResult.chunks_map,
+      image_chunks_map: processingResult.image_chunks_map,
       metadata: JSON.stringify({
         originalFileName: file.originalName || file.fileName,
         uploadedBy: file.uploadedByEmail || "system",
@@ -325,6 +327,8 @@ async function processCollectionJob(
       image_chunks: [],
       chunks_pos: [],
       image_chunks_pos: [],
+      chunks_map: [],
+      image_chunks_map: [],
       metadata: JSON.stringify({
         version: "1.0",
         lastModified: Date.now(),
@@ -444,6 +448,8 @@ async function processFolderJob(
       image_chunks: [],
       chunks_pos: [],
       image_chunks_pos: [],
+      chunks_map: [],
+      image_chunks_map: [],
       metadata: JSON.stringify({
         version: "1.0",
         lastModified: Date.now(),

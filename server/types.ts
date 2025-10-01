@@ -600,3 +600,10 @@ export const UserMetadata = z.object({
 })
 
 export type UserMetadataType = z.infer<typeof UserMetadata>
+
+// ChunkMetadata type for OCR and file processing
+export type ChunkMetadata = {
+  chunk_index: number;
+  page_number: number;
+  block_labels: string[];
+};
