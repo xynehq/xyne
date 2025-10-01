@@ -149,6 +149,22 @@ services:
     networks:
       - xyne
 
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    container_name: livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ../livekit.yaml:/etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "devkey: devsecret"
+    networks:
+      - xyne
+
   loki:
     image: grafana/loki:3.4.1
     container_name: loki
@@ -176,21 +192,6 @@ services:
         chmod 755 /promtail-data
       '
     user: "0:0"
-    networks:
-      - xyne
-
-  livekit:
-    image: livekit/livekit-server:latest
-    command: --config /etc/livekit.yaml
-    restart: unless-stopped
-    ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882/udp"
-    volumes:
-      - ./livekit.yaml:/etc/livekit.yaml
-    environment:
-      LIVEKIT_KEYS: "devkey: devsecret"
     networks:
       - xyne
 
