@@ -68,14 +68,15 @@ export class CharacterQueue {
     ) {
       // Process a batch of characters based on batchSize
       const charsToProcess = Math.min(this.options.batchSize, this.queue.length)
-      let batchText = ""
+      // let batchText = ""
 
-      for (let i = 0; i < charsToProcess; i++) {
-        const nextChar = this.queue.shift()
-        if (nextChar !== undefined) {
-          batchText += nextChar
-        }
-      }
+      // for (let i = 0; i < charsToProcess; i++) {
+      //   const nextChar = this.queue.shift()
+      //   if (nextChar !== undefined) {
+      //     batchText += nextChar
+      //   }
+      // }
+      const batchText = this.queue.splice(0, charsToProcess).join("")
 
       if (batchText) {
         aggregatedText += batchText
