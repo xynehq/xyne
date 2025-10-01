@@ -737,6 +737,39 @@ export const getCollectionFilesVespaIds = async (
   return resp
 }
 
+// Get collection items status for polling - with access control
+export const getCollectionItemsStatusByCollections = async (
+  trx: TxnOrClient,
+  collectionIds: string[],
+  userId: number,
+) => {
+  if (collectionIds.length === 0) {
+    return []
+  }
+
+  // Fetch items only for collections owned by the user
+  const items = await trx
+    .select({
+      id: collectionItems.id,
+      uploadStatus: collectionItems.uploadStatus,
+      statusMessage: collectionItems.statusMessage,
+      retryCount: collectionItems.retryCount,
+      collectionId: collectionItems.collectionId,
+    })
+    .from(collectionItems)
+    .innerJoin(collections, eq(collectionItems.collectionId, collections.id))
+    .where(
+      and(
+        inArray(collectionItems.collectionId, collectionIds),
+        eq(collections.ownerId, userId),
+        isNull(collectionItems.deletedAt),
+        isNull(collections.deletedAt),
+      ),
+    )
+
+  return items
+}
+
 export const getCollectionFoldersItemIds = async (
   collectionFoldersIds: string[],
   trx: TxnOrClient,

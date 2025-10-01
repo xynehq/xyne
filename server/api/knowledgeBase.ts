@@ -35,6 +35,7 @@ import {
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
   getCollectionFilesVespaIds,
+  getCollectionItemsStatusByCollections,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"
@@ -1664,25 +1665,12 @@ export const PollCollectionsStatusApi = async (c: Context) => {
       throw new HTTPException(400, { message: "collectionIds array is required" })
     }
 
-    // Fetch all items for the given collections
-    const items = await db
-      .select({
-        id: collectionItems.id,
-        uploadStatus: collectionItems.uploadStatus,
-        statusMessage: collectionItems.statusMessage,
-        retryCount: collectionItems.retryCount,
-        collectionId: collectionItems.collectionId,
-      })
-      .from(collectionItems)
-      .where(
-        and(
-          sql`${collectionItems.collectionId} IN (${sql.join(
-            collectionIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-          isNull(collectionItems.deletedAt),
-        ),
-      )
+    // Fetch items only for collections owned by the user (enforced in DB function)
+    const items = await getCollectionItemsStatusByCollections(
+      db,
+      collectionIds,
+      user.id,
+    )
 
     return c.json({ items })
   } catch (error) {
