@@ -17,6 +17,8 @@ import {
   ToolType,
   ToolExecutionStatus,
 } from "@/types/workflowTypes"
+import { workspaces } from "./workspaces"
+import { users } from "./users"
 
 // Custom UUID array type for PostgreSQL
 export const uuidArray = customType<{
@@ -60,11 +62,16 @@ export const toolExecutionStatusEnum = pgEnum("tool_execution_status", Object.va
 export const workflowTemplate = pgTable("workflow_template", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  workspaceId: integer("workspace_id")
+    .notNull()
+    .references(() => workspaces.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   description: text("description"),
   version: text("version").notNull().default("1.0.0"),
   status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
   config: jsonb("config").default({}),
-  createdBy: text("created_by"),
   rootWorkflowStepTemplateId: uuid("root_workflow_step_template_id"), // UUID reference
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -103,10 +110,15 @@ export const workflowStepTemplate = pgTable("workflow_step_template", {
 // 3. Workflow Tools Table (renamed from workflow_tools)
 export const workflowTool = pgTable("workflow_tool", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
+  workspaceId: integer("workspace_id")
+    .notNull()
+    .references(() => workspaces.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
   type: toolTypeEnum("type").notNull(),
   value: jsonb("value"), // Can store string, number, or object based on tool type
   config: jsonb("config").default({}),
-  createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
@@ -119,6 +131,12 @@ export const workflowTool = pgTable("workflow_tool", {
 // 4. Workflow Executions Table (renamed from workflow_executions)
 export const workflowExecution = pgTable("workflow_execution", {
   id: uuid("id").notNull().primaryKey().defaultRandom(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
+  workspaceId: integer("workspace_id")
+    .notNull()
+    .references(() => workspaces.id),
   workflowTemplateId: uuid("workflow_template_id")
     .notNull()
     .references(() => workflowTemplate.id),
@@ -127,7 +145,6 @@ export const workflowExecution = pgTable("workflow_execution", {
   status: workflowStatusEnum("status").notNull().default(WorkflowStatus.DRAFT),
   metadata: jsonb("metadata").default({}),
   rootWorkflowStepExeId: uuid("root_workflow_step_exe_id"), // UUID reference
-  createdBy: text("created_by"),
   completedBy: text("completed_by"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -243,20 +260,13 @@ export type InsertWorkflowStepExecution = z.infer<
 export type InsertToolExecution = z.infer<typeof insertToolExecutionSchema>
 
 // Public schemas (for API responses)
-export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema.omit({
-  createdBy: true,
-})
-
+export const publicWorkflowTemplateSchema = selectWorkflowTemplateSchema
 export const publicWorkflowExecutionSchema = selectWorkflowExecutionSchema.omit(
   {
-    createdBy: true,
     completedBy: true,
   },
 )
-
-export const publicWorkflowToolSchema = selectWorkflowToolSchema.omit({
-  createdBy: true,
-})
+export const publicWorkflowToolSchema = selectWorkflowToolSchema
 
 export type PublicWorkflowTemplate = z.infer<
   typeof publicWorkflowTemplateSchema
