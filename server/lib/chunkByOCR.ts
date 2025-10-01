@@ -3,6 +3,7 @@ import * as path from "path"
 import { PDFDocument } from "pdf-lib"
 import { getLogger } from "../logger"
 import { Subsystem, type ChunkMetadata } from "../types"
+import type { ProcessingResult } from "../services/fileProcessor"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "chunkByOCR",
@@ -12,15 +13,6 @@ const DEFAULT_MAX_CHUNK_BYTES = 1024
 const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
 const DEFAULT_LAYOUT_PARSING_BASE_URL = "http://localhost:8000"
 const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
-
-export interface ProcessingResult {
-  chunks: string[]
-  chunks_pos: number[]
-  image_chunks: string[]
-  image_chunks_pos: number[]
-  chunks_map: ChunkMetadata[]
-  image_chunks_map: ChunkMetadata[]
-}
 
 type LayoutParsingBlock = {
   block_label?: string
