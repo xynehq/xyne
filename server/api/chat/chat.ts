@@ -1349,14 +1349,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         let source = []
         if (
           pathExtractedInfo &&
-          (pathExtractedInfo.collectionfileIds.length ||
+          (pathExtractedInfo.collectionFileIds.length ||
             pathExtractedInfo.collectionFolderIds.length ||
             pathExtractedInfo.collectionIds.length)
         ) {
           if (pathExtractedInfo.collectionFolderIds.length) {
             source = pathExtractedInfo.collectionFolderIds
-          } else if (pathExtractedInfo.collectionfileIds.length) {
-            source = pathExtractedInfo.collectionfileIds
+          } else if (pathExtractedInfo.collectionFileIds.length) {
+            source = pathExtractedInfo.collectionFileIds
           } else {
             source = pathExtractedInfo.collectionIds
           }
@@ -2622,14 +2622,14 @@ async function* generatePointQueryTimeExpansion(
         let source = []
         if (
           pathExtractedInfo &&
-          (pathExtractedInfo.collectionfileIds.length ||
+          (pathExtractedInfo.collectionFileIds.length ||
             pathExtractedInfo.collectionFolderIds.length ||
             pathExtractedInfo.collectionIds.length)
         ) {
           if (pathExtractedInfo.collectionFolderIds.length) {
             source = pathExtractedInfo.collectionFolderIds
-          } else if (pathExtractedInfo.collectionfileIds.length) {
-            source = pathExtractedInfo.collectionfileIds
+          } else if (pathExtractedInfo.collectionFileIds.length) {
+            source = pathExtractedInfo.collectionFileIds
           } else {
             source = pathExtractedInfo.collectionIds
           }
@@ -3202,14 +3202,14 @@ async function* generateMetadataQueryAnswer(
         let source = []
         if (
           pathExtractedInfo &&
-          (pathExtractedInfo.collectionfileIds.length ||
+          (pathExtractedInfo.collectionFileIds.length ||
             pathExtractedInfo.collectionFolderIds.length ||
             pathExtractedInfo.collectionIds.length)
         ) {
           if (pathExtractedInfo.collectionFolderIds?.length) {
             source = pathExtractedInfo.collectionFolderIds
-          } else if (pathExtractedInfo.collectionfileIds.length) {
-            source = pathExtractedInfo.collectionfileIds
+          } else if (pathExtractedInfo.collectionFileIds.length) {
+            source = pathExtractedInfo.collectionFileIds
           } else {
             source = pathExtractedInfo.collectionIds
           }
@@ -3830,7 +3830,7 @@ const fallbackText = (classification: QueryRouterLLMResponse): string => {
 }
 
 export type pathExtractedInfo = {
-  collectionfileIds: string[]
+  collectionFileIds: string[]
   collectionFolderIds: string[]
   collectionIds: string[]
 }

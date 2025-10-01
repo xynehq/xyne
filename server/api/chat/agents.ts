@@ -4304,11 +4304,7 @@ export const AgentMessageApi = async (c: Context) => {
                   understandSpan,
                   agentPromptForLLM,
                   actualModelId,
-                  {
-                    collectionfileIds: pathExtractedInfo.collectionFileIds,
-                    collectionFolderIds: pathExtractedInfo.collectionFolderIds,
-                    collectionIds: pathExtractedInfo.collectionIds,
-                  },
+                  pathExtractedInfo,
                 )
                 stream.writeSSE({
                   event: ChatSSEvents.Start,
