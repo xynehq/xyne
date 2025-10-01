@@ -612,7 +612,15 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
     // Auto-execute next automated steps
-    const allTools = await db.select().from(workflowTool)
+    const allTools = await db
+      .select()
+      .from(workflowTool)
+      .where(
+        and(
+          eq(workflowTool.workspaceId, user.workspaceId),
+          eq(workflowTool.userId, user.id),
+        ),
+      )
     const rootStepName = rootStepExecution.name || "Root Step"
     const currentResults: Record<string, any> = {}
 
@@ -1663,7 +1671,15 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
     console.log("Step execution updated successfully")
 
     // Continue workflow execution - execute next automated steps
-    const tools = await db.select().from(workflowTool)
+    const tools = await db
+      .select()
+      .from(workflowTool)
+      .where(
+        and(
+          eq(workflowTool.workspaceId, stepExecution.workspaceId),
+          eq(workflowTool.userId, stepExecution.userId),
+        ),
+      )
     const stepName = stepExecution.name || "unknown_step"
     const currentResults: Record<string, any> = {}
     currentResults[stepName] = {
@@ -2265,8 +2281,16 @@ const executeWorkflowTool = async (
 // List workflow tools
 export const ListWorkflowToolsApi = async (c: Context) => {
   try {
-    const tools = await db.select().from(workflowTool)
-
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
+    const tools = await db
+      .select()
+      .from(workflowTool)
+      .where(
+        and(
+          eq(workflowTool.workspaceId, user.workspaceId),
+          eq(workflowTool.userId, user.id),
+        ),
+      )
     return c.json({
       success: true,
       data: tools,
@@ -2798,6 +2822,7 @@ export const CreateWorkflowToolApi = async (c: Context) => {
 // Update workflow tool
 export const UpdateWorkflowToolApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const toolId = c.req.param("toolId")
     const requestData = await c.req.json()
 
@@ -2805,7 +2830,11 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
     const existingTool = await db
       .select()
       .from(workflowTool)
-      .where(eq(workflowTool.id, toolId))
+      .where(and(
+        eq(workflowTool.workspaceId, user.workspaceId),
+        eq(workflowTool.userId, user.id),
+        eq(workflowTool.id, toolId),
+      ))
 
     if (existingTool.length === 0) {
       throw new HTTPException(404, {
@@ -2884,12 +2913,17 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
 // Get single workflow tool
 export const GetWorkflowToolApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const toolId = c.req.param("toolId")
 
     const [tool] = await db
       .select()
       .from(workflowTool)
-      .where(eq(workflowTool.id, toolId))
+      .where(and(
+        eq(workflowTool.workspaceId, user.workspaceId),
+        eq(workflowTool.userId, user.id),
+        eq(workflowTool.id, toolId),
+      ))
 
     if (!tool) {
       throw new HTTPException(404, {
@@ -2912,13 +2946,18 @@ export const GetWorkflowToolApi = async (c: Context) => {
 // Delete workflow tool
 export const DeleteWorkflowToolApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const toolId = c.req.param("toolId")
 
     // Check if tool exists first
     const existingTool = await db
       .select()
       .from(workflowTool)
-      .where(eq(workflowTool.id, toolId))
+      .where(and(
+        eq(workflowTool.workspaceId, user.workspaceId),
+        eq(workflowTool.userId, user.id),
+        eq(workflowTool.id, toolId),
+      ))
 
     if (existingTool.length === 0) {
       throw new HTTPException(404, {
