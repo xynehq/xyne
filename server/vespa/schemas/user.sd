@@ -229,14 +229,13 @@ schema user {
     rank-profile default_native inherits initial {
         # slight boost for people
         global-phase {
-            expression: 1.2 * ((query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank))
+            expression: 2 * (combined_nativeRank)
         }
 
         match-features {
             matchedFieldCount
             nativeRank(name)
             nativeRank(email)
-            vector_score
         }
     }
 rank-profile title_boosted_hybrid inherits initial {
