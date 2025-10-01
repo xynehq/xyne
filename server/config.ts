@@ -8,6 +8,11 @@ let port = process.env.PORT || 3000
 let metricsPort = process.env.METRICS_PORT || 3001
 let syncServerPort = process.env.SYNC_SERVER_PORT || 3010
 let host = process.env.HOST || "http://localhost:3000"
+
+// Centralized database URL construction
+function getDatabaseUrl(): string {
+    return process.env.DATABASE_URL || `postgres://xyne:xyne@${postgresBaseHost}:5432/xyne`
+}
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
 
@@ -43,6 +48,10 @@ let VertexRegion = ""
 let VertexAIModel = ""
 let aiProviderBaseUrl = ""
 let isReasoning = false
+
+// File processing worker configuration
+let fileProcessingWorkerThreads = parseInt(process.env.FILE_PROCESSING_WORKER_THREADS || "1", 10)
+let fileProcessingTeamSize = parseInt(process.env.FILE_PROCESSING_TEAM_SIZE || "1", 10)
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
@@ -214,4 +223,7 @@ export default {
   vespaEndpoint: `http://${vespaBaseHost}:8080`,
   defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
   CurrentAuthType,
+  getDatabaseUrl,
+  fileProcessingWorkerThreads,
+  fileProcessingTeamSize,
 }

@@ -2,9 +2,10 @@ import { getErrorMessage } from "@/utils"
 import { chunkDocument } from "@/chunks"
 // import { extractTextAndImagesWithChunksFromPDF } from "@/pdf
 
-import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
+import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
+import { type ChunkMetadata } from "@/types"
 import * as XLSX from "xlsx"
 import {
   getBaseMimeType,
@@ -13,15 +14,23 @@ import {
   isDocxFile,
   isPptxFile,
 } from "@/integrations/dataSource/config"
+import { getLogger, Subsystem } from "@/logger"
+
+const Logger = getLogger(Subsystem.Ingest).child({
+  module: "fileProcessor",
+})
 
 export interface ProcessingResult {
   chunks: string[]
   chunks_pos: number[]
   image_chunks: string[]
   image_chunks_pos: number[]
+  chunks_map: ChunkMetadata[]
+  image_chunks_map: ChunkMetadata[]
 }
 
 export class FileProcessorService {
+
   static async processFile(
     buffer: Buffer,
     mimeType: string,
@@ -39,15 +48,12 @@ export class FileProcessorService {
 
     try {
       if (baseMimeType === "application/pdf") {
-        // Process PDF
-        const result = await extractTextAndImagesWithChunksFromPDFviaGemini(
-          new Uint8Array(buffer),
-          vespaDocId,
-        )
-        chunks = result.text_chunks
-        chunks_pos = result.text_chunk_pos
-        image_chunks = result.image_chunks || []
-        image_chunks_pos = result.image_chunk_pos || []
+        // Redirect PDF processing to OCR
+        const result = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
+
+        
+
+        return result
       } else if (isDocxFile(baseMimeType)) {
         // Process DOCX
         const result = await extractTextAndImagesWithChunksFromDocx(
@@ -138,9 +144,9 @@ export class FileProcessorService {
         }
       }
     } catch (error) {
-      console.warn(
-        `Failed to process file content for ${fileName}: ${getErrorMessage(error)}`,
-      )
+      // Log the processing failure with error details and context
+      Logger.error(error, `File processing failed for ${fileName} (${baseMimeType}, ${buffer.length} bytes)`)
+      
       // Create basic chunk on processing error
       chunks = [
         `File: ${fileName}, Type: ${baseMimeType}, Size: ${buffer.length} bytes`,
@@ -148,11 +154,26 @@ export class FileProcessorService {
       chunks_pos = [0]
     }
 
+    // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
+    const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
+      chunk_index: index,
+      page_number: -1, // Default to page -1 for non-PDF files
+      block_labels: ["text"], // Default block label
+    }));
+
+    const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
+      chunk_index: index, // Local indexing for image chunks array
+      page_number: -1, // Default to page -1 for non-PDF files
+      block_labels: ["image"], // Default block label
+    }));
+
     return {
       chunks,
       chunks_pos,
       image_chunks,
       image_chunks_pos,
+      chunks_map,
+      image_chunks_map,
     }
   }
 }

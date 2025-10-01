@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { api } from "@/api";
 import { useDocumentOperations } from "@/contexts/DocumentOperationsContext";
 
@@ -6,9 +6,8 @@ type Options = {
   caseSensitive?: boolean;
   highlightClass?: string;
   activeClass?: string;
-  matchThreshold?: number;    // 0.0 = exact match, 1.0 = very loose (default: 0.3)
-  maxChunkLength?: number;    // Maximum chunk length to process (default: 500)
   debug?: boolean;            // Enable debug logging
+  documentId?: string;        // Document ID for caching
 };
 
 type HighlightMatch = {
@@ -29,22 +28,59 @@ type HighlightResponse = {
   debug?: any;
 };
 
+type CacheEntry = {
+  response: HighlightResponse;
+  timestamp: number;
+};
+
+type HighlightCache = {
+  [key: string]: CacheEntry;
+};
+
+// Cache duration constant - defined at module scope to prevent re-declaration on each render
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 export function useScopedFind(
   containerRef: React.RefObject<HTMLElement>,
   opts: Options = {}
 ) {
   const { documentOperationsRef } = useDocumentOperations();
   const { 
-    caseSensitive = false,
+    caseSensitive = true,
     highlightClass = "bg-yellow-200/60 dark:bg-yellow-200/40 rounded-sm px-0.5 py-px", 
-    matchThreshold = 0.3,
-    maxChunkLength = 500,
-    debug = false
+    debug = false,
+    documentId,
   } = opts;
+
+  // Cache for API responses
+  const cacheRef = useRef<HighlightCache>({});
 
   const [matches, setMatches] = useState<HTMLElement[]>([]);
   const [index, setIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Generate cache key based on document ID, chunk index, and options
+  const generateCacheKey = useCallback((
+    docId: string | undefined,
+    chunkIdx: number | null | undefined,
+  ): string => {
+    const keyComponents = [
+      docId || 'no-doc-id',
+      chunkIdx !== null && chunkIdx !== undefined ? chunkIdx.toString() : 'no-chunk-idx',
+    ];
+    return keyComponents.join('|');
+  }, []);
+
+  // Clean expired cache entries
+  const cleanExpiredCache = useCallback(() => {
+    const now = Date.now();
+    const cache = cacheRef.current;
+    Object.keys(cache).forEach(key => {
+      if (now - cache[key].timestamp > CACHE_DURATION) {
+        delete cache[key];
+      }
+    });
+  }, []);
 
   // Extract text content from the container
   const extractContainerText = useCallback((container: HTMLElement): string => {
@@ -54,7 +90,7 @@ export function useScopedFind(
         if (!p) return NodeFilter.FILTER_REJECT;
         const tag = p.tagName.toLowerCase();
         if (tag === "script" || tag === "style") return NodeFilter.FILTER_REJECT;
-        if (!n.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
+        if (!(n as Text).nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       },
     });
@@ -194,14 +230,14 @@ export function useScopedFind(
   }, [containerRef]);
 
   const highlightText = useCallback(
-    async (text: string): Promise<boolean> => {
+    async (text: string, chunkIndex: number): Promise<boolean> => {
       if (debug) {
         console.log('highlightText called with:', text);
       }
       
       const root = containerRef.current;
       if (!root) {
-        console.log('No container ref found');
+        if (debug) console.log('No container ref found');
         return false;
       }
       
@@ -229,23 +265,63 @@ export function useScopedFind(
           console.log('Container text extracted, length:', containerText.length);
         }
 
-        const response = await api.highlight.$post({
-          json: {
-            chunkText: text,
-            documentContent: containerText,
-            options: {
-              matchThreshold,
-              maxChunkLength,
-              caseSensitive
+        // Clean expired cache entries
+        cleanExpiredCache();
+
+        // Generate cache key
+        const canUseCache = !!documentId;
+        const cacheKey = canUseCache
+          ? generateCacheKey(documentId, chunkIndex)
+          : '';
+
+        // Check cache first (only if safe)
+        const cachedEntry = canUseCache ? cacheRef.current[cacheKey] : undefined;
+        let result: HighlightResponse;
+
+        if (cachedEntry && (Date.now() - cachedEntry.timestamp) < CACHE_DURATION) {
+          if (debug) {
+            console.log('Using cached result for key:', cacheKey);
+          }
+          result = cachedEntry.response;
+        } else {
+          if (debug) {
+            console.log('Cache miss, making API call for key:', cacheKey);
+          }
+
+          const response = await api.highlight.$post({
+            json: {
+              chunkText: text,
+              documentContent: containerText,
+              options: {
+                caseSensitive,
+              }
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          result = await response.json();
+          
+          // Only cache successful responses and only when safe
+          if (result.success && canUseCache) {
+            cacheRef.current[cacheKey] = {
+              response: result,
+              timestamp: Date.now(),
+            };
+
+            if (debug) {
+              console.log('Cached successful result for key:', cacheKey);
+            }
+          } else if (result.success && !canUseCache && debug) {
+            console.log('Skipping cache write (no documentId)');
+          } else {
+            if (debug) {
+              console.log('Not caching failed response for key:', cacheKey);
             }
           }
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
         }
-
-        const result: HighlightResponse = await response.json();
         
         if (debug) {
           console.log('Backend response:', result);
@@ -293,7 +369,7 @@ export function useScopedFind(
         setIsLoading(false);
       }
     },
-    [clearHighlights, containerRef, extractContainerText, createHighlightMarks, matchThreshold, maxChunkLength, caseSensitive, debug]
+    [clearHighlights, containerRef, extractContainerText, createHighlightMarks, caseSensitive, debug, documentId, generateCacheKey, cleanExpiredCache]
   );
 
   const scrollToMatch = useCallback(
@@ -337,6 +413,15 @@ export function useScopedFind(
 
   // Clean up when container unmounts
   useEffect(() => () => clearHighlights(), [clearHighlights]);
+
+  // Clean up expired cache entries periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      cleanExpiredCache();
+    }, CACHE_DURATION / 2); // Clean every 2.5 minutes
+
+    return () => clearInterval(interval);
+  }, [cleanExpiredCache]);
 
   return {
     highlightText,

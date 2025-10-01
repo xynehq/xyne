@@ -763,3 +763,10 @@ export const getDocumentSchema = z.object({
   docId: z.string().min(1),
   schema: z.string().min(1),
 })
+
+export enum UploadStatus {
+  PENDING = "pending",
+  PROCESSING = "processing",
+  COMPLETED = "completed", 
+  FAILED = "failed",
+}

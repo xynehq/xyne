@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
+// import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,7 +74,7 @@ import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { createAuthEventSource } from "@/hooks/useChatStream"
-import { textToCitationIndex } from "@/utils/chatUtils"
+import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
 import SharedAgent from "@/components/SharedAgent"
@@ -2729,7 +2729,7 @@ function AgentComponent() {
               <div className="w-full max-w-3xl mx-auto px-4 pt-0 pb-6">
                 <div className="flex flex-col space-y-6">
                   <div className="flex justify-between items-center">
-                    <h1 className="text-4xl tracking-wider font-display text-gray-700 dark:text-gray-100">
+                    <h1 className="text-[32px] tracking-wider font-display text-gray-700 dark:text-gray-100">
                       AGENTS
                     </h1>
                     <div className="flex items-center gap-4 ">
@@ -3148,16 +3148,16 @@ function AgentComponent() {
                         Select knowledge sources for your agent.
                       </p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        RAG
-                      </Label>
-                      <Switch
-                        checked={isRagOn}
-                        onCheckedChange={setIsRagOn}
-                        id="rag-toggle"
-                      />
-                    </div>
+                    {/* <div className="flex items-center gap-3">
+                        <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          RAG
+                        </Label>
+                        <Switch
+                          checked={isRagOn}
+                          onCheckedChange={setIsRagOn}
+                          id="rag-toggle"
+                        />
+                      </div> */}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
                     {currentSelectedIntegrationObjects.length === 0 && (
