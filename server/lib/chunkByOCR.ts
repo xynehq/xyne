@@ -12,7 +12,7 @@ const Logger = getLogger(Subsystem.Integrations).child({
 const DEFAULT_MAX_CHUNK_BYTES = 1024
 const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
 const DEFAULT_LAYOUT_PARSING_BASE_URL = "http://localhost:8000"
-const LAYOUT_PARSING_API_PATH = "v2/models/layout-parsing/infer"
+const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
 
 type LayoutParsingBlock = {
   block_label?: string
@@ -292,8 +292,9 @@ async function callLayoutParsingApi(
   buffer: Buffer,
   fileName: string,
 ): Promise<LayoutParsingApiPayload> {
-  const baseUrl = process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL
-  const apiUrl = baseUrl + LAYOUT_PARSING_API_PATH
+  const baseUrl = (process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL).replace(/\/+$/, '')
+  
+  const apiUrl = baseUrl + '/' + LAYOUT_PARSING_API_PATH.replace(/^\/+/, '')
   const fileType =
     Number.parseInt(process.env.LAYOUT_PARSING_FILE_TYPE ?? "0", 10) || 0
   const visualize = process.env.LAYOUT_PARSING_VISUALIZE === "false"
