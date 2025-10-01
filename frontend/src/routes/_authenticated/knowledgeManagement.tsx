@@ -512,6 +512,82 @@ function KnowledgeManagementContent() {
     fetchCollections()
   }, [toast, user?.email])
 
+  // Poll for upload status updates
+  useEffect(() => {
+    const pollInterval = 5000 // Poll every 3 seconds
+
+    const pollStatuses = async () => {
+      // Only poll if there are collections
+      if (collections.length === 0) return
+
+      try {
+        const collectionIds = collections.map((c) => c.id)
+        const response = await api.cl["poll-status"].$post({
+          json: { collectionIds },
+        })
+
+        if (response.ok) {
+          const data = (await response.json()) as {
+            items: Array<{
+              id: string
+              uploadStatus: UploadStatus
+              statusMessage: string | null
+              retryCount: number
+              collectionId: string
+            }>
+          }
+          const statusMap = new Map(
+            data.items.map((item) => [
+              item.id,
+              {
+                uploadStatus: item.uploadStatus,
+                statusMessage: item.statusMessage,
+                retryCount: item.retryCount,
+              },
+            ]),
+          )
+
+          // Update collections with new statuses
+          setCollections((prevCollections) =>
+            prevCollections.map((collection) => {
+              // Recursively update file tree with new statuses
+              const updateItemStatuses = (items: FileNode[]): FileNode[] => {
+                return items.map((item) => {
+                  const statusUpdate = item.id ? statusMap.get(item.id) : null
+                  return {
+                    ...item,
+                    uploadStatus: statusUpdate?.uploadStatus ?? item.uploadStatus,
+                    statusMessage: statusUpdate?.statusMessage ?? item.statusMessage,
+                    retryCount: statusUpdate?.retryCount ?? item.retryCount,
+                    children: item.children
+                      ? updateItemStatuses(item.children)
+                      : undefined,
+                  }
+                })
+              }
+
+              return {
+                ...collection,
+                items: updateItemStatuses(collection.items),
+              }
+            }),
+          )
+        }
+      } catch (error) {
+        // Silently fail polling - don't show errors to user
+        console.error("Failed to poll collection statuses:", error)
+      }
+    }
+
+    // Start polling
+    const intervalId = setInterval(pollStatuses, pollInterval)
+
+    // Poll immediately on mount
+    pollStatuses()
+
+    return () => clearInterval(intervalId)
+  }, [collections.length]) // Only depend on collections.length to avoid re-creating interval on every status update
+
   const handleCloseModal = () => {
     setShowNewCollection(false)
     setAddingToCollection(null)
