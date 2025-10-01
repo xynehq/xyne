@@ -27,7 +27,7 @@ interface ScriptExecutionOutput {
   extractedFiles?: string[]
 }
 
-const timeout_value = 20
+const timeout_value = 40
 
 // Bubblewrap sandbox toggle from environment
 const USE_BUBBLEWRAP = process.env.USE_BUBBLEWRAP === 'true'
@@ -178,7 +178,11 @@ const config = JSON.parse(configRaw);
         allowedImports: [
           "jsonlite", "base", "stats", "utils", "graphics", "grDevices",
           "methods", "datasets", "stringr", "lubridate", "dplyr",
-          "httr", "RCurl", "curl", "readr", "data.table"
+          "httr", "RCurl", "curl", "readr", "data.table",
+          "methods", "datasets", "stringr", "lubridate", "dplyr", 
+          "httr", "RCurl", "curl","digest","tidyverse","glue","bigrquery",
+          "readr","readxl","googlesheets4","stringr","data.table",
+          "countrycode","foreach","doParallel","googledrive"
         ],
         restrictedKeywords: [
           "system(", "system2(", "shell(", "Sys.setenv", "source(",

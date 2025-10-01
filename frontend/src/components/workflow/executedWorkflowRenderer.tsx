@@ -2150,8 +2150,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           
           // Extract previous step result for review content
           let previousStepResult = null
-          if (selectedTemplate?.stepExecutions && step.prevStepIds && step.prevStepIds.length > 0) {
-            const prevStepId = step.prevStepIds[0] // Get the first previous step
+          const stepExecution = step as any // Cast to access execution properties
+          if (selectedTemplate?.stepExecutions && stepExecution.prevStepIds && stepExecution.prevStepIds.length > 0) {
+            const prevStepId = stepExecution.prevStepIds[0] // Get the first previous step
             const prevStep = selectedTemplate.stepExecutions.find(s => s.workflowStepTemplateId === prevStepId)
             
             if (prevStep && selectedTemplate.toolExecutions) {

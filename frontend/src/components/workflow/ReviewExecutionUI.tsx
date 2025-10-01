@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, X, CheckCircle, XCircle, Clock, AlertTriangle, Trash2, CornerDownLeft } from "lucide-react"
+import {  X, CheckCircle, XCircle, Clock, AlertTriangle, Trash2, CornerDownLeft } from "lucide-react"
 import { api } from "../../api"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 

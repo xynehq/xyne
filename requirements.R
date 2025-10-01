@@ -6,5 +6,9 @@ options(repos = c(CRAN = "https://cran.rstudio.com/"))
 install.packages(c(
   "jsonlite",  # JSON parsing/generation
   "httr",      # HTTP requests for API calls
-  "curl"       # Basic HTTP/network operations
-), dependencies=TRUE, quiet=TRUE)
+  "curl",       # Basic HTTP/network operations
+  "methods", "datasets", "stringr", "lubridate", "dplyr", 
+  "httr", "RCurl", "curl","digest","tidyverse","glue","bigrquery",
+  "readr","readxl","googlesheets4","stringr","data.table",
+  "countrycode","foreach","doParallel","googledrive"
+), dependencies=TRUE, quiet=FALSE)

@@ -1017,8 +1017,8 @@ const StepNode: React.FC<NodeProps> = ({
           {/* PlusButton for adding next step (only if not awaiting trigger) */}
           {!isAwaitingTrigger && (
             <PlusButton
-              hasNext={data.hasNext}
-              nodeId={data.id}
+              hasNext={Boolean(data.hasNext)}
+              nodeId={String(data.id)}
               isConnectable={isConnectable}
               showHandles={false}
             />
@@ -2575,27 +2575,22 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     if (nodes.length > 0 || edges.length > 0) {
       const currentHash = createWorkflowHash()
       
-      // Check if we have a valid trigger node (not just the trigger selector)
-      const hasValidTrigger = nodes.some(node => {
+      // Check if we have any actual workflow steps (not just trigger selector)
+      const hasActualSteps = nodes.some(node => {
         const nodeData = node.data as any
-        return nodeData?.step?.type && 
-               nodeData.step.type !== "trigger_selector" && 
-               (nodeData.step.type === "form_submission" || 
-                nodeData.step.type === "manual" || 
-                nodeData.step.type === "schedule" ||
-                nodeData.step.type === "app_event")
+        return nodeData?.step?.type && nodeData.step.type !== "trigger_selector"
       })
       
-      if (lastSavedHash === "" && hasValidTrigger) {
-        // First time with nodes/edges and valid trigger, mark as changed
+      if (lastSavedHash === "" && hasActualSteps) {
+        // First time with nodes/edges and actual steps, mark as changed
         setHasWorkflowChanged(true)
         setIsWorkflowSaved(false)
-      } else if (currentHash !== lastSavedHash && hasValidTrigger) {
-        // Workflow has changed since last save and has valid trigger
+      } else if (currentHash !== lastSavedHash && hasActualSteps) {
+        // Workflow has changed since last save and has actual steps
         setHasWorkflowChanged(true)
         setIsWorkflowSaved(false)
-      } else if (!hasValidTrigger) {
-        // No valid trigger yet, keep disabled
+      } else if (!hasActualSteps) {
+        // No actual steps yet, keep disabled
         setHasWorkflowChanged(false)
         setIsWorkflowSaved(false)
       } else {
@@ -3885,7 +3880,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               ...node,
               data: {
                 ...node.data,
-                tools: node.data?.tools?.map((tool: any) => {
+                tools: Array.isArray(node.data?.tools) ? node.data.tools.map((tool: any) => {
                   if (tool.type === "review") {
                     return {
                       ...tool,
@@ -3897,7 +3892,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                     }
                   }
                   return tool
-                }) || [{
+                }) : [{
                   type: "review",
                   config: {
                     email_addresses: emailConfig.email_addresses,
@@ -4257,7 +4252,16 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         onWorkflowNameChange={handleWorkflowNameChange}
         isEditable={builder}
         onSaveChanges={handleSaveChanges}
-        isSaveDisabled={!hasWorkflowChanged || (isWorkflowSaved && !hasWorkflowChanged)}
+        isSaveDisabled={(() => {
+          // Check if we have actual workflow steps (not just trigger selector)
+          const hasActualSteps = nodes.some(node => {
+            const nodeData = node.data as any
+            return nodeData?.step?.type && nodeData.step.type !== "trigger_selector"
+          })
+          
+          // Enable save button if we have actual steps and changes have been made
+          return !hasActualSteps || (!hasWorkflowChanged && isWorkflowSaved)
+        })()}
         hasUnsavedChanges={builder && hasWorkflowChanged}
         onConfirmRefresh={handleConfirmRefresh}
       />

@@ -1,6 +1,6 @@
 import React, { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, X, Play, CheckCircle, AlertTriangle, Clock } from "lucide-react"
+import { X, Play, CheckCircle, AlertTriangle, Clock } from "lucide-react"
 import { api } from "../../api"
 
 interface TriggerExecutionUIProps {
