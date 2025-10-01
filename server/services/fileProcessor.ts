@@ -16,6 +16,10 @@ import {
 } from "@/integrations/dataSource/config"
 import { getLogger, Subsystem } from "@/logger"
 
+const Logger = getLogger(Subsystem.Ingest).child({
+  module: "fileProcessor",
+})
+
 export interface ProcessingResult {
   chunks: string[]
   chunks_pos: number[]
@@ -26,7 +30,6 @@ export interface ProcessingResult {
 }
 
 export class FileProcessorService {
-  private static logger = getLogger(Subsystem.Ingest)
 
   static async processFile(
     buffer: Buffer,
@@ -141,6 +144,8 @@ export class FileProcessorService {
         }
       }
     } catch (error) {
+      // Log the processing failure with error details and context
+      Logger.error(error, `File processing failed for ${fileName} (${baseMimeType}, ${buffer.length} bytes)`)
       
       // Create basic chunk on processing error
       chunks = [
