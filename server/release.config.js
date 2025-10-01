@@ -1,6 +1,6 @@
 // release.config.js
 export default {
-  branches: ["main"],
+  branches: ["main", "docker_release"], // release from main and docker_release branches
   plugins: [
     "@semantic-release/commit-analyzer", // decides bump (major/minor/patch)
     "@semantic-release/release-notes-generator", // generates human-readable notes
