@@ -36,6 +36,7 @@ import {
   generateCollectionVespaDocId,
   getCollectionFilesVespaIds,
   getCollectionItemsStatusByCollections,
+  markParentAsProcessing,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
 import { cleanUpAgentDb } from "@/db/agent"

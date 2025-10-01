@@ -447,6 +447,13 @@ export const createFolder = async (
   // Update collection total count
   await updateCollectionTotalCount(trx, collectionId, 1)
 
+  // Mark parent folder/collection as PROCESSING when folder is created
+  if (parentId) {
+    await markParentAsProcessing(trx, parentId, false)
+  } else {
+    await markParentAsProcessing(trx, collectionId, true)
+  }
+
   return folder
 }
 
@@ -527,6 +534,13 @@ export const createFileItem = async (
   // Update parent folder counts (if the file is in a folder)
   if (parentId) {
     await updateParentFolderCounts(trx, parentId, 1)
+  }
+
+  // Mark parent folder/collection as PROCESSING when file is uploaded
+  if (parentId) {
+    await markParentAsProcessing(trx, parentId, false)
+  } else {
+    await markParentAsProcessing(trx, collectionId, true)
   }
 
   return item
@@ -860,6 +874,52 @@ export const generateFolderVespaDocId = (): string => {
 // Generate Vespa document ID for collections
 export const generateCollectionVespaDocId = (): string => {
   return `cl-${createId()}`
+}
+
+// Helper function to mark parent (folder/collection) as PROCESSING when new items are added
+export const markParentAsProcessing = async (
+  trx: TxnOrClient,
+  parentId: string | null,
+  isCollection: boolean,
+) => {
+  if (!parentId) return
+
+  const updateData = {
+    uploadStatus: UploadStatus.PROCESSING,
+    updatedAt: sql`NOW()`,
+  }
+
+  if (isCollection) {
+    // Update collection status
+    await trx
+      .update(collections)
+      .set(updateData)
+      .where(eq(collections.id, parentId))
+  } else {
+    // Update folder status
+    await trx
+      .update(collectionItems)
+      .set(updateData)
+      .where(eq(collectionItems.id, parentId))
+
+    // Recursively mark parent's parent as processing
+    const [folder] = await trx
+      .select({
+        parentId: collectionItems.parentId,
+        collectionId: collectionItems.collectionId,
+      })
+      .from(collectionItems)
+      .where(eq(collectionItems.id, parentId))
+
+    if (folder) {
+      // Recursively mark parent (either another folder or the collection)
+      await markParentAsProcessing(
+        trx,
+        folder.parentId || folder.collectionId,
+        !folder.parentId, // isCollection = true if no parentId
+      )
+    }
+  }
 }
 
 // Helper function to update parent (collection/folder) status based on children completion
