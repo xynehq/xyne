@@ -254,6 +254,7 @@ import {
   GetFileContentApi,
   DownloadFileApi,
   GetChunkContentApi,
+  PollCollectionsStatusApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -1114,6 +1115,7 @@ export const AppRoutes = app
     zValidator("query", searchKnowledgeBaseSchema),
     SearchKnowledgeBaseApi,
   )
+  .post("/cl/poll-status", PollCollectionsStatusApi)
   .get("/cl/:clId", GetCollectionApi)
   .put("/cl/:clId", UpdateCollectionApi)
   .delete("/cl/:clId", DeleteCollectionApi)

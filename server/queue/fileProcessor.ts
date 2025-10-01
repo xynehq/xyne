@@ -7,9 +7,10 @@ import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { db } from "@/db/client"
 import { collectionItems, collections } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, and, isNull } from "drizzle-orm"
 import { readFile } from "node:fs/promises"
 import { UploadStatus } from "@/shared/types"
+import { updateParentStatus } from "@/db/knowledgeBase"
 
 const Logger = getLogger(Subsystem.Queue)
 
@@ -39,6 +40,8 @@ async function handleRetryFailure(
   entityId: string,
   currentRetryCount: number,
   errorMessage: string,
+  parentId?: string | null,
+  collectionId?: string,
 ) {
   const newRetryCount = currentRetryCount + 1
   const maxRetries = 3 // Match pg-boss retryLimit
@@ -62,6 +65,15 @@ async function handleRetryFailure(
         .update(collectionItems)
         .set(updateData)
         .where(eq(collectionItems.id, entityId))
+
+      // If it's a file that failed, trigger parent status update
+      if (entityType === ProcessingJobType.FILE && parentId !== undefined && collectionId) {
+        if (parentId) {
+          await updateParentStatus(db, parentId, false)
+        } else {
+          await updateParentStatus(db, collectionId, true)
+        }
+      }
     }
   } else {
     // Update retry count but keep status as 'processing' for retries
@@ -250,6 +262,13 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       })
       .where(eq(collectionItems.id, fileId))
 
+    // Trigger parent status update after file completion
+    if (file.parentId) {
+      await updateParentStatus(db, file.parentId, false)
+    } else {
+      await updateParentStatus(db, file.collectionId, true)
+    }
+
     const endTime = Date.now()
     Logger.info(
       `Successfully processed file: ${fileId} in ${endTime - startTime}ms`,
@@ -264,6 +283,8 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       fileId,
       file.retryCount || 0,
       errorMessage,
+      file.parentId,
+      file.collectionId,
     )
 
     throw error // Let pg-boss handle retries
@@ -344,19 +365,13 @@ async function processCollectionJob(
     // Insert into Vespa
     await insert(vespaDoc, KbItemsSchema)
 
-    // Update status to completed
-    await db
-      .update(collections)
-      .set({
-        uploadStatus: UploadStatus.COMPLETED,
-        statusMessage: `Successfully processed collection Vespa insertion`,
-        updatedAt: new Date(),
-      })
-      .where(eq(collections.id, collectionId))
+    // Keep collection in PROCESSING status
+    // It will be updated to COMPLETED only when child files/folders complete
+    // This prevents race condition where collection is marked complete before children are added
 
     const endTime = Date.now()
     Logger.info(
-      `Successfully processed collection Vespa insertion: ${collectionId} in ${endTime - startTime}ms`,
+      `Successfully processed collection Vespa insertion: ${collectionId} in ${endTime - startTime}ms (waiting for children to complete)`,
     )
   } catch (error) {
     const errorMessage = getErrorMessage(error)
@@ -460,20 +475,9 @@ async function processFolderJob(
 
     // Insert into Vespa
     await insert(vespaDoc, KbItemsSchema)
-
-    // Update status to completed
-    await db
-      .update(collectionItems)
-      .set({
-        uploadStatus: UploadStatus.COMPLETED,
-        statusMessage: `Successfully processed folder Vespa insertion`,
-        updatedAt: new Date(),
-      })
-      .where(eq(collectionItems.id, folderId))
-
     const endTime = Date.now()
     Logger.info(
-      `Successfully processed folder Vespa insertion: ${folderId} in ${endTime - startTime}ms`,
+      `Successfully processed folder Vespa insertion: ${folderId} in ${endTime - startTime}ms (waiting for children to complete)`,
     )
   } catch (error) {
     const errorMessage = getErrorMessage(error)

@@ -1645,6 +1645,60 @@ export const GetFileContentApi = async (c: Context) => {
   }
 }
 
+// Poll collection items status for multiple collections
+export const PollCollectionsStatusApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+
+  // Get user from database
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
+
+  try {
+    const body = await c.req.json()
+    const collectionIds = body.collectionIds as string[]
+
+    if (!collectionIds || !Array.isArray(collectionIds) || collectionIds.length === 0) {
+      throw new HTTPException(400, { message: "collectionIds array is required" })
+    }
+
+    // Fetch all items for the given collections
+    const items = await db
+      .select({
+        id: collectionItems.id,
+        uploadStatus: collectionItems.uploadStatus,
+        statusMessage: collectionItems.statusMessage,
+        retryCount: collectionItems.retryCount,
+        collectionId: collectionItems.collectionId,
+      })
+      .from(collectionItems)
+      .where(
+        and(
+          sql`${collectionItems.collectionId} IN (${sql.join(
+            collectionIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+          isNull(collectionItems.deletedAt),
+        ),
+      )
+
+    return c.json({ items })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to poll collections status: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to poll collections status",
+    })
+  }
+}
+
 // Download file (supports all file types with true streaming and range requests)
 export const DownloadFileApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
