@@ -17,6 +17,7 @@ const Logger = getLogger(Subsystem.Api).child({ module: "calls" })
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY!
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET!
 const LIVEKIT_URL = process.env.LIVEKIT_URL || "ws://localhost:7880"
+const LIVEKIT_CLIENT_URL = process.env.LIVEKIT_CLIENT_URL
 
 if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
   throw new Error(
@@ -152,6 +153,7 @@ export const InitiateCallApi = async (c: Context) => {
       },
       callType: validatedData.callType,
       targetToken,
+      livekitUrl: LIVEKIT_CLIENT_URL,
       timestamp: Date.now(),
     }
 
@@ -167,7 +169,7 @@ export const InitiateCallApi = async (c: Context) => {
       roomName,
       callerToken,
       callType: validatedData.callType,
-      livekitUrl: LIVEKIT_URL,
+      livekitUrl: LIVEKIT_CLIENT_URL,
       notificationSent, // Include whether notification was sent
       caller: {
         id: caller.externalId,
@@ -225,7 +227,7 @@ export const JoinCallApi = async (c: Context) => {
       success: true,
       token,
       roomName: validatedData.roomName,
-      livekitUrl: LIVEKIT_URL,
+      livekitUrl: LIVEKIT_CLIENT_URL,
       user: {
         id: user.externalId,
         name: user.name,
@@ -320,6 +322,7 @@ export const InviteToCallApi = async (c: Context) => {
       },
       callType: validatedData.callType,
       targetToken,
+      livekitUrl: LIVEKIT_CLIENT_URL,
       timestamp: Date.now(),
     }
 

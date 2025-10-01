@@ -1,6 +1,5 @@
 import { getLogger } from "@/logger"
 import { Subsystem, type TxnOrClient } from "@/types"
-import { boss } from "."
 import { db, getConnectorByApp } from "@/db/connector"
 import { syncConnectorTools } from "@/db/tool"
 import { getErrorMessage } from "@/utils"
