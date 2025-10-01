@@ -225,6 +225,7 @@ export const messageSchema = z.object({
       return val.toLowerCase() === "true"
     }),
 })
+
 export type MessageReqType = z.infer<typeof messageSchema>
 
 export const messageRetrySchema = z.object({
@@ -249,6 +250,7 @@ export const generatePromptSchema = z.object({
       },
     ),
 })
+
 
 export type GeneratePromptPayload = z.infer<typeof generatePromptSchema>
 
@@ -296,11 +298,7 @@ export const SearchApi = async (c: Context) => {
     debug,
     agentId,
     // @ts-ignore
-  } = c.req.valid("query") as z.infer<typeof searchQuerySchema>
-  if ((entity === undefined || entity === null) && app === Apps.GoogleDrive) {
-    entity = Object.values(DriveEntity)
-  }
-
+  } = c.req.valid("query")  
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const timestampRange = getTimestamp(lastUpdated)

@@ -478,12 +478,14 @@ function AgentComponent() {
 
         let response
         if (isInGoogleDriveContext) {
-          // Search Google Drive items
+         
           response = await api.search.$get({
             query: {
               query: dropdownSearchQuery,
               app: Apps.GoogleDrive,
               isAgentIntegSearch: true,
+              entity:Object.values(DriveEntity)
+             
             },
           })
         } else {
