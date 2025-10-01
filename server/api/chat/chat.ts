@@ -11,6 +11,7 @@ import {
   generateFollowUpQuestions,
   webSearchQuestion,
   getDeepResearchResponse,
+  aggregatorQueryJsonStream,
 } from "@/ai/provider"
 import { generateFollowUpQuestionsSystemPrompt } from "@/ai/prompts"
 import {
@@ -704,6 +705,69 @@ async function* processIterator(
     }
   }
   return parsed.answer
+}
+
+type AggregatorParsed = { docIds: string[] | null } | { [k: string]: any }
+
+export async function* processIteratorForAggregatorQueries(
+  iterator: AsyncIterableIterator<ConverseResponse>,
+): AsyncIterableIterator<
+  ConverseResponse & {
+    docIds?: string[]
+  }
+> {
+  let buffer = ""
+  let parsed: AggregatorParsed = { docIds: null }
+
+  // token we require before attempting to parse a final JSON object
+  const DOCIDS_TOKEN = '"docIds":'
+
+  // Track already-yielded ids to only stream new ones
+  const yielded = new Set<string>()
+
+  for await (const chunk of iterator) {
+    if (chunk.text) {
+      buffer += chunk.text
+      try {
+        const parsable = cleanBuffer(buffer)
+        parsed = jsonParseLLMOutput(parsable, DOCIDS_TOKEN) as AggregatorParsed
+
+        // Expect shape: { docIds: string[] } OR { docIds: [] }
+        const docIds = Array.isArray((parsed as any)?.docIds)
+          ? ((parsed as any).docIds as string[])
+          : null
+
+        if (docIds) {
+          // Stream only the new docIds
+          const newOnes: string[] = []
+          for (const id of docIds) {
+            if (!yielded.has(id)) {
+              yielded.add(id)
+              newOnes.push(id)
+            }
+          }
+          if (newOnes.length > 0) {
+            yield { docIds: newOnes }
+          }
+        } else if ((parsed as any)?.docIds === null) {
+          // If model explicitly outputs null or incomplete JSON, keep waiting
+          // Do nothing; continue accumulating
+        }
+      } catch {
+        // Not parseable yet; keep accumulating
+      }
+    }
+
+    if (chunk.cost) {
+      // Pass through token/cost info if present
+      yield { cost: chunk.cost }
+    }
+  }
+
+  // Return final array (empty if none)
+  return (
+    Array.isArray((parsed as any)?.docIds) ? (parsed as any).docIds : []
+  ) as any
 }
 
 export const GetChatApi = async (c: Context) => {
@@ -1694,7 +1758,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(totalResults, maxSummaryCount, userMetadata)
+        const initialContext = buildContext(
+          totalResults,
+          maxSummaryCount,
+          userMetadata,
+        )
 
         const { imageFileNames } = extractImageFileNames(
           initialContext,
@@ -3035,6 +3103,37 @@ async function* processResultsForMetadata(
   )
 }
 
+async function* processResultsForAggregatorQuery(
+  items: VespaSearchResult[],
+  input: string,
+  userCtx: string,
+  userMetadata: UserMetadataType,
+  userRequestsReasoning?: boolean,
+  agentContext?: string,
+  modelId?: string,
+) {
+  const streamOptions = {
+    stream: true,
+    modelId: modelId ? (modelId as Models) : defaultBestModel,
+    reasoning: config.isReasoning && userRequestsReasoning,
+    agentPrompt: agentContext,
+  }
+
+  let iterator: AsyncIterableIterator<ConverseResponse>
+
+  iterator = aggregatorQueryJsonStream(
+    input,
+    userCtx,
+    userMetadata,
+    items,
+    streamOptions,
+  )
+
+  return yield* processIteratorForAggregatorQueries(
+    iterator,
+  )
+}
+
 async function* generateMetadataQueryAnswer(
   input: string,
   messages: Message[],
@@ -3062,6 +3161,7 @@ async function* generateMetadataQueryAnswer(
   const count = classification.filters.count
   const direction = classification.direction as string
   const isGenericItemFetch = classification.type === QueryType.GetItems
+  const isAggregatorQuery = classification.type === QueryType.AggregatorQuery
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
   const isValidAppOrEntity =
@@ -3699,6 +3799,170 @@ async function* generateMetadataQueryAnswer(
         return answer
       }
     }
+  } else if (isAggregatorQuery && classification.filterQuery) {
+    const pageSizeForAggregatorQuery = 40
+    const maxIterationsForAggregatorQuery = 10
+    // Specific metadata retrieval
+    span?.setAttribute("Search_Type", QueryType.AggregatorQuery)
+    span?.setAttribute(
+      "isReasoning",
+      userRequestsReasoning && config.isReasoning ? true : false,
+    )
+    span?.setAttribute("modelId", defaultBestModel)
+    loggerWithChild({ email: email }).info(
+      `Search Type : ${QueryType.AggregatorQuery}`,
+    )
+
+    const { filterQuery } = classification
+    const query = filterQuery
+    const rankProfile =
+      sortDirection === "desc"
+        ? SearchModes.GlobalSorted
+        : SearchModes.NativeRank
+
+    let resolvedIntent = {} as Intent
+    if (intent && Object.keys(intent).length > 0) {
+      loggerWithChild({ email: email }).info(
+        `[AggregatorQuery] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+      )
+      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
+      loggerWithChild({ email: email }).info(
+        `[AggregatorQuery] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+      )
+    }
+
+    const searchOptions = {
+      limit: pageSizeForAggregatorQuery,
+      alpha: userAlpha,
+      rankProfile,
+      timestampRange:
+        timestampRange.to || timestampRange.from ? timestampRange : null,
+      intent: resolvedIntent,
+    }
+
+    let finalDocIds: string[] = []
+    for (
+      let iteration = 0;
+      iteration < maxIterationsForAggregatorQuery;
+      iteration++
+    ) {
+      const iterationSpan = span?.startSpan(`search_iteration_${iteration}`)
+      loggerWithChild({ email: email }).info(
+        `Search ${QueryType.AggregatorQuery} Iteration - ${iteration} : ${rankProfile}`,
+      )
+
+      let searchResults: VespaSearchResponse
+      if (!agentPrompt) {
+        searchResults = await searchVespa(
+          query,
+          email,
+          apps ?? null,
+          entities ?? null,
+          {
+            ...searchOptions,
+            limit:
+              pageSizeForAggregatorQuery +
+              pageSizeForAggregatorQuery * iteration,
+            offset: pageSizeForAggregatorQuery * iteration,
+          },
+        )
+      } else {
+        const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
+        searchResults = await searchVespaAgent(
+          query,
+          email,
+          apps ?? null,
+          entities ?? null,
+          agentAppEnums,
+          {
+            ...searchOptions,
+            offset: pageSizeForAggregatorQuery * iteration,
+            limit:
+              pageSizeForAggregatorQuery +
+              pageSizeForAggregatorQuery * iteration,
+            dataSourceIds: agentSpecificDataSourceIds,
+            channelIds: channelIds,
+            selectedItem: selectedItem,
+          },
+        )
+      }
+
+      // Expand email threads in the results
+      searchResults.root.children = await expandEmailThreadsInResults(
+        searchResults.root.children || [],
+        email,
+        iterationSpan,
+      )
+
+      items = searchResults.root.children || []
+
+      loggerWithChild({ email: email }).info(`Rank Profile : ${rankProfile}`)
+
+      iterationSpan?.setAttribute("offset", pageSize * iteration)
+      iterationSpan?.setAttribute("rank_profile", rankProfile)
+
+      iterationSpan?.setAttribute(
+        `iteration - ${iteration} retrieved documents length`,
+        items.length,
+      )
+      iterationSpan?.setAttribute(
+        `iteration-${iteration} retrieved documents id's`,
+        JSON.stringify(
+          items.map((v: VespaSearchResult) => (v.fields as any).docId),
+        ),
+      )
+      iterationSpan?.setAttribute(`context`, buildContext(items, 20, userMetadata))
+      iterationSpan?.end()
+
+      loggerWithChild({ email: email }).info(
+        `Number of documents for ${QueryType.AggregatorQuery} = ${items.length}`,
+      )
+
+      const docIds = yield* processResultsForAggregatorQuery(
+        items,
+        input,
+        userCtx,
+        userMetadata,
+        userRequestsReasoning,
+        agentPrompt,
+        modelId,
+      )
+
+      if (docIds.length === 0) {
+        loggerWithChild({ email: email }).info(
+          `LLM found no relevant documents on iteration ${iteration}, stopping further retrieval`,
+        )
+        break
+      }
+
+      finalDocIds.push(...docIds)
+    }
+    let finalItems: VespaSearchResult[] = []
+    if (finalDocIds.length !== 0) {
+      const allFinalDocs = await GetDocumentsByDocIds(finalDocIds, span!)
+      finalItems = allFinalDocs.root.children || []
+    }
+    const answer = yield* processResultsForMetadata(
+      finalItems,
+      input,
+      userCtx,
+      userMetadata,
+      apps,
+      entities,
+      undefined,
+      userRequestsReasoning,
+      span,
+      email,
+      agentPrompt,
+      modelId,
+    )
+
+    if (answer == null) {
+      yield { text: METADATA_FALLBACK_TO_RAG }
+      return
+    } else {
+      return answer
+    }
   } else {
     // None of the conditions matched
     yield { text: METADATA_FALLBACK_TO_RAG }
@@ -3839,11 +4103,12 @@ export async function* UnderstandMessageAndAnswer(
   const isGenericItemFetch = classification.type === QueryType.GetItems
   const isFilteredItemSearch =
     classification.type === QueryType.SearchWithFilters
+  const isAggregatorQuery = classification.type === QueryType.AggregatorQuery
   const isFilteredSearchSortedByRecency =
     classification.filterQuery &&
     classification.filters.sortDirection === "desc"
 
-  if (isGenericItemFetch || isFilteredItemSearch) {
+  if (isGenericItemFetch || isFilteredItemSearch || isAggregatorQuery) {
     loggerWithChild({ email: email }).info("Metadata Retrieval")
 
     const metadataRagSpan = passedSpan?.startSpan("metadata_rag")
