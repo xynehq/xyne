@@ -11,7 +11,7 @@ let host = process.env.HOST || "http://localhost:3000"
 
 // Centralized database URL construction
 function getDatabaseUrl(): string {
-    return process.env.DATABASE_URL || `$`
+    return process.env.DATABASE_URL || `postgres://xyne:xyne@${postgresBaseHost}:5432/xyne`
 }
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
