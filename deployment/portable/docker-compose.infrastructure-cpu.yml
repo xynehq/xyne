@@ -129,7 +129,7 @@ services:
         max-file: "6"
 
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.9.1
     command: --config /etc/livekit.yaml
     container_name: livekit
     restart: unless-stopped
@@ -140,7 +140,7 @@ services:
     volumes:
       - ../livekit.yaml:/etc/livekit.yaml
     environment:
-      LIVEKIT_KEYS: "devkey: devsecret"
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret}"
     networks:
       - xyne
 
