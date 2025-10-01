@@ -17,7 +17,7 @@ const Logger = getLogger(Subsystem.Api).child({ module: "calls" })
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY!
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET!
 const LIVEKIT_URL = process.env.LIVEKIT_URL || "ws://localhost:7880"
-const LIVEKIT_CLIENT_URL = process.env.LIVEKIT_CLIENT_URL || LIVEKIT_URL
+const LIVEKIT_CLIENT_URL = process.env.LIVEKIT_CLIENT_URL
 
 if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
   throw new Error(
