@@ -513,13 +513,14 @@ function KnowledgeManagementContent() {
   }, [toast, user?.email])
 
   // Poll for upload status updates
+  const [isPolling, setIsPolling] = useState(false)
+
   useEffect(() => {
-    const pollInterval = 5000 // Poll every 3 seconds
+    if (collections.length === 0) return
+
+    const pollInterval = 5000 
 
     const pollStatuses = async () => {
-      // Only poll if there are collections
-      if (collections.length === 0) return
-
       try {
         const collectionIds = collections.map((c) => c.id)
         const response = await api.cl["poll-status"].$post({
@@ -547,6 +548,12 @@ function KnowledgeManagementContent() {
             ]),
           )
 
+          // Check if any files are still processing or pending
+          const hasProcessingFiles = data.items.some(
+            (item) => item.uploadStatus === UploadStatus.PROCESSING ||
+                     item.uploadStatus === UploadStatus.PENDING
+          )
+
           // Update collections with new statuses
           setCollections((prevCollections) =>
             prevCollections.map((collection) => {
@@ -572,6 +579,11 @@ function KnowledgeManagementContent() {
               }
             }),
           )
+
+          // Stop polling if no files are processing or pending
+          if (!hasProcessingFiles) {
+            setIsPolling(false)
+          }
         }
       } catch (error) {
         // Silently fail polling - don't show errors to user
@@ -579,14 +591,44 @@ function KnowledgeManagementContent() {
       }
     }
 
-    // Start polling
-    const intervalId = setInterval(pollStatuses, pollInterval)
+    if (isPolling) {
+      console.log("Polling active")
+      const intervalId = setInterval(pollStatuses, pollInterval)
+      pollStatuses() // Poll immediately
 
-    // Poll immediately on mount
-    pollStatuses()
+      return () => {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isPolling, collections.length])
 
-    return () => clearInterval(intervalId)
-  }, [collections.length]) // Only depend on collections.length to avoid re-creating interval on every status update
+  // Start polling when collections change and have processing files
+  useEffect(() => {
+    if (collections.length === 0) return
+
+    const hasProcessingFiles = collections.some((collection) => {
+      const checkItems = (items: FileNode[]): boolean => {
+        return items.some(
+          (item) => {
+            console.log(`Checking file: ${item.name}, status: ${item.uploadStatus}`)
+            return (
+              item.uploadStatus === UploadStatus.PROCESSING ||
+              item.uploadStatus === UploadStatus.PENDING ||
+              (item.children && checkItems(item.children))
+            )
+          }
+        )
+      }
+      return checkItems(collection.items)
+    })
+
+    console.log(`hasProcessingFiles: ${hasProcessingFiles}, isPolling: ${isPolling}`)
+
+    if (hasProcessingFiles && !isPolling) {
+      console.log("Starting polling: Files in processing state detected")
+      setIsPolling(true)
+    }
+  }, [collections, isPolling])
 
   const handleCloseModal = () => {
     setShowNewCollection(false)
