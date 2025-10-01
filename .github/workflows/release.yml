@@ -5,6 +5,7 @@ on:
     branches:
       - main 
       - docker_release
+      - docker_release_staging
 
 jobs:
   release:
