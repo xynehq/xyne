@@ -117,6 +117,7 @@ import {
   type MinimalAgentFragment,
 } from "./types"
 import {
+  collectFollowupContext,
   convertReasoningStepToText,
   extractFileIdsFromMessage,
   extractImageFileNames,
@@ -3398,7 +3399,6 @@ export const AgentMessageApi = async (c: Context) => {
       agentPromptPayload,
       streamOff,
       path,
-      isFollowUp,
     }: MessageReqType = body
 
     // Parse selectedModelConfig JSON to extract individual values
@@ -3485,34 +3485,6 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
 
-    let fileIds: string[] = []
-
-    // Handle isFollowUp functionality - get context from previous user message
-    if (isFollowUp && chatId) {
-      try {
-        const updatedContext = await applyFollowUpContext(
-          chatId,
-          email
-        )
-
-        fileIds = updatedContext.fileIds
-        imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
-        attachmentMetadata.push(...updatedContext.attachmentMetadata)
-
-        // Dedup
-        fileIds = Array.from(new Set(fileIds))
-        imageAttachmentFileIds = Array.from(new Set(imageAttachmentFileIds))
-        let byId = new Map(attachmentMetadata.map(a => [a.fileId, a]))
-        attachmentMetadata = Array.from(byId.values())
-      } catch (error) {
-        loggerWithChild({ email: email }).error(
-          error,
-          `Error getting context from previous user message for isFollowUp: ${getErrorMessage(error)}`,
-        )
-        // Continue execution even if we can't get previous context
-      }
-    }
-
     // const agentPrompt = agentId && isCuid(agentId) ? agentId : "";
     const userAndWorkspace = await getUserAndWorkspaceByEmail(
       db,
@@ -3551,7 +3523,7 @@ export const AgentMessageApi = async (c: Context) => {
       if (
         config.ragOffFeature &&
         agentForDb.isRagOn === false &&
-        !((attachmentMetadata && attachmentMetadata.length > 0) || (fileIds && fileIds.length > 0))
+        !(attachmentMetadata && attachmentMetadata.length > 0)
       ) {
         return AgentMessageApiRagOff(c)
       }
@@ -3585,6 +3557,7 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
     const isMsgWithContext = isMessageWithContext(message)
+    let fileIds: string[] = []
     const extractedInfo =
       isMsgWithContext || (path && ids)
         ? await extractFileIdsFromMessage(message, email, ids)
@@ -3775,6 +3748,30 @@ export const AgentMessageApi = async (c: Context) => {
               })
             }
 
+            const filteredMessages = messages
+                .slice(0, messages.length - 1)
+                .filter((msg) => !msg?.errorMessage)
+                .filter(
+                  (msg) =>
+                    !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                )
+  
+            // Check for follow-up context carry-forward
+            const lastIdx = filteredMessages.length - 1;
+            const workingSet = collectFollowupContext(filteredMessages, lastIdx);
+  
+            const hasCarriedContext =
+              workingSet.fileIds.length > 0 ||
+              workingSet.attachmentFileIds.length > 0;
+            if (hasCarriedContext) {
+              fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]));
+              imageAttachmentFileIds = Array.from(
+                new Set([...imageAttachmentFileIds, ...workingSet.attachmentFileIds])
+              );
+              loggerWithChild({ email: email }).info(
+                `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
+              );
+            }
             if (
               (fileIds && fileIds?.length > 0) ||
               (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)

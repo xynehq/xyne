@@ -46,6 +46,7 @@ import {
   AgentReasoningStepType,
   OpenAIError,
   type AgentReasoningStep,
+  type AttachmentMetadata,
 } from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
 import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
@@ -63,6 +64,81 @@ import {
 } from "@/db/knowledgeBase"
 import { db } from "@/db/client"
 import { get } from "http"
+
+// Follow-up context types and utilities
+export type WorkingSet = {
+  fileIds: string[];
+  attachmentFileIds: string[]; // images etc.
+  carriedFromMessageIds: string[];
+};
+
+const MAX_FILES = 12;
+
+export function collectFollowupContext(
+  messages: SelectMessage[],
+  startIdx: number,
+  maxHops = 12
+): WorkingSet {
+  const ws: WorkingSet = {
+    fileIds: [],
+    attachmentFileIds: [],
+    carriedFromMessageIds: [],
+  };
+
+  const seen = new Set<string>();
+  let hops = 0;
+
+  for (let i = startIdx; i >= 0 && hops < maxHops; i--, hops++) {
+    const m = messages[i];
+
+    // Use existing chain break classification system to detect boundaries
+    if (m.messageRole === "user" && m.queryRouterClassification) {
+      try {
+        const classification = typeof m.queryRouterClassification === "string" 
+          ? JSON.parse(m.queryRouterClassification) 
+          : m.queryRouterClassification;
+        if (classification.isFollowUp === false) break;
+      } catch (error) {
+        // If we can't parse classification, continue processing
+      }
+    }
+
+    // 1) attachments the user explicitly added
+    if (Array.isArray(m.attachments)) {
+      for (const a of m.attachments as AttachmentMetadata[]) {
+        if (a.isImage && a.fileId && !seen.has(`img:${a.fileId}`)) {
+          ws.attachmentFileIds.push(a.fileId);
+          ws.carriedFromMessageIds.push(m.externalId);
+          seen.add(`img:${a.fileId}`);
+        }
+        if (a.fileId && !seen.has(`f:${a.fileId}`)) {
+          ws.fileIds.push(a.fileId);
+          ws.carriedFromMessageIds.push(m.externalId);
+          seen.add(`f:${a.fileId}`);
+          if (ws.fileIds.length >= MAX_FILES) break;
+        }
+      }
+    }
+
+    // 2) fileIds from user messages
+    if (Array.isArray(m.fileIds) && m.fileIds.length > 0) {
+      for (const fileId of m.fileIds) {
+        if (!seen.has(`f:${fileId}`)) {
+          ws.fileIds.push(fileId);
+          ws.carriedFromMessageIds.push(m.externalId);
+          seen.add(`f:${fileId}`);
+          if (ws.fileIds.length >= MAX_FILES) break;
+        }
+      }
+    }
+  }
+
+  // De-dupe & trim
+  ws.fileIds = Array.from(new Set(ws.fileIds)).slice(0, MAX_FILES);
+  ws.attachmentFileIds = Array.from(new Set(ws.attachmentFileIds));
+
+  return ws;
+}
 
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
