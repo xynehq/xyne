@@ -3,11 +3,11 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
-import { Apps, SelectPublicAgent, DriveEntity } from "shared/types"
+import {  SelectPublicAgent } from "shared/types"
 import { api } from "@/api"
-import { getIcon } from "@/lib/common"
 import { Button } from "./ui/button"
 import { ArrowLeft } from "lucide-react"
+import { availableIntegrationsList } from "@/routes/_authenticated/agent"
 interface SharedAgentProps {
   agent: SelectPublicAgent
   onBack: () => void
@@ -16,13 +16,7 @@ interface CustomBadgeProps {
   text?: string
   icon?: React.ReactNode
 }
-interface IntegrationSource {
-  id: string
-  name: string
-  app: Apps | string
-  entity: string
-  icon: React.ReactNode
-}
+
 interface CollectionItem {
   id: string
   name: string
@@ -45,65 +39,7 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({ text, icon }) => {
 const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
   const [integrationItem, setIntegrationItem] = useState<CollectionItem[]>([])
   const [integrationApps, setIntegrationApps] = useState<string[]>([])
-  const availableIntegrationsList: IntegrationSource[] = [
-    {
-      id: "googledrive",
-      name: "Google Drive",
-      app: Apps.GoogleDrive,
-      entity: "file",
-      icon: getIcon(Apps.GoogleDrive, "file", { w: 16, h: 16, mr: 8 }),
-    },
-    {
-      id: "googledocs",
-      name: "Google Docs",
-      app: Apps.GoogleDrive,
-      entity: DriveEntity.Docs,
-      icon: getIcon(Apps.GoogleDrive, DriveEntity.Docs, {
-        w: 16,
-        h: 16,
-        mr: 8,
-      }),
-    },
-    {
-      id: "googlesheets",
-      name: "Google Sheets",
-      app: Apps.GoogleDrive,
-      entity: DriveEntity.Sheets,
-      icon: getIcon(Apps.GoogleDrive, DriveEntity.Sheets, {
-        w: 16,
-        h: 16,
-        mr: 8,
-      }),
-    },
-    {
-      id: "slack",
-      name: "Slack",
-      app: Apps.Slack,
-      entity: "message",
-      icon: getIcon(Apps.Slack, "message", { w: 16, h: 16, mr: 8 }),
-    },
-    {
-      id: "gmail",
-      name: "Gmail",
-      app: Apps.Gmail,
-      entity: "mail",
-      icon: getIcon(Apps.Gmail, "mail", { w: 16, h: 16, mr: 8 }),
-    },
-    {
-      id: "googlecalendar",
-      name: "Calendar",
-      app: Apps.GoogleCalendar,
-      entity: "event",
-      icon: getIcon(Apps.GoogleCalendar, "event", { w: 16, h: 16, mr: 8 }),
-    },
-    {
-      id: "pdf",
-      name: "PDF",
-      app: "pdf",
-      entity: "pdf_default",
-      icon: getIcon("pdf", "pdf_default", { w: 16, h: 16, mr: 8 }),
-    },
-  ]
+ 
   const currentSelectedIntegrationObjects = useMemo(() => {
     const result: Array<{
       id: string
@@ -200,19 +136,26 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
         ].$get({
           param: { agentExternalId: agent.externalId },
         })
+   
+      
         if (response.ok) {
           const data = await response.json()
+       
           if (data?.integrationItems?.collection?.groups) {
             const groups = data.integrationItems.collection.groups
 
             const CollectionItems: any[] = Object.values(groups).flat()
-            const { collection, ...rest } = data?.integrationItems
+            
+            
             const updatedItems = await Promise.all(
               CollectionItems.map(async (item) => {
                 if (item.type === "collection") {
                   try {
                     const res = await api.cl[":clId"]["name"].$get({
-                      param: { clId: item.id },
+                      param: { clId: item.id},
+                      query:{
+                        agentExternalId:agent.externalId
+                      }
                     })
                     if (res.ok) {
                       const { name } = await res.json()
@@ -229,11 +172,15 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
                 return item
               }),
             )
-
-            const integrationApps = Object.keys(rest)
             setIntegrationItem(updatedItems)
-            setIntegrationApps(integrationApps)
+            
           }
+          if(data.integrationItems){
+             const { collection, ...rest } = data?.integrationItems
+             const integrationApps = Object.keys(rest)
+             setIntegrationApps(integrationApps)
+          }
+         
         }
       } catch (err) {
         console.error("couldn't fetchAgent", err)

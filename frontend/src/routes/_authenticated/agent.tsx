@@ -132,7 +132,7 @@ interface IntegrationSource {
   icon: React.ReactNode
 }
 
-const availableIntegrationsList: IntegrationSource[] = [
+export const availableIntegrationsList: IntegrationSource[] = [
   {
     id: "googledrive",
     name: "Google Drive",
@@ -1579,6 +1579,7 @@ function AgentComponent() {
             const existingUsers = users.filter((user) =>
               data.userEmails.includes(user.email),
             )
+            console.log("fetched agent permission",data);
             setSelectedUsers(existingUsers)
           }
         } catch (error) {
