@@ -1,5 +1,6 @@
 import { promises as fsPromises } from "fs"
-import path from "path"
+import * as path from "path"
+import { PDFDocument } from "pdf-lib"
 import { getLogger } from "../logger"
 import { Subsystem, type ChunkMetadata } from "../types"
 
@@ -9,7 +10,8 @@ const Logger = getLogger(Subsystem.Integrations).child({
 
 const DEFAULT_MAX_CHUNK_BYTES = 1024
 const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
-const DEFAULT_LAYOUT_PARSING_URL = "http://localhost:8000/v2/models/layout-parsing/infer"
+const DEFAULT_LAYOUT_PARSING_BASE_URL = "http://localhost:8000"
+const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
 
 export interface ProcessingResult {
   chunks: string[]
@@ -19,7 +21,7 @@ export interface ProcessingResult {
   chunks_map: ChunkMetadata[]
   image_chunks_map: ChunkMetadata[]
 }
-``
+
 type LayoutParsingBlock = {
   block_label?: string
   block_content?: string
@@ -199,7 +201,9 @@ function parseBBoxKeyFromImagePath(imagePath: string): string | null {
   return numbers.slice(-4).join("_")
 }
 
-function buildImageLookup(images: Record<string, string>): Map<string, ImageLookupEntry> {
+function buildImageLookup(
+  images: Record<string, string>,
+): Map<string, ImageLookupEntry> {
   const lookup = new Map<string, ImageLookupEntry>()
 
   for (const [imgPath, base64Data] of Object.entries(images)) {
@@ -231,7 +235,9 @@ function transformBlockContent(label: string, content: string): string {
     case "formula":
       return content ? `$$${content}$$` : content
     case "figure_title":
-      return content ? `<div style="text-align: center;">${content}</div>` : content
+      return content
+        ? `<div style="text-align: center;">${content}</div>`
+        : content
     default:
       return content
   }
@@ -290,11 +296,19 @@ function deriveImageFileName(
   return `page_${pageIndex + 1}_image_${imageIndex}.${ext}`
 }
 
-async function callLayoutParsingApi(buffer: Buffer, fileName: string): Promise<LayoutParsingApiPayload> {
-  const apiUrl = process.env.LAYOUT_PARSING_URL || DEFAULT_LAYOUT_PARSING_URL
-  const fileType = Number.parseInt(process.env.LAYOUT_PARSING_FILE_TYPE ?? "0", 10) || 0
-  const visualize = process.env.LAYOUT_PARSING_VISUALIZE === "true"
-  const timeoutMs = Number.parseInt(process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "120000", 10)
+async function callLayoutParsingApi(
+  buffer: Buffer,
+  fileName: string,
+): Promise<LayoutParsingApiPayload> {
+  const baseUrl = process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL
+  const apiUrl = baseUrl + LAYOUT_PARSING_API_PATH
+  const fileType =
+    Number.parseInt(process.env.LAYOUT_PARSING_FILE_TYPE ?? "0", 10) || 0
+  const visualize = process.env.LAYOUT_PARSING_VISUALIZE === "false"
+  const timeoutMs = Number.parseInt(
+    process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "120000",
+    10,
+  )
 
   Logger.info("Calling layout parsing API", {
     apiUrl,
@@ -325,7 +339,10 @@ async function callLayoutParsingApi(buffer: Buffer, fileName: string): Promise<L
   }
 
   const controller = new AbortController()
-  const timer = Number.isFinite(timeoutMs) && timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined
+  const timer =
+    Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : undefined
 
   try {
     const response = await fetch(apiUrl, {
@@ -355,7 +372,9 @@ async function callLayoutParsingApi(buffer: Buffer, fileName: string): Promise<L
     try {
       parsed = JSON.parse(outputPayload)
     } catch (error) {
-      throw new Error(`Failed to JSON.parse layout parsing payload: ${(error as Error).message}`)
+      throw new Error(
+        `Failed to JSON.parse layout parsing payload: ${(error as Error).message}`,
+      )
     }
 
     const result = (parsed as { result?: LayoutParsingApiPayload }).result
@@ -394,7 +413,9 @@ function transformLayoutParsingResults(
       const blockLabel = rawBlock.block_label ?? "text"
       const rawContent = rawBlock.block_content ?? ""
       const transformedContent = transformBlockContent(blockLabel, rawContent)
-      const blockBBox = Array.isArray(rawBlock.block_bbox) ? [...rawBlock.block_bbox] : []
+      const blockBBox = Array.isArray(rawBlock.block_bbox)
+        ? [...rawBlock.block_bbox]
+        : []
 
       const transformedBlock: OcrBlock = {
         block_label: blockLabel,
@@ -421,14 +442,14 @@ function transformLayoutParsingResults(
             }
             usedImagePaths.add(matchedImage.filePath)
           } catch (error) {
-            console.log("Failed to decode image from layout parsing result", {
+            Logger.error("Failed to decode image from layout parsing result", {
               error: (error as Error).message,
               pageIndex,
               bboxKey,
             })
           }
         } else {
-          console.log("No matching image found for block", {
+          Logger.debug("No matching image found for block", {
             pageIndex,
             bboxKey,
           })
@@ -444,35 +465,154 @@ function transformLayoutParsingResults(
   return { ocrResponse, images, imageMetadata }
 }
 
+async function splitPdfIntoBatches(
+  buffer: Buffer,
+  maxPagesPerBatch: number = 30,
+): Promise<Buffer[]> {
+  const srcPdf = await PDFDocument.load(buffer)
+  const totalPages = srcPdf.getPageCount()
+
+  if (totalPages <= maxPagesPerBatch) {
+    return [buffer]
+  }
+
+  Logger.info("Splitting large PDF into batches", {
+    totalPages,
+    maxPagesPerBatch,
+    estimatedBatches: Math.ceil(totalPages / maxPagesPerBatch),
+  })
+
+  const batches: Buffer[] = []
+
+  for (let startPage = 0; startPage < totalPages; startPage += maxPagesPerBatch) {
+    const endPage = Math.min(startPage + maxPagesPerBatch, totalPages)
+    const pageCount = endPage - startPage
+
+    // Create new PDF with subset of pages
+    const newPdf = await PDFDocument.create()
+    const pageIndices: number[] = []
+    for (let i = 0; i < pageCount; i++) {
+      pageIndices.push(startPage + i)
+    }
+
+    const copiedPages = await newPdf.copyPages(srcPdf, pageIndices)
+    for (const page of copiedPages) {
+      newPdf.addPage(page)
+    }
+
+    const pdfBytes = await newPdf.save()
+    batches.push(Buffer.from(pdfBytes))
+
+    Logger.info("Created PDF batch", {
+      batchIndex: batches.length,
+      startPage: startPage + 1,
+      endPage,
+      pagesInBatch: pageCount,
+      batchSizeBytes: pdfBytes.length,
+    })
+  }
+
+  return batches
+}
+
+function mergeLayoutParsingResults(
+  results: LayoutParsingApiPayload[],
+): LayoutParsingApiPayload {
+  const allLayoutResults: LayoutParsingResult[] = []
+  let pageOffset = 0
+
+  for (const result of results) {
+    const layoutResults = result.layoutParsingResults ?? []
+    
+    // Adjust page indices to maintain correct ordering across batches
+    const adjustedResults = layoutResults.map((layout, localPageIndex) => ({
+      ...layout,
+      // We don't need to modify the layout structure itself since 
+      // transformLayoutParsingResults handles page indexing correctly
+    }))
+
+    allLayoutResults.push(...adjustedResults)
+    pageOffset += layoutResults.length
+  }
+
+  return {
+    layoutParsingResults: allLayoutResults,
+    dataInfo: results[0]?.dataInfo,
+  }
+}
+
 export async function chunkByOCRFromBuffer(
   buffer: Buffer,
   fileName: string,
   docId: string,
 ): Promise<ProcessingResult> {
-  console.log("🚀 chunkByOCRFromBuffer: Starting processing", {
-    fileName,
-    docId,
-    bufferSize: buffer.length
-  })
   
-  const apiResult = await callLayoutParsingApi(buffer, fileName)
-  console.log("📡 chunkByOCRFromBuffer: API result received", {
-    layoutResultsCount: apiResult.layoutParsingResults?.length || 0
-  })
-  
-  const layoutResults = apiResult.layoutParsingResults ?? []
-  if (layoutResults.length === 0) {
-    Logger.warn("Layout parsing API returned no results", { fileName })
-    console.log("⚠️ chunkByOCRFromBuffer: No layout results returned")
+  // Check if this is a PDF and handle batching if necessary
+  const isPdf = fileName.toLowerCase().endsWith('.pdf')
+  let finalApiResult: LayoutParsingApiPayload
+
+  if (isPdf) {
+    try {
+      const srcPdf = await PDFDocument.load(buffer)
+      const totalPages = srcPdf.getPageCount()
+
+      if (totalPages > 30) {
+        // Split PDF into batches and process each
+        const batches = await splitPdfIntoBatches(buffer, 30)
+        const batchResults: LayoutParsingApiPayload[] = []
+
+        for (let i = 0; i < batches.length; i++) {
+          const batch = batches[i]
+          Logger.info("Processing PDF batch", {
+            batchIndex: i + 1,
+            totalBatches: batches.length,
+            batchSizeBytes: batch.length,
+          })
+
+          const batchResult = await callLayoutParsingApi(batch, `${fileName}_batch_${i + 1}`)
+          batchResults.push(batchResult)
+        }
+
+        // Merge all batch results
+        finalApiResult = mergeLayoutParsingResults(batchResults)
+        
+        Logger.info("Merged batch results", {
+          totalBatches: batches.length,
+          layoutResultsCount: finalApiResult.layoutParsingResults?.length || 0,
+        })
+      } else {
+        // Small PDF, process normally
+        finalApiResult = await callLayoutParsingApi(buffer, fileName)
+      }
+    } catch (error) {
+      Logger.warn("Failed to analyze PDF for batching, processing as single file", {
+        fileName,
+        error: (error as Error).message,
+      })
+      finalApiResult = await callLayoutParsingApi(buffer, fileName)
+    }
+  } else {
+    // Not a PDF, process normally
+    finalApiResult = await callLayoutParsingApi(buffer, fileName)
   }
 
-  const { ocrResponse, images, imageMetadata } = transformLayoutParsingResults(layoutResults)
-  console.log("🔄 chunkByOCRFromBuffer: Transformed layout results", {
+  Logger.info("API result received", {
+    layoutResultsCount: finalApiResult.layoutParsingResults?.length || 0,
+  })
+
+  const layoutResults = finalApiResult.layoutParsingResults ?? []
+  if (layoutResults.length === 0) {
+    Logger.warn("Layout parsing API returned no results", { fileName })
+  }
+
+  const { ocrResponse, images, imageMetadata } =
+    transformLayoutParsingResults(layoutResults)
+  Logger.debug("Transformed layout results", {
     ocrResponsePages: Object.keys(ocrResponse).length,
     imagesCount: Object.keys(images).length,
-    imageMetadataCount: Object.keys(imageMetadata).length
+    imageMetadataCount: Object.keys(imageMetadata).length,
   })
-  
+
   return chunkByOCR(docId, ocrResponse, images, imageMetadata)
 }
 
@@ -488,8 +628,14 @@ export async function chunkByOCR(
   const image_chunks_map: ChunkMetadata[] = []
 
   const globalSeq: GlobalSeq = { value: 0 }
-  const maxChunkBytes = Number.parseInt(process.env.OCR_MAX_CHUNK_BYTES ?? "", 1024)
-  const chunkSizeLimit = Number.isFinite(maxChunkBytes) && maxChunkBytes > 0 ? maxChunkBytes : DEFAULT_MAX_CHUNK_BYTES
+  const maxChunkBytes = Number.parseInt(
+    process.env.OCR_MAX_CHUNK_BYTES ?? "",
+    1024,
+  )
+  const chunkSizeLimit =
+    Number.isFinite(maxChunkBytes) && maxChunkBytes > 0
+      ? maxChunkBytes
+      : DEFAULT_MAX_CHUNK_BYTES
 
   let currentTextBuffer = ""
   let currentBlockLabels: string[] = []
@@ -520,7 +666,7 @@ export async function chunkByOCR(
       chunks_map.push({
         chunk_index: globalSeq.value,
         page_number: lastPageNumber,
-        block_labels: [...new Set(currentBlockLabels)],
+        block_labels: Array.from(new Set(currentBlockLabels)),
       })
 
       globalSeq.value += 1
@@ -571,7 +717,8 @@ export async function chunkByOCR(
         //   block.image_index,
         //   metadata.pageIndex ?? pageNumber,
         // )
-        const fileName = String(globalSeq.value) + ".png"
+        const extension = detectImageExtension(imageBuffer)
+        const fileName = String(globalSeq.value) + "." + extension
 
         const uniqueFileName = ensureUniqueFileName(fileName, usedFileNames)
         const imagePath = path.join(docImageDir, uniqueFileName)
@@ -609,12 +756,13 @@ export async function chunkByOCR(
       } else {
         const normalizedText = normalizeBlockContent(block)
         if (!normalizedText) {
-          console.log("No normlaize text found")
           continue
         }
 
         const projectedSize =
-          getByteLength(currentTextBuffer) + (currentTextBuffer ? 1 : 0) + getByteLength(normalizedText)
+          getByteLength(currentTextBuffer) +
+          (currentTextBuffer ? 1 : 0) +
+          getByteLength(normalizedText)
 
         if (projectedSize > chunkSizeLimit) {
           addChunk()
@@ -627,19 +775,21 @@ export async function chunkByOCR(
   }
 
   if (currentTextBuffer.trim()) {
-    console.log("🔚 chunkByOCR: Adding final text chunk")
+    Logger.debug("Adding final text chunk")
     addChunk()
   }
 
   const chunks_pos = chunks_map.map((metadata) => metadata.chunk_index)
-  const image_chunks_pos = image_chunks_map.map((metadata) => metadata.chunk_index)
+  const image_chunks_pos = image_chunks_map.map(
+    (metadata) => metadata.chunk_index,
+  )
 
-  console.log("🎉 chunkByOCR: Processing completed", {
+  Logger.info("Processing completed", {
     totalTextChunks: chunks.length,
     totalImageChunks: image_chunks.length,
     totalChunksMetadata: chunks_map.length,
     totalImageChunksMetadata: image_chunks_map.length,
-    finalGlobalSeq: globalSeq.value
+    finalGlobalSeq: globalSeq.value,
   })
 
   return {
