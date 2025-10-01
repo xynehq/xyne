@@ -704,8 +704,8 @@ export const extractItemIdsFromPath = async (
   const collectionFolderIds: string[] = []
   const collectionIds: string[] = []
 
-  // If pathRefId is null or undefined, return empty arrays
-  if (!pathRefId) {
+  // If pathRefId is empty string, return empty object
+  if (!pathRefId || pathRefId === "") {
     return {
       collectionFileIds,
       collectionFolderIds,
@@ -716,26 +716,31 @@ export const extractItemIdsFromPath = async (
   const vespaId = String(pathRefId)
 
   try {
-    // Query collectionItems first to get id and type
-    const [item] = await db
-      .select({ id: collectionItems.id, type: collectionItems.type })
-      .from(collectionItems)
-      .where(
-        and(
-          eq(collectionItems.vespaDocId, vespaId),
-          isNull(collectionItems.deletedAt),
-        ),
-      )
+    // Check prefix and do respective DB call
+    if (vespaId.startsWith("clf-") || vespaId.startsWith("clfd-")) {
+      // Collection file/folder prefix - extract ID and query collectionItems with type verification
+      const isFile = vespaId.startsWith("clf-")
+      const expectedType = isFile ? "file" : "folder"
+      const [item] = await db
+        .select({ id: collectionItems.id, type: collectionItems.type })
+        .from(collectionItems)
+        .where(
+          and(
+            eq(collectionItems.vespaDocId, vespaId),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
 
-    if (item) {
-      // Based on type, append the appropriate prefix
-      if (item.type === "file") {
-        collectionFileIds.push(`clf-${item.id}`)
-      } else if (item.type === "folder") {
-        collectionFolderIds.push(`clfd-${item.id}`)
+      // Verify the item exists and type matches the prefix
+      if (item && item.type === expectedType) {
+        if (isFile) {
+          collectionFileIds.push(`clf-${item.id}`) // Keep the original prefixed ID
+        } else {
+          collectionFolderIds.push(`clfd-${item.id}`) // Keep the original prefixed ID
+        }
       }
-    } else {
-      // If not found in collectionItems, check collections table
+    } else if (vespaId.startsWith("cl-")) {
+      // Collection prefix - extract ID and query collections table
       const [collection] = await db
         .select({ id: collections.id })
         .from(collections)
@@ -747,8 +752,9 @@ export const extractItemIdsFromPath = async (
         )
 
       if (collection) {
-        collectionIds.push(`cl-${collection.id}`)
+        collectionIds.push(`cl-${collection.id}`) // Keep the original prefixed ID
       }
+    } else {
     }
   } catch (error) {
     // Log error but don't throw - return empty arrays
