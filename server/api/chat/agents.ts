@@ -3541,7 +3541,7 @@ export const AgentMessageApi = async (c: Context) => {
           collectionFolderIds: [],
         }
     const pathExtractedInfo = isValidPath
-      ? await extractItemIdsFromPath(ids)
+      ? await extractItemIdsFromPath(ids ?? "")
       : { collectionFileIds: [], collectionFolderIds: [], collectionIds: [] }
     let fileIds = extractedInfo?.fileIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {

@@ -694,7 +694,7 @@ export const extractFileIdsFromMessage = async (
   }
 }
 export const extractItemIdsFromPath = async (
-  pathRefId: any,
+  pathRefId: string,
 ): Promise<{
   collectionFileIds: string[]
   collectionFolderIds: string[]
