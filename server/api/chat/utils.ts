@@ -62,6 +62,8 @@ import {
   getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
 import { db } from "@/db/client"
+import { collections, collectionItems } from "@/db/schema"
+import { and, eq, isNull } from "drizzle-orm"
 import { get } from "http"
 
 function slackTs(ts: string | number) {
@@ -691,7 +693,78 @@ export const extractFileIdsFromMessage = async (
     collectionFolderIds: collectionIds.filter(Boolean),
   }
 }
+export const extractItemIdsFromPath = async (
+  pathRefId: any,
+): Promise<{
+  collectionFileIds: string[]
+  collectionFolderIds: string[]
+  collectionIds: string[]
+}> => {
+  const collectionFileIds: string[] = []
+  const collectionFolderIds: string[] = []
+  const collectionIds: string[] = []
 
+  // If pathRefId is null or undefined, return empty arrays
+  if (!pathRefId) {
+    return {
+      collectionFileIds,
+      collectionFolderIds,
+      collectionIds,
+    }
+  }
+
+  const vespaId = String(pathRefId)
+
+  try {
+    // Query collectionItems first to get id and type
+    const [item] = await db
+      .select({ id: collectionItems.id, type: collectionItems.type })
+      .from(collectionItems)
+      .where(
+        and(
+          eq(collectionItems.vespaDocId, vespaId),
+          isNull(collectionItems.deletedAt),
+        ),
+      )
+
+    if (item) {
+      // Based on type, append the appropriate prefix
+      if (item.type === "file") {
+        collectionFileIds.push(`clf-${item.id}`)
+      } else if (item.type === "folder") {
+        collectionFolderIds.push(`clfd-${item.id}`)
+      }
+    } else {
+      // If not found in collectionItems, check collections table
+      const [collection] = await db
+        .select({ id: collections.id })
+        .from(collections)
+        .where(
+          and(
+            eq(collections.vespaDocId, vespaId),
+            isNull(collections.deletedAt),
+          ),
+        )
+
+      if (collection) {
+        collectionIds.push(`cl-${collection.id}`)
+      }
+    }
+  } catch (error) {
+    // Log error but don't throw - return empty arrays
+    getLoggerWithChild(Subsystem.Chat)().error(
+      `Error extracting item IDs from pathRefId: ${vespaId}`,
+      error,
+    )
+  }
+
+  // Ensure we always return the same structure
+  return {
+    collectionFileIds,
+    collectionFolderIds,
+    collectionIds,
+  }
+}
 export const handleError = (error: any) => {
   let errorMessage = "Something went wrong. Please try again."
   if (error?.code === OpenAIError.RateLimitError) {

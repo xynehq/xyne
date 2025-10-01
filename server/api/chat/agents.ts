@@ -121,6 +121,7 @@ import {
   convertReasoningStepToText,
   extractFileIdsFromMessage,
   extractImageFileNames,
+  extractItemIdsFromPath,
   getCitationToImage,
   handleError,
   isMessageWithContext,
@@ -3532,16 +3533,17 @@ export const AgentMessageApi = async (c: Context) => {
       }
     }
     const isMsgWithContext = isMessageWithContext(message)
-    const extractedInfo =
-      isMsgWithContext || (path && ids)
-        ? await extractFileIdsFromMessage(message, email, ids)
-        : {
-            totalValidFileIdsFromLinkCount: 0,
-            fileIds: [],
-            collectionFolderIds: [],
-          }
+    const extractedInfo = isMsgWithContext
+      ? await extractFileIdsFromMessage(message, email)
+      : {
+          totalValidFileIdsFromLinkCount: 0,
+          fileIds: [],
+          collectionFolderIds: [],
+        }
+    const pathExtractedInfo = isValidPath
+      ? await extractItemIdsFromPath(ids)
+      : { collectionFileIds: [], collectionFolderIds: [], collectionIds: [] }
     let fileIds = extractedInfo?.fileIds
-    let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }
@@ -3760,9 +3762,6 @@ export const AgentMessageApi = async (c: Context) => {
                 imageAttachmentFileIds,
                 agentPromptForLLM,
                 fileIds.length > 0,
-                actualModelId,
-                Boolean(isValidPath),
-                folderIds,
               )
               stream.writeSSE({
                 event: ChatSSEvents.Start,
@@ -4304,6 +4303,12 @@ export const AgentMessageApi = async (c: Context) => {
                   userRequestsReasoning,
                   understandSpan,
                   agentPromptForLLM,
+                  actualModelId,
+                  {
+                    collectionfileIds: pathExtractedInfo.collectionFileIds,
+                    collectionFolderIds: pathExtractedInfo.collectionFolderIds,
+                    collectionIds: pathExtractedInfo.collectionIds,
+                  },
                 )
                 stream.writeSSE({
                   event: ChatSSEvents.Start,

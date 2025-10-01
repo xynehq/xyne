@@ -1222,6 +1222,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
   agentPrompt?: string,
+  pathExtractedInfo?: pathExtractedInfo,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -1345,8 +1346,25 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
+        let source = []
+        if (
+          pathExtractedInfo &&
+          (pathExtractedInfo.collectionfileIds.length ||
+            pathExtractedInfo.collectionFolderIds.length ||
+            pathExtractedInfo.collectionIds.length)
+        ) {
+          if (pathExtractedInfo.collectionFolderIds.length) {
+            source = pathExtractedInfo.collectionFolderIds
+          } else if (pathExtractedInfo.collectionfileIds.length) {
+            source = pathExtractedInfo.collectionfileIds
+          } else {
+            source = pathExtractedInfo.collectionIds
+          }
+        } else {
+          source = selectedItems[Apps.KnowledgeBase]
+        }
 
-        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+        for (const itemId of source) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
             collectionIds.push(itemId.replace(/^cl[-_]/, ""))
@@ -2483,6 +2501,7 @@ async function* generatePointQueryTimeExpansion(
   userRequestsReasoning: boolean,
   eventRagSpan?: Span,
   agentPrompt?: string,
+  pathExtractedInfo?: pathExtractedInfo,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2600,8 +2619,24 @@ async function* generatePointQueryTimeExpansion(
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
-
-        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+        let source = []
+        if (
+          pathExtractedInfo &&
+          (pathExtractedInfo.collectionfileIds.length ||
+            pathExtractedInfo.collectionFolderIds.length ||
+            pathExtractedInfo.collectionIds.length)
+        ) {
+          if (pathExtractedInfo.collectionFolderIds.length) {
+            source = pathExtractedInfo.collectionFolderIds
+          } else if (pathExtractedInfo.collectionfileIds.length) {
+            source = pathExtractedInfo.collectionfileIds
+          } else {
+            source = pathExtractedInfo.collectionIds
+          }
+        } else {
+          source = selectedItems[Apps.KnowledgeBase]
+        }
+        for (const itemId of source) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
             collectionIds.push(itemId.replace(/^cl[-_]/, ""))
@@ -3047,6 +3082,7 @@ async function* generateMetadataQueryAnswer(
   agentPrompt?: string,
   maxIterations = 5,
   modelId?: string,
+  pathExtractedInfo?: pathExtractedInfo,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3163,8 +3199,24 @@ async function* generateMetadataQueryAnswer(
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
-
-        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+        let source = []
+        if (
+          pathExtractedInfo &&
+          (pathExtractedInfo.collectionfileIds.length ||
+            pathExtractedInfo.collectionFolderIds.length ||
+            pathExtractedInfo.collectionIds.length)
+        ) {
+          if (pathExtractedInfo.collectionFolderIds?.length) {
+            source = pathExtractedInfo.collectionFolderIds
+          } else if (pathExtractedInfo.collectionfileIds.length) {
+            source = pathExtractedInfo.collectionfileIds
+          } else {
+            source = pathExtractedInfo.collectionIds
+          }
+        } else {
+          source = selectedItems[Apps.KnowledgeBase]
+        }
+        for (const itemId of source) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
             collectionIds.push(itemId.replace(/^cl[-_]/, ""))
@@ -3777,6 +3829,12 @@ const fallbackText = (classification: QueryRouterLLMResponse): string => {
   return `${searchDescription}${timeDescription}`
 }
 
+export type pathExtractedInfo = {
+  collectionfileIds: string[]
+  collectionFolderIds: string[]
+  collectionIds: string[]
+}
+
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
@@ -3789,6 +3847,7 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?: Span,
   agentPrompt?: string,
   modelId?: string,
+  pathExtractedInfo?: pathExtractedInfo,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3836,6 +3895,7 @@ export async function* UnderstandMessageAndAnswer(
       agentPrompt,
       5,
       modelId,
+      pathExtractedInfo,
     )
 
     let hasYieldedAnswer = false
@@ -3884,6 +3944,7 @@ export async function* UnderstandMessageAndAnswer(
       userRequestsReasoning,
       eventRagSpan,
       agentPrompt,
+      pathExtractedInfo,
     )
   } else {
     loggerWithChild({ email: email }).info(
@@ -3906,6 +3967,7 @@ export async function* UnderstandMessageAndAnswer(
       userRequestsReasoning,
       ragSpan,
       agentPrompt, // Pass agentPrompt to generateIterativeTimeFilterAndQueryRewrite
+      pathExtractedInfo,
     )
   }
 }
