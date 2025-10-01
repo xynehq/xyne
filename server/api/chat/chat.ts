@@ -4502,9 +4502,8 @@ export const MessageApi = async (c: Context) => {
             })
           }
 
-          const filteredMessages = messages
+          let filteredMessages = messages
               .slice(0, messages.length - 1)
-              .filter((msg) => !msg?.errorMessage)
               .filter(
                 (msg) =>
                   !(msg.messageRole === MessageRole.Assistant && !msg.message),
@@ -4787,6 +4786,7 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
+            filteredMessages = filteredMessages.filter((msg) => !msg?.errorMessage)
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )

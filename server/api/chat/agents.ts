@@ -3753,7 +3753,6 @@ export const AgentMessageApi = async (c: Context) => {
 
             const filteredMessages = messages
                 .slice(0, messages.length - 1)
-                .filter((msg) => !msg?.errorMessage)
                 .filter(
                   (msg) =>
                     !(msg.messageRole === MessageRole.Assistant && !msg.message),

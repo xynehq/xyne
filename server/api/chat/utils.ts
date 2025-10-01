@@ -93,18 +93,6 @@ export function collectFollowupContext(
   for (let i = startIdx; i >= 0 && hops < maxHops; i--, hops++) {
     const m = messages[i];
 
-    // Use existing chain break classification system to detect boundaries
-    if (m.messageRole === "user" && m.queryRouterClassification) {
-      try {
-        const classification = typeof m.queryRouterClassification === "string" 
-          ? JSON.parse(m.queryRouterClassification) 
-          : m.queryRouterClassification;
-        if (classification.isFollowUp === false) break;
-      } catch (error) {
-        // If we can't parse classification, continue processing
-      }
-    }
-
     // 1) attachments the user explicitly added
     if (Array.isArray(m.attachments)) {
       for (const a of m.attachments as AttachmentMetadata[]) {
@@ -112,6 +100,7 @@ export function collectFollowupContext(
           ws.attachmentFileIds.push(a.fileId);
           ws.carriedFromMessageIds.push(m.externalId);
           seen.add(`img:${a.fileId}`);
+          continue; // images are separate from fileIds
         }
         if (a.fileId && !seen.has(`f:${a.fileId}`)) {
           ws.fileIds.push(a.fileId);
@@ -131,6 +120,18 @@ export function collectFollowupContext(
           seen.add(`f:${fileId}`);
           if (ws.fileIds.length >= MAX_FILES) break;
         }
+      }
+    }
+
+    // Use existing chain break classification system to detect boundaries
+    if (m.messageRole === "user" && m.queryRouterClassification) {
+      try {
+        const classification = typeof m.queryRouterClassification === "string" 
+          ? JSON.parse(m.queryRouterClassification) 
+          : m.queryRouterClassification;
+        if (classification.isFollowUp === false) break;
+      } catch (error) {
+        // If we can't parse classification, continue processing
       }
     }
   }
