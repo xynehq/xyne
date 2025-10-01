@@ -24,6 +24,7 @@ interface ScriptExecutionOutput {
   consoleLogs?: string
   error: string | null
   exitCode: number
+  extractedFiles?: string[]
 }
 
 const timeout_value = 20
@@ -95,15 +96,16 @@ function getLanguageConfig(language: ScriptLanguage): LanguageConfig {
         fileExtension: "py",
         runCommand: "python3",
         allowedImports: [
-          "json", "math", "datetime", "random", "re", "collections", 
+          "json", "math", "datetime", "random", "re", "collections",
           "itertools", "functools", "operator", "string", "uuid",
           "hashlib", "base64", "urllib.parse", "statistics", "requests",
-          "urllib", "http", "urllib.request", "urllib.error", "http.client"
+          "urllib", "http", "urllib.request", "urllib.error", "http.client",
+          "csv", "io", "pathlib"
         ],
         restrictedKeywords: [
            "import os","from os", "import sys", "import subprocess", "import socket",
-           "from sys", "from subprocess", "exec", "eval", "open(", "file(","dir(",
-          "__import__", "importlib", "globals(", "locals(", "vars(", 
+           "from sys", "from subprocess", "exec", "eval", "file(","dir(",
+          "__import__", "importlib", "globals(", "locals(", "vars(",
           "getattr(", "setattr(", "hasattr(", "delattr(", "compile("
         ],
         getDataParser: (input: Record<string, any>, config: Record<string, any>) => {
@@ -137,11 +139,11 @@ config = json.loads(configRaw)
         allowedImports: [
           "Math", "Date", "JSON", "Array", "Object", "String",
           "Number", "Boolean", "RegExp", "Set", "Map", "Promise",
-          "fetch", "axios", "https", "http"
+          "fetch", "axios", "https", "http", "fs"
         ],
         restrictedKeywords: [
           "require(", "import(", "eval(", "Function(", "process.",
-          "global.", "Buffer.", "fs.", "child_process", "net.",
+          "global.", "Buffer.", "child_process", "net.",
           "import ", "import{", "import*", "import.", "import\n",
           "export ", "module.", "window.", "globalThis.", "self.",
           "importScripts(", "Worker(", "SharedWorker("
@@ -175,12 +177,12 @@ const config = JSON.parse(configRaw);
         runCommand: "Rscript",
         allowedImports: [
           "jsonlite", "base", "stats", "utils", "graphics", "grDevices",
-          "methods", "datasets", "stringr", "lubridate", "dplyr", 
-          "httr", "RCurl", "curl"
+          "methods", "datasets", "stringr", "lubridate", "dplyr",
+          "httr", "RCurl", "curl", "readr", "data.table"
         ],
         restrictedKeywords: [
           "system(", "system2(", "shell(", "Sys.setenv", "source(",
-          "load(", "save(", "file.create", "file.remove", "unlink(",
+          "load(", "save(", "file.remove", "unlink(",
           "attach(", "detach(", "require(", "loadNamespace(",
           "eval(", "parse(", "do.call(", "assign(", "exists("
         ],
@@ -568,7 +570,7 @@ function formatROutput(rawOutput: string): Record<string, any> | false {
   }
 }
 
-function createBubblewrapArgs(scriptPath: string): string[] {
+function createBubblewrapArgs(scriptPath: string, exportDir?: string): string[] {
   const path = require('path')
 
   // Minimal bubblewrap arguments for containers
@@ -583,17 +585,27 @@ function createBubblewrapArgs(scriptPath: string): string[] {
     '--die-with-parent'
   ]
 
+  // Add writable export directory if provided
+  if (exportDir) {
+    baseArgs.push(
+      '--bind', exportDir, '/tmp/export'
+    )
+  }
+
   return baseArgs
 }
 
 export async function executeScript(
-  executionInput: ScriptExecutionInput
+  executionInput: ScriptExecutionInput,
+  workflowId?: string
 ): Promise<ScriptExecutionOutput> {
   const { spawn } = require('child_process')
   const fs = require('fs').promises
-  
+  const path = require('path')
+
   let scriptPath = ''
-  
+  let exportDir = ''
+
   try {
     // Generate the script file
     const scriptGenResult = await generateScript(
@@ -613,7 +625,18 @@ export async function executeScript(
     }
     
     scriptPath = scriptGenResult.filePath!
-    
+
+    // Create export directory for file outputs if workflowId is provided
+    if (workflowId && USE_BUBBLEWRAP) {
+      const workflowFilesDir = path.join(process.cwd(), "script_executor_utils", "workflow_files", workflowId)
+      await fs.mkdir(workflowFilesDir, { recursive: true })
+
+      // Create temporary export directory for this execution
+      const { randomUUID } = require('crypto')
+      exportDir = path.join(workflowFilesDir, `temp_export_${randomUUID()}`)
+      await fs.mkdir(exportDir, { recursive: true })
+    }
+
     // Get the run command
     const langConfig = getLanguageConfig(executionInput.language)
     const runCommand = `${langConfig.runCommand} ${scriptPath}`.trim()
@@ -632,7 +655,7 @@ export async function executeScript(
 
     // Apply bubblewrap sandbox if enabled
     if (USE_BUBBLEWRAP) {
-      const bubblewrapArgs = createBubblewrapArgs(scriptPath)
+      const bubblewrapArgs = createBubblewrapArgs(scriptPath, exportDir || undefined)
       const originalCommand = command
       const originalArgs = args
       command = 'bwrap'
@@ -659,6 +682,34 @@ export async function executeScript(
       })
       
       child.on('close', async (code: any, signal: any) => {
+        // Extract files from export directory if it exists
+        let extractedFiles: string[] = []
+        if (exportDir && workflowId) {
+          try {
+            const workflowFilesDir = path.join(process.cwd(), "script_executor_utils", "workflow_files", workflowId)
+            await fs.mkdir(workflowFilesDir, { recursive: true })
+
+            // Check if export directory has any files
+            const exportFiles = await fs.readdir(exportDir, { withFileTypes: true })
+            for (const file of exportFiles) {
+              if (file.isFile()) {
+                const sourceFile = path.join(exportDir, file.name)
+                const destFile = path.join(workflowFilesDir, file.name)
+
+                // Copy file to workflow directory
+                await fs.copyFile(sourceFile, destFile)
+                extractedFiles.push(file.name)
+                Logger.info(`📁 Extracted file: ${file.name} to workflow_files/${workflowId}/`)
+              }
+            }
+
+            // Clean up temporary export directory
+            await fs.rm(exportDir, { recursive: true, force: true })
+          } catch (extractError) {
+            Logger.warn(`Failed to extract files from export directory: ${extractError}`)
+          }
+        }
+
         // Delete the script file after execution
         try {
           await fs.unlink(scriptPath)
@@ -671,7 +722,8 @@ export async function executeScript(
             success: false,
             output: { value: stdout },
             error: `Script execution timed out after ${timeout_value} minute`,
-            exitCode: -1
+            exitCode: -1,
+            extractedFiles
           })
         } else if (code === 0) {
           // Split output by OUTPUT_STATEMENT_START marker
@@ -698,14 +750,16 @@ export async function executeScript(
             output: result,
             consoleLogs: consoleLogs,
             error: null,
-            exitCode: code
+            exitCode: code,
+            extractedFiles
           })
         } else {
           resolve({
             success: false,
             output: { value: stdout },
             error: stderr,
-            exitCode: code
+            exitCode: code,
+            extractedFiles
           })
         }
       })
@@ -722,7 +776,8 @@ export async function executeScript(
           success: false,
           output: { value: stdout },
           error: error.message,
-          exitCode: -1
+          exitCode: -1,
+          extractedFiles: []
         })
       })
       
@@ -741,7 +796,8 @@ export async function executeScript(
       success: false,
       output: {},
       error: error instanceof Error ? error.message : 'Unknown error',
-      exitCode: -1
+      exitCode: -1,
+      extractedFiles: []
     }
   }
 }
@@ -755,5 +811,6 @@ export function getCodeWritingBlock(language: ScriptLanguage, input?: Record<str
   return `${langConfig.commentKeyword} ${dataParser.inputComment}
 ${langConfig.commentKeyword} ${dataParser.configComment}
 ${langConfig.commentKeyword} Allowed external packages list -> [${langConfig.allowedImports}]
-${langConfig.commentKeyword} Write your code below this line and return the output as a JSON object`
+${langConfig.commentKeyword} Write your code below this line and return the output as a JSON object
+${langConfig.commentKeyword} To create files for download, save them to /tmp/export/ directory (e.g., /tmp/export/data.csv)`
 }
