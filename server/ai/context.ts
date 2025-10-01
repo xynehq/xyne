@@ -660,23 +660,10 @@ const constructCollectionFileContext = (
       }) || []
   }
 
-  let imageContent = ""
-  if (isSelectedFiles && fields?.matchfeatures) {
-  
-    imageContent = imageChunks
-      .slice(0, maxImageChunks)
-      .sort((a, b) => a.index - b.index)
-      .map((v) => v.chunk)
-      .join("\n")
-  } else if (isSelectedFiles) {
-    imageContent = imageChunks.map((v) => v.chunk).join("\n")
-  } else {
-
-    imageContent = imageChunks
+  let imageContent = imageChunks
       .slice(0, maxImageChunks)
       .map((v) => v.chunk)
       .join("\n")
-  }
 
 
   return `Source: Knowledge Base
