@@ -263,10 +263,12 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
   let email: string = ""
   let via_apiKey = false
   try {
-    const user = await getUserFromJWT(db,c.get(JwtPayloadKey))
+    const jwtPayload = c.get(JwtPayloadKey)
+    const user = await getUserFromJWT(db, jwtPayload)
     const userId = user.id
+    const workspaceExternalId = jwtPayload.workspaceId
 
-    Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}`)
+    Logger.debug(`Debug-ExecuteWorkflowWithInputApi: userId=${userId}, workspaceInternalId=${user.workspaceId}, workspaceExternalId=${workspaceExternalId}`)
 
     const templateId = c.req.param("templateId")
     const contentType = c.req.header("content-type") || ""
@@ -419,8 +421,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         metadata: {
           ...requestData.metadata,
           executionContext: {
-            userEmail: email,
-            workspaceId: user.workspaceId,
+            userEmail: user.email,
+            workspaceId: workspaceExternalId,
           }
         },
         status: WorkflowStatus.ACTIVE,
@@ -519,8 +521,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                     get: (key: string) => {
                       if (key === JwtPayloadKey) {
                         return {
-                          sub: email,
-                          workspaceId: user.workspaceId 
+                          sub: user.email,
+                          workspaceId: workspaceExternalId 
                         }
                       }
                       return undefined
@@ -701,7 +703,15 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
 
     // Get tools
-    const tools = await db.select().from(workflowTool)
+    const tools = await db
+      .select()
+      .from(workflowTool)
+      .where(and(
+        eq(workflowTool.workspaceId, user.workspaceId),
+        eq(workflowTool.userId, user.id),
+      ))
+
+    
 
     // Create workflow execution
     const [execution] = await db
