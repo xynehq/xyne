@@ -12,7 +12,7 @@ const Logger = getLogger(Subsystem.Integrations).child({
 const DEFAULT_MAX_CHUNK_BYTES = 1024
 const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
 const DEFAULT_LAYOUT_PARSING_BASE_URL = "http://localhost:8000"
-const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
+const LAYOUT_PARSING_API_PATH = "v2/models/layout-parsing/infer"
 
 type LayoutParsingBlock = {
   block_label?: string
@@ -298,7 +298,7 @@ async function callLayoutParsingApi(
     Number.parseInt(process.env.LAYOUT_PARSING_FILE_TYPE ?? "0", 10) || 0
   const visualize = process.env.LAYOUT_PARSING_VISUALIZE === "false"
   const timeoutMs = Number.parseInt(
-    process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "120000",
+    process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "300000",
     10,
   )
 
@@ -352,7 +352,7 @@ async function callLayoutParsingApi(
         `Layout parsing API request failed (${response.status}): ${responseText.slice(0, 200)}`,
       )
     }
-
+    Logger.info("Layout parsing API request succeeded, parsing response")
     const envelope = (await response.json()) as LayoutParsingApiEnvelope
 
     const outputPayload = envelope.outputs?.[0]?.data?.[0]
@@ -375,6 +375,20 @@ async function callLayoutParsingApi(
     }
 
     return result
+  } catch (error) {
+    // Log the layout parsing API failure with context
+    Logger.error(error, `Layout parsing API call failed for file: ${fileName}`, {
+      fileName,
+      fileSize: buffer.length,
+      apiUrl,
+    })
+    
+    // Re-throw with enhanced error message for better debugging
+    if (error instanceof Error) {
+      throw new Error(`Layout parsing API failed for "${fileName}": ${error.message}`)
+    } else {
+      throw new Error(`Layout parsing API failed for "${fileName}": Unknown error occurred`)
+    }
   } finally {
     if (timer) {
       clearTimeout(timer)
