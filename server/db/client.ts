@@ -6,7 +6,7 @@ import { Subsystem } from "@/types"
 
 const Logger = getLogger(Subsystem.Db).child({ module: "client" })
 
-const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
+const url = config.getDatabaseUrl()
 
 const queryClient = postgres(url, {
   idle_timeout: 0,
