@@ -39,6 +39,18 @@ jobs:
           GH_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
         run: bunx semantic-release --no-ci
 
+      - name: Check if new release was published
+        id: check_release
+        run: |
+            # Get the latest tag reachable from HEAD
+            TAG=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "")
+            if [ -n "$TAG" ]; then
+              echo "published=true" >> $GITHUB_OUTPUT
+              echo "New release tag found: $TAG"
+            else
+              echo "published=false" >> $GITHUB_OUTPUT
+              echo "No new release tag on HEAD"
+            fi
 
       - name: Extract version from package.json
         id: get_version
