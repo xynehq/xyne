@@ -554,54 +554,8 @@ export async function chunkByOCRFromBuffer(
   docId: string,
 ): Promise<ProcessingResult> {
   
-  // Check if this is a PDF and handle batching if necessary
-  const isPdf = fileName.toLowerCase().endsWith('.pdf')
-  let finalApiResult: LayoutParsingApiPayload
-
-  if (isPdf) {
-    try {
-      const srcPdf = await PDFDocument.load(buffer)
-      const totalPages = srcPdf.getPageCount()
-
-      if (totalPages > 30) {
-        // Split PDF into batches and process each
-        const batches = await splitPdfIntoBatches(buffer, 30)
-        const batchResults: LayoutParsingApiPayload[] = []
-
-        for (let i = 0; i < batches.length; i++) {
-          const batch = batches[i]
-          Logger.info("Processing PDF batch", {
-            batchIndex: i + 1,
-            totalBatches: batches.length,
-            batchSizeBytes: batch.length,
-          })
-
-          const batchResult = await callLayoutParsingApi(batch, `${fileName}_batch_${i + 1}`)
-          batchResults.push(batchResult)
-        }
-
-        // Merge all batch results
-        finalApiResult = mergeLayoutParsingResults(batchResults)
-        
-        Logger.info("Merged batch results", {
-          totalBatches: batches.length,
-          layoutResultsCount: finalApiResult.layoutParsingResults?.length || 0,
-        })
-      } else {
-        // Small PDF, process normally
-        finalApiResult = await callLayoutParsingApi(buffer, fileName)
-      }
-    } catch (error) {
-      Logger.warn("Failed to analyze PDF for batching, processing as single file", {
-        fileName,
-        error: (error as Error).message,
-      })
-      finalApiResult = await callLayoutParsingApi(buffer, fileName)
-    }
-  } else {
-    // Not a PDF, process normally
-    finalApiResult = await callLayoutParsingApi(buffer, fileName)
-  }
+  // Process the file directly without splitting
+  const finalApiResult = await callLayoutParsingApi(buffer, fileName)
 
   Logger.info("API result received", {
     layoutResultsCount: finalApiResult.layoutParsingResults?.length || 0,

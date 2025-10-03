@@ -47,12 +47,47 @@ import { DeleteDocument, GetDocument } from "@/search/vespa"
 import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
 import { boss, FileProcessingQueue } from "@/queue/api-server-queue"
 import * as crypto from "crypto"
+import { fileTypeFromBuffer } from "file-type"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
 import { ApiKeyScopes, UploadStatus } from "@/shared/types"
+
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx":
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".txt": "text/plain",
+  ".csv": "text/csv",
+  ".html": "text/html",
+  ".xml": "application/xml",
+  ".json": "application/json",
+  ".zip": "application/zip",
+  ".rar": "application/vnd.rar",
+  ".7z": "application/x-7z-compressed",
+  ".tar": "application/x-tar",
+  ".gz": "application/gzip",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".mp4": "video/mp4",
+  ".avi": "video/x-msvideo",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+}
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
@@ -125,6 +160,75 @@ function getStoragePath(
     month,
     `${storageKey}_${fileName}`,
   )
+}
+
+// Enhanced MIME type detection with extension normalization and magic byte analysis
+async function detectMimeType(
+  fileName: string,
+  buffer: ArrayBuffer | Uint8Array | Buffer,
+  browserMimeType?: string,
+): Promise<string> {
+  try {
+    let detectionBuffer: Uint8Array | Buffer
+    if (Buffer.isBuffer(buffer)) {
+      detectionBuffer = buffer
+    } else if (buffer instanceof Uint8Array) {
+      detectionBuffer = buffer
+    } else {
+      detectionBuffer = new Uint8Array(buffer)
+    }
+
+    // Step 1: Normalize the file extension (case-insensitive)
+    const ext = extname(fileName).toLowerCase()
+
+    // Step 2: Extension-based MIME mapping uses a module-level constant now.
+
+    // Step 3: Use magic byte detection from file-type library
+    let detectedType: string | undefined
+    try {
+      const fileTypeResult = await fileTypeFromBuffer(detectionBuffer)
+      if (fileTypeResult?.mime) {
+        detectedType = fileTypeResult.mime
+        loggerWithChild().debug(
+          `Magic byte detection for ${fileName}: ${detectedType}`,
+        )
+      }
+    } catch (error) {
+      loggerWithChild().debug(
+        `Magic byte detection failed for ${fileName}: ${getErrorMessage(error)}`,
+      )
+    }
+
+    // Step 4: Determine the best MIME type using fallback strategy
+    let finalMimeType: string
+
+    // Priority: 1. Magic bytes (most reliable), 2. Extension mapping, 3. Browser type, 4. Default
+    if (detectedType) {
+      finalMimeType = detectedType
+    } else if (EXTENSION_MIME_MAP[ext]) {
+      finalMimeType = EXTENSION_MIME_MAP[ext]
+    } else if (
+      browserMimeType &&
+      browserMimeType !== "application/octet-stream"
+    ) {
+      finalMimeType = browserMimeType
+    } else {
+      finalMimeType = "application/octet-stream"
+    }
+
+    loggerWithChild().debug(
+      `MIME detection for ${fileName}: extension=${ext}, magic=${detectedType}, browser=${browserMimeType}, final=${finalMimeType}`,
+    )
+
+    return finalMimeType
+  } catch (error) {
+    loggerWithChild().error(
+      error,
+      `Error in MIME detection for ${fileName}: ${getErrorMessage(error)}`,
+    )
+    // Fallback to browser type or default
+    return browserMimeType || "application/octet-stream"
+  }
 }
 
 // API Handlers
@@ -1240,6 +1344,13 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
+        // Detect MIME type using robust detection with extension normalization and magic bytes
+        const detectedMimeType = await detectMimeType(
+          originalFileName,
+          buffer,
+          file.type,
+        )
+
         // Create file record in database first
         const item = await db.transaction(async (tx: TxnOrClient) => {
           return await createFileItem(
@@ -1251,7 +1362,7 @@ export const UploadFilesApi = async (c: Context) => {
             fileName,
             storagePath,
             storageKey,
-            file.type || "application/octet-stream",
+            detectedMimeType,
             file.size,
             checksum,
             {
@@ -1651,23 +1762,25 @@ export const GetChunkContentApi = async (c: Context) => {
     }
 
     // Handle both legacy number[] format and new ChunkMetadata[] format
-    const index = resp.fields.chunks_pos.findIndex((pos: number | ChunkMetadata) => {
-      // If it's a number (legacy format), compare directly
-      if (typeof pos === "number") {
-        return pos === chunkIndex
-      }
-      // If it's a ChunkMetadata object, compare the index field
-      if (typeof pos === "object" && pos !== null) {
-        if (pos.chunk_index !== undefined) {
-          return pos.chunk_index === chunkIndex
-        } else {
-          loggerWithChild({ email: userEmail }).warn(
-            `Unexpected chunk position object format: ${JSON.stringify(pos)}`,
-          )
+    const index = resp.fields.chunks_pos.findIndex(
+      (pos: number | ChunkMetadata) => {
+        // If it's a number (legacy format), compare directly
+        if (typeof pos === "number") {
+          return pos === chunkIndex
         }
-      }
-      return false
-    })
+        // If it's a ChunkMetadata object, compare the index field
+        if (typeof pos === "object" && pos !== null) {
+          if (pos.chunk_index !== undefined) {
+            return pos.chunk_index === chunkIndex
+          } else {
+            loggerWithChild({ email: userEmail }).warn(
+              `Unexpected chunk position object format: ${JSON.stringify(pos)}`,
+            )
+          }
+        }
+        return false
+      },
+    )
     if (index === -1) {
       throw new HTTPException(404, { message: "Chunk index not found" })
     }
@@ -1750,8 +1863,14 @@ export const PollCollectionsStatusApi = async (c: Context) => {
     const body = await c.req.json()
     const collectionIds = body.collectionIds as string[]
 
-    if (!collectionIds || !Array.isArray(collectionIds) || collectionIds.length === 0) {
-      throw new HTTPException(400, { message: "collectionIds array is required" })
+    if (
+      !collectionIds ||
+      !Array.isArray(collectionIds) ||
+      collectionIds.length === 0
+    ) {
+      throw new HTTPException(400, {
+        message: "collectionIds array is required",
+      })
     }
 
     // Fetch items only for collections owned by the user (enforced in DB function)
