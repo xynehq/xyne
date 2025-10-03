@@ -108,6 +108,7 @@ interface FetchedDataSource {
   entity: string
 }
 
+
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, onRemove, icon }) => {
   return (
     <div className="flex items-center justify-center bg-slate-100 dark:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium pl-2 pr-1 py-1 rounded-md border border-slate-200 dark:border-slate-500">
@@ -326,6 +327,7 @@ function isItemSelectedWithInheritance(
 
   return false
 }
+ 
 
 function AgentComponent() {
   const { agentId } = Route.useSearch()
@@ -418,7 +420,7 @@ function AgentComponent() {
   const getDriveEntityIcon = (entity: string) => {
     return getIcon(Apps.GoogleDrive, entity as any, { w: 16, h: 16, mr: 8 })
   }
-
+  
   // Google Drive navigation functions
   const navigateToGoogleDrive = async () => {
     setNavigationPath([
@@ -434,6 +436,8 @@ function AgentComponent() {
         const data = await response.json()
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
+        
+     
         setCurrentItems(items)
       }
     } catch (error) {
@@ -463,6 +467,8 @@ function AgentComponent() {
         const data = await response.json()
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
+       
+     
         setCurrentItems(items)
       }
     } catch (error) {
@@ -1890,7 +1896,10 @@ function AgentComponent() {
   const toggleIntegrationSelection = (integrationId: string) => {
     setSelectedIntegrations((prev) => {
       const newValue = !prev[integrationId]
-
+      if(integrationId === "googledrive" && !newValue ){
+         setSelectedItemsInGoogleDrive(new Set())
+          setSelectedItemDetailsInGoogleDrive({})
+      }
       // If it's a collection integration and we're deselecting it, clear its items
       if (integrationId.startsWith("cl_") && !newValue) {
         const clId = integrationId.replace("cl_", "")
@@ -2063,9 +2072,22 @@ function AgentComponent() {
 
     // Handle Google Drive items
     if (
-      selectedIntegrations["googledrive"] &&
-      selectedItemsInGoogleDrive.size > 0
+      selectedIntegrations["googledrive"] 
     ) {
+      if(selectedItemsInGoogleDrive.size === 0){
+        const googleDriveIntegration = allAvailableIntegrations.find(
+          (int) => int.id === "googledrive",
+        )
+        if (googleDriveIntegration) {
+          result.push({
+            ...googleDriveIntegration,
+            type: "integration",
+          })
+        }
+      }
+      else{
+
+      
       // If specific Google Drive items are selected, show individual file/folder pills
       for (const itemId of selectedItemsInGoogleDrive) {
         const item = selectedItemDetailsInGoogleDrive[itemId]
@@ -2088,18 +2110,8 @@ function AgentComponent() {
           })
         }
       }
-    } else if (selectedIntegrations["googledrive"]) {
-      // If no specific items are selected but Google Drive is checked, show the main Google Drive pill
-      const googleDriveIntegration = allAvailableIntegrations.find(
-        (int) => int.id === "googledrive",
-      )
-      if (googleDriveIntegration) {
-        result.push({
-          ...googleDriveIntegration,
-          type: "integration",
-        })
-      }
     }
+    } 
 
     allAvailableIntegrations.forEach((integration) => {
       if (
@@ -3333,6 +3345,8 @@ function AgentComponent() {
                                                     // Extract the actual items from the Vespa response structure
                                                     const items =
                                                       data?.root?.children || []
+                                                    
+                                                    
                                                     setCurrentItems(items)
                                                     setIsLoadingItems(false)
                                                   })
@@ -3540,17 +3554,46 @@ function AgentComponent() {
 
                                 return (
                                   <>
-                                    {/* Regular integrations */}
+                                      {collections.length > 0 && (
+                                      <DropdownMenuItem
+                                        onSelect={(e) => {
+                                          e.preventDefault()
+                                          setNavigationPath([
+                                            {
+                                              id: "cl-root",
+                                              name: "Collections",
+                                              type: "cl-root",
+                                            },
+                                          ])
+                                          setDropdownSearchQuery("")
+                                        }}
+                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                      >
+                                        <div className="flex items-center">
+                                          <div className="w-4 h-4 mr-3">  </div>
+                                          <span className="mr-2 flex items-center">
+                                          <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                          </span>
+                                          <span className="text-gray-700 dark:text-gray-200">
+                                            Collections
+                                          </span>
+                                        </div>
+                                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                                      </DropdownMenuItem>
+                                    )}
+                                   
                                     {otherIntegrations.map((integration) => {
                                       const isGoogleDrive =
                                         integration.app === Apps.GoogleDrive &&
                                         integration.entity === "file"
                                       const showChevron = isGoogleDrive
+                                      
 
                                       return (
                                         <DropdownMenuItem
                                           key={integration.id}
                                           onSelect={(e) => {
+                                           
                                             e.preventDefault()
                                             toggleIntegrationSelection(
                                               integration.id,
@@ -3594,31 +3637,7 @@ function AgentComponent() {
                                       )
                                     })}
 
-                                    {/* Collections item */}
-                                    {collections.length > 0 && (
-                                      <DropdownMenuItem
-                                        onSelect={(e) => {
-                                          e.preventDefault()
-                                          setNavigationPath([
-                                            {
-                                              id: "cl-root",
-                                              name: "Collections",
-                                              type: "cl-root",
-                                            },
-                                          ])
-                                          setDropdownSearchQuery("")
-                                        }}
-                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                      >
-                                        <div className="flex items-center">
-                                          <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
-                                          <span className="text-gray-700 dark:text-gray-200">
-                                            Collections
-                                          </span>
-                                        </div>
-                                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                                      </DropdownMenuItem>
-                                    )}
+
                                   </>
                                 )
                               })()
@@ -4224,6 +4243,7 @@ function AgentComponent() {
                                             setSelectedIntegrations={
                                               setSelectedIntegrations
                                             }
+                                            selectedIntegrations={selectedIntegrations}
                                           />
                                         )
                                       } else {
