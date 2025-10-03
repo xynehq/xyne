@@ -14,20 +14,21 @@ const Logger = getLogger(Subsystem.Api)
 
 // No request body schema needed - fileId comes from URL
 
-
 // Helper function to process any document type using existing worker logic
 async function processDocumentDirect(jobData: ProcessingJob) {
   const startTime = Date.now()
-  
+
   try {
     // Use the existing processJob function from the worker
     await processJob({ data: jobData })
-    
+
     const endTime = Date.now()
     const processingTime = endTime - startTime
-    
-    Logger.info(`Successfully processed ${jobData.type || 'file'} job in ${processingTime}ms`)
-    
+
+    Logger.info(
+      `Successfully processed ${jobData.type || "file"} job in ${processingTime}ms`,
+    )
+
     return {
       success: true,
       message: "Document processed successfully",
@@ -37,7 +38,7 @@ async function processDocumentDirect(jobData: ProcessingJob) {
   } catch (error) {
     const errorMessage = getErrorMessage(error)
     Logger.error(error, `Failed to process document: ${errorMessage}`)
-    
+
     return {
       success: false,
       message: `Processing failed: ${errorMessage}`,
@@ -53,7 +54,8 @@ export const InsertFileDocumentApi = async (c: Context) => {
   const { email: userEmail, via_apiKey } = getAuth(c)
 
   if (via_apiKey) {
-    const apiKeyScopes = safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
     if (!apiKeyScopes.includes(ApiKeyScopes.UPLOAD_FILES)) {
       return c.json(
         { message: "API key does not have scope to process files" },
@@ -65,21 +67,28 @@ export const InsertFileDocumentApi = async (c: Context) => {
   try {
     // Get fileId from URL parameter
     const fileId = c.req.param("fileId")
-    
+
     // Validate fileId format
-    if (!fileId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fileId)) {
+    if (
+      !fileId ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        fileId,
+      )
+    ) {
       throw new HTTPException(400, { message: "Invalid fileId format" })
     }
 
-    // Get user from database
-    const users = await getUserByEmail(db, userEmail)
+    // Get user and file details in parallel to optimize database queries
+    const [users, fileItem] = await Promise.all([
+      getUserByEmail(db, userEmail),
+      getCollectionItemById(db, fileId),
+    ])
+    
     if (!users || users.length === 0) {
       throw new HTTPException(404, { message: "User not found" })
     }
     const user = users[0]
-
-    // Get file and verify it exists and user has access
-    const fileItem = await getCollectionItemById(db, fileId)
+    
     if (!fileItem || fileItem.type !== "file") {
       throw new HTTPException(404, { message: "File not found" })
     }
