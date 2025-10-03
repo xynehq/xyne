@@ -47,6 +47,7 @@ import { DeleteDocument, GetDocument } from "@/search/vespa"
 import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
 import { boss, FileProcessingQueue } from "@/queue/api-server-queue"
 import * as crypto from "crypto"
+import { fileTypeFromBuffer } from "file-type"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
@@ -125,6 +126,94 @@ function getStoragePath(
     month,
     `${storageKey}_${fileName}`,
   )
+}
+
+// Enhanced MIME type detection with extension normalization and magic byte analysis
+async function detectMimeType(
+  fileName: string,
+  buffer: ArrayBuffer,
+  browserMimeType?: string,
+): Promise<string> {
+  try {
+    // Step 1: Normalize the file extension (case-insensitive)
+    const ext = extname(fileName).toLowerCase()
+    
+    // Step 2: Extension-based MIME mapping with common types
+    const extensionMimeMap: Record<string, string> = {
+      ".pdf": "application/pdf",
+      ".doc": "application/msword",
+      ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ".xls": "application/vnd.ms-excel",
+      ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ".ppt": "application/vnd.ms-powerpoint",
+      ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ".txt": "text/plain",
+      ".csv": "text/csv",
+      ".html": "text/html",
+      ".xml": "application/xml",
+      ".json": "application/json",
+      ".zip": "application/zip",
+      ".rar": "application/vnd.rar",
+      ".7z": "application/x-7z-compressed",
+      ".tar": "application/x-tar",
+      ".gz": "application/gzip",
+      ".mp3": "audio/mpeg",
+      ".wav": "audio/wav",
+      ".mp4": "video/mp4",
+      ".avi": "video/x-msvideo",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png",
+      ".gif": "image/gif",
+      ".bmp": "image/bmp",
+      ".webp": "image/webp",
+      ".svg": "image/svg+xml",
+      ".ico": "image/x-icon",
+    }
+
+    // Step 3: Use magic byte detection from file-type library
+    let detectedType: string | undefined
+    try {
+      const fileTypeResult = await fileTypeFromBuffer(buffer)
+      if (fileTypeResult?.mime) {
+        detectedType = fileTypeResult.mime
+        loggerWithChild().debug(
+          `Magic byte detection for ${fileName}: ${detectedType}`,
+        )
+      }
+    } catch (error) {
+      loggerWithChild().debug(
+        `Magic byte detection failed for ${fileName}: ${getErrorMessage(error)}`,
+      )
+    }
+
+    // Step 4: Determine the best MIME type using fallback strategy
+    let finalMimeType: string
+
+    // Priority: 1. Magic bytes (most reliable), 2. Extension mapping, 3. Browser type, 4. Default
+    if (detectedType) {
+      finalMimeType = detectedType
+    } else if (extensionMimeMap[ext]) {
+      finalMimeType = extensionMimeMap[ext]
+    } else if (browserMimeType && browserMimeType !== "application/octet-stream") {
+      finalMimeType = browserMimeType
+    } else {
+      finalMimeType = "application/octet-stream"
+    }
+
+    loggerWithChild().debug(
+      `MIME detection for ${fileName}: extension=${ext}, magic=${detectedType}, browser=${browserMimeType}, final=${finalMimeType}`,
+    )
+
+    return finalMimeType
+  } catch (error) {
+    loggerWithChild().error(
+      error,
+      `Error in MIME detection for ${fileName}: ${getErrorMessage(error)}`,
+    )
+    // Fallback to browser type or default
+    return browserMimeType || "application/octet-stream"
+  }
 }
 
 // API Handlers
@@ -1181,6 +1270,13 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
+        // Detect MIME type using robust detection with extension normalization and magic bytes
+        const detectedMimeType = await detectMimeType(
+          originalFileName,
+          arrayBuffer,
+          file.type,
+        )
+
         // Create file record in database first
         const item = await db.transaction(async (tx: TxnOrClient) => {
           return await createFileItem(
@@ -1192,7 +1288,7 @@ export const UploadFilesApi = async (c: Context) => {
             fileName,
             storagePath,
             storageKey,
-            file.type || "application/octet-stream",
+            detectedMimeType,
             file.size,
             checksum,
             {
