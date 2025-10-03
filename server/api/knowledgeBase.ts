@@ -4,7 +4,7 @@ import { createReadStream as createFileReadStream } from "node:fs"
 import { join, dirname, extname } from "node:path"
 import { stat } from "node:fs/promises"
 import { stream } from "hono/streaming"
-import { type SelectUser } from "@/db/schema"
+import { userAgentPermissions, type SelectUser } from "@/db/schema"
 import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -39,8 +39,8 @@ import {
   markParentAsProcessing,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
-import { cleanUpAgentDb } from "@/db/agent"
-import type { CollectionItem, File as DbFile } from "@/db/schema"
+import { cleanUpAgentDb, getAgentByExternalId } from "@/db/agent"
+import type {Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { DeleteDocument, GetDocument } from "@/search/vespa"
@@ -346,6 +346,65 @@ export const GetCollectionApi = async (c: Context) => {
     })
   }
 }
+
+export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const collectionId = c.req.param("clId")
+  const agentExternalId = c.req.query("agentExternalId")
+ 
+  if(!agentExternalId || !collectionId){
+    throw new HTTPException(400, { message: "agentExternalId and collectionId are required" })
+  }
+
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
+  
+  const agent=await getAgentByExternalId(db,agentExternalId,user.workspaceId)
+  
+  if(!agent){
+    throw new HTTPException(404, { message: "Agent not found" })
+  }
+  const hasPermission=await db
+    .select()
+    .from(userAgentPermissions)
+    .where(
+      and(
+        eq(userAgentPermissions.userId, user.id),
+        eq(userAgentPermissions.agentId, agent.id),
+        
+      )
+    )
+    .limit(1)
+
+  if (!hasPermission || hasPermission.length === 0) {
+    throw new HTTPException(403, { message: "You don't have shared access to this agent" })
+  }
+  try {
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
+    }
+
+    
+
+    return c.json({ name: collection.name })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to get Collection: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to get Collection",
+    })
+  }
+}
+
 
 // Update a Collection
 export const UpdateCollectionApi = async (c: Context) => {
