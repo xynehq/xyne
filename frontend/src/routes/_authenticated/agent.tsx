@@ -199,7 +199,7 @@ interface User {
   email: string
 }
 
-interface CollectionItem {
+export interface CollectionItem {
   id: string
   collectionId: string
   path?: string
@@ -1579,7 +1579,7 @@ function AgentComponent() {
             const existingUsers = users.filter((user) =>
               data.userEmails.includes(user.email),
             )
-            console.log("fetched agent permission",data);
+          
             setSelectedUsers(existingUsers)
           }
         } catch (error) {

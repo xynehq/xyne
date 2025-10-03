@@ -7,7 +7,11 @@ import { SelectPublicAgent } from "shared/types"
 import { api } from "@/api"
 import { Button } from "./ui/button"
 import { ArrowLeft } from "lucide-react"
-import { availableIntegrationsList, CollectionItem } from "@/routes/_authenticated/agent"
+import {
+  availableIntegrationsList,
+  CollectionItem,
+} from "@/routes/_authenticated/agent"
+
 interface SharedAgentProps {
   agent: SelectPublicAgent
   onBack: () => void
@@ -16,7 +20,6 @@ interface CustomBadgeProps {
   text?: string
   icon?: React.ReactNode
 }
-
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, icon }) => {
   return (
@@ -166,10 +169,16 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
 
             setIntegrationItem(updatedItems)
           }
+          else{
+            setIntegrationItem([])
+          }
           if (data.integrationItems) {
             const { collection, ...rest } = data?.integrationItems
             const integrationApps = Object.keys(rest)
             setIntegrationApps(integrationApps)
+          }
+          else{
+            setIntegrationApps([])
           }
         }
       } catch (err) {
