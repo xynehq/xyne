@@ -144,6 +144,8 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
             const groups = data.integrationItems.collection.groups
 
             const CollectionItems: CollectionItem[] = Object.values(groups).flat() as CollectionItem[]
+
+            
             const updatedItems = await Promise.all(
               CollectionItems.map(async (item) => {
                 if (item.type === "collection") {
