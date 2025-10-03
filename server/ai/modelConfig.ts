@@ -280,16 +280,16 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   websearch: true,
   //   deepResearch: true,
   // },
-  [Models.Vertex_Claude_3_7_Sonnet]: {
-    actualName: "claude-3-7-sonnet@20250219",
-    labelName: ModelDisplayNames.VERTEX_CLAUDE_3_7_SONNET,
-    provider: AIProviders.VertexAI,
-    reasoning: true,
-    websearch: true,
-    deepResearch: true,
-    description:
-      "Advanced reasoning with enhanced performance and longer context.",
-  },
+  // [Models.Vertex_Claude_3_7_Sonnet]: {
+  //   actualName: "claude-3-7-sonnet@20250219",
+  //   labelName: ModelDisplayNames.VERTEX_CLAUDE_3_7_SONNET,
+  //   provider: AIProviders.VertexAI,
+  //   reasoning: true,
+  //   websearch: true,
+  //   deepResearch: true,
+  //   description:
+  //     "Advanced reasoning with enhanced performance and longer context.",
+  // },
   // [Models.Vertex_Claude_3_5_Sonnet_V2]: {
   //   actualName: "claude-3-5-sonnet-v2@20241022",
   //   labelName: ModelDisplayNames.VERTEX_CLAUDE_3_5_SONNET_V2,
@@ -298,15 +298,15 @@ export const MODEL_CONFIGURATIONS: Record<Models, ModelConfiguration> = {
   //   websearch: true,
   //   deepResearch: true,
   // },
-  [Models.Vertex_Claude_3_5_Sonnet]: {
-    actualName: "claude-3-5-sonnet-v2@20241022",
-    labelName: ModelDisplayNames.VERTEX_CLAUDE_3_5_SONNET,
-    provider: AIProviders.VertexAI,
-    reasoning: false,
-    websearch: true,
-    deepResearch: true,
-    description: "Designed for quick responses while ensuring solid reasoning.",
-  },
+  // [Models.Vertex_Claude_3_5_Sonnet]: {
+  //   actualName: "claude-3-5-sonnet-v2@20241022",
+  //   labelName: ModelDisplayNames.VERTEX_CLAUDE_3_5_SONNET,
+  //   provider: AIProviders.VertexAI,
+  //   reasoning: false,
+  //   websearch: true,
+  //   deepResearch: true,
+  //   description: "Designed for quick responses while ensuring solid reasoning.",
+  // },
   // [Models.Vertex_Claude_3_5_Haiku]: {
   //   actualName: "claude-3-5-haiku@20241022",
   //   labelName: ModelDisplayNames.VERTEX_CLAUDE_3_5_HAIKU,
