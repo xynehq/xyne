@@ -52,7 +52,7 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: xynehq
+          username: ${{ secrets.XYNE_DOCKERHUB_USERNAME }}
           password: ${{ secrets.XYNE_DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
@@ -61,5 +61,5 @@ jobs:
           context: .
           push: true
           tags: |
-            xynehq/staging:latest
-            xynehq/staging:${{ steps.get_version.outputs.version }}
+            ${{ secrets.XYNE_DOCKERHUB_USERNAME }}/xynehq/staging:latest
+            ${{ secrets.XYNE_DOCKERHUB_USERNAME }}/xynehq/staging:${{ steps.get_version.outputs.version }}
