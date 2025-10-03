@@ -42,20 +42,9 @@ jobs:
           GH_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
         run: bunx semantic-release --no-ci
 
-      - name: Dump semantic-release outputs
-      # The `if: always()` condition ensures this step runs every time,
-      # so you can see the outputs even if the release step itself has issues.
-        if: always()
-        run: |
-          echo "--- Semantic Release Outputs ---"
-          echo "new_release_published: ${{ steps.semantic.outputs.new_release_published }}"
-          echo "new_release_version: ${{ steps.semantic.outputs.new_release_version }}"
-          echo "---------------------------------"
-
-      - name: Extract release version
+      - name: Extract version from package.json
         id: get_version
-        if: steps.semantic.outputs.new_release_published == 'true'
-        run: echo "version=${{ steps.semantic.outputs.new_release_version }}" >> $GITHUB_OUTPUT
+        run: echo "version=$(jq -r .version ./server/package.json)" >> $GITHUB_OUTPUT
 
       - name: Log in to Docker Hub
         if: steps.semantic.outputs.new_release_published == 'true'
