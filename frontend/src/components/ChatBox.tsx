@@ -3915,29 +3915,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             ) : (
               (() => {
                 const tooltipContent = isSendDisabled ? getSendButtonTooltipContent() : undefined;
-                
-                if (tooltipContent) {
-                  return (
-                    <SmartTooltip content={tooltipContent}>
-                      <button
-                        disabled={isSendDisabled}
-                        onClick={() => handleSendMessage()}
-                        className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {uploadingFilesCount > 0 ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <ArrowRight
-                            className="text-white dark:text-slate-200"
-                            size={16}
-                          />
-                        )}
-                      </button>
-                    </SmartTooltip>
-                  );
-                }
-                
-                return (
+                const button = (
                   <button
                     disabled={isSendDisabled}
                     onClick={() => handleSendMessage()}
@@ -3953,6 +3931,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     )}
                   </button>
                 );
+
+                return tooltipContent ? <SmartTooltip content={tooltipContent}>{button}</SmartTooltip> : button;
               })()
             )}
           </div>
