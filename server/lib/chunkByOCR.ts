@@ -292,13 +292,14 @@ async function callLayoutParsingApi(
   buffer: Buffer,
   fileName: string,
 ): Promise<LayoutParsingApiPayload> {
-  const baseUrl = process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL
-  const apiUrl = baseUrl + LAYOUT_PARSING_API_PATH
+  const baseUrl = (process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL).replace(/\/+$/, '')
+  
+  const apiUrl = baseUrl + '/' + LAYOUT_PARSING_API_PATH.replace(/^\/+/, '')
   const fileType =
     Number.parseInt(process.env.LAYOUT_PARSING_FILE_TYPE ?? "0", 10) || 0
   const visualize = process.env.LAYOUT_PARSING_VISUALIZE === "false"
   const timeoutMs = Number.parseInt(
-    process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "120000",
+    process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "300000",
     10,
   )
 
@@ -352,7 +353,7 @@ async function callLayoutParsingApi(
         `Layout parsing API request failed (${response.status}): ${responseText.slice(0, 200)}`,
       )
     }
-
+    Logger.info("Layout parsing API request succeeded, parsing response")
     const envelope = (await response.json()) as LayoutParsingApiEnvelope
 
     const outputPayload = envelope.outputs?.[0]?.data?.[0]
@@ -375,6 +376,20 @@ async function callLayoutParsingApi(
     }
 
     return result
+  } catch (error) {
+    // Log the layout parsing API failure with context
+    Logger.error(error, `Layout parsing API call failed for file: ${fileName}`, {
+      fileName,
+      fileSize: buffer.length,
+      apiUrl,
+    })
+    
+    // Re-throw with enhanced error message for better debugging
+    if (error instanceof Error) {
+      throw new Error(`Layout parsing API failed for "${fileName}": ${error.message}`)
+    } else {
+      throw new Error(`Layout parsing API failed for "${fileName}": Unknown error occurred`)
+    }
   } finally {
     if (timer) {
       clearTimeout(timer)
