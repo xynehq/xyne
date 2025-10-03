@@ -3,7 +3,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
-import {  SelectPublicAgent } from "shared/types"
+import { SelectPublicAgent } from "shared/types"
 import { api } from "@/api"
 import { Button } from "./ui/button"
 import { ArrowLeft } from "lucide-react"
@@ -24,7 +24,6 @@ interface CollectionItem {
   parentId?: string | null
   path?: string
   isCollectionLevel?: boolean
-  [key: string]: any
 }
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, icon }) => {
@@ -39,7 +38,7 @@ const CustomBadge: React.FC<CustomBadgeProps> = ({ text, icon }) => {
 const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
   const [integrationItem, setIntegrationItem] = useState<CollectionItem[]>([])
   const [integrationApps, setIntegrationApps] = useState<string[]>([])
- 
+
   const currentSelectedIntegrationObjects = useMemo(() => {
     const result: Array<{
       id: string
@@ -136,26 +135,24 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
         ].$get({
           param: { agentExternalId: agent.externalId },
         })
-   
-      
+
         if (response.ok) {
           const data = await response.json()
-       
+
           if (data?.integrationItems?.collection?.groups) {
             const groups = data.integrationItems.collection.groups
 
             const CollectionItems: any[] = Object.values(groups).flat()
-            
-            
+
             const updatedItems = await Promise.all(
               CollectionItems.map(async (item) => {
                 if (item.type === "collection") {
                   try {
                     const res = await api.cl[":clId"]["name"].$get({
-                      param: { clId: item.id},
-                      query:{
-                        agentExternalId:agent.externalId
-                      }
+                      param: { clId: item.id },
+                      query: {
+                        agentExternalId: agent.externalId,
+                      },
                     })
                     if (res.ok) {
                       const { name } = await res.json()
@@ -172,15 +169,14 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
                 return item
               }),
             )
+
             setIntegrationItem(updatedItems)
-            
           }
-          if(data.integrationItems){
-             const { collection, ...rest } = data?.integrationItems
-             const integrationApps = Object.keys(rest)
-             setIntegrationApps(integrationApps)
+          if (data.integrationItems) {
+            const { collection, ...rest } = data?.integrationItems
+            const integrationApps = Object.keys(rest)
+            setIntegrationApps(integrationApps)
           }
-         
         }
       } catch (err) {
         console.error("couldn't fetchAgent", err)
