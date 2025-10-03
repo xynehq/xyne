@@ -20,6 +20,12 @@ interface CustomBadgeProps {
   text?: string
   icon?: React.ReactNode
 }
+enum IntegrationObjectType {
+  FILE = "file",
+  FOLDER = "folder", 
+  INTEGRATION = "integration",
+  COLLECTION = "cl"
+}
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, icon }) => {
   return (
@@ -39,7 +45,7 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
       id: string
       name: string
       icon: React.ReactNode
-      type?: "file" | "folder" | "integration" | "cl"
+      type?: IntegrationObjectType
       clId?: string
       clName?: string
     }> = []
@@ -49,7 +55,7 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
           id: integration.id,
           name: integration.name,
           icon: integration.icon,
-          type: "integration",
+          type: IntegrationObjectType.INTEGRATION,
           clId: integration.id,
           clName: integration.name,
         })
@@ -61,6 +67,7 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
         const clId = integration?.id
         let displayName = integration.name || "integration"
         const itemType = integration.type || "integration"
+
         const itemIcon =
           itemType === "folder" ? (
             <svg
@@ -112,7 +119,7 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
           id: integration.id || "",
           name: displayName,
           icon: itemIcon,
-          type: itemType as "file" | "folder" | "integration" | "cl",
+          type: itemType as IntegrationObjectType,
           clId: clId || "",
           clName: integration.name || "",
         })
