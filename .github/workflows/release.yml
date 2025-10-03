@@ -48,12 +48,14 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Log in to Docker Hub
+        if: steps.check_release.outputs.published == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.XYNE_DOCKERHUB_USERNAME }}
           password: ${{ secrets.XYNE_DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
+        if: steps.check_release.outputs.published == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
