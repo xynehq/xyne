@@ -23,7 +23,8 @@ interface CollectionItem {
   type: "file" | "folder" | "collection"
   parentId?: string | null
   path?: string
-  isCollectionLevel?: boolean
+  isCollectionLevel?: boolean,
+  
 }
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, icon }) => {
@@ -142,8 +143,7 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
           if (data?.integrationItems?.collection?.groups) {
             const groups = data.integrationItems.collection.groups
 
-            const CollectionItems: any[] = Object.values(groups).flat()
-
+            const CollectionItems: CollectionItem[] = Object.values(groups).flat() as CollectionItem[]
             const updatedItems = await Promise.all(
               CollectionItems.map(async (item) => {
                 if (item.type === "collection") {
