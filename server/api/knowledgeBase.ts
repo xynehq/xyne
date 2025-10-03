@@ -45,7 +45,7 @@ import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { DeleteDocument, GetDocument } from "@/search/vespa"
 import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
-import { boss, FileProcessingQueue } from "@/queue/api-server-queue"
+import { boss, FileProcessingQueue, PdfFileProcessingQueue } from "@/queue/api-server-queue"
 import * as crypto from "crypto"
 import { fileTypeFromBuffer } from "file-type"
 import {
@@ -1381,8 +1381,10 @@ export const UploadFilesApi = async (c: Context) => {
         })
 
         // Queue after transaction commits to avoid race condition
+        // Route PDF files to the PDF queue, other files to the general queue
+        const queueName = detectedMimeType === "application/pdf" ? PdfFileProcessingQueue : FileProcessingQueue
         await boss.send(
-          FileProcessingQueue,
+          queueName,
           { fileId: item.id, type: ProcessingJobType.FILE },
           {
             retryLimit: 3,
