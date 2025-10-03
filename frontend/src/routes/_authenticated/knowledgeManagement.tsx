@@ -37,6 +37,7 @@ import {
   deleteCollection,
   deleteItem,
 } from "@/utils/fileUtils"
+import { isValidFile } from "shared/fileUtils"
 import type {
   Collection as CollectionType,
   CollectionItem,
@@ -662,9 +663,21 @@ function KnowledgeManagementContent() {
       return
     }
 
-    // Start the global upload progress
-    const batches = createBatches(selectedFiles, collectionName.trim())
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
+    // Filter out unsupported files before upload
+    const validFiles = selectedFiles.filter(f => isValidFile(f.file))
+
+
+    if (validFiles.length === 0) {
+      toast.error({
+        title: "Upload Error",
+        description: "No valid files to upload. All selected files are unsupported.",
+      })
+      return
+    }
+
+    // Start the global upload progress with only valid files
+    const batches = createBatches(validFiles, collectionName.trim())
+    const files = validFiles.map(f => ({ file: f.file, id: f.id }))
     const { uploadId, abortController } = startUpload(collectionName.trim(), files, batches.length, true)
 
     // Close the modal immediately after starting upload
@@ -858,9 +871,20 @@ function KnowledgeManagementContent() {
       return
     }
 
-    // Start the global upload progress
-    const batches = createBatches(selectedFiles, addingToCollection.name)
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
+    // Filter out unsupported files before upload
+    const validFiles = selectedFiles.filter(f => isValidFile(f.file))
+
+    if (validFiles.length === 0) {
+      toast.error({
+        title: "Upload Error",
+        description: "No valid files to upload. All selected files are unsupported.",
+      })
+      return
+    }
+
+    // Start the global upload progress with only valid files
+    const batches = createBatches(validFiles, addingToCollection.name)
+    const files = validFiles.map(f => ({ file: f.file, id: f.id }))
     const { uploadId, abortController } = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
 
     // Close the modal immediately after starting upload
