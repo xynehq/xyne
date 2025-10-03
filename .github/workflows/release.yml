@@ -33,6 +33,7 @@ jobs:
 
       - name: Run semantic-release
         id: semantic
+        id: semantic
         working-directory: ./server
         env:
           HUSKY: 0
