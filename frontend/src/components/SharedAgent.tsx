@@ -130,6 +130,9 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
   }, [agent, integrationItem, integrationApps])
 
   useEffect(() => {
+    let isCancelled=false
+    setIntegrationItem([])
+    setIntegrationApps([])
     const fetchAgent = async () => {
       try {
         const response = await api.agent[":agentExternalId"][
@@ -137,8 +140,10 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
         ].$get({
           param: { agentExternalId: agent.externalId },
         })
-
-        if (response.ok) {
+        if(isCancelled){
+          return;
+        }
+        if (!isCancelled && response.ok) {
           const data = await response.json()
 
           if (data?.integrationItems?.collection?.groups) {
@@ -147,7 +152,7 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
             const CollectionItems: CollectionItem[] = Object.values(
               groups,
             ).flat() as CollectionItem[]
-
+          
             const updatedItems = await Promise.all(
               CollectionItems.map(async (item) => {
                 if (item.type === "collection") {
@@ -173,8 +178,10 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
                 return item
               }),
             )
+          
 
             setIntegrationItem(updatedItems)
+          
           }
           else{
             setIntegrationItem([])
@@ -189,11 +196,16 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
           }
         }
       } catch (err) {
+        if(!isCancelled){
         console.error("couldn't fetchAgent", err)
+        }
       }
     }
     fetchAgent()
-  }, [agent])
+    return (()=>{
+      isCancelled=true
+    })
+  }, [agent.externalId])
 
   return (
     <div className="w-full flex flex-col items-center">
