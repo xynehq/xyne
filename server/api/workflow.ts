@@ -726,8 +726,8 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       .insert(workflowExecution)
       .values({
         workflowTemplateId: template[0].id,
-        userId: template[0].userId,
-        workspaceId: template[0].workspaceId,
+        userId: user.id,
+        workspaceId: user.workspaceId,
         name:
           requestData.name ||
           `${template[0].name} - ${new Date().toLocaleDateString()}`,
@@ -1402,6 +1402,7 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
 // Form submission with file upload integration
 export const SubmitWorkflowFormApi = async (c: Context) => {
   try {
+    const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const contentType = c.req.header("content-type") || ""
     let stepId: string
     let formData: any = {}
@@ -1676,8 +1677,8 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       .from(workflowTool)
       .where(
         and(
-          eq(workflowTool.workspaceId, stepExecution.workspaceId),
-          eq(workflowTool.userId, stepExecution.userId),
+          eq(workflowTool.workspaceId, user.workspaceId),
+          eq(workflowTool.userId, user.id),
         ),
       )
     const stepName = stepExecution.name || "unknown_step"
