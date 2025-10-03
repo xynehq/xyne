@@ -48,6 +48,7 @@ import {
   AttachmentMetadata,
   FileType,
   ModelConfiguration,
+  UploadStatus,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -206,6 +207,7 @@ interface ChatBoxProps {
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
   hideButtons?: boolean // Add prop to hide mark step as done section
+  uploadStatus?: UploadStatus
 }
 
 const availableSources: SourceItem[] = [
@@ -372,6 +374,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       isAgenticMode = false,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
+      uploadStatus,
     } = props
     // Interface for fetched tools
     interface FetchedTool {
@@ -637,6 +640,38 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       !hideButtons &&
       (overrideIsRagOn ??
         (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
+
+    // Check if document is ready for chat based on upload status
+    const isDocumentReady = !uploadStatus || uploadStatus === UploadStatus.COMPLETED
+    
+    // Determine if send should be disabled
+    const isSendDisabled = isStreaming || 
+                          retryIsStreaming || 
+                          uploadingFilesCount > 0 ||
+                          !isDocumentReady
+
+    // Helper function to get tooltip content for disabled send button
+    const getSendButtonTooltipContent = (): string | undefined => {
+      if (uploadingFilesCount > 0) {
+        return "Uploading files..."
+      }
+      if (uploadStatus && uploadStatus !== UploadStatus.COMPLETED) {
+        switch (uploadStatus) {
+          case UploadStatus.PENDING:
+            return "Upload pending"
+          case UploadStatus.PROCESSING:
+            return "Processing document"
+          case UploadStatus.FAILED:
+            return "Upload failed"
+          default:
+            return "Document not ready"
+        }
+      }
+      if (isStreaming || retryIsStreaming) {
+        return "Generating response"
+      }
+      return undefined
+    }
 
     // localStorage keys for tool selection persistence
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -2696,7 +2731,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                     query.trim().length > 0 &&
                     !isStreaming &&
                     !retryIsStreaming &&
-                    uploadingFilesCount === 0
+                    uploadingFilesCount === 0 &&
+                    isDocumentReady
                   ) {
                     handleSendMessage()
                   }
@@ -3877,22 +3913,27 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 <Square className="text-white dark:text-gray-200" size={16} />
               </button>
             ) : (
-              <button
-                disabled={
-                  isStreaming || retryIsStreaming || uploadingFilesCount > 0
-                }
-                onClick={() => handleSendMessage()}
-                className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
-              >
-                {uploadingFilesCount > 0 ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <ArrowRight
-                    className="text-white dark:text-slate-200"
-                    size={16}
-                  />
-                )}
-              </button>
+              (() => {
+                const tooltipContent = isSendDisabled ? getSendButtonTooltipContent() : undefined;
+                const button = (
+                  <button
+                    disabled={isSendDisabled}
+                    onClick={() => handleSendMessage()}
+                    className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {uploadingFilesCount > 0 ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <ArrowRight
+                        className="text-white dark:text-slate-200"
+                        size={16}
+                      />
+                    )}
+                  </button>
+                );
+
+                return tooltipContent ? <SmartTooltip content={tooltipContent}>{button}</SmartTooltip> : button;
+              })()
             )}
           </div>
         </div>

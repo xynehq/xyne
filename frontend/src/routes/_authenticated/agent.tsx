@@ -52,6 +52,7 @@ import {
   ChevronLeft,
   ChevronRight,
   BookOpen,
+  Eye,
 } from "lucide-react"
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useTheme } from "@/components/ThemeContext"
@@ -76,6 +77,7 @@ import { createAuthEventSource } from "@/hooks/useChatStream"
 import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
+import SharedAgent from "@/components/SharedAgent"
 
 type CurrentResp = {
   resp: string
@@ -130,7 +132,7 @@ interface IntegrationSource {
   icon: React.ReactNode
 }
 
-const availableIntegrationsList: IntegrationSource[] = [
+export const availableIntegrationsList: IntegrationSource[] = [
   {
     id: "googledrive",
     name: "Google Drive",
@@ -197,7 +199,7 @@ interface User {
   email: string
 }
 
-interface CollectionItem {
+export interface CollectionItem {
   id: string
   collectionId: string
   path?: string
@@ -267,7 +269,9 @@ function isItemSelectedWithInheritance(
 function AgentComponent() {
   const { agentId } = Route.useSearch()
   const navigate = useNavigate()
-  const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list")
+  const [viewMode, setViewMode] = useState<
+    "list" | "create" | "edit" | "viewAgent"
+  >("list")
   const [allAgentsList, setAllAgentsList] = useState<SelectPublicAgent[]>([])
   const [madeByMeAgentsList, setMadeByMeAgentsList] = useState<
     SelectPublicAgent[]
@@ -276,6 +280,9 @@ function AgentComponent() {
     SelectPublicAgent[]
   >([])
   const [editingAgent, setEditingAgent] = useState<SelectPublicAgent | null>(
+    null,
+  )
+  const [viewingAgent, setViewingAgent] = useState<SelectPublicAgent | null>(
     null,
   )
   const [selectedChatAgentExternalId, setSelectedChatAgentExternalId] =
@@ -1100,6 +1107,10 @@ function AgentComponent() {
     setEditingAgent(agent)
     setViewMode("create")
   }
+  const handleViewAgent = (agent: SelectPublicAgent) => {
+    setViewingAgent(agent)
+    setViewMode("viewAgent")
+  }
 
   const allAvailableIntegrations = useMemo(() => {
     const dynamicDataSources: IntegrationSource[] = fetchedDataSources.map(
@@ -1111,7 +1122,6 @@ function AgentComponent() {
         icon: getIcon(Apps.DataSource, "datasource", { w: 16, h: 16, mr: 8 }),
       }),
     )
-
     const collectionSources: IntegrationSource[] = fetchedCollections.map(
       (cl) => ({
         id: `cl_${cl.id}`,
@@ -1579,6 +1589,7 @@ function AgentComponent() {
             const existingUsers = users.filter((user) =>
               data.userEmails.includes(user.email),
             )
+          
             setSelectedUsers(existingUsers)
           }
         } catch (error) {
@@ -2036,7 +2047,6 @@ function AgentComponent() {
       }
     }
 
-    // Handle collections
     allAvailableIntegrations.forEach((integration) => {
       if (
         integration.id.startsWith("cl_") &&
@@ -2046,13 +2056,11 @@ function AgentComponent() {
         const selectedItems = selectedItemsInCollection[clId] || new Set()
 
         if (selectedItems.size === 0) {
-          // If no specific items are selected, show the whole CL pill
           result.push({
             ...integration,
             type: "cl",
           })
         } else {
-          // If specific items are selected, show individual file/folder pills
           const itemDetails = selectedItemDetailsInCollection[clId] || {}
 
           selectedItems.forEach((itemId) => {
@@ -2075,7 +2083,7 @@ function AgentComponent() {
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="mr-2 text-gray-700"
+                    className="mr-2 text-blue-600"
                   >
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                   </svg>
@@ -2104,7 +2112,7 @@ function AgentComponent() {
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="mr-2 text-gray-600"
+                    className="mr-2 text-blue-600"
                   >
                     <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
                     <polyline points="13 2 13 9 20 9"></polyline>
@@ -2909,37 +2917,43 @@ function AgentComponent() {
                     return (
                       <>
                         <div className="space-y-0">
-                          {paginatedList.map((agent) => (
-                            <AgentListItem
-                              key={agent.externalId}
-                              agent={agent}
-                              isFavorite={favoriteAgents.includes(
-                                agent.externalId,
-                              )}
-                              isShared={
-                                activeTab === "all" &&
-                                sharedToMeAgentsList.some(
-                                  (sharedAgent) =>
-                                    sharedAgent.externalId === agent.externalId,
-                                )
-                              }
-                              isMadeByMe={madeByMeAgentsList.some(
-                                (madeByMeAgent) =>
-                                  madeByMeAgent.externalId === agent.externalId,
-                              )}
-                              onToggleFavorite={toggleFavorite}
-                              onEdit={() => handleEditAgent(agent)}
-                              onDelete={() =>
-                                handleDeleteAgent(agent.externalId)
-                              }
-                              onClick={() =>
-                                navigate({
-                                  to: "/",
-                                  search: { agentId: agent.externalId },
-                                })
-                              }
-                            />
-                          ))}
+                          {paginatedList.map((agent) => {
+                            const isShared =
+                              (activeTab === "all" ||
+                                activeTab === "shared-to-me") &&
+                              sharedToMeAgentsList.some(
+                                (sharedAgent) =>
+                                  sharedAgent.externalId === agent.externalId,
+                              )
+
+                            return (
+                              <AgentListItem
+                                key={agent.externalId}
+                                agent={agent}
+                                isFavorite={favoriteAgents.includes(
+                                  agent.externalId,
+                                )}
+                                isShared={isShared}
+                                isMadeByMe={madeByMeAgentsList.some(
+                                  (madeByMeAgent) =>
+                                    madeByMeAgent.externalId ===
+                                    agent.externalId,
+                                )}
+                                onToggleFavorite={toggleFavorite}
+                                onEdit={() => handleEditAgent(agent)}
+                                onView={() => handleViewAgent(agent)}
+                                onDelete={() =>
+                                  handleDeleteAgent(agent.externalId)
+                                }
+                                onClick={() =>
+                                  navigate({
+                                    to: "/",
+                                    search: { agentId: agent.externalId },
+                                  })
+                                }
+                              />
+                            )
+                          })}
                         </div>
                         {totalPages > 1 && (
                           <div className="flex justify-between items-center mt-6">
@@ -2978,6 +2992,11 @@ function AgentComponent() {
                 </div>
               </div>
             </div>
+          ) : viewMode === "viewAgent" && viewingAgent ? (
+            <SharedAgent
+              agent={viewingAgent}
+              onBack={() => setViewMode("list")}
+            />
           ) : (
             <>
               <div className="flex items-center mb-4 w-full max-w-xl">
@@ -4578,6 +4597,7 @@ interface AgentListItemProps {
   isFavorite: boolean
   onToggleFavorite: (id: string) => void
   onEdit: () => void
+  onView: () => void
   onDelete: () => void
   onClick: () => void
   isShared?: boolean
@@ -4591,6 +4611,7 @@ function AgentListItem({
   isMadeByMe, // Added
   onToggleFavorite,
   onEdit,
+  onView,
   onDelete,
   onClick,
 }: AgentListItemProps): JSX.Element {
@@ -4629,6 +4650,20 @@ function AgentListItem({
         </div>
       </div>
       <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+        {isShared && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation()
+              onView()
+            }}
+            className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+            title="View Agent"
+          >
+            <Eye size={16} />
+          </Button>
+        )}
         {isMadeByMe && (
           <>
             <Button
