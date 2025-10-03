@@ -641,6 +641,21 @@ function KnowledgeManagementContent() {
     setOpenDropdown(null)
   }
 
+  // Utility function to filter valid files and show error if none are valid
+  const getValidFilesOrShowError = (files: FileUploadSelectedFile[]) => {
+    const validFiles = files.filter(f => isValidFile(f.file))
+    
+    if (validFiles.length === 0) {
+      toast.error({
+        title: "Unsupported Files",
+        description: "No valid files to upload. All selected files are unsupported.",
+      })
+      return null
+    }
+    
+    return validFiles
+  }
+
   const handleUpload = async () => {
     if (selectedFiles.length === 0) {
       toast.error({
@@ -664,16 +679,8 @@ function KnowledgeManagementContent() {
     }
 
     // Filter out unsupported files before upload
-    const validFiles = selectedFiles.filter(f => isValidFile(f.file))
-
-
-    if (validFiles.length === 0) {
-      toast.error({
-        title: "Upload Error",
-        description: "No valid files to upload. All selected files are unsupported.",
-      })
-      return
-    }
+    const validFiles = getValidFilesOrShowError(selectedFiles)
+    if (!validFiles) return
 
     // Start the global upload progress with only valid files
     const batches = createBatches(validFiles, collectionName.trim())
@@ -872,15 +879,8 @@ function KnowledgeManagementContent() {
     }
 
     // Filter out unsupported files before upload
-    const validFiles = selectedFiles.filter(f => isValidFile(f.file))
-
-    if (validFiles.length === 0) {
-      toast.error({
-        title: "Upload Error",
-        description: "No valid files to upload. All selected files are unsupported.",
-      })
-      return
-    }
+    const validFiles = getValidFilesOrShowError(selectedFiles)
+    if (!validFiles) return
 
     // Start the global upload progress with only valid files
     const batches = createBatches(validFiles, addingToCollection.name)
