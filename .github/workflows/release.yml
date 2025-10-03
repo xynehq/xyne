@@ -61,5 +61,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.XYNE_DOCKERHUB_USERNAME }}/xynehq/staging:latest
-            ${{ secrets.XYNE_DOCKERHUB_USERNAME }}/xynehq/staging:${{ steps.get_version.outputs.version }}
+            xynehq/staging:latest
+            xynehq/staging:${{ steps.get_version.outputs.version }}
