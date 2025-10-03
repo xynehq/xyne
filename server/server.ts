@@ -263,6 +263,9 @@ import {
   PollCollectionsStatusApi,
 } from "@/api/knowledgeBase"
 import {
+  InsertFileDocumentApi,
+} from "@/api/documentInsertion"
+import {
   searchKnowledgeBaseSchema,
   SearchKnowledgeBaseApi,
 } from "./api/knowledgeBase/search"
@@ -1131,6 +1134,10 @@ export const AppRoutes = app
   .post("/cl/:clId/items/upload", UploadFilesApi)
   .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
   .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
+  
+  // Document insertion API route
+  .post("/document/:fileId/insert", InsertFileDocumentApi) // Insert file document into Vespa
+  
   .delete("/cl/:clId/items/:itemId", DeleteItemApi)
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)

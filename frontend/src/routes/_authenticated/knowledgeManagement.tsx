@@ -83,7 +83,6 @@ interface Collection {
   isPrivate?: boolean
 }
 
-
 // Memoized Document Viewer Container to prevent re-renders on sidebar resize
 const DocumentViewerContainer = memo(
   ({
@@ -247,15 +246,20 @@ const DocumentViewerContainer = memo(
       selectedDocument?.content,
     ])
 
-    const { highlightText, clearHighlights, scrollToMatch } =
-      useScopedFind(containerRef, {
+    const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
+      containerRef,
+      {
         documentId: selectedDocument?.file.id,
-      })
+      },
+    )
 
     // Expose the highlight functions via the document operations ref
     useEffect(() => {
       if (documentOperationsRef?.current) {
-        documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number) => {
+        documentOperationsRef.current.highlightText = async (
+          text: string,
+          chunkIndex: number,
+        ) => {
           if (!containerRef.current) {
             const container = document.querySelector(
               '[data-container-ref="true"]',
@@ -384,20 +388,29 @@ function KnowledgeManagementContent() {
   // Chat overlay state - only used when isChatHidden is true
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false)
 
-   
   // Vespa data modal state
   const [isVespaModalOpen, setIsVespaModalOpen] = useState(false)
-        
+
   // Use global upload progress context
-  const { currentUpload, startUpload, updateProgress, updateFileStatus, finishUpload } = useUploadProgress()
-  
+  const {
+    currentUpload,
+    startUpload,
+    updateProgress,
+    updateFileStatus,
+    finishUpload,
+  } = useUploadProgress()
+
   // Derived state from global context
   const isUploading = currentUpload?.isUploading || false
-  const batchProgress = currentUpload?.batchProgress || { total: 0, current: 0, batch: 0, totalBatches: 0 }
+  const batchProgress = currentUpload?.batchProgress || {
+    total: 0,
+    current: 0,
+    batch: 0,
+    totalBatches: 0,
+  }
   const uploadingCollectionName = currentUpload?.collectionName || ""
   const isNewCollectionUpload = currentUpload?.isNewCollection || false
   const targetCollectionId = currentUpload?.targetCollectionId
-
 
   // Zoom detection for chat component
   useEffect(() => {
@@ -446,8 +459,6 @@ function KnowledgeManagementContent() {
   }, [])
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
-
-
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -519,7 +530,7 @@ function KnowledgeManagementContent() {
   useEffect(() => {
     if (collections.length === 0) return
 
-    const pollInterval = 5000 
+    const pollInterval = 5000
 
     const pollStatuses = async () => {
       try {
@@ -551,8 +562,9 @@ function KnowledgeManagementContent() {
 
           // Check if any files are still processing or pending
           const hasProcessingFiles = data.items.some(
-            (item) => item.uploadStatus === UploadStatus.PROCESSING ||
-                     item.uploadStatus === UploadStatus.PENDING
+            (item) =>
+              item.uploadStatus === UploadStatus.PROCESSING ||
+              item.uploadStatus === UploadStatus.PENDING,
           )
 
           // Update collections with new statuses
@@ -564,8 +576,10 @@ function KnowledgeManagementContent() {
                   const statusUpdate = item.id ? statusMap.get(item.id) : null
                   return {
                     ...item,
-                    uploadStatus: statusUpdate?.uploadStatus ?? item.uploadStatus,
-                    statusMessage: statusUpdate?.statusMessage ?? item.statusMessage,
+                    uploadStatus:
+                      statusUpdate?.uploadStatus ?? item.uploadStatus,
+                    statusMessage:
+                      statusUpdate?.statusMessage ?? item.statusMessage,
                     retryCount: statusUpdate?.retryCount ?? item.retryCount,
                     children: item.children
                       ? updateItemStatuses(item.children)
@@ -609,21 +623,23 @@ function KnowledgeManagementContent() {
 
     const hasProcessingFiles = collections.some((collection) => {
       const checkItems = (items: FileNode[]): boolean => {
-        return items.some(
-          (item) => {
-            console.log(`Checking file: ${item.name}, status: ${item.uploadStatus}`)
-            return (
-              item.uploadStatus === UploadStatus.PROCESSING ||
-              item.uploadStatus === UploadStatus.PENDING ||
-              (item.children && checkItems(item.children))
-            )
-          }
-        )
+        return items.some((item) => {
+          console.log(
+            `Checking file: ${item.name}, status: ${item.uploadStatus}`,
+          )
+          return (
+            item.uploadStatus === UploadStatus.PROCESSING ||
+            item.uploadStatus === UploadStatus.PENDING ||
+            (item.children && checkItems(item.children))
+          )
+        })
       }
       return checkItems(collection.items)
     })
 
-    console.log(`hasProcessingFiles: ${hasProcessingFiles}, isPolling: ${isPolling}`)
+    console.log(
+      `hasProcessingFiles: ${hasProcessingFiles}, isPolling: ${isPolling}`,
+    )
 
     if (hasProcessingFiles && !isPolling) {
       console.log("Starting polling: Files in processing state detected")
@@ -664,8 +680,13 @@ function KnowledgeManagementContent() {
 
     // Start the global upload progress
     const batches = createBatches(selectedFiles, collectionName.trim())
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
-    const { uploadId, abortController } = startUpload(collectionName.trim(), files, batches.length, true)
+    const files = selectedFiles.map((f) => ({ file: f.file, id: f.id }))
+    const { uploadId, abortController } = startUpload(
+      collectionName.trim(),
+      files,
+      batches.length,
+      true,
+    )
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -683,26 +704,37 @@ function KnowledgeManagementContent() {
         const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
 
         // Mark batch files as uploading
-        batchFiles.forEach(file => {
-          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
+        batchFiles.forEach((file) => {
+          updateFileStatus(uploadId, file.file.name, file.id, "uploading")
         })
 
-        const uploadResult = await uploadFileBatch(batchFiles.map((f) => f.file), cl.id, null, abortController.signal)
+        const uploadResult = await uploadFileBatch(
+          batchFiles.map((f) => f.file),
+          cl.id,
+          null,
+          abortController.signal,
+        )
 
         // Update individual file statuses based on results
         if (uploadResult.results) {
           uploadResult.results.forEach((result: any, index: number) => {
             const file = batchFiles[index]
             if (result.success) {
-              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+              updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
             } else {
-              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
+              updateFileStatus(
+                uploadId,
+                file.file.name,
+                file.id,
+                "failed",
+                result.error || "Upload failed",
+              )
             }
           })
         } else {
           // Fallback: mark all as uploaded if no individual results available
-          batchFiles.forEach(file => {
-            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+          batchFiles.forEach((file) => {
+            updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
           })
         }
 
@@ -802,9 +834,9 @@ function KnowledgeManagementContent() {
       })
     } catch (error) {
       console.error("Upload failed:", error)
-      
+
       // Check if the error is due to cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         toast({
           title: "Upload Cancelled",
           description: "File upload was cancelled by user.",
@@ -860,8 +892,14 @@ function KnowledgeManagementContent() {
 
     // Start the global upload progress
     const batches = createBatches(selectedFiles, addingToCollection.name)
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
-    const { uploadId, abortController } = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
+    const files = selectedFiles.map((f) => ({ file: f.file, id: f.id }))
+    const { uploadId, abortController } = startUpload(
+      addingToCollection.name,
+      files,
+      batches.length,
+      false,
+      addingToCollection.id,
+    )
 
     // Close the modal immediately after starting upload
     handleCloseModal()
@@ -877,12 +915,12 @@ function KnowledgeManagementContent() {
         const batchFiles = batches[i].map((f) => ({ file: f.file, id: f.id }))
 
         // Mark batch files as uploading
-        batchFiles.forEach(file => {
-          updateFileStatus(uploadId, file.file.name, file.id, 'uploading')
+        batchFiles.forEach((file) => {
+          updateFileStatus(uploadId, file.file.name, file.id, "uploading")
         })
-        
+
         const uploadedResult = await uploadFileBatch(
-          batchFiles.map(f => f.file),
+          batchFiles.map((f) => f.file),
           addingToCollection.id,
           targetFolder?.id,
           abortController.signal,
@@ -893,15 +931,21 @@ function KnowledgeManagementContent() {
           uploadedResult.results.forEach((result: any, index: number) => {
             const file = batchFiles[index]
             if (result.success) {
-              updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+              updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
             } else {
-              updateFileStatus(uploadId, file.file.name, file.id, 'failed', result.error || 'Upload failed')
+              updateFileStatus(
+                uploadId,
+                file.file.name,
+                file.id,
+                "failed",
+                result.error || "Upload failed",
+              )
             }
           })
         } else {
           // Fallback: mark all as uploaded if no individual results available
-          batchFiles.forEach(file => {
-            updateFileStatus(uploadId, file.file.name, file.id, 'uploaded')
+          batchFiles.forEach((file) => {
+            updateFileStatus(uploadId, file.file.name, file.id, "uploaded")
           })
         }
 
@@ -1002,9 +1046,9 @@ function KnowledgeManagementContent() {
       handleCloseModal()
     } catch (error) {
       console.error("Add files failed:", error)
-      
+
       // Check if the error is due to cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         toast({
           title: "Upload Cancelled",
           description: "File upload was cancelled by user.",
@@ -1431,7 +1475,7 @@ function KnowledgeManagementContent() {
             try {
               await documentOperationsRef.current.highlightText(
                 chunkContent.chunkContent,
-                newChunkIndex
+                newChunkIndex,
               )
             } catch (error) {
               console.error(
@@ -1682,7 +1726,8 @@ function KnowledgeManagementContent() {
                                             item.lastUpdatedByEmail ||
                                             user?.email ||
                                             "Unknown",
-                                          uploadStatus: item.uploadStatus as UploadStatus,
+                                          uploadStatus:
+                                            item.uploadStatus as UploadStatus,
                                           statusMessage: item.statusMessage,
                                           retryCount: item.retryCount,
                                           isOpen: false,
@@ -1763,31 +1808,33 @@ function KnowledgeManagementContent() {
               </div>
               <div className="mt-12">
                 {/* Show skeleton loader when uploading to NEW collection */}
-                {isUploading && batchProgress.total > 0 && isNewCollectionUpload && (
-                  <div className="mb-8">
-                    <div className="flex justify-between items-center mb-4">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                          {uploadingCollectionName}
-                        </h2>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          uploading files...
-                        </span>
+                {isUploading &&
+                  batchProgress.total > 0 &&
+                  isNewCollectionUpload && (
+                    <div className="mb-8">
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                            {uploadingCollectionName}
+                          </h2>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            uploading files...
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {batchProgress.current} / {batchProgress.total} files
+                          processed
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {batchProgress.current} / {batchProgress.total} files
-                        processed
-                      </div>
+                      <FileUploadSkeleton
+                        totalFiles={batchProgress.total}
+                        processedFiles={batchProgress.current}
+                        currentBatch={batchProgress.batch}
+                        totalBatches={batchProgress.totalBatches}
+                        showHeaders={true}
+                      />
                     </div>
-                    <FileUploadSkeleton
-                      totalFiles={batchProgress.total}
-                      processedFiles={batchProgress.current}
-                      currentBatch={batchProgress.batch}
-                      totalBatches={batchProgress.totalBatches}
-                      showHeaders={true}
-                    />
-                  </div>
-                )}
+                  )}
 
                 {collections.map((collection) => (
                   <div key={collection.id} className="mb-8">
@@ -1942,8 +1989,106 @@ function KnowledgeManagementContent() {
                               }
                             }
                           }}
-                          onRetry={(node, path) => {
-                            // TODO: Implement retry logic here
+                          onRetry={async (node, path) => {
+                            if (
+                              node.type !== "file" ||
+                              node.uploadStatus !== UploadStatus.FAILED ||
+                              !node.id
+                            ) {
+                              return
+                            }
+
+                            const updateNodeStatusInState = (
+                              status: UploadStatus,
+                              message?: string,
+                            ) => {
+                              setCollections((prev) => {
+                                const updateRecursively = (
+                                  nodes: FileNode[],
+                                ): FileNode[] => {
+                                  return nodes.map((n) => {
+                                    if (n.id === node.id) {
+                                      return {
+                                        ...n,
+                                        uploadStatus: status,
+                                        statusMessage: message,
+                                      }
+                                    }
+                                    if (n.children) {
+                                      return {
+                                        ...n,
+                                        children: updateRecursively(n.children),
+                                      }
+                                    }
+                                    return n
+                                  })
+                                }
+
+                                return prev.map((c) =>
+                                  c.id !== collection.id
+                                    ? c
+                                    : {
+                                        ...c,
+                                        items: updateRecursively(c.items),
+                                      },
+                                )
+                              })
+                            }
+
+                            try {
+                              updateNodeStatusInState(
+                                UploadStatus.PROCESSING,
+                                "Retrying...",
+                              )
+
+                              const response = await api.document[
+                                ":fileId"
+                              ].insert.$post({
+                                param: { fileId: node.id },
+                              })
+
+                              if (!response.ok) {
+                                const errorBody = await response.text()
+                                throw new Error(
+                                  `API returned ${response.status}: ${errorBody}`,
+                                )
+                              }
+
+                              const result = await response.json()
+                              if (
+                                !result.success ||
+                                result.status !== "completed"
+                              ) {
+                                throw new Error(
+                                  result.message ||
+                                    "Processing failed after successful API call.",
+                                )
+                              }
+
+                              toast({
+                                title: "File processed successfully",
+                                description: `${node.name} has been processed and added to the knowledge base.`,
+                              })
+                              updateNodeStatusInState(
+                                UploadStatus.COMPLETED,
+                                undefined,
+                              )
+                            } catch (error) {
+                              console.error("Retry failed:", error)
+                              const errorMessage =
+                                error instanceof Error
+                                  ? error.message
+                                  : `Failed to process ${node.name}. Please try again.`
+                              toast({
+                                title: "Retry failed",
+                                description: errorMessage,
+                                variant: "destructive",
+                              })
+                              updateNodeStatusInState(
+                                UploadStatus.FAILED,
+                                "Retry failed",
+                              )
+                            }
                           }}
                           onToggle={async (node) => {
                             if (node.type !== "folder") return
@@ -1989,7 +2134,8 @@ function KnowledgeManagementContent() {
                                                 item.lastUpdatedByEmail ||
                                                 user?.email ||
                                                 "Unknown",
-                                              uploadStatus: item.uploadStatus as UploadStatus,
+                                              uploadStatus:
+                                                item.uploadStatus as UploadStatus,
                                               statusMessage: item.statusMessage,
                                               retryCount: item.retryCount,
                                               isOpen: false,
@@ -2027,18 +2173,18 @@ function KnowledgeManagementContent() {
                           }}
                         />
                         {/* Show skeleton for existing collection uploads */}
-                        {isUploading && 
-                         !isNewCollectionUpload && 
-                         targetCollectionId === collection.id && 
-                         batchProgress.total > 0 && (
-                          <FileUploadSkeleton
-                            totalFiles={batchProgress.total}
-                            processedFiles={batchProgress.current}
-                            currentBatch={batchProgress.batch}
-                            totalBatches={batchProgress.totalBatches}
-                            showHeaders={false}
-                          />
-                        )}
+                        {isUploading &&
+                          !isNewCollectionUpload &&
+                          targetCollectionId === collection.id &&
+                          batchProgress.total > 0 && (
+                            <FileUploadSkeleton
+                              totalFiles={batchProgress.total}
+                              processedFiles={batchProgress.current}
+                              currentBatch={batchProgress.batch}
+                              totalBatches={batchProgress.totalBatches}
+                              showHeaders={false}
+                            />
+                          )}
                       </>
                     )}
                   </div>
