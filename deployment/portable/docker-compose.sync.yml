@@ -1,34 +1,16 @@
 services:
-  app-storage-init:
-    image: busybox
-    volumes:
-      - ${XYNE_DATA_DIR:-./data}/app-uploads:/app-uploads
-      - ${XYNE_DATA_DIR:-./data}/app-logs:/app-logs
-      - ${XYNE_DATA_DIR:-./data}/app-migrations:/app-migrations
-      - ${XYNE_DATA_DIR:-./data}/app-downloads:/app-downloads
-    command: |
-      sh -c '
-        mkdir -p /app-uploads /app-logs /app-migrations /app-downloads
-        chown -R 1000:1000 /app-uploads /app-logs /app-migrations /app-downloads
-        chmod 755 /app-uploads /app-logs /app-migrations /app-downloads
-      '
-    user: "0:0"
-    networks:
-      - xyne
-
-  app:
+  app-sync:
     image: xyne
-    container_name: xyne-app
+    container_name: xyne-app-sync
     build:
       context: ../..
       dockerfile: Dockerfile
     user: "${DOCKER_UID}:${DOCKER_GID}"
     ports:
-      - "${PORT:-3000}:${PORT:-3000}"
-      - "3001:3001"
+      - "3010:3010"
     depends_on:
-      app-storage-init:
-        condition: service_completed_successfully
+      app:
+        condition: service_healthy
       xyne-db:
         condition: service_healthy
       vespa:
@@ -51,8 +33,9 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    command: ["bun", "run", "dev:sync"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
       interval: 30s
       timeout: 10s
       retries: 3

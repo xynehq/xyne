@@ -101,7 +101,7 @@ services:
     container_name: vespa-deploy
     depends_on:
       vespa:
-        condition: service_healthy
+        condition: service_started
     environment:
       - VESPA_CONFIGSERVERS=vespa
     volumes:
