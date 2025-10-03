@@ -635,10 +635,14 @@ internalMetricRouter.post("/update-metrics", handleUpdatedMetrics)
 const handleAppValidation = async (c: Context) => {
   const authHeader = c.req.header("Authorization")
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  if (!authHeader) {
     throw new HTTPException(401, {
-      message: "Missing or malformed Authorization header",
+      message: "Missing Authorization header",
     })
+  }
+
+  if (!authHeader.startsWith("Bearer ")) {
+    throw new HTTPException(400, { message: "Malformed Authorization header" })
   }
 
   const token = authHeader.slice("Bearer ".length).trim()
@@ -661,7 +665,7 @@ const handleAppValidation = async (c: Context) => {
 
   const email = user?.email
   if (!email) {
-    throw new HTTPException(500, {
+    throw new HTTPException(400, {
       message: "Could not get the email of the user",
     })
   }
@@ -720,9 +724,9 @@ const handleAppValidation = async (c: Context) => {
   return c.json(
     {
       success: false,
-      message: "No existing User found",
+      message: "User is not provisioned / access forbidden",
     },
-    404,
+    403,
   )
 }
 
@@ -1390,13 +1394,13 @@ app.get(
 
     const email = user?.email
     if (!email) {
-      throw new HTTPException(500, {
+      throw new HTTPException(400, {
         message: "Could not get the email of the user",
       })
     }
 
     if (!user?.verified_email) {
-      throw new HTTPException(500, { message: "User email is not verified" })
+      throw new HTTPException(403, { message: "User email is not verified" })
     }
     // hosted domain
     // @ts-ignore

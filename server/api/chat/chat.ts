@@ -359,7 +359,7 @@ export const GetChatTraceApi = async (c: Context) => {
 
     if (!trace) {
       // Return 404 if the trace is not found for the given IDs
-      throw new HTTPException(500, { message: "Chat trace not found" })
+      throw new HTTPException(404, { message: "Chat trace not found" })
     }
 
     // The traceJson is likely already a JSON object/string in the DB, return it directly
@@ -7230,7 +7230,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
     email = sub || ""
 
     if (!email) {
-      throw new HTTPException(401, { message: "Unauthorized" })
+      throw new HTTPException(400, { message: "Email is required" })
     }
 
     const availableModels = getAvailableModels({

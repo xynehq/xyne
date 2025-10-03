@@ -2297,7 +2297,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
     const userEmail = jwtPayload?.sub
     if (!userEmail) {
-      throw new HTTPException(401, { message: "Unauthorized - no user email" })
+      throw new HTTPException(400, { message: "Could not get the email of the user" })
     }
 
     // Get workspace ID from JWT payload

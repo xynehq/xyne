@@ -804,7 +804,7 @@ export const UpdateConnectorStatus = async (c: Context) => {
   }: { connectorId: string; status: ConnectorStatus } = c.req.valid("form")
   const connector = await getConnectorByExternalId(db, connectorId, user.id)
   if (!connector) {
-    throw new HTTPException(500, {
+    throw new HTTPException(400, {
       message: "could not get connector",
     })
   }
