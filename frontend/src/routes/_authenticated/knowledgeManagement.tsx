@@ -366,6 +366,7 @@ function KnowledgeManagementContent() {
     file: FileNode
     collection: Collection
     content?: Blob
+    uploadStatus?: UploadStatus
   } | null>(null)
   const [loadingDocument, setLoadingDocument] = useState(false)
 
@@ -1290,6 +1291,7 @@ function KnowledgeManagementContent() {
         file,
         collection,
         content: blob,
+        uploadStatus: file.uploadStatus,
       })
     } catch (error) {
       console.error("Error loading document:", error)
@@ -1543,6 +1545,7 @@ function KnowledgeManagementContent() {
                     initialChatId={currentInitialChatId}
                     onChatCreated={handleChatCreated}
                     onChunkIndexChange={handleChunkIndexChange}
+                    uploadStatus={selectedDocument.uploadStatus}
                   />
                 </div>
               ) : (
@@ -1604,6 +1607,7 @@ function KnowledgeManagementContent() {
                       initialChatId={currentInitialChatId}
                       onChatCreated={handleChatCreated}
                       onChunkIndexChange={handleChunkIndexChange}
+                      uploadStatus={selectedDocument.uploadStatus}
                     />
                   </div>
                 </div>
