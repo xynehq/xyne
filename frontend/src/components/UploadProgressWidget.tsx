@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useUploadProgress } from '@/contexts/UploadProgressContext'
+import { useUploadProgress } from '@/store'
 import { Button } from '@/components/ui/button'
 import { X, ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
 import { ConfirmModal } from '@/components/ui/confirmModal'
