@@ -42,6 +42,21 @@ jobs:
           GH_TOKEN: ${{ secrets.XYNE_GH_TOKEN }}
         run: bunx semantic-release --no-ci
 
+      - name: Check if new release was published
+        id: check_release
+        run: |
+            # Fetch tags from origin to ensure we see tags created by semantic-release
+            git fetch --tags origin
+            # Get the latest tag reachable from HEAD
+            TAG=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "")
+            if [ -n "$TAG" ]; then
+              echo "published=true" >> $GITHUB_OUTPUT
+              echo "New release tag found: $TAG"
+            else
+              echo "published=false" >> $GITHUB_OUTPUT
+              echo "No new release tag on HEAD"
+            fi
+
       - name: Extract version from package.json
         id: get_version
         run: |
@@ -50,12 +65,14 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Log in to Docker Hub
+        if: steps.check_release.outputs.published == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.XYNE_DOCKERHUB_USERNAME }}
           password: ${{ secrets.XYNE_DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
+        if: steps.check_release.outputs.published == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
