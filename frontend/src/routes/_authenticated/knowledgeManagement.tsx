@@ -1938,8 +1938,97 @@ function KnowledgeManagementContent() {
                               }
                             }
                           }}
-                          onRetry={(node, path) => {
-                            // TODO: Implement retry logic here
+                          onRetry={async (node, path) => {
+                            // Only retry failed files
+                            if (node.type !== "file" || node.uploadStatus !== UploadStatus.FAILED || !node.id) {
+                              return
+                            }
+
+                            try {
+                              // Set status to processing
+                              const updatedCollections = [...collections]
+                              const coll = updatedCollections.find((c) => c.id === collection.id)
+                              if (coll) {
+                                const updateNodeStatus = (nodes: FileNode[]): FileNode[] => {
+                                  return nodes.map(n => {
+                                    if (n.id === node.id) {
+                                      return { ...n, uploadStatus: UploadStatus.PROCESSING, statusMessage: "Retrying..." }
+                                    }
+                                    if (n.children) {
+                                      return { ...n, children: updateNodeStatus(n.children) }
+                                    }
+                                    return n
+                                  })
+                                }
+                                coll.items = updateNodeStatus(coll.items)
+                                setCollections(updatedCollections)
+                              }
+
+                              // Call our new document insertion API
+                              const response = await api.document[":fileId"].insert.$post({
+                                param: { fileId: node.id }
+                              })
+
+                              if (response.ok) {
+                                const result = await response.json()
+                                
+                                // Check if processing actually succeeded
+                                if (result.success && result.status === "completed") {
+                                  toast({
+                                    title: "File processed successfully",
+                                    description: `${node.name} has been processed and added to the knowledge base.`,
+                                  })
+
+                                  // Update status to completed
+                                  if (coll) {
+                                    const updateNodeStatus = (nodes: FileNode[]): FileNode[] => {
+                                      return nodes.map(n => {
+                                        if (n.id === node.id) {
+                                          return { ...n, uploadStatus: UploadStatus.COMPLETED, statusMessage: undefined }
+                                        }
+                                        if (n.children) {
+                                          return { ...n, children: updateNodeStatus(n.children) }
+                                        }
+                                        return n
+                                      })
+                                    }
+                                    coll.items = updateNodeStatus(coll.items)
+                                    setCollections([...updatedCollections])
+                                  }
+                                } else {
+                                  // Processing failed even though API call succeeded
+                                  throw new Error(result.message || "Processing failed")
+                                }
+                              } else {
+                                throw new Error(`API returned ${response.status}`)
+                              }
+                            } catch (error) {
+                              console.error("Retry failed:", error)
+                              toast({
+                                title: "Retry failed",
+                                description: `Failed to process ${node.name}. Please try again.`,
+                                variant: "destructive",
+                              })
+
+                              // Reset status back to failed
+                              const updatedCollections = [...collections]
+                              const coll = updatedCollections.find((c) => c.id === collection.id)
+                              if (coll) {
+                                const updateNodeStatus = (nodes: FileNode[]): FileNode[] => {
+                                  return nodes.map(n => {
+                                    if (n.id === node.id) {
+                                      return { ...n, uploadStatus: UploadStatus.FAILED, statusMessage: "Retry failed" }
+                                    }
+                                    if (n.children) {
+                                      return { ...n, children: updateNodeStatus(n.children) }
+                                    }
+                                    return n
+                                  })
+                                }
+                                coll.items = updateNodeStatus(coll.items)
+                                setCollections(updatedCollections)
+                              }
+                            }
                           }}
                           onToggle={async (node) => {
                             if (node.type !== "folder") return

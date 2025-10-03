@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { FileNode } from "@/utils/fileUtils"
+import { UploadStatus } from "shared/types"
 
 // Helper function to truncate email smartly
 const truncateEmail = (email: string, maxLength: number = 20): string => {
@@ -69,13 +70,13 @@ const UploadStatusIndicator = ({
         <Tooltip>
           <TooltipTrigger asChild>
             <div>
-              {uploadStatus === "completed" && (
+              {uploadStatus === UploadStatus.COMPLETED && (
                 <Check size={14} className="text-green-600 dark:text-green-400" />
               )}
-              {(uploadStatus === "processing" || uploadStatus === "pending") && (
+              {(uploadStatus === UploadStatus.PROCESSING || uploadStatus === UploadStatus.PENDING) && (
                 <Loader2 size={14} className="text-black dark:text-white animate-spin" />
               )}
-              {uploadStatus === "failed" && (
+              {uploadStatus === UploadStatus.FAILED && (
                 <AlertOctagon size={14} className="text-red-500" />
               )}
             </div>
@@ -233,7 +234,7 @@ const FileNodeComponent = ({
                   }}
                 />
               )}
-              {(node.retryCount ?? 0) > 3 && onRetry && (
+              {node.uploadStatus === UploadStatus.FAILED && node.type === "file" && onRetry && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
