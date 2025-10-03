@@ -379,10 +379,18 @@ function AgentComponent() {
     folderId: string,
     folderName: string,
   ) => {
-    setNavigationPath((prev) => [
-      ...prev,
-      { id: folderId, name: folderName, type: "drive-folder" },
-    ])
+    
+    
+    setNavigationPath((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].id === folderId) {
+        return prev;
+      }
+      return [
+        ...prev,
+        { id: folderId, name: folderName, type: "drive-folder" },
+      ];
+    });
+  
     setIsLoadingItems(true)
     try {
       const response = await api.search.driveitem.$post({
@@ -3327,6 +3335,7 @@ function AgentComponent() {
                                   {(() => {
                                     // Show up to 3 items in the breadcrumb
                                     if (navigationPath.length > 0) {
+                                     
                                       // Get the last 3 items or all if less than 3
                                       const itemsToShow =
                                         navigationPath.length <= 3
@@ -3336,7 +3345,7 @@ function AgentComponent() {
                                             )
 
                                       return itemsToShow.map((item, index) => (
-                                        <React.Fragment key={item.id}>
+                                        <React.Fragment key={`${item.id}-${index}`}>
                                           <span className="mx-2 flex-shrink-0">
                                             /
                                           </span>
@@ -3344,15 +3353,18 @@ function AgentComponent() {
                                             className={`max-w-[60px] truncate ${index < itemsToShow.length - 1 ? "cursor-pointer hover:text-gray-800 dark:hover:text-gray-100" : "font-medium"}`}
                                             title={item.name}
                                             onClick={() => {
+                                              
                                               if (
                                                 index <
                                                 itemsToShow.length - 1
                                               ) {
+                                              
                                                 // Navigate to this item
                                                 const newPathIndex =
                                                   navigationPath.findIndex(
                                                     (p) => p.id === item.id,
                                                   )
+                                               
                                                 if (newPathIndex >= 0) {
                                                   const newPath =
                                                     navigationPath.slice(
@@ -3360,6 +3372,7 @@ function AgentComponent() {
                                                       newPathIndex + 1,
                                                     )
                                                   setNavigationPath(newPath)
+                                                 
 
                                                   if (
                                                     newPath.length === 1 &&
@@ -3368,7 +3381,7 @@ function AgentComponent() {
                                                   ) {
                                                     setCurrentItems([])
                                                   } else if (
-                                                    newPath.length > 1
+                                                    newPath.length > 1 && newPath[0].type==="cl-root"
                                                   ) {
                                                     const clId = newPath.find(
                                                       (item) =>
@@ -3419,6 +3432,17 @@ function AgentComponent() {
                                                             false,
                                                           ),
                                                         )
+                                                    }
+                                                  }
+                                                  else if(newPath.length === 1 && newPath[0].type === "drive-root"){
+                                                    
+                                                       navigateToGoogleDrive();
+                                                  }
+                                                  else if(newPath.length>1 && newPath[0].type === "drive-root"){
+                                                    if(newPath[newPath.length-1].type === "drive-folder"){
+                                                    const FolderId=newPath[newPath.length-1].id;
+                                                    const FolderName=newPath[newPath.length-1].name
+                                                    navigateToDriveFolder(FolderId,FolderName);
                                                     }
                                                   }
                                                 }
