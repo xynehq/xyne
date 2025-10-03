@@ -288,24 +288,24 @@ export const modelDetailsMap: Record<
       },
     },
   },
-  [getActualModelName(Models.Vertex_Claude_3_5_Sonnet)]: {
-    name: "vertex-claude-3-5-sonnet",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.003,
-        pricePerThousandOutputTokens: 0.015,
-      },
-    },
-  },
-  [getActualModelName(Models.Vertex_Claude_3_7_Sonnet)]: {
-    name: "vertex-claude-3-7-sonnet",
-    cost: {
-      onDemand: {
-        pricePerThousandInputTokens: 0.003,
-        pricePerThousandOutputTokens: 0.015,
-      },
-    },
-  },
+  // [getActualModelName(Models.Vertex_Claude_3_5_Sonnet)]: {
+  //   name: "vertex-claude-3-5-sonnet",
+  //   cost: {
+  //     onDemand: {
+  //       pricePerThousandInputTokens: 0.003,
+  //       pricePerThousandOutputTokens: 0.015,
+  //     },
+  //   },
+  // },
+  // [getActualModelName(Models.Vertex_Claude_3_7_Sonnet)]: {
+  //   name: "vertex-claude-3-7-sonnet",
+  //   cost: {
+  //     onDemand: {
+  //       pricePerThousandInputTokens: 0.003,
+  //       pricePerThousandOutputTokens: 0.015,
+  //     },
+  //   },
+  // },
   [getActualModelName(Models.Vertex_Claude_Sonnet_4)]:{
     name:"vertex-claude-sonnet-4",
     cost:{
