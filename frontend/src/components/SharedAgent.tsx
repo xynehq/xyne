@@ -7,7 +7,7 @@ import { SelectPublicAgent } from "shared/types"
 import { api } from "@/api"
 import { Button } from "./ui/button"
 import { ArrowLeft } from "lucide-react"
-import { availableIntegrationsList } from "@/routes/_authenticated/agent"
+import { availableIntegrationsList, CollectionItem } from "@/routes/_authenticated/agent"
 interface SharedAgentProps {
   agent: SelectPublicAgent
   onBack: () => void
@@ -17,15 +17,6 @@ interface CustomBadgeProps {
   icon?: React.ReactNode
 }
 
-interface CollectionItem {
-  id: string
-  name: string
-  type: "file" | "folder" | "collection"
-  parentId?: string | null
-  path?: string
-  isCollectionLevel?: boolean,
-  
-}
 
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, icon }) => {
   return (
@@ -143,9 +134,10 @@ const SharedAgent: React.FC<SharedAgentProps> = ({ agent, onBack }) => {
           if (data?.integrationItems?.collection?.groups) {
             const groups = data.integrationItems.collection.groups
 
-            const CollectionItems: CollectionItem[] = Object.values(groups).flat() as CollectionItem[]
+            const CollectionItems: CollectionItem[] = Object.values(
+              groups,
+            ).flat() as CollectionItem[]
 
-            
             const updatedItems = await Promise.all(
               CollectionItems.map(async (item) => {
                 if (item.type === "collection") {
