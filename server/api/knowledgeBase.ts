@@ -35,6 +35,8 @@ import {
   generateFolderVespaDocId,
   generateCollectionVespaDocId,
   getCollectionFilesVespaIds,
+  getCollectionItemsStatusByCollections,
+  markParentAsProcessing,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
 import { cleanUpAgentDb, getAgentByExternalId } from "@/db/agent"
@@ -1729,6 +1731,47 @@ export const GetFileContentApi = async (c: Context) => {
     )
     throw new HTTPException(500, {
       message: "Failed to get file content",
+    })
+  }
+}
+
+// Poll collection items status for multiple collections
+export const PollCollectionsStatusApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+
+  // Get user from database
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
+
+  try {
+    const body = await c.req.json()
+    const collectionIds = body.collectionIds as string[]
+
+    if (!collectionIds || !Array.isArray(collectionIds) || collectionIds.length === 0) {
+      throw new HTTPException(400, { message: "collectionIds array is required" })
+    }
+
+    // Fetch items only for collections owned by the user (enforced in DB function)
+    const items = await getCollectionItemsStatusByCollections(
+      db,
+      collectionIds,
+      user.id,
+    )
+
+    return c.json({ items })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to poll collections status: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to poll collections status",
     })
   }
 }

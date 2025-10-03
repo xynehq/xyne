@@ -147,11 +147,9 @@ export class FileProcessorService {
       // Log the processing failure with error details and context
       Logger.error(error, `File processing failed for ${fileName} (${baseMimeType}, ${buffer.length} bytes)`)
       
-      // Create basic chunk on processing error
-      chunks = [
-        `File: ${fileName}, Type: ${baseMimeType}, Size: ${buffer.length} bytes`,
-      ]
-      chunks_pos = [0]
+      // Re-throw the error to ensure proper error handling upstream
+      // This allows callers to handle failures appropriately (retries, status updates, etc.)
+      throw new Error(`Failed to process file "${fileName}": ${getErrorMessage(error)}`)
     }
 
     // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
