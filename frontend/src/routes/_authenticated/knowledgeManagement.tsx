@@ -2010,6 +2010,21 @@ function KnowledgeManagementContent() {
                                       },
                                 )
                               })
+
+                              setSelectedDocument((prevSelected) => {
+                                if (!prevSelected || prevSelected.file.id !== node.id) {
+                                  return prevSelected
+                                }
+                                return {
+                                  ...prevSelected,
+                                  uploadStatus: status,
+                                  file: {
+                                    ...prevSelected.file,
+                                    uploadStatus: status,
+                                    statusMessage: message,
+                                  },
+                                }
+                              })
                             }
 
                             try {
