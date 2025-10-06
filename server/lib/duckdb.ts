@@ -28,7 +28,7 @@ export const querySheetChunks = async (
   );
 
   // Create a temporary CSV file using streaming for large data
-  const tmpDir = tmpdir().replace(/'/g, "''");
+  const tmpDir = tmpdir()
   const tempFilePath = join(tmpDir, `duckdb_temp_${Date.now()}.tsv`);
   Logger.debug(`Writing ${cleanedSheetChunks.length} chunks to temporary file: ${tempFilePath}`);
   
@@ -69,14 +69,13 @@ export const querySheetChunks = async (
     Logger.debug(`Creating VIEW ${tableName} over CSV file: ${tempFilePath}`);
     
     // 1) Create a VIEW over the CSV (no materialization)
-    const escapedPath = tempFilePath.replace(/'/g, "''");
-    Logger.debug(`Escaped path: ${escapedPath}`);
+    Logger.debug(`Escaped path: ${tempFilePath}`);
     
     try {
       await connection.run(`
         CREATE OR REPLACE VIEW ${tableName} AS
         SELECT * FROM read_csv(
-          '${escapedPath}',
+          '${tempFilePath}',
           delim='\t', 
           header=true, 
           quote='"',

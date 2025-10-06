@@ -2186,6 +2186,17 @@ export const getSheetsListFromOneSpreadsheet = async (
   spreadsheet: drive_v3.Schema$File,
   userEmail: string,
 ): Promise<VespaFileWithDrivePermission[]> => {
+  // Early size check before fetching spreadsheet data
+  const sizeInBytes = spreadsheet.size ? parseInt(spreadsheet.size, 10) : 0
+  if (!isNaN(sizeInBytes) && sizeInBytes > MAX_GD_SHEET_SIZE) {
+    const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2)
+    const maxSizeInMB = (MAX_GD_SHEET_SIZE / (1024 * 1024)).toFixed(2)
+    loggerWithChild({ email: userEmail }).warn(
+      `Ignoring ${spreadsheet.name} as its size (${sizeInMB} MB) exceeds the limit of ${maxSizeInMB} MB`,
+    )
+    return []
+  }
+
   const sheetsArr = []
   try {
     const spreadSheetData = await getSpreadsheet(
@@ -2194,17 +2205,6 @@ export const getSheetsListFromOneSpreadsheet = async (
       client,
       userEmail,
     )
-
-    // Early size check before fetching spreadsheet data
-    const sizeInBytes = spreadsheet.size ? parseInt(spreadsheet.size, 10) : 0
-    if (!isNaN(sizeInBytes) && sizeInBytes > MAX_GD_SHEET_SIZE) {
-      const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2)
-      const maxSizeInMB = (MAX_GD_SHEET_SIZE / (1024 * 1024)).toFixed(2)
-      loggerWithChild({ email: userEmail }).warn(
-        `Ignoring ${spreadsheet.name} as its size (${sizeInMB} MB) exceeds the limit of ${maxSizeInMB} MB`,
-      )
-      return []
-    }
 
     if (spreadSheetData) {
       // Now we should get all sheets inside this spreadsheet using the spreadSheetData

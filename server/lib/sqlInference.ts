@@ -23,7 +23,7 @@ export const analyzeQueryAndGenerateSQL = async (
   schema: string,
   fewShotSamples: string
 ): Promise<DuckDBQuery | null> => {
-  Logger.debug(`Analyzing query and generating SQL: ${query}`);
+  Logger.debug(`Analyzing query and generating SQL`);
 
   const stripNoise = (s: string) => {
     let t = s.trim();
