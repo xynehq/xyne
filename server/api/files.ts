@@ -285,7 +285,7 @@ export const handleAttachmentUpload = async (c: Context) => {
             const vespaDoc = {
               docId: docId,
               clId: "attachment",
-              itemId: fileId,
+              itemId: docId,
               fileName: fileName,
               app: Apps.KnowledgeBase as const,
               entity: KnowledgeBaseEntity.Attachment,
@@ -334,13 +334,13 @@ export const handleAttachmentUpload = async (c: Context) => {
               ? path.relative(outputDir, thumbnailPath)
               : "",
           createdAt: new Date(),
-          url: `/api/v1/attachments/${fileId}`,
+          url: `/api/v1/attachments/${vespaId}`,
         }
 
         attachmentMetadata.push(metadata)
 
         loggerWithChild({ email }).info(
-          `Attachment "${file.name}" processed with ID ${fileId}${isImage ? " (saved to disk with thumbnail)" : " (processed and ingested into Vespa)"}`,
+          `Attachment "${file.name}" processed with ID ${vespaId}${isImage ? " (saved to disk with thumbnail)" : " (processed and ingested into Vespa)"}`,
         )
       } catch (error) {
         // Cleanup: remove the directory if file write fails (only for images)

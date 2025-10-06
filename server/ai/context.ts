@@ -69,7 +69,7 @@ const extractHeaderAndDataChunks = (
       processedChunks.push({
         chunk: headerChunk,
         score: 1,
-        index: chunks_summary.length,
+        index: 0,
       });
     }
 

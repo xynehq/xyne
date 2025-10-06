@@ -2922,7 +2922,7 @@ export async function* listFiles(
   let nextPageToken = ""
 
   // Build the query with date filters if provided
-  let query = q ? `${q} and trashed = false` : "trashed = false"
+  let query = q ? `(${q}) and trashed = false` : "trashed = false"
   const dateFilters: string[] = []
 
   if (startDate) {

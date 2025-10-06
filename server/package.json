@@ -103,6 +103,7 @@
     "livekit-server-sdk": "^2.13.3",
     "llama3-tokenizer-js": "^1.2.0",
     "nanoid": "^5.1.5",
+    "node-sql-parser": "^5.3.12",
     "ollama": "^0.5.11",
     "openai": "^5.16.0",
     "ora": "^8.1.1",

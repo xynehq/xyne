@@ -3,7 +3,8 @@ import { getLogger } from "@/logger";
 import { Subsystem } from "@/types";
 import type { DuckDBResult } from "@/types";
 import { analyzeQueryAndGenerateSQL } from "./sqlInference";
-import { writeFileSync, unlinkSync, createWriteStream, promises as fs } from "fs";
+import { validateSQLQuery } from "./sqlValidator";
+import { writeFileSync, createWriteStream, promises as fs } from "fs";
 import { join } from "path";
 import { tmpdir, cpus } from "os";
 
@@ -81,7 +82,7 @@ export const querySheetChunks = async (
           quote='"',
           escape='"',
           null_padding=true,
-          ignore_errors=true,
+          ignore_errors=false,
           strict_mode=false,
           sample_size=100000
         )
@@ -130,8 +131,29 @@ export const querySheetChunks = async (
     }
     Logger.debug(`Generated SQL: ${duckDBQuery.sql}`);
     
-    Logger.debug(`Executing DuckDB query: ${duckDBQuery.sql}`);
-    const result = await connection.all(duckDBQuery.sql);
+    // Validate and sanitize the generated SQL using AST parsing
+    Logger.debug("Validating generated SQL for security and correctness");
+    const validationResult = validateSQLQuery(duckDBQuery.sql, tableName, {
+      allowSubqueries: true,
+      allowJoins: false,
+      allowWindowFunctions: true,
+      allowCTEs: true,
+    });
+
+    if (!validationResult.isValid) {
+      Logger.error(`SQL validation failed: ${validationResult.error}`);
+      throw new Error(`SQL validation failed: ${validationResult.error}`);
+    }
+
+    if (validationResult.warnings && validationResult.warnings.length > 0) {
+      Logger.warn(`SQL validation warnings: ${validationResult.warnings.join(", ")}`);
+    }
+
+    const finalSQL = validationResult.sanitizedSQL || duckDBQuery.sql;
+    Logger.debug(`Final validated SQL: ${finalSQL}`);
+    
+    Logger.debug(`Executing DuckDB query: ${finalSQL}`);
+    const result = await connection.all(finalSQL);
     const elapsedMs = Date.now() - startTime;
     Logger.debug(`Query executed successfully, returned ${result.length} rows in ${elapsedMs}ms`);
 
@@ -145,7 +167,7 @@ export const querySheetChunks = async (
 
     const resultPackage: DuckDBResult = {
       user_question: userQuery,
-      sql: duckDBQuery.sql,
+      sql: finalSQL, // Use the validated and sanitized SQL
       execution_meta: {
         row_count: result.length,
         elapsed_ms: elapsedMs,
@@ -180,7 +202,7 @@ export const querySheetChunks = async (
     
     // Clean up temporary TSV file
     try {
-      unlinkSync(tempFilePath);
+      await fs.unlink(tempFilePath);
       Logger.debug(`Temporary TSV file deleted: ${tempFilePath}`);
     } catch (e) {
       Logger.warn(`Failed to delete temporary TSV file ${tempFilePath}:`, e);

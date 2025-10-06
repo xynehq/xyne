@@ -230,7 +230,8 @@ export function expandSheetIds(fileId: string): string[] {
   const sheetNumber = parseInt(sheetNumberStr, 10)
   // Generate IDs from docId_sheet_0 to docId_sheet_number
   const expandedIds: string[] = []
-  for (let i = 0; i < Math.max(sheetNumber, 1); i++) {
+  const upper = Number.isFinite(sheetNumber) ? sheetNumber : 1
+  for (let i = 0; i < upper; i++) {
     expandedIds.push(`${docId}_sheet_${i}`)
   }
   
