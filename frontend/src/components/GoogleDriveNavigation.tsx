@@ -143,8 +143,8 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
   setSelectedIntegrations,
   selectedIntegrations,
 }) => {
-  useMemo(() => {
-    sortDriveItems(currentItems)
+  const sortedItems= useMemo(() => {
+    return sortDriveItems(currentItems)
   }, [currentItems])
 
   // Function to get icon for Google Drive entity
@@ -322,8 +322,8 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
               <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
                 Loading...
               </div>
-            ) : currentItems.length > 0 ? (
-              currentItems.map((item: any) => {
+            ) : sortedItems.length > 0 ? (
+              sortedItems.map((item: any) => {
                 const itemId = item.id || item.fields?.docId
                 const itemDocId = item.fields?.docId
                 const itemEntity = item.fields?.entity
