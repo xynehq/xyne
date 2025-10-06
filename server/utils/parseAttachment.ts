@@ -55,7 +55,7 @@ export const parseAttachmentMetadata = (c: Context): AttachmentMetadata[] => {
       queryValue: attachmentMetadataQuery,
     })
 
-    throw new HTTPException(500, {
+    throw new HTTPException(400, {
       message: "Failed to parse attachmentMetadata",
     })
   }

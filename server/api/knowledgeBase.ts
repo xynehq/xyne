@@ -1966,7 +1966,7 @@ export const DownloadFileApi = async (c: Context) => {
     const storagePath = collectionFile.storagePath
 
     if (!collectionFile.originalName) {
-      throw new HTTPException(404, { message: "File original name is missing" })
+      throw new HTTPException(400, { message: "File original name is missing" })
     }
 
     // Filename sanitization helper functions for download functionality
