@@ -213,7 +213,7 @@ import {
 import { getDateForAI } from "@/utils/index"
 import type { User } from "@microsoft/microsoft-graph-types"
 import { getAuth, safeGet } from "../agent"
-import { applyFollowUpContext } from "@/utils/parseAttachment"
+import { getChunkCountPerDoc } from "./chunk-selection"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -2016,22 +2016,56 @@ async function* generateAnswerFromGivenContext(
     "generateAnswerFromGivenContext",
   )
 
+  const selectedContext = isContextSelected(message)
+  const builtUserQuery = selectedContext
+    ? buildUserQuery(selectedContext)
+    : message
+
   let previousResultsLength = 0
   const combinedSearchResponse: VespaSearchResult[] = []
+  let chunksPerDocument: number[] = []
+  const targetChunks = 120
 
   if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
+    const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
     let results
     if (isValidPath) {
       if (folderIds?.length) {
         results = await searchCollectionRAG(messageText, undefined, folderIds)
-      } else
+      } else {
         results = await searchCollectionRAG(messageText, fileIds, undefined)
+      }
+      if (results.root.children) {
+        combinedSearchResponse.push(...results.root.children)
+      }
     } else {
-      results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+      const collectionFileIds = fileIds.filter((fid) => fid.startsWith("clf-") || fid.startsWith("att_"))
+      const nonCollectionFileIds = fileIds.filter((fid) => !fid.startsWith("clf-") && !fid.startsWith("att_"))
+      if(nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+        results = await searchVespaInFiles(builtUserQuery, email, nonCollectionFileIds, {
+            limit: fileIds?.length,
+            alpha: userAlpha,
+          })
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+      if (collectionFileIds && collectionFileIds.length > 0) {
+        results = await searchCollectionRAG(messageText, collectionFileIds, undefined)
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
     }
-    if (results.root.children) {
-      combinedSearchResponse.push(...results.root.children)
-    }
+    
+    // Apply intelligent chunk selection based on document relevance and chunk scores
+    chunksPerDocument = await getChunkCountPerDoc(
+      combinedSearchResponse,
+      targetChunks,
+      email,
+      fileSearchSpan
+    )
+    fileSearchSpan?.end()
   }
 
   loggerWithChild({ email: email }).info(
@@ -2142,7 +2176,7 @@ async function* generateAnswerFromGivenContext(
     let content = answerContextMap(
       v as VespaSearchResults,
       userMetadata,
-      0,
+      i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
       isMsgWithSources,
     )
@@ -2206,10 +2240,6 @@ async function* generateAnswerFromGivenContext(
     }`,
   )
 
-  const selectedContext = isContextSelected(message)
-  const builtUserQuery = selectedContext
-    ? buildUserQuery(selectedContext)
-    : message
   const iterator = baselineRAGJsonStream(
     builtUserQuery,
     userCtx,
@@ -2238,114 +2268,18 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.setAttribute("answer_found", true)
     generateAnswerSpan?.end()
     return
-  } else if (!answer) {
-    if (
-      isMsgWithSources ||
-      (attachmentFileIds && attachmentFileIds.length > 0)
-    ) {
-      yield {
-        text: "From the selected context, I could not find any information to answer it, please change your query",
-      }
-      generateAnswerSpan?.setAttribute("answer_found", false)
-      generateAnswerSpan?.end()
-      return
-    }
-    // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
-    loggerWithChild({ email: email }).info(
-      "No answer was found when all chunks were given, trying to answer after searching vespa now",
-    )
-    let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
-      limit: fileIds?.length,
-      alpha: userAlpha,
-    })
-
-    const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
-    searchVespaSpan?.setAttribute("parsed_message", message)
-    searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery)
-    searchVespaSpan?.setAttribute("limit", fileIds?.length)
-    searchVespaSpan?.setAttribute(
-      "results length",
-      results?.root?.children?.length || 0,
-    )
-
-    if (!results.root.children) {
-      results.root.children = []
-    }
-    const startIndex = isReasoning ? previousResultsLength : 0
-    const initialContext = cleanContext(
-      results?.root?.children
-        ?.map(
-          (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(
-              v as VespaSearchResults,
-              userMetadata,
-              20,
-              true,
-            )}`,
-        )
-        ?.join("\n"),
-    )
-    loggerWithChild({ email: email }).info(
-      `[Selected Context Path] Number of contextual chunks being passed: ${
-        results?.root?.children?.length || 0
-      }`,
-    )
-
-    const { imageFileNames } = extractImageFileNames(
-      initialContext,
-      results?.root?.children,
-    )
-
-    searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
-    searchVespaSpan?.setAttribute("context", initialContext || "")
-    searchVespaSpan?.setAttribute(
-      "number_of_chunks",
-      results.root?.children?.length || 0,
-    )
-
-    const iterator = baselineRAGJsonStream(
-      builtUserQuery,
-      userCtx,
-      userMetadata,
-      initialContext,
-      {
-        stream: true,
-        modelId: defaultBestModel,
-        reasoning: config.isReasoning && userRequestsReasoning,
-        imageFileNames,
-      },
-      true,
-    )
-
-    const answer = yield* processIterator(
-      iterator,
-      results?.root?.children,
-      previousResultsLength,
-      userRequestsReasoning,
-      email,
-    )
-    if (answer) {
-      searchVespaSpan?.setAttribute("answer_found", true)
-      searchVespaSpan?.end()
-      generateAnswerSpan?.end()
-      return
-    } else if (
+  } else if (
       // If no answer found, exit and yield nothing related to selected context found
       !answer
     ) {
-      const noAnswerSpan = searchVespaSpan?.startSpan("no_answer_response")
+      const noAnswerSpan = generateAnswerSpan?.startSpan("no_answer_response")
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
       noAnswerSpan?.end()
-      searchVespaSpan?.end()
       generateAnswerSpan?.end()
       return
     }
-    if (config.isReasoning && userRequestsReasoning) {
-      previousResultsLength += results?.root?.children?.length || 0
-    }
-  }
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += combinedSearchResponse?.length || 0
   }

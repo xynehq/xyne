@@ -20,6 +20,7 @@ import {
   ImageCitation,
   MessageFeedback,
   AttachmentMetadata,
+  UploadStatus,
 } from "shared/types"
 import { PublicUser } from "shared/types"
 import logo from "@/assets/logo.svg"
@@ -51,6 +52,7 @@ interface DocumentChatProps {
   initialChatId?: string | null
   onChatCreated?: (chatId: string) => void
   onChunkIndexChange?: (chunkIndex: number | null, documentId: string) => void
+  uploadStatus?: UploadStatus
 }
 
 const ChatMessage = React.memo(
@@ -458,6 +460,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
   initialChatId,
   onChatCreated,
   onChunkIndexChange,
+  uploadStatus,
 }) => {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -867,6 +870,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
           user={user}
           hideButtons={true}
           chatId={chatId}
+          uploadStatus={uploadStatus}
         />
       </div>
     </div>
