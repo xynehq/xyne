@@ -58,7 +58,7 @@ import {
 import ExcelViewer from "@/components/ExcelViewer"
 import CsvViewer from "@/components/CsvViewer"
 import TxtViewer from "@/components/TxtViewer"
-import { useUploadProgress } from "@/store"
+import { useUploadProgress } from "@/store/useUploadProgressStore"
 import { DebugDocModal } from "@/components/DebugDocModal"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
