@@ -13,7 +13,6 @@ export enum StepType {
 
 export enum ToolType {
   DELAY = "delay",
-  PYTHON_SCRIPT = "python_script",
   SLACK = "slack",
   GMAIL = "gmail",
   AGENT = "agent",
