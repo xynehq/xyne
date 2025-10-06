@@ -18,7 +18,8 @@ const WIDGET_HEIGHT_COLLAPSED = 150
 const WIDGET_HEIGHT_EXPANDED = 400
 
 export const UploadProgressWidget: React.FC = () => {
-  const { currentUpload, cancelUpload } = useUploadProgress()
+  const currentUpload = useUploadProgress(state => state.currentUpload)
+  const cancelUpload = useUploadProgress(state => state.cancelUpload)
   const [isExpanded, setIsExpanded] = useState(false)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('all')

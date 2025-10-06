@@ -48,11 +48,11 @@ interface UploadProgressStore {
   getUploadProgress: (uploadId: string) => UploadTask | null
 }
 
-export const useUploadProgressStore = create<UploadProgressStore>((set, get) => ({
+export const useUploadProgress = create<UploadProgressStore>((set, get) => ({
   currentUpload: null,
 
   startUpload: (collectionName, files, totalBatches, isNewCollection, targetCollectionId) => {
-    const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const uploadId = `upload_${Date.now()}_${crypto.randomUUID()}`
     const abortController = new AbortController()
     
     const uploadFiles: UploadFileStatus[] = files.map((file) => ({
@@ -130,36 +130,19 @@ export const useUploadProgressStore = create<UploadProgressStore>((set, get) => 
   },
 
   cancelUpload: (uploadId) => {
-    set((state) => {
-      if (!state.currentUpload || state.currentUpload.id !== uploadId) {
-        return state
-      }
-      
+    const uploadToCancel = get().currentUpload
+    if (uploadToCancel?.id === uploadId) {
       // Abort all ongoing requests
-      if (state.currentUpload.abortController) {
-        state.currentUpload.abortController.abort()
-      }
-      
-      return { currentUpload: null }
-    })
+      uploadToCancel.abortController.abort()
+    }
+
+    set((state) =>
+      state.currentUpload?.id === uploadId ? { currentUpload: null } : state
+    )
   },
 
   getUploadProgress: (uploadId) => {
     const state = get()
     return state.currentUpload?.id === uploadId ? state.currentUpload : null
   }
-}));
-
-export const useUploadProgress = () => {
-  const store = useUploadProgressStore()
-  
-  return {
-    currentUpload: store.currentUpload,
-    startUpload: store.startUpload,
-    updateProgress: store.updateProgress,
-    updateFileStatus: store.updateFileStatus,
-    finishUpload: store.finishUpload,
-    cancelUpload: store.cancelUpload,
-    getUploadProgress: store.getUploadProgress
-  }
-}
+}))
