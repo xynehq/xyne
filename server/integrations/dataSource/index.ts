@@ -375,26 +375,6 @@ const processSpreadsheetFile = async (
       const worksheet = workbook.Sheets[sheetName]
       if (!worksheet) continue
 
-      // const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
-      //   header: 1,
-      //   defval: "",
-      //   raw: false,
-      // })
-
-      // const validRows = sheetData.filter((row) =>
-      //   row.some((cell) => cell && cell.toString().trim().length > 0),
-      // )
-
-      // if (validRows.length === 0) continue
-
-      // if (validRows?.length > DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_ROWS) {
-      //   // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-      //   // Logger.warn(
-      //   //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-      //   // )
-      //   return []
-      // }
-
       // Use the new header-preserving chunking function
       const sheetChunks = chunkSheetWithHeaders(worksheet)
 

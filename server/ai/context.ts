@@ -76,7 +76,8 @@ const extractHeaderAndDataChunks = (
      // Update matchfeatures to include the header chunk score
      if (newMatchfeatures) {
         const existingCells = newMatchfeatures.chunk_scores?.cells || {};
-        const maxScore = Object.values(existingCells).length > 0 ? Math.max(...Object.values(existingCells as number[])) : 0;
+        const scores = Object.values(existingCells) as number[];
+        const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
         // Create new chunk_scores that match the new chunks
         const newChunkScores: Record<string, number> = {}
         newChunkScores["0"] = maxScore + 1

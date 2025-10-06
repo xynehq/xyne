@@ -2180,56 +2180,6 @@ export const getSpreadsheet = async (
   }
 }
 
-// Function to chunk rows of text data into manageable batches
-// Excludes numerical data, assuming users do not typically search by numbers
-// Concatenates all textual cells in a row into a single string
-// Adds rows' string data to a chunk until the 512-character limit is exceeded
-// If adding a row exceeds the limit, the chunk is added to the next chunk
-// Otherwise, the row is added to the current chunk
-// const chunkFinalRows = (allRows: string[][]): string[] => {
-//   const chunks: string[] = []
-//   let currentChunk = ""
-//   let totalTextLength = 0
-
-//   for (const row of allRows) {
-//     // Filter out numerical cells and empty strings
-//     const textualCells = row.filter(
-//       (cell) => isNaN(Number(cell)) && cell.trim().length > 0,
-//     )
-
-//     if (textualCells.length === 0) continue // Skip if no textual data
-
-//     const rowText = textualCells.join(" ")
-
-//     // Check if adding this rowText would exceed the maximum text length
-//     if (totalTextLength + rowText.length > MAX_GD_SHEET_TEXT_LEN) {
-//       // Logger.warn(`Text length excedded, indexing with empty content`)
-//       // Return an empty array if the total text length exceeds the limit
-//       return []
-//     }
-
-//     totalTextLength += rowText.length
-
-//     if ((currentChunk + " " + rowText).trim().length > 512) {
-//       // Add the current chunk to the list and start a new chunk
-//       if (currentChunk.trim().length > 0) {
-//         chunks.push(currentChunk.trim())
-//       }
-//       currentChunk = rowText
-//     } else {
-//       // Append the row text to the current chunk
-//       currentChunk += " " + rowText
-//     }
-//   }
-
-//   if (currentChunk.trim().length > 0) {
-//     // Add any remaining text as the last chunk
-//     chunks.push(currentChunk.trim())
-//   }
-
-//   return chunks
-// }
-
 export const getSheetsListFromOneSpreadsheet = async (
   sheets: sheets_v4.Sheets,
   client: GoogleClient,
@@ -2245,9 +2195,13 @@ export const getSheetsListFromOneSpreadsheet = async (
       userEmail,
     )
 
-    if (spreadsheet.size && parseInt(spreadsheet.size) > MAX_GD_SHEET_SIZE) {
+    // Early size check before fetching spreadsheet data
+    const sizeInBytes = spreadsheet.size ? parseInt(spreadsheet.size, 10) : 0
+    if (!isNaN(sizeInBytes) && sizeInBytes > MAX_GD_SHEET_SIZE) {
+      const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2)
+      const maxSizeInMB = (MAX_GD_SHEET_SIZE / (1024 * 1024)).toFixed(2)
       loggerWithChild({ email: userEmail }).warn(
-        `Ignoring ${spreadsheet.name} as its more than ${MAX_GD_SHEET_SIZE} MB`,
+        `Ignoring ${spreadsheet.name} as its size (${sizeInMB} MB) exceeds the limit of ${maxSizeInMB} MB`,
       )
       return []
     }
@@ -2287,17 +2241,7 @@ export const getSheetsListFromOneSpreadsheet = async (
           continue
         }
 
-        let chunks: string[] = []
-
-        // if (finalRows?.length > MAX_GD_SHEET_ROWS) {
-        //   // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-        //   // Logger.warn(
-        //   //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-        //   // )
-        //   chunks = []
-        // } else {
-          chunks = chunkSheetWithHeaders(finalRows)
-        // }
+        const chunks: string[] = chunkSheetWithHeaders(finalRows)
 
         const sheetDataToBeIngested = {
           title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,

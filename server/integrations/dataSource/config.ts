@@ -18,7 +18,7 @@ export const DATASOURCE_CONFIG = {
     10,
   ),
   MAX_SPREADSHEET_FILE_SIZE_MB: parseInt(
-    process.env.DATASOURCE_MAX_SPREADSHEET_FILE_SIZE_MB || "15",
+    process.env.DATASOURCE_MAX_SPREADSHEET_FILE_SIZE_MB || "10",
     10,
   ),
   MAX_TEXT_FILE_SIZE_MB: parseInt(

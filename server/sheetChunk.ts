@@ -13,7 +13,7 @@ function isTimestamp(value: any): boolean {
     const numValue = Number(value)
     if (!isNaN(numValue)) {
       // Unix timestamp should be reasonable (between 1970 and 2100)
-      const minTimestamp = 946684800000 // 2000-01-01 in milliseconds
+      const minTimestamp = 0 // 1970-01-01 in milliseconds (Unix epoch)
       const maxTimestamp = 4102444800000 // 2100-01-01 in milliseconds
       return numValue >= minTimestamp && numValue <= maxTimestamp
     }

@@ -260,8 +260,6 @@ export const handleAttachmentUpload = async (c: Context) => {
 
           if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
             vespaId = `${fileId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
-          } else {
-            vespaId = fileId
           }
           // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
           for (const [resultIndex, processingResult] of processingResults.entries()) {

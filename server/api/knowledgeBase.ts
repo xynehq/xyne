@@ -1585,15 +1585,19 @@ export const DeleteItemApi = async (c: Context) => {
           // Delete from Vespa
           if (itemToDelete.vespaDocId) {
             const vespaDocIds = expandSheetIds(itemToDelete.vespaDocId)
-            await Promise.all(
-              vespaDocIds.map(id => 
-                DeleteDocument(id, KbItemsSchema).then(() => 
-                  loggerWithChild({ email: userEmail }).info(
-                    `Deleted file from Vespa: ${id}`,
-                  )
+            for (const id of vespaDocIds) {
+              try {
+                await DeleteDocument(id, KbItemsSchema)
+                loggerWithChild({ email: userEmail }).info(
+                  `Deleted file from Vespa: ${id}`,
                 )
-              )
-            )
+              } catch (error) {
+                loggerWithChild({ email: userEmail }).error(
+                  `Failed to delete file from Vespa: ${id}`,
+                  { error: getErrorMessage(error) }
+                )
+              }
+            }
           }
         } catch (error) {
           loggerWithChild({ email: userEmail }).warn(
