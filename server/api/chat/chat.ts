@@ -874,12 +874,15 @@ export const ChatDeleteApi = async (c: Context) => {
           try {
             // Delete from Vespa kb_items schema using the proper Vespa function
             const vespaIds = expandSheetIds(fileId)
-            vespaIds.forEach(async (id) => {
-              await DeleteDocument(id, KbItemsSchema)
-              loggerWithChild({ email: email }).info(
-                `Successfully deleted non-image attachment ${id} from Vespa kb_items schema`,
+            await Promise.all(
+              vespaIds.map(id => 
+                DeleteDocument(id, KbItemsSchema).then(() => 
+                  loggerWithChild({ email }).info(
+                    `Successfully deleted non-image attachment ${id} from Vespa kb_items schema`,
+                  )
+                )
               )
-            })
+            )
           } catch (error) {
             const errorMessage = getErrorMessage(error)
             if (errorMessage.includes("404 Not Found")) {

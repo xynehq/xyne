@@ -632,6 +632,6 @@ export interface DuckDBResult {
   }
   assumptions: string[]
   data: {
-    rows: any[][]
+    rows: unknown[][]
   }
 }

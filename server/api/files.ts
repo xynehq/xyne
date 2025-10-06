@@ -218,11 +218,11 @@ export const handleAttachmentUpload = async (c: Context) => {
     }
 
     const attachmentMetadata: AttachmentMetadata[] = []
-    let vespaId : string = ""
-
+    
     for (const file of files) {
       const fileBuffer = await file.arrayBuffer()
       const fileId = `att_${crypto.randomUUID()}`
+      let vespaId = fileId
       const ext = file.name.split(".").pop()?.toLowerCase() || ""
       const fullFileName = `${0}.${ext}`
       const isImage = isImageFile(file.type)

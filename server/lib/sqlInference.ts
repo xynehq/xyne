@@ -87,8 +87,6 @@ ${fewShotSamples}`;
 
     const response = await provider.converse(messages, modelParams);
     const responseText = response.text || "";
-
-    console.log("DuckDB query response:", responseText);
     
     const cleaned = stripNoise(responseText);
     let parsedResponse: { isMetric: boolean; sql: string | null; notes: string };
@@ -115,7 +113,6 @@ ${fewShotSamples}`;
       notes: parsedResponse.notes
     };
 
-    console.log("DuckDB query generated:", result);
     return result;
   } catch (error) {
     Logger.error("Failed to analyze query and generate SQL:", error);

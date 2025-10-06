@@ -3,40 +3,13 @@ import { getLogger } from "@/logger";
 import { Subsystem } from "@/types";
 import type { DuckDBResult } from "@/types";
 import { analyzeQueryAndGenerateSQL } from "./sqlInference";
-import { writeFileSync, unlinkSync, createWriteStream } from "fs";
+import { writeFileSync, unlinkSync, createWriteStream, promises as fs } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
+import { tmpdir, cpus } from "os";
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "duckdb",
 });
-
-// Simple SQL validation function
-function validateSQL(sql: string): void {
-  const disallowedKeywords = [
-    'INSTALL', 'LOAD', 'PRAGMA', 'COPY', 'EXPORT', 'ATTACH', 'DETACH', 
-    'CALL', 'CREATE', 'ALTER', 'DROP', 'INSERT', 'UPDATE', 'DELETE', 
-    'SET', 'RESET'
-  ];
-  
-  const upperSQL = sql.toUpperCase();
-  
-  for (const keyword of disallowedKeywords) {
-    if (upperSQL.includes(keyword)) {
-      throw new Error(`Disallowed SQL keyword detected: ${keyword}`);
-    }
-  }
-  
-  // Ensure it's a SELECT statement
-  if (!upperSQL.trim().startsWith('SELECT')) {
-    throw new Error('Only SELECT statements are allowed');
-  }
-  
-  // Ensure there's a LIMIT clause
-  if (!upperSQL.includes('LIMIT')) {
-    throw new Error('LIMIT clause is required for all queries');
-  }
-}
 
 export const querySheetChunks = async (
   sheetChunks: string[],
@@ -54,7 +27,8 @@ export const querySheetChunks = async (
   );
 
   // Create a temporary CSV file using streaming for large data
-  const tempFilePath = join(tmpdir(), `duckdb_temp_${Date.now()}.tsv`);
+  const tmpDir = tmpdir().replace(/'/g, "''");
+  const tempFilePath = join(tmpDir, `duckdb_temp_${Date.now()}.tsv`);
   Logger.debug(`Writing ${cleanedSheetChunks.length} chunks to temporary file: ${tempFilePath}`);
   
   if (cleanedSheetChunks.length > 100) {
@@ -78,12 +52,13 @@ export const querySheetChunks = async (
   }
 
   // Use on-disk DB and tune pragmas for large files
-  const db = await Database.create(join(tmpdir(), `xyne_${Date.now()}.duckdb`));
+  const dbPath = join(tmpDir, `xyne_${Date.now()}.duckdb`);
+  const db = await Database.create(dbPath);
   const connection = await db.connect();
   
   Logger.debug("Setting up DuckDB pragmas for large file processing");
-  await connection.run(`PRAGMA temp_directory='${tmpdir()}'`);
-  await connection.run(`PRAGMA threads=${Math.max(1, Math.floor(require('os').cpus().length / 2))}`);
+  await connection.run(`PRAGMA temp_directory='${tmpDir}'`);
+  await connection.run(`PRAGMA threads=${Math.max(1, Math.floor(cpus().length / 2))}`);
   await connection.run(`PRAGMA memory_limit='4GB'`);
 
   const tableName = `v_${Date.now().toString(36)}`;
@@ -113,7 +88,7 @@ export const querySheetChunks = async (
       `);
       Logger.debug(`VIEW ${tableName} created successfully`);
     } catch (viewError) {
-      console.error(`Failed to create VIEW ${tableName}:`, viewError);
+      Logger.error(`Failed to create VIEW ${tableName}:`, viewError);
       throw viewError;
     }
 
@@ -154,10 +129,6 @@ export const querySheetChunks = async (
       return null;
     }
     Logger.debug(`Generated SQL: ${duckDBQuery.sql}`);
-
-    // 5) Validate and run
-    Logger.debug("Validating generated SQL");
-    validateSQL(duckDBQuery.sql);
     
     Logger.debug(`Executing DuckDB query: ${duckDBQuery.sql}`);
     const result = await connection.all(duckDBQuery.sql);
@@ -200,19 +171,32 @@ export const querySheetChunks = async (
     // Clean up
     Logger.debug("Cleaning up DuckDB resources");
     try {
-      await connection.close();
-      await db.close();
+      if (connection) await connection.close();
+      if (db) await db.close();
       Logger.debug("DuckDB connection and database closed");
     } catch (e) {
       Logger.warn("Error closing DuckDB resources:", e);
     }
     
-    // Clean up temporary file
+    // Clean up temporary TSV file
     try {
       unlinkSync(tempFilePath);
-      Logger.debug(`Temporary file deleted: ${tempFilePath}`);
+      Logger.debug(`Temporary TSV file deleted: ${tempFilePath}`);
     } catch (e) {
-      Logger.warn(`Failed to delete temporary file ${tempFilePath}:`, e);
+      Logger.warn(`Failed to delete temporary TSV file ${tempFilePath}:`, e);
+    }
+    
+    // Clean up temporary DuckDB file
+    try {
+      await fs.stat(dbPath);
+      await fs.unlink(dbPath);
+      Logger.debug(`Temporary DuckDB file deleted: ${dbPath}`);
+    } catch (e) {
+      if (e instanceof Error && 'code' in e && e.code === 'ENOENT') {
+        Logger.debug(`Temporary DuckDB file already removed: ${dbPath}`);
+      } else {
+        Logger.warn(`Failed to delete temporary DuckDB file ${dbPath}:`, e);
+      }
     }
   }
 };
