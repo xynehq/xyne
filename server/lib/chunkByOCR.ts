@@ -17,6 +17,8 @@ const DEFAULT_LAYOUT_PARSING_VISUALIZE = false
 const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
 const DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST = 100
 const TEXT_CHUNK_OVERLAP_CHARS = 32
+const USE_SEQUENTIAL_BATCH_PROCESSING=true
+
 
 type LayoutParsingBlock = {
   block_label?: string
@@ -574,6 +576,79 @@ function mergeLayoutParsingResults(
   }
 }
 
+async function processBatchesConcurrently(
+  batches: Buffer[],
+  fileName: string,
+): Promise<LayoutParsingApiPayload[]> {
+  Logger.info("Processing PDF batches concurrently", {
+    fileName,
+    totalBatches: batches.length,
+  })
+
+  return Promise.all(
+    batches.map(async (batch, index) => {
+      const batchIndex = index + 1
+      Logger.info("Processing PDF batch", {
+        fileName,
+        batchIndex,
+        totalBatches: batches.length,
+        batchSizeBytes: batch.length,
+      })
+      const batchResult = await callLayoutParsingApi(
+        batch,
+        `${fileName}_batch_${batchIndex}`,
+      )
+      Logger.info("Completed PDF batch", {
+        fileName,
+        batchIndex,
+        layoutResultsCount:
+          batchResult.layoutParsingResults?.length ?? 0,
+      })
+      return batchResult
+    }),
+  )
+}
+
+async function processBatchesSequentially(
+  batches: Buffer[],
+  fileName: string,
+): Promise<LayoutParsingApiPayload[]> {
+  Logger.info("Processing PDF batches sequentially", {
+    fileName,
+    totalBatches: batches.length,
+  })
+
+  const batchResults: LayoutParsingApiPayload[] = []
+
+  for (let index = 0; index < batches.length; index++) {
+    const batch = batches[index]
+    const batchIndex = index + 1
+    
+    Logger.info("Processing PDF batch sequentially", {
+      fileName,
+      batchIndex,
+      totalBatches: batches.length,
+      batchSizeBytes: batch.length,
+    })
+
+    const batchResult = await callLayoutParsingApi(
+      batch,
+      `${fileName}_batch_${batchIndex}`,
+    )
+
+    Logger.info("Completed PDF batch sequentially", {
+      fileName,
+      batchIndex,
+      layoutResultsCount:
+        batchResult.layoutParsingResults?.length ?? 0,
+    })
+
+    batchResults.push(batchResult)
+  }
+
+  return batchResults
+}
+
 export async function chunkByOCRFromBuffer(
   buffer: Buffer,
   fileName: string,
@@ -611,30 +686,12 @@ export async function chunkByOCRFromBuffer(
           fileName,
           totalPages,
           batches: batches.length,
+          processingMode: USE_SEQUENTIAL_BATCH_PROCESSING ? 'sequential' : 'concurrent',
         })
 
-        const batchResults = await Promise.all(
-          batches.map(async (batch, index) => {
-            const batchIndex = index + 1
-            Logger.info("Processing PDF batch", {
-              fileName,
-              batchIndex,
-              totalBatches: batches.length,
-              batchSizeBytes: batch.length,
-            })
-            const batchResult = await callLayoutParsingApi(
-              batch,
-              `${fileName}_batch_${batchIndex}`,
-            )
-            Logger.info("Completed PDF batch", {
-              fileName,
-              batchIndex,
-              layoutResultsCount:
-                batchResult.layoutParsingResults?.length ?? 0,
-            })
-            return batchResult
-          }),
-        )
+        const batchResults = USE_SEQUENTIAL_BATCH_PROCESSING
+          ? await processBatchesSequentially(batches, fileName)
+          : await processBatchesConcurrently(batches, fileName)
 
         finalApiResult = mergeLayoutParsingResults(batchResults)
         Logger.info("Merged batch results", {
@@ -700,7 +757,7 @@ export async function chunkByOCR(
 
   let currentTextBuffer = ""
   let currentBlockLabels: string[] = []
-  let lastPageNumber = -1
+  let currentPageNumbers: Set<number> = new Set()
   let lastTextChunk: string | null = null
 
   const imageBaseDir = path.resolve(process.env.IMAGE_DIR || DEFAULT_IMAGE_DIR)
@@ -709,10 +766,13 @@ export async function chunkByOCR(
   const savedImages = new Set<number>()
   const usedFileNames = new Set<string>()
 
-  const addChunk = () => {
+  const addChunk = (preservePageNumbers: boolean = false) => {
     if (!currentTextBuffer.trim()) {
       currentTextBuffer = ""
       currentBlockLabels = []
+      if (!preservePageNumbers) {
+        currentPageNumbers.clear()
+      }
       return
     }
 
@@ -738,7 +798,7 @@ export async function chunkByOCR(
       chunks.push(chunkContent)
       chunks_map.push({
         chunk_index: globalSeq.value,
-        page_number: lastPageNumber,
+        page_numbers: Array.from(currentPageNumbers).sort((a, b) => a - b),
         block_labels: Array.from(new Set(currentBlockLabels)),
       })
 
@@ -748,6 +808,9 @@ export async function chunkByOCR(
 
     currentTextBuffer = ""
     currentBlockLabels = []
+    if (!preservePageNumbers) {
+      currentPageNumbers.clear()
+    }
   }
 
   const pageKeys = Object.keys(ocrResponse)
@@ -757,7 +820,7 @@ export async function chunkByOCR(
 
   for (const pageNumber of pageKeys) {
     const blocks = ocrResponse[String(pageNumber)] ?? []
-    lastPageNumber = pageNumber
+    currentPageNumbers.add(pageNumber)
 
     for (const block of blocks) {
       if (block.block_label === "image") {
@@ -791,6 +854,17 @@ export async function chunkByOCR(
         //   block.image_index,
         //   metadata.pageIndex ?? pageNumber,
         // )
+        // Only process images that have content/description
+        const description = block.block_content?.trim()
+        if (!description) {
+          Logger.debug("Skipping image with no description", {
+            docId,
+            pageNumber,
+            imageIndex: block.image_index,
+          })
+          continue
+        }
+
         const extension = detectImageExtension(imageBuffer)
         const fileName = String(globalSeq.value) + "." + extension
 
@@ -817,11 +891,10 @@ export async function chunkByOCR(
           }
         }
 
-        const description = block.block_content || "Image from document"
         image_chunks.push(description)
         image_chunks_map.push({
           chunk_index: globalSeq.value,
-          page_number: pageNumber,
+          page_numbers: [pageNumber],
           block_labels: ["image"],
         })
         globalSeq.value += 1
@@ -839,7 +912,7 @@ export async function chunkByOCR(
           getByteLength(normalizedText)
 
         if (projectedSize > chunkSizeLimit) {
-          addChunk()
+          addChunk(true) // Preserve page numbers when chunking mid-page
         }
 
         currentTextBuffer += (currentTextBuffer ? " " : "") + normalizedText
@@ -850,7 +923,7 @@ export async function chunkByOCR(
 
   if (currentTextBuffer.trim()) {
     Logger.debug("Adding final text chunk")
-    addChunk()
+    addChunk(false) // Clear page numbers for final chunk
   }
 
   const chunks_pos = chunks_map.map((metadata) => metadata.chunk_index)
