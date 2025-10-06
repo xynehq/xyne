@@ -37,6 +37,7 @@ import {
   deleteCollection,
   deleteItem,
 } from "@/utils/fileUtils"
+import { isValidFile } from "shared/fileUtils"
 import type {
   Collection as CollectionType,
   CollectionItem,
@@ -58,7 +59,7 @@ import {
 import ExcelViewer from "@/components/ExcelViewer"
 import CsvViewer from "@/components/CsvViewer"
 import TxtViewer from "@/components/TxtViewer"
-import { useUploadProgress } from "@/contexts/UploadProgressContext"
+import { useUploadProgress } from "@/store/useUploadProgressStore"
 import { DebugDocModal } from "@/components/DebugDocModal"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
@@ -388,15 +389,18 @@ function KnowledgeManagementContent() {
   // Vespa data modal state
   const [isVespaModalOpen, setIsVespaModalOpen] = useState(false)
         
-  // Use global upload progress context
-  const { currentUpload, startUpload, updateProgress, updateFileStatus, finishUpload } = useUploadProgress()
+  // Use global upload progress context with selectors
+  const startUpload = useUploadProgress(state => state.startUpload)
+  const updateProgress = useUploadProgress(state => state.updateProgress)
+  const updateFileStatus = useUploadProgress(state => state.updateFileStatus)
+  const finishUpload = useUploadProgress(state => state.finishUpload)
   
-  // Derived state from global context
-  const isUploading = currentUpload?.isUploading || false
-  const batchProgress = currentUpload?.batchProgress || { total: 0, current: 0, batch: 0, totalBatches: 0 }
-  const uploadingCollectionName = currentUpload?.collectionName || ""
-  const isNewCollectionUpload = currentUpload?.isNewCollection || false
-  const targetCollectionId = currentUpload?.targetCollectionId
+  // Derived state from global context - select only what we need
+  const isUploading = useUploadProgress(state => state.currentUpload?.isUploading ?? false)
+  const batchProgress = useUploadProgress(state => state.currentUpload?.batchProgress ?? { total: 0, current: 0, batch: 0, totalBatches: 0 })
+  const uploadingCollectionName = useUploadProgress(state => state.currentUpload?.collectionName ?? "")
+  const isNewCollectionUpload = useUploadProgress(state => state.currentUpload?.isNewCollection ?? false)
+  const targetCollectionId = useUploadProgress(state => state.currentUpload?.targetCollectionId)
 
 
   // Zoom detection for chat component
@@ -640,6 +644,21 @@ function KnowledgeManagementContent() {
     setOpenDropdown(null)
   }
 
+  // Utility function to filter valid files and show error if none are valid
+  const getValidFilesOrShowError = (files: FileUploadSelectedFile[]) => {
+    const validFiles = files.filter(f => isValidFile(f.file))
+    
+    if (validFiles.length === 0) {
+      toast.error({
+        title: "Unsupported Files",
+        description: "No valid files to upload. All selected files are unsupported.",
+      })
+      return null
+    }
+    
+    return validFiles
+  }
+
   const handleUpload = async () => {
     if (selectedFiles.length === 0) {
       toast.error({
@@ -662,9 +681,13 @@ function KnowledgeManagementContent() {
       return
     }
 
-    // Start the global upload progress
-    const batches = createBatches(selectedFiles, collectionName.trim())
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
+    // Filter out unsupported files before upload
+    const validFiles = getValidFilesOrShowError(selectedFiles)
+    if (!validFiles) return
+
+    // Start the global upload progress with only valid files
+    const batches = createBatches(validFiles, collectionName.trim())
+    const files = validFiles.map(f => ({ file: f.file, id: f.id }))
     const { uploadId, abortController } = startUpload(collectionName.trim(), files, batches.length, true)
 
     // Close the modal immediately after starting upload
@@ -858,9 +881,13 @@ function KnowledgeManagementContent() {
       return
     }
 
-    // Start the global upload progress
-    const batches = createBatches(selectedFiles, addingToCollection.name)
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
+    // Filter out unsupported files before upload
+    const validFiles = getValidFilesOrShowError(selectedFiles)
+    if (!validFiles) return
+
+    // Start the global upload progress with only valid files
+    const batches = createBatches(validFiles, addingToCollection.name)
+    const files = validFiles.map(f => ({ file: f.file, id: f.id }))
     const { uploadId, abortController } = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
 
     // Close the modal immediately after starting upload

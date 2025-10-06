@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useUploadProgress } from '@/contexts/UploadProgressContext'
+import { useUploadProgress } from '@/store/useUploadProgressStore'
 import { Button } from '@/components/ui/button'
 import { X, ChevronUp, ChevronDown, Loader2 } from 'lucide-react'
 import { ConfirmModal } from '@/components/ui/confirmModal'
@@ -18,7 +18,8 @@ const WIDGET_HEIGHT_COLLAPSED = 150
 const WIDGET_HEIGHT_EXPANDED = 400
 
 export const UploadProgressWidget: React.FC = () => {
-  const { currentUpload, cancelUpload } = useUploadProgress()
+  const currentUpload = useUploadProgress(state => state.currentUpload)
+  const cancelUpload = useUploadProgress(state => state.cancelUpload)
   const [isExpanded, setIsExpanded] = useState(false)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('all')
