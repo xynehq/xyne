@@ -282,12 +282,12 @@ export const handleAttachmentUpload = async (c: Context) => {
             image_chunks_pos: image_chunks_pos,
             chunks_map: chunks.map((_, index) => ({
               chunk_index: index,
-              page_number: 0,
+              page_numbers: [0],
               block_labels: [],
             })),
             image_chunks_map: image_chunks.map((_, index) => ({
               chunk_index: index,
-              page_number: 0,
+              page_numbers: [0],
               block_labels: [],
             })),
             metadata: JSON.stringify({

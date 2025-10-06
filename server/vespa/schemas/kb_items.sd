@@ -3,7 +3,7 @@ schema kb_items {
 
   struct chunk_meta {
     field chunk_index type int {}
-    field page_number type int {}
+    field page_numbers type array<int> {}
     field block_labels type array<string> {}
   }
 
@@ -83,13 +83,11 @@ schema kb_items {
     field chunks_map type array<chunk_meta> {
       indexing: summary
       struct-field chunk_index { indexing: attribute | summary }
-      struct-field page_number { indexing: attribute | summary }
     }
 
     field image_chunks_map type array<chunk_meta> {
       indexing: summary
       struct-field chunk_index { indexing: attribute | summary }
-      struct-field page_number { indexing: attribute | summary }
     }
     
     field metadata type string {
