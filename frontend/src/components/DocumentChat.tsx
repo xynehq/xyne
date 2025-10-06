@@ -660,6 +660,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
     agentIdFromChatBox?: string | null,
     toolsList?: ToolsListItem[] | null,
     selectedModel?: string,
+    isFollowUp: boolean = false,
     selectedKbItems: string[] = [],
   ) => {
     if (!messageToSend || isStreaming || retryIsStreaming) return
@@ -698,6 +699,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
         [],
         metadata,
         selectedModel,
+        isFollowUp,
         kbItemsWithChat,
       )
     } catch (error) {

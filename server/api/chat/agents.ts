@@ -118,6 +118,7 @@ import {
   type MinimalAgentFragment,
 } from "./types"
 import {
+  collectFollowupContext,
   convertReasoningStepToText,
   extractFileIdsFromMessage,
   extractImageFileNames,
@@ -169,6 +170,7 @@ import { getRecordBypath } from "@/db/knowledgeBase"
 import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
+import { applyFollowUpContext } from "@/utils/parseAttachment"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -768,6 +770,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       selectedModelConfig,
       toolsList,
       agentId,
+      isFollowUp,
     }: MessageReqType = body
 
     // Parse the model configuration JSON
@@ -847,8 +850,8 @@ export const MessageWithToolsApi = async (c: Context) => {
       actualModelId = defaultBestModel
     }
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
@@ -874,6 +877,33 @@ export const MessageWithToolsApi = async (c: Context) => {
     loggerWithChild({ email: email }).info(
       `Total attachment files received: ${attachmentMetadata.length}`,
     )
+
+    // Handle isFollowUp functionality - get context from previous user message
+    if (isFollowUp && chatId) {
+      try {
+        const updatedContext = await applyFollowUpContext(
+          chatId,
+          email
+        )
+        
+        fileIds = [...fileIds, ...updatedContext.fileIds]
+        imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
+        attachmentMetadata.push(...updatedContext.attachmentMetadata)
+
+        // Dedup
+        fileIds = Array.from(new Set(fileIds))
+        imageAttachmentFileIds = Array.from(new Set(imageAttachmentFileIds))
+        let byId = new Map(attachmentMetadata.map(a => [a.fileId, a]))
+        attachmentMetadata = Array.from(byId.values())
+      } catch (error) {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Error getting context from previous user message for isFollowUp: ${getErrorMessage(error)}`,
+        )
+        // Continue execution even if we can't get previous context
+      }
+    }
+    
     const hasReferencedContext = fileIds && fileIds.length > 0
     contextExtractionSpan.setAttribute("file_ids_count", fileIds?.length || 0)
     contextExtractionSpan.setAttribute(
@@ -3369,8 +3399,8 @@ export const AgentMessageApi = async (c: Context) => {
     rootSpan.setAttribute("email", email)
     rootSpan.setAttribute("workspaceId", workspaceId)
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
@@ -3734,6 +3764,29 @@ export const AgentMessageApi = async (c: Context) => {
               })
             }
 
+            const filteredMessages = messages
+                .slice(0, messages.length - 1)
+                .filter(
+                  (msg) =>
+                    !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                )
+  
+            // Check for follow-up context carry-forward
+            const lastIdx = filteredMessages.length - 1;
+            const workingSet = collectFollowupContext(filteredMessages, lastIdx);
+  
+            const hasCarriedContext =
+              workingSet.fileIds.length > 0 ||
+              workingSet.attachmentFileIds.length > 0;
+            if (hasCarriedContext) {
+              fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]));
+              imageAttachmentFileIds = Array.from(
+                new Set([...imageAttachmentFileIds, ...workingSet.attachmentFileIds])
+              );
+              loggerWithChild({ email: email }).info(
+                `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
+              );
+            }
             if (
               (fileIds && fileIds?.length > 0) ||
               (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
