@@ -142,6 +142,7 @@ export class CharacterQueue {
     this.stopAnimation(false)
     this.queue = []
     this.displayed = ""
+    this.options.onUpdate(this.displayed)
   }
 
   /**
