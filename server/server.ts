@@ -22,6 +22,7 @@ import {
   GetDriveItem,
   GetDriveItemsByDocIds,
 } from "@/api/search"
+import { callNotificationService } from "@/services/callNotifications"
 import { HighlightApi, highlightSchema } from "@/api/highlight"
 import { zValidator } from "@hono/zod-validator"
 import {
@@ -83,7 +84,7 @@ import {
   GetKbVespaContent,
 } from "@/api/admin"
 import { ProxyUrl } from "@/api/proxy"
-import { init as initQueue } from "@/queue"
+import { initApiServerQueue } from "@/queue/api-server-queue"
 import { createBunWebSocket } from "hono/bun"
 import type { ServerWebSocket } from "bun"
 import { googleAuth } from "@hono/oauth-providers/google"
@@ -114,6 +115,18 @@ import {
   GetUserApiKeys,
   DeleteUserApiKey,
 } from "@/api/auth"
+import { SearchWorkspaceUsersApi, searchUsersSchema } from "@/api/users"
+import {
+  InitiateCallApi,
+  JoinCallApi,
+  EndCallApi,
+  GetActiveCallsApi,
+  InviteToCallApi,
+  initiateCallSchema,
+  joinCallSchema,
+  endCallSchema,
+  inviteToCallSchema,
+} from "@/api/calls"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -154,7 +167,12 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import { UserRole, Apps, CreateApiKeySchema, getDocumentSchema } from "@/shared/types" // Import Apps
+import {
+  UserRole,
+  Apps,
+  CreateApiKeySchema,
+  getDocumentSchema,
+} from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -241,6 +259,8 @@ import {
   GetFileContentApi,
   DownloadFileApi,
   GetChunkContentApi,
+  GetCollectionNameForSharedAgentApi,
+  PollCollectionsStatusApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -436,6 +456,89 @@ export const WsApp = app.get(
   }),
 )
 
+// const MobileWebSocketAuthMiddleware = async (c: Context, next: any) => {
+//   // First try cookie-based auth (for web)
+//   try {
+//     const cookieToken =
+//       getCookie(c, "access_token") || getCookie(c, "accessToken")
+//     if (cookieToken) {
+//       const decoded = await verify(cookieToken, accessTokenSecret)
+//       c.set(JwtPayloadKey, decoded)
+//       return await next()
+//     }
+//   } catch (error) {
+//     // Cookie auth failed, try query parameter (for mobile)
+//   }
+
+//   // Try query parameter auth (for mobile)
+//   const queryToken = c.req.query("token")
+//   if (!queryToken) {
+//     return c.text("Unauthorized: No token provided", 401)
+//   }
+
+//   try {
+//     const decoded = await verify(queryToken, accessTokenSecret)
+//     c.set(JwtPayloadKey, decoded)
+//     await next()
+//   } catch (error) {
+//     Logger.error("WebSocket authentication failed:", error)
+//     return c.text("Unauthorized: Invalid token", 401)
+//   }
+// }
+
+// WebSocket endpoint for call notifications
+export const CallNotificationWs = app.get(
+  "/ws/calls",
+  // MobileWebSocketAuthMiddleware,
+  AuthMiddleware,
+  upgradeWebSocket((c) => {
+    const payload = c.get(JwtPayloadKey)
+    const userEmail = payload.sub
+    let userId: string | undefined
+
+    return {
+      async onOpen(event, ws) {
+        // Get user details from database
+        const user = await getUserByEmail(db, userEmail)
+        if (user.length > 0) {
+          userId = user[0].externalId
+          // Register user for call notifications
+          callNotificationService.registerUser(userId, ws)
+          Logger.info(`User ${userId} connected for call notifications`)
+        }
+      },
+      onMessage(event, ws) {
+        try {
+          const message = JSON.parse(event.data.toString())
+          Logger.info(`Call notification message from user ${userId}:`, message)
+
+          // Handle different message types (accept call, reject call, etc.)
+          switch (message.type) {
+            case "call_response":
+              // Handle call acceptance/rejection
+              if (message.callId && message.response) {
+                callNotificationService.notifyCallStatus(
+                  message.callerId,
+                  message.response,
+                  { callId: message.callId, targetUserId: userId },
+                )
+              }
+              break
+          }
+        } catch (error) {
+          Logger.error(`Error parsing call notification message: ${error}`)
+        }
+      },
+      onClose: (event, ws) => {
+        if (userId) {
+          callNotificationService.removeUser(userId)
+        }
+        Logger.info(`Call notification connection closed for user ${userId}`)
+      },
+    }
+  }),
+)
+
 const clearCookies = (c: Context) => {
   const opts = {
     secure: true,
@@ -601,13 +704,13 @@ const handleAppValidation = async (c: Context) => {
 
     const accessToken = await generateTokens(
       user.email,
-      user.role,
-      user.workspaceExternalId,
+      existingUser.role,
+      existingUser.workspaceExternalId,
     )
     const refreshToken = await generateTokens(
       user.email,
-      user.role,
-      user.workspaceExternalId,
+      existingUser.role,
+      existingUser.workspaceExternalId,
       true,
     )
     // save refresh token generated in user schema
@@ -979,6 +1082,25 @@ export const AppRoutes = app
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
   .get("/agent/:agentExternalId", GetAgentApi)
   .get("/workspace/users", GetWorkspaceUsersApi)
+  .get(
+    "/workspace/users/search",
+    zValidator("query", searchUsersSchema),
+    SearchWorkspaceUsersApi,
+  )
+  // Call routes
+  .post(
+    "/calls/initiate",
+    zValidator("json", initiateCallSchema),
+    InitiateCallApi,
+  )
+  .post(
+    "/calls/invite",
+    zValidator("json", inviteToCallSchema),
+    InviteToCallApi,
+  )
+  .post("/calls/join", zValidator("json", joinCallSchema), JoinCallApi)
+  .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
+  .get("/calls/active", GetActiveCallsApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
@@ -999,7 +1121,9 @@ export const AppRoutes = app
     zValidator("query", searchKnowledgeBaseSchema),
     SearchKnowledgeBaseApi,
   )
+  .post("/cl/poll-status", PollCollectionsStatusApi)
   .get("/cl/:clId", GetCollectionApi)
+  .get("/cl/:clId/name", GetCollectionNameForSharedAgentApi)
   .put("/cl/:clId", UpdateCollectionApi)
   .delete("/cl/:clId", DeleteCollectionApi)
   .get("/cl/:clId/items", ListCollectionItemsApi)
@@ -1520,6 +1644,9 @@ app.get("/assets/*", serveStatic({ root: "./dist" }))
 app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
+  // Initialize API server queue (only FileProcessingQueue, no workers)
+  await initApiServerQueue()
+  
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {

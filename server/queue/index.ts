@@ -31,11 +31,9 @@ import {
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 
-const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
-export const boss = new PgBoss({
-  connectionString: url,
-  monitorStateIntervalMinutes: 10, // Monitor state every minute
-})
+import { boss } from "./boss"
+
+export { boss }
 
 // run it if we are re-doing ingestion
 // await boss.clearStorage()

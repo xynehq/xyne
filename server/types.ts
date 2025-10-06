@@ -19,6 +19,12 @@ import type {
   PeopleEntity,
 } from "@xyne/vespa-ts/types"
 
+export enum ProcessingJobType {
+  FILE = 'file',
+  COLLECTION = 'collection',
+  FOLDER = 'folder'
+}
+
 // type GoogleContacts = people_v1.Schema$Person
 // type WorkspaceDirectoryUser = admin_directory_v1.Schema$User
 
@@ -45,7 +51,10 @@ const baseSearchSchema = z.object({
     .pipe(z.number())
     .optional(),
   app: z.nativeEnum(Apps).optional(),
-  entity: z.string().min(1).optional(),
+  entity: z.union([
+    z.string().min(1),          
+    z.array(z.string().min(1)),  
+  ]).optional(),
   lastUpdated: z.string().default("anytime"),
   isQueryTyped: z.preprocess((val) => val === "true", z.boolean()).optional(),
   debug: z
@@ -329,6 +338,7 @@ export enum SyncCron {
   FullSync = "FullSync",
 }
 
+
 // history id was getting removed if we just use union
 // and do parse of selectSyncJobSchema
 
@@ -593,3 +603,10 @@ export const UserMetadata = z.object({
 })
 
 export type UserMetadataType = z.infer<typeof UserMetadata>
+
+// ChunkMetadata type for OCR and file processing
+export type ChunkMetadata = {
+  chunk_index: number;
+  page_number: number;
+  block_labels: string[];
+};

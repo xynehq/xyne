@@ -37,12 +37,13 @@ import {
   deleteCollection,
   deleteItem,
 } from "@/utils/fileUtils"
+import { isValidFile } from "shared/fileUtils"
 import type {
   Collection as CollectionType,
   CollectionItem,
 } from "@/types/knowledgeBase"
 import { api } from "@/api"
-import { UserRole } from "shared/types"
+import { UploadStatus, UserRole } from "shared/types"
 import DocxViewer from "@/components/DocxViewer"
 import PdfViewer from "@/components/PdfViewer"
 import ReadmeViewer from "@/components/ReadmeViewer"
@@ -366,6 +367,7 @@ function KnowledgeManagementContent() {
     file: FileNode
     collection: Collection
     content?: Blob
+    uploadStatus?: UploadStatus
   } | null>(null)
   const [loadingDocument, setLoadingDocument] = useState(false)
 
@@ -473,6 +475,9 @@ function KnowledgeManagementContent() {
                     id: item.id,
                     updatedBy:
                       item.lastUpdatedByEmail || user?.email || "Unknown",
+                    uploadStatus: item.uploadStatus as UploadStatus,
+                    statusMessage: item.statusMessage,
+                    retryCount: item.retryCount,
                   })),
                 ),
                 isOpen: (collection.items || []).length > 0, // Open if has items
@@ -509,6 +514,124 @@ function KnowledgeManagementContent() {
     fetchCollections()
   }, [toast, user?.email])
 
+  // Poll for upload status updates
+  const [isPolling, setIsPolling] = useState(false)
+
+  useEffect(() => {
+    if (collections.length === 0) return
+
+    const pollInterval = 5000 
+
+    const pollStatuses = async () => {
+      try {
+        const collectionIds = collections.map((c) => c.id)
+        const response = await api.cl["poll-status"].$post({
+          json: { collectionIds },
+        })
+
+        if (response.ok) {
+          const data = (await response.json()) as {
+            items: Array<{
+              id: string
+              uploadStatus: UploadStatus
+              statusMessage: string | null
+              retryCount: number
+              collectionId: string
+            }>
+          }
+          const statusMap = new Map(
+            data.items.map((item) => [
+              item.id,
+              {
+                uploadStatus: item.uploadStatus,
+                statusMessage: item.statusMessage,
+                retryCount: item.retryCount,
+              },
+            ]),
+          )
+
+          // Check if any files are still processing or pending
+          const hasProcessingFiles = data.items.some(
+            (item) => item.uploadStatus === UploadStatus.PROCESSING ||
+                     item.uploadStatus === UploadStatus.PENDING
+          )
+
+          // Update collections with new statuses
+          setCollections((prevCollections) =>
+            prevCollections.map((collection) => {
+              // Recursively update file tree with new statuses
+              const updateItemStatuses = (items: FileNode[]): FileNode[] => {
+                return items.map((item) => {
+                  const statusUpdate = item.id ? statusMap.get(item.id) : null
+                  return {
+                    ...item,
+                    uploadStatus: statusUpdate?.uploadStatus ?? item.uploadStatus,
+                    statusMessage: statusUpdate?.statusMessage ?? item.statusMessage,
+                    retryCount: statusUpdate?.retryCount ?? item.retryCount,
+                    children: item.children
+                      ? updateItemStatuses(item.children)
+                      : undefined,
+                  }
+                })
+              }
+
+              return {
+                ...collection,
+                items: updateItemStatuses(collection.items),
+              }
+            }),
+          )
+
+          // Stop polling if no files are processing or pending
+          if (!hasProcessingFiles) {
+            setIsPolling(false)
+          }
+        }
+      } catch (error) {
+        // Silently fail polling - don't show errors to user
+        console.error("Failed to poll collection statuses:", error)
+      }
+    }
+
+    if (isPolling) {
+      console.log("Polling active")
+      const intervalId = setInterval(pollStatuses, pollInterval)
+      pollStatuses() // Poll immediately
+
+      return () => {
+        clearInterval(intervalId)
+      }
+    }
+  }, [isPolling, collections.length])
+
+  // Start polling when collections change and have processing files
+  useEffect(() => {
+    if (collections.length === 0) return
+
+    const hasProcessingFiles = collections.some((collection) => {
+      const checkItems = (items: FileNode[]): boolean => {
+        return items.some(
+          (item) => {
+            console.log(`Checking file: ${item.name}, status: ${item.uploadStatus}`)
+            return (
+              item.uploadStatus === UploadStatus.PROCESSING ||
+              item.uploadStatus === UploadStatus.PENDING ||
+              (item.children && checkItems(item.children))
+            )
+          }
+        )
+      }
+      return checkItems(collection.items)
+    })
+
+    console.log(`hasProcessingFiles: ${hasProcessingFiles}, isPolling: ${isPolling}`)
+
+    if (hasProcessingFiles && !isPolling) {
+      console.log("Starting polling: Files in processing state detected")
+      setIsPolling(true)
+    }
+  }, [collections, isPolling])
+
   const handleCloseModal = () => {
     setShowNewCollection(false)
     setAddingToCollection(null)
@@ -516,6 +639,21 @@ function KnowledgeManagementContent() {
     setCollectionName("")
     setSelectedFiles([])
     setOpenDropdown(null)
+  }
+
+  // Utility function to filter valid files and show error if none are valid
+  const getValidFilesOrShowError = (files: FileUploadSelectedFile[]) => {
+    const validFiles = files.filter(f => isValidFile(f.file))
+    
+    if (validFiles.length === 0) {
+      toast.error({
+        title: "Unsupported Files",
+        description: "No valid files to upload. All selected files are unsupported.",
+      })
+      return null
+    }
+    
+    return validFiles
   }
 
   const handleUpload = async () => {
@@ -540,9 +678,13 @@ function KnowledgeManagementContent() {
       return
     }
 
-    // Start the global upload progress
-    const batches = createBatches(selectedFiles, collectionName.trim())
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
+    // Filter out unsupported files before upload
+    const validFiles = getValidFilesOrShowError(selectedFiles)
+    if (!validFiles) return
+
+    // Start the global upload progress with only valid files
+    const batches = createBatches(validFiles, collectionName.trim())
+    const files = validFiles.map(f => ({ file: f.file, id: f.id }))
     const { uploadId, abortController } = startUpload(collectionName.trim(), files, batches.length, true)
 
     // Close the modal immediately after starting upload
@@ -627,6 +769,9 @@ function KnowledgeManagementContent() {
             updatedAt: item.updatedAt,
             id: item.id,
             updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+            uploadStatus: item.uploadStatus as UploadStatus,
+            statusMessage: item.statusMessage,
+            retryCount: item.retryCount,
           })),
         ),
         isOpen: true,
@@ -733,9 +878,13 @@ function KnowledgeManagementContent() {
       return
     }
 
-    // Start the global upload progress
-    const batches = createBatches(selectedFiles, addingToCollection.name)
-    const files = selectedFiles.map(f => ({ file: f.file, id: f.id }))
+    // Filter out unsupported files before upload
+    const validFiles = getValidFilesOrShowError(selectedFiles)
+    if (!validFiles) return
+
+    // Start the global upload progress with only valid files
+    const batches = createBatches(validFiles, addingToCollection.name)
+    const files = validFiles.map(f => ({ file: f.file, id: f.id }))
     const { uploadId, abortController } = startUpload(addingToCollection.name, files, batches.length, false, addingToCollection.id)
 
     // Close the modal immediately after starting upload
@@ -821,6 +970,9 @@ function KnowledgeManagementContent() {
               updatedAt: item.updatedAt,
               id: item.id,
               updatedBy: item.lastUpdatedByEmail || user?.email || "Unknown",
+              uploadStatus: item.uploadStatus as UploadStatus,
+              statusMessage: item.statusMessage,
+              retryCount: item.retryCount,
             })),
           ),
           lastUpdated: new Date(updatedCl.updatedAt).toLocaleString("en-GB", {
@@ -931,6 +1083,9 @@ function KnowledgeManagementContent() {
                   id: item.id,
                   updatedBy:
                     item.lastUpdatedByEmail || user?.email || "Unknown",
+                  uploadStatus: item.uploadStatus as UploadStatus,
+                  statusMessage: item.statusMessage,
+                  retryCount: item.retryCount,
                 })),
               ),
               lastUpdated: new Date(updatedCl.updatedAt).toLocaleString(
@@ -1160,6 +1315,7 @@ function KnowledgeManagementContent() {
         file,
         collection,
         content: blob,
+        uploadStatus: file.uploadStatus,
       })
     } catch (error) {
       console.error("Error loading document:", error)
@@ -1413,6 +1569,7 @@ function KnowledgeManagementContent() {
                     initialChatId={currentInitialChatId}
                     onChatCreated={handleChatCreated}
                     onChunkIndexChange={handleChunkIndexChange}
+                    uploadStatus={selectedDocument.uploadStatus}
                   />
                 </div>
               ) : (
@@ -1450,7 +1607,7 @@ function KnowledgeManagementContent() {
                 />
 
                 {/* Chat overlay panel */}
-                <div className="relative bg-white dark:bg-[#1E1E1E] w-[50%] max-w-[50%] max-w-[90vw] h-full shadow-2xl transform transition-transform duration-300 ease-in-out">
+                <div className="relative bg-white dark:bg-[#1E1E1E] w-[50%] max-w-[90vw] h-full shadow-2xl transform transition-transform duration-300 ease-in-out">
                   {/* Close button */}
                   <div className="absolute top-2 right-4 z-10">
                     <Button
@@ -1474,6 +1631,7 @@ function KnowledgeManagementContent() {
                       initialChatId={currentInitialChatId}
                       onChatCreated={handleChatCreated}
                       onChunkIndexChange={handleChunkIndexChange}
+                      uploadStatus={selectedDocument.uploadStatus}
                     />
                   </div>
                 </div>
@@ -1548,6 +1706,9 @@ function KnowledgeManagementContent() {
                                             item.lastUpdatedByEmail ||
                                             user?.email ||
                                             "Unknown",
+                                          uploadStatus: item.uploadStatus as UploadStatus,
+                                          statusMessage: item.statusMessage,
+                                          retryCount: item.retryCount,
                                           isOpen: false,
                                           children:
                                             item.type === "folder"
@@ -1607,7 +1768,7 @@ function KnowledgeManagementContent() {
           <div className="p-4 md:py-4 md:px-8">
             <div className="w-full max-w-7xl mx-auto">
               <div className="flex justify-between items-center mt-6">
-                <h1 className="text-[26px] font-display text-gray-700 dark:text-gray-100 tracking-wider">
+                <h1 className="text-[32px] font-display text-gray-700 dark:text-gray-100 tracking-wider">
                   KNOWLEDGE MANAGEMENT
                 </h1>
                 <div className="flex items-center gap-4">
@@ -1679,6 +1840,9 @@ function KnowledgeManagementContent() {
                                   item.lastUpdatedByEmail ||
                                   user?.email ||
                                   "Unknown",
+                                uploadStatus: item.uploadStatus as UploadStatus,
+                                statusMessage: item.statusMessage,
+                                retryCount: item.retryCount,
                               })),
                             )
                           } else {
@@ -1802,6 +1966,9 @@ function KnowledgeManagementContent() {
                               }
                             }
                           }}
+                          onRetry={(node, path) => {
+                            // TODO: Implement retry logic here
+                          }}
                           onToggle={async (node) => {
                             if (node.type !== "folder") return
 
@@ -1846,6 +2013,9 @@ function KnowledgeManagementContent() {
                                                 item.lastUpdatedByEmail ||
                                                 user?.email ||
                                                 "Unknown",
+                                              uploadStatus: item.uploadStatus as UploadStatus,
+                                              statusMessage: item.statusMessage,
+                                              retryCount: item.retryCount,
                                               isOpen: false,
                                               children:
                                                 item.type === "folder"

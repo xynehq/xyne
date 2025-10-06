@@ -328,6 +328,7 @@ show_status() {
     echo "  • Grafana: http://localhost:3002"
     echo "  • Prometheus: http://localhost:9090"
     echo "  • Loki: http://localhost:3100"
+    echo "  • LiveKit Server: http://localhost:7880 (WebRTC: 7881, UDP: 7882)"
     
     # Show GPU/CPU mode
     if detect_gpu_support >/dev/null 2>&1; then
