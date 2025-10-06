@@ -299,14 +299,20 @@ export class CharacterAnimationManager {
    */
   waitForAllAnimationsComplete(): Promise<void> {
     return new Promise((resolve) => {
-      // If no animations are running, resolve immediately
-      if (!this.hasActiveAnimations()) {
-        resolve()
-        return
-      }
-
-      // Add resolver to pending list - it will be called when all animations complete
+      // Push the resolver first to avoid race condition
       this.pendingCompletionResolvers.push(resolve)
+
+      // Then immediately re-check if animations are actually running
+      // If not, remove the resolver and call it synchronously
+      if (!this.hasActiveAnimations()) {
+        // Remove the resolver we just added
+        const index = this.pendingCompletionResolvers.indexOf(resolve)
+        if (index > -1) {
+          this.pendingCompletionResolvers.splice(index, 1)
+        }
+        // Resolve immediately
+        resolve()
+      }
     })
   }
 }
