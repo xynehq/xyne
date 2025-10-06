@@ -179,6 +179,7 @@ import {
   textToImageCitationIndex,
   isValidApp,
   isValidEntity,
+  collectFollowupContext,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -4166,8 +4167,8 @@ export const MessageApi = async (c: Context) => {
       return MessageWithToolsApi(c)
     }
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
@@ -4434,6 +4435,30 @@ export const MessageApi = async (c: Context) => {
               }),
             })
           }
+
+          let filteredMessages = messages
+              .slice(0, messages.length - 1)
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              )
+
+          // Check for follow-up context carry-forward
+          const lastIdx = filteredMessages.length - 1;
+          const workingSet = collectFollowupContext(filteredMessages, lastIdx);
+
+          const hasCarriedContext =
+            workingSet.fileIds.length > 0 ||
+            workingSet.attachmentFileIds.length > 0;
+          if (hasCarriedContext) {
+            fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]));
+            imageAttachmentFileIds = Array.from(
+              new Set([...imageAttachmentFileIds, ...workingSet.attachmentFileIds])
+            );
+            loggerWithChild({ email: email }).info(
+              `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
+            );
+          }
           if (
             (fileIds && fileIds?.length > 0) ||
             (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
@@ -4695,14 +4720,7 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            const filteredMessages = messages
-              .slice(0, messages.length - 1)
-              .filter((msg) => !msg?.errorMessage)
-              .filter(
-                (msg) =>
-                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
-              )
-
+            filteredMessages = filteredMessages.filter((msg) => !msg?.errorMessage)
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
