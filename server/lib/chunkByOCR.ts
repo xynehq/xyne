@@ -17,9 +17,8 @@ const DEFAULT_LAYOUT_PARSING_VISUALIZE = false
 const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
 const DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST = 100
 const TEXT_CHUNK_OVERLAP_CHARS = 32
-const USE_SEQUENTIAL_BATCH_PROCESSING='true'
-// Control whether to process batches concurrently (all at once) or sequentially (one by one)
-// const USE_SEQUENTIAL_BATCH_PROCESSING = USE_SEQUENTIAL_BATCH_PROCESSING === 'true' || false
+const USE_SEQUENTIAL_BATCH_PROCESSING=true
+
 
 type LayoutParsingBlock = {
   block_label?: string
