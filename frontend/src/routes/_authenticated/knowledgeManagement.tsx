@@ -752,7 +752,7 @@ function KnowledgeManagementContent() {
         id: updatedCl.id,
         name: updatedCl.name,
         description: updatedCl.description,
-        files: updatedCl.totalCount || selectedFiles.length,
+        files: updatedCl.totalCount || validFiles.length,
         lastUpdated: new Date(updatedCl.updatedAt).toLocaleString("en-GB", {
           day: "numeric",
           month: "short",
