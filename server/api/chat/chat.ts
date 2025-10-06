@@ -278,7 +278,7 @@ export async function resolveNamesToEmails(
     searchSpan?.end()
 
     const resultCount = searchResults.root.children?.length || 0
-    console.log("resolveNamesToEmails result count: ", searchResults)
+    Logger.info(`resolveNamesToEmails result count: ${resultCount}`)
     if (
       !searchResults.root.children ||
       searchResults.root.children.length === 0
@@ -4218,7 +4218,7 @@ export const MessageApi = async (c: Context) => {
         loggerWithChild({ email: email }).error(
           `Invalid model: ${modelId}. Model not found in label mappings or Models enum.`,
         )
-        // throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
+        throw new HTTPException(400, { message: `Invalid model: ${modelId}` })
       }
     }
     const webSearchEnabled = enableWebSearch ?? false
@@ -4276,7 +4276,6 @@ export const MessageApi = async (c: Context) => {
         userAndWorkspaceCheck.workspace.id,
       )
     }
-    actualModelId = defaultBestModel
     // If none of the above, proceed with default RAG flow
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {

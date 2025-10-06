@@ -121,15 +121,14 @@ export const searchVespa = async (
       "Error fetching Google sync jobs status",
     )
   }
-  console.log(app, entity, "from xyne")
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
     recencyDecayRate:
       options.recencyDecayRate || config.defaultRecencyDecayRate,
-    isSlackConnected: true,
-    isDriveConnected: true,
-    isGmailConnected: true,
-    isCalendarConnected: true,
+    isSlackConnected,
+    isDriveConnected,
+    isGmailConnected,
+    isCalendarConnected,
   })
 }
 
