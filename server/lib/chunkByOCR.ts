@@ -333,7 +333,7 @@ async function callLayoutParsingApi(
     10,
   )
 
-  console.log("Calling layout parsing API", {
+  Logger.info("Calling layout parsing API", {
     apiUrl,
     fileName,
     fileSize: buffer.length,
@@ -383,7 +383,7 @@ async function callLayoutParsingApi(
         `Layout parsing API request failed (${response.status}): ${responseText.slice(0, 200)}`,
       )
     }
-    console.log("Layout parsing API request succeeded, parsing response")
+    Logger.info("Layout parsing API request succeeded, parsing response")
     const envelope = (await response.json()) as LayoutParsingApiEnvelope
 
     const outputPayload = envelope.outputs?.[0]?.data?.[0]
@@ -514,7 +514,7 @@ async function splitPdfIntoBatches(
     return [buffer]
   }
 
-  console.log("Splitting large PDF into batches", {
+  Logger.info("Splitting large PDF into batches", {
     totalPages,
     maxPagesPerBatch,
     estimatedBatches: Math.ceil(totalPages / maxPagesPerBatch),
@@ -541,7 +541,7 @@ async function splitPdfIntoBatches(
     const pdfBytes = await newPdf.save()
     batches.push(Buffer.from(pdfBytes))
 
-    console.log("Created PDF batch", {
+    Logger.info("Created PDF batch", {
       batchIndex: batches.length,
       startPage: startPage + 1,
       endPage,
@@ -581,7 +581,7 @@ async function processBatchesConcurrently(
   batches: Buffer[],
   fileName: string,
 ): Promise<LayoutParsingApiPayload[]> {
-  console.log("Processing PDF batches concurrently", {
+  Logger.info("Processing PDF batches concurrently", {
     fileName,
     totalBatches: batches.length,
   })
@@ -589,7 +589,7 @@ async function processBatchesConcurrently(
   return Promise.all(
     batches.map(async (batch, index) => {
       const batchIndex = index + 1
-      console.log("Processing PDF batch", {
+      Logger.info("Processing PDF batch", {
         fileName,
         batchIndex,
         totalBatches: batches.length,
@@ -599,7 +599,7 @@ async function processBatchesConcurrently(
         batch,
         `${fileName}_batch_${batchIndex}`,
       )
-      console.log("Completed PDF batch", {
+      Logger.info("Completed PDF batch", {
         fileName,
         batchIndex,
         layoutResultsCount:
@@ -614,7 +614,7 @@ async function processBatchesSequentially(
   batches: Buffer[],
   fileName: string,
 ): Promise<LayoutParsingApiPayload[]> {
-  console.log("Processing PDF batches sequentially", {
+  Logger.info("Processing PDF batches sequentially", {
     fileName,
     totalBatches: batches.length,
   })
@@ -625,7 +625,7 @@ async function processBatchesSequentially(
     const batch = batches[index]
     const batchIndex = index + 1
     
-    console.log("Processing PDF batch sequentially", {
+    Logger.info("Processing PDF batch sequentially", {
       fileName,
       batchIndex,
       totalBatches: batches.length,
@@ -637,7 +637,7 @@ async function processBatchesSequentially(
       `${fileName}_batch_${batchIndex}`,
     )
 
-    console.log("Completed PDF batch sequentially", {
+    Logger.info("Completed PDF batch sequentially", {
       fileName,
       batchIndex,
       layoutResultsCount:
@@ -671,7 +671,7 @@ export async function chunkByOCRFromBuffer(
       const srcPdf = await PDFDocument.load(buffer)
       const totalPages = srcPdf.getPageCount()
 
-      console.log("Analyzed PDF for batching", {
+      Logger.info("Analyzed PDF for batching", {
         fileName,
         totalPages,
         maxPagesPerRequest,
@@ -683,7 +683,7 @@ export async function chunkByOCRFromBuffer(
           maxPagesPerRequest,
           srcPdf,
         )
-        console.log("Processing PDF in batches", {
+        Logger.info("Processing PDF in batches", {
           fileName,
           totalPages,
           batches: batches.length,
@@ -695,7 +695,7 @@ export async function chunkByOCRFromBuffer(
           : await processBatchesConcurrently(batches, fileName)
 
         finalApiResult = mergeLayoutParsingResults(batchResults)
-        console.log("Merged batch results", {
+        Logger.info("Merged batch results", {
           totalBatches: batches.length,
           layoutResultsCount:
             finalApiResult.layoutParsingResults?.length || 0,
@@ -715,7 +715,7 @@ export async function chunkByOCRFromBuffer(
     finalApiResult = await callLayoutParsingApi(buffer, fileName)
   }
 
-  console.log("API result received", {
+  Logger.info("API result received", {
     layoutResultsCount: finalApiResult.layoutParsingResults?.length || 0,
   })
 
@@ -876,7 +876,7 @@ export async function chunkByOCR(
           try {
             await fsPromises.writeFile(imagePath, imageBuffer)
             savedImages.add(block.image_index)
-            console.log("Saved OCR image", {
+            Logger.info("Saved OCR image", {
               docId,
               pageNumber,
               imageIndex: block.image_index,
@@ -932,7 +932,7 @@ export async function chunkByOCR(
     (metadata) => metadata.chunk_index,
   )
 
-  console.log("Processing completed", {
+  Logger.info("Processing completed", {
     totalTextChunks: chunks.length,
     totalImageChunks: image_chunks.length,
     totalChunksMetadata: chunks_map.length,
