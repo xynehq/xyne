@@ -206,6 +206,67 @@ export interface CollectionItem {
   type?: "collection" | "folder" | "file"
   name?: string
 }
+// Icon components
+export const FileIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+    <polyline points="13 2 13 9 20 9"></polyline>
+  </svg>
+)
+
+export const FolderIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+  </svg>
+)
+
+export const CollectionIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+  </svg>
+)
+export const getItemIcon = (itemType: string): React.ReactNode => {
+  switch (itemType) {
+    case "folder":
+      return <FolderIcon />
+    case "collection":
+      return <CollectionIcon />
+    case "file":
+    default:
+      return <FileIcon />
+  }
+}
 
 // Utility function to check if an item is selected either directly or through parent inheritance
 function isItemSelectedWithInheritance(
@@ -2065,53 +2126,7 @@ function AgentComponent() {
 
               // Determine the icon based on the type from the mapping or the item type
               const itemType = integrationIdToNameMap[itemId]?.type || item.type
-              const itemIcon =
-                itemType === "folder" ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-blue-600"
-                  >
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                  </svg>
-                ) : itemType === "collection" ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-blue-600"
-                  >
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                  </svg>
-                ) : (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-blue-600"
-                  >
-                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                    <polyline points="13 2 13 9 20 9"></polyline>
-                  </svg>
-                )
-
+              const itemIcon = getItemIcon(itemType)
               result.push({
                 id: `${clId}_${itemId}`,
                 name: displayName,
