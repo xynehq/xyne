@@ -12,7 +12,11 @@ const Logger = getLogger(Subsystem.Integrations).child({
 const DEFAULT_MAX_CHUNK_BYTES = 1024
 const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
 const DEFAULT_LAYOUT_PARSING_BASE_URL = "http://localhost:8000"
+const DEFAULT_LAYOUT_PARSING_FILE_TYPE = 0
+const DEFAULT_LAYOUT_PARSING_VISUALIZE = false
 const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
+const DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST = 100
+const TEXT_CHUNK_OVERLAP_CHARS = 32
 
 type LayoutParsingBlock = {
   block_label?: string
@@ -84,6 +88,16 @@ type GlobalSeq = {
   value: number
 }
 
+function looksLikePdf(buffer: Buffer, fileName: string): boolean {
+  if (fileName.toLowerCase().endsWith(".pdf")) {
+    return true
+  }
+  if (buffer.length < 4) {
+    return false
+  }
+  return buffer.subarray(0, 4).toString("utf8") === "%PDF"
+}
+
 function getByteLength(str: string): number {
   return Buffer.byteLength(str, "utf8")
 }
@@ -114,6 +128,20 @@ function splitText(text: string, maxBytes: number): string[] {
   }
 
   return chunks
+}
+
+function trimChunkToByteLimit(content: string, byteLimit: number): string {
+  if (getByteLength(content) <= byteLimit) {
+    return content
+  }
+
+  let endIndex = content.length
+
+  while (endIndex > 0 && getByteLength(content.slice(0, endIndex)) > byteLimit) {
+    endIndex -= 1
+  }
+
+  return content.slice(0, endIndex)
 }
 
 function detectImageExtension(buffer: Buffer): string {
@@ -295,9 +323,8 @@ async function callLayoutParsingApi(
   const baseUrl = (process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL).replace(/\/+$/, '')
   
   const apiUrl = baseUrl + '/' + LAYOUT_PARSING_API_PATH.replace(/^\/+/, '')
-  const fileType =
-    Number.parseInt(process.env.LAYOUT_PARSING_FILE_TYPE ?? "0", 10) || 0
-  const visualize = process.env.LAYOUT_PARSING_VISUALIZE === "false"
+  const fileType = DEFAULT_LAYOUT_PARSING_FILE_TYPE
+  const visualize = DEFAULT_LAYOUT_PARSING_VISUALIZE
   const timeoutMs = Number.parseInt(
     process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "300000",
     10,
@@ -474,10 +501,11 @@ function transformLayoutParsingResults(
 
 async function splitPdfIntoBatches(
   buffer: Buffer,
-  maxPagesPerBatch: number = 30,
+  maxPagesPerBatch: number = DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST,
+  preloadedPdf?: PDFDocument,
 ): Promise<Buffer[]> {
-  const srcPdf = await PDFDocument.load(buffer)
-  const totalPages = srcPdf.getPageCount()
+  const sourcePdf = preloadedPdf ?? (await PDFDocument.load(buffer))
+  const totalPages = sourcePdf.getPageCount()
 
   if (totalPages <= maxPagesPerBatch) {
     return [buffer]
@@ -502,7 +530,7 @@ async function splitPdfIntoBatches(
       pageIndices.push(startPage + i)
     }
 
-    const copiedPages = await newPdf.copyPages(srcPdf, pageIndices)
+    const copiedPages = await newPdf.copyPages(sourcePdf, pageIndices)
     for (const page of copiedPages) {
       newPdf.addPage(page)
     }
@@ -526,11 +554,10 @@ function mergeLayoutParsingResults(
   results: LayoutParsingApiPayload[],
 ): LayoutParsingApiPayload {
   const allLayoutResults: LayoutParsingResult[] = []
-  let pageOffset = 0
 
   for (const result of results) {
     const layoutResults = result.layoutParsingResults ?? []
-    
+
     // Adjust page indices to maintain correct ordering across batches
     const adjustedResults = layoutResults.map((layout, localPageIndex) => ({
       ...layout,
@@ -539,7 +566,6 @@ function mergeLayoutParsingResults(
     }))
 
     allLayoutResults.push(...adjustedResults)
-    pageOffset += layoutResults.length
   }
 
   return {
@@ -553,42 +579,70 @@ export async function chunkByOCRFromBuffer(
   fileName: string,
   docId: string,
 ): Promise<ProcessingResult> {
-  
-  // Check if this is a PDF and handle batching if necessary
-  const isPdf = fileName.toLowerCase().endsWith('.pdf')
+  const maxPagesEnv = Number.parseInt(
+    process.env.LAYOUT_PARSING_MAX_PAGES_PER_REQUEST ?? "",
+    10,
+  )
+  const maxPagesPerRequest =
+    Number.isFinite(maxPagesEnv) && maxPagesEnv > 0
+      ? maxPagesEnv
+      : DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST
+
   let finalApiResult: LayoutParsingApiPayload
 
-  if (isPdf) {
+  if (looksLikePdf(buffer, fileName)) {
     try {
       const srcPdf = await PDFDocument.load(buffer)
       const totalPages = srcPdf.getPageCount()
 
-      if (totalPages > 30) {
-        // Split PDF into batches and process each
-        const batches = await splitPdfIntoBatches(buffer, 30)
-        const batchResults: LayoutParsingApiPayload[] = []
+      Logger.info("Analyzed PDF for batching", {
+        fileName,
+        totalPages,
+        maxPagesPerRequest,
+      })
 
-        for (let i = 0; i < batches.length; i++) {
-          const batch = batches[i]
-          Logger.info("Processing PDF batch", {
-            batchIndex: i + 1,
-            totalBatches: batches.length,
-            batchSizeBytes: batch.length,
-          })
+      if (totalPages > maxPagesPerRequest) {
+        const batches = await splitPdfIntoBatches(
+          buffer,
+          maxPagesPerRequest,
+          srcPdf,
+        )
+        Logger.info("Processing PDF in batches", {
+          fileName,
+          totalPages,
+          batches: batches.length,
+        })
 
-          const batchResult = await callLayoutParsingApi(batch, `${fileName}_batch_${i + 1}`)
-          batchResults.push(batchResult)
-        }
+        const batchResults = await Promise.all(
+          batches.map(async (batch, index) => {
+            const batchIndex = index + 1
+            Logger.info("Processing PDF batch", {
+              fileName,
+              batchIndex,
+              totalBatches: batches.length,
+              batchSizeBytes: batch.length,
+            })
+            const batchResult = await callLayoutParsingApi(
+              batch,
+              `${fileName}_batch_${batchIndex}`,
+            )
+            Logger.info("Completed PDF batch", {
+              fileName,
+              batchIndex,
+              layoutResultsCount:
+                batchResult.layoutParsingResults?.length ?? 0,
+            })
+            return batchResult
+          }),
+        )
 
-        // Merge all batch results
         finalApiResult = mergeLayoutParsingResults(batchResults)
-        
         Logger.info("Merged batch results", {
           totalBatches: batches.length,
-          layoutResultsCount: finalApiResult.layoutParsingResults?.length || 0,
+          layoutResultsCount:
+            finalApiResult.layoutParsingResults?.length || 0,
         })
       } else {
-        // Small PDF, process normally
         finalApiResult = await callLayoutParsingApi(buffer, fileName)
       }
     } catch (error) {
@@ -647,6 +701,7 @@ export async function chunkByOCR(
   let currentTextBuffer = ""
   let currentBlockLabels: string[] = []
   let lastPageNumber = -1
+  let lastTextChunk: string | null = null
 
   const imageBaseDir = path.resolve(process.env.IMAGE_DIR || DEFAULT_IMAGE_DIR)
   const docImageDir = path.join(imageBaseDir, docId)
@@ -669,6 +724,17 @@ export async function chunkByOCR(
         chunkContent = `(continued) ${chunkContent}`
       }
 
+      if (TEXT_CHUNK_OVERLAP_CHARS > 0 && lastTextChunk) {
+        const overlap = lastTextChunk.slice(-TEXT_CHUNK_OVERLAP_CHARS)
+        if (overlap && !chunkContent.startsWith(overlap)) {
+          const needsSeparator =
+            !/\s$/.test(overlap) && chunkContent.length > 0 && !/^\s/.test(chunkContent)
+          chunkContent = `${overlap}${needsSeparator ? " " : ""}${chunkContent}`
+        }
+      }
+
+      chunkContent = trimChunkToByteLimit(chunkContent, chunkSizeLimit)
+
       chunks.push(chunkContent)
       chunks_map.push({
         chunk_index: globalSeq.value,
@@ -677,6 +743,7 @@ export async function chunkByOCR(
       })
 
       globalSeq.value += 1
+      lastTextChunk = chunkContent
     }
 
     currentTextBuffer = ""

@@ -4,7 +4,7 @@ import { createReadStream as createFileReadStream } from "node:fs"
 import { join, dirname, extname } from "node:path"
 import { stat } from "node:fs/promises"
 import { stream } from "hono/streaming"
-import { type SelectUser } from "@/db/schema"
+import { userAgentPermissions, type SelectUser } from "@/db/schema"
 import { z } from "zod"
 import type { Context } from "hono"
 import { HTTPException } from "hono/http-exception"
@@ -39,20 +39,55 @@ import {
   markParentAsProcessing,
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
-import { cleanUpAgentDb } from "@/db/agent"
-import type { CollectionItem, File as DbFile } from "@/db/schema"
+import { cleanUpAgentDb, getAgentByExternalId } from "@/db/agent"
+import type {Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { DeleteDocument, GetDocument } from "@/search/vespa"
 import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
-import { boss, FileProcessingQueue } from "@/queue/api-server-queue"
+import { boss, FileProcessingQueue, PdfFileProcessingQueue } from "@/queue/api-server-queue"
 import * as crypto from "crypto"
+import { fileTypeFromBuffer } from "file-type"
 import {
   DATASOURCE_CONFIG,
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
 import { ApiKeyScopes, UploadStatus } from "@/shared/types"
+
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx":
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".txt": "text/plain",
+  ".csv": "text/csv",
+  ".html": "text/html",
+  ".xml": "application/xml",
+  ".json": "application/json",
+  ".zip": "application/zip",
+  ".rar": "application/vnd.rar",
+  ".7z": "application/x-7z-compressed",
+  ".tar": "application/x-tar",
+  ".gz": "application/gzip",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".mp4": "video/mp4",
+  ".avi": "video/x-msvideo",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+}
 
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, {
   module: "knowledgeBaseService",
@@ -125,6 +160,75 @@ function getStoragePath(
     month,
     `${storageKey}_${fileName}`,
   )
+}
+
+// Enhanced MIME type detection with extension normalization and magic byte analysis
+async function detectMimeType(
+  fileName: string,
+  buffer: ArrayBuffer | Uint8Array | Buffer,
+  browserMimeType?: string,
+): Promise<string> {
+  try {
+    let detectionBuffer: Uint8Array | Buffer
+    if (Buffer.isBuffer(buffer)) {
+      detectionBuffer = buffer
+    } else if (buffer instanceof Uint8Array) {
+      detectionBuffer = buffer
+    } else {
+      detectionBuffer = new Uint8Array(buffer)
+    }
+
+    // Step 1: Normalize the file extension (case-insensitive)
+    const ext = extname(fileName).toLowerCase()
+
+    // Step 2: Extension-based MIME mapping uses a module-level constant now.
+
+    // Step 3: Use magic byte detection from file-type library
+    let detectedType: string | undefined
+    try {
+      const fileTypeResult = await fileTypeFromBuffer(detectionBuffer)
+      if (fileTypeResult?.mime) {
+        detectedType = fileTypeResult.mime
+        loggerWithChild().debug(
+          `Magic byte detection for ${fileName}: ${detectedType}`,
+        )
+      }
+    } catch (error) {
+      loggerWithChild().debug(
+        `Magic byte detection failed for ${fileName}: ${getErrorMessage(error)}`,
+      )
+    }
+
+    // Step 4: Determine the best MIME type using fallback strategy
+    let finalMimeType: string
+
+    // Priority: 1. Magic bytes (most reliable), 2. Extension mapping, 3. Browser type, 4. Default
+    if (detectedType) {
+      finalMimeType = detectedType
+    } else if (EXTENSION_MIME_MAP[ext]) {
+      finalMimeType = EXTENSION_MIME_MAP[ext]
+    } else if (
+      browserMimeType &&
+      browserMimeType !== "application/octet-stream"
+    ) {
+      finalMimeType = browserMimeType
+    } else {
+      finalMimeType = "application/octet-stream"
+    }
+
+    loggerWithChild().debug(
+      `MIME detection for ${fileName}: extension=${ext}, magic=${detectedType}, browser=${browserMimeType}, final=${finalMimeType}`,
+    )
+
+    return finalMimeType
+  } catch (error) {
+    loggerWithChild().error(
+      error,
+      `Error in MIME detection for ${fileName}: ${getErrorMessage(error)}`,
+    )
+    // Fallback to browser type or default
+    return browserMimeType || "application/octet-stream"
+  }
 }
 
 // API Handlers
@@ -346,6 +450,65 @@ export const GetCollectionApi = async (c: Context) => {
     })
   }
 }
+
+export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
+  const { sub: userEmail } = c.get(JwtPayloadKey)
+  const collectionId = c.req.param("clId")
+  const agentExternalId = c.req.query("agentExternalId")
+ 
+  if(!agentExternalId || !collectionId){
+    throw new HTTPException(400, { message: "agentExternalId and collectionId are required" })
+  }
+
+  const users = await getUserByEmail(db, userEmail)
+  if (!users || users.length === 0) {
+    throw new HTTPException(404, { message: "User not found" })
+  }
+  const user = users[0]
+  
+  const agent=await getAgentByExternalId(db,agentExternalId,user.workspaceId)
+  
+  if(!agent){
+    throw new HTTPException(404, { message: "Agent not found" })
+  }
+  const hasPermission=await db
+    .select()
+    .from(userAgentPermissions)
+    .where(
+      and(
+        eq(userAgentPermissions.userId, user.id),
+        eq(userAgentPermissions.agentId, agent.id),
+        
+      )
+    )
+    .limit(1)
+
+  if (!hasPermission || hasPermission.length === 0) {
+    throw new HTTPException(403, { message: "You don't have shared access to this agent" })
+  }
+  try {
+    const collection = await getCollectionById(db, collectionId)
+    if (!collection) {
+      throw new HTTPException(404, { message: "Collection not found" })
+    }
+
+    
+
+    return c.json({ name: collection.name })
+  } catch (error) {
+    if (error instanceof HTTPException) throw error
+
+    const errMsg = getErrorMessage(error)
+    loggerWithChild({ email: userEmail }).error(
+      error,
+      `Failed to get Collection: ${errMsg}`,
+    )
+    throw new HTTPException(500, {
+      message: "Failed to get Collection",
+    })
+  }
+}
+
 
 // Update a Collection
 export const UpdateCollectionApi = async (c: Context) => {
@@ -1181,6 +1344,13 @@ export const UploadFilesApi = async (c: Context) => {
         // Write file to disk
         await writeFile(storagePath, new Uint8Array(buffer))
 
+        // Detect MIME type using robust detection with extension normalization and magic bytes
+        const detectedMimeType = await detectMimeType(
+          originalFileName,
+          buffer,
+          file.type,
+        )
+
         // Create file record in database first
         const item = await db.transaction(async (tx: TxnOrClient) => {
           return await createFileItem(
@@ -1192,7 +1362,7 @@ export const UploadFilesApi = async (c: Context) => {
             fileName,
             storagePath,
             storageKey,
-            file.type || "application/octet-stream",
+            detectedMimeType,
             file.size,
             checksum,
             {
@@ -1211,8 +1381,10 @@ export const UploadFilesApi = async (c: Context) => {
         })
 
         // Queue after transaction commits to avoid race condition
+        // Route PDF files to the PDF queue, other files to the general queue
+        const queueName = detectedMimeType === "application/pdf" ? PdfFileProcessingQueue : FileProcessingQueue
         await boss.send(
-          FileProcessingQueue,
+          queueName,
           { fileId: item.id, type: ProcessingJobType.FILE },
           {
             retryLimit: 3,
@@ -1592,23 +1764,25 @@ export const GetChunkContentApi = async (c: Context) => {
     }
 
     // Handle both legacy number[] format and new ChunkMetadata[] format
-    const index = resp.fields.chunks_pos.findIndex((pos: number | ChunkMetadata) => {
-      // If it's a number (legacy format), compare directly
-      if (typeof pos === "number") {
-        return pos === chunkIndex
-      }
-      // If it's a ChunkMetadata object, compare the index field
-      if (typeof pos === "object" && pos !== null) {
-        if (pos.chunk_index !== undefined) {
-          return pos.chunk_index === chunkIndex
-        } else {
-          loggerWithChild({ email: userEmail }).warn(
-            `Unexpected chunk position object format: ${JSON.stringify(pos)}`,
-          )
+    const index = resp.fields.chunks_pos.findIndex(
+      (pos: number | ChunkMetadata) => {
+        // If it's a number (legacy format), compare directly
+        if (typeof pos === "number") {
+          return pos === chunkIndex
         }
-      }
-      return false
-    })
+        // If it's a ChunkMetadata object, compare the index field
+        if (typeof pos === "object" && pos !== null) {
+          if (pos.chunk_index !== undefined) {
+            return pos.chunk_index === chunkIndex
+          } else {
+            loggerWithChild({ email: userEmail }).warn(
+              `Unexpected chunk position object format: ${JSON.stringify(pos)}`,
+            )
+          }
+        }
+        return false
+      },
+    )
     if (index === -1) {
       throw new HTTPException(404, { message: "Chunk index not found" })
     }
@@ -1691,8 +1865,14 @@ export const PollCollectionsStatusApi = async (c: Context) => {
     const body = await c.req.json()
     const collectionIds = body.collectionIds as string[]
 
-    if (!collectionIds || !Array.isArray(collectionIds) || collectionIds.length === 0) {
-      throw new HTTPException(400, { message: "collectionIds array is required" })
+    if (
+      !collectionIds ||
+      !Array.isArray(collectionIds) ||
+      collectionIds.length === 0
+    ) {
+      throw new HTTPException(400, {
+        message: "collectionIds array is required",
+      })
     }
 
     // Fetch items only for collections owned by the user (enforced in DB function)

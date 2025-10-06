@@ -167,7 +167,12 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import { UserRole, Apps, CreateApiKeySchema, getDocumentSchema } from "@/shared/types" // Import Apps
+import {
+  UserRole,
+  Apps,
+  CreateApiKeySchema,
+  getDocumentSchema,
+} from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -254,6 +259,7 @@ import {
   GetFileContentApi,
   DownloadFileApi,
   GetChunkContentApi,
+  GetCollectionNameForSharedAgentApi,
   PollCollectionsStatusApi,
 } from "@/api/knowledgeBase"
 import {
@@ -1121,6 +1127,7 @@ export const AppRoutes = app
   )
   .post("/cl/poll-status", PollCollectionsStatusApi)
   .get("/cl/:clId", GetCollectionApi)
+  .get("/cl/:clId/name", GetCollectionNameForSharedAgentApi)
   .put("/cl/:clId", UpdateCollectionApi)
   .delete("/cl/:clId", DeleteCollectionApi)
   .get("/cl/:clId/items", ListCollectionItemsApi)
