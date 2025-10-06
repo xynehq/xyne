@@ -2258,12 +2258,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setShowOnFormSubmissionUI(true)
           break
 
-        case "python_code":
-        case "python_script":
-          // Open What Happens Next sidebar for Python code configuration
-          setSelectedNodeForNext(node.id)
-          setShowWhatHappensNextUI(true)
-          break
 
         case "email":
           // Open Email config sidebar
@@ -3591,15 +3585,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               }}
               onSelectAction={handleWhatHappensNextAction}
               selectedNodeId={selectedNodeForNext}
-              toolType={
-                selectedNodeForNext
-                  ? (() => {
-                      const node = nodes.find((n) => n.id === selectedNodeForNext)
-                      const tools = node?.data?.tools as Tool[] | undefined
-                      return tools && tools.length > 0 ? tools[0]?.type : undefined
-                    })()
-                  : undefined
-              }
               toolData={
                 selectedNodeForNext
                   ? (() => {
@@ -3609,81 +3594,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                     })()
                   : undefined
               }
-              selectedTemplate={selectedTemplate}
-              onStepCreated={(stepData) => {
-                // Create visual step below the selected node
-                if (selectedNodeForNext && stepData) {
-                  const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
-                  if (sourceNode) {
-                    const newNodeId = `step-${nodeCounter}`
-                    
-                    // Create new node positioned below the source node
-                    const newNode = {
-                      id: newNodeId,
-                      type: "stepNode",
-                      position: {
-                        x: 400, // Consistent X position for perfect straight line alignment
-                        y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
-                      },
-                      data: {
-                        step: {
-                          id: newNodeId,
-                          name: stepData.name,
-                          description: stepData.description,
-                          type: stepData.type,
-                          status: "pending",
-                          contents: [],
-                          config: stepData.tool?.val || {},
-                        },
-                        tools: stepData.tool ? [stepData.tool] : [],
-                        isActive: false,
-                        isCompleted: false,
-                        hasNext: true, // Show + button on new step
-                      },
-                      draggable: true,
-                    }
-
-                    // Create edge connecting source to new node
-                    const newEdge = {
-                      id: `${selectedNodeForNext}-${newNodeId}`,
-                      source: selectedNodeForNext,
-                      target: newNodeId,
-                      type: "smoothstep",
-                      animated: false,
-                      style: {
-                        stroke: "#D1D5DB",
-                        strokeWidth: 2,
-                      },
-                      markerEnd: {
-                        type: "arrowclosed" as const,
-                        color: "#D1D5DB",
-                      },
-                      sourceHandle: "bottom",
-                      targetHandle: "top",
-                    }
-
-                    // Update nodes and edges
-                    setNodes((prevNodes) => [...prevNodes, newNode])
-                    setEdges((prevEdges) => [...prevEdges, newEdge])
-                    setNodeCounter((prev) => prev + 1)
-
-                    // Remove hasNext from source node since it now has a next step
-                    setNodes((prevNodes) =>
-                      prevNodes.map((node) =>
-                        node.id === selectedNodeForNext
-                          ? {
-                              ...node,
-                              data: {
-                                ...node.data,
-                                hasNext: false,
-                              },
-                            }
-                          : node,
-                      ),
-                    )
-                  }
-                }
-              }}
             />
 
         {/* AI Agent Config Sidebar */}
