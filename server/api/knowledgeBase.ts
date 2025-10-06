@@ -467,10 +467,12 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
   const user = users[0]
   
   const agent=await getAgentByExternalId(db,agentExternalId,user.workspaceId)
+  console.log("agent",agent)
   
   if(!agent){
     throw new HTTPException(404, { message: "Agent not found" })
   }
+  if(!agent.isPublic){
   const hasPermission=await db
     .select()
     .from(userAgentPermissions)
@@ -486,6 +488,7 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
   if (!hasPermission || hasPermission.length === 0) {
     throw new HTTPException(403, { message: "You don't have shared access to this agent" })
   }
+}
   try {
     const collection = await getCollectionById(db, collectionId)
     if (!collection) {
