@@ -37,6 +37,7 @@ import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import imageType from "image-type"
 import { NAMESPACE } from "@/config"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "dataSourceIntegration",
@@ -374,27 +375,28 @@ const processSpreadsheetFile = async (
       const worksheet = workbook.Sheets[sheetName]
       if (!worksheet) continue
 
-      const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,
-        defval: "",
-        raw: false,
-      })
+      // const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
+      //   header: 1,
+      //   defval: "",
+      //   raw: false,
+      // })
 
-      const validRows = sheetData.filter((row) =>
-        row.some((cell) => cell && cell.toString().trim().length > 0),
-      )
+      // const validRows = sheetData.filter((row) =>
+      //   row.some((cell) => cell && cell.toString().trim().length > 0),
+      // )
 
-      if (validRows.length === 0) continue
+      // if (validRows.length === 0) continue
 
-      if (validRows?.length > DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_ROWS) {
-        // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-        // Logger.warn(
-        //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-        // )
-        return []
-      }
+      // if (validRows?.length > DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_ROWS) {
+      //   // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+      //   // Logger.warn(
+      //   //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+      //   // )
+      //   return []
+      // }
 
-      const sheetChunks = chunkSheetRows(validRows)
+      // Use the new header-preserving chunking function
+      const sheetChunks = chunkSheetWithHeaders(worksheet)
 
       const filteredChunks = sheetChunks.filter(
         (chunk) => chunk.trim().length > 0,
@@ -465,55 +467,6 @@ const processSpreadsheetFile = async (
       "Spreadsheet",
     )
   }
-}
-
-// Function to chunk sheet rows (simplified version of chunkFinalRows)
-const chunkSheetRows = (allRows: string[][]): string[] => {
-  const chunks: string[] = []
-  let currentChunk = ""
-  let totalTextLength = 0
-  const MAX_CHUNK_SIZE = 512
-
-  for (const row of allRows) {
-    // Filter out numerical cells and empty strings, join textual cells
-    const textualCells = row
-      .filter(
-        (cell) =>
-          cell && isNaN(Number(cell)) && cell.toString().trim().length > 0,
-      )
-      .map((cell) => cell.toString().trim())
-
-    if (textualCells.length === 0) continue
-
-    const rowText = textualCells.join(" ")
-
-    // Check if adding this rowText would exceed the maximum text length
-    if (
-      totalTextLength + rowText.length >
-      DATASOURCE_CONFIG.MAX_ATTACHMENT_SHEET_TEXT_LEN
-    ) {
-      // Logger.warn(`Text length excedded, indexing with empty content`)
-      // Return an empty array if the total text length exceeds the limit
-      return []
-    }
-
-    totalTextLength += rowText.length
-
-    if ((currentChunk + " " + rowText).trim().length > MAX_CHUNK_SIZE) {
-      if (currentChunk.trim().length > 0) {
-        chunks.push(currentChunk.trim())
-      }
-      currentChunk = rowText
-    } else {
-      currentChunk += (currentChunk ? " " : "") + rowText
-    }
-  }
-
-  if (currentChunk.trim().length > 0) {
-    chunks.push(currentChunk.trim())
-  }
-
-  return chunks
 }
 
 // Main export function
@@ -596,6 +549,7 @@ export const handleDataSourceFileUpload = async (
         const processedFile = await processPptxContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isSheetFile(mimeType)) {
+        checkFileSize(file, DATASOURCE_CONFIG.MAX_SPREADSHEET_FILE_SIZE_MB)
         const fileBuffer = Buffer.from(await file.arrayBuffer())
         processedFiles = await processSheetContent(fileBuffer, options)
       } else if (isTextFile(mimeType)) {

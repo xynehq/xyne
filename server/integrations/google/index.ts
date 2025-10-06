@@ -100,8 +100,7 @@ import { unlink } from "node:fs/promises"
 import type { Document } from "@langchain/core/documents"
 import {
   MAX_GD_PDF_SIZE,
-  MAX_GD_SHEET_ROWS,
-  MAX_GD_SHEET_TEXT_LEN,
+  MAX_GD_SHEET_SIZE,
   MAX_GD_SLIDES_TEXT_LEN,
   PDFProcessingConcurrency,
   ServiceAccountUserConcurrency,
@@ -1074,6 +1073,7 @@ import {
   totalAttachmentIngested,
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -2186,49 +2186,49 @@ export const getSpreadsheet = async (
 // Adds rows' string data to a chunk until the 512-character limit is exceeded
 // If adding a row exceeds the limit, the chunk is added to the next chunk
 // Otherwise, the row is added to the current chunk
-const chunkFinalRows = (allRows: string[][]): string[] => {
-  const chunks: string[] = []
-  let currentChunk = ""
-  let totalTextLength = 0
+// const chunkFinalRows = (allRows: string[][]): string[] => {
+//   const chunks: string[] = []
+//   let currentChunk = ""
+//   let totalTextLength = 0
 
-  for (const row of allRows) {
-    // Filter out numerical cells and empty strings
-    const textualCells = row.filter(
-      (cell) => isNaN(Number(cell)) && cell.trim().length > 0,
-    )
+//   for (const row of allRows) {
+//     // Filter out numerical cells and empty strings
+//     const textualCells = row.filter(
+//       (cell) => isNaN(Number(cell)) && cell.trim().length > 0,
+//     )
 
-    if (textualCells.length === 0) continue // Skip if no textual data
+//     if (textualCells.length === 0) continue // Skip if no textual data
 
-    const rowText = textualCells.join(" ")
+//     const rowText = textualCells.join(" ")
 
-    // Check if adding this rowText would exceed the maximum text length
-    if (totalTextLength + rowText.length > MAX_GD_SHEET_TEXT_LEN) {
-      // Logger.warn(`Text length excedded, indexing with empty content`)
-      // Return an empty array if the total text length exceeds the limit
-      return []
-    }
+//     // Check if adding this rowText would exceed the maximum text length
+//     if (totalTextLength + rowText.length > MAX_GD_SHEET_TEXT_LEN) {
+//       // Logger.warn(`Text length excedded, indexing with empty content`)
+//       // Return an empty array if the total text length exceeds the limit
+//       return []
+//     }
 
-    totalTextLength += rowText.length
+//     totalTextLength += rowText.length
 
-    if ((currentChunk + " " + rowText).trim().length > 512) {
-      // Add the current chunk to the list and start a new chunk
-      if (currentChunk.trim().length > 0) {
-        chunks.push(currentChunk.trim())
-      }
-      currentChunk = rowText
-    } else {
-      // Append the row text to the current chunk
-      currentChunk += " " + rowText
-    }
-  }
+//     if ((currentChunk + " " + rowText).trim().length > 512) {
+//       // Add the current chunk to the list and start a new chunk
+//       if (currentChunk.trim().length > 0) {
+//         chunks.push(currentChunk.trim())
+//       }
+//       currentChunk = rowText
+//     } else {
+//       // Append the row text to the current chunk
+//       currentChunk += " " + rowText
+//     }
+//   }
 
-  if (currentChunk.trim().length > 0) {
-    // Add any remaining text as the last chunk
-    chunks.push(currentChunk.trim())
-  }
+//   if (currentChunk.trim().length > 0) {
+//     // Add any remaining text as the last chunk
+//     chunks.push(currentChunk.trim())
+//   }
 
-  return chunks
-}
+//   return chunks
+// }
 
 export const getSheetsListFromOneSpreadsheet = async (
   sheets: sheets_v4.Sheets,
@@ -2244,6 +2244,13 @@ export const getSheetsListFromOneSpreadsheet = async (
       client,
       userEmail,
     )
+
+    if (spreadsheet.size && parseInt(spreadsheet.size) > MAX_GD_SHEET_SIZE) {
+      loggerWithChild({ email: userEmail }).warn(
+        `Ignoring ${spreadsheet.name} as its more than ${MAX_GD_SHEET_SIZE} MB`,
+      )
+      return []
+    }
 
     if (spreadSheetData) {
       // Now we should get all sheets inside this spreadsheet using the spreadSheetData
@@ -2282,15 +2289,15 @@ export const getSheetsListFromOneSpreadsheet = async (
 
         let chunks: string[] = []
 
-        if (finalRows?.length > MAX_GD_SHEET_ROWS) {
-          // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
-          // Logger.warn(
-          //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
-          // )
-          chunks = []
-        } else {
-          chunks = chunkFinalRows(finalRows)
-        }
+        // if (finalRows?.length > MAX_GD_SHEET_ROWS) {
+        //   // If there are more rows than MAX_GD_SHEET_ROWS, still index it but with empty content
+        //   // Logger.warn(
+        //   //   `Large no. of rows in ${spreadsheet.name} -> ${sheet.sheetTitle}, indexing with empty content`,
+        //   // )
+        //   chunks = []
+        // } else {
+          chunks = chunkSheetWithHeaders(finalRows)
+        // }
 
         const sheetDataToBeIngested = {
           title: `${spreadsheet.name} / ${sheet?.sheetTitle}`,
@@ -2965,12 +2972,13 @@ export async function* listFiles(
   client: GoogleClient,
   startDate?: string,
   endDate?: string,
+  q?: string,
 ): AsyncIterableIterator<drive_v3.Schema$File[]> {
   const drive = google.drive({ version: "v3", auth: client })
   let nextPageToken = ""
 
   // Build the query with date filters if provided
-  let query = "trashed = false"
+  let query = `${q} and trashed = false`
   const dateFilters: string[] = []
 
   if (startDate) {

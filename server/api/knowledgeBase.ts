@@ -54,6 +54,7 @@ import {
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
 import { ApiKeyScopes, UploadStatus } from "@/shared/types"
+import { expandSheetIds } from "./chat/chat"
 
 const EXTENSION_MIME_MAP: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -1583,10 +1584,13 @@ export const DeleteItemApi = async (c: Context) => {
         try {
           // Delete from Vespa
           if (itemToDelete.vespaDocId) {
-            await DeleteDocument(itemToDelete.vespaDocId, KbItemsSchema)
-            loggerWithChild({ email: userEmail }).info(
-              `Deleted file from Vespa: ${itemToDelete.vespaDocId}`,
-            )
+            const vespaDocIds = expandSheetIds(itemToDelete.vespaDocId)
+            vespaDocIds.forEach(async (id) => {
+              await DeleteDocument(id, KbItemsSchema)
+              loggerWithChild({ email: userEmail }).info(
+                `Deleted file from Vespa: ${id}`,
+              )
+            })
           }
         } catch (error) {
           loggerWithChild({ email: userEmail }).warn(

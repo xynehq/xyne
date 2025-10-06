@@ -20,7 +20,7 @@ import { HTTPException } from "hono/http-exception"
 import { isValidFile, isImageFile } from "shared/fileUtils"
 import { generateThumbnail, getThumbnailPath } from "@/utils/image"
 import type { AttachmentMetadata } from "@/shared/types"
-import { FileProcessorService } from "@/services/fileProcessor"
+import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { isDataSourceError } from "@/integrations/dataSource/errors"
@@ -218,6 +218,7 @@ export const handleAttachmentUpload = async (c: Context) => {
     }
 
     const attachmentMetadata: AttachmentMetadata[] = []
+    let vespaId : string = ""
 
     for (const file of files) {
       const fileBuffer = await file.arrayBuffer()
@@ -247,7 +248,7 @@ export const handleAttachmentUpload = async (c: Context) => {
           // For non-images: process through FileProcessorService and ingest into Vespa
 
           // Process the file content using FileProcessorService
-          const processingResult = await FileProcessorService.processFile(
+          const processingResults = await FileProcessorService.processFile(
             Buffer.from(fileBuffer),
             file.type,
             file.name,
@@ -257,61 +258,75 @@ export const handleAttachmentUpload = async (c: Context) => {
             false,
           )
 
-          // TODO: Ingest the processed content into Vespa
-          // This would typically involve calling your Vespa ingestion service
-          // For now, we'll log the processing result
-          loggerWithChild({ email }).info(
-            `Processed non-image file "${file.name}" with ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`,
-          )
-
-          const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
-            processingResult
-
-          const vespaDoc = {
-            docId: fileId,
-            clId: "attachment",
-            itemId: fileId,
-            fileName: file.name,
-            app: Apps.KnowledgeBase as const,
-            entity: KnowledgeBaseEntity.Attachment,
-            description: "",
-            storagePath: "",
-            chunks: chunks,
-            chunks_pos: chunks_pos,
-            image_chunks: image_chunks,
-            image_chunks_pos: image_chunks_pos,
-            chunks_map: chunks.map((_, index) => ({
-              chunk_index: index,
-              page_number: 0,
-              block_labels: [],
-            })),
-            image_chunks_map: image_chunks.map((_, index) => ({
-              chunk_index: index,
-              page_number: 0,
-              block_labels: [],
-            })),
-            metadata: JSON.stringify({
-              originalFileName: file.name,
-              uploadedBy: email,
-              chunksCount: chunks.length,
-              imageChunksCount: image_chunks.length,
-              processingMethod: getBaseMimeType(file.type || "text/plain"),
-              lastModified: Date.now(),
-            }),
-            createdBy: email,
-            duration: 0,
-            mimeType: getBaseMimeType(file.type || "text/plain"),
-            fileSize: file.size,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
+          if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
+            vespaId = `${fileId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
+          } else {
+            vespaId = fileId
           }
+          // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
+          for (const [resultIndex, processingResult] of processingResults.entries()) {
+            let docId = fileId
+            let fileName = file.name
 
-          await insert(vespaDoc, KbItemsSchema)
+            // For sheet processing results, append sheet information
+            if ('sheetName' in processingResult) {
+              const sheetResult = processingResult as SheetProcessingResult
+              fileName = processingResults.length > 1 
+                ? `${file.name} / ${sheetResult.sheetName}`
+                : file.name
+              docId = sheetResult.docId
+            }
+
+            loggerWithChild({ email }).info(
+              `Processed non-image file "${fileName}" with ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`,
+            )
+
+            const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
+              processingResult
+
+            const vespaDoc = {
+              docId: docId,
+              clId: "attachment",
+              itemId: fileId,
+              fileName: fileName,
+              app: Apps.KnowledgeBase as const,
+              entity: KnowledgeBaseEntity.Attachment,
+              description: "",
+              storagePath: "",
+              chunks: chunks,
+              chunks_pos: chunks_pos,
+              image_chunks: image_chunks,
+              image_chunks_pos: image_chunks_pos,
+              chunks_map: processingResult.chunks_map,
+              image_chunks_map: processingResult.image_chunks_map,
+              metadata: JSON.stringify({
+                originalFileName: file.name,
+                uploadedBy: email,
+                chunksCount: chunks.length,
+                imageChunksCount: image_chunks.length,
+                processingMethod: getBaseMimeType(file.type || "text/plain"),
+                lastModified: Date.now(),
+                ...(('sheetName' in processingResult) && {
+                  sheetName: (processingResult as SheetProcessingResult).sheetName,
+                  sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
+                  totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+                }),
+              }),
+              createdBy: email,
+              duration: 0,
+              mimeType: getBaseMimeType(file.type || "text/plain"),
+              fileSize: file.size,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            }
+
+            await insert(vespaDoc, KbItemsSchema)
+          }
         }
 
         // Create attachment metadata
         const metadata: AttachmentMetadata = {
-          fileId,
+          fileId: vespaId,
           fileName: file.name,
           fileType: file.type,
           fileSize: file.size,

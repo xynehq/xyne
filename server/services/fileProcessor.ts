@@ -6,6 +6,7 @@ import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
 import { type ChunkMetadata } from "@/types"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
 import * as XLSX from "xlsx"
 import {
   getBaseMimeType,
@@ -29,6 +30,13 @@ export interface ProcessingResult {
   image_chunks_map: ChunkMetadata[]
 }
 
+export interface SheetProcessingResult extends ProcessingResult {
+  sheetName: string
+  sheetIndex: number
+  totalSheets: number
+  docId: string
+}
+
 export class FileProcessorService {
 
   static async processFile(
@@ -39,7 +47,7 @@ export class FileProcessorService {
     storagePath?: string,
     extractImages: boolean = false,
     describeImages: boolean = false,
-  ): Promise<ProcessingResult> {
+  ): Promise<(ProcessingResult | SheetProcessingResult)[]> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
     let chunks: string[] = []
     let chunks_pos: number[] = []
@@ -50,10 +58,7 @@ export class FileProcessorService {
       if (baseMimeType === "application/pdf") {
         // Redirect PDF processing to OCR
         const result = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
-
-        
-
-        return result
+        return [result]
       } else if (isDocxFile(baseMimeType)) {
         // Process DOCX
         const result = await extractTextAndImagesWithChunksFromDocx(
@@ -86,40 +91,51 @@ export class FileProcessorService {
         } else {
           workbook = XLSX.readFile(storagePath)
         }
-        const allChunks: string[] = []
 
-        for (const sheetName of workbook.SheetNames) {
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          throw new Error("No worksheets found in spreadsheet")
+        }
+
+        const sheetResults: SheetProcessingResult[] = []
+
+        for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
           const worksheet = workbook.Sheets[sheetName]
           if (!worksheet) continue
 
-          const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
-            header: 1,
-            defval: "",
-            raw: false,
-          })
-
-          const validRows = sheetData.filter((row) =>
-            row.some((cell) => cell && cell.toString().trim().length > 0),
+          // Use the same header-preserving chunking function as dataSource integration
+          const sheetChunks = chunkSheetWithHeaders(worksheet)
+          
+          const filteredChunks = sheetChunks.filter(
+            (chunk) => chunk.trim().length > 0,
           )
 
-          for (const row of validRows) {
-            const textualCells = row
-              .filter(
-                (cell) =>
-                  cell &&
-                  isNaN(Number(cell)) &&
-                  cell.toString().trim().length > 0,
-              )
-              .map((cell) => cell.toString().trim())
+          // Skip sheets with no valid content
+          if (filteredChunks.length === 0) continue
 
-            if (textualCells.length > 0) {
-              allChunks.push(textualCells.join(" "))
-            }
+          // Generate a unique docId for each sheet
+          const sheetDocId = `${vespaDocId}_sheet_${sheetIndex}`
+
+          const sheetResult: SheetProcessingResult = {
+            chunks: filteredChunks,
+            chunks_pos: filteredChunks.map((_, idx) => idx),
+            image_chunks: [],
+            image_chunks_pos: [],
+            chunks_map: [],
+            image_chunks_map: [],
+            sheetName,
+            sheetIndex,
+            totalSheets: workbook.SheetNames.length,
+            docId: sheetDocId,
           }
+
+          sheetResults.push(sheetResult)
         }
 
-        chunks = allChunks
-        chunks_pos = allChunks.map((_, idx) => idx)
+        if (sheetResults.length === 0) {
+          throw new Error("No valid content found in any worksheet")
+        }
+
+        return sheetResults
       } else if (isTextFile(baseMimeType)) {
         // Process text file
         const content = buffer.toString("utf-8")
@@ -165,13 +181,13 @@ export class FileProcessorService {
       block_labels: ["image"], // Default block label
     }));
 
-    return {
+    return [{
       chunks,
       chunks_pos,
       image_chunks,
       image_chunks_pos,
       chunks_map,
       image_chunks_map,
-    }
+    }]
   }
 }
