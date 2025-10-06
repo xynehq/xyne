@@ -28,7 +28,8 @@ interface WorkflowTemplate {
     allowed_file_types?: string[];
     supports_file_upload?: boolean;
   };
-  createdBy: string;
+  userId: number;
+  workspaceId: number;
   rootWorkflowStepTemplateId: string;
   createdAt: string;
   updatedAt: string;
@@ -59,7 +60,8 @@ interface WorkflowTemplate {
     type: string;
     value: any;
     config: any;
-    createdBy: string;
+    workspaceId: number;
+    userId: number;
     createdAt: string;
     updatedAt: string;
   }>;
@@ -81,7 +83,6 @@ interface WorkflowTemplate {
       type: string;
       value: any;
       config: any;
-      createdBy: string;
       createdAt: string;
       updatedAt: string;
     };
@@ -504,7 +505,8 @@ function WorkflowComponent() {
               version: '1.0',
               status: executionTemplate?.status || 'unknown',
               config: executionTemplate?.config || {},
-              createdBy: executionTemplate?.createdBy || '',
+              userId: executionTemplate?.userId || 0,
+              workspaceId: executionTemplate?.workspaceId || 0,
               rootWorkflowStepTemplateId: steps[0]?.id || '',
               createdAt: executionTemplate?.createdAt || new Date().toISOString(),
               updatedAt: executionTemplate?.updatedAt || new Date().toISOString(),
@@ -989,4 +991,3 @@ function WorkflowComponent() {
     </div>
   )
 }
-

@@ -46,7 +46,8 @@ interface WorkflowTemplate {
     allowed_file_types?: string[]
     supports_file_upload?: boolean
   }
-  createdBy: string
+  userId: number
+  workspaceId: number
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
@@ -77,7 +78,8 @@ interface WorkflowTemplate {
     type: string
     value: any
     config: any
-    createdBy: string
+    workspaceId: number
+    userId: number
     createdAt: string
     updatedAt: string
   }>
@@ -99,7 +101,6 @@ interface WorkflowTemplate {
       type: string
       value: any
       config: any
-      createdBy: string
       createdAt: string
       updatedAt: string
     }

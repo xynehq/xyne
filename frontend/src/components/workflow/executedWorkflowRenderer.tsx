@@ -109,7 +109,8 @@ interface ExecutionWorkflowData {
     type: string
     value: any
     config: any
-    createdBy: string
+    workspaceId: number
+    userId: number
     createdAt: string
     updatedAt: string
   }>
