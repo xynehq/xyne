@@ -242,8 +242,8 @@ const StepNode: React.FC<NodeProps> = ({
         <>
           <div
             className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-                ? "border-gray-800 dark:border-gray-300 shadow-lg"
-                : "border-gray-300 dark:border-gray-600"
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
+              : "border-gray-300 dark:border-gray-600"
               }`}
             style={{
               width: "80px",
@@ -338,8 +338,8 @@ const StepNode: React.FC<NodeProps> = ({
       <>
         <div
           className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-              ? "border-gray-800 dark:border-gray-300 shadow-lg"
-              : "border-gray-300 dark:border-gray-600"
+            ? "border-gray-800 dark:border-gray-300 shadow-lg"
+            : "border-gray-300 dark:border-gray-600"
             }`}
           style={{
             width: "320px",
@@ -504,8 +504,8 @@ const StepNode: React.FC<NodeProps> = ({
         <>
           <div
             className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-                ? "border-gray-800 dark:border-gray-300 shadow-lg"
-                : "border-gray-300 dark:border-gray-600"
+              ? "border-gray-800 dark:border-gray-300 shadow-lg"
+              : "border-gray-300 dark:border-gray-600"
               }`}
             style={{
               width: "80px",
@@ -600,8 +600,8 @@ const StepNode: React.FC<NodeProps> = ({
       <>
         <div
           className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-              ? "border-gray-800 dark:border-gray-300 shadow-lg"
-              : "border-gray-300 dark:border-gray-600"
+            ? "border-gray-800 dark:border-gray-300 shadow-lg"
+            : "border-gray-300 dark:border-gray-600"
             }`}
           style={{
             width: "320px",
@@ -750,8 +750,8 @@ const StepNode: React.FC<NodeProps> = ({
       <>
         <div
           className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${selected
-              ? "border-gray-800 dark:border-gray-300 shadow-lg"
-              : "border-gray-300 dark:border-gray-600"
+            ? "border-gray-800 dark:border-gray-300 shadow-lg"
+            : "border-gray-300 dark:border-gray-600"
             }`}
           style={{
             width: "320px",
@@ -1020,10 +1020,10 @@ const StepNode: React.FC<NodeProps> = ({
           id="top"
           isConnectable={isConnectable}
           className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${isCompleted
-              ? "bg-emerald-600"
-              : isActive
-                ? "bg-blue-600"
-                : "bg-gray-400 dark:bg-gray-500"
+            ? "bg-emerald-600"
+            : isActive
+              ? "bg-blue-600"
+              : "bg-gray-400 dark:bg-gray-500"
             }`}
         />
 
@@ -1065,10 +1065,10 @@ const StepNode: React.FC<NodeProps> = ({
           id="bottom"
           isConnectable={isConnectable}
           className={`w-3 h-3 border-2 border-white dark:border-gray-900 shadow-sm ${isCompleted
-              ? "bg-emerald-600"
-              : isActive
-                ? "bg-blue-600"
-                : "bg-gray-400 dark:bg-gray-500"
+            ? "bg-emerald-600"
+            : isActive
+              ? "bg-blue-600"
+              : "bg-gray-400 dark:bg-gray-500"
             }`}
         />
 
@@ -1233,8 +1233,8 @@ const Header = ({
           onClick={onSaveChanges}
           disabled={isSaveDisabled}
           className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${isSaveDisabled
-              ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
-              : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
+            ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+            : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
             }`}
         >
           Save Changes
@@ -1423,8 +1423,8 @@ const ToolsSidebar = ({
                     {(tool as any).status && (
                       <span
                         className={`text-xs px-2 py-1 rounded ${(tool as any).status === "completed"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-gray-100 text-gray-600"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-gray-100 text-gray-600"
                           }`}
                       >
                         {(tool as any).status}
@@ -1972,7 +1972,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       })
     }, 150) // Small delay to ensure the node is fully rendered
   }, [fitView])
-  
+
   // helper function to handle agents selection from sidebar   
   const handleOnAgentSelect = useCallback((agent: any) => {
     // Create new agent workflow step using EXISTING agent
@@ -1990,7 +1990,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             name: agent.name,
             description: agent.description,
             model: agent.model,
-            isExistingAgent: true, // 🔑 Key flag for backend
+            isExistingAgent: true,
           },
           value: {
             agentId: agent.externalId,
@@ -2035,7 +2035,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           selected: true,
         }
 
-        // 🔧 FIX: Create edge with proper typing (notice 'as any')
+        // Create edge from source node to new agent node
         const newEdge = {
           id: `${selectedNodeForNext}-${newNodeId}`,
           source: selectedNodeForNext,
@@ -2054,7 +2054,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           },
           sourceHandle: "bottom",
           targetHandle: "top",
-        } as any // 🔧 This fixes the TypeScript error
+        } as any 
 
         // Update workflow state
         setNodes((prevNodes) => [...prevNodes, newNode])
@@ -2066,10 +2066,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           prevNodes.map((node) =>
             node.id === selectedNodeForNext
               ? {
-                  ...node,
-                  data: { ...node.data, hasNext: false },
-                  selected: false,
-                }
+                ...node,
+                data: { ...node.data, hasNext: false },
+                selected: false,
+              }
               : node.id === newNodeId
                 ? node
                 : { ...node, selected: false },
@@ -3849,18 +3849,18 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           !showAIAgentConfigUI &&
           !showEmailConfigUI &&
           !showOnFormSubmissionUI && (
-              <AgentsSidebar
-    isVisible={showAgentsSidebar}
-    onClose={() => {
-      setShowAgentsSidebar(false)
-      setNodes((prevNodes) =>
-        prevNodes.map(node => ({ ...node, selected: false }))
-      )
-      setSelectedNodes([])
-    }}
-    onAgentSelect={handleOnAgentSelect}  // 🔧 Much cleaner!
-  />
-          )} 
+            <AgentsSidebar
+              isVisible={showAgentsSidebar}
+              onClose={() => {
+                setShowAgentsSidebar(false)
+                setNodes((prevNodes) =>
+                  prevNodes.map(node => ({ ...node, selected: false }))
+                )
+                setSelectedNodes([])
+              }}
+              onAgentSelect={handleOnAgentSelect}
+            />
+          )}
 
         {/* Email Config Sidebar */}
         {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && (
