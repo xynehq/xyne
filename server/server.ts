@@ -1641,12 +1641,103 @@ app.get("/pdfjs/images/*", serveStatic({ root: "./dist" }))
 app.get("/pdfjs/iccs/*", serveStatic({ root: "./dist" }))
 
 app.get("/assets/*", serveStatic({ root: "./dist" }))
+
+// Proxy docs assets and pages - SECURED
+app.all("/xyneDocs/*", async (c) => {
+  const url = new URL(c.req.url)
+  
+  // 🛡️ 1. Validate and sanitize the path to prevent SSRF
+  const requestPath = url.pathname
+  if (!requestPath.startsWith('/xyneDocs/') && requestPath !== '/xyneDocs') {
+    return new Response('Forbidden', { status: 403 })
+  }
+  
+  // 🛡️ 2. Remove dangerous path traversal sequences
+  const cleanPath = requestPath.replace(/\.\./g, '').replace(/\/+/g, '/')
+  
+  // 🛡️ 3. Validate query parameters (remove redirect attempts)
+  const searchParams = new URLSearchParams(url.search)
+  const allowedParams = ['q', 'page', 'search'] // Whitelist allowed params
+  const cleanSearch = new URLSearchParams()
+  for (const [key, value] of searchParams.entries()) {
+    if (allowedParams.includes(key) && !value.includes('http')) {
+      cleanSearch.append(key, value)
+    }
+  }
+  
+  const targetUrl = `http://127.0.0.1:3232${cleanPath}${cleanSearch.toString() ? '?' + cleanSearch.toString() : ''}`
+  
+  // 🛡️ 4. Whitelist safe request headers only
+  const safeHeaders: Record<string, string> = {
+    'user-agent': c.req.header('user-agent') || 'Xyne-Proxy/1.0',
+    'accept': c.req.header('accept') || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'accept-language': c.req.header('accept-language') || 'en-US,en;q=0.5',
+    'cache-control': c.req.header('cache-control') || 'no-cache',
+  }
+  
+  // 🛡️ 5. Limit request body size (10MB max)
+  let requestBody: ArrayBuffer | undefined
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+    const contentLength = parseInt(c.req.header('content-length') || '0')
+    if (contentLength > 10 * 1024 * 1024) { // 10MB limit
+      return new Response('Request too large', { status: 413 })
+    }
+    requestBody = await c.req.arrayBuffer()
+  }
+  
+  try {
+    const response = await fetch(targetUrl, {
+      method: c.req.method,
+      headers: safeHeaders,
+      body: requestBody,
+      // 🛡️ 6. Add timeout to prevent hanging requests
+      signal: AbortSignal.timeout(30000), // 30 second timeout
+    })
+    
+    // 🛡️ 7. Whitelist safe response headers only
+    const safeResponseHeaders: Record<string, string> = {}
+    const allowedResponseHeaders = [
+      'content-type',
+      'content-length', 
+      'cache-control',
+      'etag',
+      'last-modified',
+      'vary',
+      'x-nextjs-cache',
+      'x-nextjs-prerender',
+      'x-nextjs-stale-time'
+    ]
+    
+    response.headers.forEach((value, key) => {
+      const lowerKey = key.toLowerCase()
+      if (allowedResponseHeaders.includes(lowerKey)) {
+        safeResponseHeaders[key] = value
+      }
+    })
+    
+    // 🛡️ 8. Add security headers
+    safeResponseHeaders['x-frame-options'] = 'SAMEORIGIN'
+    safeResponseHeaders['x-content-type-options'] = 'nosniff'
+    safeResponseHeaders['referrer-policy'] = 'strict-origin-when-cross-origin'
+    
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: safeResponseHeaders,
+    })
+    
+  } catch (error) {
+    console.error('Proxy error:', error)
+    return new Response('Proxy Error', { status: 502 })
+  }
+})
+
 app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 
 export const init = async () => {
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
-  
+
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
