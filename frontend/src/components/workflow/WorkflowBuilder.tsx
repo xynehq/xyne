@@ -3151,10 +3151,78 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       // Check if we already have a saved template
       const currentTemplate = createdTemplate || selectedTemplate
+      if(selectedTemplate ) {
+        console.log("Selected Template at execution time:", selectedTemplate)
+      }
+      else if (createdTemplate) {
+        console.log("Created Template at execution time:", createdTemplate)
+      }
       
       if (currentTemplate && currentTemplate.id && currentTemplate.id !== 'pending-creation') {
-        // We have a valid saved template, open the execution modal directly
-        setShowExecutionModal(true)
+        // Check if the root node requires a form (file upload)
+        const requiresForm = (() => {
+          // Find the root step using rootWorkflowStepTemplateId
+          const rootStep = currentTemplate.steps?.find(step => 
+            step.id === currentTemplate.rootWorkflowStepTemplateId
+          )
+          
+          if (!rootStep || rootStep.type !== "manual") {
+            return false
+          }
+          
+          // Check if the root step has a form tool
+          if (rootStep.toolIds && rootStep.toolIds.length > 0) {
+            const rootStepTools = currentTemplate.workflow_tools?.filter(tool => 
+              rootStep.toolIds?.includes(tool.id)
+            )
+            
+            return rootStepTools?.some(tool => tool.type === "form") || false
+          }
+        console.log("RootStep Type",rootStep,"Tool Type",currentTemplate.rootStep)
+        console.log("Current Template at execution time:", currentTemplate)
+          
+          return false
+        })()
+        
+        if (requiresForm) {
+          // Show upload modal for workflows that require form data
+          setShowExecutionModal(true)
+        } else {
+          // Execute directly without form data for other workflow types
+          try {
+            const formData: Record<string, any> = {
+              name: `${currentTemplate?.name || "Workflow"} - ${new Date().toLocaleString()}`,
+              description: `Execution of ${currentTemplate?.name || "workflow"}`,
+            }
+
+            const executionData = {
+              name: formData.name,
+              description: formData.description,
+              formData: formData,
+            }
+            
+            const response = await workflowExecutionsAPI.executeTemplate(
+              currentTemplate.id,
+              executionData,
+            )
+
+            if (response.error || response.status === "error") {
+              console.error("Execution failed:", response.error || response.message)
+              throw new Error(response.error || response.message || "Execution failed")
+            } else {
+              const executionId = response.data?.execution?.id
+              if (executionId) {
+                startPolling(executionId)
+                showSnackbarMessage("Workflow execution started successfully!", 'success')
+              } else {
+                console.warn("No execution ID found in response")
+              }
+            }
+          } catch (error) {
+            console.error("Execution error:", error)
+            showSnackbarMessage(`Failed to execute workflow: ${error instanceof Error ? error.message : "Unknown error"}`, 'error')
+          }
+        }
         return
       }
 
@@ -4208,19 +4276,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Extract the created template ID
       const createdTemplateId = createResult.data.id
 
-      // Update the created template state for future use
+      // Use the full response data from the API instead of manually creating the object
       const newCreatedTemplate = {
+        ...createResult.data,
         id: createdTemplateId,
-        name: workflowData.name,
-        description: workflowData.description,
-        version: workflowData.version,
-        status: 'active',
-        config: workflowData.config,
-        createdBy: 'current-user',
-        rootWorkflowStepTemplateId: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      } as any
+      } as WorkflowTemplate
       
       setCreatedTemplate(newCreatedTemplate)
       

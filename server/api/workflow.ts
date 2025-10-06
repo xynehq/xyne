@@ -217,7 +217,14 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
 
+    // Debug logging to check toolIds
+    Logger.info(`GetWorkflowTemplateApi: Found ${steps.length} steps for template ${templateId}`)
+    steps.forEach((step, index) => {
+      Logger.info(`Step ${index + 1} (${step.name}): toolIds = ${JSON.stringify(step.toolIds)}`)
+    })
+
     const toolIds = steps.flatMap((s) => s.toolIds || [])
+    Logger.info(`GetWorkflowTemplateApi: Flattened toolIds = ${JSON.stringify(toolIds)}`)
     const tools =
       toolIds.length > 0
         ? await db
@@ -2861,8 +2868,10 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
       // Map tool IDs for this step
       const stepToolIds: string[] = []
+      
       if (correspondingNode?.data?.tools) {
         for (const tool of correspondingNode.data.tools) {
+          
           if (tool.id && toolIdMap.has(tool.id)) {
             // Tool has an ID and we have a mapping
             const backendId = toolIdMap.get(tool.id)!
@@ -2870,6 +2879,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
           } else {
             // Try to find by temporary ID for tools without frontend IDs
             const tempId = `${tool.type}_${JSON.stringify(tool.value || {}).slice(0, 50)}`
+            
             if (toolIdMap.has(tempId)) {
               const backendId = toolIdMap.get(tempId)!
               stepToolIds.push(backendId)
@@ -2881,21 +2891,26 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
               )
               if (matchingTool) {
                 stepToolIds.push(matchingTool.id)
+              } else {
               }
             }
           }
         }
       }
+      
 
       // Update the step with relationships
+      const updateData = {
+        prevStepIds,
+        nextStepIds,
+        toolIds: stepToolIds,
+      }
+      
       await db
         .update(workflowStepTemplate)
-        .set({
-          prevStepIds,
-          nextStepIds,
-          toolIds: stepToolIds,
-        })
+        .set(updateData)
         .where(eq(workflowStepTemplate.id, step.id))
+        
     }
 
     // Third pass: Update review tool configs with backend step IDs
@@ -2950,11 +2965,18 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         .where(eq(workflowTemplate.id, templateId))
     }
 
+    // Re-query the updated steps from database to get correct toolIds
+    const updatedSteps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, template.id))
+
+
     // Return the complete workflow template with steps and tools
     const completeTemplate = {
       ...template,
       rootWorkflowStepTemplateId: rootStepId,
-      steps: createdSteps,
+      steps: updatedSteps,
       workflow_tools: createdTools,
     }
 
