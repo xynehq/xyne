@@ -435,6 +435,8 @@ class RIBBIECircularDownloader {
                     chunks_pos: [],
                     image_chunks: [],
                     image_chunks_pos: [],
+                    chunks_map: [],
+                    image_chunks_map: [],
                     metadata: JSON.stringify({ source: 'RIBBIE-automation', vespaDocId: vespaDocId }),
                     createdBy: userEmail,
                     duration: 0,
@@ -556,6 +558,8 @@ class RIBBIECircularDownloader {
                     chunks_pos: processingResult.chunks_pos,
                     image_chunks: processingResult.image_chunks || [],
                     image_chunks_pos: processingResult.image_chunks_pos || [],
+                    chunks_map: [],
+                    image_chunks_map: [],
                     metadata: JSON.stringify({
                         source: 'RIBBIE-automation',
                         circularNumber: circular.id,
