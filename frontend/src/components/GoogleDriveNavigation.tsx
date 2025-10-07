@@ -101,8 +101,8 @@ const sortDriveItems = (item: DriveItem[]): DriveItem[] => {
     const isBFolder = b.fields.entity === DriveEntity.Folder
     if (isAFolder && !isBFolder) return -1
     if (!isAFolder && isBFolder) return 1
-    const aName = a.fields.title.toLowerCase()
-    const bName = b.fields.title.toLowerCase()
+    const aName = (a.fields.title || "").toLowerCase()
+    const bName = (b.fields.title || "").toLowerCase()
     return aName.localeCompare(bName)
   })
 }
