@@ -50,6 +50,8 @@ RUN apt-get update && apt-get install -y \
     libpixman-1-dev \
     libfontconfig1-dev \
     libfreetype6-dev \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && wget https://github.com/vespa-engine/vespa/releases/download/v8.453.24/vespa-cli_8.453.24_linux_amd64.tar.gz \
     && tar -xzf vespa-cli_8.453.24_linux_amd64.tar.gz \
     && mv vespa-cli_8.453.24_linux_amd64/bin/vespa /usr/local/bin/ \
@@ -76,6 +78,8 @@ RUN mkdir -p downloads vespa-data vespa-logs uploads migrations
 # Copy and setup startup script
 COPY start.sh /usr/src/app/start.sh
 RUN chmod +x /usr/src/app/start.sh
+
+RUN npx playwright install --with-deps
 
 USER bun
 
