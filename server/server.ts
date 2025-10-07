@@ -21,6 +21,8 @@ import {
   chatTitleSchema,
   GetDriveItem,
   GetDriveItemsByDocIds,
+  getDriveItemSchema,
+  getDriveItemsByDocIdsSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
 import { HighlightApi, highlightSchema } from "@/api/highlight"
@@ -140,6 +142,9 @@ import {
   deleteDocumentSchema,
   GetAgentsForDataSourceApi,
   GetDataSourceFile,
+  getDataSourceFileParamsSchema,
+  listDataSourceFilesParamsSchema,
+  getAgentsForDataSourceParamsSchema,
 } from "@/api/dataSource"
 import {
   ChatBookmarkApi,
@@ -172,7 +177,12 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import { UserRole, Apps, CreateApiKeySchema, getDocumentSchema } from "@/shared/types" // Import Apps
+import {
+  UserRole,
+  Apps,
+  CreateApiKeySchema,
+  getDocumentSchema,
+} from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -181,6 +191,9 @@ import {
   TuningWsRoute,
   tuneDatasetSchema,
   DeleteDatasetHandler,
+  evaluateSchema,
+  deleteDatasetParamsSchema,
+  tuningWsParamsSchema,
 } from "@/api/tuning"
 import {
   CreateAgentApi,
@@ -194,6 +207,8 @@ import {
   listAgentsSchema,
   updateAgentSchema,
   GetAgentApi,
+  getAgentParamsSchema,
+  generatePromptQuerySchema,
 } from "@/api/agent"
 import { GeneratePromptApi } from "@/api/agent/promptGeneration"
 import {
@@ -283,7 +298,7 @@ import {
   updateWorkflowToolSchema,
   addStepToWorkflowSchema,
 } from "./db/schema"
-import { sendMailHelper } from "@/api/testEmail"
+import { sendMailHelper, sendEmailSchema } from "@/api/testEmail"
 import { emailService } from "./services/emailService"
 import { AgentMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
@@ -887,9 +902,21 @@ export const AppRoutes = app
     AutocompleteApi,
   )
   .post("files/upload", zValidator("form", fileUploadSchema), handleFileUpload)
-  .post("/files/upload-attachment", zValidator("form", attachmentUploadSchema), handleAttachmentUpload)
-  .get("/attachments/:fileId", zValidator("param", fileServeParamsSchema), handleAttachmentServe)
-  .get("/attachments/:fileId/thumbnail", zValidator("param", fileServeParamsSchema), handleThumbnailServe)
+  .post(
+    "/files/upload-attachment",
+    zValidator("form", attachmentUploadSchema),
+    handleAttachmentUpload,
+  )
+  .get(
+    "/attachments/:fileId",
+    zValidator("param", fileServeParamsSchema),
+    handleAttachmentServe,
+  )
+  .get(
+    "/attachments/:fileId/thumbnail",
+    zValidator("param", fileServeParamsSchema),
+    handleThumbnailServe,
+  )
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/generateTitle",
@@ -976,18 +1003,38 @@ export const AppRoutes = app
     zValidator("query", searchSchema),
     SearchSlackChannels,
   )
-  .get("/me", zValidator("query", getUserWorkspaceInfoQuerySchema), GetUserWorkspaceInfo)
+  .get(
+    "/me",
+    zValidator("query", getUserWorkspaceInfoQuerySchema),
+    GetUserWorkspaceInfo,
+  )
   .get("/users/api-keys", GetUserApiKeys)
   .post(
     "/users/api-key",
     zValidator("json", CreateApiKeySchema),
     GenerateUserApiKey,
   )
-  .delete("/users/api-keys/:keyId", zValidator("param", deleteUserApiKeyParamsSchema), DeleteUserApiKey)
+  .delete(
+    "/users/api-keys/:keyId",
+    zValidator("param", deleteUserApiKeyParamsSchema),
+    DeleteUserApiKey,
+  )
   .get("/datasources", ListDataSourcesApi)
-  .get("/datasources/:docId", GetDataSourceFile)
-  .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
-  .get("/datasources/:dataSourceId/agents", GetAgentsForDataSourceApi)
+  .get(
+    "/datasources/:docId",
+    zValidator("param", getDataSourceFileParamsSchema),
+    GetDataSourceFile,
+  )
+  .get(
+    "/datasources/:dataSourceName/files",
+    zValidator("param", listDataSourceFilesParamsSchema),
+    ListDataSourceFilesApi,
+  )
+  .get(
+    "/datasources/:dataSourceId/agents",
+    zValidator("param", getAgentsForDataSourceParamsSchema),
+    GetAgentsForDataSourceApi,
+  )
   .get("/proxy/:url", ProxyUrl)
   .get("/answer", zValidator("query", answerSchema), AnswerApi)
   .post(
@@ -995,17 +1042,33 @@ export const AppRoutes = app
     zValidator("json", deleteDocumentSchema),
     DeleteDocumentApi,
   )
-  .post("/search/driveitem", GetDriveItem)
-  .post("/search/driveitemsbydocids", GetDriveItemsByDocIds)
-  .post("/tuning/evaluate", EvaluateHandler)
+  .post(
+    "/search/driveitem",
+    zValidator("json", getDriveItemSchema),
+    GetDriveItem,
+  )
+  .post(
+    "/search/driveitemsbydocids",
+    zValidator("json", getDriveItemsByDocIdsSchema),
+    GetDriveItemsByDocIds,
+  )
+  .post("/tuning/evaluate", zValidator("json", evaluateSchema), EvaluateHandler)
   .get("/tuning/datasets", ListDatasetsHandler)
   .post(
     "/tuning/tuneDataset",
     zValidator("json", tuneDatasetSchema),
     TuneDatasetHandler,
   )
-  .delete("/tuning/datasets/:filename", DeleteDatasetHandler)
-  .get("/tuning/ws/:jobId", TuningWsRoute)
+  .delete(
+    "/tuning/datasets/:filename",
+    zValidator("param", deleteDatasetParamsSchema),
+    DeleteDatasetHandler,
+  )
+  .get(
+    "/tuning/ws/:jobId",
+    zValidator("param", tuningWsParamsSchema),
+    TuningWsRoute,
+  )
 
   // Workflow Routes
   .post(
@@ -1078,9 +1141,17 @@ export const AppRoutes = app
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)
-  .get("/agent/generate-prompt", GeneratePromptApi)
+  .get(
+    "/agent/generate-prompt",
+    zValidator("query", generatePromptQuerySchema),
+    GeneratePromptApi,
+  )
   .get("/agents", zValidator("query", listAgentsSchema), ListAgentsApi)
-  .get("/agent/:agentExternalId", GetAgentApi)
+  .get(
+    "/agent/:agentExternalId",
+    zValidator("param", getAgentParamsSchema),
+    GetAgentApi,
+  )
   .get("/workspace/users", GetWorkspaceUsersApi)
   .get(
     "/workspace/users/search",
@@ -1101,17 +1172,29 @@ export const AppRoutes = app
   .post("/calls/join", zValidator("json", joinCallSchema), JoinCallApi)
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
   .get("/calls/active", GetActiveCallsApi)
-  .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
-  .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
+  .get(
+    "/agent/:agentExternalId/permissions",
+    zValidator("param", getAgentParamsSchema),
+    GetAgentPermissionsApi,
+  )
+  .get(
+    "/agent/:agentExternalId/integration-items",
+    zValidator("param", getAgentParamsSchema),
+    GetAgentIntegrationItemsApi,
+  )
   .put(
     "/agent/:agentExternalId",
     zValidator("json", updateAgentSchema),
     UpdateAgentApi,
   )
-  .delete("/agent/:agentExternalId", DeleteAgentApi)
+  .delete(
+    "/agent/:agentExternalId",
+    zValidator("param", getAgentParamsSchema),
+    DeleteAgentApi,
+  )
   .post("/auth/logout", LogOut)
   //send Email Route
-  .post("/email/send", sendMailHelper)
+  .post("/email/send", zValidator("json", sendEmailSchema), sendMailHelper)
 
   // Collection Routes
   .post("/cl", CreateCollectionApi)
@@ -1646,7 +1729,7 @@ app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 export const init = async () => {
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
-  
+
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
