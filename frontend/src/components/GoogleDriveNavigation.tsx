@@ -1,6 +1,6 @@
 import React from "react"
 import { ChevronRight } from "lucide-react"
-import { Apps, DriveEntity } from "shared/types"
+import { Apps, DriveEntity  } from "shared/types"
 import { getIcon } from "@/lib/common"
 import { api } from "@/api"
 
@@ -204,7 +204,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
               </div>
             ) : searchResults.length > 0 ? (
               searchResults.map((result: any) => {
-               
+               console.log("Search result item:", result)
                 const itemId = result.docId
                 const itemEntity = result.entity
                 const itemTitle = result.title || result.name || "Untitled"
@@ -292,7 +292,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
               </div>
             ) : currentItems.length > 0 ? (
               currentItems.map((item: any) => {
-           
+              console.log("Current item:", item)
                 const itemId = item.id || item.fields?.docId
                 const itemDocId = item.fields?.docId
                 const itemEntity = item.fields?.entity
