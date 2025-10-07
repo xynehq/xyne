@@ -2754,10 +2754,12 @@ function AgentComponent() {
                     <div className="flex items-center gap-4 ">
                       {(() => {
                         // Calculate whether current tab has agents
-                        const currentTabHasAgents = 
-                          (activeTab === "all" && allAgentsList.length > 0) ||
-                          (activeTab === "made-by-me" && madeByMeAgentsList.length > 0) ||
-                          (activeTab === "shared-to-me" && sharedToMeAgentsList.length > 0)
+                        const agentLists: Record<string, SelectPublicAgent[]> = {
+                          "all": allAgentsList,
+                          "made-by-me": madeByMeAgentsList,
+                          "shared-to-me": sharedToMeAgentsList,
+                        }
+                        const currentTabHasAgents = (agentLists[activeTab]?.length ?? 0) > 0
                         
                         return currentTabHasAgents && (
                           <>
@@ -2919,44 +2921,39 @@ function AgentComponent() {
                     }
 
                     if (currentListToDisplay.length === 0 && !listSearchQuery) {
-                      if (activeTab === "all" || activeTab === "made-by-me") {
-                        return (
-                          <div className="flex flex-col items-center justify-center min-h-[60vh]">
-                            <img
-                              src={agentEmptyStateIcon}
-                              alt="No agents"
-                              className="w-32 h-32 mb-6 opacity-60"
-                            />
-                            <p className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
-                              No agents created yet
-                            </p>
+                      const isSharedTab = activeTab === "shared-to-me"
+                      const title = isSharedTab
+                        ? "No agents shared with you yet"
+                        : "No agents created yet"
+                      const description = isSharedTab
+                        ? null
+                        : "Click 'Create Agent' to add your first agent"
+
+                      return (
+                        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+                          <img
+                            src={agentEmptyStateIcon}
+                            alt="No agents"
+                            className="w-32 h-32 mb-6 opacity-60"
+                          />
+                          <p className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {title}
+                          </p>
+                          {description && (
                             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                              Click 'Create Agent' to add your first agent
+                              {description}
                             </p>
+                          )}
+                          {!isSharedTab && (
                             <Button
                               onClick={handleCreateNewAgent}
                               className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
                             >
                               <Plus size={18} /> CREATE AGENT
                             </Button>
-                          </div>
-                        )
-                      }
-
-                      else if (activeTab === "shared-to-me") {
-                        return (
-                          <div className="flex flex-col items-center justify-center min-h-[60vh]">
-                            <img
-                              src={agentEmptyStateIcon}
-                            alt="No agents"
-                            className="w-32 h-32 mb-6 opacity-60"
-                          />
-                          <p className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            No agents shared with you yet
-                          </p>
+                          )}
                         </div>
                       )
-                    }
                     }
 
                     return (
