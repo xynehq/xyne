@@ -479,23 +479,25 @@ revert_app() {
         echo "Example: $0 revert v1.2.3"
         exit 1
     fi
-    
+
+    IMAGE_NAME="xynehq/xyne"
+
     echo -e "${YELLOW}Reverting application to image tag: $target_tag${NC}"
     
     # Check if the image exists locally or can be pulled
-    if ! docker image inspect "xyne:$target_tag" >/dev/null 2>&1; then
-        echo -e "${YELLOW}Image xyne:$target_tag not found locally, attempting to pull...${NC}"
-        if ! docker pull "xyne:$target_tag" 2>/dev/null; then
-            echo -e "${RED}ERROR: Failed to pull image xyne:$target_tag${NC}"
+    if ! docker image inspect "$IMAGE_NAME:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image $IMAGE_NAME:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "$IMAGE_NAME:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image $IMAGE_NAME:$target_tag${NC}"
             echo "Available local images:"
-            docker images xyne --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            docker images $IMAGE_NAME --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
             exit 1
         fi
     fi
     
     # Tag the target image as 'latest' for docker-compose
-    echo -e "${YELLOW}Tagging xyne:$target_tag as xyne:latest${NC}"
-    docker tag "xyne:$target_tag" "xyne:latest"
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
+    docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
     
     # Stop and recreate both app services with the reverted image
     COMPOSE_FILES=$(get_compose_files)
@@ -542,7 +544,7 @@ update_app_version() {
     fi
 
     # Tag the target image as 'latest' for docker-compose
-    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as xyne:latest${NC}"
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
     docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
 
     # Stop and recreate both app services with the new image
@@ -576,20 +578,21 @@ update_sync_version() {
 
     echo -e "${YELLOW}Updating sync server to image tag: $target_tag${NC}"
 
+    IMAGE_NAME="xynehq/xyne"
     # Check if the image exists locally or can be pulled
-    if ! docker image inspect "xyne:$target_tag" >/dev/null 2>&1; then
-        echo -e "${YELLOW}Image xyne:$target_tag not found locally, attempting to pull...${NC}"
-        if ! docker pull "xyne:$target_tag" 2>/dev/null; then
-            echo -e "${RED}ERROR: Failed to pull image xyne:$target_tag${NC}"
+    if ! docker image inspect "$IMAGE_NAME:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image $IMAGE_NAME:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "$IMAGE_NAME:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image $IMAGE_NAME:$target_tag${NC}"
             echo "Available local images:"
-            docker images xyne --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            docker images $IMAGE_NAME --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
             exit 1
         fi
     fi
 
     # Tag the target image as 'latest' for docker-compose
-    echo -e "${YELLOW}Tagging xyne:$target_tag as xyne:latest${NC}"
-    docker tag "xyne:$target_tag" "xyne:latest"
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
+    docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
 
     # Stop and recreate only app-sync service with the new image
     COMPOSE_FILES=$(get_compose_files)
