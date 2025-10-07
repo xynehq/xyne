@@ -108,32 +108,52 @@ async function cancelProcessingJobs(params: {
   const cancelPromises = [
     // Cancel jobs for individual items
     ...itemsToDelete.map(async (item) => {
-      try {
-        const keyPrefix = item.type === "file" ? "file" : "folder"
-        const singletonKey = `${keyPrefix}_${item.id}`
-        
-        if (item.type === "file") {
-          // For files, try both queues
-          await Promise.all([
-            boss.cancel(FileProcessingQueue, singletonKey).catch(() => {}),
-            boss.cancel(PdfFileProcessingQueue, singletonKey).catch(() => {})
-          ])
-        } else {
-          // For folders, only file-processing queue
-          await boss.cancel(FileProcessingQueue, singletonKey).catch(() => {})
-        }
-      } catch (error) {
-        // Ignore errors if job doesn't exist
+      const keyPrefix = item.type === "file" ? "file" : "folder"
+      const singletonKey = `${keyPrefix}_${item.id}`
+      
+      if (item.type === "file") {
+        // For files, try both queues
+        await Promise.all([
+          boss.cancel(FileProcessingQueue, singletonKey).catch(error => {
+            // Only ignore job not found errors, log others
+            if (!error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+              loggerWithChild({ email: userEmail }).warn(
+                error, `Failed to cancel file job ${singletonKey} from ${FileProcessingQueue}`
+              )
+            }
+          }),
+          boss.cancel(PdfFileProcessingQueue, singletonKey).catch(error => {
+            // Only ignore job not found errors, log others
+            if (!error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+              loggerWithChild({ email: userEmail }).warn(
+                error, `Failed to cancel file job ${singletonKey} from ${PdfFileProcessingQueue}`
+              )
+            }
+          })
+        ])
+      } else {
+        // For folders, only file-processing queue
+        await boss.cancel(FileProcessingQueue, singletonKey).catch(error => {
+          // Only ignore job not found errors, log others
+          if (!error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+            loggerWithChild({ email: userEmail }).warn(
+              error, `Failed to cancel folder job ${singletonKey} from ${FileProcessingQueue}`
+            )
+          }
+        })
       }
     }),
     // Cancel collection job if provided
     ...(collectionId ? [(async () => {
-      try {
-        const singletonKey = `collection_${collectionId}`
-        await boss.cancel(FileProcessingQueue, singletonKey).catch(() => {})
-      } catch (error) {
-        // Ignore errors if job doesn't exist
-      }
+      const singletonKey = `collection_${collectionId}`
+      await boss.cancel(FileProcessingQueue, singletonKey).catch(error => {
+        // Only ignore job not found errors, log others
+        if (!error.message?.includes('not found') && !error.message?.includes('does not exist')) {
+          loggerWithChild({ email: userEmail }).warn(
+            error, `Failed to cancel collection job ${singletonKey} from ${FileProcessingQueue}`
+          )
+        }
+      })
     })()] : [])
   ]
   
