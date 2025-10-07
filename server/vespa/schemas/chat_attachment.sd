@@ -31,6 +31,10 @@ schema chat_attachment {
       indexing: attribute | summary
     }
 
+    field chatRef type reference<chat_container> {
+      indexing: attribute
+    }
+
     field url type string {
       indexing: attribute | summary
     }
@@ -78,6 +82,9 @@ schema chat_attachment {
       index: enable-bm25
     }
   }
+  import field chatRef.channelName as  channelName {}
+  import field chatRef.channelId as channelId {}
+
 
   field content_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
     indexing: input chunks | embed | attribute | index
