@@ -19,6 +19,7 @@ export interface CallNotification {
   }
   callType: "video" | "audio"
   targetToken: string
+  livekitUrl: string
   timestamp: number
 }
 
@@ -45,10 +46,10 @@ class CallNotificationClient {
 
   constructor() {
     this.initializeAudioOnUserInteraction()
-    
+
     // Detect if this is a popup window (call window) or main window
     this.isMainWindow = !window.opener
-    
+
     // Only set up connection management for main window
     if (this.isMainWindow) {
       this.setupWindowEventHandlers()
@@ -285,7 +286,7 @@ class CallNotificationClient {
   // Set up window event handlers to maintain connection stability
   private setupWindowEventHandlers() {
     // Prevent WebSocket disconnection on page visibility changes
-    document.addEventListener('visibilitychange', () => {
+    document.addEventListener("visibilitychange", () => {
       // Reconnect if connection was lost while page was hidden
       if (!document.hidden && !this.isConnected()) {
         this.connect()
@@ -293,7 +294,7 @@ class CallNotificationClient {
     })
 
     // Ensure connection on window focus
-    window.addEventListener('focus', () => {
+    window.addEventListener("focus", () => {
       if (!this.isConnected()) {
         this.connect()
       }
@@ -307,7 +308,11 @@ class CallNotificationClient {
     }
 
     // Don't create a new connection if one already exists and is open or connecting
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    ) {
       return
     }
 
@@ -392,7 +397,7 @@ class CallNotificationClient {
     if (!this.isMainWindow) {
       return
     }
-    
+
     if (this.ws) {
       this.ws.close()
       this.ws = null
@@ -510,8 +515,8 @@ export function useCallNotifications() {
     clientRef.current.stopCallNotificationSound()
     setIncomingCall(null)
 
-    // Open call in a new window (same as caller experience)
-    const callUrl = `/call?token=${notification.targetToken}&room=${notification.roomName}&type=${notification.callType}`
+    // Open call in a new window with the LiveKit server URL
+    const callUrl = `/call?token=${notification.targetToken}&room=${notification.roomName}&type=${notification.callType}&serverUrl=${encodeURIComponent(notification.livekitUrl)}`
     const callWindow = window.open(
       callUrl,
       "call-window-receiver",

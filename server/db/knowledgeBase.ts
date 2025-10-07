@@ -12,6 +12,7 @@ import {
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { and, asc, desc, eq, isNull, sql, or, inArray } from "drizzle-orm"
+import { UploadStatus } from "@/shared/types"
 
 // Collection CRUD operations
 export const createCollection = async (
@@ -446,6 +447,13 @@ export const createFolder = async (
   // Update collection total count
   await updateCollectionTotalCount(trx, collectionId, 1)
 
+  // Mark parent folder/collection as PROCESSING when folder is created
+  if (parentId) {
+    await markParentAsProcessing(trx, parentId, false)
+  } else {
+    await markParentAsProcessing(trx, collectionId, true)
+  }
+
   return folder
 }
 
@@ -526,6 +534,13 @@ export const createFileItem = async (
   // Update parent folder counts (if the file is in a folder)
   if (parentId) {
     await updateParentFolderCounts(trx, parentId, 1)
+  }
+
+  // Mark parent folder/collection as PROCESSING when file is uploaded
+  if (parentId) {
+    await markParentAsProcessing(trx, parentId, false)
+  } else {
+    await markParentAsProcessing(trx, collectionId, true)
   }
 
   return item
@@ -736,6 +751,39 @@ export const getCollectionFilesVespaIds = async (
   return resp
 }
 
+// Get collection items status for polling - with access control
+export const getCollectionItemsStatusByCollections = async (
+  trx: TxnOrClient,
+  collectionIds: string[],
+  userId: number,
+) => {
+  if (collectionIds.length === 0) {
+    return []
+  }
+
+  // Fetch items only for collections owned by the user
+  const items = await trx
+    .select({
+      id: collectionItems.id,
+      uploadStatus: collectionItems.uploadStatus,
+      statusMessage: collectionItems.statusMessage,
+      retryCount: collectionItems.retryCount,
+      collectionId: collectionItems.collectionId,
+    })
+    .from(collectionItems)
+    .innerJoin(collections, eq(collectionItems.collectionId, collections.id))
+    .where(
+      and(
+        inArray(collectionItems.collectionId, collectionIds),
+        eq(collections.ownerId, userId),
+        isNull(collectionItems.deletedAt),
+        isNull(collections.deletedAt),
+      ),
+    )
+
+  return items
+}
+
 export const getCollectionFoldersItemIds = async (
   collectionFoldersIds: string[],
   trx: TxnOrClient,
@@ -826,6 +874,135 @@ export const generateFolderVespaDocId = (): string => {
 // Generate Vespa document ID for collections
 export const generateCollectionVespaDocId = (): string => {
   return `cl-${createId()}`
+}
+
+// Helper function to mark parent (folder/collection) as PROCESSING when new items are added
+export const markParentAsProcessing = async (
+  trx: TxnOrClient,
+  parentId: string | null,
+  isCollection: boolean,
+) => {
+  if (!parentId) return
+
+  const updateData = {
+    uploadStatus: UploadStatus.PROCESSING,
+    updatedAt: sql`NOW()`,
+  }
+
+  if (isCollection) {
+    // Update collection status
+    await trx
+      .update(collections)
+      .set(updateData)
+      .where(eq(collections.id, parentId))
+  } else {
+    // Update folder status
+    await trx
+      .update(collectionItems)
+      .set(updateData)
+      .where(eq(collectionItems.id, parentId))
+
+    // Recursively mark parent's parent as processing
+    const [folder] = await trx
+      .select({
+        parentId: collectionItems.parentId,
+        collectionId: collectionItems.collectionId,
+      })
+      .from(collectionItems)
+      .where(eq(collectionItems.id, parentId))
+
+    if (folder) {
+      // Recursively mark parent (either another folder or the collection)
+      await markParentAsProcessing(
+        trx,
+        folder.parentId || folder.collectionId,
+        !folder.parentId, // isCollection = true if no parentId
+      )
+    }
+  }
+}
+
+// Helper function to update parent (collection/folder) status based on children completion
+export const updateParentStatus = async (
+  trx: TxnOrClient,
+  parentId: string | null,
+  isCollection: boolean,
+) => {
+  if (!parentId) return
+
+  // Fetch children based on parent type
+  const children = await trx
+    .select({ uploadStatus: collectionItems.uploadStatus })
+    .from(collectionItems)
+    .where(
+      and(
+        isCollection
+          ? eq(collectionItems.collectionId, parentId)
+          : eq(collectionItems.parentId, parentId),
+        isCollection ? isNull(collectionItems.parentId) : sql`true`,
+        isNull(collectionItems.deletedAt),
+      ),
+    )
+
+  // Determine parent type name for logging
+  const parentType = isCollection ? "collection" : "folder"
+
+  // Handle case where parent has no children
+  if (children.length === 0) {
+    const updateData = {
+      uploadStatus: UploadStatus.COMPLETED,
+      statusMessage: `Successfully processed ${parentType}`,
+      updatedAt: sql`NOW()`,
+    }
+
+    if (isCollection) {
+      await trx.update(collections).set(updateData).where(eq(collections.id, parentId))
+    } else {
+      await trx.update(collectionItems).set(updateData).where(eq(collectionItems.id, parentId))
+    }
+    return
+  }
+
+  // Count completed and failed children
+  const completedCount = children.filter(
+    (c) => c.uploadStatus === UploadStatus.COMPLETED,
+  ).length
+  const failedCount = children.filter(
+    (c) => c.uploadStatus === UploadStatus.FAILED,
+  ).length
+
+  // Update if all children are either completed or failed
+  if (completedCount + failedCount === children.length) {
+    const updateData = {
+      uploadStatus: UploadStatus.COMPLETED,
+      statusMessage: `Successfully processed ${parentType}: ${completedCount} completed, ${failedCount} failed`,
+      updatedAt: sql`NOW()`,
+    }
+
+    if (isCollection) {
+      await trx.update(collections).set(updateData).where(eq(collections.id, parentId))
+    } else {
+      await trx.update(collectionItems).set(updateData).where(eq(collectionItems.id, parentId))
+
+      // For folders, recursively check the parent folder/collection
+      const [folder] = await trx
+        .select({
+          parentId: collectionItems.parentId,
+          collectionId: collectionItems.collectionId,
+        })
+        .from(collectionItems)
+        .where(eq(collectionItems.id, parentId))
+
+      if (folder) {
+        // Recursively update parent (either another folder or the collection)
+        await updateParentStatus(
+          trx,
+          folder.parentId || folder.collectionId,
+          !folder.parentId, // isCollection = true if no parentId
+        )
+      }
+    }
+  }
 }
 
 export const getRecordBypath = async (path: string, trx: TxnOrClient) => {

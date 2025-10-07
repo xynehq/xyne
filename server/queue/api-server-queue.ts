@@ -12,11 +12,12 @@ export const boss = new PgBoss({
 })
 
 export const FileProcessingQueue = `file-processing`
+export const PdfFileProcessingQueue = `file-processing-pdf`
 
 /**
  * Initialize pg-boss for API server usage only
  * - Starts pg-boss connection
- * - Creates only the FileProcessingQueue
+ * - Creates both FileProcessingQueue and PdfFileProcessingQueue
  * - Does NOT start any workers (workers run in sync-server.ts)
  */
 export const initApiServerQueue = async () => {
@@ -25,6 +26,9 @@ export const initApiServerQueue = async () => {
   
   Logger.info("Creating FileProcessingQueue for API server")
   await boss.createQueue(FileProcessingQueue)
+  
+  Logger.info("Creating PdfFileProcessingQueue for API server")
+  await boss.createQueue(PdfFileProcessingQueue)
   
   Logger.info("API Server Queue initialization complete - ready for boss.send()")
 }

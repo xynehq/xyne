@@ -173,6 +173,7 @@ import {
   wsConnections,
   sendWebsocketMessage,
 } from "@/integrations/metricStream"
+
 import {
   EvaluateHandler,
   ListDatasetsHandler,
@@ -258,6 +259,8 @@ import {
   GetFileContentApi,
   DownloadFileApi,
   GetChunkContentApi,
+  GetCollectionNameForSharedAgentApi,
+  PollCollectionsStatusApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -1118,7 +1121,9 @@ export const AppRoutes = app
     zValidator("query", searchKnowledgeBaseSchema),
     SearchKnowledgeBaseApi,
   )
+  .post("/cl/poll-status", PollCollectionsStatusApi)
   .get("/cl/:clId", GetCollectionApi)
+  .get("/cl/:clId/name", GetCollectionNameForSharedAgentApi)
   .put("/cl/:clId", UpdateCollectionApi)
   .delete("/cl/:clId", DeleteCollectionApi)
   .get("/cl/:clId/items", ListCollectionItemsApi)

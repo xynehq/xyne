@@ -7,7 +7,6 @@ import {
   type VespaQueryConfig,
   type CollectionVespaIds,
 } from "@xyne/vespa-ts/types"
-import { getFolderItems } from "./vespa"
 import { db } from "@/db/connector"
 import {
   getAllFolderItems,
@@ -17,6 +16,7 @@ import {
   getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
 import type { SelectAgent } from "@/db/agent"
+import { sharedVespaService } from "./vespaService"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "search-utils" })
 
@@ -86,7 +86,7 @@ export async function extractDriveIds(
     if (curr) driveIds.push(curr)
     if (curr && email) {
       try {
-        const folderItem = await getFolderItems(
+        const folderItem = await sharedVespaService.getFolderItems(
           [curr],
           fileSchema,
           DriveEntity.Folder,
