@@ -9,12 +9,22 @@ import {
   boolean,
   index,
   uniqueIndex,
+  pgEnum
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { workspaces } from "./workspaces"
 import { users } from "./users"
 
+
+export enum AgentCreationSource {
+  DIRECT = "direct",
+  WORKFLOW = "workflow"
+}
+export const creationSourceEnum = pgEnum(
+  "creation_source",
+  Object.values(AgentCreationSource) as [string, ...string[]]
+)
 // Agents Table
 export const agents = pgTable(
   "agents",
@@ -43,6 +53,8 @@ export const agents = pgTable(
       .notNull()
       .default(sql`NOW()`),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    via_apiKey: boolean("via_apiKey").notNull().default(false),
+    creation_source: creationSourceEnum("creation_source").default(AgentCreationSource.DIRECT).notNull(),
   },
   (table) => ({
     agentWorkspaceIdIndex: index("agent_workspace_id_index").on(
@@ -105,6 +117,7 @@ export const selectAgentSchema = createSelectSchema(agents, {
     .optional()
     .default([]),
   docIds: z.array(fetchedDataSourceSchema).optional().default([]),
+  via_apiKey: z.boolean().default(false).optional(),
 })
 export type SelectAgent = z.infer<typeof selectAgentSchema>
 
@@ -113,5 +126,6 @@ export const selectPublicAgentSchema = selectAgentSchema.omit({
   workspaceId: true,
   userId: true,
   deletedAt: true,
+  creation_source: true,
 })
 export type SelectPublicAgent = z.infer<typeof selectPublicAgentSchema>

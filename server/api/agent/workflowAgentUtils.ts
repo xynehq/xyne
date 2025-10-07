@@ -18,6 +18,7 @@ import { createAgentSchema } from "@/api/agent"
 import type { CreateAgentPayload } from "@/api/agent"
 import { insertAgent } from "@/db/agent" 
 import { getDateForAI } from "@/utils/index"
+import { AgentCreationSource } from "@/db/schema"
 
 const Logger = getLogger(Subsystem.Server)
 
@@ -240,7 +241,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       stream: isStreamable,
       json: false,
       reasoning: false,
-      systemPrompt: agent.prompt || "You are a helpful assistant.",
+      systemPrompt: (agent.prompt || "You are a helpful assistant.") + "\n\nIMPORTANT: Please provide responses in plain text format only. Do not use markdown.",
 
       // ADD IMAGE SUPPORT:
       ...(finalImageFileNames.length > 0 ? { imageFileNames: finalImageFileNames } : {}),
@@ -523,6 +524,7 @@ export const createAgentForWorkflow = async (
       isRagOn: validatedBody.isRagOn,
       uploadedFileNames: validatedBody.uploadedFileNames,
       docIds: validatedBody.docIds,
+      creation_source: AgentCreationSource.WORKFLOW,
     }
 
     const newAgent = await db.transaction(async (tx) => {

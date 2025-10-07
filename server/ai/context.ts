@@ -572,16 +572,23 @@ const constructCollectionFileContext = (
   isSelectedFiles?: boolean,
   isMsgWithSources?: boolean,
 ): string => {
-  if ((!maxSummaryChunks && !isSelectedFiles) || isMsgWithSources) {
+ 
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
-
   let chunks: ScoredChunk[] = []
   if (fields.matchfeatures && fields.chunks_summary) {
     const summaryStrings = fields.chunks_summary.map((c) =>
       typeof c === "string" ? c : c.chunk,
     )
-    chunks = getSortedScoredChunks(fields.matchfeatures, summaryStrings)
+    if (!maxSummaryChunks) {
+      maxSummaryChunks = 10
+    }
+    chunks = getSortedScoredChunks(
+      fields.matchfeatures,
+      summaryStrings,
+      maxSummaryChunks,
+    )
   } else if (fields.chunks_summary) {
     chunks =
       fields.chunks_summary?.map((chunk, idx) => ({
@@ -619,6 +626,46 @@ const constructCollectionFileContext = (
       .join("\n")
   }
 
+  let imageChunks: ScoredChunk[] = []
+  const maxImageChunks =
+    fields.image_chunks_summary?.length &&
+    fields.image_chunks_summary?.length < 5
+      ? fields.image_chunks_summary?.length
+      : 5
+
+
+  if (fields.matchfeatures) {
+
+    const summaryStrings = fields.image_chunks_summary?.map((c) =>
+      typeof c === "string" ? c : c.chunk,
+    ) || []
+    
+    imageChunks = getSortedScoredImageChunks(
+      fields.matchfeatures,
+      fields.image_chunks_pos_summary as number[],
+      summaryStrings as string[],
+      fields.docId,
+    )
+  } else {
+    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+  
+    imageChunks =
+      fields.image_chunks_summary?.map((chunk, idx) => {
+        const result = {
+          chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+          index: idx,
+          score: 0,
+        }
+        return result
+      }) || []
+  }
+
+  let imageContent = imageChunks
+      .slice(0, maxImageChunks)
+      .map((v) => v.chunk)
+      .join("\n")
+
+
   return `Source: Knowledge Base
 File: ${fields.fileName || "N/A"}
 Knowledge Base ID: ${fields.clId || "N/A"}
@@ -626,6 +673,7 @@ Mime Type: ${fields.mimeType || "N/A"}
 ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.createdBy ? `Uploaded By: ${fields.createdBy}` : ""}
 ${content ? `Content: ${content}` : ""}
+${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}
 \nvespa relevance score: ${relevance}\n`
 }
 

@@ -24,15 +24,16 @@ import {
   syncJobSuccess,
 } from "@/metrics/sync/sync-metrics"
 import { Auth } from "googleapis"
-import { handleMicrosoftOAuthChanges } from "@/integrations/microsoft/sync"
+import {
+  handleMicrosoftOAuthChanges,
+  handleMicrosoftServiceAccountChanges,
+} from "@/integrations/microsoft/sync"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
 
-const url = `postgres://xyne:xyne@${config.postgresBaseHost}:5432/xyne`
-export const boss = new PgBoss({
-  connectionString: url,
-  monitorStateIntervalMinutes: 10, // Monitor state every minute
-})
+import { boss } from "./boss"
+
+export { boss }
 
 // run it if we are re-doing ingestion
 // await boss.clearStorage()
@@ -218,6 +219,7 @@ const initWorkers = async () => {
     const startTime = Date.now()
     try {
       await handleGoogleServiceAccountChanges(boss, job)
+      await handleMicrosoftServiceAccountChanges()
       const endTime = Date.now()
       syncJobSuccess.inc(
         {

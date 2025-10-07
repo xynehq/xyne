@@ -24,7 +24,7 @@ export const platformEnum = pgEnum(
 
 // Chat type enum for better scalability
 export enum ChatType {
-  Default  = "default",
+  Default = "default",
   KbChat = "kb_chat",
 }
 

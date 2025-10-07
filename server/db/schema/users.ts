@@ -43,9 +43,7 @@ export const users = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .default(sql`NOW()`),
-    deletedAt: timestamp("deleted_at", { withTimezone: true })
-      .notNull()
-      .default(sql`'1970-01-01T00:00:00Z'`),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     lastLogin: timestamp("last_login", { withTimezone: true }),
     role: userRoleEnum("role").notNull().default(UserRole.User),
     refreshToken: encryptedText(refreshTokenEncryption)("refreshToken"),

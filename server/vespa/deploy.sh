@@ -3,10 +3,15 @@
 #!/bin/sh
 set -e
 
+if [ -f ../.env ]; then
+  . ../.env
+fi
+
 mkdir -p models
 TOKENIZER_URL=""
 MODEL_URL=""
 DIMS=
+
 
 # URLs to download
 if [ "$EMBEDDING_MODEL" = "bge-small-en-v1.5" ] || [ -z "$EMBEDDING_MODEL" ]; then
@@ -52,7 +57,7 @@ else
 fi
 
 
-echo "Deploying vespa..."
+echo "Deploying vespa... $VESPA_CLI_PATH"
 ${VESPA_CLI_PATH:-vespa} deploy --wait 960
 echo "Restarting vespa...."
 docker restart vespa

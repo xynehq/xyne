@@ -15,8 +15,6 @@ const listWorkflowExecutionsQuerySchema = z.object({
   page: z.coerce.number().min(1).optional().default(1),
 })
 import { ExecuteAgentForWorkflow } from "./agent/workflowAgentUtils"
-import { mkdir } from "node:fs/promises"
-import path from "node:path"
 import { db } from "@/db/client"
 import {
   workflowTemplate,
@@ -1701,123 +1699,6 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
   }
 }
 
-// Unified Python script execution function
-const executePythonScript = async (
-  scriptContent: string,
-  previousStepResults: any,
-  config: any,
-  scriptType: string = "python_script",
-) => {
-  try {
-    // Create a temporary directory for the script execution
-    const tempDir = `/tmp/${scriptType}_scripts_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    await mkdir(tempDir, { recursive: true })
-
-    // Write the script to a temporary file
-    const scriptPath = `${tempDir}/script.py`
-
-    // Prepare the script with context injection
-    const previousStepResultsJson = JSON.stringify(previousStepResults)
-      .replace(/null/g, "None")
-      .replace(/true/g, "True")
-      .replace(/false/g, "False")
-    const configJson = JSON.stringify(config || {})
-      .replace(/null/g, "None")
-      .replace(/true/g, "True")
-      .replace(/false/g, "False")
-
-    const scriptWithContext = `
-import json
-import sys
-import os
-from datetime import datetime
-
-# Inject previous step results and config
-previous_step_results = ${previousStepResultsJson}
-config = ${configJson}
-
-# Original script content
-${scriptContent}
-
-# Ensure result is available and print it as JSON for capture
-if 'result' in locals():
-    print(json.dumps(result))
-else:
-    print(json.dumps({"status": "error", "error_message": "Script did not produce a result variable"}))
-`
-
-    await Bun.write(scriptPath, scriptWithContext)
-
-    // Execute the Python script using Bun's spawn
-    const proc = Bun.spawn(["python3", scriptPath], {
-      stdout: "pipe",
-      stderr: "pipe",
-      cwd: tempDir,
-    })
-
-    const stdout = await new Response(proc.stdout).text()
-    const stderr = await new Response(proc.stderr).text()
-    await proc.exited
-
-    // Clean up temporary files
-    try {
-      const fs = await import("node:fs/promises")
-      await fs.rm(tempDir, { recursive: true, force: true })
-    } catch (cleanupError) {
-      Logger.warn(
-        `Failed to cleanup temporary ${scriptType} files:`,
-        cleanupError,
-      )
-    }
-
-    if (proc.exitCode !== 0) {
-      return {
-        status: "error",
-        result: {
-          error: `${scriptType} execution failed`,
-          stderr: stderr,
-          stdout: stdout,
-          exit_code: proc.exitCode,
-        },
-      }
-    }
-
-    if (stderr && stderr.trim()) {
-      Logger.warn(`${scriptType} stderr:`, stderr)
-    }
-
-    // Parse the output as JSON
-    try {
-      const result = JSON.parse(stdout.trim())
-      return {
-        status: "success",
-        result: result,
-      }
-    } catch (parseError) {
-      return {
-        status: "error",
-        result: {
-          error: `Failed to parse ${scriptType} output as JSON`,
-          raw_output: stdout,
-          stderr: stderr,
-          parse_error:
-            parseError instanceof Error
-              ? parseError.message
-              : String(parseError),
-        },
-      }
-    }
-  } catch (error) {
-    return {
-      status: "error",
-      result: {
-        error: `${scriptType} execution failed`,
-        message: error instanceof Error ? error.message : String(error),
-      },
-    }
-  }
-}
-
 // Helper function to extract content from previous step results using simplified input paths
 // Workflow-Todo: This function can be enhanced to support more complex path syntaxes if needed, currently this 
 const extractContentFromPath = (
@@ -1923,37 +1804,21 @@ const executeWorkflowTool = async (
           },
         }
 
-      case "python_script":
-        // Execute actual Python script from database using unified function
-        const scriptContent =
-          typeof tool.value === "string" ? tool.value : tool.value?.script
-        const config = tool.config
-
-        if (!scriptContent) {
-          return {
-            status: "error",
-            result: { error: "No script content found in tool value" },
-          }
-        }
-
-        // Use unified Python execution function
-        return await executePythonScript(
-          scriptContent,
-          previousStepResults,
-          config,
-          "python_script",
-        )
 
       case "email":
         // Enhanced email tool using config for recipients and configurable path for content extraction
-
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
-        const subject = emailConfig.subject || "Workflow Results"
+        
         const contentType = emailConfig.content_type || "html"
-        Logger.debug(`DEBUG - Email tool config details: toEmail=${JSON.stringify(toEmail)}, fromEmail=${fromEmail}, subject=${subject}, contentType=${contentType}`)
+        const [execution] = await db
+          .select()
+          .from(workflowExecution)
+          .where(eq(workflowExecution.id, executionId))
 
+        const workflowName = execution?.name || "Unknown Workflow"
+        const subject = emailConfig.subject || `Results of Workflow: ${workflowName}`
         // New configurable content path feature
         const contentPath =
           emailConfig.content_path || emailConfig.content_source_path
@@ -1993,7 +1858,7 @@ const executeWorkflowTool = async (
 <body>
     <div class="content">
         <div class="header">
-            <h2>🤖 Workflow Results</h2>
+            <h2>🤖 Results of Workflow: ${workflowName} </h2>
             <p>Generated on: ${new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"})}</p>
         </div>
         <div class="body-content">
@@ -3047,7 +2912,6 @@ function getStepIcon(toolType: string): string {
   const iconMap: Record<string, string> = {
     form: "📁",
     ai_agent: "🤖",
-    python_script: "🐍",
     email: "📧",
     slack: "💬",
     gmail: "📮",

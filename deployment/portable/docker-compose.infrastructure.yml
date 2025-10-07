@@ -101,7 +101,11 @@ services:
     container_name: vespa-deploy
     depends_on:
       vespa:
-        condition: service_healthy
+        condition: service_started
+    environment:
+      - VESPA_CONFIGSERVERS=vespa
+    volumes:
+      - ${XYNE_DATA_DIR:-./data}/vespa-models:/app/vespa/models
     networks:
       - xyne
     restart: "no"
@@ -142,6 +146,22 @@ services:
         chmod 755 /loki-data
       '
     user: "0:0"
+    networks:
+      - xyne
+
+  livekit:
+    image: livekit/livekit-server:v1.9.1
+    command: --config /etc/livekit.yaml
+    container_name: livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ../livekit.yaml:/etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret}"
     networks:
       - xyne
 

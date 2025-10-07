@@ -11,6 +11,7 @@ import { userWorkflowsAPI, workflowExecutionsAPI } from "@/components/workflow/a
 import { api } from "@/api"
 import vectorIcon from "@/assets/vector.svg"
 import playIcon from "@/assets/play.svg"
+import emptyStateIcon from "@/assets/empty-state.svg"
 import { ChevronDown, Plus, Layout, ChevronRight, Search } from "lucide-react"
 
 interface WorkflowTemplate {
@@ -580,10 +581,10 @@ function WorkflowComponent() {
       <div className="flex flex-col flex-1 h-full md:ml-[52px]">
         {viewMode === "list" ? (
           <div className="p-8 bg-gray-50 dark:bg-[#1E1E1E] overflow-y-auto h-full">
-            <div className="w-full">
+            <div className="w-full h-full flex flex-col">
               {/* Header */}
               <div className="mb-8">
-                <h1 className="text-3xl font-semibold text-gray-900 dark:text-gray-100 mb-8">
+                <h1 className="text-3xl font-display text-gray-900 dark:text-gray-100 mb-8">
                   Workflow Builder
                 </h1>
               
@@ -630,7 +631,7 @@ function WorkflowComponent() {
 
             {/* Tab Content */}
             {activeTab === "workflow" && (
-              <div className="space-y-8">
+              <div className="space-y-8 flex flex-col flex-1">
                 {/* Creation Options */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
                   <div 
@@ -708,7 +709,7 @@ function WorkflowComponent() {
                 </div>
 
                 {/* Your Workflows Section */}
-                <div>
+                <div className="flex-1 flex flex-col">
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-gray-900 dark:text-gray-400 uppercase" style={{
                       fontFamily: 'JetBrains Mono',
@@ -819,8 +820,14 @@ function WorkflowComponent() {
                       )
                     } else {
                       return (
-                        <div className="text-center py-12">
-                          <p className="text-gray-600 dark:text-gray-400">No workflows found.</p>
+                        <div className="flex flex-col flex-1 items-center justify-center">
+                          <img src={emptyStateIcon} alt="No workflows" className="w-36 h-36 mb-2 dark:invert" style={{ filter: 'brightness(0) saturate(100%) invert(47%) sepia(0%) saturate(0%) hue-rotate(180deg) brightness(92%) contrast(85%)' }} />
+                          <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2 text-lg">
+                            No workflows yet
+                          </h3>
+                          <p className="text-gray-400 dark:text-gray-400 text-center text-base">
+                            Build and manage workflows here
+                          </p>
                         </div>
                       )
                     }
@@ -837,7 +844,7 @@ function WorkflowComponent() {
             )}
 
             {activeTab === "executions" && (
-              <div className="space-y-6">
+              <div className="space-y-6 flex-1">
                 {/* Header with Search and Filters */}
                 <div className="flex items-center justify-between">
                   <div className="w-80 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 flex items-center">

@@ -106,8 +106,9 @@ const AIAgentConfigUI: React.FC<AIAgentConfigUIProps> = ({
           if (response.ok) {
             const data = await response.json()
             if (data.success && data.data && Array.isArray(data.data)) {
-              
-              const enumValues = data.data.map((model: any) => model.enumValue)
+              const enumValues = data.data
+                .filter((model: any) => model.modelType==="gemini")
+                .map((model: any) => model.enumValue)
               setModels(enumValues)
               setModelsLoaded(true)
             }

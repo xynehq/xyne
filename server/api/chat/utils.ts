@@ -46,6 +46,7 @@ import {
   AgentReasoningStepType,
   OpenAIError,
   type AgentReasoningStep,
+  type AttachmentMetadata,
 } from "@/shared/types"
 import type { Citation } from "@/api/chat/types"
 import { getFolderItems, SearchEmailThreads } from "@/search/vespa"
@@ -59,9 +60,88 @@ import path from "path"
 import {
   getAllCollectionAndFolderItems,
   getCollectionFilesVespaIds,
+  getCollectionFoldersItemIds,
 } from "@/db/knowledgeBase"
 import { db } from "@/db/client"
+import { collections, collectionItems } from "@/db/schema"
+import { and, eq, isNull } from "drizzle-orm"
 import { get } from "http"
+
+// Follow-up context types and utilities
+export type WorkingSet = {
+  fileIds: string[];
+  attachmentFileIds: string[]; // images etc.
+  carriedFromMessageIds: string[];
+};
+
+const MAX_FILES = 12;
+
+export function collectFollowupContext(
+  messages: SelectMessage[],
+  startIdx: number,
+  maxHops = 12
+): WorkingSet {
+  const ws: WorkingSet = {
+    fileIds: [],
+    attachmentFileIds: [],
+    carriedFromMessageIds: [],
+  };
+
+  const seen = new Set<string>();
+  let hops = 0;
+
+  for (let i = startIdx; i >= 0 && hops < maxHops; i--, hops++) {
+    const m = messages[i];
+
+    // 1) attachments the user explicitly added
+    if (Array.isArray(m.attachments)) {
+      for (const a of m.attachments as AttachmentMetadata[]) {
+        if (a.isImage && a.fileId && !seen.has(`img:${a.fileId}`)) {
+          ws.attachmentFileIds.push(a.fileId);
+          ws.carriedFromMessageIds.push(m.externalId);
+          seen.add(`img:${a.fileId}`);
+          continue; // images are separate from fileIds
+        }
+        if (a.fileId && !seen.has(`f:${a.fileId}`)) {
+          ws.fileIds.push(a.fileId);
+          ws.carriedFromMessageIds.push(m.externalId);
+          seen.add(`f:${a.fileId}`);
+          if (ws.fileIds.length >= MAX_FILES) break;
+        }
+      }
+    }
+
+    // 2) fileIds from user messages
+    if (Array.isArray(m.fileIds) && m.fileIds.length > 0) {
+      for (const fileId of m.fileIds) {
+        if (!seen.has(`f:${fileId}`)) {
+          ws.fileIds.push(fileId);
+          ws.carriedFromMessageIds.push(m.externalId);
+          seen.add(`f:${fileId}`);
+          if (ws.fileIds.length >= MAX_FILES) break;
+        }
+      }
+    }
+
+    // Use existing chain break classification system to detect boundaries
+    if (m.messageRole === "user" && m.queryRouterClassification) {
+      try {
+        const classification = typeof m.queryRouterClassification === "string" 
+          ? JSON.parse(m.queryRouterClassification) 
+          : m.queryRouterClassification;
+        if (classification.isFollowUp === false) break;
+      } catch (error) {
+        // If we can't parse classification, continue processing
+      }
+    }
+  }
+
+  // De-dupe & trim
+  ws.fileIds = Array.from(new Set(ws.fileIds)).slice(0, MAX_FILES);
+  ws.attachmentFileIds = Array.from(new Set(ws.attachmentFileIds));
+
+  return ws;
+}
 
 function slackTs(ts: string | number) {
   if (typeof ts === "number") ts = ts.toString()
@@ -516,17 +596,22 @@ export const extractFileIdsFromMessage = async (
   fileIds: string[]
   threadIds: string[]
   webSearchResults?: { title: string; url: string }[]
+  collectionFolderIds?: string[]
 }> => {
   const fileIds: string[] = []
   const threadIds: string[] = []
   const driveItem: string[] = []
   const collectionFolderIds: string[] = []
+  const collectionIds: string[] = []
   const webSearchResults: { title: string; url: string }[] = []
+
   if (pathRefId) {
     collectionFolderIds.push(pathRefId)
   }
+
   let validFileIdsFromLinkCount = 0
   let totalValidFileIdsFromLinkCount = 0
+
   try {
     const jsonMessage = JSON.parse(message) as UserQuery
     for (const obj of jsonMessage) {
@@ -652,27 +737,117 @@ export const extractFileIdsFromMessage = async (
     }
   }
 
-  const collectionFileIds = await getAllCollectionAndFolderItems(
+  const collectionitems = await getAllCollectionAndFolderItems(
     collectionFolderIds,
     db,
   )
+  const collectionPgFileIds = collectionitems.fileIds
+  const collectionPgFolderIds = collectionitems.folderIds
 
   if (collectionFolderIds.length > 0) {
-    const ids = await getCollectionFilesVespaIds(collectionFileIds, db)
-    const vespaIds = ids
+    const ids = await getCollectionFilesVespaIds(collectionPgFileIds, db)
+    const vespaFileIds = ids
       .filter((item) => item.vespaDocId !== null)
       .map((item) => item.vespaDocId!)
-    fileIds.push(...vespaIds)
+    fileIds.push(...vespaFileIds)
+    const folderVespaIds = await getCollectionFoldersItemIds(
+      collectionPgFolderIds,
+      db,
+    )
+
+    const vespaFolderIds = folderVespaIds
+      .filter((item) => item.id !== null)
+      .map((item) => item.id!)
+    collectionIds.push(...vespaFolderIds)
   }
 
+  // Ensure we always return the same structure
   return {
     totalValidFileIdsFromLinkCount,
     fileIds: fileIds.filter(Boolean),
     threadIds: threadIds.filter(Boolean),
     webSearchResults,
+    collectionFolderIds: collectionIds.filter(Boolean),
   }
 }
+export const extractItemIdsFromPath = async (
+  pathRefId: string,
+): Promise<{
+  collectionFileIds: string[]
+  collectionFolderIds: string[]
+  collectionIds: string[]
+}> => {
+  const collectionFileIds: string[] = []
+  const collectionFolderIds: string[] = []
+  const collectionIds: string[] = []
 
+  // If pathRefId is empty string, return empty object
+  if (!pathRefId || pathRefId === "") {
+    return {
+      collectionFileIds,
+      collectionFolderIds,
+      collectionIds,
+    }
+  }
+
+  const vespaId = String(pathRefId)
+
+  try {
+    // Check prefix and do respective DB call
+    if (vespaId.startsWith("clf-") || vespaId.startsWith("clfd-")) {
+      // Collection file/folder prefix - extract ID and query collectionItems with type verification
+      const isFile = vespaId.startsWith("clf-")
+      const expectedType = isFile ? "file" : "folder"
+      const [item] = await db
+        .select({ id: collectionItems.id, type: collectionItems.type })
+        .from(collectionItems)
+        .where(
+          and(
+            eq(collectionItems.vespaDocId, vespaId),
+            isNull(collectionItems.deletedAt),
+          ),
+        )
+
+      // Verify the item exists and type matches the prefix
+      if (item && item.type === expectedType) {
+        if (isFile) {
+          collectionFileIds.push(`clf-${item.id}`) // Keep the original prefixed ID
+        } else {
+          collectionFolderIds.push(`clfd-${item.id}`) // Keep the original prefixed ID
+        }
+      }
+    } else if (vespaId.startsWith("cl-")) {
+      // Collection prefix - extract ID and query collections table
+      const [collection] = await db
+        .select({ id: collections.id })
+        .from(collections)
+        .where(
+          and(
+            eq(collections.vespaDocId, vespaId),
+            isNull(collections.deletedAt),
+          ),
+        )
+
+      if (collection) {
+        collectionIds.push(`cl-${collection.id}`) // Keep the original prefixed ID
+      }
+    } else {
+    }
+  } catch (error) {
+    // Log error but don't throw - return empty arrays
+    getLoggerWithChild(Subsystem.Chat)().error(
+      `Error extracting item IDs from pathRefId: ${vespaId}`,
+      error,
+    )
+  }
+
+  // Ensure we always return the same structure
+  return {
+    collectionFileIds,
+    collectionFolderIds,
+    collectionIds,
+  }
+}
 export const handleError = (error: any) => {
   let errorMessage = "Something went wrong. Please try again."
   if (error?.code === OpenAIError.RateLimitError) {

@@ -198,6 +198,9 @@ server/migrations/
 server/Xenova
 server/vespa/models/
 
+# cli
+server/vespa/vespa-cli_*
+
 # fe
 .mjs
 

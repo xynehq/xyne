@@ -7,6 +7,7 @@ import {
   TableRow,
   TableFooter,
 } from "@/components/ui/table"
+import emptyStateIcon from "@/assets/empty-state.svg"
 
 interface WorkflowExecution {
   id: string
@@ -78,8 +79,28 @@ export function WorkflowExecutionsTable({
     )
   }
 
+  // Show empty state if no executions
+  if (executions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 h-[90%] min-h-[400px]">
+        <img
+          src={emptyStateIcon}
+          alt="No executions"
+          className="w-36 h-36 mb-2 dark:invert"
+          style={{ filter: 'brightness(0) saturate(100%) invert(47%) sepia(0%) saturate(0%) hue-rotate(180deg) brightness(92%) contrast(85%)' }}
+        />
+        <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2 text-lg">
+          No executions yet
+        </h3>
+        <p className="text-gray-400 dark:text-gray-400 text-center text-base">
+          Workflow executions will appear here
+        </p>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full">
       {/* Table */}
       <div className="border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-900">
         <Table>

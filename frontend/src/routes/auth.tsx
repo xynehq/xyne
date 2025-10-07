@@ -22,10 +22,14 @@ const XyneLogo = () => (
 )
 
 export default function LoginForm() {
-  const handleGoogleLogin = () => {
-    console.info("User Clicked login with google")
-    const redirectUrl = `${import.meta.env.VITE_API_BASE_URL}/v1/auth/callback`
+  const handleGoogleLogin = async () => {
+    try {
+    const redirectUrl = `${window.location.origin}/v1/auth/callback`
+    console.log("Redirecting to:", redirectUrl)
     window.location.href = redirectUrl
+   }catch (error) {
+    console.error("Failed to load config:", error)
+   }
   }
 
   return (

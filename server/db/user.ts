@@ -1,6 +1,7 @@
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq, isNull, sql } from "drizzle-orm"
 import { db } from "./client"
 import {
+  apiKeys,
   selectUserSchema,
   selectWorkspaceSchema,
   userPublicSchema,
@@ -19,6 +20,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js"
 import type { TxnOrClient } from "@/types"
 import { HTTPException } from "hono/http-exception"
 import { Apps, type UserRole } from "@/shared/types"
+import crypto from "crypto"
 
 // Define an interface for the shape of data after processing and before Zod parsing
 interface ProcessedUser
@@ -227,6 +229,34 @@ export const getUserById = async (
   return parsedRes.data
 }
 
+export const getUsersByWorkspace = async (
+  trx: TxnOrClient,
+  workspaceExternalId: string,
+  externalId?: string,
+): Promise<SelectUser[]> => {
+  const conditions = [
+    eq(users.workspaceExternalId, workspaceExternalId),
+    isNull(users.deletedAt),
+  ]
+
+  // Add external ID filter if provided
+  if (externalId) {
+    conditions.push(eq(users.externalId, externalId))
+  }
+
+  const resp = await trx
+    .select()
+    .from(users)
+    .where(and(...conditions))
+
+  return resp.map((user) => {
+    const parsedRes = selectUserSchema.safeParse(user)
+    if (!parsedRes.success) {
+      throw new Error(`Could not parse user: ${parsedRes.error.toString()}`)
+    }
+    return parsedRes.data
+  })
+}
 // based on user email will perform the join on tables users and sync_jobs which will have same email
 // then for each user we can have max 4 row 1 is for slack other is for google-drive , gmail, google-calendar
 // then we will get the last_ran_on and the user data to frontend
@@ -438,5 +468,66 @@ export const updateUserTimezone = async (
       message: "Failed to update user timezone",
       cause: error instanceof Error ? error.message : "Unknown error",
     })
+  }
+}
+
+export async function createUserApiKey({
+  db,
+  userId,
+  workspaceId,
+  name,
+  scope,
+}: {
+  db: TxnOrClient
+  userId: string
+  workspaceId: string
+  name: string
+  scope: any
+}): Promise<{
+  success: boolean
+  key?: string
+  apiKey?: any
+  error?: string
+}> {
+  try {
+    // Generate random MD5 hash
+    const md5Hash = crypto.randomBytes(16).toString("hex")
+
+    // Extract first 4 characters for display
+    const keyPrefix = md5Hash.substring(0, 4)
+
+    // Store encrypted API key in database
+    const [inserted] = await db
+      .insert(apiKeys)
+      .values({
+        userId,
+        name,
+        workspaceId,
+        key: md5Hash,
+        keyPrefix: keyPrefix,
+        config: scope,
+      })
+      .returning()
+
+    const config = (inserted.config as any) || {}
+    return {
+      success: true,
+      key: md5Hash,
+      apiKey: {
+        id: inserted.id.toString(),
+        name: inserted.name,
+        key: md5Hash,
+        keyPrefix: keyPrefix,
+        scopes: config.scopes || [],
+        agents: config.agents || [],
+        createdAt: inserted.createdAt.toISOString(),
+      },
+    }
+  } catch (err) {
+    console.error("[createAgentApiKey] Error:", err)
+    return {
+      success: false,
+      error: `Database error while creating API key - ${err}`,
+    }
   }
 }
