@@ -2021,7 +2021,7 @@ interface WorkflowBuilderProps {
   isLoadingTemplate?: boolean
   isEditableMode?: boolean
   builder?: boolean // true for create mode, false for view mode
-  onViewExecution?: (executionId: string) => void
+  onViewExecution?: (executionId: string, startPolling?: boolean) => void
 }
 
 // Internal component that uses ReactFlow hooks
@@ -3123,16 +3123,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )
 
         // Handle response similar to execution modal
+        console.log("🔍 Full execution response:", response)
+        
         if (response.error || response.status === "error") {
           console.error("Execution failed:", response.error || response.message)
           throw new Error(response.error || response.message || "Execution failed")
         } else {
-          // Extract execution ID from response.data.execution.id
-          const executionId = response.data?.execution?.id
+          // Extract execution ID from response (API handler strips success wrapper)
+          const executionId = response.execution?.id
+          
+          console.log("🔍 Extracted execution ID:", executionId)
+          console.log("🔍 Response structure:", {
+            hasData: !!response.data,
+            hasExecution: !!response.data?.execution,
+            hasDirectId: !!response.id,
+            responseKeys: Object.keys(response)
+          })
 
           if (executionId) {
-            // Start polling for completion with the execution ID
-            startPolling(executionId)
+            // Navigate to execution UI and start polling for new execution
+            if (onViewExecution) {
+              onViewExecution(executionId, true) // true = start polling
+            }
           } else {
             console.warn("No execution ID found in response")
           }
@@ -3206,13 +3218,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               executionData,
             )
 
+            console.log("🔍 Full execution response (direct):", response)
+            
             if (response.error || response.status === "error") {
               console.error("Execution failed:", response.error || response.message)
               throw new Error(response.error || response.message || "Execution failed")
             } else {
-              const executionId = response.data?.execution?.id
+              // Extract execution ID from response (API handler strips success wrapper)
+              const executionId = response.execution?.id
+              
+              console.log("🔍 Extracted execution ID (direct):", executionId)
+              console.log("🔍 Response structure (direct):", {
+                hasData: !!response.data,
+                hasExecution: !!response.data?.execution,
+                hasDirectId: !!response.id,
+                responseKeys: Object.keys(response)
+              })
+              
               if (executionId) {
-                startPolling(executionId)
+                // Navigate to execution UI and start polling for new execution
+                if (onViewExecution) {
+                  onViewExecution(executionId, true) // true = start polling
+                }
                 showSnackbarMessage("Workflow execution started successfully!", 'success')
               } else {
                 console.warn("No execution ID found in response")
@@ -3232,7 +3259,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         'warning'
       )
     }
-  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, startPolling, getWorkflowName, showSnackbarMessage])
+  }, [nodes, edges, templateWorkflow, selectedTemplate, createdTemplate, onViewExecution, getWorkflowName, showSnackbarMessage])
 
   const handleTriggerClick = useCallback(
     (triggerId: string) => {

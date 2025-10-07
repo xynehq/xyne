@@ -1450,16 +1450,14 @@ const executeWorkflowChain = async (
   }
 }
 
-// Get workflow execution status (lightweight for polling)
+// Get workflow execution status (enhanced for polling with step details)
 export const GetWorkflowExecutionStatusApi = async (c: Context) => {
   try {
     const executionId = c.req.param("executionId")
 
-    // Get only the status field for maximum performance
+    // Get execution with current step details
     const execution = await db
-      .select({
-        status: workflowExecution.status,
-      })
+      .select()
       .from(workflowExecution)
       .where(eq(workflowExecution.id, executionId))
 
@@ -1467,9 +1465,53 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Workflow execution not found" })
     }
 
+    // Get the current active step execution
+    const currentStepExecution = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(
+        and(
+          eq(workflowStepExecution.workflowExecutionId, executionId),
+          eq(workflowStepExecution.status, "active")
+        )
+      )
+      .limit(1)
+
+    let currentStep = null
+    let requiresUserInput = false
+
+    if (currentStepExecution.length > 0) {
+      const stepExec = currentStepExecution[0]
+      
+      // Get the step template to determine type
+      const stepTemplate = await db
+        .select()
+        .from(workflowStepTemplate)
+        .where(eq(workflowStepTemplate.id, stepExec.workflowStepTemplateId))
+        .limit(1)
+
+      if (stepTemplate.length > 0) {
+        const step = stepTemplate[0]
+        currentStep = {
+          id: stepExec.id,
+          name: step.name,
+          type: step.type,
+          description: step.description,
+          metadata: step.metadata
+        }
+        
+        // Determine if user input is required
+        requiresUserInput = step.type === 'manual' || 
+                          stepExec.status === 'waiting_for_user' 
+      }
+    }
+
     return c.json({
       success: true,
       status: execution[0].status,
+      currentStep: currentStep,
+      requiresUserInput: requiresUserInput,
+      executionId: executionId
     })
   } catch (error) {
     Logger.error(error, "Failed to get workflow execution status")
@@ -1513,17 +1555,24 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
         createdAt: toolExecution.createdAt,
         updatedAt: toolExecution.updatedAt,
         toolType: workflowTool.type,
+        toolConfig: workflowTool.config,
       })
       .from(toolExecution)
       .leftJoin(workflowTool, eq(toolExecution.workflowToolId, workflowTool.id))
       .where(eq(toolExecution.workflowExecutionId, executionId))
+
+    // Process toolExecutions to only include config for review tools
+    const processedToolExecutions = toolExecutions.map(te => ({
+      ...te,
+      toolConfig: te.toolType === 'review' ? te.toolConfig : undefined
+    }))
 
     return c.json({
       success: true,
       data: {
         ...execution[0],
         stepExecutions: stepExecutions,
-        toolExecutions: toolExecutions,
+        toolExecutions: processedToolExecutions,
       },
     })
   } catch (error) {
@@ -3933,8 +3982,7 @@ export const ReviewWorkflowStepApi = async (c: Context) => {
       executeWorkflowChain(
         currentStep.workflowExecutionId,
         nextStep.id,
-        tools,
-        currentResults,
+        tools
       ).catch((error) => {
         Logger.error(
           error,

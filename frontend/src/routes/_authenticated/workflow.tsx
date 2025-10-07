@@ -139,6 +139,7 @@ function WorkflowComponent() {
   const [isExecutionMode, setIsExecutionMode] = useState(false)
   const [workflowSearchTerm, setWorkflowSearchTerm] = useState("")
   const [isBuilderMode, setIsBuilderMode] = useState(true) // true for create/edit, false for view-only
+  const [shouldStartPolling, setShouldStartPolling] = useState(false)
 
 
   const fetchWorkflows = async () => {
@@ -393,6 +394,7 @@ function WorkflowComponent() {
       setSelectedTemplate(template)
       setIsExecutionMode(false)
       setIsBuilderMode(editable) // Set builder mode based on editable parameter
+      setShouldStartPolling(false) // Reset polling for template views
       setViewMode("builder")
     } catch (error) {
       console.error('❌ Failed to fetch template:', error)
@@ -402,7 +404,7 @@ function WorkflowComponent() {
     }
   }
 
-  const handleViewExecution = async (executionId: string) => {
+  const handleViewExecution = async (executionId: string, startPolling: boolean = false) => {
     try {
       setIsLoadingTemplate(true)
       
@@ -430,13 +432,18 @@ function WorkflowComponent() {
           executionTemplate = executionData
         }
 
-        // Check if it has stepExecutions structure (for executions) or steps structure (for templates)
-        if (executionTemplate && (
-          (executionTemplate.stepExecutions && executionTemplate.stepExecutions.length > 0) ||
-          (executionTemplate.steps && executionTemplate.steps.length > 0)
-        )) {
+        // Check if it has stepExecutions structure (for executions only)
+        if (executionTemplate && executionTemplate.stepExecutions && executionTemplate.stepExecutions.length > 0) {
+          // This is a real execution with stepExecutions
           setSelectedTemplate(executionTemplate)
           setIsExecutionMode(true) // Mark as execution mode
+          setShouldStartPolling(startPolling) // Only start polling if explicitly requested
+          setViewMode("builder")
+        } else if (executionTemplate && executionTemplate.steps && executionTemplate.steps.length > 0) {
+          // This is a template with steps - should NOT be execution mode
+          setSelectedTemplate(executionTemplate)
+          setIsExecutionMode(false) // Mark as template mode (no execution mode)
+          setShouldStartPolling(false) // Never start polling for templates
           setViewMode("builder")
         } else {
           // Try to create a workflow structure from execution data
@@ -513,6 +520,7 @@ function WorkflowComponent() {
             }
             setSelectedTemplate(workflowFromExecution)
             setIsExecutionMode(true)
+            setShouldStartPolling(startPolling) // Only start polling if explicitly requested
             setViewMode("builder")
           } else {
             console.error('❌ Could not create workflow structure from execution data')
@@ -931,7 +939,7 @@ function WorkflowComponent() {
                     fetchExecutions(1, size, dateFilter, debouncedSearchTerm);
                   }}
                   onRowClick={(execution) => {
-                    handleViewExecution(execution.id);
+                    handleViewExecution(execution.id, false); // false = do not start polling when viewing existing executions
                   }}
                 />
               </div>
@@ -949,9 +957,12 @@ function WorkflowComponent() {
                     setSelectedTemplate(null)
                     setIsExecutionMode(false)
                     setIsBuilderMode(true) // Reset to builder mode
+                    setShouldStartPolling(false) // Reset polling state
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
+                  onTemplateUpdate={setSelectedTemplate}
+                  shouldStartPolling={shouldStartPolling}
                 />
               ) : (
                 <WorkflowBuilder 
@@ -961,6 +972,7 @@ function WorkflowComponent() {
                     setSelectedTemplate(null)
                     setIsExecutionMode(false)
                     setIsBuilderMode(true) // Reset to builder mode
+                    setShouldStartPolling(false) // Reset polling state
                   }}
                   onRefreshWorkflows={fetchWorkflows}
                   selectedTemplate={selectedTemplate}

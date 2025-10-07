@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from "react"
+import React, { useCallback, useState, useEffect, useRef } from "react"
 import { Bot, Mail, Settings, X, FileTextIcon , FileText, Code} from "lucide-react"
 import ReviewExecutionUI from "./ReviewExecutionUI"
 import TriggerExecutionUI from "./TriggerExecutionUI"
@@ -29,6 +29,7 @@ import {
   UserDetail,
   Tool,
 } from "./Types"
+import { api } from "../../api"
 
 // Type for execution workflow data
 interface ExecutionWorkflowData {
@@ -82,6 +83,7 @@ interface ExecutionWorkflowData {
     result?: any
     createdAt: string
     updatedAt: string
+    toolConfig?: any
   }>
   // For template workflows (fallback)
   steps?: Array<{
@@ -130,6 +132,152 @@ const StepNode: React.FC<NodeProps> = ({
     isActive?: boolean
     isCompleted?: boolean
     tools?: Tool[]
+  }
+
+  // Special rendering for steps with review tools (same as builder mode)
+  const hasReviewTool = tools && tools.length > 0 && tools[0].type === "review"
+  if (hasReviewTool) {
+    // Get config from review tool
+    const reviewConfig = tools[0]?.config || {}
+    const reviewDefinition = tools[0]?.val || {}
+    
+    const isConfigured = reviewConfig.approved && reviewConfig.rejected
+    const isAwaitingReview = step.status === "active"
+    const isReviewCompleted = step.status === "completed"
+
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all ${
+            isAwaitingReview
+              ? "bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600"
+              : isReviewCompleted
+              ? "bg-green-50 dark:bg-green-900/20 border-2 border-green-300 dark:border-green-600"
+              : "bg-white dark:bg-gray-800 border-2"
+          } ${
+            selected 
+              ? "border-purple-600 shadow-xl shadow-purple-500/15" 
+              : isAwaitingReview
+              ? "border-amber-300 dark:border-amber-600"
+              : isReviewCompleted
+              ? "border-green-300 dark:border-green-600"
+              : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
+          } rounded-xl p-4 min-w-[280px] flex flex-col`}
+        >
+          {/* Header */}
+          <div className="flex items-center space-x-3 mb-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              isAwaitingReview 
+                ? "bg-amber-100 dark:bg-amber-800" 
+                : isReviewCompleted
+                ? "bg-green-100 dark:bg-green-800"
+                : "bg-orange-100 dark:bg-orange-800"
+            }`}>
+              <svg
+                className={`w-4 h-4 ${
+                  isAwaitingReview 
+                    ? "text-amber-600 dark:text-amber-300" 
+                    : isReviewCompleted
+                    ? "text-green-600 dark:text-green-300"
+                    : "text-orange-600 dark:text-orange-300"
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
+              </svg>
+            </div>
+            <div className="flex-1 text-left">
+              <h3 className={`font-semibold text-sm ${
+                isAwaitingReview 
+                  ? "text-amber-900 dark:text-amber-100" 
+                  : "text-gray-900 dark:text-gray-100"
+              }`}>
+                {step.name || "Review Step"}
+              </h3>
+              {isAwaitingReview && (
+                <div className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                  Action Required
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="text-left flex-1">
+            <p className={`text-sm ${
+              isAwaitingReview 
+                ? "text-amber-700 dark:text-amber-300" 
+                : "text-gray-600 dark:text-gray-400"
+            } leading-relaxed`}>
+              {(() => {
+                if (isAwaitingReview) {
+                  return "Review is required to continue the workflow. Click to approve or reject."
+                }
+                
+                if (reviewDefinition.description) {
+                  return reviewDefinition.description
+                }
+                
+                if (isConfigured) {
+                  return `Review step configured with approval and rejection paths.`
+                }
+                
+                return "Review step - configured with approval and rejection paths"
+              })()}
+            </p>
+          </div>
+
+          {/* ReactFlow Handles for Review Node */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+          {/* ReactFlow handles for approved and rejected paths */}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="approved"
+            isConnectable={isConnectable}
+            className="opacity-0"
+            style={{ left: '25%', transform: 'translateX(-50%)', bottom: '-6px' }}
+          />
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="rejected"
+            isConnectable={isConnectable}
+            className="opacity-0"
+            style={{ left: '75%', transform: 'translateX(-50%)', bottom: '-6px' }}
+          />
+          {/* Bottom connection points for review step */}
+          {/* Approved path dot - at 25% from left */}
+          <div className="absolute -bottom-1.5 left-1/4 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+          
+          {/* Rejected path dot - at 75% from left */}
+          <div className="absolute -bottom-1.5 left-3/4 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+        </div>
+      </>
+    )
   }
 
   // Special rendering for AI Agent nodes and steps with ai_agent tools
@@ -1203,11 +1351,12 @@ const StepNode: React.FC<NodeProps> = ({
 const Header = ({
   onBackToWorkflows,
   workflowName,
-}: { onBackToWorkflows?: () => void; workflowName?: string }) => {
+  isPolling,
+}: { onBackToWorkflows?: () => void; workflowName?: string; isPolling?: boolean }) => {
   return (
     <div className="flex flex-col items-start justify-center px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px] gap-3">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 w-full">
+      <div className="flex items-center justify-between w-full">
         <div className="text-slate-500 dark:text-gray-400 text-sm font-normal leading-5">
           <span
             className="cursor-pointer hover:text-slate-700 dark:hover:text-gray-300"
@@ -1220,6 +1369,12 @@ const Header = ({
             / {workflowName || "Untitled Workflow"}
           </span>
         </div>
+        {isPolling && (
+          <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+            <div className="w-2 h-2 bg-blue-600 dark:bg-blue-400 rounded-full animate-pulse"></div>
+            <span>Live polling</span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1851,6 +2006,8 @@ interface WorkflowBuilderProps {
   onBackToWorkflows?: () => void
   selectedTemplate?: ExecutionWorkflowData | null
   isLoadingTemplate?: boolean
+  onTemplateUpdate?: (template: ExecutionWorkflowData) => void
+  shouldStartPolling?: boolean
 }
 
 // Internal component that uses ReactFlow hooks
@@ -1859,6 +2016,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   onBackToWorkflows,
   selectedTemplate,
   isLoadingTemplate,
+  onTemplateUpdate,
+  shouldStartPolling,
 }) => {
   const [, setZoomLevel] = useState(100)
   const [showResultModal, setShowResultModal] = useState(false)
@@ -1870,8 +2029,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedReviewStepId, setSelectedReviewStepId] = useState<string | null>(null)
   const [selectedTriggerStepId, setSelectedTriggerStepId] = useState<string | null>(null)
   const [reviewPreviousStepResult, setReviewPreviousStepResult] = useState<any>(null)
-  // Cleanup polling on component unmount
-  const [pollingInterval] = useState<NodeJS.Timeout | null>(null)
+  // Simple polling timeout reference for cleanup
+  const pollingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Empty initial state
   const initialNodes: Node[] = []
@@ -1895,70 +2054,95 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         : selectedTemplate.steps
 
 
-      // Sort steps for top-to-bottom execution flow starting with root step
-      const sortedSteps = (() => {
-        if (!stepsData || stepsData.length === 0) return []
+      // Sort steps by nextStepIds relationships and creation order (same as builder mode without step_order)
+      const sortedSteps = stepsData ? [...stepsData].sort((a, b) => {
+        // Sort by nextStepIds relationships
+        // If step A's nextStepIds contains step B's id, A should come first
+        if (a.nextStepIds?.includes(b.id)) return -1
+        if (b.nextStepIds?.includes(a.id)) return 1
+        // Fallback to creation time
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      }) : []
+
+      // Simple Parent-Based DFS Algorithm (same as builder mode)
+      const performSimpleDFS = (steps: any[]) => {
+        // Get the root step ID from template
+        const rootStepId = isExecution 
+          ? (selectedTemplate as any).rootWorkflowStepExeId 
+          : selectedTemplate.rootWorkflowStepTemplateId
         
-        // For executions, find the root step using rootWorkflowStepExeId
-        if (isExecution && (selectedTemplate as any).rootWorkflowStepExeId) {
-          const rootStepExeId = (selectedTemplate as any).rootWorkflowStepExeId
-          const rootStep = stepsData.find((step: any) => step.id === rootStepExeId)
+        if (!rootStepId) {
+          console.error('No root step ID found in template')
+          return new Map()
+        }
+        
+        const nodePositions = new Map()
+        const visited = new Set()
+        
+        // Simple DFS with parent-based positioning
+        const dfs = (nodeId: string, parentX: number, parentY: number, siblingIds: string[] = [], myIndex: number = 0) => {
+          // Skip if already visited
+          if (visited.has(nodeId)) return
+          visited.add(nodeId)
           
-          if (rootStep) {
-            
-            // Build execution order starting from root step
-            const orderedSteps: any[] = []
-            const visited = new Set<string>()
-            
-            const addStepAndFollowing = (currentStep: any) => {
-              if (visited.has(currentStep.id)) return
-              
-              visited.add(currentStep.id)
-              orderedSteps.push(currentStep)
-              
-              // Add next steps in order
-              if (currentStep.nextStepIds && currentStep.nextStepIds.length > 0) {
-                currentStep.nextStepIds.forEach((nextStepId: string) => {
-                  const nextStep = stepsData.find((s: any) => s.workflowStepTemplateId === nextStepId || s.id === nextStepId)
-                  if (nextStep && !visited.has(nextStep.id)) {
-                    addStepAndFollowing(nextStep)
-                  }
-                })
-              }
-            }
-            
-            addStepAndFollowing(rootStep)
-            
-            // Add any remaining steps that weren't connected
-            stepsData.forEach((step: any) => {
-              if (!visited.has(step.id)) {
-                orderedSteps.push(step)
-              }
+          // Calculate position: center children around parent
+          let x = parentX
+          if (siblingIds.length > 1) {
+            // Center multiple children around parent
+            const totalWidth = (siblingIds.length - 1) * 500
+            const startX = parentX - (totalWidth / 2)
+            x = startX + (myIndex * 500)
+          }
+          const y = parentY + 250
+          
+          // Store position
+          nodePositions.set(nodeId, { x, y })
+          
+          // Find the current node
+          const currentNode = steps.find(s => s.id === nodeId || (isExecution && s.workflowStepTemplateId === nodeId))
+          if (!currentNode) {
+            return
+          }
+          
+          // Get nextStepIds for this node
+          const nextStepIds = currentNode.nextStepIds || []
+          
+          // Recurse for each child
+          if (nextStepIds.length > 0) {
+            nextStepIds.forEach((childId: string, index: number) => {
+              dfs(childId, x, y, nextStepIds, index)
             })
-            
-            return orderedSteps
           }
         }
         
-        // Fallback sorting for templates or when root step not found
-        return [...stepsData].sort((a, b) => {
-          // First try to sort by step_order in metadata
-          const orderA = a.metadata?.step_order ?? 999
-          const orderB = b.metadata?.step_order ?? 999
-          if (orderA !== orderB) {
-            return orderA - orderB
-          }
-          // Fallback to sorting by nextStepIds relationships
-          // If step A's nextStepIds contains step B's id, A should come first
-          if (a.nextStepIds?.includes(b.id)) return -1
-          if (b.nextStepIds?.includes(a.id)) return 1
-          // Final fallback to creation time
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        })
-      })()
+        // Start with root at (400, 100)
+        nodePositions.set(rootStepId, { x: 400, y: 100 })
+        
+        // Start DFS for root's children
+        const rootNode = steps.find(s => s.id === rootStepId || (isExecution && s.workflowStepTemplateId === rootStepId))
+        if (rootNode?.nextStepIds) {
+          rootNode.nextStepIds.forEach((childId: string, index: number) => {
+            dfs(childId, 400, 100, rootNode.nextStepIds, index)
+          })
+        }
+        
+        return nodePositions
+      }
+      
+      const nodePositions = performSimpleDFS(sortedSteps)
 
+      // Calculate positions using simple parent-based algorithm
+      const calculatePosition = (step: any) => {
+        const position = nodePositions.get(step.id) || nodePositions.get(step.workflowStepTemplateId)
+        if (position) {
+          return position
+        }
+        
+        // Fallback for nodes not found in DFS
+        return { x: 400, y: 100 }
+      }
 
-      // Create nodes from steps in top-down layout
+      // Create nodes from steps with DFS-based layout
       const templateNodes: Node[] = sortedSteps.map((step, index) => {
         // Find associated tools for this step
         let stepTools: any[] = []
@@ -1978,7 +2162,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           stepTools = toolExecutions.map((toolExec: any) => ({
             id: toolExec.id,
             type: toolExec.toolType || toolExec.type || "execution_tool", // Use new toolType field first
-            config: toolExec.result || {},
+            config: toolExec.toolConfig || {},
             toolExecutionId: toolExec.id,
             status: toolExec.status,
             result: toolExec.result,
@@ -1999,10 +2183,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         return {
           id: step.id,
           type: "stepNode",
-          position: {
-            x: 400, // Keep all nodes at the same horizontal position
-            y: 100 + index * 200, // Stack vertically with 200px spacing (reduced for new node height)
-          },
+          position: calculatePosition(step),
           data: {
             step: {
               id: step.id,
@@ -2049,12 +2230,107 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               }
             }
 
+            // Check if source is a review step with approved/rejected paths (same as builder mode)
+            let sourceHandle = "bottom"
+            let edgeLabel = ""
+            let labelStyle = {}
+            let labelBgStyle = {}
+            
+            // Get tools for this step - check if this step has review tools
+            const hasReviewTools = isExecution 
+              ? selectedTemplate.toolExecutions?.some(toolExec =>
+                  step.toolExecIds?.includes(toolExec.id) && 
+                  (toolExec.toolType === "review" || toolExec.type === "review")
+                )
+              : selectedTemplate.workflow_tools?.some(tool =>
+                  step.toolIds?.includes(tool.id) && tool.type === "review"
+                )
+                
+            if (hasReviewTools) {
+              // Get the review tool config
+              let config = {}
+              
+              if (isExecution) {
+                const toolExecution = selectedTemplate.toolExecutions?.find(toolExec =>
+                  step.toolExecIds?.includes(toolExec.id) && 
+                  (toolExec.toolType === "review" || toolExec.type === "review")
+                )
+                config = toolExecution?.toolConfig || {}
+              } else {
+                const workflowTool = selectedTemplate.workflow_tools?.find(tool =>
+                  step.toolIds?.includes(tool.id) && tool.type === "review"
+                )
+                config = workflowTool?.config || {}
+              }
+              
+              if (Object.keys(config).length > 0) {
+                console.log("Review tool config:", config, "targetStepId:", targetStepId)
+                
+                // Check if this target matches approved or rejected path
+                const typedConfig = config as { approved?: string; rejected?: string }
+                
+                // For execution mode, we need to map template step IDs to execution step IDs
+                let approvedStepId = typedConfig.approved
+                let rejectedStepId = typedConfig.rejected
+                
+                if (isExecution) {
+                  // Find execution step ID for approved template step ID
+                  if (approvedStepId) {
+                    const approvedExecution = stepsData.find(
+                      (s: any) => s.workflowStepTemplateId === approvedStepId
+                    )
+                    if (approvedExecution) {
+                      approvedStepId = approvedExecution.id
+                    }
+                  }
+                  
+                  // Find execution step ID for rejected template step ID  
+                  if (rejectedStepId) {
+                    const rejectedExecution = stepsData.find(
+                      (s: any) => s.workflowStepTemplateId === rejectedStepId
+                    )
+                    if (rejectedExecution) {
+                      rejectedStepId = rejectedExecution.id
+                    }
+                  }
+                }
+                
+                if (approvedStepId === targetStepId) {
+                  sourceHandle = "approved"
+                  edgeLabel = "Approved"
+                } else if (rejectedStepId === targetStepId) {
+                  sourceHandle = "rejected"
+                  edgeLabel = "Rejected"
+                }
+              }
+            }
+            
+            if (edgeLabel !== "") {
+              labelStyle = { 
+                fill: '#6B7280', 
+                fontWeight: 600, 
+                fontSize: '12px',
+                fontFamily: 'Inter'
+              }
+              labelBgStyle = { 
+                fill: '#F9FAFB', 
+                stroke: '#E5E7EB',
+                strokeWidth: 1,
+                rx: 4
+              }
+            }
+
             templateEdges.push({
               id: `${step.id}-${targetStepId}`,
               source: step.id,
               target: targetStepId,
+              sourceHandle: sourceHandle,
+              targetHandle: "top",
               type: "smoothstep",
               animated: false,
+              label: edgeLabel !== "" ? edgeLabel : null,
+              labelStyle: edgeLabel !== "" ? labelStyle : null,
+              labelBgStyle: edgeLabel !== "" ? labelBgStyle : null,
               style: {
                 stroke: "#D1D5DB",
                 strokeWidth: 2,
@@ -2251,21 +2527,111 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [getViewport])
 
 
-  // Function to fetch workflow status
-
-
-
-  // Cleanup polling on component unmount
-  useEffect(() => {
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
+  // Function to fetch enhanced workflow status
+  const fetchWorkflowStatus = (async (executionId: string) => {
+    try {
+      console.log("📊 Fetching execution data for:", executionId)
+      
+      // Fetch fresh execution data
+      const response = await api.workflow.executions[executionId].$get()
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
+      
+      const executionData = await response.json()
+      console.log("📊 Raw execution data:", executionData)
+      
+      // Extract the actual data - could be nested
+      let extractedData = executionData
+      if (executionData.success && executionData.data) {
+        extractedData = executionData.data
+      } else if (executionData.data) {
+        extractedData = executionData.data
+      }
+      
+      console.log("📊 Extracted execution data:", extractedData)
+      
+      // Update UI with fresh execution data
+      if (extractedData && onTemplateUpdate) {
+        onTemplateUpdate(extractedData)
+      }
+      
+      // Check if workflow is completed or failed at workflow level
+      if (extractedData.status === 'completed' || extractedData.status === 'failed') {
+        console.log("✅ Workflow finished, stopping polling")
+        return extractedData
+      }
+      
+      // Check if all steps are completed or any step has failed
+      if (extractedData.stepExecutions) {
+        const allStepsCompleted = extractedData.stepExecutions.every((step: any) => step.status === 'completed')
+        const anyStepFailed = extractedData.stepExecutions.some((step: any) => step.status === 'failed')
+        
+        if (allStepsCompleted) {
+          console.log("✅ All steps completed, stopping polling")
+          return extractedData
+        }
+        
+        if (anyStepFailed) {
+          console.log("❌ One or more steps failed, stopping polling")
+          return extractedData
+        }
+        
+        // Find manual steps first (higher priority)
+        const manualStep = extractedData.stepExecutions.find((step: any) => 
+          step.type?.toLowerCase() === 'manual' && step.status !== 'completed'
+        )
+        
+        if (manualStep) {
+          console.log("🔍 Manual step found:", {
+            stepId: manualStep.id,
+            stepName: manualStep.name,
+            stepType: manualStep.type,
+            stepStatus: manualStep.status
+          })
+          
+          console.log("⏸️ MANUAL STEP DETECTED - STOPPING POLLING")
+          
+          // Show appropriate UI for manual steps
+          console.log("🔧 Opening manual step UI")
+          setSelectedTriggerStepId(manualStep.id)
+          setShowTriggerExecutionUI(true)
+          
+          return extractedData
+        }
+        
+        // If no manual steps, find other active steps (running/pending)
+        const activeStep = extractedData.stepExecutions.find((step: any) => 
+          step.status === 'running' || step.status === 'pending'
+        )
+        
+        if (activeStep) {
+          console.log("🔍 Active automated step found:", {
+            stepId: activeStep.id,
+            stepName: activeStep.name,
+            stepType: activeStep.type,
+            stepStatus: activeStep.status
+          })
+        }
+      }
+      
+      // Continue polling after 5 seconds for automated steps
+      console.log("⏰ Scheduling next poll in 5 seconds")
+      pollingTimeoutRef.current = setTimeout(() => {
+        fetchWorkflowStatus(executionId)
+      }, 5000)
+      
+      return extractedData
+    } catch (error) {
+      console.error('❌ Failed to fetch execution data:', error)
+      // Continue polling on error after 5 seconds
+      console.log("⏰ Scheduling retry in 5 seconds after error")
+      pollingTimeoutRef.current = setTimeout(() => {
+        fetchWorkflowStatus(executionId)
+      }, 5000)
+      return null
     }
-  }, [pollingInterval])
-
-
-
+  })
 
 
 
@@ -2287,8 +2653,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     <div className="w-full h-full flex flex-col bg-white dark:bg-gray-900 relative">
       {/* Header */}
       <Header
-        onBackToWorkflows={onBackToWorkflows}
+        onBackToWorkflows={() => {
+          onBackToWorkflows?.()
+        }}
         workflowName={selectedTemplate?.name}
+        isPolling={false}
       />
 
       {/* Main content area */}
@@ -2378,7 +2747,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           previousStepResult={reviewPreviousStepResult}
           onReviewSubmitted={() => {
             console.log("Review submitted, workflow will continue")
-            // Could add workflow refresh logic here if needed
+            // Resume polling - it will handle execution data refresh
+            if (selectedTemplate?.id) {
+              fetchWorkflowStatus(selectedTemplate.id)
+            }
           }}
         />
 
@@ -2395,7 +2767,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           builder={false} // Always execution mode in this component
           onTriggerSubmitted={() => {
             console.log("Trigger submitted, workflow will continue")
-            // Could add workflow refresh logic here if needed
+            // Resume polling - it will handle execution data refresh
+            if (selectedTemplate?.id) {
+              fetchWorkflowStatus(selectedTemplate.id)
+            }
           }}
         />
 
