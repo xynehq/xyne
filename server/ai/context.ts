@@ -719,7 +719,7 @@ const constructCollectionFileContext = (
   isMsgWithSources?: boolean,
 ): string => {
  
-  if ((!maxSummaryChunks && !isSelectedFiles)) {
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
   let chunks: ScoredChunk[] = []
