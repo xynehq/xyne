@@ -61,7 +61,7 @@ export const parseAttachmentMetadata = (c: Context): AttachmentMetadata[] => {
     })
 
     throw new HTTPException(400, {
-      message: "Invalid JSON format in attachmentMetadata parameter",
+      message: "Failed to parse attachmentMetadata",
     })
   }
 }

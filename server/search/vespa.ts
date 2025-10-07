@@ -5,6 +5,7 @@ import {
   DriveEntity,
   type Entity,
   type VespaQueryConfig,
+  type VespaSchema,
 } from "@xyne/vespa-ts/types"
 import config from "@/config"
 import { db } from "@/db/client"
@@ -76,7 +77,6 @@ export const searchVespa = async (
       "Error fetching Google sync jobs status",
     )
   }
-
   return await vespa.searchVespa.bind(vespa)(query, email, app, entity, {
     ...options,
     recencyDecayRate:
@@ -155,7 +155,6 @@ export const GetRandomDocument = vespa.GetRandomDocument.bind(vespa)
 export const HybridDefaultProfile = vespa.HybridDefaultProfile.bind(vespa)
 
 export const GetDocumentsByDocIds = vespa.GetDocumentsByDocIds.bind(vespa)
-export const searchVespaThroughAgent = vespa.searchVespaThroughAgent.bind(vespa)
 export const searchSlackInVespa = vespa.searchSlackInVespa.bind(vespa)
 
 export const getAllDocumentsForAgent = vespa.getAllDocumentsForAgent.bind(vespa)

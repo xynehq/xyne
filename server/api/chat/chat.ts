@@ -96,7 +96,6 @@ import {
   GetDocumentsByDocIds,
   searchSlackInVespa,
   getDocumentOrNull,
-  searchVespaThroughAgent,
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,
@@ -305,7 +304,7 @@ export async function resolveNamesToEmails(
     searchSpan?.end()
 
     const resultCount = searchResults.root.children?.length || 0
-
+    Logger.info(`resolveNamesToEmails result count: ${resultCount}`)
     if (
       !searchResults.root.children ||
       searchResults.root.children.length === 0
@@ -318,7 +317,7 @@ export async function resolveNamesToEmails(
         const fields = result.fields as VespaMail
         const contextLine = `
         [Index ${index}]: 
-        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userMetadata.userTimezone})})
+        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", { timeZone: userMetadata.userTimezone })})
         Subject: ${fields.subject || "Unknown"}
         From: <${fields.from}>
         To: <${fields.to}>
@@ -382,7 +381,7 @@ export const GetChatTraceApi = async (c: Context) => {
 
     if (!trace) {
       // Return 404 if the trace is not found for the given IDs
-      throw new HTTPException(500, { message: "Chat trace not found" })
+      throw new HTTPException(404, { message: "Chat trace not found" })
     }
 
     // The traceJson is likely already a JSON object/string in the DB, return it directly
@@ -1947,14 +1946,20 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     const ragSpan = pageSpan?.startSpan("baseline_rag")
 
-    const iterator = baselineRAGJsonStream(input, userCtx, userMetadata, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-      agentPrompt,
-      messages,
-      imageFileNames,
-    })
+    const iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      userMetadata,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        agentPrompt,
+        messages,
+        imageFileNames,
+      },
+    )
 
     const answer = yield* processIterator(
       iterator,
@@ -2670,8 +2675,18 @@ async function* generatePointQueryTimeExpansion(
         to,
       )}`,
     )
-    iterationSpan?.setAttribute("from", new Date(from).toLocaleString("en-US", { timeZone: userMetadata.userTimezone}))
-    iterationSpan?.setAttribute("to", new Date(to).toLocaleString("en-US", { timeZone: userMetadata.userTimezone}))
+    iterationSpan?.setAttribute(
+      "from",
+      new Date(from).toLocaleString("en-US", {
+        timeZone: userMetadata.userTimezone,
+      }),
+    )
+    iterationSpan?.setAttribute(
+      "to",
+      new Date(to).toLocaleString("en-US", {
+        timeZone: userMetadata.userTimezone,
+      }),
+    )
     // Search in both calendar events and emails
     const searchSpan = iterationSpan?.startSpan("search_vespa")
     const emailSearchSpan = searchSpan?.startSpan("email_search")
@@ -2870,13 +2885,19 @@ async function* generatePointQueryTimeExpansion(
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
     loggerWithChild({ email: email }).info("Using meetingPromptJsonStream")
-    const iterator = meetingPromptJsonStream(input, userCtx, userMetadata.dateForAI, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-      agentPrompt,
-      imageFileNames,
-    })
+    const iterator = meetingPromptJsonStream(
+      input,
+      userCtx,
+      userMetadata.dateForAI,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        agentPrompt,
+        imageFileNames,
+      },
+    )
 
     const answer = yield* processIterator(
       iterator,
@@ -2995,10 +3016,22 @@ async function* processResultsForMetadata(
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app?.length == 1 && app[0] === Apps.Gmail) {
     loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(input, userCtx, userMetadata.dateForAI, context, streamOptions)
+    iterator = mailPromptJsonStream(
+      input,
+      userCtx,
+      userMetadata.dateForAI,
+      context,
+      streamOptions,
+    )
   } else {
     loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(input, userCtx, userMetadata, context, streamOptions)
+    iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      userMetadata,
+      context,
+      streamOptions,
+    )
   }
 
   return yield* processIterator(
@@ -3228,7 +3261,13 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3393,7 +3432,13 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata,span)
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3541,11 +3586,21 @@ async function* generateMetadataQueryAnswer(
         : SearchModes.NativeRank
 
     let resolvedIntent = {} as Intent
-    if (intent && Object.keys(intent).length > 0) {
+    if (
+      intent &&
+      Object.keys(intent).length > 0 &&
+      apps?.includes(Apps.Gmail)
+    ) {
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -4249,7 +4304,6 @@ export const MessageApi = async (c: Context) => {
         userAndWorkspaceCheck.workspace.id,
       )
     }
-
     // If none of the above, proceed with default RAG flow
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {
@@ -4303,8 +4357,8 @@ export const MessageApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -5880,8 +5934,8 @@ export const MessageRetryApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata = { userTimezone, dateForAI }
 
     // Extract sources from search parameters
     const kbItems = c.req.query("selectedKbItems")
@@ -7221,7 +7275,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
     email = sub || ""
 
     if (!email) {
-      throw new HTTPException(401, { message: "Unauthorized" })
+      throw new HTTPException(400, { message: "Email is required" })
     }
 
     const availableModels = getAvailableModels({

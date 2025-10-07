@@ -4,7 +4,7 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
- import { AgentCreationSource } from "@/db/schema"
+import { AgentCreationSource } from "@/db/schema"
 import {
   generateAgentStepSummaryPromptJson,
   generateConsolidatedStepSummaryPromptJson,
@@ -16,9 +16,7 @@ import {
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
 } from "@/ai/provider"
-import {
-  getConnectorById,
-} from "@/db/connector"
+import { getConnectorById } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import {
@@ -44,15 +42,9 @@ import {
   updateMessageByExternalId,
 } from "@/db/chat"
 import { db } from "@/db/client"
-import {
-  insertMessage,
-  getChatMessagesWithAuth,
-} from "@/db/message"
+import { insertMessage, getChatMessagesWithAuth } from "@/db/message"
 import { getToolsByConnectorId } from "@/db/tool"
-import {
-  type SelectChat,
-  type SelectMessage,
-} from "@/db/schema"
+import { type SelectChat, type SelectMessage } from "@/db/schema"
 import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
@@ -64,15 +56,8 @@ import {
   type AgentReasoningStep,
   type MessageReqType,
 } from "@/shared/types"
-import {
-  MessageRole,
-  Subsystem,
-  type UserMetadataType,
-} from "@/types"
-import {
-  getErrorMessage,
-  splitGroupedCitationsWithSpaces,
-} from "@/utils"
+import { MessageRole, Subsystem, type UserMetadataType } from "@/types"
+import { getErrorMessage, splitGroupedCitationsWithSpaces } from "@/utils"
 import {
   type ConversationRole,
   type Message,
@@ -85,6 +70,8 @@ import { getTracer, type Tracer } from "@/tracer"
 import {
   GetDocumentsByDocIds,
   getDocumentOrNull,
+  searchVespaAgent,
+  SearchVespaThreads,
   getAllDocumentsForAgent,
   searchSlackInVespa,
 } from "@/search/vespa"
@@ -98,9 +85,7 @@ import {
   type VespaSearchResults,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
-import {
-  insertChatTrace,
-} from "@/db/chatTrace"
+import { insertChatTrace } from "@/db/chatTrace"
 import type { AttachmentMetadata } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
@@ -190,9 +175,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 type ChatContainerFields = z.infer<typeof VespaChatContainerSearchSchema>
 type ChatUserFields = z.infer<typeof VespaChatUserSchema>
 
-const isChatContainerFields = (
-  value: unknown,
-): value is ChatContainerFields =>
+const isChatContainerFields = (value: unknown): value is ChatContainerFields =>
   isRecord(value) && VespaChatContainerSearchSchema.safeParse(value).success
 
 const isChatUserFields = (value: unknown): value is ChatUserFields =>
@@ -223,13 +206,19 @@ const generateStepSummary = async (
 
     // Use a fast model for summary generation
     const summarySpan = span.startSpan("synthesis_call")
-    const summary = await generateSynthesisBasedOnToolOutput(prompt,dateForAI, "", "", {
-      modelId: (modelId as Models) || defaultFastModel,
-      stream: false,
-      json: true,
-      reasoning: false,
-      messages: [],
-    })
+    const summary = await generateSynthesisBasedOnToolOutput(
+      prompt,
+      dateForAI,
+      "",
+      "",
+      {
+        modelId: (modelId as Models) || defaultFastModel,
+        stream: false,
+        json: true,
+        reasoning: false,
+        messages: [],
+      },
+    )
     summarySpan.setAttribute("model_id", defaultFastModel)
     summarySpan.end()
 
@@ -881,11 +870,8 @@ export const MessageWithToolsApi = async (c: Context) => {
     // Handle isFollowUp functionality - get context from previous user message
     if (isFollowUp && chatId) {
       try {
-        const updatedContext = await applyFollowUpContext(
-          chatId,
-          email
-        )
-        
+        const updatedContext = await applyFollowUpContext(chatId, email)
+
         fileIds = [...fileIds, ...updatedContext.fileIds]
         imageAttachmentFileIds.push(...updatedContext.imageAttachmentFileIds)
         attachmentMetadata.push(...updatedContext.attachmentMetadata)
@@ -893,7 +879,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         // Dedup
         fileIds = Array.from(new Set(fileIds))
         imageAttachmentFileIds = Array.from(new Set(imageAttachmentFileIds))
-        let byId = new Map(attachmentMetadata.map(a => [a.fileId, a]))
+        let byId = new Map(attachmentMetadata.map((a) => [a.fileId, a]))
         attachmentMetadata = Array.from(byId.values())
       } catch (error) {
         loggerWithChild({ email: email }).error(
@@ -903,7 +889,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         // Continue execution even if we can't get previous context
       }
     }
-    
+
     const hasReferencedContext = fileIds && fileIds.length > 0
     contextExtractionSpan.setAttribute("file_ids_count", fileIds?.length || 0)
     contextExtractionSpan.setAttribute(
@@ -948,8 +934,8 @@ export const MessageWithToolsApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
     initSpan.end()
 
@@ -1625,10 +1611,12 @@ export const MessageWithToolsApi = async (c: Context) => {
               }
               planningContext = cleanContext(resolvedContexts?.join("\n"))
               if (chatContexts.length > 0) {
-                planningContext += "\n" + buildContext(chatContexts, 10, userMetadata)
+                planningContext +=
+                  "\n" + buildContext(chatContexts, 10, userMetadata)
               }
               if (threadContexts.length > 0) {
-                planningContext += "\n" + buildContext(threadContexts, 10, userMetadata)
+                planningContext +=
+                  "\n" + buildContext(threadContexts, 10, userMetadata)
               }
 
               gatheredFragments = await Promise.all(
@@ -2368,13 +2356,11 @@ export const MessageWithToolsApi = async (c: Context) => {
                             fallbackResponse.contexts &&
                             Array.isArray(fallbackResponse.contexts)
                           ) {
-                            fallbackResponse.contexts.forEach(
-                              (context) => {
-                                citations.push(context.source)
-                                citationMap[citations.length] =
-                                  citations.length - 1
-                              },
-                            )
+                            fallbackResponse.contexts.forEach((context) => {
+                              citations.push(context.source)
+                              citationMap[citations.length] =
+                                citations.length - 1
+                            })
 
                             if (citations.length > 0) {
                               await stream.writeSSE({
@@ -2773,8 +2759,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -2886,6 +2872,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const allDataSources = await getAllDocumentsForAgent(
             [Apps.DataSource],
             agentForDb?.appIntegrations as string[],
+            400,
+            email,
           )
           dataSourceSpan.end()
           loggerWithChild({ email }).info(
@@ -3163,6 +3151,8 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const allDataSources = await getAllDocumentsForAgent(
           [Apps.DataSource],
           agentForDb?.appIntegrations as string[],
+          400,
+          email,
         )
         dataSourceSpan.end()
         loggerWithChild({ email }).info(
@@ -3599,8 +3589,8 @@ export const AgentMessageApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -3765,27 +3755,30 @@ export const AgentMessageApi = async (c: Context) => {
             }
 
             const filteredMessages = messages
-                .slice(0, messages.length - 1)
-                .filter(
-                  (msg) =>
-                    !(msg.messageRole === MessageRole.Assistant && !msg.message),
-                )
-  
+              .slice(0, messages.length - 1)
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              )
+
             // Check for follow-up context carry-forward
-            const lastIdx = filteredMessages.length - 1;
-            const workingSet = collectFollowupContext(filteredMessages, lastIdx);
-  
+            const lastIdx = filteredMessages.length - 1
+            const workingSet = collectFollowupContext(filteredMessages, lastIdx)
+
             const hasCarriedContext =
               workingSet.fileIds.length > 0 ||
-              workingSet.attachmentFileIds.length > 0;
+              workingSet.attachmentFileIds.length > 0
             if (hasCarriedContext) {
-              fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]));
+              fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]))
               imageAttachmentFileIds = Array.from(
-                new Set([...imageAttachmentFileIds, ...workingSet.attachmentFileIds])
-              );
+                new Set([
+                  ...imageAttachmentFileIds,
+                  ...workingSet.attachmentFileIds,
+                ]),
+              )
               loggerWithChild({ email: email }).info(
                 `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
-              );
+              )
             }
             if (
               (fileIds && fileIds?.length > 0) ||
