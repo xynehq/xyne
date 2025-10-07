@@ -44,6 +44,11 @@ import {
   startSlackIngestionSchema,
   microsoftServiceSchema,
   UserRoleChangeSchema,
+  fileUploadSchema,
+  attachmentUploadSchema,
+  fileServeParamsSchema,
+  getUserWorkspaceInfoQuerySchema,
+  deleteUserApiKeyParamsSchema,
 } from "@/types"
 import {
   AddApiKeyConnector,
@@ -167,12 +172,7 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import {
-  UserRole,
-  Apps,
-  CreateApiKeySchema,
-  getDocumentSchema,
-} from "@/shared/types" // Import Apps
+import { UserRole, Apps, CreateApiKeySchema, getDocumentSchema } from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -886,10 +886,10 @@ export const AppRoutes = app
     zValidator("json", autocompleteSchema),
     AutocompleteApi,
   )
-  .post("files/upload", handleFileUpload)
-  .post("/files/upload-attachment", handleAttachmentUpload)
-  .get("/attachments/:fileId", handleAttachmentServe)
-  .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
+  .post("files/upload", zValidator("form", fileUploadSchema), handleFileUpload)
+  .post("/files/upload-attachment", zValidator("form", attachmentUploadSchema), handleAttachmentUpload)
+  .get("/attachments/:fileId", zValidator("param", fileServeParamsSchema), handleAttachmentServe)
+  .get("/attachments/:fileId/thumbnail", zValidator("param", fileServeParamsSchema), handleThumbnailServe)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/generateTitle",
@@ -976,14 +976,14 @@ export const AppRoutes = app
     zValidator("query", searchSchema),
     SearchSlackChannels,
   )
-  .get("/me", GetUserWorkspaceInfo)
+  .get("/me", zValidator("query", getUserWorkspaceInfoQuerySchema), GetUserWorkspaceInfo)
   .get("/users/api-keys", GetUserApiKeys)
   .post(
     "/users/api-key",
     zValidator("json", CreateApiKeySchema),
     GenerateUserApiKey,
   )
-  .delete("/users/api-keys/:keyId", DeleteUserApiKey)
+  .delete("/users/api-keys/:keyId", zValidator("param", deleteUserApiKeyParamsSchema), DeleteUserApiKey)
   .get("/datasources", ListDataSourcesApi)
   .get("/datasources/:docId", GetDataSourceFile)
   .get("/datasources/:dataSourceName/files", ListDataSourceFilesApi)
