@@ -51,7 +51,10 @@ const baseSearchSchema = z.object({
     .pipe(z.number())
     .optional(),
   app: z.nativeEnum(Apps).optional(),
-  entity: z.string().min(1).optional(),
+  entity: z.union([
+    z.string().min(1),          
+    z.array(z.string().min(1)),  
+  ]).optional(),
   lastUpdated: z.string().default("anytime"),
   isQueryTyped: z.preprocess((val) => val === "true", z.boolean()).optional(),
   debug: z
@@ -600,3 +603,10 @@ export const UserMetadata = z.object({
 })
 
 export type UserMetadataType = z.infer<typeof UserMetadata>
+
+// ChunkMetadata type for OCR and file processing
+export type ChunkMetadata = {
+  chunk_index: number;
+  page_numbers: number[];
+  block_labels: string[];
+};

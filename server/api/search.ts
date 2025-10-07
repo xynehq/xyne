@@ -224,7 +224,12 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
+  isFollowUp: z.string().optional().transform((val) => {
+    if (!val) return false
+    return val.toLowerCase() === "true"
+  }),
 })
+
 export type MessageReqType = z.infer<typeof messageSchema>
 
 export const messageRetrySchema = z.object({
@@ -249,6 +254,7 @@ export const generatePromptSchema = z.object({
       },
     ),
 })
+
 
 export type GeneratePromptPayload = z.infer<typeof generatePromptSchema>
 
@@ -296,7 +302,7 @@ export const SearchApi = async (c: Context) => {
     debug,
     agentId,
     // @ts-ignore
-  } = c.req.valid("query")
+  } = c.req.valid("query")  
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const timestampRange = getTimestamp(lastUpdated)
@@ -562,8 +568,8 @@ export const AnswerApi = async (c: Context) => {
 
   const ctx = userContext(userAndWorkspace)
   const userTimezone = userAndWorkspace.user?.timeZone || "Asia/Kolkata"
-  const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-  const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+  const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+  const userMetadata: UserMetadataType = { userTimezone, dateForAI }
   const initialPrompt = `context about user asking the query\n${ctx}\nuser's query: ${query}`
   // could be called parallely if not for userAndWorkspace
   let { result, cost } = await analyzeQueryForNamesAndEmails(initialPrompt, {
@@ -704,7 +710,6 @@ export const AnswerApi = async (c: Context) => {
     })
   })
 }
-
 
 export const GetDriveItem = async (c: Context) => {
   const { sub, workspaceId } = c.get(JwtPayloadKey)

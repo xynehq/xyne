@@ -167,7 +167,12 @@ import {
   deleteSharedChatSchema,
   checkSharedChatSchema,
 } from "@/api/chat/sharedChat"
-import { UserRole, Apps, CreateApiKeySchema, getDocumentSchema } from "@/shared/types" // Import Apps
+import {
+  UserRole,
+  Apps,
+  CreateApiKeySchema,
+  getDocumentSchema,
+} from "@/shared/types" // Import Apps
 import { wsConnections } from "@/integrations/metricStream"
 import {
   EvaluateHandler,
@@ -254,6 +259,8 @@ import {
   GetFileContentApi,
   DownloadFileApi,
   GetChunkContentApi,
+  GetCollectionNameForSharedAgentApi,
+  PollCollectionsStatusApi,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -634,10 +641,14 @@ internalMetricRouter.post("/update-metrics", handleUpdatedMetrics)
 const handleAppValidation = async (c: Context) => {
   const authHeader = c.req.header("Authorization")
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  if (!authHeader) {
     throw new HTTPException(401, {
-      message: "Missing or malformed Authorization header",
+      message: "Missing Authorization header",
     })
+  }
+
+  if (!authHeader.startsWith("Bearer ")) {
+    throw new HTTPException(400, { message: "Malformed Authorization header" })
   }
 
   const token = authHeader.slice("Bearer ".length).trim()
@@ -660,7 +671,7 @@ const handleAppValidation = async (c: Context) => {
 
   const email = user?.email
   if (!email) {
-    throw new HTTPException(500, {
+    throw new HTTPException(400, {
       message: "Could not get the email of the user",
     })
   }
@@ -719,9 +730,9 @@ const handleAppValidation = async (c: Context) => {
   return c.json(
     {
       success: false,
-      message: "No existing User found",
+      message: "User is not provisioned / access forbidden",
     },
-    404,
+    403,
   )
 }
 
@@ -1114,7 +1125,9 @@ export const AppRoutes = app
     zValidator("query", searchKnowledgeBaseSchema),
     SearchKnowledgeBaseApi,
   )
+  .post("/cl/poll-status", PollCollectionsStatusApi)
   .get("/cl/:clId", GetCollectionApi)
+  .get("/cl/:clId/name", GetCollectionNameForSharedAgentApi)
   .put("/cl/:clId", UpdateCollectionApi)
   .delete("/cl/:clId", DeleteCollectionApi)
   .get("/cl/:clId/items", ListCollectionItemsApi)
@@ -1388,13 +1401,13 @@ app.get(
 
     const email = user?.email
     if (!email) {
-      throw new HTTPException(500, {
+      throw new HTTPException(400, {
         message: "Could not get the email of the user",
       })
     }
 
     if (!user?.verified_email) {
-      throw new HTTPException(500, { message: "User email is not verified" })
+      throw new HTTPException(403, { message: "User email is not verified" })
     }
     // hosted domain
     // @ts-ignore

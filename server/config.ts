@@ -11,7 +11,7 @@ let host = process.env.HOST || "http://localhost:3000"
 
 // Centralized database URL construction
 function getDatabaseUrl(): string {
-    return process.env.DATABASE_URL || `$`
+    return process.env.DATABASE_URL || `postgres://xyne:xyne@${postgresBaseHost}:5432/xyne`
 }
 let redirectUri = process.env.GOOGLE_REDIRECT_URI!
 let postOauthRedirect = "/"
@@ -48,6 +48,12 @@ let VertexRegion = ""
 let VertexAIModel = ""
 let aiProviderBaseUrl = ""
 let isReasoning = false
+
+// File processing worker configuration
+let fileProcessingWorkerThreads = parseInt(process.env.FILE_PROCESSING_WORKER_THREADS || "4", 10)
+let fileProcessingTeamSize = parseInt(process.env.FILE_PROCESSING_TEAM_SIZE || "4", 10)
+let pdfFileProcessingWorkerThreads = parseInt(process.env.PDF_FILE_PROCESSING_WORKER_THREADS || "2", 10)
+let pdfFileProcessingTeamSize = parseInt(process.env.PDF_FILE_PROCESSING_TEAM_SIZE || "2", 10)
 let fastModelReasoning = false
 let slackHost = process.env.SLACK_HOST
 let VESPA_NAMESPACE = "my_content"
@@ -220,4 +226,8 @@ export default {
   defaultRecencyDecayRate: 0.1, // Decay rate for recency scoring in Vespa searches
   CurrentAuthType,
   getDatabaseUrl,
+  fileProcessingWorkerThreads,
+  fileProcessingTeamSize,
+  pdfFileProcessingWorkerThreads,
+  pdfFileProcessingTeamSize,
 }

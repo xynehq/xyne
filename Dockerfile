@@ -17,11 +17,11 @@ RUN bun install
 
 # Copy server source code and configuration
 WORKDIR /usr/src/app
-COPY server/ /usr/src/app/server/
-COPY frontend/ /usr/src/app/frontend/
+COPY --chown=bun:bun server/ /usr/src/app/server/
+COPY --chown=bun:bun frontend/ /usr/src/app/frontend/
 
 # Copy other necessary files
-COPY biome.json /usr/src/app/
+COPY --chown=bun:bun biome.json /usr/src/app/
 
 # Make scripts executable
 WORKDIR /usr/src/app/server
@@ -64,17 +64,16 @@ RUN apt-get update && apt-get install -y \
 # Copy sample data archive if it exists (conditional copy during build)
 #COPY deployment/sample-data.tar.gz* /usr/src/app/deployment/
 
-# Set ownership for bun user
-RUN chown -R bun:bun /usr/src/app
-
 # Note: Application ports are exposed below
 
 WORKDIR /usr/src/app/server
 
-RUN mkdir -p downloads vespa-data vespa-logs uploads migrations
+# Create runtime directories and set ownership for bun user
+RUN mkdir -p downloads vespa-data vespa-logs uploads migrations && \
+    chown bun:bun downloads vespa-data vespa-logs uploads migrations
 
 # Copy and setup startup script
-COPY start.sh /usr/src/app/start.sh
+COPY --chown=bun:bun start.sh /usr/src/app/start.sh
 RUN chmod +x /usr/src/app/start.sh
 
 USER bun
