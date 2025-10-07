@@ -15,6 +15,7 @@ import {
   chatUserSchema,
   chatMessageSchema,
   chatContainerSchema,
+  type VespaSchema,
 } from "@xyne/vespa-ts/types"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "vespa-service" })
@@ -38,7 +39,7 @@ const AllSources = [
   chatUserSchema,
   chatMessageSchema,
   chatContainerSchema,
-]
+] as VespaSchema[]
 
 const dependencies: VespaDependencies = {
   logger: Logger,
