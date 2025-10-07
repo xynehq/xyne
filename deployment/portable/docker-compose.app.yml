@@ -17,11 +17,8 @@ services:
       - xyne
 
   app:
-    image: xyne
+    image: xynehq/xyne
     container_name: xyne-app
-    build:
-      context: ../..
-      dockerfile: Dockerfile
     user: "${DOCKER_UID}:${DOCKER_GID}"
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
