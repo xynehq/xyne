@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react"
 import { Apps, DriveEntity } from "shared/types"
 import { getIcon } from "@/lib/common"
 import { api } from "@/api"
+import {FileSchema} from "shared/types"
 
 // Utility function to check if an item is selected either directly or through parent inheritance
 function isItemSelectedWithInheritance(
@@ -88,27 +89,8 @@ interface GoogleDriveNavigationProps {
   >
   selectedIntegrations: Record<string, boolean>
 }
-interface DriveItemFields {
-  app: "google-drive"
-  createdAt: number
-  docId: string
-  documentid: string
-  entity: DriveEntity
-  metadata?: string | ""
-  mimeType: string
-  owner: string
-  ownerEmail: string
-  parentId: string
-  permissions: string[]
-  photoLink: string
-  sddocname: string
-  title: string
-  updatedAt: number
-  url: string
-}
-
 interface DriveItem {
-  fields: DriveItemFields
+  fields: FileSchema
   id: string
   relevance: number
   source: string
