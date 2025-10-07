@@ -53,9 +53,10 @@ export type {
   SearchResultsSchema,
   SearchResponse,
   SearchResultDiscriminatedUnion,
-  FileSchema
+  
 } from "@xyne/vespa-ts/types"
 
+export type VespaFile = z.infer<typeof VespaFileSchema>
 export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
