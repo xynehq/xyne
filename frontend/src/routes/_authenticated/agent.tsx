@@ -2667,56 +2667,8 @@ function AgentComponent() {
     container.scrollTop = container.scrollHeight
   }, [messages, currentResp?.resp])
 
-  // Helper function for Google Drive item selection
-  function handleGoogleDriveItemSelection(
-    itemId: string,
-    itemDetail: any,
-    selectedItemsInGoogleDrive: Set<string>,
-    setSelectedItemsInGoogleDrive: React.Dispatch<
-      React.SetStateAction<Set<string>>
-    >,
-    setSelectedItemDetailsInGoogleDrive: React.Dispatch<
-      React.SetStateAction<Record<string, any>>
-    >,
-    setSelectedIntegrations: React.Dispatch<
-      React.SetStateAction<Record<string, boolean>>
-    >,
-  ) {
-    const isCurrentlySelected = selectedItemsInGoogleDrive.has(itemId)
-
-    setSelectedItemsInGoogleDrive((prev) => {
-      const newSet = new Set(prev)
-      if (isCurrentlySelected) {
-        newSet.delete(itemId)
-      } else {
-        newSet.add(itemId)
-      }
-      return newSet
-    })
-
-    setSelectedItemDetailsInGoogleDrive((prev) => {
-      const newState = { ...prev }
-      if (isCurrentlySelected) {
-        delete newState[itemId]
-      } else {
-        newState[itemId] = itemDetail
-      }
-      return newState
-    })
-
-    setSelectedIntegrations((prev) => {
-      const newSelectedSet = new Set(selectedItemsInGoogleDrive)
-      if (isCurrentlySelected) {
-        newSelectedSet.delete(itemId)
-      } else {
-        newSelectedSet.add(itemId)
-      }
-      return {
-        ...prev,
-        googledrive: newSelectedSet.size > 0,
-      }
-    })
-  }
+  
+ 
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
@@ -3687,17 +3639,7 @@ function AgentComponent() {
                                     {(() => {
                                       // If there's a search query, always show global search results
                                       if (dropdownSearchQuery.trim()) {
-                                        return (
-                                          <div className="max-h-60 overflow-y-auto">
-                                            {isSearching ? (
-                                              <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
-                                                Searching...
-                                              </div>
-                                            ) : searchResults.length > 0 ? (
-                                              searchResults.map(
-                                                (result: any) => {
-                                                  // Check if we're in Google Drive context for proper handling
-                                                  const isInGoogleDriveContext =
+                                        const isInGoogleDriveContext =
                                                     navigationPath.some(
                                                       (item) =>
                                                         item.type ===
@@ -3705,101 +3647,56 @@ function AgentComponent() {
                                                         item.type ===
                                                           "drive-folder",
                                                     )
+                                        return (
+                                          <div className="max-h-60 overflow-y-auto">
+                                            {isSearching ? (
+                                              <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                                Searching...
+                                              </div>
+                                            ) : searchResults.length > 0 ? (
+                                              isInGoogleDriveContext ? (
+                                                <GoogleDriveNavigation
+                                            navigationPath={navigationPath}
+                                            setNavigationPath={
+                                              setNavigationPath
+                                            }
+                                            currentItems={currentItems}
+                                            setCurrentItems={setCurrentItems}
+                                            isLoadingItems={isLoadingItems}
+                                            setIsLoadingItems={
+                                              setIsLoadingItems
+                                            }
+                                            dropdownSearchQuery={
+                                              dropdownSearchQuery
+                                            }
+                                            setDropdownSearchQuery={
+                                              setDropdownSearchQuery
+                                            }
+                                            searchResults={searchResults}
+                                            isSearching={isSearching}
+                                            selectedItemsInGoogleDrive={
+                                              selectedItemsInGoogleDrive
+                                            }
+                                            setSelectedItemsInGoogleDrive={
+                                              setSelectedItemsInGoogleDrive
+                                            }
+                                            selectedItemDetailsInGoogleDrive={
+                                              selectedItemDetailsInGoogleDrive
+                                            }
+                                            setSelectedItemDetailsInGoogleDrive={
+                                              setSelectedItemDetailsInGoogleDrive
+                                            }
+                                            setSelectedIntegrations={
+                                              setSelectedIntegrations
+                                            }
+                                          />
+                                              ):(
+                                              searchResults.map(
+                                                (result: any) => {
+                                                  // Check if we're in Google Drive context for proper handling
+                                                  
 
-                                                  if (isInGoogleDriveContext) {
-                                                    // Handle Google Drive search results
-                                                    const itemId = result.docId
-                                                    const itemEntity =
-                                                      result.entity
-                                                    const itemTitle =
-                                                      result.title ||
-                                                      result.name ||
-                                                      "Untitled"
-                                                    const isFolder =
-                                                      itemEntity ===
-                                                      DriveEntity.Folder
-
-                                                    const handleFolderNavigation =
-                                                      () => {
-                                                        if (
-                                                          isFolder &&
-                                                          result.fields?.docId
-                                                        ) {
-                                                          // Clear search query and results when navigating
-                                                          setDropdownSearchQuery(
-                                                            "",
-                                                          )
-                                                          setSearchResults([])
-                                                          navigateToDriveFolder(
-                                                            result.fields.docId,
-                                                            itemTitle,
-                                                          )
-                                                        }
-                                                      }
-
-                                                    return (
-                                                      <div
-                                                        key={itemId}
-                                                        className="flex items-center px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-                                                      >
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={selectedItemsInGoogleDrive.has(
-                                                            itemId,
-                                                          )}
-                                                          onChange={(e) => {
-                                                            e.stopPropagation()
-                                                            // Use helper function
-                                                            handleGoogleDriveItemSelection(
-                                                              itemId,
-                                                              // Normalize the data structure for search results
-                                                              {
-                                                                ...result,
-                                                                fields: {
-                                                                  docId:
-                                                                    result.docId ||
-                                                                    itemId,
-                                                                  title:
-                                                                    result.title ||
-                                                                    result.name ||
-                                                                    itemTitle,
-                                                                  name:
-                                                                    result.name ||
-                                                                    result.title ||
-                                                                    itemTitle,
-                                                                  entity:
-                                                                    result.entity ||
-                                                                    itemEntity,
-                                                                },
-                                                              },
-                                                              selectedItemsInGoogleDrive,
-                                                              setSelectedItemsInGoogleDrive,
-                                                              setSelectedItemDetailsInGoogleDrive,
-                                                              setSelectedIntegrations,
-                                                            )
-                                                          }}
-                                                          className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                                        />
-                                                        {getDriveEntityIcon(
-                                                          itemEntity,
-                                                        )}
-                                                        <span
-                                                          className={`text-gray-700 dark:text-gray-200 truncate flex-1 ${isFolder ? "cursor-pointer hover:text-blue-600 dark:hover:text-blue-400" : ""}`}
-                                                          onClick={
-                                                            handleFolderNavigation
-                                                          }
-                                                        >
-                                                          {itemTitle}
-                                                        </span>
-                                                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                                                          {isFolder
-                                                            ? "folder"
-                                                            : itemEntity ||
-                                                              "file"}
-                                                        </span>
-                                                      </div>
-                                                    )
-                                                  } else {
+                                                  
                                                     // Handle regular search results (knowledge-base, etc.)
                                                     // Check if the item is directly selected vs inherited from parent
                                                     const isDirectlySelected =
@@ -3992,9 +3889,10 @@ function AgentComponent() {
                                                         </div>
                                                       </div>
                                                     )
-                                                  }
+                                                  
                                                 },
                                               )
+                                            )
                                             ) : (
                                               <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
                                                 No results found for "
