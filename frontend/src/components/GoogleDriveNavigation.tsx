@@ -206,14 +206,14 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
             ) : searchResults.length > 0 ? (
               searchResults.map((result: any) => {
                
-                const itemId = result.docId
+                const itemDocId = result.docId
                 const itemEntity = result.entity
                 const itemTitle = result.title || result.name || "Untitled"
                 const isFolder = itemEntity === DriveEntity.Folder
                   const isDirectlySelected =
-                  selectedItemsInGoogleDrive.has(itemId)
+                  selectedItemsInGoogleDrive.has(itemDocId)
                 const isInheritedFromParent = isItemSelectedWithInheritance(
-                  itemId,
+                  itemDocId,
                   selectedItemsInGoogleDrive,
                   selectedItemDetailsInGoogleDrive,
                   navigationPath,
@@ -232,7 +232,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
 
                 return (
                   <div
-                    key={itemId}
+                    key={itemDocId}
                     className="flex items-center px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
                   >
                     <input
@@ -242,12 +242,12 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
                       onChange={(e) => {
                         e.stopPropagation()
                         handleGoogleDriveItemSelection(
-                          itemId,
+                          itemDocId,
                           // Normalize the data structure for search results
                           {
                             ...result,
                             fields: {
-                              docId: result.docId || itemId,
+                              docId: itemDocId,
                               title: result.title || result.name || itemTitle,
                               name: result.name || result.title || itemTitle,
                               entity: result.entity || itemEntity,
@@ -294,7 +294,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
             ) : currentItems.length > 0 ? (
               currentItems.map((item: any) => {
            
-                const itemId = item.id || item.fields?.docId
+               
                 const itemDocId = item.fields?.docId
                 const itemEntity = item.fields?.entity
                 const itemTitle =
@@ -303,9 +303,9 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
 
                 // Check if this item is inherited from a selected parent folder
                 const isDirectlySelected =
-                  selectedItemsInGoogleDrive.has(itemDocId || itemId)
+                  selectedItemsInGoogleDrive.has(itemDocId )
                 const isInheritedFromParent = isItemSelectedWithInheritance(
-                  itemDocId || itemId,
+                  itemDocId ,
                   selectedItemsInGoogleDrive,
                   selectedItemDetailsInGoogleDrive,
                   navigationPath,
@@ -316,7 +316,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
 
                 return (
                   <div
-                    key={itemId}
+                    key={itemDocId}
                     className="flex items-center px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
                     onClick={() => {
                       if (isFolder && itemDocId) {
@@ -333,7 +333,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
                         if (isDisabled) return // Prevent changes if inherited from parent
 
                         handleGoogleDriveItemSelection(
-                          itemDocId || itemId,
+                          itemDocId ,
                           item,
                           selectedItemsInGoogleDrive,
                           setSelectedItemsInGoogleDrive,
