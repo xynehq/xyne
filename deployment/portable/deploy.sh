@@ -265,17 +265,28 @@ start_infrastructure() {
 }
 
 start_app() {
-    echo -e "${YELLOW} Starting application services...${NC}"
+    echo -e "${YELLOW}Starting application services...${NC}"
 
     COMPOSE_FILES=$(get_compose_files)
     DOCKER_COMPOSE=$(get_docker_compose_cmd)
-    $DOCKER_COMPOSE $COMPOSE_FILES up -d app
-    echo -e "${GREEN} Main application service started${NC}"
 
-    echo -e "${YELLOW} Starting sync server...${NC}"
-    $DOCKER_COMPOSE $COMPOSE_FILES up -d app-sync
-    echo -e "${GREEN} Sync server started${NC}"
+    if [ "$APP_DEPLOY_MODE" = "build" ]; then
+        echo -e "${BLUE}Building app locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app
+        echo -e "${BLUE}Building sync server locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app-sync
+
+        echo -e "${BLUE}Starting services with locally built images...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app app-sync
+    else
+        echo -e "${BLUE}Using prebuilt image (version mode, may pull from registry)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d app
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d app-sync
+    fi
+
+    echo -e "${GREEN}Application services started${NC}"
 }
+
 
 get_infrastructure_compose() {
     if detect_gpu_support >/dev/null 2>&1; then
@@ -617,9 +628,28 @@ case $COMMAND in
         setup_permissions
         start_infrastructure
         sleep 10  # Wait for infrastructure to be ready
+
+        echo -e "${YELLOW}Select app deployment mode:${NC}"
+        echo "  1) build (default)"
+        echo "  2) version"
+        read -p "Enter choice [1/2]: " user_choice
+
+        if [ "$user_choice" = "2" ]; then
+            APP_DEPLOY_MODE="version"
+            echo -e "${BLUE}Using docker-compose.app-version.yml and docker-compose.sync-version.yml${NC}"
+            cp docker-compose.app-version.yml docker-compose.app.yml
+            cp docker-compose.sync-version.yml docker-compose.sync.yml
+        else
+            APP_DEPLOY_MODE="build"
+            echo -e "${BLUE}Using docker-compose.app-build.yml and docker-compose.sync-build.yml${NC}"
+            cp docker-compose.app-build.yml docker-compose.app.yml
+            cp docker-compose.sync-build.yml docker-compose.sync.yml
+        fi
+
         start_app
         show_status
         ;;
+
     start-infra)
         setup_environment
         setup_permissions
