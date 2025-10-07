@@ -39,7 +39,7 @@ import type {
   ChainBreakClassifications,
   ConverseResponse,
   Cost,
-  Intent,
+  MailParticipant,
   LLMProvider,
   ModelParams,
   QueryRouterLLMResponse,
@@ -431,7 +431,7 @@ export const getAISDKProviderByModel = (modelId: Models): ProviderV2 => {
             : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
               : null
-
+  console.log("Provider type:", providerType, "for model:", modelId)
   switch (providerType) {
     case AIProviders.VertexAI: {
       if (!VertexProjectId || !VertexRegion) {
@@ -855,7 +855,7 @@ export const generateTitleUsingQuery = async (
 
     params.json = true
     Logger.info("inside generateTitleUsingQuery")
-    if(assistantResponse === undefined){
+    if (assistantResponse === undefined) {
       assistantResponse = ""
     }
 
@@ -1204,7 +1204,7 @@ export const baselineRAGJson = async (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
-      dateForAI
+      dateForAI,
     )
   } else {
     params.systemPrompt = baselinePromptJson(userCtx, retrievedCtx, dateForAI)
@@ -1386,10 +1386,14 @@ export const temporalPromptJsonStream = (
       userCtx,
       retrievedCtx,
       parseAgentPrompt(params.agentPrompt),
-      dateForAI
+      dateForAI,
     )
   } else {
-    params.systemPrompt = temporalDirectionJsonPrompt(userCtx, retrievedCtx, dateForAI)
+    params.systemPrompt = temporalDirectionJsonPrompt(
+      userCtx,
+      retrievedCtx,
+      dateForAI,
+    )
   }
   params.json = true
   const baseMessage = {
@@ -1597,7 +1601,7 @@ export async function generateToolSelectionOutput(
   reasoning?: string | null
 } | null> {
   params.json = true
-  const dateForAI = getDateForAI({userTimeZone: "Asia/Kolkata"})
+  const dateForAI = getDateForAI({ userTimeZone: "Asia/Kolkata" })
 
   let defaultReasoning = isReasoning
   params.systemPrompt = SearchQueryToolContextPrompt(
@@ -1753,7 +1757,7 @@ export function generateSynthesisBasedOnToolOutput(
     userCtx,
     currentMessage,
     gatheredFragments,
-    dateForAI
+    dateForAI,
   )
 
   const baseMessage = {
@@ -1873,16 +1877,16 @@ export const generateFallback = async (
 }
 
 export const extractEmailsFromContext = async (
-  names: Intent,
+  names: MailParticipant,
   userCtx: string,
   retrievedCtx: string,
   params: ModelParams,
-): Promise<{ emails: Intent }> => {
+): Promise<{ emails: MailParticipant }> => {
   if (!params.modelId) {
     params.modelId = defaultFastModel
   }
 
-  const intentNames =
+  const participants =
     [
       ...(names.from?.length ? [`From: ${names.from.join(", ")}`] : []),
       ...(names.to?.length ? [`To: ${names.to.join(", ")}`] : []),
@@ -1893,7 +1897,7 @@ export const extractEmailsFromContext = async (
   params.systemPrompt = nameToEmailResolutionPrompt(
     userCtx,
     retrievedCtx,
-    intentNames,
+    participants,
     names,
   )
   params.json = false
@@ -1902,7 +1906,7 @@ export const extractEmailsFromContext = async (
     role: ConversationRole.USER,
     content: [
       {
-        text: `Help me find emails for these names: ${intentNames}`,
+        text: `Help me find emails for these names: ${participants}`,
       },
     ],
   }

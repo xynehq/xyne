@@ -4145,7 +4145,7 @@ export const AgentMessageApi = async (c: Context) => {
                 endTime: "",
                 count: 0,
                 sortDirection: "",
-                intent: {},
+                mailParticipants: {},
                 offset: 0,
               }
               let parsed = {
@@ -4154,7 +4154,7 @@ export const AgentMessageApi = async (c: Context) => {
                 temporalDirection: null,
                 filter_query: "",
                 type: "",
-                intent: {},
+                mailParticipants: {},
                 filters: queryFilters,
               }
 
@@ -4327,7 +4327,7 @@ export const AgentMessageApi = async (c: Context) => {
                       ...(parsed?.filters ?? {}),
                       apps: parsed.filters?.apps || [],
                       entities: parsed.filters?.entities as any,
-                      intent: parsed.intent || {},
+                      mailParticipants: parsed.mailParticipants || {},
                     },
                   }
 
