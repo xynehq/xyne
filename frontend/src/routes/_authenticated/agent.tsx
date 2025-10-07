@@ -77,7 +77,7 @@ import { createAuthEventSource } from "@/hooks/useChatStream"
 import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
-import SharedAgent from "@/components/SharedAgent"
+import ViewAgent from "@/components/ViewAgent"
 
 type CurrentResp = {
   resp: string
@@ -205,6 +205,67 @@ export interface CollectionItem {
   path?: string
   type?: "collection" | "folder" | "file"
   name?: string
+}
+// Icon components
+export const FileIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+    <polyline points="13 2 13 9 20 9"></polyline>
+  </svg>
+)
+
+export const FolderIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+  </svg>
+)
+
+export const CollectionIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+  </svg>
+)
+export const getItemIcon = (itemType: string): React.ReactNode => {
+  switch (itemType) {
+    case "folder":
+      return <FolderIcon />
+    case "collection":
+      return <CollectionIcon />
+    case "file":
+    default:
+      return <FileIcon />
+  }
 }
 
 // Utility function to check if an item is selected either directly or through parent inheritance
@@ -386,18 +447,13 @@ function AgentComponent() {
     folderId: string,
     folderName: string,
   ) => {
-    
-    
     setNavigationPath((prev) => {
       if (prev.length > 0 && prev[prev.length - 1].id === folderId) {
-        return prev;
+        return prev
       }
-      return [
-        ...prev,
-        { id: folderId, name: folderName, type: "drive-folder" },
-      ];
-    });
-  
+      return [...prev, { id: folderId, name: folderName, type: "drive-folder" }]
+    })
+
     setIsLoadingItems(true)
     try {
       const response = await api.search.driveitem.$post({
@@ -493,14 +549,12 @@ function AgentComponent() {
 
         let response
         if (isInGoogleDriveContext) {
-         
           response = await api.search.$get({
             query: {
               query: dropdownSearchQuery,
               app: Apps.GoogleDrive,
               isAgentIntegSearch: true,
-              entity:Object.values(DriveEntity)
-             
+              entity: Object.values(DriveEntity),
             },
           })
         } else {
@@ -1589,7 +1643,7 @@ function AgentComponent() {
             const existingUsers = users.filter((user) =>
               data.userEmails.includes(user.email),
             )
-          
+
             setSelectedUsers(existingUsers)
           }
         } catch (error) {
@@ -2072,53 +2126,7 @@ function AgentComponent() {
 
               // Determine the icon based on the type from the mapping or the item type
               const itemType = integrationIdToNameMap[itemId]?.type || item.type
-              const itemIcon =
-                itemType === "folder" ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-blue-600"
-                  >
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                  </svg>
-                ) : itemType === "collection" ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-blue-600"
-                  >
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                  </svg>
-                ) : (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-blue-600"
-                  >
-                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                    <polyline points="13 2 13 9 20 9"></polyline>
-                  </svg>
-                )
-
+              const itemIcon = getItemIcon(itemType)
               result.push({
                 id: `${clId}_${itemId}`,
                 name: displayName,
@@ -2933,6 +2941,7 @@ function AgentComponent() {
                                 isFavorite={favoriteAgents.includes(
                                   agent.externalId,
                                 )}
+                                isAgentPublic={agent.isPublic}
                                 isShared={isShared}
                                 isMadeByMe={madeByMeAgentsList.some(
                                   (madeByMeAgent) =>
@@ -2993,7 +3002,7 @@ function AgentComponent() {
               </div>
             </div>
           ) : viewMode === "viewAgent" && viewingAgent ? (
-            <SharedAgent
+            <ViewAgent
               agent={viewingAgent}
               onBack={() => setViewMode("list")}
             />
@@ -3356,7 +3365,6 @@ function AgentComponent() {
                                   {(() => {
                                     // Show up to 3 items in the breadcrumb
                                     if (navigationPath.length > 0) {
-                                     
                                       // Get the last 3 items or all if less than 3
                                       const itemsToShow =
                                         navigationPath.length <= 3
@@ -3366,7 +3374,9 @@ function AgentComponent() {
                                             )
 
                                       return itemsToShow.map((item, index) => (
-                                        <React.Fragment key={`${item.id}-${index}`}>
+                                        <React.Fragment
+                                          key={`${item.id}-${index}`}
+                                        >
                                           <span className="mx-2 flex-shrink-0">
                                             /
                                           </span>
@@ -3374,18 +3384,16 @@ function AgentComponent() {
                                             className={`max-w-[60px] truncate ${index < itemsToShow.length - 1 ? "cursor-pointer hover:text-gray-800 dark:hover:text-gray-100" : "font-medium"}`}
                                             title={item.name}
                                             onClick={() => {
-                                              
                                               if (
                                                 index <
                                                 itemsToShow.length - 1
                                               ) {
-                                              
                                                 // Navigate to this item
                                                 const newPathIndex =
                                                   navigationPath.findIndex(
                                                     (p) => p.id === item.id,
                                                   )
-                                               
+
                                                 if (newPathIndex >= 0) {
                                                   const newPath =
                                                     navigationPath.slice(
@@ -3393,7 +3401,6 @@ function AgentComponent() {
                                                       newPathIndex + 1,
                                                     )
                                                   setNavigationPath(newPath)
-                                                 
 
                                                   if (
                                                     newPath.length === 1 &&
@@ -3402,7 +3409,9 @@ function AgentComponent() {
                                                   ) {
                                                     setCurrentItems([])
                                                   } else if (
-                                                    newPath.length > 1 && newPath[0].type==="cl-root"
+                                                    newPath.length > 1 &&
+                                                    newPath[0].type ===
+                                                      "cl-root"
                                                   ) {
                                                     const clId = newPath.find(
                                                       (item) =>
@@ -3454,16 +3463,34 @@ function AgentComponent() {
                                                           ),
                                                         )
                                                     }
-                                                  }
-                                                  else if(newPath.length === 1 && newPath[0].type === "drive-root"){
-                                                    
-                                                       navigateToGoogleDrive();
-                                                  }
-                                                  else if(newPath.length>1 && newPath[0].type === "drive-root"){
-                                                    if(newPath[newPath.length-1].type === "drive-folder"){
-                                                    const FolderId=newPath[newPath.length-1].id;
-                                                    const FolderName=newPath[newPath.length-1].name
-                                                    navigateToDriveFolder(FolderId,FolderName);
+                                                  } else if (
+                                                    newPath.length === 1 &&
+                                                    newPath[0].type ===
+                                                      "drive-root"
+                                                  ) {
+                                                    navigateToGoogleDrive()
+                                                  } else if (
+                                                    newPath.length > 1 &&
+                                                    newPath[0].type ===
+                                                      "drive-root"
+                                                  ) {
+                                                    if (
+                                                      newPath[
+                                                        newPath.length - 1
+                                                      ].type === "drive-folder"
+                                                    ) {
+                                                      const FolderId =
+                                                        newPath[
+                                                          newPath.length - 1
+                                                        ].id
+                                                      const FolderName =
+                                                        newPath[
+                                                          newPath.length - 1
+                                                        ].name
+                                                      navigateToDriveFolder(
+                                                        FolderId,
+                                                        FolderName,
+                                                      )
                                                     }
                                                   }
                                                 }
@@ -4602,6 +4629,7 @@ interface AgentListItemProps {
   onClick: () => void
   isShared?: boolean
   isMadeByMe?: boolean // New prop
+  isAgentPublic?: boolean
 }
 
 function AgentListItem({
@@ -4614,6 +4642,7 @@ function AgentListItem({
   onView,
   onDelete,
   onClick,
+  isAgentPublic,
 }: AgentListItemProps): JSX.Element {
   return (
     <div
@@ -4650,7 +4679,7 @@ function AgentListItem({
         </div>
       </div>
       <div className="flex items-center gap-3 ml-4 flex-shrink-0">
-        {isShared && (
+        {(isShared || (isAgentPublic && !isMadeByMe)) && (
           <Button
             variant="ghost"
             size="icon"

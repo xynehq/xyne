@@ -197,6 +197,8 @@ interface ChatBoxProps {
     agentId?: string | null,
     toolsList?: ToolsListItem[],
     selectedModel?: string,
+    isFollowup?: boolean,
+    selectedKbItems?: string[],
   ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -1983,7 +1985,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return () => document.removeEventListener("mousedown", handleOutsideClick)
     }, [showReferenceBox])
 
-    const handleSendMessage = useCallback(async () => {
+    const handleSendMessage = useCallback(async (isFollowUp: boolean = false) => {
       const activeSourceIds = Object.entries(selectedSources)
         .filter(([, isSelected]) => isSelected)
         .map(([id]) => id)
@@ -2103,6 +2105,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         persistedAgentId,
         toolsListToSend,
         JSON.stringify(modelConfig), // Send model config as JSON string
+        isFollowUp,
       )
 
       // Clear the input and attached files after sending
@@ -2208,7 +2211,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           setTimeout(() => {
             // Call handleSendMessage which will use the current state values
             // for agents, tools, connectors, etc.
-            handleSendMessage()
+            handleSendMessage(true)
           }, 0)
         },
         getCurrentModelConfig: () => {

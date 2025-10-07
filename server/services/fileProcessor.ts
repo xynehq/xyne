@@ -155,13 +155,13 @@ export class FileProcessorService {
     // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
     const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
       chunk_index: index,
-      page_number: -1, // Default to page -1 for non-PDF files
+      page_numbers: [-1], // Default to page -1 for non-PDF files
       block_labels: ["text"], // Default block label
     }));
 
     const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
       chunk_index: index, // Local indexing for image chunks array
-      page_number: -1, // Default to page -1 for non-PDF files
+      page_numbers: [-1], // Default to page -1 for non-PDF files
       block_labels: ["image"], // Default block label
     }));
 

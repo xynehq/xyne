@@ -1,6 +1,12 @@
 // release.config.js
 export default {
-  branches: ["main"],
+  branches: [
+    "main",
+    {
+      name: "release-*",
+      prerelease: true
+    }
+  ],
   plugins: [
     "@semantic-release/commit-analyzer", // decides bump (major/minor/patch)
     "@semantic-release/release-notes-generator", // generates human-readable notes
