@@ -137,7 +137,6 @@ app.get("/status", (c) => {
   })
 })
 
-
 // // Protected ingestion API routes - require JWT authentication
 app.use("*", AuthMiddleware)
 
@@ -170,25 +169,12 @@ app.post(
 app.post("/syncSlackByMail", HandlePerUserSlackSync)
 app.post("/syncGoogleWorkSpaceByMail", HandlePerUserGoogleWorkSpaceSync)
 
-export const initSyncServer = async () => {
-  Logger.info("Initializing Sync Server")
-
-  
-  // Start multiple file processing workers in separate threads
-  const workerThreads: Worker[] = []
-  const workerCount = config.fileProcessingWorkerThreads
-  
-  Logger.info(`Starting ${workerCount} file processing worker threads...`)
-  
-  for (let i = 0; i < workerCount; i++) {
-    const fileProcessingWorker = new Worker(path.join(__dirname, "fileProcessingWorker.ts"))
-    workerThreads.push(fileProcessingWorker)
 const startAndMonitorWorkers = (
   workerScript: string,
   workerType: string,
   count: number,
   workerThreads: Worker[],
-  arrayIndexOffset: number
+  arrayIndexOffset: number,
 ) => {
   Logger.info(`Starting ${count} ${workerType} processing worker threads...`)
 
@@ -200,40 +186,60 @@ const startAndMonitorWorkers = (
 
     worker.on("message", (message) => {
       if (message.status === "initialized") {
-        Logger.info(`${workerType} processing worker thread ${workerIndexForLogging} initialized successfully`)
+        Logger.info(
+          `${workerType} processing worker thread ${workerIndexForLogging} initialized successfully`,
+        )
       } else if (message.status === "error") {
-        Logger.error(`${workerType} processing worker thread ${workerIndexForLogging} failed: ${message.error}`)
+        Logger.error(
+          `${workerType} processing worker thread ${workerIndexForLogging} failed: ${message.error}`,
+        )
       }
     })
 
     worker.on("error", (error) => {
-      Logger.error(error, `${workerType} processing worker thread ${workerIndexForLogging} error`)
+      Logger.error(
+        error,
+        `${workerType} processing worker thread ${workerIndexForLogging} error`,
+      )
     })
 
     worker.on("exit", (code) => {
       if (code !== 0) {
-        Logger.error(`${workerType} processing worker thread ${workerIndexForLogging} exited with code ${code}`)
-        
-        Logger.info(`Restarting ${workerType} processing worker thread ${workerIndexForLogging}...`)
+        Logger.error(
+          `${workerType} processing worker thread ${workerIndexForLogging} exited with code ${code}`,
+        )
+
+        Logger.info(
+          `Restarting ${workerType} processing worker thread ${workerIndexForLogging}...`,
+        )
         const newWorker = new Worker(path.join(__dirname, workerScript))
         workerThreads[workerArrayIndex] = newWorker
-        
+
         // Re-attach event listeners for the new worker
         newWorker.on("message", (message) => {
           if (message.status === "initialized") {
-            Logger.info(`${workerType} processing worker thread ${workerIndexForLogging} restarted and initialized successfully`)
+            Logger.info(
+              `${workerType} processing worker thread ${workerIndexForLogging} restarted and initialized successfully`,
+            )
           } else if (message.status === "error") {
-            Logger.error(`${workerType} processing worker thread ${workerIndexForLogging} failed: ${message.error}`)
+            Logger.error(
+              `${workerType} processing worker thread ${workerIndexForLogging} failed: ${message.error}`,
+            )
           }
         })
-        
+
         newWorker.on("error", (error) => {
-          Logger.error(error, `${workerType} processing worker thread ${workerIndexForLogging} error`)
+          Logger.error(
+            error,
+            `${workerType} processing worker thread ${workerIndexForLogging} error`,
+          )
         })
-        
+
         newWorker.on("exit", (code) => {
           if (code !== 0) {
-            Logger.error(`${workerType} processing worker thread ${workerIndexForLogging} exited with code ${code}`)
+            Logger.error(
+              `${workerType} processing worker thread ${workerIndexForLogging} exited with code ${code}`,
+            )
           }
         })
       }
@@ -250,8 +256,20 @@ export const initSyncServer = async () => {
   const pdfWorkerCount = config.pdfFileProcessingWorkerThreads
 
   // Start workers using the helper function
-  startAndMonitorWorkers("fileProcessingWorker.ts", "File", fileWorkerCount, workerThreads, 0)
-  startAndMonitorWorkers("pdfFileProcessingWorker.ts", "PDF file", pdfWorkerCount, workerThreads, fileWorkerCount)
+  startAndMonitorWorkers(
+    "fileProcessingWorker.ts",
+    "File",
+    fileWorkerCount,
+    workerThreads,
+    0,
+  )
+  startAndMonitorWorkers(
+    "pdfFileProcessingWorker.ts",
+    "PDF file",
+    pdfWorkerCount,
+    workerThreads,
+    fileWorkerCount,
+  )
 
   // Initialize the queue system in background - don't await (excluding file processing)
   initQueue()
@@ -261,7 +279,6 @@ export const initSyncServer = async () => {
     .catch((error) => {
       Logger.error(error, "Failed to initialize queue system")
     })
-
 
   // Connect to main server WebSocket
   connectToMainServer()
