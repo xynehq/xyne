@@ -1,10 +1,7 @@
 services:
   app-sync:
-    image: xyne
+    image: xynehq/xyne
     container_name: xyne-app-sync
-    build:
-      context: ../..
-      dockerfile: Dockerfile
     user: "${DOCKER_UID}:${DOCKER_GID}"
     ports:
       - "3010:3010"
