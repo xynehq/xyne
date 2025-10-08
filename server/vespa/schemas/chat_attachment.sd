@@ -83,7 +83,7 @@ schema chat_attachment {
     }
   }
   import field chatRef.channelName as  channelName {}
-  import field chatRef.channelId as channelId {}
+  import field chatRef.docId as channelId {}
 
 
   field content_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
