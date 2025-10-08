@@ -78,6 +78,7 @@ import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
 import ViewAgent from "@/components/ViewAgent"
+import agentEmptyStateIcon from "@/assets/emptystateIcons/agent.png"
 
 type CurrentResp = {
   resp: string
@@ -2763,22 +2764,36 @@ function AgentComponent() {
                       AGENTS
                     </h1>
                     <div className="flex items-center gap-4 ">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                        <input
-                          type="text"
-                          placeholder="Search agents.."
-                          value={listSearchQuery}
-                          onChange={handleListSearchChange}
-                          className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
-                        />
-                      </div>
-                      <Button
-                        onClick={handleCreateNewAgent}
-                        className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
-                      >
-                        <Plus size={18} /> CREATE
-                      </Button>
+                      {(() => {
+                        // Calculate whether current tab has agents
+                        const agentLists: Record<string, SelectPublicAgent[]> = {
+                          "all": allAgentsList,
+                          "made-by-me": madeByMeAgentsList,
+                          "shared-to-me": sharedToMeAgentsList,
+                        }
+                        const currentTabHasAgents = (agentLists[activeTab]?.length ?? 0) > 0
+                        
+                        return currentTabHasAgents && (
+                          <>
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                              <input
+                                type="text"
+                                placeholder="Search agents.."
+                                value={listSearchQuery}
+                                onChange={handleListSearchChange}
+                                className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
+                              />
+                            </div>
+                            <Button
+                              onClick={handleCreateNewAgent}
+                              className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                            >
+                              <Plus size={18} /> CREATE
+                            </Button>
+                          </>
+                        )
+                      })()}
                     </div>
                   </div>
 
@@ -2832,46 +2847,42 @@ function AgentComponent() {
                     )
                   })()}
 
-                  {(allAgentsList.length > 0 ||
-                    madeByMeAgentsList.length > 0 ||
-                    sharedToMeAgentsList.length > 0) && ( // Only show tabs if there are agents in any list
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex space-x-2">
-                        <TabButton
-                          active={activeTab === "all"}
-                          onClick={() => handleTabChange("all")}
-                          icon="asterisk"
-                          label="ALL"
-                        />
-                        <TabButton
-                          active={activeTab === "shared-to-me"}
-                          onClick={() => handleTabChange("shared-to-me")}
-                          icon="users"
-                          label="SHARED-WITH-ME"
-                        />
-                        <TabButton
-                          active={activeTab === "made-by-me"}
-                          onClick={() => handleTabChange("made-by-me")}
-                          icon="user"
-                          label="MADE-BY-ME"
-                        />
-                      </div>
-                      <div>
-                        <Button
-                          onClick={fetchAllAgentData}
-                          variant="outline"
-                          size="sm"
-                          className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700"
-                          disabled={isLoadingAgents}
-                        >
-                          <RefreshCw
-                            size={14}
-                            className={`${isLoadingAgents ? "animate-spin" : ""}`}
-                          />
-                        </Button>
-                      </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex space-x-2">
+                      <TabButton
+                        active={activeTab === "all"}
+                        onClick={() => handleTabChange("all")}
+                        icon="asterisk"
+                        label="ALL"
+                      />
+                      <TabButton
+                        active={activeTab === "shared-to-me"}
+                        onClick={() => handleTabChange("shared-to-me")}
+                        icon="users"
+                        label="SHARED-WITH-ME"
+                      />
+                      <TabButton
+                        active={activeTab === "made-by-me"}
+                        onClick={() => handleTabChange("made-by-me")}
+                        icon="user"
+                        label="MADE-BY-ME"
+                      />
                     </div>
-                  )}
+                    <div>
+                      <Button
+                        onClick={fetchAllAgentData}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                        disabled={isLoadingAgents}
+                      >
+                        <RefreshCw
+                          size={14}
+                          className={`${isLoadingAgents ? "animate-spin" : ""}`}
+                        />
+                      </Button>
+                    </div>
+                  </div>
 
                   {(() => {
                     let currentListToDisplay: SelectPublicAgent[] = []
@@ -2922,13 +2933,36 @@ function AgentComponent() {
                     }
 
                     if (currentListToDisplay.length === 0 && !listSearchQuery) {
+                      const isSharedTab = activeTab === "shared-to-me"
+                      const title = isSharedTab
+                        ? "No agents shared with you yet"
+                        : "No agents created yet"
+                      const description = isSharedTab
+                        ? null
+                        : "Click 'Create Agent' to add your first agent"
+
                       return (
-                        <div className="text-center py-10 text-gray-500 dark:text-gray-400">
-                          <p className="text-lg mb-2">
-                            No agents in this category yet.
+                        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+                          <img
+                            src={agentEmptyStateIcon}
+                            alt="No agents"
+                            className="w-32 h-32 mb-6 opacity-60"
+                          />
+                          <p className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {title}
                           </p>
-                          {activeTab === "all" && (
-                            <p>Click "CREATE" to get started.</p>
+                          {description && (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                              {description}
+                            </p>
+                          )}
+                          {!isSharedTab && (
+                            <Button
+                              onClick={handleCreateNewAgent}
+                              className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                            >
+                              <Plus size={18} /> CREATE AGENT
+                            </Button>
                           )}
                         </div>
                       )
