@@ -26,7 +26,6 @@ export const createWorkflowTemplate = async (
     description?: string
     version?: string
     config?: any
-    createdBy?: string
     rootWorkflowStepTemplateId?: string
   },
 ): Promise<SelectWorkflowTemplate> => {
@@ -156,7 +155,6 @@ export const createWorkflowExecution = async (
     userId: number
     name: string
     description?: string
-    createdBy?: string
     metadata?: any
   },
 ): Promise<SelectWorkflowExecution> => {

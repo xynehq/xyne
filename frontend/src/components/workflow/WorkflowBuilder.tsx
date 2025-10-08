@@ -3411,7 +3411,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         version: workflowData.version,
         status: 'active',
         config: workflowData.config,
-        createdBy: 'current-user',
         rootWorkflowStepTemplateId: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

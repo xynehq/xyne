@@ -176,6 +176,8 @@ function WorkflowComponent() {
           .map((workflowTemplate) => ({
             id: workflowTemplate.id,
             name: workflowTemplate.name,
+            userId: workflowTemplate.userId,
+            workspaceid: workflowTemplate.workspaceId,
             description: workflowTemplate.description,
             icon: getTemplateIcon(workflowTemplate),
             iconBgColor: getTemplateIconBgColor(workflowTemplate),
@@ -772,7 +774,6 @@ function WorkflowComponent() {
                           version: '',
                           status: '',
                           config: {},
-                          createdBy: '',
                           rootWorkflowStepTemplateId: '',
                           createdAt: '',
                           updatedAt: '',

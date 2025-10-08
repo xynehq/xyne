@@ -313,7 +313,6 @@ export interface LegacyWorkflowTemplate {
   }
   createdAt?: string
   updatedAt?: string
-  createdBy?: string | null
   serviceConfigId?: string
   rootWorkflowStepTemplateId?: string | null
   steps: Step[]

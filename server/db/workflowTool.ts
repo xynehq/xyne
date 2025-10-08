@@ -19,7 +19,6 @@ export const createWorkflowTool = async (
     userId: number,
     value?: string | number | Record<string, any>
     config?: Record<string, any>
-    createdBy?: string
   },
 ): Promise<SelectWorkflowTool> => {
   const [tool] = await trx
