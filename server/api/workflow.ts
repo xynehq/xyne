@@ -2521,7 +2521,7 @@ const executeWorkflowTool = async (
             script: scriptContent,
             input: scriptInput,
             config: scriptConfig,
-          })
+          }, executionId)
 
           if (executionResult.success) {
             return {
@@ -2529,6 +2529,7 @@ const executeWorkflowTool = async (
               result: {
                 output: executionResult.output,
                 consoleLogs: executionResult.consoleLogs,
+                exportedFiles: executionResult.extractedFiles,
                 language: language,
                 exitCode: executionResult.exitCode,
                 processedAt: new Date().toISOString(),
