@@ -452,13 +452,9 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
 
         const imageDir = path.join(imageBaseDir, fileId)
         try {
-          await db.transaction(async (tx) => {
-            await fs.access(imageDir)
-            await fs.rm(imageDir, { recursive: true, force: true })
-            if(fileId.startsWith("attf_")) {
-              await DeleteDocument(fileId, fileSchema)
-            }
-          })
+          await fs.access(imageDir)
+          await fs.rm(imageDir, { recursive: true, force: true })
+          await DeleteDocument(fileId, fileSchema)
           
           loggerWithChild({ email: email }).info(
             `Deleted image attachment directory: ${imageDir}`,
@@ -487,16 +483,14 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
       try {
         const vespaIds = expandSheetIds(fileId)
         for (const vespaId of vespaIds) {
-          await db.transaction(async (tx) => {
-            // Delete images from disk
-            await DeleteImages(vespaId)
-            // Delete from Vespa kb_items or file schema
-            if(vespaId.startsWith("att_")) {
-              await DeleteDocument(vespaId, KbItemsSchema)
-            } else {
-              await DeleteDocument(vespaId, fileSchema)
-            }
-          })
+          // Delete from Vespa kb_items or file schema
+          if(vespaId.startsWith("att_")) {
+            await DeleteDocument(vespaId, KbItemsSchema)
+          } else {
+            await DeleteDocument(vespaId, fileSchema)
+          }
+          // Delete images from disk
+          await DeleteImages(vespaId)
           loggerWithChild({ email: email }).info(
             `Successfully deleted non-image attachment ${vespaId} from Vespa`,
           )
