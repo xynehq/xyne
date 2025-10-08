@@ -142,7 +142,7 @@ config = json.loads(configRaw)
           "fetch", "axios", "https", "http", "fs"
         ],
         restrictedKeywords: [
-          "require(", "import(", "eval(", "Function(", "process.",
+          "import(", "eval(", "Function(", "process.",
           "global.", "Buffer.", "child_process", "net.",
           "import ", "import{", "import*", "import.", "import\n",
           "export ", "module.", "window.", "globalThis.", "self.",
@@ -574,20 +574,48 @@ function formatROutput(rawOutput: string): Record<string, any> | false {
   }
 }
 
-function createBubblewrapArgs(scriptPath: string, exportDir?: string): string[] {
+function createBubblewrapArgs(scriptPath: string, exportDir?: string,importDir?:string): string[] {
   const path = require('path')
+  const fs = require('fs')
 
-  // Minimal bubblewrap arguments for containers
   const baseArgs = [
-    // Basic mounts without namespaces
-    '--dev-bind', '/', '/',
+    // Create new namespace for security
+    '--unshare-all',
 
-    // Set working directory
-    '--chdir', path.dirname(scriptPath),
+    // Essential system directories (read-only)
+    '--ro-bind', '/bin', '/bin',
+    '--ro-bind', '/usr', '/usr',
+
+    // Minimal proc filesystem
+    '--proc', '/proc',
+
+    // Temporary directories (writable)
+    '--tmpfs', '/tmp',
+    '--tmpfs', '/var/tmp',
+
+    // Set working directory to /tmp
+    '--chdir', '/tmp',
 
     // Die with parent
     '--die-with-parent'
   ]
+
+  // Add library directories for container environment
+  const libraryPaths = [
+    '/lib',
+    '/lib64',
+    '/lib/x86_64-linux-gnu',
+    '/usr/lib/x86_64-linux-gnu',  // Additional system libraries
+    '/usr/lib64',                 // 64-bit libraries
+    '/usr/share',                 // Shared data files (needed by R)
+    '/etc'                        // Configuration files (needed by R)
+  ]
+
+  for (const libPath of libraryPaths) {
+    if (fs.existsSync(libPath)) {
+      baseArgs.push('--ro-bind', libPath, libPath)
+    }
+  }
 
   // Add writable export directory if provided
   if (exportDir) {
@@ -595,6 +623,14 @@ function createBubblewrapArgs(scriptPath: string, exportDir?: string): string[] 
       '--bind', exportDir, '/tmp/export'
     )
   }
+
+  if(importDir){
+    baseArgs.push(
+      '--ro-bind', importDir, '/tmp/storage'
+    )
+  }
+
+  
 
   return baseArgs
 }
@@ -605,11 +641,12 @@ export async function executeScript(
 ): Promise<ScriptExecutionOutput> {
   const { spawn } = require('child_process')
   const fs = require('fs').promises
+  const fsSync = require('fs')
   const path = require('path')
 
   let scriptPath = ''
   let exportDir = ''
-
+  let importDir = ''
   try {
     // Generate the script file
     const scriptGenResult = await generateScript(
@@ -629,15 +666,15 @@ export async function executeScript(
     }
     
     scriptPath = scriptGenResult.filePath!
-
+    Logger.info(`current working directory: ${process.cwd()}`)
     // Create export directory for file outputs if workflowId is provided
     if (workflowId && USE_BUBBLEWRAP) {
-      const workflowFilesDir = path.join(process.cwd(), "script_executor_utils", "workflow_files", workflowId)
-      await fs.mkdir(workflowFilesDir, { recursive: true })
-
       // Create temporary export directory for this execution
       const { randomUUID } = require('crypto')
-      exportDir = path.join(workflowFilesDir, `temp_export_${randomUUID()}`)
+      Logger.info(`current working directory inside if: ${process.cwd()}`)
+      exportDir = path.join(process.cwd(), "script_executor_utils", `temp_export_${randomUUID()}`)
+
+      importDir = path.join(process.cwd(), "script_executor_utils", "workflow_files", workflowId)
       await fs.mkdir(exportDir, { recursive: true })
     }
 
@@ -659,11 +696,25 @@ export async function executeScript(
 
     // Apply bubblewrap sandbox if enabled
     if (USE_BUBBLEWRAP) {
-      const bubblewrapArgs = createBubblewrapArgs(scriptPath, exportDir || undefined)
+      // Copy script to a temporary location inside sandbox
+      const scriptBaseName = path.basename(scriptPath)
+      const sandboxScriptPath = `/tmp/${scriptBaseName}`
+
+      const bubblewrapArgs = createBubblewrapArgs(scriptPath, exportDir || undefined, (fsSync.existsSync(importDir) ? importDir : undefined))
+
+      // Add script file binding (read-only)
+      bubblewrapArgs.push('--ro-bind', scriptPath, sandboxScriptPath)
+
       const originalCommand = command
       const originalArgs = args
+
+      // Update command to use sandbox script path
+      const updatedArgs = originalArgs.map(arg =>
+        arg === scriptPath ? sandboxScriptPath : arg
+      )
+
       command = 'bwrap'
-      args = [...bubblewrapArgs, originalCommand, ...originalArgs]
+      args = [...bubblewrapArgs, originalCommand, ...updatedArgs]
     } else {
       Logger.info(`Running without sandbox: ${command} ${args.join(' ')}`)
     }
@@ -699,11 +750,10 @@ export async function executeScript(
               if (file.isFile()) {
                 const sourceFile = path.join(exportDir, file.name)
                 const destFile = path.join(workflowFilesDir, file.name)
-
+                
                 // Copy file to workflow directory
                 await fs.copyFile(sourceFile, destFile)
                 extractedFiles.push(file.name)
-                Logger.info(`📁 Extracted file: ${file.name} to workflow_files/${workflowId}/`)
               }
             }
 
@@ -724,7 +774,8 @@ export async function executeScript(
         if (signal === 'SIGKILL') {
           resolve({
             success: false,
-            output: { value: stdout },
+            output: {},
+            consoleLogs: stdout,
             error: `Script execution timed out after ${timeout_value} minute`,
             exitCode: -1,
             extractedFiles
@@ -733,7 +784,6 @@ export async function executeScript(
           // Split output by OUTPUT_STATEMENT_START marker
           const outputMarker = "=== OUTPUT_STATEMENT_START ==="
           const outputParts = stdout.split(outputMarker)
-          
           let consoleLogs = ""
           let result: Record<string, any> = {}
           
@@ -760,7 +810,8 @@ export async function executeScript(
         } else {
           resolve({
             success: false,
-            output: { value: stdout },
+            output: {},
+            consoleLogs: stdout,
             error: stderr,
             exitCode: code,
             extractedFiles
@@ -778,7 +829,8 @@ export async function executeScript(
         
         resolve({
           success: false,
-          output: { value: stdout },
+          output: {},
+          consoleLogs: stdout,
           error: error.message,
           exitCode: -1,
           extractedFiles: []
@@ -816,5 +868,6 @@ export function getCodeWritingBlock(language: ScriptLanguage, input?: Record<str
 ${langConfig.commentKeyword} ${dataParser.configComment}
 ${langConfig.commentKeyword} Allowed external packages list -> [${langConfig.allowedImports}]
 ${langConfig.commentKeyword} Write your code below this line and return the output as a JSON object
-${langConfig.commentKeyword} To create files for download, save them to /tmp/export/ directory (e.g., /tmp/export/data.csv)`
+${langConfig.commentKeyword} To create files for download, save them to export/ directory (e.g., export/data.csv)
+${langConfig.commentKeyword} To access files from previous steps, access them from storage/ directory (e.g., storage/data.csv)`
 }
