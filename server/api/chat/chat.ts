@@ -216,6 +216,7 @@ import type { User } from "@microsoft/microsoft-graph-types"
 import { getAuth, safeGet } from "../agent"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { handleAttachmentDelete } from "../files"
+import { A } from "ollama/dist/shared/ollama.6319775f.mjs"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -787,6 +788,7 @@ export const ChatDeleteApi = async (c: Context) => {
     email = sub || ""
     // @ts-ignore
     const { chatId } = c.req.valid("json")
+    const attachmentsToDelete: AttachmentMetadata[] = []
     await db.transaction(async (tx) => {
       // Get the chat's internal ID first
       const chat = await getChatByExternalIdWithAuth(tx, chatId, email)
@@ -800,7 +802,7 @@ export const ChatDeleteApi = async (c: Context) => {
       for (const message of messagesToDelete) {
         if (message.attachments && Array.isArray(message.attachments)) {
           const attachments = message.attachments as AttachmentMetadata[]
-          await handleAttachmentDelete(attachments, email)
+          attachmentsToDelete.push(...attachments)
         }
       }
 
@@ -813,6 +815,9 @@ export const ChatDeleteApi = async (c: Context) => {
       await deleteMessagesByChatId(tx, chatId)
       await deleteChatByExternalIdWithAuth(tx, chatId, email)
     })
+    if (attachmentsToDelete.length) {
+      await handleAttachmentDelete(attachmentsToDelete, email)
+    }
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
