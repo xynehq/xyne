@@ -293,7 +293,7 @@ export const handleAttachmentUpload = async (c: Context) => {
               title: file.name,
               url: "",
               app: Apps.Attachment,
-              docId: fileId,
+              docId: docId,
               parentId: null,
               owner: email,
               photoLink: "",
@@ -497,35 +497,16 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
 
   const { attachment } = handleAttachmentDeleteSchema.parse(await c.req.json())
   const fileId = attachment.fileId
-  const isImage = attachment.isImage || (attachment.fileType && isImageFile(attachment.fileType))
   if (!fileId) {
     throw new HTTPException(400, { message: "File ID is required" })
   }
 
-  if(isImage) {
-    await handleAttachmentDelete([attachment], email)
-    return c.json({ success: true, message: "Attachment deleted successfully" })
-  } 
-
   try {
-    // Get the attachment document from the file schema
-    const attachmentDoc = await GetDocument(fileSchema, fileId)
-
-    if (!attachmentDoc || !attachmentDoc.fields) {
-      return c.json({ success: true, message: "Attachment already deleted" })
+    const vespaIds = expandSheetIds(fileId)
+    for (const vespaId of vespaIds) {      
+      await handleAttachmentDelete([{ ...attachment, fileId: vespaId }], email)
     }
-
-    // Check permissions - file schema has permissions array
-    const fields = attachmentDoc.fields as any
-    const permissions = Array.isArray(fields.permissions) ? fields.permissions as string[] : []
-    if (!permissions.includes(email)) {
-      throw new HTTPException(403, { message: "Access denied to this attachment" })
-    }
-    
-    await handleAttachmentDelete([attachment], email)
-    
     return c.json({ success: true, message: "Attachment deleted successfully" })
-    
   } catch (error) {
     if (error instanceof HTTPException) {
       throw error
