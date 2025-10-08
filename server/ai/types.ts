@@ -382,7 +382,7 @@ export const ToolAnswerResponse = z.object({
 })
 
 // Intent Schema - only includes fields with actual values (modular for different apps)
-export const IntentSchema = z.object({
+export const MailParticipantSchema = z.object({
   from: z.array(z.string()).optional(),
   to: z.array(z.string()).optional(),
   cc: z.array(z.string()).optional(),
@@ -390,7 +390,7 @@ export const IntentSchema = z.object({
   subject: z.array(z.string()).optional(),
 })
 
-export type Intent = z.infer<typeof IntentSchema>
+export type MailParticipant = z.infer<typeof MailParticipantSchema>
 
 // Zod schemas for filters
 export const FiltersSchema = z.object({
@@ -401,7 +401,7 @@ export const FiltersSchema = z.object({
   sortDirection: z.string().optional(),
   count: z.preprocess((val) => (val == null ? 5 : val), z.number()),
   offset: z.preprocess((val) => (val == null ? 0 : val), z.number()),
-  intent: IntentSchema.optional(),
+  mailParticipants: MailParticipantSchema.optional(),
 })
 
 const TemporalClassifierSchema = z.object({
