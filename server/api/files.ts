@@ -251,6 +251,31 @@ export const handleAttachmentUpload = async (c: Context) => {
           // Generate thumbnail for images
           thumbnailPath = getThumbnailPath(outputDir, fileId)
           await generateThumbnail(Buffer.from(fileBuffer), thumbnailPath)
+
+          const vespaDoc = {
+            title: file.name,
+            url: "",
+            app: Apps.Attachment,
+            docId: fileId,
+            parentId: null,
+            owner: email,
+            photoLink: "",
+            ownerEmail: email,
+            entity: attachmentFileTypeMap[getFileType({ type: file.type, name: file.name })],
+            chunks: [],
+            chunks_pos: [],
+            image_chunks: [],
+            image_chunks_pos: [],
+            chunks_map: [],
+            image_chunks_map: [],
+            permissions: [email],
+            mimeType: getBaseMimeType(file.type),
+            metadata: filePath,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+
+          await insert(vespaDoc, fileSchema)
         } else {
           // For non-images: process through FileProcessorService and ingest into file schema
 
@@ -427,8 +452,14 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
 
         const imageDir = path.join(imageBaseDir, fileId)
         try {
-          await fs.access(imageDir)
-          await fs.rm(imageDir, { recursive: true, force: true })
+          await db.transaction(async (tx) => {
+            await fs.access(imageDir)
+            await fs.rm(imageDir, { recursive: true, force: true })
+            if(fileId.startsWith("attf_")) {
+              await DeleteDocument(fileId, fileSchema)
+            }
+          })
+          
           loggerWithChild({ email: email }).info(
             `Deleted image attachment directory: ${imageDir}`,
           )
@@ -456,20 +487,16 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
       try {
         const vespaIds = expandSheetIds(fileId)
         for (const vespaId of vespaIds) {
-          // Delete images from disk
-          try {
+          await db.transaction(async (tx) => {
+            // Delete images from disk
             await DeleteImages(vespaId)
-          } catch (error) {
-            loggerWithChild({ email: email }).warn(
-              `Failed to delete images from disk: ${fileId} - ${getErrorMessage(error)}`,
-            )
-          }
-          // Delete from Vespa kb_items or file schema
-          if(vespaId.startsWith("att_")) {
-            await DeleteDocument(vespaId, KbItemsSchema)
-          } else {
-            await DeleteDocument(vespaId, fileSchema)
-          }
+            // Delete from Vespa kb_items or file schema
+            if(vespaId.startsWith("att_")) {
+              await DeleteDocument(vespaId, KbItemsSchema)
+            } else {
+              await DeleteDocument(vespaId, fileSchema)
+            }
+          })
           loggerWithChild({ email: email }).info(
             `Successfully deleted non-image attachment ${vespaId} from Vespa`,
           )
@@ -501,7 +528,21 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
     throw new HTTPException(400, { message: "File ID is required" })
   }
 
-  try {   
+  try {
+    // Get the attachment document from the file schema
+    const attachmentDoc = await GetDocument(fileSchema, expandSheetIds(fileId)[0])
+
+    if (!attachmentDoc || !attachmentDoc.fields) {
+      return c.json({ success: true, message: "Attachment already deleted" })
+    }
+
+    // Check permissions - file schema has permissions array
+    const fields = attachmentDoc.fields as any
+    const permissions = Array.isArray(fields.permissions) ? fields.permissions as string[] : []
+    if (!permissions.includes(email)) {
+      throw new HTTPException(403, { message: "Access denied to this attachment" })
+    }
+    
     await handleAttachmentDelete([attachment], email)
     return c.json({ success: true, message: "Attachment deleted successfully" })
   } catch (error) {
