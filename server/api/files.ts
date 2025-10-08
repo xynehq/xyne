@@ -501,11 +501,8 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
     throw new HTTPException(400, { message: "File ID is required" })
   }
 
-  try {
-    const vespaIds = expandSheetIds(fileId)
-    for (const vespaId of vespaIds) {      
-      await handleAttachmentDelete([{ ...attachment, fileId: vespaId }], email)
-    }
+  try {   
+    await handleAttachmentDelete([attachment], email)
     return c.json({ success: true, message: "Attachment deleted successfully" })
   } catch (error) {
     if (error instanceof HTTPException) {
