@@ -484,7 +484,7 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
 
     // Check permissions - file schema has permissions array
     const fields = attachmentDoc.fields as any
-    const permissions = fields.permissions as string[] || []
+    const permissions = Array.isArray(fields.permissions) ? fields.permissions as string[] : []
     if (!permissions.includes(email)) {
       throw new HTTPException(403, { message: "Access denied to this attachment" })
     }
