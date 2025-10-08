@@ -82,6 +82,7 @@ import {
   adminQuerySchema,
   userAgentLeaderboardQuerySchema,
   agentAnalysisQuerySchema,
+  connectorIdParamsSchema,
   AddServiceConnectionMicrosoft,
   UpdateUser,
   HandlePerUserSlackSync,
@@ -276,6 +277,18 @@ import {
   GetChunkContentApi,
   GetCollectionNameForSharedAgentApi,
   PollCollectionsStatusApi,
+  createCollectionSchema,
+  updateCollectionSchema,
+  createFolderSchema,
+  pollCollectionsStatusSchema,
+  collectionParamsSchema,
+  collectionNameForSharedAgentParamsSchema,
+  collectionNameForSharedAgentQuerySchema,
+  listCollectionItemsParamsSchema,
+  listCollectionItemsQuerySchema,
+  deleteItemParamsSchema,
+  fileOperationParamsSchema,
+  chunkContentParamsSchema,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -1197,28 +1210,92 @@ export const AppRoutes = app
   .post("/email/send", zValidator("json", sendEmailSchema), sendMailHelper)
 
   // Collection Routes
-  .post("/cl", CreateCollectionApi)
+  .post("/cl", zValidator("json", createCollectionSchema), CreateCollectionApi)
   .get("/cl", ListCollectionsApi)
   .get(
     "/cl/search",
     zValidator("query", searchKnowledgeBaseSchema),
     SearchKnowledgeBaseApi,
   )
-  .post("/cl/poll-status", PollCollectionsStatusApi)
-  .get("/cl/:clId", GetCollectionApi)
-  .get("/cl/:clId/name", GetCollectionNameForSharedAgentApi)
-  .put("/cl/:clId", UpdateCollectionApi)
-  .delete("/cl/:clId", DeleteCollectionApi)
-  .get("/cl/:clId/items", ListCollectionItemsApi)
-  .post("/cl/:clId/items/folder", CreateFolderApi)
-  .post("/cl/:clId/items/upload", UploadFilesApi)
-  .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
-  .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
-  .delete("/cl/:clId/items/:itemId", DeleteItemApi)
-  .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
-  .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
-  .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
-  .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
+  .post(
+    "/cl/poll-status",
+    zValidator("json", pollCollectionsStatusSchema),
+    PollCollectionsStatusApi,
+  )
+  .get(
+    "/cl/:clId",
+    zValidator("param", collectionParamsSchema),
+    GetCollectionApi,
+  )
+  .get(
+    "/cl/:clId/name",
+    zValidator("param", collectionNameForSharedAgentParamsSchema),
+    zValidator("query", collectionNameForSharedAgentQuerySchema),
+    GetCollectionNameForSharedAgentApi,
+  )
+  .put(
+    "/cl/:clId",
+    zValidator("param", collectionParamsSchema),
+    zValidator("json", updateCollectionSchema),
+    UpdateCollectionApi,
+  )
+  .delete(
+    "/cl/:clId",
+    zValidator("param", collectionParamsSchema),
+    DeleteCollectionApi,
+  )
+  .get(
+    "/cl/:clId/items",
+    zValidator("param", listCollectionItemsParamsSchema),
+    zValidator("query", listCollectionItemsQuerySchema),
+    ListCollectionItemsApi,
+  )
+  .post(
+    "/cl/:clId/items/folder",
+    zValidator("param", collectionParamsSchema),
+    zValidator("json", createFolderSchema),
+    CreateFolderApi,
+  )
+  .post(
+    "/cl/:clId/items/upload",
+    zValidator("param", collectionParamsSchema),
+    UploadFilesApi,
+  )
+  .post(
+    "/cl/:clId/items/upload/batch",
+    zValidator("param", collectionParamsSchema),
+    UploadFilesApi,
+  ) // Batch upload endpoint
+  .post(
+    "/cl/:clId/items/upload/complete",
+    zValidator("param", collectionParamsSchema),
+    UploadFilesApi,
+  ) // Complete batch session
+  .delete(
+    "/cl/:clId/items/:itemId",
+    zValidator("param", deleteItemParamsSchema),
+    DeleteItemApi,
+  )
+  .get(
+    "/cl/:clId/files/:itemId/preview",
+    zValidator("param", fileOperationParamsSchema),
+    GetFilePreviewApi,
+  )
+  .get(
+    "/cl/:clId/files/:itemId/content",
+    zValidator("param", fileOperationParamsSchema),
+    GetFileContentApi,
+  )
+  .get(
+    "/cl/:clId/files/:itemId/download",
+    zValidator("param", fileOperationParamsSchema),
+    DownloadFileApi,
+  )
+  .get(
+    "/chunk/:cId/files/:itemId/content",
+    zValidator("param", chunkContentParamsSchema),
+    GetChunkContentApi,
+  )
   .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(
@@ -1326,7 +1403,11 @@ export const AppRoutes = app
     AddStdioMCPConnector,
   )
 
-  .get("/connector/:connectorId/tools", GetConnectorTools) // Added route for GetConnectorTools
+  .get(
+    "/connector/:connectorId/tools",
+    zValidator("param", connectorIdParamsSchema),
+    GetConnectorTools,
+  ) // Added route for GetConnectorTools
 
   .delete(
     "/connector/delete",

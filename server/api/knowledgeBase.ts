@@ -40,12 +40,16 @@ import {
   // Legacy aliases for backward compatibility
 } from "@/db/knowledgeBase"
 import { cleanUpAgentDb, getAgentByExternalId } from "@/db/agent"
-import type {Collection, CollectionItem, File as DbFile } from "@/db/schema"
+import type { Collection, CollectionItem, File as DbFile } from "@/db/schema"
 import { collectionItems, collections } from "@/db/schema"
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { DeleteDocument, GetDocument } from "@/search/vespa"
 import { ChunkMetadata, KbItemsSchema } from "@xyne/vespa-ts/types"
-import { boss, FileProcessingQueue, PdfFileProcessingQueue } from "@/queue/api-server-queue"
+import {
+  boss,
+  FileProcessingQueue,
+  PdfFileProcessingQueue,
+} from "@/queue/api-server-queue"
 import * as crypto from "crypto"
 import { fileTypeFromBuffer } from "file-type"
 import {
@@ -135,6 +139,61 @@ const createFolderSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
   metadata: z.record(z.any(), z.any()).optional(),
 })
+
+const pollCollectionsStatusSchema = z.object({
+  collectionIds: z.array(z.string()).min(1),
+})
+
+const collectionParamsSchema = z.object({
+  clId: z.string().min(1),
+})
+
+const collectionNameForSharedAgentParamsSchema = z.object({
+  clId: z.string().min(1),
+})
+
+const collectionNameForSharedAgentQuerySchema = z.object({
+  agentExternalId: z.string().min(1),
+})
+
+const listCollectionItemsParamsSchema = z.object({
+  clId: z.string().min(1),
+})
+
+const listCollectionItemsQuerySchema = z.object({
+  parentId: z.string().optional(),
+})
+
+const deleteItemParamsSchema = z.object({
+  clId: z.string().min(1),
+  itemId: z.string().min(1),
+})
+
+const fileOperationParamsSchema = z.object({
+  clId: z.string().min(1),
+  itemId: z.string().min(1),
+})
+
+const chunkContentParamsSchema = z.object({
+  cId: z.string().min(1),
+  itemId: z.string().min(1),
+})
+
+// Export schemas for use in server.ts
+export {
+  createCollectionSchema,
+  updateCollectionSchema,
+  createFolderSchema,
+  pollCollectionsStatusSchema,
+  collectionParamsSchema,
+  collectionNameForSharedAgentParamsSchema,
+  collectionNameForSharedAgentQuerySchema,
+  listCollectionItemsParamsSchema,
+  listCollectionItemsQuerySchema,
+  deleteItemParamsSchema,
+  fileOperationParamsSchema,
+  chunkContentParamsSchema,
+}
 
 // Helper functions
 function calculateChecksum(buffer: ArrayBuffer): string {
@@ -455,9 +514,11 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const collectionId = c.req.param("clId")
   const agentExternalId = c.req.query("agentExternalId")
- 
-  if(!agentExternalId || !collectionId){
-    throw new HTTPException(400, { message: "agentExternalId and collectionId are required" })
+
+  if (!agentExternalId || !collectionId) {
+    throw new HTTPException(400, {
+      message: "agentExternalId and collectionId are required",
+    })
   }
 
   const users = await getUserByEmail(db, userEmail)
@@ -465,34 +526,37 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
     throw new HTTPException(404, { message: "User not found" })
   }
   const user = users[0]
-  
-  const agent=await getAgentByExternalId(db,agentExternalId,user.workspaceId)
-  
-  if(!agent){
+
+  const agent = await getAgentByExternalId(
+    db,
+    agentExternalId,
+    user.workspaceId,
+  )
+
+  if (!agent) {
     throw new HTTPException(404, { message: "Agent not found" })
   }
-  const hasPermission=await db
+  const hasPermission = await db
     .select()
     .from(userAgentPermissions)
     .where(
       and(
         eq(userAgentPermissions.userId, user.id),
         eq(userAgentPermissions.agentId, agent.id),
-        
-      )
+      ),
     )
     .limit(1)
 
   if (!hasPermission || hasPermission.length === 0) {
-    throw new HTTPException(403, { message: "You don't have shared access to this agent" })
+    throw new HTTPException(403, {
+      message: "You don't have shared access to this agent",
+    })
   }
   try {
     const collection = await getCollectionById(db, collectionId)
     if (!collection) {
       throw new HTTPException(404, { message: "Collection not found" })
     }
-
-    
 
     return c.json({ name: collection.name })
   } catch (error) {
@@ -508,7 +572,6 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
     })
   }
 }
-
 
 // Update a Collection
 export const UpdateCollectionApi = async (c: Context) => {
@@ -1382,7 +1445,10 @@ export const UploadFilesApi = async (c: Context) => {
 
         // Queue after transaction commits to avoid race condition
         // Route PDF files to the PDF queue, other files to the general queue
-        const queueName = detectedMimeType === "application/pdf" ? PdfFileProcessingQueue : FileProcessingQueue
+        const queueName =
+          detectedMimeType === "application/pdf"
+            ? PdfFileProcessingQueue
+            : FileProcessingQueue
         await boss.send(
           queueName,
           { fileId: item.id, type: ProcessingJobType.FILE },
