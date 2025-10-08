@@ -220,6 +220,27 @@ import { handleAttachmentDelete } from "../files"
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
 
+export function expandSheetIds(fileId: string): string[] {
+  // Check if the fileId matches the pattern docId_sheet_number
+  const sheetMatch = fileId.match(/^(.+)_sheet_(\d+)$/)
+  
+  if (!sheetMatch) {
+    // Not a sheet ID, return as is
+    return [fileId]
+  }
+  
+  const [, docId, sheetNumberStr] = sheetMatch
+  const sheetNumber = parseInt(sheetNumberStr, 10)
+  // Generate IDs from docId_sheet_0 to docId_sheet_number
+  const expandedIds: string[] = []
+  const upper = Number.isFinite(sheetNumber) ? sheetNumber : 1
+  for (let i = 0; i < upper; i++) {
+    expandedIds.push(`${docId}_sheet_${i}`)
+  }
+  
+  return expandedIds
+}
+
 export async function resolveNamesToEmails(
   intent: Intent,
   email: string,
@@ -779,7 +800,7 @@ export const ChatDeleteApi = async (c: Context) => {
       for (const message of messagesToDelete) {
         if (message.attachments && Array.isArray(message.attachments)) {
           const attachments = message.attachments as AttachmentMetadata[]
-            await handleAttachmentDelete(attachments, email)
+          await handleAttachmentDelete(attachments, email)
         }
       }
 
@@ -1099,24 +1120,26 @@ export const replaceDocIdwithUserDocId = async (
   return userMap[email] ?? docId
 }
 
-export function buildContext(
+export async function buildContext(
   results: VespaSearchResult[],
   maxSummaryCount: number | undefined,
   userMetadata: UserMetadataType,
   startIndex: number = 0,
-): string {
-  return cleanContext(
-    results
-      ?.map(
-        (v, i) =>
-          `Index ${i + startIndex} \n ${answerContextMap(
-            v as VespaSearchResults,
-            userMetadata,
-            maxSummaryCount,
-          )}`,
-      )
-      ?.join("\n"),
+  builtUserQuery?: string,
+): Promise<string> {
+  const contextPromises = results?.map(
+    async (v, i) =>
+      `Index ${i + startIndex} \n ${await answerContextMap(
+        v as VespaSearchResults,
+        userMetadata,
+        maxSummaryCount,
+        undefined,
+        undefined,
+        builtUserQuery,
+      )}`,
   )
+  const contexts = await Promise.all(contextPromises || [])
+  return cleanContext(contexts.join("\n"))
 }
 
 async function* generateIterativeTimeFilterAndQueryRewrite(
@@ -1473,10 +1496,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
       vespaSearchSpan?.end()
 
-      const initialContext = buildContext(
+      const initialContext = await buildContext(
         results?.root?.children,
         maxSummaryCount,
         userMetadata,
+        0,
+        message,
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -1605,11 +1630,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(
-          totalResults,
-          maxSummaryCount,
-          userMetadata,
-        )
+        const initialContext = await buildContext(totalResults, maxSummaryCount, userMetadata, 0, message)
 
         const { imageFileNames } = extractImageFileNames(
           initialContext,
@@ -1797,11 +1818,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     pageSearchSpan?.end()
     const startIndex = isReasoning ? previousResultsLength : 0
     const contextSpan = pageSpan?.startSpan("build_context")
-    const initialContext = buildContext(
+    const initialContext = await buildContext(
       results?.root?.children,
       maxSummaryCount,
       userMetadata,
       startIndex,
+      message,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -2092,12 +2114,13 @@ async function* generateAnswerFromGivenContext(
 
   const startIndex = isReasoning ? previousResultsLength : 0
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
-    let content = answerContextMap(
+    let content = await answerContextMap(
       v as VespaSearchResults,
       userMetadata,
       i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
       isMsgWithSources,
+      message,
     )
     if (
       v.fields &&
@@ -2738,11 +2761,12 @@ async function* generatePointQueryTimeExpansion(
     // Prepare context for LLM
     const contextSpan = iterationSpan?.startSpan("build_context")
     const startIndex = isReasoning ? previousResultsLength : 0
-    const initialContext = buildContext(
+    const initialContext = await buildContext(
       combinedResults?.root?.children,
       maxSummaryCount,
       userMetadata,
       startIndex,
+      message,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -2879,7 +2903,7 @@ async function* processResultsForMetadata(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
   )
-  const context = buildContext(items, chunksCount, userMetadata)
+  const context = await buildContext(items, chunksCount, userMetadata, 0, input)
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
@@ -3230,7 +3254,7 @@ async function* generateMetadataQueryAnswer(
         ),
       )
 
-      pageSpan?.setAttribute("context", buildContext(items, 20, userMetadata))
+      pageSpan?.setAttribute("context", await buildContext(items, 20, userMetadata, 0, input))
       if (!items.length) {
         loggerWithChild({ email: email }).info(
           `No documents found on iteration ${iteration}${
@@ -3407,7 +3431,7 @@ async function* generateMetadataQueryAnswer(
       ),
     )
 
-    span?.setAttribute("context", buildContext(items, 20, userMetadata))
+    span?.setAttribute("context", await buildContext(items, 20, userMetadata, 0, input))
     span?.end()
     loggerWithChild({ email: email }).info(
       `Retrieved Documents : ${QueryType.GetItems} - ${items.length}`,
@@ -3553,10 +3577,7 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
-      iterationSpan?.setAttribute(
-        `context`,
-        buildContext(items, 20, userMetadata),
-      )
+      iterationSpan?.setAttribute(`context`, await buildContext(items, 20, userMetadata, 0, input))
       iterationSpan?.end()
 
       loggerWithChild({ email: email }).info(
@@ -4145,7 +4166,7 @@ export const MessageApi = async (c: Context) => {
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
-      .map((m) => m.fileId)
+      .flatMap((m) => expandSheetIds(m.fileId))
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -4201,7 +4222,7 @@ export const MessageApi = async (c: Context) => {
       try {
         const resp = await getCollectionFilesVespaIds(JSON.parse(kbItems), db)
         fileIds = resp
-          .map((file) => file.vespaDocId || "")
+          .flatMap((file) => expandSheetIds(file.vespaDocId || ""))
           .filter((id) => id !== "")
       } catch {
         fileIds = []

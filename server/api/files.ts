@@ -23,13 +23,14 @@ import { HTTPException } from "hono/http-exception"
 import { isValidFile, isImageFile, getFileType } from "shared/fileUtils"
 import { generateThumbnail, getThumbnailPath } from "@/utils/image"
 import { attachmentFileTypeMap, type AttachmentMetadata } from "@/shared/types"
-import { FileProcessorService } from "@/services/fileProcessor"
+import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
 import { Apps, fileSchema, KbItemsSchema } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { isDataSourceError } from "@/integrations/dataSource/errors"
 import { handleAttachmentDeleteSchema } from "./search"
 import { getErrorMessage } from "@/utils"
 import { promises as fs } from "node:fs"
+import { expandSheetIds } from "./chat/chat"
 
 const { JwtPayloadKey } = config
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
@@ -224,10 +225,11 @@ export const handleAttachmentUpload = async (c: Context) => {
     }
 
     const attachmentMetadata: AttachmentMetadata[] = []
-
+    
     for (const file of files) {
       const fileBuffer = await file.arrayBuffer()
       const fileId = `attf_${crypto.randomUUID()}`
+      let vespaId = fileId
       const ext = file.name.split(".").pop()?.toLowerCase() || ""
       const fullFileName = `${0}.${ext}`
       const isImage = isImageFile(file.type)
@@ -253,7 +255,7 @@ export const handleAttachmentUpload = async (c: Context) => {
           // For non-images: process through FileProcessorService and ingest into file schema
 
           // Process the file content using FileProcessorService
-          const processingResult = await FileProcessorService.processFile(
+          const processingResults = await FileProcessorService.processFile(
             Buffer.from(fileBuffer),
             file.type,
             file.name,
@@ -263,44 +265,72 @@ export const handleAttachmentUpload = async (c: Context) => {
             false,
           )
 
-          const { chunks, chunks_pos, image_chunks, image_chunks_pos } = processingResult
-
-          const vespaDoc = {
-            title: file.name,
-            url: "",
-            app: Apps.Attachment,
-            docId: fileId,
-            parentId: null,
-            owner: email,
-            photoLink: "",
-            ownerEmail: email,
-            entity: attachmentFileTypeMap[getFileType({ type: file.type, name: file.name })],
-            chunks: chunks,
-            chunks_pos: chunks_pos,
-            image_chunks: image_chunks,
-            image_chunks_pos: image_chunks_pos,
-            chunks_map: processingResult.chunks_map,
-            image_chunks_map: processingResult.image_chunks_map,
-            permissions: [email],
-            mimeType: getBaseMimeType(file.type || "text/plain"),
-            metadata: JSON.stringify({
-              originalFileName: file.name,
-              uploadedBy: email,
-              chunksCount: chunks.length,
-              processingMethod: getBaseMimeType(file.type || "text/plain"),
-              lastModified: Date.now(),
-              isAttachment: true,
-            }),
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
+          if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
+            vespaId = `${fileId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
           }
+          // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
+          for (const [resultIndex, processingResult] of processingResults.entries()) {
+            let docId = fileId
+            let fileName = file.name
 
-          await insert(vespaDoc, fileSchema)
+            // For sheet processing results, append sheet information
+            if ('sheetName' in processingResult) {
+              const sheetResult = processingResult as SheetProcessingResult
+              fileName = processingResults.length > 1 
+                ? `${file.name} / ${sheetResult.sheetName}`
+                : file.name
+              docId = sheetResult.docId
+            }
+
+            loggerWithChild({ email }).info(
+              `Processed non-image file "${fileName}" with ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`,
+            )
+
+            const { chunks, chunks_pos, image_chunks, image_chunks_pos } =
+              processingResult
+
+            const vespaDoc = {
+              title: file.name,
+              url: "",
+              app: Apps.Attachment,
+              docId: fileId,
+              parentId: null,
+              owner: email,
+              photoLink: "",
+              ownerEmail: email,
+              entity: attachmentFileTypeMap[getFileType({ type: file.type, name: file.name })],
+              chunks: chunks,
+              chunks_pos: chunks_pos,
+              image_chunks: image_chunks,
+              image_chunks_pos: image_chunks_pos,
+              chunks_map: processingResult.chunks_map,
+              image_chunks_map: processingResult.image_chunks_map,
+              permissions: [email],
+              mimeType: getBaseMimeType(file.type || "text/plain"),
+              metadata: JSON.stringify({
+                originalFileName: file.name,
+                uploadedBy: email,
+                chunksCount: chunks.length,
+                imageChunksCount: image_chunks.length,
+                processingMethod: getBaseMimeType(file.type || "text/plain"),
+                lastModified: Date.now(),
+                ...(('sheetName' in processingResult) && {
+                  sheetName: (processingResult as SheetProcessingResult).sheetName,
+                  sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
+                  totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+                }),
+              }),
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            }
+
+            await insert(vespaDoc, fileSchema)
+          }
         }
 
         // Create attachment metadata
         const metadata: AttachmentMetadata = {
-          fileId,
+          fileId: vespaId,
           fileName: file.name,
           fileType: file.type,
           fileSize: file.size,
@@ -310,13 +340,13 @@ export const handleAttachmentUpload = async (c: Context) => {
               ? path.relative(outputDir, thumbnailPath)
               : "",
           createdAt: new Date(),
-          url: `/api/v1/attachments/${fileId}`,
+          url: `/api/v1/attachments/${vespaId}`,
         }
 
         attachmentMetadata.push(metadata)
 
         loggerWithChild({ email }).info(
-          `Attachment "${file.name}" processed with ID ${fileId}${isImage ? " (saved to disk with thumbnail)" : " (processed and ingested into Vespa)"}`,
+          `Attachment "${file.name}" processed with ID ${vespaId}${isImage ? " (saved to disk with thumbnail)" : " (processed and ingested into Vespa)"}`,
         )
       } catch (error) {
         // Cleanup: remove the directory if file write fails (only for images)
@@ -424,23 +454,26 @@ export const handleAttachmentDelete = async (attachments: AttachmentMetadata [],
 
     for (const fileId of nonImageAttachmentFileIds) {
       try {
-        // Delete images from disk
-        try {
-          await DeleteImages(fileId)
-        } catch (error) {
-          loggerWithChild({ email: email }).warn(
-            `Failed to delete images from disk: ${fileId} - ${getErrorMessage(error)}`,
+        const vespaIds = expandSheetIds(fileId)
+        for (const vespaId of vespaIds) {
+          // Delete images from disk
+          try {
+            await DeleteImages(vespaId)
+          } catch (error) {
+            loggerWithChild({ email: email }).warn(
+              `Failed to delete images from disk: ${fileId} - ${getErrorMessage(error)}`,
+            )
+          }
+          // Delete from Vespa kb_items or file schema
+          if(vespaId.startsWith("att_")) {
+            await DeleteDocument(vespaId, KbItemsSchema)
+          } else {
+            await DeleteDocument(vespaId, fileSchema)
+          }
+          loggerWithChild({ email: email }).info(
+            `Successfully deleted non-image attachment ${vespaId} from Vespa`,
           )
         }
-        // Delete from Vespa kb_items or file schema
-        if(fileId.startsWith("att_")) {
-          await DeleteDocument(fileId, KbItemsSchema)
-        } else {
-          await DeleteDocument(fileId, fileSchema)
-        }
-        loggerWithChild({ email: email }).info(
-          `Successfully deleted non-image attachment ${fileId} from Vespa`,
-        )
       } catch (error) {
         const errorMessage = getErrorMessage(error)
         if (errorMessage.includes("404 Not Found")) {
