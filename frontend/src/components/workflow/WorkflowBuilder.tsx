@@ -2090,11 +2090,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [templateWorkflow] = useState<TemplateFlow | null>(
     null,
   )
-  // Running workflow state (for real-time updates)
-  const [, setIsPolling] = useState(false)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(
-    null,
-  )
   // Workflow name state
   const [currentWorkflowName, setCurrentWorkflowName] = useState<string>("")
   // Snackbar state
@@ -2971,127 +2966,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     )
   }, [selectedNodes, setNodes])
 
-  // Function to stop polling
-  const stopPolling = useCallback(() => {
-    setIsPolling(false)
 
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
-    }
-  }, [pollingInterval, setIsPolling, setPollingInterval])
 
-  // Function to fetch workflow execution status
-  const fetchWorkflowStatus = useCallback(
-    async (executionId: string) => {
-      try {
-        // Use the status endpoint for lightweight polling
-        const statusData = await workflowExecutionsAPI.fetchStatus(executionId)
 
-        // Check if workflow is completed or failed to stop polling
-        if (statusData.success) {
-          if (statusData.status === "completed") {
-            // Fetch full details to update nodes with final status
-            const fullData = await workflowExecutionsAPI.fetchById(executionId)
-            
-            // Update nodes to show completed status
-            if (fullData?.stepExecutions) {
-              setNodes((currentNodes) =>
-                currentNodes.map((node) => ({
-                  ...node,
-                  data: {
-                    ...node.data,
-                    isActive: false,
-                    isCompleted: true,
-                    step: node.data.step
-                      ? {
-                          ...node.data.step,
-                          status: "completed",
-                        }
-                      : node.data.step,
-                  },
-                })),
-              )
-            }
-            
-            stopPolling()
-          } else if (statusData.status === "failed") {
-            // Update nodes to show failed status
-            setNodes((currentNodes) =>
-              currentNodes.map((node) => ({
-                ...node,
-                data: {
-                  ...node.data,
-                  isActive: false,
-                  isCompleted: false,
-                  step: node.data.step
-                    ? {
-                        ...node.data.step,
-                        status: "failed",
-                      }
-                    : node.data.step,
-                },
-              })),
-            )
-            
-            stopPolling()
-          } else if (statusData.status === "active") {
-            // Update nodes to show active status
-            setNodes((currentNodes) =>
-              currentNodes.map((node, index) => ({
-                ...node,
-                data: {
-                  ...node.data,
-                  isActive: index === 0, // Show first step as active for simplicity
-                  isCompleted: false,
-                  step: node.data.step
-                    ? {
-                        ...node.data.step,
-                        status: "running",
-                      }
-                    : node.data.step,
-                },
-              })),
-            )
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching workflow status:", error)
-        // Stop polling on persistent errors
-        stopPolling()
-      }
-    },
-    [setNodes, stopPolling],
-  )
-
-  // Function to start polling
-  const startPolling = useCallback(
-    (workflowId: string) => {
-      setIsPolling(true)
-
-      // Clear any existing interval
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
-      }
-
-      // Start polling every second
-      const interval = setInterval(() => {
-        fetchWorkflowStatus(workflowId)
-      }, 1000)
-
-      setPollingInterval(interval)
-    },
-    [pollingInterval, fetchWorkflowStatus, setIsPolling, setPollingInterval],
-  )
-
-  // Cleanup polling on component unmount
-  useEffect(() => {
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
-      }
-    }
-  }, [pollingInterval])
 
   const executeWorkflow = useCallback(async (file?: File) => {
     if (file) {

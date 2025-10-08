@@ -197,7 +197,9 @@ export const CreateCollectionApi = async (c: Context) => {
         description: validatedData.description || "",
         storagePath: "",
         chunks: [],
+        chunks_map: [],
         image_chunks: [],
+        image_chunks_map: [],
         chunks_pos: [],
         image_chunks_pos: [],
         metadata: JSON.stringify({
@@ -708,7 +710,9 @@ export const CreateFolderApi = async (c: Context) => {
         description: folderMetadata.description || "",
         storagePath: "",
         chunks: [],
+        chunks_map: [],
         image_chunks: [],
+        image_chunks_map: [],
         chunks_pos: [],
         image_chunks_pos: [],
         metadata: JSON.stringify({
@@ -876,7 +880,9 @@ async function ensureFolderPath(
         description: "Auto-created during file upload",
         storagePath: "",
         chunks: [],
+        chunks_map: [],
         image_chunks: [],
+        image_chunks_map: [],
         chunks_pos: [],
         image_chunks_pos: [],
         metadata: JSON.stringify({
@@ -1287,8 +1293,10 @@ export const UploadFilesApi = async (c: Context) => {
             storagePath: storagePath,
             chunks: chunks,
             chunks_pos: chunks_pos,
+            chunks_map: [],
             image_chunks: image_chunks,
             image_chunks_pos: image_chunks_pos,
+            image_chunks_map: [],
             metadata: JSON.stringify({
               originalFileName: file.name,
               uploadedBy: user.email,

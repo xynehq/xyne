@@ -279,8 +279,10 @@ export const handleAttachmentUpload = async (c: Context) => {
             storagePath: "",
             chunks: chunks,
             chunks_pos: chunks_pos,
+            chunks_map: [],
             image_chunks: image_chunks,
             image_chunks_pos: image_chunks_pos,
+            image_chunks_map: [],
             metadata: JSON.stringify({
               originalFileName: file.name,
               uploadedBy: email,

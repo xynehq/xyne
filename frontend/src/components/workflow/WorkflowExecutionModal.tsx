@@ -482,7 +482,7 @@ export function WorkflowExecutionModal({
                 <Button
                   onClick={() => {
                     if (executionId && onViewExecution) {
-                      onViewExecution(executionId, false) // false = do not start polling when viewing executions from modal
+                      onViewExecution(executionId)
                       handleClose() // Close the modal after navigating
                     }
                   }}

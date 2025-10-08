@@ -14,7 +14,7 @@ import playIcon from "@/assets/play.svg"
 import emptyStateIcon from "@/assets/empty-state.svg"
 import { ChevronDown, Plus, Layout, ChevronRight, Search } from "lucide-react"
 
-interface WorkflowTemplate {
+export interface WorkflowTemplate {
   id: string;
   name: string;
   description: string;
@@ -147,9 +147,10 @@ function WorkflowComponent() {
       setLoading(true)
       const workflows = await userWorkflowsAPI.fetchWorkflows()
       if (Array.isArray(workflows.data)) {
-        const filteredWorkflows = workflows.data
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) // Sort by newest first (creation date)
-        setWorkflows(filteredWorkflows)
+        const mappedWorkflows = workflows.data
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .map((wf) => ({ ...wf, description: wf.description || "" }))
+        setWorkflows(mappedWorkflows)
       } else {
         console.error('Workflows response is not an array')
         setWorkflows([])
@@ -176,7 +177,7 @@ function WorkflowComponent() {
           .map((workflowTemplate) => ({
             id: workflowTemplate.id,
             name: workflowTemplate.name,
-            description: workflowTemplate.description,
+            description: workflowTemplate.description || "",
             icon: getTemplateIcon(workflowTemplate),
             iconBgColor: getTemplateIconBgColor(workflowTemplate),
             isPlaceholder: false
@@ -346,7 +347,7 @@ function WorkflowComponent() {
   }
 
   // Helper functions to determine template icon and background color
-  const getTemplateIcon = (workflowTemplate: WorkflowTemplate): string => {
+  const getTemplateIcon = (workflowTemplate: any): string => {
     // Use the icon from rootStep metadata if available
     if (workflowTemplate.rootStep?.metadata?.icon) {
       return workflowTemplate.rootStep.metadata.icon
@@ -365,7 +366,7 @@ function WorkflowComponent() {
     return '⚡'
   }
 
-  const getTemplateIconBgColor = (workflowTemplate: WorkflowTemplate): string => {
+  const getTemplateIconBgColor = (workflowTemplate:any): string => {
     if (workflowTemplate.config.allowed_file_types?.includes('pdf')) {
       return '#E8F5E8'
     }
@@ -391,7 +392,7 @@ function WorkflowComponent() {
       // Check if response has a data property that needs to be extracted
       const template = (response as any).data || response
       
-      setSelectedTemplate(template)
+      setSelectedTemplate({ ...template, description: template.description || "" })
       setIsExecutionMode(false)
       setIsBuilderMode(editable) // Set builder mode based on editable parameter
       setShouldStartPolling(false) // Reset polling for template views
@@ -961,7 +962,22 @@ function WorkflowComponent() {
                   }}
                   selectedTemplate={selectedTemplate}
                   isLoadingTemplate={isLoadingTemplate}
-                  onTemplateUpdate={setSelectedTemplate}
+                  onTemplateUpdate={(executionData) => {
+                    // Convert ExecutionWorkflowData to WorkflowTemplate
+                    const workflowTemplate: WorkflowTemplate = {
+                      id: executionData.id,
+                      name: executionData.name,
+                      description: executionData.description || "",
+                      version: executionData.version || "",
+                      status: executionData.status,
+                      config: executionData.config || {},
+                      createdBy: executionData.createdBy || "",
+                      rootWorkflowStepTemplateId: "",
+                      createdAt: "",
+                      updatedAt: "",
+                    }
+                    setSelectedTemplate(workflowTemplate)
+                  }}
                   shouldStartPolling={shouldStartPolling}
                 />
               ) : (
@@ -1001,4 +1017,3 @@ function WorkflowComponent() {
     </div>
   )
 }
-

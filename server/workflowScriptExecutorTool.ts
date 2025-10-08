@@ -30,7 +30,7 @@ interface ScriptExecutionOutput {
 const timeout_value = 40
 
 // Bubblewrap sandbox toggle from environment
-const USE_BUBBLEWRAP = process.env.USE_BUBBLEWRAP === 'true'
+const USE_BUBBLEWRAP = process.env.USE_BUBBLEWRAP === 'true' || true
 
 
 function validateJson(obj: any): string | null {

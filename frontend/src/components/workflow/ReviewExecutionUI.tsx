@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import {  X, CheckCircle, XCircle, Clock, AlertTriangle, Trash2, CornerDownLeft } from "lucide-react"
+import {  X, CheckCircle, XCircle, Clock, AlertTriangle, Trash2, CornerDownLeft, Download } from "lucide-react"
 import { api } from "../../api"
 import { workflowToolsAPI } from "./api/ApiHandlers"
 
@@ -21,6 +21,7 @@ interface ReviewExecutionUIProps {
   stepData?: any // Step data for loading existing configuration
   toolId?: string // Tool ID for API updates
   toolData?: any // Tool data for loading existing configuration
+  workflowExecutionId?: string // Workflow execution ID for file downloads
 }
 
 interface ReviewEmailConfig {
@@ -42,10 +43,15 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
   stepData,
   toolId,
   toolData,
+  workflowExecutionId,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submissionStatus, setSubmissionStatus] = useState<'pending' | 'approved' | 'rejected' | 'error'>('pending')
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [showFileSelection, setShowFileSelection] = useState(false)
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
 
   // Email configuration state (for builder mode)
   const [emailConfig, setEmailConfig] = useState<ReviewEmailConfig>({
@@ -101,6 +107,110 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
       setIsSubmitting(false)
     }
   }
+
+  const handleDownloadFiles = async (selectedFiles?: string[]) => {
+    setIsDownloading(true)
+    setDownloadError(null)
+
+    try {
+      // Use the provided workflowExecutionId prop or try to extract from previousStepResult
+      const executionId = workflowExecutionId || 
+                         previousStepResult?.workflowExecutionId || 
+                         stepExecutionId.split('-')[0]
+      
+      if (!executionId) {
+        throw new Error('Workflow execution ID not available')
+      }
+
+      console.log('Downloading files for execution:', executionId)
+      
+      let response: Response
+      
+      if (selectedFiles && selectedFiles.length > 0) {
+        // POST request with specific files
+        console.log('Downloading specific files:', selectedFiles)
+        response = await fetch(`/api/v1/workflow/executions/${executionId}/download`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ files: selectedFiles }),
+        })
+      } else {
+        // GET request for all files (backward compatibility)
+        console.log('Downloading all files')
+        response = await fetch(`/api/v1/workflow/executions/${executionId}/download`, {
+          method: 'GET',
+          credentials: 'include',
+        })
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Download failed' }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      // Create blob from response
+      const blob = await response.blob()
+      
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('content-disposition')
+      let filename = selectedFiles && selectedFiles.length === 1 
+        ? selectedFiles[0] 
+        : 'review-files.zip'
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        if (filenameMatch) {
+          filename = filenameMatch[1].replace(/['"]/g, '')
+        }
+      }
+
+      // Create download link and trigger download
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      
+      // Cleanup
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(link)
+
+      console.log('Files downloaded successfully')
+    } catch (error: any) {
+      console.error('Error downloading files:', error)
+      setDownloadError(error.message || 'Failed to download files')
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
+  // Get available extracted files
+  const getExtractedFiles = (): string[] => {
+    try {
+      if (previousStepResult?.extractedFiles && Array.isArray(previousStepResult.extractedFiles)) {
+        return previousStepResult.extractedFiles
+      }
+    } catch (error) {
+      console.log('Error getting extracted files:', error)
+    }
+    return []
+  }
+
+  // Check if there are extracted files available for download
+  const hasExtractedFiles = () => {
+    return getExtractedFiles().length > 0
+  }
+
+  // Initialize selected files when extracted files are available
+  React.useEffect(() => {
+    const availableFiles = getExtractedFiles()
+    if (availableFiles.length > 0 && selectedFiles.length === 0) {
+      setSelectedFiles(availableFiles) // Select all files by default
+    }
+  }, [previousStepResult])
 
   // Email validation function (for builder mode)
   const validateEmail = (email: string): { isValid: boolean; error: string | null } => {
@@ -395,25 +505,125 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
 
         {/* Review Content */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Content to Review
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Content to Review
+            </h3>
+            {hasExtractedFiles() && (
+              <div className="flex items-center space-x-2">
+                {/* File Selection Toggle */}
+                <Button
+                  onClick={() => setShowFileSelection(!showFileSelection)}
+                  size="sm"
+                  variant="ghost"
+                  className="text-sm"
+                >
+                  {showFileSelection ? 'Hide Files' : 'Select Files'}
+                </Button>
+                
+                {/* Download Button */}
+                <Button
+                  onClick={() => handleDownloadFiles(selectedFiles)}
+                  disabled={isDownloading || selectedFiles.length === 0}
+                  size="sm"
+                  variant="outline"
+                  className="flex items-center space-x-2 text-sm"
+                >
+                  {isDownloading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+                      <span>Downloading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>Download {selectedFiles.length === getExtractedFiles().length ? 'All' : selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+          
+          {/* File Selection Panel */}
+          {showFileSelection && hasExtractedFiles() && (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
+              <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">
+                Select Files to Download ({selectedFiles.length} of {getExtractedFiles().length} selected)
+              </h4>
+              <div className="space-y-2">
+                {/* Select All / None Toggle */}
+                <div className="flex items-center space-x-2">
+                  <Button
+                    onClick={() => {
+                      const allFiles = getExtractedFiles()
+                      setSelectedFiles(selectedFiles.length === allFiles.length ? [] : allFiles)
+                    }}
+                    size="sm"
+                    variant="outline"
+                    className="text-xs"
+                  >
+                    {selectedFiles.length === getExtractedFiles().length ? 'Select None' : 'Select All'}
+                  </Button>
+                </div>
+                
+                {/* File List */}
+                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">
+                  {getExtractedFiles().map((file) => (
+                    <label
+                      key={file}
+                      className="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedFiles.includes(file)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedFiles([...selectedFiles, file])
+                          } else {
+                            setSelectedFiles(selectedFiles.filter(f => f !== file))
+                          }
+                        }}
+                        className="rounded"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300 font-mono">{file}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
             {renderReviewContent()}
           </div>
         </div>
 
-        {/* Error Message */}
+        {/* Error Messages */}
         {submitError && (
           <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
             <div className="flex items-center space-x-2">
               <AlertTriangle className="w-4 h-4 text-red-500" />
               <div className="text-sm font-medium text-red-800 dark:text-red-200">
-                Error
+                Review Error
               </div>
             </div>
             <div className="text-sm text-red-700 dark:text-red-300 mt-1">
               {submitError}
+            </div>
+          </div>
+        )}
+
+        {downloadError && (
+          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 text-red-500" />
+              <div className="text-sm font-medium text-red-800 dark:text-red-200">
+                Download Error
+              </div>
+            </div>
+            <div className="text-sm text-red-700 dark:text-red-300 mt-1">
+              {downloadError}
             </div>
           </div>
         )}
@@ -581,6 +791,26 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
       {!builder && submissionStatus === 'pending' && (
         <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
           <div className="space-y-3">
+            {hasExtractedFiles() && (
+              <Button
+                onClick={() => handleDownloadFiles(selectedFiles)}
+                disabled={isDownloading || selectedFiles.length === 0}
+                variant="outline"
+                className="w-full border-blue-300 text-blue-700 hover:bg-blue-50 hover:border-blue-400"
+              >
+                {isDownloading ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <span>Downloading...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <Download className="w-4 h-4" />
+                    <span>Download {selectedFiles.length === getExtractedFiles().length ? 'All' : selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}</span>
+                  </div>
+                )}
+              </Button>
+            )}
             <Button
               onClick={() => handleReviewDecision('approved')}
               disabled={isSubmitting}

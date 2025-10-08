@@ -203,6 +203,7 @@ import {
   SubmitFormStepApi,
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
+  DownloadReviewFilesApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
   createWorkflowTemplateSchema,
@@ -979,6 +980,8 @@ export const AppRoutes = app
   .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
+  .get("/workflow/executions/:executionId/download", DownloadReviewFilesApi)
+  .post("/workflow/executions/:executionId/download", DownloadReviewFilesApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
   .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
   .get("/workflow/script/languages", GetScriptLanguagesApi)

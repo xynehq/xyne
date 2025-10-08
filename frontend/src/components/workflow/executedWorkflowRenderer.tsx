@@ -31,26 +31,12 @@ import {
 } from "./Types"
 import { api } from "../../api"
 
-// Type for execution workflow data
-interface ExecutionWorkflowData {
-  id: string
-  name: string
-  description?: string
-  version?: string
-  status: string
-  config?: {
-    ai_model?: string
-    max_file_size?: string
-    auto_execution?: boolean
-    schema_version?: string
-    allowed_file_types?: string[]
-    supports_file_upload?: boolean
-  }
-  createdBy?: string
-  rootWorkflowStepTemplateId?: string
+// Import WorkflowTemplate from workflow.tsx
+import type { WorkflowTemplate } from "../../routes/_authenticated/workflow"
+
+// Extended WorkflowTemplate for execution workflows
+interface ExecutionWorkflowTemplate extends WorkflowTemplate {
   rootWorkflowStepExeId?: string // For execution workflows
-  createdAt: string
-  updatedAt: string
   // For execution workflows
   stepExecutions?: Array<{
     id: string
@@ -85,38 +71,6 @@ interface ExecutionWorkflowData {
     updatedAt: string
     toolConfig?: any
   }>
-  // For template workflows (fallback)
-  steps?: Array<{
-    id: string
-    workflowTemplateId: string
-    name: string
-    description: string
-    type: string
-    parentStepId: string | null
-    prevStepIds: string[]
-    nextStepIds: string[]
-    toolIds: string[]
-    timeEstimate: number
-    metadata: {
-      icon?: string
-      step_order?: number
-      schema_version?: string
-      user_instructions?: string
-      ai_model?: string
-      automated_description?: string
-    }
-    createdAt: string
-    updatedAt: string
-  }>
-  workflow_tools?: Array<{
-    id: string
-    type: string
-    value: any
-    config: any
-    createdBy: string
-    createdAt: string
-    updatedAt: string
-  }>
 }
 
 import botLogo from "@/assets/bot-logo.svg"
@@ -139,7 +93,6 @@ const StepNode: React.FC<NodeProps> = ({
   if (hasReviewTool) {
     // Get config from review tool
     const reviewConfig = tools[0]?.config || {}
-    const reviewDefinition = tools[0]?.val || {}
     
     const isConfigured = reviewConfig.approved && reviewConfig.rejected
     const isAwaitingReview = step.status === "active"
@@ -226,10 +179,7 @@ const StepNode: React.FC<NodeProps> = ({
                 if (isAwaitingReview) {
                   return "Review is required to continue the workflow. Click to approve or reject."
                 }
-                
-                if (reviewDefinition.description) {
-                  return reviewDefinition.description
-                }
+              
                 
                 if (isConfigured) {
                   return `Review step configured with approval and rejection paths.`
@@ -1351,8 +1301,7 @@ const StepNode: React.FC<NodeProps> = ({
 const Header = ({
   onBackToWorkflows,
   workflowName,
-  isPolling,
-}: { onBackToWorkflows?: () => void; workflowName?: string; isPolling?: boolean }) => {
+}: { onBackToWorkflows?: () => void; workflowName?: string; }) => {
   return (
     <div className="flex flex-col items-start justify-center px-6 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[80px] gap-3">
       {/* Breadcrumb */}
@@ -1369,12 +1318,6 @@ const Header = ({
             / {workflowName || "Untitled Workflow"}
           </span>
         </div>
-        {isPolling && (
-          <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
-            <div className="w-2 h-2 bg-blue-600 dark:bg-blue-400 rounded-full animate-pulse"></div>
-            <span>Live polling</span>
-          </div>
-        )}
       </div>
     </div>
   )
@@ -2004,9 +1947,9 @@ interface WorkflowBuilderProps {
   onStepClick?: (step: Step) => void
   user?: UserDetail
   onBackToWorkflows?: () => void
-  selectedTemplate?: ExecutionWorkflowData | null
+  selectedTemplate?: ExecutionWorkflowTemplate | null
   isLoadingTemplate?: boolean
-  onTemplateUpdate?: (template: ExecutionWorkflowData) => void
+  onTemplateUpdate?: (template: ExecutionWorkflowTemplate) => void
   shouldStartPolling?: boolean
 }
 
@@ -2017,7 +1960,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   selectedTemplate,
   isLoadingTemplate,
   onTemplateUpdate,
-  shouldStartPolling,
 }) => {
   const [, setZoomLevel] = useState(100)
   const [showResultModal, setShowResultModal] = useState(false)
@@ -2032,6 +1974,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   // Simple polling timeout reference for cleanup
   const pollingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Local workflow data state for forcing re-renders during polling
+  const [workflowData, setWorkflowData] = useState<ExecutionWorkflowTemplate | null>(selectedTemplate || null)
+
+  // Update local data when selectedTemplate changes
+  useEffect(() => {
+    setWorkflowData(selectedTemplate || null)
+  }, [selectedTemplate])
+
   // Empty initial state
   const initialNodes: Node[] = []
   const initialEdges: Edge[] = []
@@ -2042,16 +1992,18 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   // Create nodes and edges from selectedTemplate
   useEffect(() => {
+    // Use workflowData for rendering, fallback to selectedTemplate for initial load
+    const dataToRender = workflowData || selectedTemplate
     if (
-      selectedTemplate &&
-      (selectedTemplate.steps || selectedTemplate.stepExecutions)
+      dataToRender &&
+      (dataToRender.steps || dataToRender.stepExecutions)
     ) {
 
           // Check if this is an execution (has stepExecutions) or template (has steps)
-      const isExecution = !!selectedTemplate.stepExecutions
+      const isExecution = !!dataToRender.stepExecutions
       const stepsData = isExecution
-        ? selectedTemplate.stepExecutions
-        : selectedTemplate.steps
+        ? dataToRender.stepExecutions
+        : dataToRender.steps
 
 
       // Sort steps by nextStepIds relationships and creation order (same as builder mode without step_order)
@@ -2068,8 +2020,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       const performSimpleDFS = (steps: any[]) => {
         // Get the root step ID from template
         const rootStepId = isExecution 
-          ? (selectedTemplate as any).rootWorkflowStepExeId 
-          : selectedTemplate.rootWorkflowStepTemplateId
+          ? (dataToRender as any).rootWorkflowStepExeId 
+          : dataToRender.rootWorkflowStepTemplateId
         
         if (!rootStepId) {
           console.error('No root step ID found in template')
@@ -2152,7 +2104,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // For executions, get tool executions from toolExecIds
           const executionStep = step as any
           toolExecutions =
-            selectedTemplate.toolExecutions?.filter((toolExec: any) =>
+            dataToRender.toolExecutions?.filter((toolExec: any) =>
               executionStep.toolExecIds?.includes(toolExec.id),
             ) || []
 
@@ -2172,7 +2124,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // For templates, use workflow_tools
           const templateStep = step as any
           stepTools =
-            selectedTemplate.workflow_tools?.filter((tool) =>
+            dataToRender.workflow_tools?.filter((tool) =>
               templateStep.toolIds?.includes(tool.id),
             ) || []
         }
@@ -2238,11 +2190,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             
             // Get tools for this step - check if this step has review tools
             const hasReviewTools = isExecution 
-              ? selectedTemplate.toolExecutions?.some(toolExec =>
+              ? dataToRender.toolExecutions?.some(toolExec =>
                   step.toolExecIds?.includes(toolExec.id) && 
                   (toolExec.toolType === "review" || toolExec.type === "review")
                 )
-              : selectedTemplate.workflow_tools?.some(tool =>
+              : dataToRender.workflow_tools?.some(tool =>
                   step.toolIds?.includes(tool.id) && tool.type === "review"
                 )
                 
@@ -2251,13 +2203,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               let config = {}
               
               if (isExecution) {
-                const toolExecution = selectedTemplate.toolExecutions?.find(toolExec =>
+                const toolExecution = dataToRender.toolExecutions?.find(toolExec =>
                   step.toolExecIds?.includes(toolExec.id) && 
                   (toolExec.toolType === "review" || toolExec.type === "review")
                 )
                 config = toolExecution?.toolConfig || {}
               } else {
-                const workflowTool = selectedTemplate.workflow_tools?.find(tool =>
+                const workflowTool = dataToRender.workflow_tools?.find(tool =>
                   step.toolIds?.includes(tool.id) && tool.type === "review"
                 )
                 config = workflowTool?.config || {}
@@ -2358,7 +2310,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         fitView({ padding: 0.2 })
       }, 50)
     }
-  }, [selectedTemplate, setNodes, setEdges, fitView])
+  }, [selectedTemplate, workflowData, setNodes, setEdges, fitView])
 
 
   const onConnect = useCallback(
@@ -2429,17 +2381,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           const stepExecution = step as any // Cast to access execution properties
           if (selectedTemplate?.stepExecutions && stepExecution.prevStepIds && stepExecution.prevStepIds.length > 0) {
             const prevStepId = stepExecution.prevStepIds[0] // Get the first previous step
-            const prevStep = selectedTemplate.stepExecutions.find(s => s.workflowStepTemplateId === prevStepId)
+            const prevStep = (workflowData || selectedTemplate)?.stepExecutions?.find((s: any) => s.workflowStepTemplateId === prevStepId)
             
-            if (prevStep && selectedTemplate.toolExecutions) {
+            if (prevStep && (workflowData || selectedTemplate)?.toolExecutions) {
               // Find tool executions for the previous step
-              const prevStepToolExecs = selectedTemplate.toolExecutions.filter(
-                tool => prevStep.toolExecIds.includes(tool.id)
+              const prevStepToolExecs = (workflowData || selectedTemplate)?.toolExecutions?.filter(
+                (tool: any) => prevStep.toolExecIds.includes(tool.id)
               )
               
-              if (prevStepToolExecs.length > 0) {
+              if (prevStepToolExecs && prevStepToolExecs.length > 0) {
                 // Get the result from the most recent completed tool execution
-                const completedTools = prevStepToolExecs.filter(tool => tool.result)
+                const completedTools = prevStepToolExecs.filter((tool: any) => tool.result)
                 if (completedTools.length > 0) {
                   previousStepResult = completedTools[completedTools.length - 1].result
                 }
@@ -2556,6 +2508,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         onTemplateUpdate(extractedData)
       }
       
+      // Update local workflow data to trigger re-renders
+      setWorkflowData(extractedData)
+      
       // Check if workflow is completed or failed at workflow level
       if (extractedData.status === 'completed' || extractedData.status === 'failed') {
         console.log("✅ Workflow finished, stopping polling")
@@ -2657,7 +2612,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           onBackToWorkflows?.()
         }}
         workflowName={selectedTemplate?.name}
-        isPolling={false}
       />
 
       {/* Main content area */}
@@ -2745,6 +2699,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           stepName="Review Step"
           builder={false} // Always execution mode in this component
           previousStepResult={reviewPreviousStepResult}
+          workflowExecutionId={selectedTemplate?.id}
           onReviewSubmitted={() => {
             console.log("Review submitted, workflow will continue")
             // Resume polling - it will handle execution data refresh

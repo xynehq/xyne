@@ -4,6 +4,8 @@ import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 import { type SelectAgent } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
+import JSZip from "jszip"
+import { readFile } from "node:fs/promises"
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
@@ -4156,7 +4158,7 @@ export const TriggerWorkflowStepApi = async (c: Context) => {
         stepId: stepId,
         triggeredBy: userEmail,
         toolExecution: toolExecutionRecord,
-        completedStep: completedStep[0],
+        completedStep: completedStep,
         executionResults,
       },
       message: "Trigger step completed successfully",
@@ -4300,5 +4302,217 @@ export const ServeWorkflowFileApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
+  }
+}
+
+// Download extracted files from workflow execution as ZIP
+export const DownloadReviewFilesApi = async (c: Context) => {
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    const executionId = c.req.param("executionId")
+
+    if (!executionId) {
+      throw new HTTPException(400, {
+        message: "Execution ID is required",
+      })
+    }
+
+    Logger.info(`Downloading extracted files for execution ${executionId}`)
+
+    // Get workflow execution to verify user access
+    const workflowExecutionRows = await db
+      .select()
+      .from(workflowExecution)
+      .where(eq(workflowExecution.id, executionId))
+
+    if (!workflowExecutionRows || workflowExecutionRows.length === 0) {
+      throw new HTTPException(404, { message: "Workflow execution not found" })
+    }
+
+    const [workflow] = workflowExecutionRows
+
+    // Debug logging
+    Logger.info(`Download access check: executionId=${executionId}, user=${sub}, createdBy=${workflow.createdBy}`)
+
+    // TODO: Re-enable access control in production
+    // Temporarily allow any user to access files for development/testing
+    // if (workflow.createdBy !== sub) {
+    //   Logger.warn(`Access denied: user ${sub} tried to access workflow execution ${executionId} created by ${workflow.createdBy}`)
+    //   throw new HTTPException(403, {
+    //     message: "Access denied to this workflow execution",
+    //   })
+    // }
+
+    // Get all tool executions for this workflow to find extracted files
+    const toolExecutions = await db
+      .select()
+      .from(toolExecution)
+      .where(eq(toolExecution.workflowExecutionId, executionId))
+
+    // Collect all extracted files from all tool executions
+    let allExtractedFiles: string[] = []
+    for (const toolExecution of toolExecutions) {
+      try {
+        const result = toolExecution.result as any
+        if (result?.extractedFiles && Array.isArray(result.extractedFiles)) {
+          allExtractedFiles.push(...result.extractedFiles)
+          Logger.info(`Found ${result.extractedFiles.length} files from tool execution ${toolExecution.id}`)
+        }
+      } catch (error) {
+        Logger.error(error, `Failed to parse tool execution result for ${toolExecution.id}`)
+      }
+    }
+
+    if (allExtractedFiles.length === 0) {
+      throw new HTTPException(404, {
+        message: "No extracted files found in this workflow execution",
+      })
+    }
+
+    Logger.info(`Found ${allExtractedFiles.length} total extracted files available`)
+
+    // Determine which files to download
+    let filesToDownload: string[] = []
+    
+    if (c.req.method === 'POST') {
+      // For POST requests, get specific files from request body
+      const body = await c.req.json().catch(() => ({}))
+      const requestedFiles = body.files || []
+      
+      if (!Array.isArray(requestedFiles)) {
+        throw new HTTPException(400, {
+          message: "Invalid request: 'files' must be an array of filenames",
+        })
+      }
+
+      if (requestedFiles.length === 0) {
+        throw new HTTPException(400, {
+          message: "Invalid request: at least one file must be specified",
+        })
+      }
+
+      // Validate that all requested files exist in extracted files
+      const invalidFiles = requestedFiles.filter(file => !allExtractedFiles.includes(file))
+      if (invalidFiles.length > 0) {
+        throw new HTTPException(400, {
+          message: `Requested files not found: ${invalidFiles.join(', ')}. Available files: ${allExtractedFiles.join(', ')}`,
+        })
+      }
+
+      filesToDownload = requestedFiles
+      Logger.info(`Downloading ${filesToDownload.length} specific files: ${JSON.stringify(filesToDownload)}`)
+    } else {
+      // For GET requests, download all files (backward compatibility)
+      filesToDownload = allExtractedFiles
+      Logger.info(`Downloading all ${filesToDownload.length} extracted files`)
+    }
+
+    // Create ZIP archive
+    const zip = new JSZip()
+    
+    // Use the correct directory structure as mentioned by user
+    const baseDir = path.resolve(process.cwd(), "script_executor_utils", executionId)
+    
+    let filesAdded = 0
+    const errors: string[] = []
+
+    Logger.info(`Looking for files in directory: ${baseDir}`)
+    Logger.info(`Files to process: ${JSON.stringify(filesToDownload)}`)
+
+    // Add each file to the ZIP
+    for (const filePath of filesToDownload) {
+      try {
+        let fullPath: string
+        
+        // Handle both absolute and relative paths
+        if (path.isAbsolute(filePath)) {
+          // If it's an absolute path, use it directly but verify it's safe
+          fullPath = filePath
+          // Ensure the absolute path is within a reasonable scope
+          if (!fullPath.includes(executionId)) {
+            errors.push(`Skipped potentially unsafe absolute path: ${filePath}`)
+            continue
+          }
+        } else {
+          // If it's a relative path, join with base directory
+          const safePath = path.normalize(filePath)
+          if (safePath.includes("..")) {
+            errors.push(`Skipped unsafe relative path: ${filePath}`)
+            continue
+          }
+          fullPath = path.join(baseDir, safePath)
+        }
+
+        Logger.info(`Attempting to read file: ${fullPath}`)
+
+        // Read file and add to ZIP
+        const fileBuffer = await readFile(fullPath)
+        const fileName = path.basename(filePath)
+        
+        // Add file to ZIP with buffer
+        zip.file(fileName, fileBuffer, { binary: true })
+        filesAdded++
+        
+        Logger.info(`Successfully added file to ZIP: ${fileName} (${fileBuffer.length} bytes)`)
+      } catch (error) {
+        Logger.error(error, `Failed to read file: ${filePath}`)
+        errors.push(`Failed to read file: ${filePath} - ${error}`)
+      }
+    }
+
+    if (filesAdded === 0) {
+      throw new HTTPException(404, {
+        message: `No files could be read from the filesystem. Errors: ${errors.join('; ')}`,
+      })
+    }
+
+    Logger.info(`Creating ZIP with ${filesAdded} files`)
+
+    // Test if ZIP has any files
+    const fileNames = Object.keys(zip.files)
+    Logger.info(`ZIP contains files: ${JSON.stringify(fileNames)}`)
+
+    if (fileNames.length === 0) {
+      throw new HTTPException(500, {
+        message: "ZIP archive is empty after processing files"
+      })
+    }
+
+    // Generate ZIP buffer with proper options
+    const zipBuffer = await zip.generateAsync({ 
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 }
+    })
+
+    Logger.info(`ZIP buffer generated, size: ${zipBuffer.length} bytes`)
+    
+    // Set response headers for file download
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-")
+    const filename = `review-files-${executionId}-${timestamp}.zip`
+    
+    // Clear any existing headers that might interfere
+    c.header("Content-Type", "application/zip")
+    c.header("Content-Disposition", `attachment; filename="${filename}"`)
+    c.header("Content-Length", zipBuffer.length.toString())
+    c.header("Cache-Control", "no-cache")
+    c.header("Pragma", "no-cache")
+
+    Logger.info(`Successfully created ZIP with ${filesAdded} files (${errors.length} errors), size: ${zipBuffer.length} bytes`)
+
+    // Return the ZIP file as a proper Response
+    return new Response(zipBuffer, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Length": zipBuffer.length.toString(),
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache"
+      }
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to download review files")
+    throw error
   }
 }

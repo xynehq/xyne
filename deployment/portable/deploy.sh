@@ -36,6 +36,7 @@ show_help() {
     echo "Options:"
     echo "  --force-gpu        Force GPU mode even if GPU not detected"
     echo "  --force-cpu        Force CPU-only mode even if GPU detected"
+    echo "  --no-cache         Build Docker images without using cache"
     echo ""
     echo "Environment Variables:"
     echo "  XYNE_DATA_DIR      Data directory path (default: ./data)"
@@ -98,6 +99,7 @@ detect_gpu_support() {
 COMMAND=${1:-""}
 FORCE_GPU=false
 FORCE_CPU=false
+NO_CACHE_FLAG=""
 
 # Show help if no command provided
 if [ -z "$COMMAND" ]; then
@@ -115,6 +117,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --force-cpu)
             FORCE_CPU=true
+            shift
+            ;;
+        --no-cache)
+            NO_CACHE_FLAG="--no-cache"
             shift
             ;;
         *)
@@ -240,7 +246,7 @@ start_infrastructure() {
         echo -e "${BLUE} Using CPU-only Vespa${NC}"
     fi
 
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build $NO_CACHE_FLAG
     echo -e "${GREEN} Infrastructure services started${NC}"
 }
 
@@ -276,7 +282,7 @@ update_app() {
     # Build new image
     echo "  Building new app image..."
     INFRA_COMPOSE=$(get_infrastructure_compose)
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml build app
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml build $NO_CACHE_FLAG app
     
     # Stop and recreate both app services
     echo " Recreating main app service..."
@@ -301,7 +307,7 @@ update_infrastructure() {
     docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull || echo -e "${YELLOW}Some images require building (this is normal for custom images)${NC}"
 
     # Build and start all services (--build will handle custom images)
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
+    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build $NO_CACHE_FLAG
     echo -e "${GREEN} Infrastructure services updated${NC}"
 }
 

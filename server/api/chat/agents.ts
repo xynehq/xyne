@@ -3049,7 +3049,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           const dataSourceSpan = streamSpan.startSpan("get_all_data_sources")
           const allDataSources = await getAllDocumentsForAgent(
             [Apps.DataSource],
-            agentForDb?.appIntegrations as string[],
+            [email],
+            100,
+            (agentForDb?.appIntegrations as string[])?.join(',') || '',
           )
           dataSourceSpan.end()
           loggerWithChild({ email }).info(
@@ -3326,7 +3328,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         const dataSourceSpan = nonStreamSpan.startSpan("get_all_data_sources")
         const allDataSources = await getAllDocumentsForAgent(
           [Apps.DataSource],
-          agentForDb?.appIntegrations as string[],
+          [email],
+          100,
+          (agentForDb?.appIntegrations as string[])?.join(',') || '',
         )
         dataSourceSpan.end()
         loggerWithChild({ email }).info(
