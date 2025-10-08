@@ -48,6 +48,7 @@ interface WorkflowTemplate {
   }
   userId: number
   workspaceId: number
+  isPublic: boolean
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
@@ -1137,7 +1138,7 @@ const Header = ({
   selectedTemplate?: WorkflowTemplate | null;
   onWorkflowNameChange?: (newName: string) => void;
   isEditable?: boolean;
-  onSaveChanges?: () => void;
+  onSaveChanges?: (isPublic: boolean) => void;
   isSaveDisabled?: boolean;
   hasUnsavedChanges?: boolean;
   onConfirmRefresh?: (callback: () => void) => void;
@@ -1233,10 +1234,11 @@ const Header = ({
         </span>
       </div>
 
-      {/* Save Changes Button - only show in builder mode (create from blank) */}
+     {/* Save Buttons - only show in builder mode (create from blank) */}
       {onSaveChanges && isEditable && (
+        <div className="flex items-center gap-3">
           <button
-            onClick={onSaveChanges}
+            onClick={() => onSaveChanges(false)}
             disabled={isSaveDisabled}
             className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
               isSaveDisabled
@@ -1246,6 +1248,18 @@ const Header = ({
           >
             Save Changes
           </button>
+          <button
+            onClick={() => onSaveChanges(true)}
+            disabled={isSaveDisabled}
+            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
+              isSaveDisabled
+                ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
+            }`}
+          >
+            Save as Public
+          </button>
+        </div>
       )}
     </div>
   )
@@ -3331,7 +3345,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [builder, hasWorkflowChanged, handleConfirmRefresh])
 
   // Handler for save changes button
-  const handleSaveChanges = useCallback(async () => {
+  const handleSaveChanges = useCallback(async (isPublic: boolean) => {
     try {
       // Check if we have nodes to create a workflow
       if (nodes.length === 0 || (nodes.length === 1 && (nodes[0].data as any)?.step?.type === "trigger_selector")) {
@@ -3345,6 +3359,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       const workflowData = {
         name: derivedName,
         description: selectedTemplate?.description || "Workflow created from builder",
+        isPublic,
         version: "1.0.0",
         config: {
           ai_model: "gemini-1.5-pro",

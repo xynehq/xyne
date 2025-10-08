@@ -232,6 +232,7 @@ export interface WorkflowTemplate {
   description: string
   version: string
   status: string
+  isPublic?: boolean
   config: {
     ai_model?: string
     max_file_size?: string

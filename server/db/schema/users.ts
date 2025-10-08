@@ -64,7 +64,6 @@ export const userPublicSchema = selectUserSchema.omit({
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-  id: true,
   workspaceId: true,
 })
 

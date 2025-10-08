@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm"
+import { eq, desc, and, or } from "drizzle-orm"
 import type { TxnOrClient } from "@/types"
 import {
   workflowTemplate,
@@ -23,6 +23,7 @@ export const createWorkflowTemplate = async (
     name: string
     userId: number
     workspaceId: number
+    isPublic?: boolean
     description?: string
     version?: string
     config?: any
@@ -35,6 +36,7 @@ export const createWorkflowTemplate = async (
       name: data.name,
       userId: data.userId,
       workspaceId: data.workspaceId,
+      isPublic: data.isPublic,
       description: data.description,
       version: data.version || "1.0.0",
       config: data.config || {},
@@ -45,7 +47,7 @@ export const createWorkflowTemplate = async (
   return selectWorkflowTemplateSchema.parse(template)
 }
 
-export const getWorkflowTemplateById = async (
+export const getWorkflowTemplateByIdWithPublicCheck = async (
   trx: TxnOrClient,
   id: string,
   workspaceId: number,
@@ -55,16 +57,19 @@ export const getWorkflowTemplateById = async (
     .select()
     .from(workflowTemplate)
     .where(and(
-      eq(workflowTemplate.workspaceId, workspaceId),
-      eq(workflowTemplate.userId, userId),
       eq(workflowTemplate.id, id),
-    ),)
+      eq(workflowTemplate.workspaceId, workspaceId),
+      or(
+        eq(workflowTemplate.isPublic, true),
+        eq(workflowTemplate.userId, userId),
+      )
+    ))
     .limit(1)
 
   return template ? selectWorkflowTemplateSchema.parse(template) : null
 }
 
-export const getAllWorkflowTemplates = async (
+export const getAccessibleWorkflowTemplates = async (
   trx: TxnOrClient,
   workspaceId: number,
   userId: number,
@@ -74,7 +79,10 @@ export const getAllWorkflowTemplates = async (
     .from(workflowTemplate)
     .where(and(
       eq(workflowTemplate.workspaceId, workspaceId),
-      eq(workflowTemplate.userId, userId),
+      or(
+        eq(workflowTemplate.isPublic, true),
+        eq(workflowTemplate.userId, userId),
+      )
     ))
     .orderBy(desc(workflowTemplate.createdAt))
 

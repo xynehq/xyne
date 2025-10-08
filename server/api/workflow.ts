@@ -41,6 +41,7 @@ import {
   sql,
   inArray,
   and,
+  or,
   gte,
   lte,
   ilike,
@@ -143,7 +144,10 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
       .from(workflowTemplate)
       .where(and(
         eq(workflowTemplate.workspaceId, user.workspaceId),
-        eq(workflowTemplate.userId, user.id),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, user.id),
+        )
       ))
 
     // Get step templates and root step details for each workflow
@@ -217,9 +221,12 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
       .select()
       .from(workflowTemplate)
       .where(and(
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        eq(workflowTemplate.userId, user.id),
         eq(workflowTemplate.id, templateId),
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, user.id),
+        )
       ))
 
     if (!template || template.length === 0) {
@@ -304,14 +311,19 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       throw new HTTPException(400, { message: "rootStepInput is required" })
     }
 
-    // Get template and validate
+    // Get template and validate (allow access to user's own or public templates)
     const template = await db
       .select()
       .from(workflowTemplate)
       .where(and(
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        eq(workflowTemplate.userId, user.id),
         eq(workflowTemplate.id, templateId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          and(
+            eq(workflowTemplate.workspaceId, user.workspaceId),
+            eq(workflowTemplate.userId, user.id),
+          )
+        )
       ))
     if (!template || template.length === 0) {
       throw new HTTPException(404, { message: "Workflow template not found" })
@@ -695,7 +707,10 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       .where(and(
         eq(workflowTemplate.id, templateId),
         eq(workflowTemplate.workspaceId, user.workspaceId),
-        eq(workflowTemplate.userId, user.id),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, user.id),
+        )
       ))
 
     if (!template || template.length === 0) {
@@ -2182,6 +2197,7 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
         name: requestData.name,
         userId: user.id,
         workspaceId: user.workspaceId,
+        isPublic: requestData.isPublic,
         description: requestData.description,
         version: requestData.version || "1.0.0",
         status: "draft",
@@ -2241,6 +2257,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         userId: user.id,
         workspaceId: user.workspaceId,
         description: requestData.description,
+        isPublic: requestData.isPublic,
         version: requestData.version || "1.0.0",
         status: "draft",
         config: requestData.config || {},
@@ -2872,9 +2889,12 @@ export const AddStepToWorkflowApi = async (c: Context) => {
       .select()
       .from(workflowTemplate)
       .where(and(
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        eq(workflowTemplate.userId, user.id),
         eq(workflowTemplate.id, templateId),
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, user.id),
+        )
       ))
 
     if (!template) {
@@ -3040,9 +3060,12 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       .select()
       .from(workflowTemplate)
       .where(and(
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        eq(workflowTemplate.userId, user.id),
         eq(workflowTemplate.id, templateId),
+        eq(workflowTemplate.workspaceId, user.workspaceId),
+        or(
+          eq(workflowTemplate.isPublic, true),
+          eq(workflowTemplate.userId, user.id),
+        )
       ))
 
     if (!template) {

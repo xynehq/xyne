@@ -30,6 +30,7 @@ interface WorkflowTemplate {
   };
   userId: number;
   workspaceId: number;
+  isPublic: boolean;
   rootWorkflowStepTemplateId: string;
   createdAt: string;
   updatedAt: string;
@@ -140,7 +141,7 @@ function WorkflowComponent() {
   const [isExecutionMode, setIsExecutionMode] = useState(false)
   const [workflowSearchTerm, setWorkflowSearchTerm] = useState("")
   const [isBuilderMode, setIsBuilderMode] = useState(true) // true for create/edit, false for view-only
-
+  const [workflowFilter, setWorkflowFilter] = useState<"all" | "shared-workflows" | "my-workflows">("all")
 
   const fetchWorkflows = async () => {
     try {
@@ -509,6 +510,7 @@ function WorkflowComponent() {
               config: executionTemplate?.config || {},
               userId: executionTemplate?.userId || 0,
               workspaceId: executionTemplate?.workspaceId || 0,
+              isPublic: executionTemplate?.isPublic,
               rootWorkflowStepTemplateId: steps[0]?.id || '',
               createdAt: executionTemplate?.createdAt || new Date().toISOString(),
               updatedAt: executionTemplate?.updatedAt || new Date().toISOString(),
@@ -740,6 +742,40 @@ function WorkflowComponent() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Workflow Filter Tabs */}
+                  <div className="flex items-center gap-1 mb-6 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
+                    <button
+                      onClick={() => setWorkflowFilter("all")}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        workflowFilter === "all"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setWorkflowFilter("my-workflows")}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        workflowFilter === "my-workflows"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                      }`}
+                    >
+                      My workflows
+                    </button>
+                    <button
+                      onClick={() => setWorkflowFilter("shared-workflows")}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        workflowFilter === "shared-workflows"
+                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                      }`}
+                    >
+                      Shared workflows
+                    </button>
+                  </div>
                   
                   {loading ? (
                     <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(327px, 1fr))', justifyContent: 'stretch' }}>
@@ -758,10 +794,21 @@ function WorkflowComponent() {
                       ))}
                     </div>
                   ) : (() => {
-                    // Filter workflows based on search term
-                    const filteredWorkflows = workflows.filter(workflow =>
+                    // Filter workflows based on search term and filter type
+                    let filteredWorkflows = workflows.filter(workflow =>
                       workflow.name.toLowerCase().includes(workflowSearchTerm.toLowerCase())
                     )
+
+                    // Apply additional filtering based on workflowFilter
+                    if (workflowFilter === "my-workflows") {
+                      filteredWorkflows = filteredWorkflows.filter(workflow =>
+                        workflow.userId === user?.id
+                      )
+                    } else if (workflowFilter === "shared-workflows") {
+                      filteredWorkflows = filteredWorkflows.filter(workflow =>
+                        workflow.isPublic === true && workflow.userId !== user?.id
+                      )
+                    }
                     
                     if (filteredWorkflows.length > 0) {
                       // If 4 or fewer workflows, show fixed 4-column grid with placeholders

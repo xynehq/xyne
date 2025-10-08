@@ -22,6 +22,7 @@ interface WorkflowTemplate {
   }
   userId: number
   workspaceId: number
+  isPublic: boolean
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
