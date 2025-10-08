@@ -216,31 +216,10 @@ import type { User } from "@microsoft/microsoft-graph-types"
 import { getAuth, safeGet } from "../agent"
 import { getChunkCountPerDoc } from "./chunk-selection"
 import { handleAttachmentDelete } from "../files"
-import { A } from "ollama/dist/shared/ollama.6319775f.mjs"
+import { expandSheetIds } from "@/search/utils"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
-
-export function expandSheetIds(fileId: string): string[] {
-  // Check if the fileId matches the pattern docId_sheet_number
-  const sheetMatch = fileId.match(/^(.+)_sheet_(\d+)$/)
-  
-  if (!sheetMatch) {
-    // Not a sheet ID, return as is
-    return [fileId]
-  }
-  
-  const [, docId, sheetNumberStr] = sheetMatch
-  const sheetNumber = parseInt(sheetNumberStr, 10)
-  // Generate IDs from docId_sheet_0 to docId_sheet_number
-  const expandedIds: string[] = []
-  const upper = Number.isFinite(sheetNumber) ? sheetNumber : 1
-  for (let i = 0; i < upper; i++) {
-    expandedIds.push(`${docId}_sheet_${i}`)
-  }
-  
-  return expandedIds
-}
 
 export async function resolveNamesToEmails(
   intent: Intent,

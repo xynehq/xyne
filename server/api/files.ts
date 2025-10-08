@@ -30,7 +30,7 @@ import { isDataSourceError } from "@/integrations/dataSource/errors"
 import { handleAttachmentDeleteSchema } from "./search"
 import { getErrorMessage } from "@/utils"
 import { promises as fs } from "node:fs"
-import { expandSheetIds } from "./chat/chat"
+import { expandSheetIds } from "@/search/utils"
 
 const { JwtPayloadKey } = config
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })

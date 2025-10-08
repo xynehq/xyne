@@ -122,7 +122,6 @@ import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   buildContext,
   buildUserQuery,
-  expandSheetIds,
   getThreadContext,
   isContextSelected,
   UnderstandMessageAndAnswer,
@@ -157,6 +156,7 @@ import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
 import { applyFollowUpContext } from "@/utils/parseAttachment"
+import { expandSheetIds } from "@/search/utils"
 const {
   JwtPayloadKey,
   defaultBestModel,
