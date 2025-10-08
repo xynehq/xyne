@@ -27,6 +27,7 @@ import {
   GooglePeopleEntity,
   SlackEntity,
   MicrosoftPeopleEntity,
+  
 } from "@xyne/vespa-ts/types"
 export {
   GooglePeopleEntity,
@@ -52,8 +53,10 @@ export type {
   SearchResultsSchema,
   SearchResponse,
   SearchResultDiscriminatedUnion,
+  
 } from "@xyne/vespa-ts/types"
 
+export type VespaFile = z.infer<typeof VespaFileSchema>
 export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)

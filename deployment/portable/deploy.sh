@@ -25,6 +25,8 @@ show_help() {
     echo "  restart            Restart all services"
     echo "  update-app         Update only the main app service (efficient for code changes)"
     echo "  update-sync        Update only the sync server service"
+    echo "  update-app-version <version>  Update both app and sync to a specific Docker image tag"
+    echo "  update-sync-version <version> Update sync server to a specific Docker image tag"
     echo "  update-infra       Update infrastructure services"
     echo "  logs [service]     Show logs for all services or specific service"
     echo "  status             Show status of all services"
@@ -263,17 +265,28 @@ start_infrastructure() {
 }
 
 start_app() {
-    echo -e "${YELLOW} Starting application services...${NC}"
+    echo -e "${YELLOW}Starting application services...${NC}"
 
     COMPOSE_FILES=$(get_compose_files)
     DOCKER_COMPOSE=$(get_docker_compose_cmd)
-    $DOCKER_COMPOSE $COMPOSE_FILES up -d app
-    echo -e "${GREEN} Main application service started${NC}"
 
-    echo -e "${YELLOW} Starting sync server...${NC}"
-    $DOCKER_COMPOSE $COMPOSE_FILES up -d app-sync
-    echo -e "${GREEN} Sync server started${NC}"
+    if [ "$APP_DEPLOY_MODE" = "build" ]; then
+        echo -e "${BLUE}Building app locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app
+        echo -e "${BLUE}Building sync server locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app-sync
+
+        echo -e "${BLUE}Starting services with locally built images...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app app-sync
+    else
+        echo -e "${BLUE}Using prebuilt image (version mode, may pull from registry)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d app
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d app-sync
+    fi
+
+    echo -e "${GREEN}Application services started${NC}"
 }
+
 
 get_infrastructure_compose() {
     if detect_gpu_support >/dev/null 2>&1; then
@@ -477,23 +490,25 @@ revert_app() {
         echo "Example: $0 revert v1.2.3"
         exit 1
     fi
-    
+
+    IMAGE_NAME="xynehq/xyne"
+
     echo -e "${YELLOW}Reverting application to image tag: $target_tag${NC}"
     
     # Check if the image exists locally or can be pulled
-    if ! docker image inspect "xyne:$target_tag" >/dev/null 2>&1; then
-        echo -e "${YELLOW}Image xyne:$target_tag not found locally, attempting to pull...${NC}"
-        if ! docker pull "xyne:$target_tag" 2>/dev/null; then
-            echo -e "${RED}ERROR: Failed to pull image xyne:$target_tag${NC}"
+    if ! docker image inspect "$IMAGE_NAME:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image $IMAGE_NAME:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "$IMAGE_NAME:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image $IMAGE_NAME:$target_tag${NC}"
             echo "Available local images:"
-            docker images xyne --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            docker images $IMAGE_NAME --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
             exit 1
         fi
     fi
     
     # Tag the target image as 'latest' for docker-compose
-    echo -e "${YELLOW}Tagging xyne:$target_tag as xyne:latest${NC}"
-    docker tag "xyne:$target_tag" "xyne:latest"
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
+    docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
     
     # Stop and recreate both app services with the reverted image
     COMPOSE_FILES=$(get_compose_files)
@@ -514,6 +529,98 @@ revert_app() {
     show_status
 }
 
+# Update both app and app-sync to a given version
+update_app_version() {
+    local target_tag=$1
+    if [ -z "$target_tag" ]; then
+        echo -e "${RED}ERROR: No image tag specified${NC}"
+        echo "Usage: $0 update-app-version <tag>"
+        echo "Example: $0 update-app-version 1.2.3"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}Updating app and sync to image tag: $target_tag${NC}"
+
+    IMAGE_NAME="xynehq/xyne"
+
+    # Check if the image exists locally or can be pulled
+    if ! docker image inspect "$IMAGE_NAME:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image $IMAGE_NAME:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "$IMAGE_NAME:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image $IMAGE_NAME:$target_tag${NC}"
+            echo "Available local images:"
+            docker images $IMAGE_NAME --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            exit 1
+        fi
+    fi
+
+    # Tag the target image as 'latest' for docker-compose
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
+    docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
+
+    # Stop and recreate both app services with the new image
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    echo -e "${YELLOW}Stopping current app services${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES stop app app-sync
+
+    echo -e "${YELLOW}Starting main app service with new image${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app
+
+    echo -e "${YELLOW}Starting sync server with new image${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app-sync
+
+    echo -e "${GREEN}App and sync server updated to tag: $target_tag${NC}"
+    echo -e "${BLUE}INFO: Database and Vespa services were not affected${NC}"
+
+    # Show status
+    show_status
+}
+
+# Update only app-sync to a given version
+update_sync_version() {
+    local target_tag=$1
+    if [ -z "$target_tag" ]; then
+        echo -e "${RED}ERROR: No image tag specified${NC}"
+        echo "Usage: $0 update-sync-version <tag>"
+        echo "Example: $0 update-sync-version 1.2.3"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}Updating sync server to image tag: $target_tag${NC}"
+
+    IMAGE_NAME="xynehq/xyne"
+    # Check if the image exists locally or can be pulled
+    if ! docker image inspect "$IMAGE_NAME:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image $IMAGE_NAME:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "$IMAGE_NAME:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image $IMAGE_NAME:$target_tag${NC}"
+            echo "Available local images:"
+            docker images $IMAGE_NAME --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            exit 1
+        fi
+    fi
+
+    # Tag the target image as 'latest' for docker-compose
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
+    docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
+
+    # Stop and recreate only app-sync service with the new image
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    echo -e "${YELLOW}Stopping sync server${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES stop app-sync
+
+    echo -e "${YELLOW}Starting sync server with new image${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app-sync
+
+    echo -e "${GREEN}Sync server updated to tag: $target_tag${NC}"
+    echo -e "${BLUE}INFO: Database, Vespa, and main app services were not affected${NC}"
+
+    # Show status
+    show_status
+}
+
 # Main script logic
 case $COMMAND in
     start)
@@ -521,9 +628,28 @@ case $COMMAND in
         setup_permissions
         start_infrastructure
         sleep 10  # Wait for infrastructure to be ready
+
+        echo -e "${YELLOW}Select app deployment mode:${NC}"
+        echo "  1) build (default)"
+        echo "  2) version"
+        read -p "Enter choice [1/2]: " user_choice
+
+        if [ "$user_choice" = "2" ]; then
+            APP_DEPLOY_MODE="version"
+            echo -e "${BLUE}Using docker-compose.app-version.yml and docker-compose.sync-version.yml${NC}"
+            cp docker-compose.app-version.yml docker-compose.app.yml
+            cp docker-compose.sync-version.yml docker-compose.sync.yml
+        else
+            APP_DEPLOY_MODE="build"
+            echo -e "${BLUE}Using docker-compose.app-build.yml and docker-compose.sync-build.yml${NC}"
+            cp docker-compose.app-build.yml docker-compose.app.yml
+            cp docker-compose.sync-build.yml docker-compose.sync.yml
+        fi
+
         start_app
         show_status
         ;;
+
     start-infra)
         setup_environment
         setup_permissions
@@ -580,6 +706,12 @@ case $COMMAND in
         ;;
     revert)
         revert_app $1
+        ;;
+    update-app-version)
+        update_app_version $1
+        ;;
+    update-sync-version)
+        update_sync_version $1
         ;;
     help|--help|-h)
         show_help
