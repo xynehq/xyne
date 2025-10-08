@@ -2,8 +2,9 @@ import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import type { DuckDBQuery } from "@/types";
 import { getProviderByModel } from "@/ai/provider"
-import { Models } from "@/ai/types"
+import type { Models } from "@/ai/types"
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
+import config from "@/config"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "sqlInference",
@@ -23,6 +24,11 @@ export const analyzeQueryAndGenerateSQL = async (
   schema: string,
   fewShotSamples: string
 ): Promise<DuckDBQuery | null> => {
+  const model : Models = config.sqlInferenceModel as Models
+  if (!model) {
+    Logger.warn("SQL inference model not set, returning null");
+    return null;
+  }
   Logger.debug(`Analyzing query and generating SQL`);
 
   const stripNoise = (s: string) => {
@@ -68,7 +74,7 @@ schema: ${schema}
 ${fewShotSamples}`;
 
   try {
-    const provider = getProviderByModel(Models.Vertex_Claude_Sonnet_4);
+    const provider = getProviderByModel(model);
     
     const messages: Message[] = [
       {
@@ -78,7 +84,7 @@ ${fewShotSamples}`;
     ]
 
     const modelParams = {
-      modelId: Models.Vertex_Claude_Sonnet_4,
+      modelId: model,
       temperature: 0.1,
       max_new_tokens: 512,
       stream: false,

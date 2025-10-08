@@ -91,10 +91,10 @@ const validateFile = (file: File): void => {
   }
 }
 
-const checkFileSize = (file: File, maxFileSizeMB: number): void => {
-  const fileSizeMB = file.size / (1024 * 1024)
+export const checkFileSize = (size: number, maxFileSizeMB: number): void => {
+  const fileSizeMB = size / (1024 * 1024)
   if (fileSizeMB > maxFileSizeMB) {
-    throw createFileSizeError(file, maxFileSizeMB)
+    throw createFileSizeError(size, maxFileSizeMB)
   }
 }
 
@@ -479,7 +479,7 @@ export const handleDataSourceFileUpload = async (
           `LLM API endpoint is not set. Skipping image: ${options.fileName}`,
         )
       }
-      checkFileSize(file, DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB)
+      checkFileSize(file.size, DATASOURCE_CONFIG.MAX_IMAGE_FILE_SIZE_MB)
       const imageBuffer = Buffer.from(await file.arrayBuffer())
       const type = await imageType(new Uint8Array(imageBuffer))
       if (!type || !DATASOURCE_CONFIG.SUPPORTED_IMAGE_TYPES.has(type.mime)) {
@@ -514,26 +514,26 @@ export const handleDataSourceFileUpload = async (
     } else {
       // Process based on file type
       if (mimeType === "application/pdf") {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_PDF_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_PDF_FILE_SIZE_MB)
         const fileBuffer = new Uint8Array(await file.arrayBuffer())
         const processedFile = await processPdfContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isDocxFile(mimeType)) {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_DOCX_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_DOCX_FILE_SIZE_MB)
         const fileBuffer = new Uint8Array(await file.arrayBuffer())
         const processedFile = await processDocxContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isPptxFile(mimeType)) {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_PPTX_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_PPTX_FILE_SIZE_MB)
         const fileBuffer = new Uint8Array(await file.arrayBuffer())
         const processedFile = await processPptxContent(fileBuffer, options)
         processedFiles = [processedFile]
       } else if (isSheetFile(mimeType)) {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_SPREADSHEET_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_SPREADSHEET_FILE_SIZE_MB)
         const fileBuffer = Buffer.from(await file.arrayBuffer())
         processedFiles = await processSheetContent(fileBuffer, options)
       } else if (isTextFile(mimeType)) {
-        checkFileSize(file, DATASOURCE_CONFIG.MAX_TEXT_FILE_SIZE_MB)
+        checkFileSize(file.size, DATASOURCE_CONFIG.MAX_TEXT_FILE_SIZE_MB)
         const content = await file.text()
         const processedFile = await processTextContent(content, options)
         processedFiles = [processedFile]

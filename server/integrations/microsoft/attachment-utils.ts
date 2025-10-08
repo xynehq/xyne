@@ -19,6 +19,7 @@ import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { makeGraphApiCall, type MicrosoftGraphClient } from "./client"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
+import { checkFileSize } from "../dataSource"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "microsoft-attachments",
@@ -194,8 +195,9 @@ export const getOutlookAttachmentChunks = async (
 
     // Process based on MIME type
     if (mimeType === "application/pdf") {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_PDF_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_PDF_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_PDF_SIZE} MB`,
         )
@@ -215,8 +217,9 @@ export const getOutlookAttachmentChunks = async (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       mimeType === "application/msword"
     ) {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_DOCX_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_DOCX_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_DOCX_SIZE} MB`,
         )
@@ -236,8 +239,9 @@ export const getOutlookAttachmentChunks = async (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
       mimeType === "application/vnd.ms-powerpoint"
     ) {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_PPTX_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_PPTX_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_PPTX_SIZE} MB`,
         )
@@ -257,8 +261,9 @@ export const getOutlookAttachmentChunks = async (
       mimeType === "text/html" ||
       mimeType === "text/markdown"
     ) {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_TEXT_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_TEXT_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_TEXT_SIZE} MB`,
         )
@@ -360,8 +365,9 @@ export const getOutlookSpreadsheetSheets = async (
       mimeType === "application/vnd.ms-excel" ||
       mimeType === "text/csv"
     ) {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_SHEET_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_SHEET_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_SHEET_SIZE} MB`,
         )

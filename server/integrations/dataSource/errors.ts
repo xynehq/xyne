@@ -92,10 +92,10 @@ export const createFileValidationError = (file: File): FileValidationError => {
 }
 
 export const createFileSizeError = (
-  file: File,
+  size: number,
   maxSizeMB: number,
 ): FileSizeExceededError => {
-  const actualSizeMB = file.size / (1024 * 1024)
+  const actualSizeMB = size / (1024 * 1024)
   return new FileSizeExceededError(maxSizeMB, actualSizeMB)
 }
 

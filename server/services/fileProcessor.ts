@@ -37,6 +37,8 @@ export interface SheetProcessingResult extends ProcessingResult {
   docId: string
 }
 
+type ProcessingResultArray = (ProcessingResult | SheetProcessingResult)[]
+
 export class FileProcessorService {
 
   static async processFile(
@@ -47,7 +49,7 @@ export class FileProcessorService {
     storagePath?: string,
     extractImages: boolean = false,
     describeImages: boolean = false,
-  ): Promise<(ProcessingResult | SheetProcessingResult)[]> {
+  ): Promise<ProcessingResultArray> {
     const baseMimeType = getBaseMimeType(mimeType || "text/plain")
     let chunks: string[] = []
     let chunks_pos: number[] = []

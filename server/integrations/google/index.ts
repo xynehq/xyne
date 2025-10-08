@@ -1074,6 +1074,7 @@ import {
   totalIngestedMails,
 } from "@/metrics/google/gmail-metrics"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
+import { checkFileSize } from "../dataSource"
 
 const stats = z.object({
   type: z.literal(WorkerResponseTypes.Stats),
@@ -2188,11 +2189,11 @@ export const getSheetsListFromOneSpreadsheet = async (
 ): Promise<VespaFileWithDrivePermission[]> => {
   // Early size check before fetching spreadsheet data
   const sizeInBytes = spreadsheet.size ? parseInt(spreadsheet.size, 10) : 0
-  if (!isNaN(sizeInBytes) && sizeInBytes > MAX_GD_SHEET_SIZE) {
-    const sizeInMB = (sizeInBytes / (1024 * 1024)).toFixed(2)
-    const maxSizeInMB = (MAX_GD_SHEET_SIZE / (1024 * 1024)).toFixed(2)
+  try {
+    checkFileSize(sizeInBytes, MAX_GD_SHEET_SIZE)
+  } catch (error) {
     loggerWithChild({ email: userEmail }).warn(
-      `Ignoring ${spreadsheet.name} as its size (${sizeInMB} MB) exceeds the limit of ${maxSizeInMB} MB`,
+      `Ignoring ${spreadsheet.name} as its size (${Math.round(sizeInBytes / 1024 / 1024)} MB) exceeds the limit of ${MAX_GD_SHEET_SIZE} MB`,
     )
     return []
   }
