@@ -128,6 +128,8 @@ import {
   type VespaSearchResultsSchema,
   KnowledgeBaseEntity,
   KbItemsSchema,
+  AttachmentEntity,
+  fileSchema,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import {
@@ -213,6 +215,7 @@ import { getDateForAI } from "@/utils/index"
 import type { User } from "@microsoft/microsoft-graph-types"
 import { getAuth, safeGet } from "../agent"
 import { getChunkCountPerDoc } from "./chunk-selection"
+import { handleAttachmentDelete } from "../files"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -485,7 +488,7 @@ const checkAndYieldCitations = async function* (
           const f = (item as any)?.fields
           if (
             f?.sddocname === dataSourceFileSchema ||
-            f?.entity === KnowledgeBaseEntity.Attachment
+            Object.values(AttachmentEntity).includes(f?.entity)
           ) {
             // Skip datasource and attachment files from citations
             continue
@@ -770,106 +773,13 @@ export const ChatDeleteApi = async (c: Context) => {
         throw new HTTPException(404, { message: "Chat not found" })
       }
 
-      // Get all messages for the chat to find attachments
+      // Get all messages for the chat to delete attachments
       const messagesToDelete = await getChatMessagesWithAuth(tx, chatId, email)
-
-      // Collect all attachment file IDs that need to be deleted
-      const imageAttachmentFileIds: string[] = []
-      const nonImageAttachmentFileIds: string[] = []
 
       for (const message of messagesToDelete) {
         if (message.attachments && Array.isArray(message.attachments)) {
-          const attachments =
-            message.attachments as unknown as AttachmentMetadata[]
-          for (const attachment of attachments) {
-            if (attachment && typeof attachment === "object") {
-              if (attachment.fileId) {
-                // Check if this is an image attachment using both isImage field and fileType
-                const isImageAttachment =
-                  attachment.isImage ||
-                  (attachment.fileType && isImageFile(attachment.fileType))
-
-                if (isImageAttachment) {
-                  imageAttachmentFileIds.push(attachment.fileId)
-                } else {
-                  nonImageAttachmentFileIds.push(attachment.fileId)
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Delete image attachments and their thumbnails from disk
-      if (imageAttachmentFileIds.length > 0) {
-        loggerWithChild({ email: email }).info(
-          `Deleting ${imageAttachmentFileIds.length} image attachment files and their thumbnails for chat ${chatId}`,
-        )
-
-        for (const fileId of imageAttachmentFileIds) {
-          try {
-            // Validate fileId to prevent path traversal
-            if (
-              fileId.includes("..") ||
-              fileId.includes("/") ||
-              fileId.includes("\\")
-            ) {
-              loggerWithChild({ email: email }).error(
-                `Invalid fileId detected: ${fileId}. Skipping deletion for security.`,
-              )
-              continue
-            }
-            const imageBaseDir = path.resolve(
-              process.env.IMAGE_DIR || "downloads/xyne_images_db",
-            )
-
-            const imageDir = path.join(imageBaseDir, fileId)
-            try {
-              await fs.access(imageDir)
-              await fs.rm(imageDir, { recursive: true, force: true })
-              loggerWithChild({ email: email }).info(
-                `Deleted image attachment directory: ${imageDir}`,
-              )
-            } catch (attachmentError) {
-              loggerWithChild({ email: email }).warn(
-                `Image attachment file ${fileId} not found in either directory during chat deletion`,
-              )
-            }
-          } catch (error) {
-            loggerWithChild({ email: email }).error(
-              error,
-              `Failed to delete image attachment file ${fileId} during chat deletion: ${getErrorMessage(error)}`,
-            )
-          }
-        }
-      }
-
-      // Delete non-image attachments from Vespa kb_items schema
-      if (nonImageAttachmentFileIds.length > 0) {
-        loggerWithChild({ email: email }).info(
-          `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa kb_items schema for chat ${chatId}`,
-        )
-
-        for (const fileId of nonImageAttachmentFileIds) {
-          try {
-            // Delete from Vespa kb_items schema using the proper Vespa function
-            await DeleteDocument(fileId, KbItemsSchema)
-            loggerWithChild({ email: email }).info(
-              `Successfully deleted non-image attachment ${fileId} from Vespa kb_items schema`,
-            )
-          } catch (error) {
-            const errorMessage = getErrorMessage(error)
-            if (errorMessage.includes("404 Not Found")) {
-              loggerWithChild({ email: email }).warn(
-                `Non-image attachment ${fileId} not found in Vespa kb_items schema (may have been already deleted)`,
-              )
-            } else {
-              loggerWithChild({ email: email }).error(
-                error,
-                `Failed to delete non-image attachment ${fileId} from Vespa kb_items schema: ${errorMessage}`,
-              )
-            }
-          }
+          const attachments = message.attachments as AttachmentMetadata[]
+            await handleAttachmentDelete(attachments, email)
         }
       }
 

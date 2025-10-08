@@ -83,6 +83,7 @@ import {
   VespaChatUserSchema,
   type VespaSearchResult,
   type VespaSearchResults,
+  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
@@ -391,7 +392,7 @@ const checkAndYieldCitationsForAgent = async function* (
           }
 
           // we dont want citations for attachments in the chat
-          if (item.source.entity === KnowledgeBaseEntity.Attachment) {
+          if (Object.values(AttachmentEntity).includes(item.source.entity as AttachmentEntity)) {
             continue
           }
 
