@@ -895,14 +895,38 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       // All executed steps are completed
       shouldComplete = true
       completionReason = "All executed steps completed"
-    } else if (activeSteps.length === 0 && manualStepsAwaitingInput.length === 0) {
-      // No active steps and no manual steps awaiting input
-      // This means we've reached the end of the execution path
-      shouldComplete = true
-      completionReason = "End of execution path reached"
     } else {
-      // There are still active steps or manual steps awaiting input
-      shouldComplete = false
+      // Check if any completed step is a leaf node (has no next steps that are executed)
+      const leafNodeCompleted = completedSteps.some(completedStep => {
+        // A step is a leaf node if it has no next steps OR all its next steps are unexecuted (draft)
+        const nextStepIds = completedStep.nextStepIds || []
+        if (nextStepIds.length === 0) {
+          // No next steps - definitely a leaf node
+          return true
+        }
+        
+        // Check if all next steps are unexecuted (not in executedSteps)
+        const executedStepIds = executedSteps.map(s => s.id)
+        const allNextStepsUnexecuted = nextStepIds.every(nextId => 
+          !executedStepIds.includes(nextId)
+        )
+        
+        return allNextStepsUnexecuted
+      })
+
+      if (leafNodeCompleted) {
+        shouldComplete = true
+        completionReason = "Leaf node completed - workflow finished"
+        Logger.info(`Detected leaf node completion in workflow ${executionId}`)
+      } else if (activeSteps.length === 0 && manualStepsAwaitingInput.length === 0) {
+        // No active steps and no manual steps awaiting input
+        // This means we've reached the end of the execution path
+        shouldComplete = true
+        completionReason = "End of execution path reached"
+      } else {
+        // There are still active steps or manual steps awaiting input
+        shouldComplete = false
+      }
     }
 
     // Update workflow metadata with current progress
