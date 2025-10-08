@@ -1,8 +1,9 @@
-import React from "react"
+import React, { useMemo } from "react"
 import { ChevronRight } from "lucide-react"
 import { Apps, DriveEntity  } from "shared/types"
 import { getIcon } from "@/lib/common"
 import { api } from "@/api"
+import {VespaFile} from "shared/types"
 
 
 
@@ -15,21 +16,26 @@ function isItemSelectedWithInheritance(
     name: string
     type: "cl-root" | "cl" | "folder" | "drive-root" | "drive-folder"
   }>,
+  selectedIntegrations: Record<string, boolean>,
 ): boolean {
   
-  // Check if item is directly selected
+
   if (selectedItemsInGoogleDrive.has(itemId)) {
     return true
   }
+  const hasGoogleDriveSelected = !!selectedIntegrations["googledrive"]
+  const isGoogleDriveSelectAll =
+    hasGoogleDriveSelected && selectedItemsInGoogleDrive.size === 0
 
-  // Check if any parent folder in the current navigation path is selected
+  if (isGoogleDriveSelectAll) return true
+ 
   const parentFolders = navigationPath
     .filter((pathItem) => pathItem.type === "drive-folder")
     .map((pathItem) => pathItem.id)
 
-  // Check if any parent folder is selected
+ 
   for (const parentFolderId of parentFolders) {
-    // Find the parent folder in selected items
+
     for (const selectedItemId of selectedItemsInGoogleDrive) {
       const selectedItemDetail =
         selectedItemDetailsInGoogleDrive[selectedItemId]
@@ -37,7 +43,7 @@ function isItemSelectedWithInheritance(
         const selectedDocId =
           selectedItemDetail.fields?.docId || selectedItemDetail.docId
         if (selectedDocId === parentFolderId) {
-          // This item is inside a selected folder
+         
           return true
         }
       }
@@ -83,6 +89,24 @@ interface GoogleDriveNavigationProps {
   setSelectedIntegrations: React.Dispatch<
     React.SetStateAction<Record<string, boolean>>
   >
+  selectedIntegrations: Record<string, boolean>
+}
+interface DriveItem {
+  fields: VespaFile
+  id: string
+  relevance: number
+  source: string
+}
+const sortDriveItems = (item: DriveItem[]): DriveItem[] => {
+  return [...item].sort((a: DriveItem, b: DriveItem) => {
+    const isAFolder = a.fields.entity === DriveEntity.Folder
+    const isBFolder = b.fields.entity === DriveEntity.Folder
+    if (isAFolder && !isBFolder) return -1
+    if (!isAFolder && isBFolder) return 1
+    const aName = (a.fields.title || "").toLowerCase()
+    const bName = (b.fields.title || "").toLowerCase()
+    return aName.localeCompare(bName)
+  })
 }
 
 export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
@@ -101,7 +125,12 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
   selectedItemDetailsInGoogleDrive,
   setSelectedItemDetailsInGoogleDrive,
   setSelectedIntegrations,
+  selectedIntegrations,
 }) => {
+  const sortedItems= useMemo(() => {
+    return sortDriveItems(currentItems)
+  }, [currentItems])
+
   // Function to get icon for Google Drive entity
   const getDriveEntityIcon = (entity: string) => {
     return getIcon(Apps.GoogleDrive, entity as any, { w: 16, h: 16, mr: 8 })
@@ -205,7 +234,6 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
               </div>
             ) : searchResults.length > 0 ? (
               searchResults.map((result: any) => {
-               
                 const itemDocId = result.docId
                 const itemEntity = result.entity
                 const itemTitle = result.title || result.name || "Untitled"
@@ -241,6 +269,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
                       disabled={isDisabled}
                       onChange={(e) => {
                         e.stopPropagation()
+
                         handleGoogleDriveItemSelection(
                           itemDocId,
                           // Normalize the data structure for search results
@@ -291,9 +320,8 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
               <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
                 Loading...
               </div>
-            ) : currentItems.length > 0 ? (
-              currentItems.map((item: any) => {
-           
+            ) : sortedItems.length > 0 ? (
+              sortedItems.map((item: any) => {
                
                 const itemDocId = item.fields?.docId
                 const itemEntity = item.fields?.entity
@@ -303,13 +331,15 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
 
                 // Check if this item is inherited from a selected parent folder
                 const isDirectlySelected =
-                  selectedItemsInGoogleDrive.has(itemDocId )
+                  selectedItemsInGoogleDrive.has(itemDocId)
                 const isInheritedFromParent = isItemSelectedWithInheritance(
                   itemDocId ,
                   selectedItemsInGoogleDrive,
                   selectedItemDetailsInGoogleDrive,
                   navigationPath,
+                  selectedIntegrations,
                 )
+
                 const finalIsSelected =
                   isDirectlySelected || isInheritedFromParent
                 const isDisabled = isInheritedFromParent && !isDirectlySelected
@@ -333,7 +363,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
                         if (isDisabled) return // Prevent changes if inherited from parent
 
                         handleGoogleDriveItemSelection(
-                          itemDocId ,
+                          itemDocId,
                           item,
                           selectedItemsInGoogleDrive,
                           setSelectedItemsInGoogleDrive,
