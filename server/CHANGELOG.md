@@ -1,3 +1,10 @@
+## [3.12.1](https://github.com/xynehq/xyne/compare/v3.12.0...v3.12.1) (2025-10-09)
+
+
+### Bug Fixes
+
+* **agent:** added a hot fix for drive agent ([#1074](https://github.com/xynehq/xyne/issues/1074)) ([d3a4c5c](https://github.com/xynehq/xyne/commit/d3a4c5cf2454c30e63db367fb40ba9ee736bec12))
+
 # [3.12.0](https://github.com/xynehq/xyne/compare/v3.11.7...v3.12.0) (2025-10-09)
 
 
