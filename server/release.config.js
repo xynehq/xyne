@@ -1,3 +1,5 @@
+import path from 'path';
+
 // release.config.js
 export default {
   branches: [
