@@ -1970,6 +1970,7 @@ async function* generateAnswerFromGivenContext(
         results = await searchVespaInFiles(builtUserQuery, email, nonCollectionFileIds, {
             limit: fileIds?.length,
             alpha: userAlpha,
+            rankProfile: SearchModes.attachmentRank,
           })
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)

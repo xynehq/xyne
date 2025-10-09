@@ -106,7 +106,7 @@ schema file {
     }
   }
 
-  field chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS])  {
+  field chunk_embeddings type tensor<bfloat16>(p{}, v[384])  {
     indexing: input chunks | embed | attribute | index
     attribute: paged
     attribute {
@@ -114,7 +114,7 @@ schema file {
     }
   }
 
-  field image_chunk_embeddings type tensor<bfloat16>(p{}, v[DIMS]) {
+  field image_chunk_embeddings type tensor<bfloat16>(p{}, v[384]) {
     indexing: input image_chunks | embed | attribute | index
     attribute: paged
     attribute { distance-metric: angular }
@@ -143,7 +143,7 @@ schema file {
   rank-profile initial {
     # Inputs for the query vector and alpha for hybrid search
     inputs {
-      query(e) tensor<bfloat16>(v[DIMS])  # Query embedding
+      query(e) tensor<bfloat16>(v[384])  # Query embedding
       query(alpha) double  # Alpha parameter for hybrid weight
       query(recency_decay_rate) double
     }
@@ -246,26 +246,26 @@ schema file {
     }
   }
 
-  rank-profile default_native_image inherits initial_image {
+  rank-profile attachmentRank inherits initial_image {
 
     first-phase {
-      expression: (query(alpha) * (vector_score + )) + ((1 - query(alpha)) *  combined_nativeRank)
+      expression: (query(alpha) * (vector_score_image)) + ((1 - query(alpha)) *  combined_nativeRank_image)
     }
 
     global-phase {
       expression {
         (
-          (query(alpha) * vector_score) + 
-          ((1 - query(alpha)) *  combined_nativeRank)
+          (query(alpha) * vector_score_image) + 
+          ((1 - query(alpha)) *  combined_nativeRank_image)
         ) * doc_recency
       }
       rerank-count: 1000
     }
 
     match-features {
-      matchedFieldCount
-      vector_score
-      combined_nativeRank
+      matchedFieldCount_image
+      vector_score_image
+      combined_nativeRank_image
       nativeRank(title)
       nativeRank(chunks)
       chunk_scores
