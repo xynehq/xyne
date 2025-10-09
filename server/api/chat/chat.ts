@@ -213,6 +213,7 @@ import { getDateForAI } from "@/utils/index"
 import type { User } from "@microsoft/microsoft-graph-types"
 import { getAuth, safeGet } from "../agent"
 import { getChunkCountPerDoc } from "./chunk-selection"
+import { L } from "@/dist/assets/index-BAfFuDwx"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -1276,6 +1277,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             lowerIntegration.startsWith("ds_")
           ) {
             // ds- is the prefix for datasource externalId
+            //what is the difference between datasource and knowledge base
             agentSpecificDataSourceIds.push(integration)
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
@@ -1337,6 +1339,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const { selectedApps, selectedItems } = parseAppSelections(
         agentPromptData.appIntegrations,
       )
+      Logger.info(`selectedApps: ${JSON.stringify(selectedApps, null, 2)}`);
+      Logger.info(`Selected Items: ${JSON.stringify(selectedItems, null, 2)}`);
       // Use selectedApps and selectedItems
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
@@ -1458,6 +1462,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       span: initialSearchSpan,
     })
   } else {
+    Logger.info(`Agent Apps in iterative RAG:  ${agentAppEnums}`);
+    Logger.info(`Agent Specific DataSource Ids in iterative RAG: ${JSON.stringify(agentSpecificDataSourceIds, null, 2)}`);
+    Logger.info(`Agent Specific Collection Selections in iterative RAG: ${JSON.stringify(agentSpecificCollectionSelections, null, 2)}`);
+    Logger.info(`Channel Ids in iterative RAG: ${JSON.stringify(channelIds, null, 2 )}`);
+    Logger.info(`Selected Items in iterative RAG: ${JSON.stringify(selectedItem, null, 2)}`);
     searchResults = await searchVespaAgent(
       message,
       email,
@@ -1472,10 +1481,11 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
         collectionSelections: agentSpecificCollectionSelections,
-        selectedItem: selectedItem,
+        selectedItem: selectedItem,//agentIntegration format (app_integrations format)
       },
     )
   }
+  Logger.info(`Initial Search Results in iterative RAG: ${JSON.stringify(searchResults, null, 2)}`);
 
   // Expand email threads in the results
   // Skip thread expansion if original intent was GetItems (exact count requested)

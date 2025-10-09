@@ -4,6 +4,7 @@ import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 import { type SelectAgent } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
+import { executeAgentWithFullFeatures } from "./agent/agentCoreExecution"
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
@@ -83,6 +84,7 @@ import { getActualNameFromEnum } from "@/ai/modelConfig"
 import { getProviderByModel } from "@/ai/provider"
 import { Models } from "@/ai/types"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
+import { ag } from "@/dist/assets/index-BAfFuDwx"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -1944,6 +1946,7 @@ const executeWorkflowTool = async (
 
       case "ai_agent":
         const aiConfig = tool.config || {}
+        Logger.info(`AI Agent tool execution with config: ${JSON.stringify(aiConfig, null, 2)}`)
         const aiValue = tool.value || {}
         const agentId = aiConfig.agentId
 
@@ -2027,44 +2030,86 @@ const executeWorkflowTool = async (
               userQuery = prompt
             }
           }
-          const result: ExecuteAgentResponse = await ExecuteAgentForWorkflow({
-            agentId,
-            userQuery,
-            workspaceId,
-            userEmail,
-            isStreamable: false,
-            temperature,
-            attachmentFileIds: imageAttachmentIds,
-            nonImageAttachmentFileIds: documentAttachmentIds,
-          })
+          const isExistingAgent = aiConfig.isExistingAgent 
+          Logger.info(`Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`)
 
-          if (!result.success) {
+
+          if (isExistingAgent) {
+            // ===== Path 1: Existing Direct Agent with Full Features =====
+            // Use executeAgentWithFullFeatures for RAG, KB, and integrations
+            Logger.info(`[workflow] Using full-featured agent execution for existing agent: ${agentId}`)
+
+            const fullResult = await executeAgentWithFullFeatures({
+              agentId,
+              userQuery: "Analyze this resume and suggest improvements.",
+              userEmail,
+              workspaceId,
+              streamable: false,
+              temperature,
+            })
+
+            if (!fullResult.success) {
+              return {
+                status: "error",
+                result: {
+                  error: "Agent execution failed",
+                  details: fullResult.error,
+                }
+              }
+            }
+
+
             return {
-              status: "error",
+              status: "success",
               result: {
-                error: "Agent execution failed",
-                details: result.error,
+                aiOutput: fullResult.response,
+                agentName: aiConfig.agentName || "Unknown Agent",
+                model: aiConfig.modelId || "gpt-4o",
+                inputType: aiConfig.inputType || "text",
+                processedAt: new Date().toISOString(),
+                chatId: null
               }
             }
           }
+          else {
+            const result: ExecuteAgentResponse = await ExecuteAgentForWorkflow({
+              agentId,
+              userQuery,
+              workspaceId,
+              userEmail,
+              isStreamable: false,
+              temperature,
+              attachmentFileIds: imageAttachmentIds,
+              nonImageAttachmentFileIds: documentAttachmentIds,
+            })
 
-          // Extract response from agent result
-          const agentResponse = result.type === 'streaming'
-            ? "Streaming response completed"
-            : result.response.text
+            if (!result.success) {
+              return {
+                status: "error",
+                result: {
+                  error: "Agent execution failed",
+                  details: result.error,
+                }
+              }
+            }
 
-          return {
-            status: "success",
-            result: {
-              aiOutput: agentResponse,
-              agentName: result.agentName,
-              model: result.modelId,
-              chatId: result.chatId,
-              inputType: aiConfig.inputType || "text",
-              processedAt: new Date().toISOString(),
+            // Extract response from agent result
+            const agentResponse = result.type === 'streaming'
+              ? "Streaming response completed"
+              : result.response.text
+
+            return {
+              status: "success",
+              result: {
+                aiOutput: agentResponse,
+                agentName: result.agentName,
+                model: result.modelId,
+                chatId: result.chatId,
+                inputType: aiConfig.inputType || "text",
+                processedAt: new Date().toISOString(),
+              }
             }
           }
-
         } catch (error) {
           Logger.error(error, "ExecuteAgentForWorkflow failed in workflow")
           return {
@@ -2235,51 +2280,71 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
       if (tool.type === "ai_agent") {
         try {
-          Logger.info(`Creating agent for AI agent tool: ${JSON.stringify(tool.value)}`)
+          Logger.info(`Processing AI agent tool: ${JSON.stringify(tool.value)}`)
 
-          // Extract agent data from tool configuration
-          const agentData: CreateAgentPayload = {
-            name: tool.value?.name || `Workflow Agent - ${template.name}`,
-            description: tool.value?.description || "Auto-generated agent for workflow execution",
-            prompt: tool.value?.systemPrompt || "You are a helpful assistant that processes workflow data.",
-            model: tool.value?.model || "googleai-gemini-2-5-flash", // Use model from tool config
-            isPublic: false, // Workflow agents are private by default
-            appIntegrations: [], // No app integrations for workflow agents
-            allowWebSearch: false, // Disable web search for workflow agents
-            isRagOn: false, // Disable RAG for workflow agents
-            uploadedFileNames: [], // No uploaded files for workflow agents
-            docIds: [], // No document IDs for workflow agents
-            userEmails: [] // No additional users for permissions
+          // Check if this is referencing an existing agent
+          if (tool.value?.isExistingAgent && tool.value?.agentId) {
+            // Reference existing agent - don't create new one
+            Logger.info(`Referencing existing agent: ${tool.value.agentId}`)
+
+            processedConfig = {
+              ...processedConfig,
+              inputType: "form",
+              agentId: tool.value.agentId,
+              agentName: tool.value.name,
+              isExistingAgent: true,
+              dynamicallyCreated: false
+            }
+
+            Logger.info(`Tool config updated with existing agent ID: ${tool.value.agentId}`)
+
+          } else {
+            // Create new agent for workflow (existing behavior)
+            Logger.info(`Creating new agent for workflow`)
+
+            const agentData: CreateAgentPayload = {
+              name: tool.value?.name || `Workflow Agent - ${template.name}`,
+              description: tool.value?.description || "Auto-generated agent for workflow execution",
+              prompt: tool.value?.systemPrompt || "You are a helpful assistant that processes workflow data.",
+              model: tool.value?.model || "googleai-gemini-2-5-flash",
+              isPublic: false,
+              appIntegrations: [],
+              allowWebSearch: false,
+              isRagOn: false,
+              uploadedFileNames: [],
+              docIds: [],
+              userEmails: []
+            }
+
+            Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
+
+            const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId,
+              workspaceInternalId)
+
+            Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
+
+            processedConfig = {
+              ...processedConfig,
+              inputType: "form",
+              agentId: newAgent.externalId,
+              createdAgentId: newAgent.externalId,
+              agentName: newAgent.name,
+              isExistingAgent: false,
+              dynamicallyCreated: true
+            }
+
+            Logger.info(`Tool config updated with agent ID: ${newAgent.externalId}`)
           }
-
-          Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
-
-          // Create the agent using createAgentForWorkflow
-          const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, workspaceInternalId)
-
-          Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
-
-          // Store the agent ID in the tool config for later use
-          processedConfig = {
-            ...processedConfig,
-            inputType: "form",
-            agentId: newAgent.externalId, // ← This replaces the hardcoded agent ID
-            createdAgentId: newAgent.externalId, // Store backup reference
-            agentName: newAgent.name,
-            dynamicallyCreated: true // Flag to indicate this was auto-created
-          }
-
-          Logger.info(`Tool config updated with agent ID: ${newAgent.externalId}`)
 
         } catch (agentCreationError) {
-          Logger.error(agentCreationError, `Failed to create agent for workflow tool, using fallback config`)
+          Logger.error(agentCreationError, `Failed to process agent for workflow tool`)
 
-          // Fallback to original behavior if agent creation fails
           processedConfig = {
             ...processedConfig,
             inputType: "form",
             agentCreationFailed: true,
-            agentCreationError: agentCreationError instanceof Error ? agentCreationError.message : String(agentCreationError)
+            agentCreationError: agentCreationError instanceof Error ? agentCreationError.message :
+              String(agentCreationError)
           }
         }
       }
@@ -3229,8 +3294,8 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
         websearch: config.websearch,
         deepResearch: config.deepResearch,
         // Add model type for better categorization in frontend
-        modelType: enumValue.includes('gemini') ? 'gemini' : 
-                   enumValue.includes('claude') ? 'claude' : 'other',
+        modelType: enumValue.includes('gemini') ? 'gemini' :
+          enumValue.includes('claude') ? 'claude' : 'other',
       }))
       .sort((a, b) => {
         const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };
