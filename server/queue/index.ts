@@ -31,6 +31,7 @@ import {
 } from "@/integrations/microsoft/sync"
 const Logger = getLogger(Subsystem.Queue)
 const JobExpiryHours = config.JobExpiryHours
+const SYNC_JOB_AUTH_TYPE_CLEANUP = "cleanup"
 
 import { boss } from "./boss"
 
@@ -168,7 +169,7 @@ const initWorkers = async () => {
           sync_job_name: SyncToolsQueue,
           sync_job_auth_type: "sync_tool",
         },
-        endTime - startTime,
+        (endTime - startTime) / 1000,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -205,7 +206,7 @@ const initWorkers = async () => {
           sync_job_name: SyncOAuthSaaSQueue,
           sync_job_auth_type: AuthType.OAuth,
         },
-        endTime - startTime,
+        (endTime - startTime) / 1000,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -244,7 +245,7 @@ const initWorkers = async () => {
           sync_job_name: SyncServiceAccountSaaSQueue,
           sync_job_auth_type: AuthType.ServiceAccount,
         },
-        endTime - startTime,
+        (endTime - startTime) / 1000,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -280,7 +281,7 @@ const initWorkers = async () => {
           sync_job_name: SyncGoogleWorkspace,
           sync_job_auth_type: AuthType.ServiceAccount,
         },
-        endTime - startTime,
+        (endTime - startTime) / 1000,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -319,7 +320,7 @@ const initWorkers = async () => {
           sync_job_name: SyncSlackQueue,
           sync_job_auth_type: SlackEntity.User,
         },
-        endTime - startTime,
+        (endTime - startTime) / 1000,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -337,7 +338,6 @@ const initWorkers = async () => {
       )
     }
   })
-
   await boss.work(CleanupAttachmentsQueue, async () => {
     const startTime = Date.now()
     try {
@@ -351,16 +351,16 @@ const initWorkers = async () => {
       syncJobSuccess.inc(
         {
           sync_job_name: CleanupAttachmentsQueue,
-          sync_job_auth_type: "cleanup",
+          sync_job_auth_type: SYNC_JOB_AUTH_TYPE_CLEANUP,
         },
         1,
       )
       syncJobDuration.observe(
         {
           sync_job_name: CleanupAttachmentsQueue,
-          sync_job_auth_type: "cleanup",
+          sync_job_auth_type: SYNC_JOB_AUTH_TYPE_CLEANUP,
         },
-        endTime - startTime,
+        (endTime - startTime) / 1000,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -371,7 +371,7 @@ const initWorkers = async () => {
       syncJobError.inc(
         {
           sync_job_name: CleanupAttachmentsQueue,
-          sync_job_auth_type: "cleanup",
+          sync_job_auth_type: SYNC_JOB_AUTH_TYPE_CLEANUP,
           sync_job_error_type: `${errorMessage}`,
         },
         1,
