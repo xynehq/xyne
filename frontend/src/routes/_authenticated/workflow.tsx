@@ -178,7 +178,7 @@ function WorkflowComponent() {
             id: workflowTemplate.id,
             name: workflowTemplate.name,
             userId: workflowTemplate.userId,
-            workspaceid: workflowTemplate.workspaceId,
+            workspaceId: workflowTemplate.workspaceId,
             description: workflowTemplate.description,
             icon: getTemplateIcon(workflowTemplate),
             iconBgColor: getTemplateIconBgColor(workflowTemplate),

@@ -317,12 +317,10 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .from(workflowTemplate)
       .where(and(
         eq(workflowTemplate.id, templateId),
+        eq(workflowTemplate.workspaceId, user.workspaceId),
         or(
           eq(workflowTemplate.isPublic, true),
-          and(
-            eq(workflowTemplate.workspaceId, user.workspaceId),
-            eq(workflowTemplate.userId, user.id),
-          )
+          eq(workflowTemplate.userId, user.id),
         )
       ))
     if (!template || template.length === 0) {
