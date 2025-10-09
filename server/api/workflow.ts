@@ -52,6 +52,9 @@ import {
 } from "drizzle-orm"
 
 import { type AttachmentMetadata } from "@/shared/types"
+import { webhookRegistry } from "@/services/webhookRegistry"
+import webhookIntegrationService from "@/services/webhookIntegrationService"
+import { hasWebhookTools, triggerWebhookReload } from "@/services/webhookReloadService"
 
 // Re-export schemas for server.ts
 export {
@@ -2517,6 +2520,17 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       workflow_tools: createdTools,
     }
 
+    // Check if workflow contains webhook tools and reload webhooks if needed
+    if (hasWebhookTools(createdTools)) {
+      Logger.info("🔄 Workflow contains webhook tools, triggering webhook reload...")
+      const reloadResult = await triggerWebhookReload()
+      if (reloadResult.success) {
+        Logger.info(`✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`)
+      } else {
+        Logger.warn(`⚠️ Webhook reload failed: ${reloadResult.error}`)
+      }
+    }
+
     return c.json({
       success: true,
       data: completeTemplate,
@@ -2550,6 +2564,15 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
       })
       .where(eq(workflowTemplate.id, templateId))
       .returning()
+
+    // Trigger webhook reload after template update (config might contain workflow changes)
+    Logger.info("🔄 Template updated, triggering webhook reload to ensure webhooks are current...")
+    const reloadResult = await triggerWebhookReload()
+    if (reloadResult.success) {
+      Logger.info(`✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`)
+    } else {
+      Logger.warn(`⚠️ Webhook reload failed: ${reloadResult.error}`)
+    }
 
     return c.json({
       success: true,
@@ -2721,6 +2744,43 @@ export const CreateWorkflowToolApi = async (c: Context) => {
       })
       .returning()
 
+    // If this is a webhook tool, register the webhook
+    if (tool.type === ToolType.WEBHOOK && tool.config && tool.value) {
+      try {
+        const config = tool.config as any
+        const value = tool.value as any
+        
+        if (config.path || value.path) {
+          const webhookConfig = {
+            webhookUrl: value.webhookUrl || `http://localhost:3000/webhook${config.path || value.path}`,
+            httpMethod: config.httpMethod || 'POST',
+            path: config.path || value.path,
+            authentication: config.authentication || 'none',
+            selectedCredential: config.selectedCredential,
+            responseMode: config.responseMode || 'immediately',
+            options: config.options || {},
+            headers: config.headers || {},
+            queryParams: config.queryParams || {}
+          }
+          
+          // Get workflow template ID (simplified - in real implementation you'd get this from context)
+          const templateId = requestData.workflowTemplateId || 'default-template'
+          
+          await webhookRegistry.registerWebhook(
+            webhookConfig.path,
+            templateId,
+            tool.id,
+            webhookConfig
+          )
+          
+          Logger.info(`Registered webhook ${webhookConfig.path} for tool ${tool.id}`)
+        }
+      } catch (webhookError) {
+        Logger.error(webhookError, `Failed to register webhook for tool ${tool.id}`)
+        // Don't fail the tool creation if webhook registration fails
+      }
+    }
+
     return c.json({
       success: true,
       data: tool,
@@ -2805,6 +2865,52 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
 
       return { tool: updatedTool, step: updatedStep }
     })
+
+    // If this is a webhook tool, update the webhook registration
+    if (result.tool.type === ToolType.WEBHOOK && result.tool.config && result.tool.value) {
+      try {
+        const config = result.tool.config as any
+        const value = result.tool.value as any
+        
+        if (config.path || value.path) {
+          const webhookConfig = {
+            webhookUrl: value.webhookUrl || `http://localhost:3000/webhook${config.path || value.path}`,
+            httpMethod: config.httpMethod || 'POST',
+            path: config.path || value.path,
+            authentication: config.authentication || 'none',
+            selectedCredential: config.selectedCredential,
+            responseMode: config.responseMode || 'immediately',
+            options: config.options || {},
+            headers: config.headers || {},
+            queryParams: config.queryParams || {}
+          }
+          
+          // Get workflow template ID (simplified - in real implementation you'd get this from context)
+          const templateId = requestData.workflowTemplateId || 'default-template'
+          
+          // Unregister old webhook first (if path changed)
+          if (existingTool[0] && existingTool[0].value) {
+            const oldValue = existingTool[0].value as any
+            if (oldValue.path && oldValue.path !== webhookConfig.path) {
+              await webhookRegistry.unregisterWebhook(oldValue.path)
+            }
+          }
+          
+          // Register new/updated webhook
+          await webhookRegistry.registerWebhook(
+            webhookConfig.path,
+            templateId,
+            result.tool.id,
+            webhookConfig
+          )
+          
+          Logger.info(`Updated webhook registration ${webhookConfig.path} for tool ${result.tool.id}`)
+        }
+      } catch (webhookError) {
+        Logger.error(webhookError, `Failed to update webhook for tool ${result.tool.id}`)
+        // Don't fail the tool update if webhook registration fails
+      }
+    }
 
     return c.json({
       success: true,
