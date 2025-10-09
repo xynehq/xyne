@@ -807,6 +807,12 @@ export const insertChatMessage = async (
   const attachmentIds: string[] = []
   if (message.files && message.files.length > 0) {
     for (const file of message.files) {
+      if (!file.id) {
+        loggerWithChild({ email: name }).info(
+          `attachment Id is missing for message ${message.client_msg_id}`,
+        )
+        continue
+      }
       try {
         await insertChatAttachment(
           file,
