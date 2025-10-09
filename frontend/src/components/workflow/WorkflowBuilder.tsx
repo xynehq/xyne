@@ -142,6 +142,7 @@ import {
   FormSubmissionIcon,
   WorkflowExecutionIcon,
   ChatMessageIcon,
+  WebhookIcon,
   HelpIcon,
   TemplatesIcon,
   AddIcon,
@@ -149,11 +150,13 @@ import {
 } from "./WorkflowIcons"
 import {
   workflowExecutionsAPI,
+  workflowToolsAPI,
 } from "./api/ApiHandlers"
 import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
+import WebhookConfigurationUI, { WebhookConfig } from "./WebhookConfigurationUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
@@ -707,6 +710,168 @@ const StepNode: React.FC<NodeProps> = ({
             <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
           </div>
 
+          {/* Add Next Step Button */}
+          {hasNext && (
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
+              }}
+            >
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                style={{
+                  width: "28px",
+                  height: "28px",
+                }}
+              >
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // Special rendering for webhook nodes and steps with webhook tools
+  const hasWebhookTool = tools && tools.length > 0 && tools[0].type === "webhook"
+  if (step.type === "webhook" || hasWebhookTool) {
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Orange webhook icon with background */}
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-orange-50 dark:bg-orange-900/50"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+              }}
+            >
+              <WebhookIcon width={16} height={16} />
+            </div>
+            <h3
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+              }}
+            >
+              {(() => {
+                // First try to get title from workflow_tools[index].val.title
+                if (hasWebhookTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.title) {
+                  return (tools[0].val as any).title
+                }
+                
+                // Try to get title from workflow_tools[index].value.title
+                if (hasWebhookTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.title) {
+                  return (tools[0] as any).value.title
+                }
+                
+                // Fallback to "Webhook" title
+                return "Webhook"
+              })()}
+            </h3>
+          </div>
+          {/* Full-width horizontal divider */}
+          <div className="w-full h-px bg-gray-200 dark:bg-gray-600 mb-3"></div>
+          {/* Description text */}
+          <div className="px-4 pb-4">
+            <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed text-left break-words overflow-hidden">
+              {(() => {
+                // First try to get description from workflow_tools[index].val.description
+                if (hasWebhookTool && tools?.[0]?.val && typeof tools[0].val === 'object' && (tools[0].val as any)?.description) {
+                  return (tools[0].val as any).description
+                }
+                
+                // Try to get description from workflow_tools[index].value.description
+                if (hasWebhookTool && tools?.[0] && (tools[0] as any)?.value && typeof (tools[0] as any).value === 'object' && (tools[0] as any).value?.description) {
+                  return (tools[0] as any).value.description
+                }
+                
+                // If step has description, use it next
+                if (step.description) {
+                  return step.description
+                }
+                // Get config from step or tool
+                const webhookConfig =
+                  (step as any).config ||
+                  (hasWebhookTool && tools?.[0]?.val) ||
+                  {}
+                // Build description from webhook configuration
+                if (webhookConfig?.webhookUrl || webhookConfig?.path) {
+                  const method = webhookConfig?.httpMethod || 'POST'
+                  const url = webhookConfig?.webhookUrl || `${window.location.origin}/webhook${webhookConfig?.path || ''}`
+                  const auth = webhookConfig?.authentication === 'none' ? 'No authentication' : 
+                              webhookConfig?.authentication === 'basic' ? 'Basic authentication' :
+                              webhookConfig?.authentication === 'bearer' ? 'Bearer token authentication' :
+                              webhookConfig?.authentication === 'api_key' ? 'API key authentication' : 'No authentication'
+                  
+                  return `${method} ${url} • ${auth}`
+                }
+                // Fallback description
+                return "Webhook endpoint to receive HTTP requests and trigger workflow execution"
+              })()}
+            </p>
+          </div>
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
           {/* Add Next Step Button */}
           {hasNext && (
             <div
@@ -1608,6 +1773,13 @@ const TriggersSidebar = ({
       enabled: false,
     },
     {
+      id: "webhook",
+      name: "On Webhook Call",
+      description: "Runs the flow on receiving an HTTP request",
+      icon: <WebhookIcon width={20} height={20} />,
+      enabled: true,
+    },
+    {
       id: "workflow",
       name: "When executed by another workflow",
       description:
@@ -1853,6 +2025,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     null,
   )
   const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
+    null,
+  )
+  const [showWebhookConfigUI, setShowWebhookConfigUI] = useState(false)
+  const [selectedWebhookNodeId, setSelectedWebhookNodeId] = useState<string | null>(
     null,
   )
   const [zoomLevel, setZoomLevel] = useState(100)
@@ -2169,7 +2345,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                (nodeData.step.type === "form_submission" || 
                 nodeData.step.type === "manual" || 
                 nodeData.step.type === "schedule" ||
-                nodeData.step.type === "app_event")
+                nodeData.step.type === "app_event" ||
+                nodeData.step.type === "webhook")
       })
       
       if (lastSavedHash === "" && hasValidTrigger) {
@@ -2247,10 +2424,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowWebhookConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
       setSelectedFormNodeId(null)
+      setSelectedWebhookNodeId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -2271,6 +2450,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open Email config sidebar
           setSelectedEmailNodeId(node.id)
           setShowEmailConfigUI(true)
+          break
+
+        case "webhook":
+          // Open Webhook config sidebar
+          setSelectedWebhookNodeId(node.id)
+          setShowWebhookConfigUI(true)
           break
 
         case "ai_agent":
@@ -2476,6 +2661,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowWebhookConfigUI(false)
       
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
@@ -2488,6 +2674,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowWebhookConfigUI(false)
       
       // Open Triggers sidebar
       setShowTriggersSidebar(true)
@@ -2733,6 +2920,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         setShowOnFormSubmissionUI(true)
         setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
 
+        // Reset zoom to 100%
+        setZoomLevel(100)
+        setTimeout(() => {
+          zoomTo(1)
+        }, 50)
+      } else if (triggerId === "webhook") {
+        // Close TriggersSidebar with slide-out animation when WebhookConfigurationUI opens
+        setShowTriggersSidebar(false)
+        setSelectedWebhookNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowWebhookConfigUI(true)
+        setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
         // Reset zoom to 100%
         setZoomLevel(100)
         setTimeout(() => {
@@ -3141,6 +3339,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     }
   }, [selectedFormNodeId, nodes.length, setNodes])
 
+  const handleWebhookConfigBack = useCallback(() => {
+    setShowWebhookConfigUI(false)
+    
+    // If we're in creation mode (pending), go back to triggers sidebar
+    if (selectedWebhookNodeId === "pending") {
+      setShowTriggersSidebar(true)
+      setSelectedWebhookNodeId(null)
+      // If we were in pending mode (creating new trigger), show empty canvas again
+      if (nodes.length === 0) {
+        setShowEmptyCanvas(true)
+      }
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedWebhookNodeId(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedWebhookNodeId, nodes.length, setNodes])
+
   const handleOnFormSubmissionSave = useCallback(
     (formConfig: FormConfig) => {
       if (selectedFormNodeId === "pending") {
@@ -3233,6 +3453,136 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }, 50)
     },
     [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges],
+  )
+
+  const handleWebhookConfigSave = useCallback(
+    async (webhookConfig: WebhookConfig) => {
+      try {
+        let savedWebhookData: any
+
+        if (selectedWebhookNodeId === "pending") {
+          // Create new webhook - call API to save to workflow_tool table
+          savedWebhookData = await workflowToolsAPI.saveWebhookConfig({
+            webhookUrl: webhookConfig.webhookUrl,
+            httpMethod: webhookConfig.httpMethod,
+            path: webhookConfig.path,
+            authentication: webhookConfig.authentication,
+            selectedCredential: webhookConfig.selectedCredential,
+            responseMode: webhookConfig.responseMode,
+            headers: webhookConfig.headers,
+            queryParams: webhookConfig.queryParams,
+            options: webhookConfig.options,
+          })
+
+          console.log("Webhook saved to backend:", savedWebhookData)
+
+          // Create new webhook node when saving configuration
+          const newNodeId = "webhook-trigger"
+          
+          // Create the tool object for Webhook with backend response
+          const webhookTool = {
+            id: savedWebhookData?.id || `tool-${newNodeId}`,
+            type: "webhook",
+            val: savedWebhookData?.value || webhookConfig, // Use backend response or fallback
+            value: savedWebhookData?.value || webhookConfig,
+            config: savedWebhookData?.config || webhookConfig,
+          }
+
+          // Create webhook node
+          const webhookNode: Node = {
+            id: newNodeId,
+            type: "stepNode",
+            position: { x: 400, y: 100 }, // Consistent X position for straight line connections
+            data: {
+              step: {
+                id: newNodeId,
+                name: `Webhook: ${webhookConfig.path}`,
+                status: "PENDING",
+                contents: [],
+                type: "webhook",
+                config: savedWebhookData?.config || webhookConfig,
+              },
+              tools: [webhookTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + icon since this is the starting node
+              anyNodeSelected: false,
+            },
+            draggable: true,
+            selectable: true,
+            selected: true, // Select the newly created node
+          }
+
+          setNodes([webhookNode])
+          setNodeCounter(2)
+          setSelectedNodes([webhookNode]) // Update selectedNodes for the anyNodeSelected flag
+
+        } else if (selectedWebhookNodeId && selectedWebhookNodeId !== "pending") {
+          // Update existing webhook - call API to update workflow_tool table
+          const toolId = getToolIdFromStepId(selectedWebhookNodeId)
+          
+          if (!toolId) {
+            throw new Error("Tool ID not found for webhook node")
+          }
+          
+          savedWebhookData = await workflowToolsAPI.updateWebhookConfig(toolId, {
+            webhookUrl: webhookConfig.webhookUrl,
+            httpMethod: webhookConfig.httpMethod,
+            path: webhookConfig.path,
+            authentication: webhookConfig.authentication,
+            selectedCredential: webhookConfig.selectedCredential,
+            responseMode: webhookConfig.responseMode,
+            headers: webhookConfig.headers,
+            queryParams: webhookConfig.queryParams,
+            options: webhookConfig.options,
+          })
+
+          console.log("Webhook updated in backend:", savedWebhookData)
+
+          // Update existing webhook node
+          const webhookTool = {
+            id: toolId,
+            type: "webhook",
+            val: savedWebhookData?.value || webhookConfig,
+            value: savedWebhookData?.value || webhookConfig,
+            config: savedWebhookData?.config || webhookConfig,
+          }
+
+          setNodes((nds) =>
+            nds.map((node) =>
+              node.id === selectedWebhookNodeId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      step: {
+                        ...(node.data.step || {}),
+                        name: `Webhook: ${webhookConfig.path}`,
+                        config: savedWebhookData?.config || webhookConfig,
+                      },
+                      tools: [webhookTool],
+                      hasNext: !edges.some(edge => edge.source === selectedWebhookNodeId),
+                    },
+                  }
+                : node,
+            ),
+          )
+        }
+
+        setShowWebhookConfigUI(false)
+        setSelectedWebhookNodeId(null)
+        setZoomLevel(100)
+        setTimeout(() => {
+          zoomTo(1)
+        }, 50)
+
+      } catch (error) {
+        console.error("Failed to save webhook configuration:", error)
+        // Show error message to user
+        alert("Failed to save webhook configuration. Please try again.")
+      }
+    },
+    [selectedWebhookNodeId, setNodes, setNodeCounter, setSelectedNodes, zoomTo, edges, getToolIdFromStepId],
   )
 
   const handleResultClick = useCallback((result: any) => {
@@ -3563,7 +3913,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         {!showWhatHappensNextUI &&
           !showAIAgentConfigUI &&
           !showEmailConfigUI &&
-          !showOnFormSubmissionUI && (
+          !showOnFormSubmissionUI &&
+          !showWebhookConfigUI && (
             <TriggersSidebar
               isVisible={showTriggersSidebar}
               onTriggerClick={handleTriggerClick}
@@ -3689,7 +4040,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             />
 
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && !showOnFormSubmissionUI && (
+        {!showEmailConfigUI && !showOnFormSubmissionUI && !showWebhookConfigUI && (
           <AIAgentConfigUI
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
@@ -3727,7 +4078,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
 
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && !showOnFormSubmissionUI && (
+        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showWebhookConfigUI && (
           <EmailConfigUI
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
@@ -3802,6 +4153,45 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }
             toolId={selectedFormNodeId ? getToolIdFromStepId(selectedFormNodeId) : undefined}
           />
+        
+        {/* Webhook Configuration Sidebar */}
+        <WebhookConfigurationUI
+          isVisible={showWebhookConfigUI}
+          onBack={handleWebhookConfigBack}
+          onClose={() => {
+            setShowWebhookConfigUI(false)
+            setSelectedWebhookNodeId(null)
+            setNodes((prevNodes) => 
+              prevNodes.map(node => ({ ...node, selected: false }))
+            )
+            setSelectedNodes([])
+            // If we were in pending mode (creating new trigger), show empty canvas again
+            if (nodes.length === 0) {
+              setShowEmptyCanvas(true)
+            }
+          }}
+          onSave={handleWebhookConfigSave}
+          showBackButton={selectedWebhookNodeId === "pending"}
+          builder={builder}
+          initialConfig={
+            selectedWebhookNodeId
+              ? (
+                  nodes.find((n) => n.id === selectedWebhookNodeId)?.data
+                    ?.step as any
+                )?.config
+              : undefined
+          }
+          toolData={
+            selectedWebhookNodeId
+              ? (() => {
+                  const node = nodes.find((n) => n.id === selectedWebhookNodeId)
+                  const tools = node?.data?.tools as Tool[] | undefined
+                  return tools && tools.length > 0 ? tools[0] : undefined
+                })()
+              : undefined
+          }
+          toolId={selectedWebhookNodeId ? getToolIdFromStepId(selectedWebhookNodeId) : undefined}
+        />
       </div>
 
       {/* Execution Result Modal */}

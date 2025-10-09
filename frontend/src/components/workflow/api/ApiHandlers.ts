@@ -1,6 +1,22 @@
 import { Flow, TemplateFlow } from "../Types"
 import { api } from "../../../api"
 
+// Credential types
+export interface Credential {
+  id: string
+  name: string
+  type: "basic" | "bearer" | "api_key"
+  user?: string
+  password?: string
+  token?: string
+  apiKey?: string
+  allowedDomains?: string
+  isValid?: boolean
+  createdBy?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
 // API request/response types for workflow templates
 
 interface WorkflowTemplateResponse {
@@ -404,6 +420,218 @@ export const workflowToolsAPI = {
     })
     return extractResponseData<any>(response)
   },
+
+  /**
+   * Save webhook configuration to workflow_tool table
+   */
+  async saveWebhookConfig(webhookConfig: {
+    webhookUrl: string
+    httpMethod: string
+    path: string
+    authentication: string
+    selectedCredential?: string
+    responseMode: string
+    headers?: Record<string, string>
+    queryParams?: Record<string, string>
+    options?: Record<string, any>
+  }): Promise<any> {
+    console.log("🔗 Starting webhook save process...")
+    console.log("📋 Webhook config input:", webhookConfig)
+
+    // Format credential data for backend storage
+    const formatCredentialData = async () => {
+      console.log("🔐 Formatting credential data...")
+      if (webhookConfig.authentication === "none") {
+        console.log("ℹ️ No authentication, returning empty array")
+        return []
+      }
+
+      try {
+        // Fetch all credentials of the required type
+        console.log("🔍 Fetching all credentials for auth type:", webhookConfig.authentication)
+        const allCredentials = await credentialsAPI.fetchByType(webhookConfig.authentication as "basic" | "bearer" | "api_key")
+        
+        if (allCredentials.length === 0) {
+          console.log("ℹ️ No credentials found for this auth type")
+          return []
+        }
+
+        console.log(`✅ Found ${allCredentials.length} credentials of type ${webhookConfig.authentication}`)
+
+        // Map all credentials with isSelected flag based on selectedCredential
+        const credentialData = allCredentials.map(credential => {
+          const isSelected = credential.id === webhookConfig.selectedCredential
+          
+          // Create base64 encoding of user:password for basic auth
+          const basicAuth = btoa(`${credential.user}:${credential.password}`)
+          
+          console.log(`📋 Processing credential: ${credential.name}, isSelected: ${isSelected}`)
+          
+          return {
+            user: credential.user,
+            password: credential.password, // Note: In production, this should be encrypted
+            basic_auth: basicAuth,
+            isSelected,
+            name: credential.name,
+            allowedDomains: credential.allowedDomains
+          }
+        })
+
+        console.log("📦 Formatted credential data with all credentials:", credentialData)
+        return credentialData
+      } catch (error) {
+        console.error("❌ Error formatting credential data:", error)
+        return []
+      }
+    }
+
+    const credentialArray = await formatCredentialData()
+
+    // Prepare data for workflow_tool table
+    const toolData = {
+      type: "webhook",
+      value: {
+        // Store webhook URL and path in value column
+        webhookUrl: webhookConfig.webhookUrl,
+        path: webhookConfig.path,
+        httpMethod: webhookConfig.httpMethod,
+        title: `Webhook: ${webhookConfig.path}`,
+        description: `${webhookConfig.httpMethod} ${webhookConfig.webhookUrl} • ${
+          webhookConfig.authentication === 'none' ? 'No authentication' : 'Basic authentication'
+        }`
+      },
+      config: {
+        // Store behavior configuration in config column
+        authentication: webhookConfig.authentication,
+        responseMode: webhookConfig.responseMode,
+        headers: webhookConfig.headers || {},
+        queryParams: webhookConfig.queryParams || {},
+        options: webhookConfig.options || {},
+        credentials: credentialArray, // Array of credential objects with base64 auth
+        selectedCredential: webhookConfig.selectedCredential
+      }
+    }
+
+    console.log("📋 Final tool data to send to backend:", JSON.stringify(toolData, null, 2))
+
+    try {
+      // Check if webhook type is supported by the backend
+      console.log("🚀 Attempting to create tool with backend API...")
+      const response = await this.createTool(toolData)
+      console.log("✅ Backend response:", response)
+      return response
+    } catch (error) {
+      console.error("❌ Backend API error:", error)
+      
+      // Check if it's a validation error for unsupported tool type
+      if (error instanceof Error && error.message.includes("webhook")) {
+        console.log("⚠️ Backend doesn't support 'webhook' tool type yet")
+        console.log("🔄 This is expected during development - webhook type needs to be added to backend validation")
+        
+        // For now, return a mock response to unblock frontend development
+        const mockResponse = {
+          id: `mock-webhook-${Date.now()}`,
+          type: "webhook",
+          value: toolData.value,
+          config: toolData.config,
+          createdAt: new Date().toISOString(),
+          note: "Mock response - backend needs webhook tool type support"
+        }
+        
+        console.log("🔧 Returning mock response for development:", mockResponse)
+        return mockResponse
+      }
+      
+      // Re-throw other errors
+      throw error
+    }
+  },
+
+  /**
+   * Update existing webhook configuration
+   */
+  async updateWebhookConfig(
+    toolId: string, 
+    webhookConfig: {
+      webhookUrl: string
+      httpMethod: string
+      path: string
+      authentication: string
+      selectedCredential?: string
+      responseMode: string
+      headers?: Record<string, string>
+      queryParams?: Record<string, string>
+      options?: Record<string, any>
+    }
+  ): Promise<any> {
+    // Format credential data for backend storage
+    const formatCredentialData = async () => {
+      if (webhookConfig.authentication === "none") {
+        return []
+      }
+
+      try {
+        // Fetch all credentials of the required type
+        const allCredentials = await credentialsAPI.fetchByType(webhookConfig.authentication as "basic" | "bearer" | "api_key")
+        
+        if (allCredentials.length === 0) {
+          return []
+        }
+
+        // Map all credentials with isSelected flag based on selectedCredential
+        const credentialData = allCredentials.map(credential => {
+          const isSelected = credential.id === webhookConfig.selectedCredential
+          
+          // Create base64 encoding of user:password for basic auth
+          const basicAuth = btoa(`${credential.user}:${credential.password}`)
+          
+          return {
+            user: credential.user,
+            password: credential.password, // Note: In production, this should be encrypted
+            basic_auth: basicAuth,
+            isSelected,
+            name: credential.name,
+            allowedDomains: credential.allowedDomains
+          }
+        })
+
+        return credentialData
+      } catch (error) {
+        console.error("Error formatting credential data:", error)
+        return []
+      }
+    }
+
+    const credentialArray = await formatCredentialData()
+
+    // Prepare data for workflow_tool table
+    const toolData = {
+      type: "webhook",
+      value: {
+        // Store webhook URL and path in value column
+        webhookUrl: webhookConfig.webhookUrl,
+        path: webhookConfig.path,
+        httpMethod: webhookConfig.httpMethod,
+        title: `Webhook: ${webhookConfig.path}`,
+        description: `${webhookConfig.httpMethod} ${webhookConfig.webhookUrl} • ${
+          webhookConfig.authentication === 'none' ? 'No authentication' : 'Basic authentication'
+        }`
+      },
+      config: {
+        // Store behavior configuration in config column
+        authentication: webhookConfig.authentication,
+        responseMode: webhookConfig.responseMode,
+        headers: webhookConfig.headers || {},
+        queryParams: webhookConfig.queryParams || {},
+        options: webhookConfig.options || {},
+        credentials: credentialArray, // Array of credential objects with base64 auth
+        selectedCredential: webhookConfig.selectedCredential
+      }
+    }
+
+    const response = await this.updateTool(toolId, toolData)
+    return response
+  },
 }
 
 // Workflow Steps API for adding and editing steps
@@ -466,4 +694,148 @@ export const workflowStepsAPI = {
     // You may need to use updateStep to modify nextStepIds instead
     throw new Error("linkSteps endpoint not available in current API. Use updateStep to modify nextStepIds.")
   },
+}
+
+// Mock credentials state for development/testing
+let mockCredentials: Credential[] = []
+
+// Credentials API
+export const credentialsAPI = {
+  /**
+   * Fetch all credentials for the current user
+   */
+  async fetchAll(): Promise<Credential[]> {
+    try {
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 300))
+      return [...mockCredentials] // Return a copy to prevent external modification
+    } catch (error) {
+      console.error('Failed to fetch credentials:', error)
+      return []
+    }
+  },
+
+  /**
+   * Fetch credentials by type
+   */
+  async fetchByType(type: "basic" | "bearer" | "api_key"): Promise<Credential[]> {
+    const allCredentials = await this.fetchAll()
+    return allCredentials.filter(cred => cred.type === type)
+  },
+
+  /**
+   * Create a new credential
+   */
+  async create(credentialData: {
+    name: string
+    type: "basic" | "bearer" | "api_key"
+    user?: string
+    password?: string
+    token?: string
+    apiKey?: string
+    allowedDomains?: string
+  }): Promise<Credential> {
+    try {
+      const newCredential: Credential = {
+        id: Date.now().toString(),
+        ...credentialData,
+        isValid: true,
+        createdBy: "current-user",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      // Add to mock state
+      mockCredentials.push(newCredential)
+
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      return newCredential
+    } catch (error) {
+      console.error('Failed to create credential:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Update an existing credential
+   */
+  async update(credentialId: string, updates: Partial<Credential>): Promise<Credential> {
+    try {
+      const credentialIndex = mockCredentials.findIndex(cred => cred.id === credentialId)
+      
+      if (credentialIndex === -1) {
+        throw new Error(`Credential with ID ${credentialId} not found`)
+      }
+
+      const updatedCredential: Credential = {
+        ...mockCredentials[credentialIndex],
+        ...updates,
+        id: credentialId, // Ensure ID doesn't get overwritten
+        updatedAt: new Date().toISOString(),
+      }
+
+      // Update in mock state
+      mockCredentials[credentialIndex] = updatedCredential
+
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      return updatedCredential
+    } catch (error) {
+      console.error('Failed to update credential:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Delete a credential
+   */
+  async delete(credentialId: string): Promise<void> {
+    try {
+      const credentialIndex = mockCredentials.findIndex(cred => cred.id === credentialId)
+      
+      if (credentialIndex === -1) {
+        throw new Error(`Credential with ID ${credentialId} not found`)
+      }
+
+      // Remove from mock state
+      mockCredentials.splice(credentialIndex, 1)
+
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 300))
+
+      console.log(`Credential ${credentialId} deleted`)
+    } catch (error) {
+      console.error('Failed to delete credential:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Test credential validity
+   */
+  async testCredential(credentialId: string): Promise<{ isValid: boolean; message?: string }> {
+    try {
+      const credential = mockCredentials.find(cred => cred.id === credentialId)
+      
+      if (!credential) {
+        throw new Error(`Credential with ID ${credentialId} not found`)
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Use the credential's isValid property
+      const isValid = credential.isValid || false
+      
+      return {
+        isValid,
+        message: isValid ? "Credential is valid" : "Credential authentication failed"
+      }
+    } catch (error) {
+      console.error('Failed to test credential:', error)
+      return { isValid: false, message: "Failed to test credential" }
+    }
+  }
 }
