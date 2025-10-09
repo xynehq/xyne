@@ -7,11 +7,12 @@ const __dirname = path.dirname(__filename);
 export default {
   branches: [
     "main",
+     { name: "fix/changelog", prerelease: "changelog" },
+
     {
       name: "release-*",
       prerelease: true
     },
-    { name: "fix/changelog", prerelease: true },
   ],
   plugins: [
     "@semantic-release/commit-analyzer", // decides bump (major/minor/patch)
