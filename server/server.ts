@@ -1205,7 +1205,7 @@ app.all("/webhook/*", async (c) => {
   // Validate authentication if required
   const authType = webhook.config?.authentication || 'none'
   if (authType !== 'none') {
-    const authValid = await validateWebhookAuth(c, webhook.config)
+    const authValid = await validateWebhookAuth(c, webhook)
     if (!authValid) {
       Logger.warn(`Authentication failed for webhook ${path}`)
       return c.json({ error: "Authentication failed" }, 401)
@@ -1281,26 +1281,111 @@ app.all("/webhook/*", async (c) => {
   })
 })
 
-// Simple webhook authentication validation
-async function validateWebhookAuth(c: Context, config: any): Promise<boolean> {
-  const authType = config?.authentication || 'none'
+// Webhook authentication validation with stored credentials
+async function validateWebhookAuth(c: Context, webhook: any): Promise<boolean> {
+  const authType = webhook.config?.authentication || 'none'
   const authHeader = c.req.header('Authorization')
   
   switch (authType) {
     case 'basic':
       if (!authHeader || !authHeader.startsWith('Basic ')) {
+        Logger.warn('Basic authentication required but no Authorization header provided')
         return false
       }
-      // TODO: Validate against stored credentials
-      return true
+      
+      // Extract the base64 encoded credentials from Authorization header
+      const providedCredentials = authHeader.replace('Basic ', '')
+      
+      // Find the selected credential from credentials array
+      const basicCredentials = webhook.config?.credentials || []
+      const basicSelectedCredential = basicCredentials.find((cred: any) => cred.isSelected === true)
+      
+      if (!basicSelectedCredential) {
+        Logger.warn('No selected credential found in webhook configuration')
+        return false
+      }
+      
+      const storedCredentials = basicSelectedCredential.basic_auth
+      
+      if (!storedCredentials) {
+        Logger.warn('No basic_auth value found in selected credential')
+        return false
+      }
+      
+      // Compare provided credentials with stored base64 encoded hash
+      if (providedCredentials === storedCredentials) {
+        Logger.info('Basic authentication successful')
+        return true
+      } else {
+        Logger.warn('Basic authentication failed: credentials do not match')
+        return false
+      }
+      
+    case 'bearer':
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        Logger.warn('Bearer authentication required but no Authorization header provided')
+        return false
+      }
+      
+      // Extract the token from Authorization header
+      const providedToken = authHeader.replace('Bearer ', '')
+      
+      // Find the selected credential from credentials array
+      const bearerCredentials = webhook.config?.credentials || []
+      const bearerSelectedCredential = bearerCredentials.find((cred: any) => cred.isSelected === true)
+      
+      if (!bearerSelectedCredential) {
+        Logger.warn('No selected credential found in webhook configuration')
+        return false
+      }
+      
+      const storedToken = bearerSelectedCredential.bearer_token
+      
+      if (!storedToken) {
+        Logger.warn('No bearer_token value found in selected credential')
+        return false
+      }
+      
+      // Compare provided token with stored token
+      if (providedToken === storedToken) {
+        Logger.info('Bearer authentication successful')
+        return true
+      } else {
+        Logger.warn('Bearer authentication failed: token does not match')
+        return false
+      }
       
     case 'api_key':
       const apiKey = c.req.header('X-API-Key') || c.req.query('api_key')
       if (!apiKey) {
+        Logger.warn('API key authentication required but no X-API-Key header or api_key query parameter provided')
         return false
       }
-      // TODO: Validate API key
-      return true
+      
+      // Find the selected credential from credentials array
+      const apiKeyCredentials = webhook.config?.credentials || []
+      const apiKeySelectedCredential = apiKeyCredentials.find((cred: any) => cred.isSelected === true)
+      
+      if (!apiKeySelectedCredential) {
+        Logger.warn('No selected credential found in webhook configuration')
+        return false
+      }
+      
+      const storedApiKey = apiKeySelectedCredential.api_key
+      
+      if (!storedApiKey) {
+        Logger.warn('No api_key value found in selected credential')
+        return false
+      }
+      
+      // Compare provided API key with stored key
+      if (apiKey === storedApiKey) {
+        Logger.info('API key authentication successful')
+        return true
+      } else {
+        Logger.warn('API key authentication failed: key does not match')
+        return false
+      }
       
     default:
       return true
