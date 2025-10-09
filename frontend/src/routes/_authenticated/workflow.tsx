@@ -141,7 +141,7 @@ function WorkflowComponent() {
   const [isExecutionMode, setIsExecutionMode] = useState(false)
   const [workflowSearchTerm, setWorkflowSearchTerm] = useState("")
   const [isBuilderMode, setIsBuilderMode] = useState(true) // true for create/edit, false for view-only
-  const [workflowFilter, setWorkflowFilter] = useState<"all" | "shared-workflows" | "my-workflows">("all")
+  const [workflowFilter, setWorkflowFilter] = useState<"all" | "public">("all")
 
   const fetchWorkflows = async () => {
     try {
@@ -756,24 +756,14 @@ function WorkflowComponent() {
                       All
                     </button>
                     <button
-                      onClick={() => setWorkflowFilter("my-workflows")}
+                      onClick={() => setWorkflowFilter("public")}
                       className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
-                        workflowFilter === "my-workflows"
+                        workflowFilter === "public"
                           ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
                           : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
                       }`}
                     >
-                      My workflows
-                    </button>
-                    <button
-                      onClick={() => setWorkflowFilter("shared-workflows")}
-                      className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
-                        workflowFilter === "shared-workflows"
-                          ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
-                          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-                      }`}
-                    >
-                      Shared workflows
+                      public workflows
                     </button>
                   </div>
                   
@@ -800,16 +790,10 @@ function WorkflowComponent() {
                     )
 
                     // Apply additional filtering based on workflowFilter
-                    if (workflowFilter === "my-workflows") {
-                      filteredWorkflows = filteredWorkflows.filter(workflow =>
-                        workflow.userId === user?.id
-                      )
-                    } else if (workflowFilter === "shared-workflows") {
-                      filteredWorkflows = filteredWorkflows.filter(workflow =>
-                        workflow.isPublic === true && workflow.userId !== user?.id
-                      )
-                    }
-                    
+                    if (workflowFilter === "public") {
+                      filteredWorkflows = filteredWorkflows.filter(workflow => workflow.isPublic)
+                    }                     
+
                     if (filteredWorkflows.length > 0) {
                       // If 4 or fewer workflows, show fixed 4-column grid with placeholders
                       if (filteredWorkflows.length <= 4) {
