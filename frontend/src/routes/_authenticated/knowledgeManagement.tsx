@@ -1574,6 +1574,7 @@ function KnowledgeManagementContent() {
                     onChatCreated={handleChatCreated}
                     onChunkIndexChange={handleChunkIndexChange}
                     uploadStatus={selectedDocument.uploadStatus}
+                    isKnowledgeBaseChat={true}
                   />
                 </div>
               ) : (

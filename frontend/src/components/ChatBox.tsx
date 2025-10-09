@@ -209,7 +209,8 @@ interface ChatBoxProps {
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
   hideButtons?: boolean // Add prop to hide mark step as done section
-  uploadStatus?: UploadStatus
+  uploadStatus?: UploadStatus,
+  isKnowledgeBaseChat?: boolean | false
 }
 
 const availableSources: SourceItem[] = [
@@ -377,6 +378,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
       uploadStatus,
+      isKnowledgeBaseChat
     } = props
     // Interface for fetched tools
     interface FetchedTool {
@@ -826,9 +828,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     // File upload utility functions
 
     const uploadFiles = useCallback(
+      
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
-
+        if(isKnowledgeBaseChat){
+          return []
+        }
         setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
 
@@ -911,6 +916,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [uploadingFilesCount])
     const processFiles = useCallback(
       (files: FileList | File[]) => {
+        if(isKnowledgeBaseChat){
+          return
+        }
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
           toast.error({
@@ -2922,7 +2930,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           )}
 
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-            <SmartTooltip content="attachment">
+            {!isKnowledgeBaseChat && <SmartTooltip content="attachment">
               <Attach
                 className={`${
                   selectedFiles.length >= MAX_ATTACHMENTS
@@ -2941,6 +2949,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 }
               />
             </SmartTooltip>
+  }
 
             {showAdvancedOptions && (
               <>
