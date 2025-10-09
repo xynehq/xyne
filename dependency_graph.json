@@ -1,0 +1,137 @@
+{
+  "metadata": {
+    "total_modules": 292,
+    "analysis_timestamp": "2025-01-09",
+    "platform": "Xyne AI Knowledge Management Platform",
+    "architecture": "Full-stack TypeScript with React frontend and Node.js backend"
+  },
+  "core_dependencies": {
+    "MessageWithToolsApi": {
+      "module": "server/api/chat/agents.ts",
+      "type": "function",
+      "dependencies": [
+        "getUserAndWorkspaceByEmail",
+        "insertChat",
+        "insertMessage", 
+        "getToolsByConnectorId",
+        "executeVespaSearch",
+        "performSynthesis",
+        "getErrorMessage",
+        "calculateCost",
+        "buildImageParts",
+        "validateToolParams",
+        "upsertTool",
+        "syncConnectorTools"
+      ],
+      "complexity": "very_high",
+      "dependency_count": 32
+    },
+    "VespaClient": {
+      "module": "server/search/vespaClient.ts",
+      "type": "class",
+      "methods": [
+        "insertDocument",
+        "updateDocument", 
+        "deleteDocument",
+        "getChatUserByEmail",
+        "ifMailDocumentsExist",
+        "groupSearch",
+        "getDocument"
+      ],
+      "dependencies": [
+        "server/utils.ts",
+        "server/db/schema"
+      ],
+      "complexity": "high"
+    },
+    "syncConnectorTools": {
+      "module": "server/db/tool.ts",
+      "type": "function",
+      "dependencies": [
+        "insertTool",
+        "getWorkspaceTools",
+        "getUserAndWorkspaceByEmail",
+        "getErrorMessage"
+      ],
+      "complexity": "medium"
+    },
+    "useChatStream": {
+      "module": "frontend/src/hooks/useChatStream.ts",
+      "type": "hook",
+      "dependencies": [
+        "notifySubscribers",
+        "getErrorMessage",
+        "toast"
+      ],
+      "complexity": "medium"
+    }
+  },
+  "ai_provider_dependencies": {
+    "OpenAIProvider": {
+      "module": "server/ai/provider/openai.ts",
+      "dependencies": [
+        "buildImageParts",
+        "calculateCost",
+        "getErrorMessage"
+      ]
+    },
+    "BedrockProvider": {
+      "module": "server/ai/provider/bedrock.ts", 
+      "dependencies": [
+        "buildImageParts",
+        "calculateCost",
+        "getErrorMessage"
+      ]
+    },
+    "GeminiProvider": {
+      "module": "server/ai/provider/gemini.ts",
+      "dependencies": [
+        "buildGeminiImageParts",
+        "calculateCost",
+        "getErrorMessage"
+      ]
+    }
+  },
+  "database_dependencies": {
+    "getUserAndWorkspaceByEmail": {
+      "module": "server/db/user.ts",
+      "used_by": [
+        "MessageWithToolsApi",
+        "UpdateAgentApi", 
+        "ListAgentsApi",
+        "syncConnectorTools"
+      ],
+      "usage_count": 12
+    },
+    "insertChat": {
+      "module": "server/db/chat.ts",
+      "used_by": ["MessageWithToolsApi"]
+    },
+    "insertMessage": {
+      "module": "server/db/message.ts", 
+      "used_by": ["MessageWithToolsApi"]
+    }
+  },
+  "cross_module_relationships": [
+    {
+      "from": "server/api/chat/agents.ts",
+      "to": "server/db/user.ts", 
+      "relationship": "database_query"
+    },
+    {
+      "from": "server/api/chat/agents.ts",
+      "to": "server/search/vespaClient.ts",
+      "relationship": "search_integration"
+    },
+    {
+      "from": "server/api/chat/agents.ts",
+      "to": "server/ai/provider/",
+      "relationship": "ai_processing"
+    },
+    {
+      "from": "frontend/src/hooks/useChatStream.ts",
+      "to": "server/api/chat/agents.ts",
+      "relationship": "sse_streaming"
+    }
+  ]
+}

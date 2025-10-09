@@ -1,0 +1,236 @@
+{
+  "metadata": {
+    "description": "Component parent-child hierarchy for Xyne platform",
+    "total_components": 85,
+    "analysis_date": "2025-01-09"
+  },
+  "root_components": {
+    "MessageWithToolsApi": {
+      "module": "server/api/chat/agents.ts",
+      "type": "orchestrator",
+      "children": [
+        {
+          "name": "getUserAndWorkspaceByEmail",
+          "module": "server/db/user.ts",
+          "type": "database_query"
+        },
+        {
+          "name": "insertChat", 
+          "module": "server/db/chat.ts",
+          "type": "database_insert"
+        },
+        {
+          "name": "insertMessage",
+          "module": "server/db/message.ts", 
+          "type": "database_insert"
+        },
+        {
+          "name": "getToolsByConnectorId",
+          "module": "server/db/tool.ts",
+          "type": "database_query"
+        },
+        {
+          "name": "executeVespaSearch",
+          "module": "server/api/chat/tools.ts",
+          "type": "search_operation"
+        },
+        {
+          "name": "performSynthesis",
+          "module": "server/ai/agentPrompts.ts",
+          "type": "ai_processing"
+        },
+        {
+          "name": "validateToolParams",
+          "module": "server/api/chat/tools.ts",
+          "type": "validation"
+        },
+        {
+          "name": "calculateCost",
+          "module": "server/utils.ts",
+          "type": "utility"
+        }
+      ]
+    },
+    "VespaClient": {
+      "module": "server/search/vespaClient.ts",
+      "type": "search_infrastructure",
+      "children": [
+        {
+          "name": "insertDocument",
+          "type": "crud_operation"
+        },
+        {
+          "name": "updateDocument", 
+          "type": "crud_operation"
+        },
+        {
+          "name": "deleteDocument",
+          "type": "crud_operation"
+        },
+        {
+          "name": "getChatUserByEmail",
+          "type": "search_query"
+        },
+        {
+          "name": "ifMailDocumentsExist",
+          "type": "search_query"
+        },
+        {
+          "name": "groupSearch",
+          "type": "search_query"
+        }
+      ]
+    },
+    "syncConnectorTools": {
+      "module": "server/db/tool.ts",
+      "type": "synchronization",
+      "children": [
+        {
+          "name": "insertTool",
+          "module": "server/db/tool.ts",
+          "type": "database_insert"
+        },
+        {
+          "name": "getWorkspaceTools",
+          "module": "server/db/tool.ts", 
+          "type": "database_query"
+        },
+        {
+          "name": "upsertTool",
+          "module": "server/db/tool.ts",
+          "type": "database_upsert"
+        }
+      ]
+    }
+  },
+  "frontend_hierarchy": {
+    "useChatStream": {
+      "module": "frontend/src/hooks/useChatStream.ts",
+      "type": "react_hook",
+      "children": [
+        {
+          "name": "notifySubscribers",
+          "type": "state_management"
+        },
+        {
+          "name": "getErrorMessage",
+          "module": "server/utils.ts",
+          "type": "utility"
+        },
+        {
+          "name": "toast",
+          "type": "ui_notification"
+        }
+      ]
+    },
+    "ChatBox": {
+      "module": "frontend/src/components/ChatBox.tsx",
+      "type": "react_component",
+      "children": [
+        {
+          "name": "useChatStream",
+          "module": "frontend/src/hooks/useChatStream.ts",
+          "type": "custom_hook"
+        }
+      ]
+    },
+    "DocumentChat": {
+      "module": "frontend/src/components/DocumentChat.tsx", 
+      "type": "react_component",
+      "children": [
+        {
+          "name": "useChatStream",
+          "module": "frontend/src/hooks/useChatStream.ts",
+          "type": "custom_hook"
+        }
+      ]
+    }
+  },
+  "ai_provider_hierarchy": {
+    "OpenAIProvider": {
+      "module": "server/ai/provider/openai.ts",
+      "type": "ai_provider",
+      "children": [
+        {
+          "name": "buildImageParts",
+          "type": "image_processing"
+        },
+        {
+          "name": "calculateCost",
+          "module": "server/utils.ts",
+          "type": "utility"
+        }
+      ]
+    },
+    "BedrockProvider": {
+      "module": "server/ai/provider/bedrock.ts",
+      "type": "ai_provider", 
+      "children": [
+        {
+          "name": "buildImageParts",
+          "type": "image_processing"
+        },
+        {
+          "name": "calculateCost",
+          "module": "server/utils.ts",
+          "type": "utility"
+        }
+      ]
+    },
+    "GeminiProvider": {
+      "module": "server/ai/provider/gemini.ts",
+      "type": "ai_provider",
+      "children": [
+        {
+          "name": "buildGeminiImageParts",
+          "type": "image_processing"
+        },
+        {
+          "name": "calculateCost", 
+          "module": "server/utils.ts",
+          "type": "utility"
+        }
+      ]
+    }
+  },
+  "utility_hierarchy": {
+    "getErrorMessage": {
+      "module": "server/utils.ts",
+      "type": "utility",
+      "used_by_count": 15,
+      "parents": [
+        "MessageWithToolsApi",
+        "syncConnectorTools", 
+        "useChatStream",
+        "OpenAIProvider",
+        "BedrockProvider",
+        "GeminiProvider"
+      ]
+    },
+    "calculateCost": {
+      "module": "server/utils.ts",
+      "type": "utility",
+      "used_by_count": 8,
+      "parents": [
+        "OpenAIProvider",
+        "BedrockProvider", 
+        "GeminiProvider",
+        "MessageWithToolsApi"
+      ]
+    }
+  },
+  "integration_hierarchy": {
+    "SlackHybridProfile": {
+      "module": "server/integrations/slack/channelIngest.ts",
+      "type": "integration",
+      "complexity": "high",
+      "children": [
+        {
+          "name": "saveConnectorState",
+          "module": "server/db/connector.ts",
+          "type": "state_management"
+        }
+      ]
+    }
+  }
+}

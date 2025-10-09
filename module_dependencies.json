@@ -1,0 +1,184 @@
+{
+  "metadata": {
+    "description": "Inter-module dependency relationships for Xyne platform",
+    "total_modules": 292,
+    "dependency_clusters": 5,
+    "analysis_date": "2025-01-09"
+  },
+  "dependency_clusters": {
+    "chat_processing": {
+      "description": "Core chat and conversation processing modules",
+      "modules": [
+        "server/api/chat/agents.ts",
+        "server/api/chat/tools.ts", 
+        "server/api/chat/chat.ts",
+        "server/ai/agentPrompts.ts"
+      ],
+      "central_component": "MessageWithToolsApi",
+      "complexity": "very_high"
+    },
+    "database_layer": {
+      "description": "Database operations and schema management",
+      "modules": [
+        "server/db/user.ts",
+        "server/db/chat.ts",
+        "server/db/message.ts",
+        "server/db/tool.ts",
+        "server/db/connector.ts",
+        "server/db/schema/"
+      ],
+      "most_used": "server/db/user.ts",
+      "complexity": "high"
+    },
+    "search_infrastructure": {
+      "description": "Vespa search engine integration and operations", 
+      "modules": [
+        "server/search/vespaClient.ts",
+        "server/search/utils.ts",
+        "server/search/mappers.ts"
+      ],
+      "central_component": "VespaClient",
+      "complexity": "high"
+    },
+    "ai_providers": {
+      "description": "Multiple AI/LLM provider integrations",
+      "modules": [
+        "server/ai/provider/openai.ts",
+        "server/ai/provider/bedrock.ts", 
+        "server/ai/provider/gemini.ts",
+        "server/ai/provider/fireworks.ts",
+        "server/ai/provider/ollama.ts",
+        "server/ai/provider/together.ts",
+        "server/ai/provider/vertex.ts"
+      ],
+      "pattern": "provider_pattern",
+      "complexity": "medium"
+    },
+    "frontend_components": {
+      "description": "React frontend components and hooks",
+      "modules": [
+        "frontend/src/components/ChatBox.tsx",
+        "frontend/src/components/DocumentChat.tsx",
+        "frontend/src/hooks/useChatStream.ts",
+        "frontend/src/components/workflow/",
+        "frontend/src/components/ui/"
+      ],
+      "architecture": "react_hooks_pattern", 
+      "complexity": "medium"
+    }
+  },
+  "cross_cluster_dependencies": [
+    {
+      "from_cluster": "chat_processing",
+      "to_cluster": "database_layer",
+      "relationship": "data_persistence",
+      "key_connections": [
+        "MessageWithToolsApi → getUserAndWorkspaceByEmail",
+        "MessageWithToolsApi → insertChat",
+        "MessageWithToolsApi → insertMessage"
+      ]
+    },
+    {
+      "from_cluster": "chat_processing", 
+      "to_cluster": "search_infrastructure",
+      "relationship": "knowledge_retrieval",
+      "key_connections": [
+        "MessageWithToolsApi → executeVespaSearch",
+        "tools.ts → VespaClient methods"
+      ]
+    },
+    {
+      "from_cluster": "chat_processing",
+      "to_cluster": "ai_providers", 
+      "relationship": "ai_processing",
+      "key_connections": [
+        "MessageWithToolsApi → AI provider methods",
+        "agentPrompts.ts → provider integration"
+      ]
+    },
+    {
+      "from_cluster": "frontend_components",
+      "to_cluster": "chat_processing",
+      "relationship": "sse_streaming",
+      "key_connections": [
+        "useChatStream → MessageWithToolsApi",
+        "ChatBox → chat endpoints"
+      ]
+    }
+  ],
+  "module_statistics": {
+    "most_depended_on": [
+      {
+        "module": "server/utils.ts",
+        "dependency_count": 15,
+        "key_functions": ["getErrorMessage", "calculateCost"]
+      },
+      {
+        "module": "server/db/user.ts", 
+        "dependency_count": 12,
+        "key_functions": ["getUserAndWorkspaceByEmail"]
+      },
+      {
+        "module": "server/ai/agentPrompts.ts",
+        "dependency_count": 8, 
+        "key_functions": ["performSynthesis"]
+      }
+    ],
+    "highest_complexity": [
+      {
+        "module": "server/api/chat/agents.ts",
+        "component": "MessageWithToolsApi",
+        "dependency_count": 32,
+        "complexity": "very_high"
+      },
+      {
+        "module": "server/api/agent.ts",
+        "component": "UpdateAgentApi", 
+        "dependency_count": 6,
+        "complexity": "medium"
+      },
+      {
+        "module": "server/integrations/slack/channelIngest.ts",
+        "component": "SlackHybridProfile",
+        "dependency_count": 5,
+        "complexity": "high"
+      }
+    ]
+  },
+  "integration_modules": {
+    "google_workspace": [
+      "server/integrations/google/drive.ts",
+      "server/integrations/google/gmail.ts", 
+      "server/integrations/google/calendar.ts"
+    ],
+    "microsoft_365": [
+      "server/integrations/microsoft/onedrive.ts",
+      "server/integrations/microsoft/outlook.ts"
+    ],
+    "slack": [
+      "server/integrations/slack/channelIngest.ts",
+      "server/integrations/slack/sync.ts"
+    ],
+    "mcp_connectors": [
+      "server/mcp/github.ts"
+    ]
+  },
+  "architectural_patterns": {
+    "provider_pattern": {
+      "used_in": "ai_providers cluster",
+      "description": "Consistent interface across multiple AI providers"
+    },
+    "repository_pattern": {
+      "used_in": "database_layer cluster", 
+      "description": "Data access abstraction with consistent CRUD operations"
+    },
+    "hook_pattern": {
+      "used_in": "frontend_components cluster",
+      "description": "React hooks for state management and side effects"
+    },
+    "orchestrator_pattern": {
+      "used_in": "chat_processing cluster",
+      "description": "MessageWithToolsApi coordinates multiple services"
+    }
+  }
+}

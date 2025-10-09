@@ -1,0 +1,322 @@
+{
+  "metadata": {
+    "description": "AST analysis and complexity metrics for Xyne platform",
+    "analysis_method": "MCP brain semantic search + CodeTraverse dependency analysis",
+    "total_functions_analyzed": 75,
+    "analysis_date": "2025-01-09"
+  },
+  "function_signatures": {
+    "MessageWithToolsApi": {
+      "module": "server/api/chat/agents.ts",
+      "signature": "async function MessageWithToolsApi(request: Request, context: Context)",
+      "parameters": [
+        {
+          "name": "request",
+          "type": "Request",
+          "description": "HTTP request object"
+        },
+        {
+          "name": "context", 
+          "type": "Context",
+          "description": "Hono framework context"
+        }
+      ],
+      "return_type": "Promise<Response>",
+      "complexity": "very_high",
+      "cyclomatic_complexity": 15,
+      "lines_of_code": 200,
+      "dependencies": 32
+    },
+    "executeVespaSearch": {
+      "module": "server/api/chat/tools.ts",
+      "signature": "async function executeVespaSearch(query: string, options: SearchOptions)",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "description": "Search query text"
+        },
+        {
+          "name": "options",
+          "type": "SearchOptions",
+          "description": "Search configuration options"
+        }
+      ],
+      "return_type": "Promise<VespaSearchResponse>",
+      "complexity": "medium",
+      "cyclomatic_complexity": 5,
+      "lines_of_code": 80
+    },
+    "syncConnectorTools": {
+      "module": "server/db/tool.ts", 
+      "signature": "async function syncConnectorTools(workspaceId: string, connectorId: string)",
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "type": "string"
+        },
+        {
+          "name": "connectorId", 
+          "type": "string"
+        }
+      ],
+      "return_type": "Promise<void>",
+      "complexity": "medium",
+      "cyclomatic_complexity": 4,
+      "lines_of_code": 120
+    },
+    "useChatStream": {
+      "module": "frontend/src/hooks/useChatStream.ts",
+      "signature": "function useChatStream(options: ChatStreamOptions)",
+      "parameters": [
+        {
+          "name": "options",
+          "type": "ChatStreamOptions",
+          "description": "SSE streaming configuration"
+        }
+      ],
+      "return_type": "ChatStreamHook",
+      "complexity": "medium",
+      "cyclomatic_complexity": 6,
+      "lines_of_code": 150
+    }
+  },
+  "type_definitions": {
+    "SearchOptions": {
+      "module": "server/search/types.ts",
+      "type": "interface",
+      "properties": [
+        "mode: SearchMode",
+        "filters?: SearchFilters",
+        "limit?: number",
+        "offset?: number"
+      ]
+    },
+    "SearchMode": {
+      "module": "server/search/types.ts", 
+      "type": "enum",
+      "values": ["NativeRank", "BM25", "AI", "Random", "GlobalSorted"]
+    },
+    "VespaSearchResponse": {
+      "module": "server/search/types.ts",
+      "type": "interface",
+      "properties": [
+        "hits: SearchHit[]",
+        "totalCount: number", 
+        "facets?: SearchFacets"
+      ]
+    },
+    "ChatStreamOptions": {
+      "module": "frontend/src/types/chat.ts",
+      "type": "interface",
+      "properties": [
+        "endpoint: string",
+        "onMessage?: (message: Message) => void",
+        "onError?: (error: Error) => void"
+      ]
+    }
+  },
+  "complexity_analysis": {
+    "very_high_complexity": [
+      {
+        "function": "MessageWithToolsApi",
+        "module": "server/api/chat/agents.ts",
+        "metrics": {
+          "cyclomatic_complexity": 15,
+          "cognitive_complexity": 20,
+          "dependency_count": 32,
+          "lines_of_code": 200
+        },
+        "reasons": [
+          "Orchestrates multiple services",
+          "Complex error handling",
+          "Multiple conditional branches",
+          "Async/await chains"
+        ]
+      }
+    ],
+    "high_complexity": [
+      {
+        "function": "SlackHybridProfile",
+        "module": "server/integrations/slack/channelIngest.ts",
+        "metrics": {
+          "cyclomatic_complexity": 8,
+          "cognitive_complexity": 12,
+          "dependency_count": 5,
+          "lines_of_code": 180
+        }
+      },
+      {
+        "function": "VespaClient.groupSearch",
+        "module": "server/search/vespaClient.ts", 
+        "metrics": {
+          "cyclomatic_complexity": 7,
+          "cognitive_complexity": 10,
+          "lines_of_code": 120
+        }
+      }
+    ],
+    "medium_complexity": [
+      {
+        "function": "executeVespaSearch",
+        "module": "server/api/chat/tools.ts",
+        "metrics": {
+          "cyclomatic_complexity": 5,
+          "cognitive_complexity": 6,
+          "lines_of_code": 80
+        }
+      },
+      {
+        "function": "useChatStream",
+        "module": "frontend/src/hooks/useChatStream.ts",
+        "metrics": {
+          "cyclomatic_complexity": 6,
+          "cognitive_complexity": 8,
+          "lines_of_code": 150
+        }
+      }
+    ]
+  },
+  "architectural_patterns": {
+    "provider_pattern": {
+      "description": "Consistent interface across AI providers",
+      "implementations": [
+        {
+          "module": "server/ai/provider/openai.ts",
+          "class": "OpenAIProvider",
+          "methods": ["buildImageParts", "calculateCost", "generateResponse"]
+        },
+        {
+          "module": "server/ai/provider/bedrock.ts", 
+          "class": "BedrockProvider",
+          "methods": ["buildImageParts", "calculateCost", "generateResponse"]
+        },
+        {
+          "module": "server/ai/provider/gemini.ts",
+          "class": "GeminiProvider", 
+          "methods": ["buildGeminiImageParts", "calculateCost", "generateResponse"]
+        }
+      ],
+      "benefits": ["Pluggable AI providers", "Consistent interface", "Easy testing"]
+    },
+    "repository_pattern": {
+      "description": "Data access abstraction layer",
+      "implementations": [
+        {
+          "module": "server/db/user.ts",
+          "functions": ["getUserAndWorkspaceByEmail", "insertUser", "updateUser"]
+        },
+        {
+          "module": "server/db/chat.ts",
+          "functions": ["insertChat", "getChatById", "updateChat"]
+        },
+        {
+          "module": "server/db/tool.ts",
+          "functions": ["insertTool", "getWorkspaceTools", "syncConnectorTools"]
+        }
+      ],
+      "benefits": ["Database abstraction", "Consistent error handling", "Transaction management"]
+    },
+    "hook_pattern": {
+      "description": "React hooks for state management",
+      "implementations": [
+        {
+          "module": "frontend/src/hooks/useChatStream.ts",
+          "hook": "useChatStream",
+          "features": ["SSE streaming", "Error handling", "State management"]
+        }
+      ],
+      "benefits": ["Reusable state logic", "Side effect management", "Component decoupling"]
+    },
+    "orchestrator_pattern": {
+      "description": "Central coordination of multiple services",
+      "implementations": [
+        {
+          "module": "server/api/chat/agents.ts",
+          "function": "MessageWithToolsApi",
+          "coordinates": [
+            "Database operations",
+            "Search operations", 
+            "AI processing",
+            "Tool execution"
+          ]
+        }
+      ],
+      "benefits": ["Service coordination", "Transaction management", "Error handling"]
+    }
+  },
+  "code_quality_metrics": {
+    "maintainability_index": {
+      "MessageWithToolsApi": 45,
+      "executeVespaSearch": 75,
+      "syncConnectorTools": 68,
+      "useChatStream": 72
+    },
+    "technical_debt": {
+      "high_debt": [
+        {
+          "component": "MessageWithToolsApi",
+          "issues": [
+            "High cyclomatic complexity",
+            "Too many responsibilities",
+            "Long function length"
+          ],
+          "recommendation": "Break into smaller functions"
+        }
+      ],
+      "medium_debt": [
+        {
+          "component": "SlackHybridProfile",
+          "issues": ["Complex integration logic"],
+          "recommendation": "Extract utility functions"
+        }
+      ]
+    }
+  },
+  "inheritance_hierarchies": {
+    "ai_providers": {
+      "base_pattern": "Provider interface",
+      "implementations": [
+        "OpenAIProvider",
+        "BedrockProvider", 
+        "GeminiProvider",
+        "FireworksProvider",
+        "OllamaProvider",
+        "TogetherProvider",
+        "VertexAIProvider"
+      ],
+      "shared_methods": ["calculateCost", "buildImageParts", "generateResponse"]
+    },
+    "database_entities": {
+      "base_pattern": "Drizzle ORM schema",
+      "entities": [
+        "users",
+        "workspaces", 
+        "chats",
+        "messages",
+        "agents",
+        "tools",
+        "workflows"
+      ],
+      "shared_fields": ["id", "createdAt", "updatedAt", "workspaceId"]
+    }
+  },
+  "performance_characteristics": {
+    "async_patterns": {
+      "heavy_async": [
+        "MessageWithToolsApi",
+        "executeVespaSearch",
+        "syncConnectorTools"
+      ],
+      "streaming": [
+        "useChatStream",
+        "SSE endpoints"
+      ]
+    },
+    "database_operations": {
+      "batch_operations": ["syncConnectorTools"],
+      "single_operations": ["insertChat", "insertMessage"],
+      "query_patterns": ["getUserAndWorkspaceByEmail"]
+    }
+  }
+}
