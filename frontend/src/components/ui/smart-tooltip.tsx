@@ -4,6 +4,7 @@ interface SmartTooltipProps {
   children: React.ReactElement
   content: string
   delayDuration?: number
+  className?: string
 }
 
 // Smart tooltip wrapper component that adjusts position based on available space
@@ -11,6 +12,7 @@ export const SmartTooltip: React.FC<SmartTooltipProps> = ({
   children,
   content,
   delayDuration = 500,
+  className = "",
 }) => {
   const [isVisible, setIsVisible] = useState(false)
   const [position, setPosition] = useState<"top" | "bottom">("bottom")
@@ -67,7 +69,7 @@ export const SmartTooltip: React.FC<SmartTooltipProps> = ({
   return (
     <div
       ref={triggerRef}
-      className="relative inline-block"
+      className={`relative inline-block ${className}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
