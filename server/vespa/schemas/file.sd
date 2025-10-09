@@ -192,32 +192,6 @@ schema file {
       expression: elementwise(bm25(chunks), x, double)
     }
   }
-
-  rank-profile initial_image inherits initial {
-    function vector_score_image() {
-      expression: vector_score() + closeness(field, image_chunk_embeddings)
-    }
-
-    function combined_bm25_image() {
-      expression: combined_bm25() + bm25(image_chunks)
-    }
-
-    function matchedFieldCount_image() {
-      expression {
-        # The `matches` returns 1 if the field contains a match, otherwise 0
-        matchedFieldCount() + matches(image_chunks)
-      }
-    }
-
-    function combined_nativeRank_image() {
-      expression: (nativeRank(title) + nativeRank(chunks) + nativeRank(image_chunks)) / if(matchedFieldCount_image == 0, 1, matchedFieldCount_image)
-    }
-
-    function image_chunk_scores() {
-      expression: elementwise(bm25(image_chunks), x, double)
-    }
-  }
-
  
   rank-profile default_native inherits initial {
 
@@ -246,7 +220,30 @@ schema file {
     }
   }
 
-  rank-profile attachmentRank inherits initial_image {
+  rank-profile attachmentRank inherits initial {
+
+    function vector_score_image() {
+      expression: vector_score() + closeness(field, image_chunk_embeddings)
+    }
+
+    function combined_bm25_image() {
+      expression: combined_bm25() + bm25(image_chunks)
+    }
+
+    function matchedFieldCount_image() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matchedFieldCount() + matches(image_chunks)
+      }
+    }
+
+    function combined_nativeRank_image() {
+      expression: (nativeRank(title) + nativeRank(chunks) + nativeRank(image_chunks)) / if(matchedFieldCount_image == 0, 1, matchedFieldCount_image)
+    }
+
+    function image_chunk_scores() {
+      expression: elementwise(bm25(image_chunks), x, double)
+    }
 
     first-phase {
       expression: (query(alpha) * (vector_score_image)) + ((1 - query(alpha)) *  combined_nativeRank_image)
