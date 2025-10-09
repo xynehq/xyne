@@ -3348,6 +3348,13 @@ async function* generateMetadataQueryAnswer(
     if (agentPrompt) {
       const agentApps = agentAppEnums.filter((a) => apps?.includes(a))
       if (agentApps.length) {
+        // Hot fix added due to integration issue with Google Drive agent
+        // we fix this in the short term by blocking all Google Drive agent queries 
+        // to go through getItems
+        if(agentApps.includes(Apps.GoogleDrive)){
+          yield { text: METADATA_FALLBACK_TO_RAG }
+          return
+        }
         loggerWithChild({ email: email }).info(
           `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
