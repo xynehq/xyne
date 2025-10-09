@@ -43,10 +43,9 @@ import {
   DataSourceEntity,
   WebSearchEntity,
   FileType,
-  MIME_TYPE_MAPPINGS,
-  EXTENSION_MAPPINGS,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
+import { getFileType } from "shared/fileUtils"
 
 // Define placeholder entities if they don't exist in shared/types
 const PdfEntity = { Default: "pdf_default" } as const
@@ -165,30 +164,9 @@ export const getIcon = (
   }
 }
 
-// Helper function to determine FileType from a file
-export const getFileType = (file: File): FileType => {
-  // First check by MIME type
-  for (const [fileType, mimeTypes] of Object.entries(MIME_TYPE_MAPPINGS)) {
-    if ((mimeTypes as readonly string[]).includes(file.type)) {
-      return fileType as FileType
-    }
-  }
-
-  // Fallback to extension checking
-  const fileName = file.name.toLowerCase()
-  for (const [fileType, extensions] of Object.entries(EXTENSION_MAPPINGS)) {
-    if ((extensions as readonly string[]).some(ext => fileName.endsWith(ext))) {
-      return fileType as FileType
-    }
-  }
-
-  // Default fallback
-  return FileType.FILE
-}
-
 // Icon mapping from FileType to SVG component
 export const getFileIcon = (file: File) => {
-  const fileType = getFileType(file)
+  const fileType = getFileType({type: file.type, name: file.name})
   
   switch (fileType) {
     case FileType.TEXT:

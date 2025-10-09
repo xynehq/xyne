@@ -369,11 +369,15 @@ export const handleGoogleDriveChange = async (
                 await insertWithRetry(data, fileSchema)
               }
             } else {
-              vespaData.permissions = toPermissionsList(
+              const permissionsAsString = toPermissionsList(
                 vespaData.permissions,
                 email,
-              )
-              await insertWithRetry(vespaData, fileSchema)
+              );
+              const vespaDataForInsert = {
+                ...vespaData,
+                permissions: permissionsAsString,
+              };
+              await insertWithRetry(vespaDataForInsert, fileSchema);
             }
           }
         } catch (err) {
