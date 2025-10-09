@@ -40,6 +40,7 @@ show_help() {
     echo "Options:"
     echo "  --force-gpu        Force GPU mode even if GPU not detected"
     echo "  --force-cpu        Force CPU-only mode even if GPU detected"
+    echo "  --no-cache         Build Docker images without using cache"
     echo ""
     echo "Environment Variables:"
     echo "  XYNE_DATA_DIR      Data directory path (default: ./data)"
@@ -104,6 +105,7 @@ detect_gpu_support() {
 COMMAND=${1:-""}
 FORCE_GPU=false
 FORCE_CPU=false
+NO_CACHE_FLAG=""
 
 # Show help if no command provided
 if [ -z "$COMMAND" ]; then
@@ -121,6 +123,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --force-cpu)
             FORCE_CPU=true
+            shift
+            ;;
+        --no-cache)
+            NO_CACHE_FLAG="--no-cache"
             shift
             ;;
         *)

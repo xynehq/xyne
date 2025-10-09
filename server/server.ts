@@ -218,9 +218,12 @@ import {
   DeleteWorkflowStepTemplateApi,
   UpdateWorkflowStepExecutionApi,
   CompleteWorkflowStepExecutionApi,
+  ReviewWorkflowStepApi,
+  TriggerWorkflowStepApi,
   SubmitFormStepApi,
   GetFormDefinitionApi,
   ServeWorkflowFileApi,
+  DownloadReviewFilesApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
   createWorkflowTemplateSchema,
@@ -231,8 +234,10 @@ import {
   createWorkflowToolSchema,
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
+  reviewSubmissionSchema,
   listWorkflowExecutionsQuerySchema,
 } from "@/api/workflow"
+import { GetScriptLanguagesApi } from "@/api/script"
 import metricRegister from "@/metrics/sharedRegistry"
 import {
   handleAttachmentUpload,
@@ -1077,11 +1082,20 @@ export const AppRoutes = app
     UpdateWorkflowStepExecutionApi,
   )
   .post("/workflow/steps/:stepId/complete", CompleteWorkflowStepExecutionApi)
+  .post(
+    "/workflow/steps/:stepId/review",
+    zValidator("json", reviewSubmissionSchema),
+    ReviewWorkflowStepApi,
+  )
+  .post("/workflow/steps/:stepId/trigger", TriggerWorkflowStepApi)
   .get("/workflow/steps/:stepId/form", GetFormDefinitionApi)
   .post("/workflow/steps/submit-form", SubmitFormStepApi)
   .get("/workflow/files/:fileId", ServeWorkflowFileApi)
+  .get("/workflow/executions/:executionId/download", DownloadReviewFilesApi)
+  .post("/workflow/executions/:executionId/download", DownloadReviewFilesApi)
   .get("/workflow/models/gemini", GetGeminiModelEnumsApi)
   .get("/workflow/models/vertexai", GetVertexAIModelEnumsApi)
+  .get("/workflow/script/languages", GetScriptLanguagesApi)
 
   // Agent Routes
   .post("/agent/create", zValidator("json", createAgentSchema), CreateAgentApi)

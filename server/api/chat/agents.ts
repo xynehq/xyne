@@ -49,6 +49,7 @@ import { getUserAndWorkspaceByEmail } from "@/db/user"
 import { getLogger, getLoggerWithChild } from "@/logger"
 import {
   AgentReasoningStepType,
+  AgentToolName,
   ApiKeyScopes,
   ChatSSEvents,
   ContextSysthesisState,
@@ -3575,6 +3576,7 @@ export const AgentMessageApi = async (c: Context) => {
       ? await extractItemIdsFromPath(ids ?? "")
       : { collectionFileIds: [], collectionFolderIds: [], collectionIds: [] }
     let fileIds = extractedInfo?.fileIds
+    let folderIds = extractedInfo?.collectionFolderIds
     if (nonImageAttachmentFileIds && nonImageAttachmentFileIds.length > 0) {
       fileIds = [...fileIds, ...nonImageAttachmentFileIds]
     }

@@ -4,6 +4,8 @@ import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 import { type SelectAgent } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
+import JSZip from "jszip"
+import { readFile } from "node:fs/promises"
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
@@ -61,6 +63,7 @@ export {
   createWorkflowToolSchema,
   updateWorkflowStepExecutionSchema,
   formSubmissionSchema,
+  reviewSubmissionSchema,
 } from "@/db/schema/workflows"
 
 // Export query schema
@@ -83,6 +86,7 @@ import { getActualNameFromEnum } from "@/ai/modelConfig"
 import { getProviderByModel } from "@/ai/provider"
 import { Models } from "@/ai/types"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
+import { executeScript, ScriptLanguage } from "@/workflowScriptExecutorTool"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -213,7 +217,14 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
       .from(workflowStepTemplate)
       .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
 
+    // Debug logging to check toolIds
+    Logger.info(`GetWorkflowTemplateApi: Found ${steps.length} steps for template ${templateId}`)
+    steps.forEach((step, index) => {
+      Logger.info(`Step ${index + 1} (${step.name}): toolIds = ${JSON.stringify(step.toolIds)}`)
+    })
+
     const toolIds = steps.flatMap((s) => s.toolIds || [])
+    Logger.info(`GetWorkflowTemplateApi: Flattened toolIds = ${JSON.stringify(toolIds)}`)
     const tools =
       toolIds.length > 0
         ? await db
@@ -301,12 +312,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       requestData = await c.req.json()
     }
 
-    // Validate required fields
-    if (!requestData.rootStepInput) {
-      throw new HTTPException(400, { message: "rootStepInput is required" })
-    }
-
-    // Get template and validate
+    // Get template and validate to check if root step is trigger type
     const template = await db
       .select()
       .from(workflowTemplate)
@@ -322,7 +328,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       })
     }
 
-    // Get root step template
+    // Get root step template to check if it's a trigger type
     const rootStepTemplate = await db
       .select()
       .from(workflowStepTemplate)
@@ -336,7 +342,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     const rootStep = rootStepTemplate[0]
 
-    // Get root step tool for validation
+    // Get root step tool to check if it's a trigger
     let rootStepTool = null
     if (rootStep.toolIds && rootStep.toolIds.length > 0) {
       const toolResult = await db
@@ -349,8 +355,21 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       }
     }
 
-    // Validate input based on root step type
-    if (rootStep.type === StepType.MANUAL && rootStepTool?.type === ToolType.FORM) {
+    // Check if root step is a trigger - if so, allow execution without input
+    const isTriggerRootStep = rootStep.type === StepType.MANUAL && rootStepTool?.type === ToolType.TRIGGER
+
+    // Validate required fields - skip validation for trigger root steps
+    if (!isTriggerRootStep && !requestData.rootStepInput) {
+      throw new HTTPException(400, { message: "rootStepInput is required" })
+    }
+
+    // Provide empty input for trigger steps
+    if (isTriggerRootStep && !requestData.rootStepInput) {
+      requestData.rootStepInput = {}
+    }
+
+    // Validate input based on root step type (skip validation for trigger tools)
+    if (rootStep.type === StepType.MANUAL && rootStepTool?.type === ToolType.FORM && !isTriggerRootStep) {
       // Validate form input
       const formDefinition = rootStepTool.value as any
       const formFields = formDefinition?.fields || []
@@ -470,16 +489,16 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .set({ rootWorkflowStepExeId: rootStepExecution.id })
       .where(eq(workflowExecution.id, execution.id))
 
+    // Update step statuses to activate steps that are ready
+    await updateDownstreamStepStatuses(execution.id)
+
     // Process file uploads and create tool execution
     let toolExecutionRecord = null
     let processedFormData = { ...requestData.rootStepInput }
 
-    if (rootStepTool) {
+    if (rootStepTool && rootStepTool.type === ToolType.FORM) {
       // Handle file uploads if present
-      if (
-        contentType.includes("multipart/form-data") &&
-        rootStepTool.type === ToolType.FORM
-      ) {
+      if (contentType.includes("multipart/form-data")) {
         const formDefinition = rootStepTool.value as any
         const formFields = formDefinition?.fields || []
 
@@ -585,49 +604,56 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           completedAt: new Date(),
         })
         .returning()
+
+      // Mark root step as completed (only for form tools)
+      await db
+        .update(workflowStepExecution)
+        .set({
+          status: WorkflowStatus.COMPLETED,
+          completedBy: "api",
+          completedAt: new Date(),
+          toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
+          metadata: {
+            ...(rootStepExecution.metadata || {}),
+            formSubmission: {
+              formData: processedFormData,
+              submittedAt: new Date().toISOString(),
+              submittedBy: "api",
+              autoCompleted: true,
+            },
+          },
+        })
+        .where(eq(workflowStepExecution.id, rootStepExecution.id))
     }
 
-    // Mark root step as completed
-    await db
-      .update(workflowStepExecution)
-      .set({
-        status: WorkflowStatus.COMPLETED,
-        completedBy: "api",
-        completedAt: new Date(),
-        toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
-        metadata: {
-          ...(rootStepExecution.metadata || {}),
-          formSubmission: {
-            formData: processedFormData,
-            submittedAt: new Date().toISOString(),
-            submittedBy: "api",
-            autoCompleted: true,
-          },
-        },
-      })
-      .where(eq(workflowStepExecution.id, rootStepExecution.id))
-
-    // Auto-execute next automated steps
+    // Auto-execute next automated steps (only for completed form tools)
     const allTools = await db.select().from(workflowTool)
     const rootStepName = rootStepExecution.name || "Root Step"
     const currentResults: Record<string, any> = {}
 
-    currentResults[rootStepName] = {
-      stepId: rootStepExecution.id,
-      formSubmission: {
-        formData: processedFormData,
-        submittedAt: new Date().toISOString(),
-        submittedBy: "api",
-        autoCompleted: true,
-      },
-      toolExecution: toolExecutionRecord,
+    // Determine response based on whether root step was completed or is awaiting input
+    const isRootStepCompleted = rootStepTool && rootStepTool.type === ToolType.FORM
+    const responseMessage = isRootStepCompleted 
+      ? "Workflow started successfully - automated steps running in background"
+      : "Workflow created successfully - awaiting manual input for root step"
+
+    if (isRootStepCompleted) {
+      currentResults[rootStepName] = {
+        stepId: rootStepExecution.id,
+        formSubmission: {
+          formData: processedFormData,
+          submittedAt: new Date().toISOString(),
+          submittedBy: "api",
+          autoCompleted: true,
+        },
+        toolExecution: toolExecutionRecord,
+      }
     }
 
-    // Return response immediately and execute automated steps in parallel
+    // Return response immediately and execute automated steps in parallel (only if root step completed)
     const responseData = {
       success: true,
-      message:
-        "Workflow started successfully - automated steps running in background",
+      message: responseMessage,
       data: {
         execution: {
           ...execution,
@@ -635,15 +661,16 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         },
         rootStepExecution: {
           ...rootStepExecution,
-          status: ToolExecutionStatus.COMPLETED,
+          status: isRootStepCompleted ? ToolExecutionStatus.COMPLETED : rootStepExecution.status,
         },
         toolExecution: toolExecutionRecord,
         statusPollingUrl: `/api/v1/workflow/executions/${execution.id}/status`,
       },
     }
 
-    // Execute automated steps in background (non-blocking)
+    // Execute automated steps in background (non-blocking) - only if root step is completed
     if (
+      isRootStepCompleted &&
       rootStepExecution.nextStepIds &&
       Array.isArray(rootStepExecution.nextStepIds)
     ) {
@@ -753,7 +780,6 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       executionResults = await executeWorkflowChain(
         execution.id,
         rootStepExecution.id,
-        tools,
         {},
       )
     }
@@ -867,14 +893,38 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
       // All executed steps are completed
       shouldComplete = true
       completionReason = "All executed steps completed"
-    } else if (activeSteps.length === 0 && manualStepsAwaitingInput.length === 0) {
-      // No active steps and no manual steps awaiting input
-      // This means we've reached the end of the execution path
-      shouldComplete = true
-      completionReason = "End of execution path reached"
     } else {
-      // There are still active steps or manual steps awaiting input
-      shouldComplete = false
+      // Check if any completed step is a leaf node (has no next steps that are executed)
+      const leafNodeCompleted = completedSteps.some(completedStep => {
+        // A step is a leaf node if it has no next steps OR all its next steps are unexecuted (draft)
+        const nextStepIds = completedStep.nextStepIds || []
+        if (nextStepIds.length === 0) {
+          // No next steps - definitely a leaf node
+          return true
+        }
+        
+        // Check if all next steps are unexecuted (not in executedSteps)
+        const executedStepIds = executedSteps.map(s => s.id)
+        const allNextStepsUnexecuted = nextStepIds.every(nextId => 
+          !executedStepIds.includes(nextId)
+        )
+        
+        return allNextStepsUnexecuted
+      })
+
+      if (leafNodeCompleted) {
+        shouldComplete = true
+        completionReason = "Leaf node completed - workflow finished"
+        Logger.info(`Detected leaf node completion in workflow ${executionId}`)
+      } else if (activeSteps.length === 0 && manualStepsAwaitingInput.length === 0) {
+        // No active steps and no manual steps awaiting input
+        // This means we've reached the end of the execution path
+        shouldComplete = true
+        completionReason = "End of execution path reached"
+      } else {
+        // There are still active steps or manual steps awaiting input
+        shouldComplete = false
+      }
     }
 
     // Update workflow metadata with current progress
@@ -941,7 +991,6 @@ const executeAutomatedWorkflowSteps = async (
           executionResults = await executeWorkflowChain(
             executionId,
             nextStep.id,
-            allTools,
             executionResults,
           )
         } catch (stepError) {
@@ -1015,10 +1064,147 @@ const executeAutomatedWorkflowSteps = async (
 }
 
 // Execute workflow chain - automatically execute steps in sequence
+// Function to send email notifications when review steps become active
+const sendReviewNotificationIfNeeded = async (step: any) => {
+  try {
+    // Check if this step is a manual step (which could be a review step)
+    if (step.type !== StepType.MANUAL) {
+      return
+    }
+
+    // Get the step template to find the associated tools
+    const stepTemplate = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.id, step.workflowStepTemplateId))
+
+    if (!stepTemplate || stepTemplate.length === 0) {
+      return
+    }
+
+    const toolIds = stepTemplate[0].toolIds || []
+    if (toolIds.length === 0) {
+      return
+    }
+
+    // Get the tools for this step
+    const tools = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolIds[0])) // Assuming first tool is the primary tool
+
+    if (!tools || tools.length === 0) {
+      return
+    }
+
+    const tool = tools[0]
+
+    // Check if this is a review tool with email configuration
+    if (tool.type === ToolType.REVIEW && tool.config) {
+      const reviewConfig = tool.config as any
+      const emailAddresses = reviewConfig.email_addresses || []
+      const emailMessage = reviewConfig.email_message || ""
+
+      if (emailAddresses.length > 0 && emailMessage) {
+        const { emailService } = await import("@/services/emailService")
+
+        // Get workflow execution info for email context
+        const [execution] = await db
+          .select()
+          .from(workflowExecution)
+          .where(eq(workflowExecution.id, step.workflowExecutionId))
+
+        const workflowName = execution?.name || "Unknown Workflow"
+        const subject = `Review Required: ${workflowName} - ${step.name}`
+
+        // Send email to all configured addresses
+        const emailPromises = emailAddresses.map(async (email: string) => {
+          try {
+            const emailSent = await emailService.sendEmail({
+              to: email,
+              subject: subject,
+              body: emailMessage,
+              contentType: "text",
+            })
+
+            if (emailSent) {
+              Logger.info(`✅ Review activation email sent to: ${email} for step: ${step.name}`)
+            } else {
+              Logger.warn(`⚠️  Failed to send review activation email to: ${email}`)
+            }
+
+            return { email, success: emailSent }
+          } catch (emailError) {
+            Logger.error(`❌ Error sending review activation email to ${email}:`, emailError)
+            return { email, success: false, error: emailError }
+          }
+        })
+
+        const emailResults = await Promise.all(emailPromises)
+        const successfulEmails = emailResults.filter(result => result.success).length
+
+        Logger.info(`📧 Review activation emails sent: ${successfulEmails}/${emailAddresses.length} for step: ${step.name}`)
+      }
+    }
+  } catch (error) {
+    Logger.error(error, `Failed to send review notification for step: ${step.name}`)
+  }
+}
+
+// Function to update downstream step statuses when their prerequisites are met
+const updateDownstreamStepStatuses = async (executionId: string) => {
+  try {
+    // Get all step executions for this workflow
+    const allSteps = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+    // Find steps that are in DRAFT status and check if they can be activated
+    const draftSteps = allSteps.filter(step => step.status === WorkflowStatus.DRAFT)
+    
+    for (const step of draftSteps) {
+      const prevStepIds = step.prevStepIds || []
+      
+      if (prevStepIds.length === 0) {
+        // Root step - should be active if not already completed
+        if (step.status === WorkflowStatus.DRAFT) {
+          await db
+            .update(workflowStepExecution)
+            .set({ status: WorkflowStatus.ACTIVE })
+            .where(eq(workflowStepExecution.id, step.id))
+
+          // Check if this is a review step and send email notifications
+          await sendReviewNotificationIfNeeded(step)
+        }
+      } else {
+        // Check if all previous steps are completed
+        const prevSteps = allSteps.filter(s => 
+          prevStepIds.includes(s.workflowStepTemplateId)
+        )
+        
+        const allPrevStepsCompleted = prevSteps.length > 0 && 
+          prevSteps.every(s => s.status === WorkflowStatus.COMPLETED)
+        
+        if (allPrevStepsCompleted && step.status === WorkflowStatus.DRAFT) {
+          await db
+            .update(workflowStepExecution)
+            .set({ status: WorkflowStatus.ACTIVE })
+            .where(eq(workflowStepExecution.id, step.id))
+
+          // Check if this is a review step and send email notifications
+          await sendReviewNotificationIfNeeded(step)
+        }
+      }
+    }
+  } catch (error) {
+    Logger.error(error, "Failed to update downstream step statuses")
+  }
+}
+
 const executeWorkflowChain = async (
   executionId: string,
   currentStepId: string,
-  tools: any[],
   previousResults: any,
 ) => {
   try {
@@ -1053,10 +1239,17 @@ const executeWorkflowChain = async (
       return previousResults
     }
 
-    const tool = tools.find((t) => t.id === toolId)
-    if (!tool) {
+    // Fetch the current tool data from database to get latest updates
+    const toolFromDb = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolId))
+    
+    if (!toolFromDb || toolFromDb.length === 0) {
       return previousResults
     }
+
+    const tool = toolFromDb[0]
 
     // Execute the tool
     const toolResult = await executeWorkflowTool(tool, previousResults, executionId)
@@ -1205,6 +1398,9 @@ const executeWorkflowChain = async (
       })
       .where(eq(workflowStepExecution.id, currentStepId))
 
+    // Update status of downstream steps that can now be activated
+    await updateDownstreamStepStatuses(executionId)
+
     // Store results for next step
     const updatedResults = {
       ...(previousResults || {}),
@@ -1233,7 +1429,6 @@ const executeWorkflowChain = async (
           await executeWorkflowChain(
             executionId,
             nextStep.id,
-            tools,
             updatedResults,
           )
         }
@@ -1279,16 +1474,14 @@ const executeWorkflowChain = async (
   }
 }
 
-// Get workflow execution status (lightweight for polling)
+// Get workflow execution status (enhanced for polling with step details)
 export const GetWorkflowExecutionStatusApi = async (c: Context) => {
   try {
     const executionId = c.req.param("executionId")
 
-    // Get only the status field for maximum performance
+    // Get execution with current step details
     const execution = await db
-      .select({
-        status: workflowExecution.status,
-      })
+      .select()
       .from(workflowExecution)
       .where(eq(workflowExecution.id, executionId))
 
@@ -1296,9 +1489,53 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Workflow execution not found" })
     }
 
+    // Get the current active step execution
+    const currentStepExecution = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(
+        and(
+          eq(workflowStepExecution.workflowExecutionId, executionId),
+          eq(workflowStepExecution.status, "active")
+        )
+      )
+      .limit(1)
+
+    let currentStep = null
+    let requiresUserInput = false
+
+    if (currentStepExecution.length > 0) {
+      const stepExec = currentStepExecution[0]
+      
+      // Get the step template to determine type
+      const stepTemplate = await db
+        .select()
+        .from(workflowStepTemplate)
+        .where(eq(workflowStepTemplate.id, stepExec.workflowStepTemplateId))
+        .limit(1)
+
+      if (stepTemplate.length > 0) {
+        const step = stepTemplate[0]
+        currentStep = {
+          id: stepExec.id,
+          name: step.name,
+          type: step.type,
+          description: step.description,
+          metadata: step.metadata
+        }
+        
+        // Determine if user input is required
+        requiresUserInput = step.type === 'manual' || 
+                          stepExec.status === 'waiting_for_user' 
+      }
+    }
+
     return c.json({
       success: true,
       status: execution[0].status,
+      currentStep: currentStep,
+      requiresUserInput: requiresUserInput,
+      executionId: executionId
     })
   } catch (error) {
     Logger.error(error, "Failed to get workflow execution status")
@@ -1342,17 +1579,63 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
         createdAt: toolExecution.createdAt,
         updatedAt: toolExecution.updatedAt,
         toolType: workflowTool.type,
+        toolConfig: workflowTool.config,
       })
       .from(toolExecution)
       .leftJoin(workflowTool, eq(toolExecution.workflowToolId, workflowTool.id))
       .where(eq(toolExecution.workflowExecutionId, executionId))
 
+    // Get workflow template to access workflow tools
+    const workflowTemplateData = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, execution[0].workflowTemplateId))
+
+    // Get step templates to map toolIds to workflow_tool_ids
+    const stepTemplates = workflowTemplateData.length > 0 ? await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, workflowTemplateData[0].id))
+      : []
+
+    // Get all workflow tools for the template through step templates
+    const allToolIds: string[] = []
+    stepTemplates.forEach(stepTemplate => {
+      if (stepTemplate.toolIds) {
+        allToolIds.push(...stepTemplate.toolIds)
+      }
+    })
+    
+    const workflowTools = allToolIds.length > 0 ? await db
+      .select()
+      .from(workflowTool)
+      .where(inArray(workflowTool.id, allToolIds))
+      : []
+
+    // Enhance step executions with workflow_tool_ids
+    const enhancedStepExecutions = stepExecutions.map(stepExec => {
+      // Find the corresponding step template
+      const stepTemplate = stepTemplates.find(st => st.id === stepExec.workflowStepTemplateId)
+      
+      return {
+        ...stepExec,
+        workflow_tool_ids: stepTemplate?.toolIds || []
+      }
+    })
+
+    // Process toolExecutions to only include config for review tools
+    const processedToolExecutions = toolExecutions.map(te => ({
+      ...te,
+      toolConfig: te.toolType === 'review' ? te.toolConfig : undefined
+    }))
+
     return c.json({
       success: true,
       data: {
         ...execution[0],
-        stepExecutions: stepExecutions,
-        toolExecutions: toolExecutions,
+        stepExecutions: enhancedStepExecutions,
+        toolExecutions: processedToolExecutions,
+        workflow_tools: workflowTools,
       },
     })
   } catch (error) {
@@ -1635,7 +1918,6 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
     console.log("Step execution updated successfully")
 
     // Continue workflow execution - execute next automated steps
-    const tools = await db.select().from(workflowTool)
     const stepName = stepExecution.name || "unknown_step"
     const currentResults: Record<string, any> = {}
     currentResults[stepName] = {
@@ -1669,7 +1951,6 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
           await executeWorkflowChain(
             stepExecution.workflowExecutionId,
             nextStep.id,
-            tools,
             currentResults,
           )
         }
@@ -1704,7 +1985,7 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
 const extractContentFromPath = (
   previousStepResults: any,
   contentPath: string,
-): string => {
+): string | null => {
   try {
 
     if (!contentPath.startsWith("input.")) {
@@ -1714,7 +1995,7 @@ const extractContentFromPath = (
     // Get all step keys
     const stepKeys = Object.keys(previousStepResults)
     if (stepKeys.length === 0) {
-      return "No previous steps available"
+      return null
     }
 
     const propertyPath = contentPath.slice(6) // Remove "input."
@@ -1733,7 +2014,7 @@ const extractContentFromPath = (
           target = target[part]
         } else {
           Logger.debug(`DEBUG - extractContentFromPath: Property '${part}' not found in latest step result`)
-          return `Property '${part}' not found in any step result. Available steps: ${stepKeys.join(", ")}`
+          return null
         }
       }
 
@@ -1745,9 +2026,9 @@ const extractContentFromPath = (
       }
     }
 
-    return `No content found for path '${contentPath}' in any step. Available steps: ${stepKeys.join(", ")}`
+    return null
   } catch (error) {
-    return `Error: ${error instanceof Error ? error.message : String(error)}`
+    return null
   }
 }
 
@@ -1803,6 +2084,80 @@ const executeWorkflowTool = async (
             message: "User input required - handled by form submission API",
           },
         }
+      case "review":
+        // Check if email notification is configured
+        const reviewConfig = tool.config || {}
+        const emailAddresses = reviewConfig.email_addresses || []
+        const emailMessage = reviewConfig.email_message || ""
+        
+        // Send email notification if email addresses are configured
+        if (emailAddresses.length > 0 && emailMessage) {
+          try {
+            const { emailService } = await import("@/services/emailService")
+            
+            // Get workflow execution info for email context
+            const [execution] = await db
+              .select()
+              .from(workflowExecution)
+              .where(eq(workflowExecution.id, executionId))
+            
+            const workflowName = execution?.name || "Unknown Workflow"
+            const subject = `Review Required: ${workflowName}`
+            
+            // Send email to all configured addresses
+            const emailPromises = emailAddresses.map(async (email: string) => {
+              try {
+                const emailSent = await emailService.sendEmail({
+                  to: email,
+                  subject: subject,
+                  body: emailMessage,
+                  contentType: "text",
+                })
+                
+                if (emailSent) {
+                  Logger.info(`✅ Review notification email sent to: ${email}`)
+                } else {
+                  Logger.warn(`⚠️  Failed to send review notification email to: ${email}`)
+                }
+                
+                return { email, success: emailSent }
+              } catch (emailError) {
+                Logger.error(`❌ Error sending review email to ${email}:`, emailError)
+                return { email, success: false, error: emailError }
+              }
+            })
+            
+            const emailResults = await Promise.all(emailPromises)
+            const successfulEmails = emailResults.filter(result => result.success).length
+            
+            Logger.info(`📧 Review notification emails sent: ${successfulEmails}/${emailAddresses.length}`)
+            
+          } catch (error) {
+            Logger.error("Error sending review notification emails:", error)
+          }
+        }
+        
+        // Review tools are handled by review submission API
+        return {
+          status: "awaiting_user_input",
+          result: {
+            reviewDefinition: tool.value,
+            config: tool.config, // Contains approved/rejected step IDs
+            message: "User review required - approve or reject to continue",
+            emailNotificationSent: emailAddresses.length > 0 && emailMessage,
+          },
+        }
+
+      case "trigger":
+        // Trigger tools are handled by trigger completion API
+        return {
+          status: "awaiting_user_input",
+          result: {
+            triggerDefinition: tool.value,
+            config: tool.config,
+            message: "Manual trigger required - mark as complete to continue workflow",
+          },
+        }
 
 
       case "email":
@@ -1828,17 +2183,24 @@ const executeWorkflowTool = async (
 
           if (contentPath) {
             // Extract content using configurable path
-            emailBody = extractContentFromPath(previousStepResults, contentPath)
+            emailBody = extractContentFromPath(previousStepResults, contentPath) || ""
+          }
 
-            if (!emailBody) {
-              emailBody = `No content found at path: ${contentPath}`
-            }
-          } else {
-            // Fallback to extracting from response.aiOutput path
-            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput")
-            if (!emailBody) {
-              emailBody = "No content available from previous step"
-            }
+          // Try fallback paths if contentPath failed or wasn't provided
+          if (!emailBody) {
+            emailBody = extractContentFromPath(previousStepResults, "input.aiOutput") || ""
+          }
+
+          if (!emailBody) {
+            emailBody = extractContentFromPath(previousStepResults, "input.output.body") || ""
+          }
+
+          if (!emailBody) {
+            emailBody = extractContentFromPath(previousStepResults, "input.output") || ""
+          }
+
+          if (!emailBody) {
+            emailBody = "No content available from previous step"
           }
 
           // Wrap plain text in HTML if content type is HTML
@@ -2077,6 +2439,105 @@ const executeWorkflowTool = async (
           }
         }
 
+      case "script":
+        // Execute script using unified script executor
+        const scriptContent = tool.value.script
+        const scriptConfig = tool.value.config
+        const language = tool.value.language
+        Logger.info(`Executing script in language: ${language}`)
+        if (!scriptContent) {
+          return {
+            status: "error",
+            result: { error: "No script content found in tool value" },
+          }
+        }
+
+        // Map language string to ScriptLanguage enum
+        let scriptLanguage: ScriptLanguage
+        switch (language.toLowerCase()) {
+          case "python":
+            scriptLanguage = ScriptLanguage.Python
+            break
+          case "javascript":
+          case "js":
+            scriptLanguage = ScriptLanguage.JavaScript
+            break
+          case "r":
+            scriptLanguage = ScriptLanguage.R
+            break
+          default:
+            return {
+              status: "error",
+              result: { error: `Unsupported script language: ${language}` },
+            }
+        }
+        try {
+          // Extract the latest step's result for script input
+          let scriptInput = previousStepResults
+          
+          // If we have structured step results, extract the latest step's output
+          if (previousStepResults && typeof previousStepResults === 'object') {
+            const stepKeys = Object.keys(previousStepResults)
+            if (stepKeys.length > 0) {
+              const latestStepKey = stepKeys[stepKeys.length - 1]
+              const latestStep = previousStepResults[latestStepKey]
+              
+              // Use the latest step's result as the script input
+              if (latestStep?.result) {
+                scriptInput = latestStep.result
+                Logger.info(`Using latest step '${latestStepKey}' result as script input`)
+              } else if (latestStep?.formSubmission) {
+                // For form steps, use the form data
+                scriptInput = latestStep.formSubmission
+                Logger.info(`Using latest step '${latestStepKey}' form data as script input`)
+              } else {
+                Logger.warn(`Latest step '${latestStepKey}' has no result or formData, using full object`)
+                scriptInput = previousStepResults
+              }
+            }
+          }
+          
+          const executionResult = await executeScript({
+            type: "complete",
+            language: scriptLanguage,
+            script: scriptContent,
+            input: scriptInput,
+            config: scriptConfig,
+          }, executionId)
+
+          if (executionResult.success) {
+            return {
+              status: "success",
+              result: {
+                output: executionResult.output,
+                consoleLogs: executionResult.consoleLogs,
+                extractedFiles: executionResult.extractedFiles,
+                language: language,
+                exitCode: executionResult.exitCode,
+                processedAt: new Date().toISOString(),
+              },
+            }
+          } else {
+            return {
+              status: "error",
+              result: {
+                error: executionResult.error || "Script execution failed",
+                consoleLogs: executionResult.consoleLogs,
+                language: language,
+                exitCode: executionResult.exitCode,
+              },
+            }
+          }
+        } catch (error) {
+          return {
+            status: "error",
+            result: {
+              error: "Script execution failed",
+              message: error instanceof Error ? error.message : String(error),
+              language: language,
+            },
+          }
+        }
 
       default:
         return {
@@ -2299,6 +2760,12 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       // Map frontend tool ID to backend tool ID
       if (tool.id) {
         toolIdMap.set(tool.id, createdTool.id)
+      } else {
+        // For tools without frontend IDs, create a temporary mapping based on type and content
+        const tempId = `${tool.type}_${JSON.stringify(tool.value || {}).slice(0, 50)}`
+        toolIdMap.set(tempId, createdTool.id)
+        // Also store the original tool reference for matching
+        tool._tempId = tempId
       }
     }
 
@@ -2318,13 +2785,24 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     for (const node of sortedNodes) {
       const stepData = node.data.step
 
+      // Check if this step has any trigger tools to determine if it should be manual
+      const nodeTools = node.data?.tools || []
+      const hasTriggerTool = nodeTools.some((tool: any) => tool.type === ToolType.TRIGGER)
+      const hasFormTool = nodeTools.some((tool: any) => tool.type === ToolType.FORM)
+      const hasReviewTool = nodeTools.some((tool: any) => tool.type === ToolType.REVIEW)
+      
+      // Determine step type: manual if it has trigger/form/review tools or is explicitly marked as manual
+      const isManualStep = hasTriggerTool || hasFormTool || hasReviewTool || 
+                          stepData.type === "form_submission" || 
+                          stepData.type === "manual"
+
       const [createdStep] = await db
         .insert(workflowStepTemplate)
         .values({
           workflowTemplateId: templateId,
           name: stepData.name,
           description: stepData.description || "",
-          type: stepData.type === "form_submission" || stepData.type === "manual" ? "manual" : "automated",
+          type: isManualStep ? "manual" : "automated",
           timeEstimate: 180, // Default time estimate
           metadata: {
             icon: stepData.metadata?.icon,
@@ -2366,32 +2844,80 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
       // Map tool IDs for this step
       const stepToolIds: string[] = []
+      
       if (correspondingNode?.data?.tools) {
         for (const tool of correspondingNode.data.tools) {
+          
           if (tool.id && toolIdMap.has(tool.id)) {
-            stepToolIds.push(toolIdMap.get(tool.id)!)
+            // Tool has an ID and we have a mapping
+            const backendId = toolIdMap.get(tool.id)!
+            stepToolIds.push(backendId)
           } else {
-            // Find tool by type and config if no ID mapping
-            const matchingTool = createdTools.find(t =>
-              t.type === tool.type &&
-              JSON.stringify(t.value) === JSON.stringify(tool.value || {})
-            )
-            if (matchingTool) {
-              stepToolIds.push(matchingTool.id)
+            // Try to find by temporary ID for tools without frontend IDs
+            const tempId = `${tool.type}_${JSON.stringify(tool.value || {}).slice(0, 50)}`
+            
+            if (toolIdMap.has(tempId)) {
+              const backendId = toolIdMap.get(tempId)!
+              stepToolIds.push(backendId)
+            } else {
+              // Fallback: Find tool by exact type and value match
+              const matchingTool = createdTools.find(t => 
+                t.type === tool.type && 
+                JSON.stringify(t.value) === JSON.stringify(tool.value || {})
+              )
+              if (matchingTool) {
+                stepToolIds.push(matchingTool.id)
+              } else {
+              }
             }
           }
         }
       }
+      
 
       // Update the step with relationships
+      const updateData = {
+        prevStepIds,
+        nextStepIds,
+        toolIds: stepToolIds,
+      }
+      
       await db
         .update(workflowStepTemplate)
-        .set({
-          prevStepIds,
-          nextStepIds,
-          toolIds: stepToolIds,
-        })
+        .set(updateData)
         .where(eq(workflowStepTemplate.id, step.id))
+        
+    }
+
+    // Third pass: Update review tool configs with backend step IDs
+    for (const tool of createdTools) {
+      if (tool.type === ToolType.REVIEW && tool.config) {
+        const updatedConfig = { ...tool.config }
+        let configChanged = false
+
+        // Update approved step ID if it exists and maps to a backend step
+        if (updatedConfig.approved && stepIdMap.has(updatedConfig.approved)) {
+          updatedConfig.approved = stepIdMap.get(updatedConfig.approved)
+          configChanged = true
+        }
+
+        // Update rejected step ID if it exists and maps to a backend step
+        if (updatedConfig.rejected && stepIdMap.has(updatedConfig.rejected)) {
+          updatedConfig.rejected = stepIdMap.get(updatedConfig.rejected)
+          configChanged = true
+        }
+
+        // Only update if config changed
+        if (configChanged) {
+          await db
+            .update(workflowTool)
+            .set({ config: updatedConfig })
+            .where(eq(workflowTool.id, tool.id))
+          
+          // Update the tool object for return data
+          tool.config = updatedConfig
+        }
+      }
     }
 
     // Set root step (first step in the workflow - usually form submission or trigger)
@@ -2415,11 +2941,18 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         .where(eq(workflowTemplate.id, templateId))
     }
 
+    // Re-query the updated steps from database to get correct toolIds
+    const updatedSteps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, template.id))
+
+
     // Return the complete workflow template with steps and tools
     const completeTemplate = {
       ...template,
       rootWorkflowStepTemplateId: rootStepId,
-      steps: createdSteps,
+      steps: updatedSteps,
       workflow_tools: createdTools,
     }
 
@@ -2918,6 +3451,7 @@ function getStepIcon(toolType: string): string {
     delay: "⏰",
     agent: "🤖",
     merged_node: "🔀",
+    review: "👁️",
   }
   return iconMap[toolType] || "⚙️"
 }
@@ -3129,6 +3663,46 @@ export const CompleteWorkflowStepExecutionApi = async (c: Context) => {
   try {
     const stepId = c.req.param("stepId")
 
+    // Get the current step execution
+    const [currentStep] = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.id, stepId))
+
+    if (!currentStep) {
+      throw new HTTPException(404, {
+        message: "Workflow step execution not found",
+      })
+    }
+
+    // Check if all previous steps are completed
+    const prevStepIds = currentStep.prevStepIds || []
+    
+    if (prevStepIds.length > 0) {
+      // Get all step executions for this workflow
+      const allSteps = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+      // Find previous steps and check their status
+      const previousSteps = allSteps.filter(step => 
+        prevStepIds.includes(step.workflowStepTemplateId)
+      )
+
+      const incompletePrevSteps = previousSteps.filter(step => 
+        step.status !== WorkflowStatus.COMPLETED
+      )
+
+      if (incompletePrevSteps.length > 0) {
+        const incompleteStepNames = incompletePrevSteps.map(step => step.name).join(", ")
+        throw new HTTPException(400, {
+          message: `Cannot complete step. Previous steps must be completed first: ${incompleteStepNames}`,
+        })
+      }
+    }
+
+    // All previous steps are completed, mark this step as complete
     const [stepExecution] = await db
       .update(workflowStepExecution)
       .set({
@@ -3139,12 +3713,387 @@ export const CompleteWorkflowStepExecutionApi = async (c: Context) => {
       .where(eq(workflowStepExecution.id, stepId))
       .returning()
 
+    // Update status of downstream steps that can now be activated
+    await updateDownstreamStepStatuses(currentStep.workflowExecutionId)
+
     return c.json({
       success: true,
       data: stepExecution,
     })
   } catch (error) {
     Logger.error(error, "Failed to complete workflow step execution")
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+// Review workflow step execution (approve/reject)
+export const ReviewWorkflowStepApi = async (c: Context) => {
+  try {
+    const stepId = c.req.param("stepId")
+    const requestData = await c.req.json()
+    
+    // Validate input
+    if (!requestData.input || !["approved", "rejected"].includes(requestData.input)) {
+      throw new HTTPException(400, {
+        message: "Input must be either 'approved' or 'rejected'",
+      })
+    }
+
+    const reviewDecision = requestData.input as "approved" | "rejected"
+
+    // Get the current step execution
+    const [currentStep] = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.id, stepId))
+
+    if (!currentStep) {
+      throw new HTTPException(404, {
+        message: "Workflow step execution not found",
+      })
+    }
+
+    // Get the step template to access tool configuration
+    const stepTemplate = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.id, currentStep.workflowStepTemplateId))
+
+    if (!stepTemplate || stepTemplate.length === 0) {
+      throw new HTTPException(404, { message: "Step template not found" })
+    }
+
+    const toolIds = stepTemplate[0].toolIds || []
+    if (toolIds.length === 0) {
+      throw new HTTPException(400, {
+        message: "No tools configured for this step",
+      })
+    }
+
+    // Get the review tool
+    const reviewTool = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolIds[0]))
+
+    if (!reviewTool || reviewTool.length === 0) {
+      throw new HTTPException(404, { message: "Review tool not found" })
+    }
+
+    if (reviewTool[0].type !== ToolType.REVIEW) {
+      throw new HTTPException(400, {
+        message: "Step is not a review step",
+      })
+    }
+
+    // Get the next step template ID based on approval/rejection
+    const toolConfig = reviewTool[0].config as any
+    const nextStepTemplateId = reviewDecision === "approved" 
+      ? toolConfig?.approved 
+      : toolConfig?.rejected
+
+    if (!nextStepTemplateId) {
+      throw new HTTPException(400, {
+        message: `No ${reviewDecision} step configured for this review`,
+      })
+    }
+
+    // Get the single previous step that led to this review step
+    const allWorkflowSteps = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+    // Find the single previous step that has the current review step as its next step
+    const previousStep = allWorkflowSteps.find(step => 
+      step.nextStepIds?.includes(currentStep.workflowStepTemplateId) && 
+      step.status === WorkflowStatus.COMPLETED
+    )
+
+    // Get previous step tool result
+    let previousStepResult = null
+    if (previousStep) {
+      const allToolExecutions = await db
+        .select()
+        .from(toolExecution)
+        .where(eq(toolExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+      // Get the first tool execution result from the previous step
+      const previousToolExec = allToolExecutions.find(te => 
+        previousStep.toolExecIds?.includes(te.id)
+      )
+      
+      if (previousToolExec) {
+        previousStepResult = previousToolExec.result
+      }
+    }
+
+    // Create tool execution record for the review decision
+    const [toolExecutionRecord] = await db
+      .insert(toolExecution)
+      .values({
+        workflowToolId: reviewTool[0].id,
+        workflowExecutionId: currentStep.workflowExecutionId,
+        status: ToolExecutionStatus.COMPLETED,
+        result: {
+          reviewDecision: reviewDecision,
+          decidedAt: new Date().toISOString(),
+          decidedBy: "demo",
+          nextStepTemplateId: nextStepTemplateId,
+          // Include previous step tool result so the next step can access the original input
+          input: previousStepResult,
+        },
+        startedAt: new Date(),
+        completedAt: new Date(),
+      })
+      .returning()
+
+    // Mark the review step as completed
+    const [completedStep] = await db
+      .update(workflowStepExecution)
+      .set({
+        status: WorkflowStatus.COMPLETED,
+        completedBy: "demo",
+        completedAt: new Date(),
+        toolExecIds: [toolExecutionRecord.id],
+        metadata: {
+          ...(currentStep.metadata || {}),
+          reviewDecision: {
+            decision: reviewDecision,
+            decidedAt: new Date().toISOString(),
+            decidedBy: "demo",
+            nextStepTemplateId: nextStepTemplateId,
+          },
+        },
+      })
+      .where(eq(workflowStepExecution.id, stepId))
+      .returning()
+
+    // Update status of downstream steps that can now be activated
+    await updateDownstreamStepStatuses(currentStep.workflowExecutionId)
+
+    // Continue workflow execution - execute the next step based on decision
+    const tools = await db.select().from(workflowTool)
+    const stepName = currentStep.name || "Review Step"
+    const currentResults: Record<string, any> = {}
+
+    currentResults[stepName] = {
+      stepId: currentStep.id,
+      reviewDecision: {
+        decision: reviewDecision,
+        decidedAt: new Date().toISOString(),
+        decidedBy: "demo",
+        nextStepTemplateId: nextStepTemplateId,
+      },
+      toolExecution: toolExecutionRecord,
+      // Include previous step tool result so the next step can access the original input
+      previousStepResult: previousStepResult,
+    }
+
+    // Get all step executions for this workflow to find the next step
+    const allSteps = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+    // Find the next step execution that matches the template ID
+    const nextStep = allSteps.find(
+      (s) => s.workflowStepTemplateId === nextStepTemplateId
+    )
+
+    if (nextStep && nextStep.type === StepType.AUTOMATED) {
+      // Execute the next automated step
+      executeWorkflowChain(
+        currentStep.workflowExecutionId,
+        nextStep.id,
+        tools
+      ).catch((error) => {
+        Logger.error(
+          error,
+          `Background workflow execution failed after review decision`,
+        )
+      })
+    }
+
+    return c.json({
+      success: true,
+      message: `Review ${reviewDecision} successfully - workflow continued`,
+      data: {
+        stepId: stepId,
+        reviewDecision: reviewDecision,
+        nextStepTemplateId: nextStepTemplateId,
+        toolExecution: toolExecutionRecord,
+        completedStep: completedStep,
+      },
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to process review decision")
+    
+    if (error instanceof HTTPException) {
+      throw error
+    }
+
+    throw new HTTPException(500, {
+      message: getErrorMessage(error),
+    })
+  }
+}
+
+export const TriggerWorkflowStepApi = async (c: Context) => {
+  try {
+    const stepId = c.req.param("stepId")
+    
+    // Get JWT payload for user email
+    let jwtPayload
+    try {
+      jwtPayload = c.get(JwtPayloadKey)
+    } catch (e) {
+      Logger.info("No JWT payload found in context")
+    }
+
+    const userEmail = jwtPayload?.sub
+    if (!userEmail) {
+      throw new HTTPException(401, { message: "Unauthorized - no user email" })
+    }
+
+    // Get the current step execution
+    const [currentStep] = await db
+      .select()
+      .from(workflowStepExecution)
+      .where(eq(workflowStepExecution.id, stepId))
+
+    if (!currentStep) {
+      throw new HTTPException(404, {
+        message: "Workflow step execution not found",
+      })
+    }
+
+    // Get the step template to access tool configuration
+    const stepTemplate = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.id, currentStep.workflowStepTemplateId))
+
+    if (!stepTemplate || stepTemplate.length === 0) {
+      throw new HTTPException(404, { message: "Step template not found" })
+    }
+
+    const toolIds = stepTemplate[0].toolIds || []
+    if (toolIds.length === 0) {
+      throw new HTTPException(400, {
+        message: "No tools configured for this step",
+      })
+    }
+
+    // Get the trigger tool
+    const triggerTool = await db
+      .select()
+      .from(workflowTool)
+      .where(eq(workflowTool.id, toolIds[0]))
+
+    if (!triggerTool || triggerTool.length === 0) {
+      throw new HTTPException(404, { message: "Trigger tool not found" })
+    }
+
+    if (triggerTool[0].type !== ToolType.TRIGGER) {
+      throw new HTTPException(400, {
+        message: "Step is not a trigger step",
+      })
+    }
+
+    // Create a tool execution record with triggered_by information
+    const toolResult = {
+      triggered_by: userEmail,
+      triggered_at: new Date().toISOString(),
+      message: "Trigger step completed successfully",
+    }
+
+    const [toolExecutionRecord] = await db
+      .insert(toolExecution)
+      .values({
+        workflowToolId: triggerTool[0].id,
+        workflowExecutionId: currentStep.workflowExecutionId,
+        status: "completed",
+        result: toolResult,
+        startedAt: new Date(),
+        completedAt: new Date(),
+      })
+      .returning()
+
+    // Mark current step as completed
+    const [completedStep] = await db
+      .update(workflowStepExecution)
+      .set({
+        status: WorkflowStatus.COMPLETED,
+        completedBy: userEmail,
+        completedAt: new Date(),
+        toolExecIds: [toolExecutionRecord.id],
+        metadata: {
+          ...(currentStep.metadata || {}),
+          triggerCompletion: {
+            triggeredBy: userEmail,
+            triggeredAt: new Date().toISOString(),
+          },
+        },
+      })
+      .where(eq(workflowStepExecution.id, stepId))
+      .returning()
+
+    // Update status of downstream steps that can now be activated
+    await updateDownstreamStepStatuses(currentStep.workflowExecutionId)
+
+    // Continue workflow execution with next steps
+    const nextStepIds = currentStep.nextStepIds || []
+    let executionResults = {}
+
+    if (nextStepIds.length > 0) {
+      // Get all step executions for this workflow to find the next steps
+      const allSteps = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, currentStep.workflowExecutionId))
+
+      // Find and execute next steps
+      for (const nextStepTemplateId of nextStepIds) {
+        const nextStep = allSteps.find(step => 
+          step.workflowStepTemplateId === nextStepTemplateId
+        )
+        
+        if (nextStep && nextStep.type === StepType.AUTOMATED) {
+          try {
+            Logger.info(`🚀 Auto-executing next step after trigger: ${nextStep.name}`)
+            executionResults = await executeWorkflowChain(
+              currentStep.workflowExecutionId,
+              nextStep.id,
+              toolResult,
+            )
+          } catch (chainError) {
+            Logger.error(`Failed to execute workflow chain from trigger step: ${chainError}`)
+          }
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        stepId: stepId,
+        triggeredBy: userEmail,
+        toolExecution: toolExecutionRecord,
+        completedStep: completedStep,
+        executionResults,
+      },
+      message: "Trigger step completed successfully",
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to process trigger step")
+    
+    if (error instanceof HTTPException) {
+      throw error
+    }
+
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
@@ -3277,5 +4226,217 @@ export const ServeWorkflowFileApi = async (c: Context) => {
     throw new HTTPException(500, {
       message: getErrorMessage(error),
     })
+  }
+}
+
+// Download extracted files from workflow execution as ZIP
+export const DownloadReviewFilesApi = async (c: Context) => {
+  try {
+    const { sub } = c.get(JwtPayloadKey)
+    const executionId = c.req.param("executionId")
+
+    if (!executionId) {
+      throw new HTTPException(400, {
+        message: "Execution ID is required",
+      })
+    }
+
+    Logger.info(`Downloading extracted files for execution ${executionId}`)
+
+    // Get workflow execution to verify user access
+    const workflowExecutionRows = await db
+      .select()
+      .from(workflowExecution)
+      .where(eq(workflowExecution.id, executionId))
+
+    if (!workflowExecutionRows || workflowExecutionRows.length === 0) {
+      throw new HTTPException(404, { message: "Workflow execution not found" })
+    }
+
+    const [workflow] = workflowExecutionRows
+
+    // Debug logging
+    Logger.info(`Download access check: executionId=${executionId}, user=${sub}, createdBy=${workflow.createdBy}`)
+
+    // TODO: Re-enable access control in production
+    // Temporarily allow any user to access files for development/testing
+    // if (workflow.createdBy !== sub) {
+    //   Logger.warn(`Access denied: user ${sub} tried to access workflow execution ${executionId} created by ${workflow.createdBy}`)
+    //   throw new HTTPException(403, {
+    //     message: "Access denied to this workflow execution",
+    //   })
+    // }
+
+    // Get all tool executions for this workflow to find extracted files
+    const toolExecutions = await db
+      .select()
+      .from(toolExecution)
+      .where(eq(toolExecution.workflowExecutionId, executionId))
+
+    // Collect all extracted files from all tool executions
+    let allExtractedFiles: string[] = []
+    for (const toolExecution of toolExecutions) {
+      try {
+        const result = toolExecution.result as any
+        if (result?.extractedFiles && Array.isArray(result.extractedFiles)) {
+          allExtractedFiles.push(...result.extractedFiles)
+          Logger.info(`Found ${result.extractedFiles.length} files from tool execution ${toolExecution.id}`)
+        }
+      } catch (error) {
+        Logger.error(error, `Failed to parse tool execution result for ${toolExecution.id}`)
+      }
+    }
+
+    if (allExtractedFiles.length === 0) {
+      throw new HTTPException(404, {
+        message: "No extracted files found in this workflow execution",
+      })
+    }
+
+    Logger.info(`Found ${allExtractedFiles.length} total extracted files available`)
+
+    // Determine which files to download
+    let filesToDownload: string[] = []
+    
+    if (c.req.method === 'POST') {
+      // For POST requests, get specific files from request body
+      const body = await c.req.json().catch(() => ({}))
+      const requestedFiles = body.files || []
+      
+      if (!Array.isArray(requestedFiles)) {
+        throw new HTTPException(400, {
+          message: "Invalid request: 'files' must be an array of filenames",
+        })
+      }
+
+      if (requestedFiles.length === 0) {
+        throw new HTTPException(400, {
+          message: "Invalid request: at least one file must be specified",
+        })
+      }
+
+      // Validate that all requested files exist in extracted files
+      const invalidFiles = requestedFiles.filter(file => !allExtractedFiles.includes(file))
+      if (invalidFiles.length > 0) {
+        throw new HTTPException(400, {
+          message: `Requested files not found: ${invalidFiles.join(', ')}. Available files: ${allExtractedFiles.join(', ')}`,
+        })
+      }
+
+      filesToDownload = requestedFiles
+      Logger.info(`Downloading ${filesToDownload.length} specific files: ${JSON.stringify(filesToDownload)}`)
+    } else {
+      // For GET requests, download all files (backward compatibility)
+      filesToDownload = allExtractedFiles
+      Logger.info(`Downloading all ${filesToDownload.length} extracted files`)
+    }
+
+    // Create ZIP archive
+    const zip = new JSZip()
+    
+    // Use the correct directory structure as mentioned by user
+    const baseDir = path.resolve(process.cwd(), "script_executor_utils","workflow_files", executionId)
+    
+    let filesAdded = 0
+    const errors: string[] = []
+
+    Logger.info(`Looking for files in directory: ${baseDir}`)
+    Logger.info(`Files to process: ${JSON.stringify(filesToDownload)}`)
+
+    // Add each file to the ZIP
+    for (const filePath of filesToDownload) {
+      try {
+        let fullPath: string
+        
+        // Handle both absolute and relative paths
+        if (path.isAbsolute(filePath)) {
+          // If it's an absolute path, use it directly but verify it's safe
+          fullPath = filePath
+          // Ensure the absolute path is within a reasonable scope
+          if (!fullPath.includes(executionId)) {
+            errors.push(`Skipped potentially unsafe absolute path: ${filePath}`)
+            continue
+          }
+        } else {
+          // If it's a relative path, join with base directory
+          const safePath = path.normalize(filePath)
+          if (safePath.includes("..")) {
+            errors.push(`Skipped unsafe relative path: ${filePath}`)
+            continue
+          }
+          fullPath = path.join(baseDir, safePath)
+        }
+
+        Logger.info(`Attempting to read file: ${fullPath}`)
+
+        // Read file and add to ZIP
+        const fileBuffer = await readFile(fullPath)
+        const fileName = path.basename(filePath)
+        
+        // Add file to ZIP with buffer
+        zip.file(fileName, fileBuffer, { binary: true })
+        filesAdded++
+        
+        Logger.info(`Successfully added file to ZIP: ${fileName} (${fileBuffer.length} bytes)`)
+      } catch (error) {
+        Logger.error(error, `Failed to read file: ${filePath}`)
+        errors.push(`Failed to read file: ${filePath} - ${error}`)
+      }
+    }
+
+    if (filesAdded === 0) {
+      throw new HTTPException(404, {
+        message: `No files could be read from the filesystem. Errors: ${errors.join('; ')}`,
+      })
+    }
+
+    Logger.info(`Creating ZIP with ${filesAdded} files`)
+
+    // Test if ZIP has any files
+    const fileNames = Object.keys(zip.files)
+    Logger.info(`ZIP contains files: ${JSON.stringify(fileNames)}`)
+
+    if (fileNames.length === 0) {
+      throw new HTTPException(500, {
+        message: "ZIP archive is empty after processing files"
+      })
+    }
+
+    // Generate ZIP buffer with proper options
+    const zipBuffer = await zip.generateAsync({ 
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 }
+    })
+
+    Logger.info(`ZIP buffer generated, size: ${zipBuffer.length} bytes`)
+    
+    // Set response headers for file download
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-")
+    const filename = `review-files-${executionId}-${timestamp}.zip`
+    
+    // Clear any existing headers that might interfere
+    c.header("Content-Type", "application/zip")
+    c.header("Content-Disposition", `attachment; filename="${filename}"`)
+    c.header("Content-Length", zipBuffer.length.toString())
+    c.header("Cache-Control", "no-cache")
+    c.header("Pragma", "no-cache")
+
+    Logger.info(`Successfully created ZIP with ${filesAdded} files (${errors.length} errors), size: ${zipBuffer.length} bytes`)
+
+    // Return the ZIP file as a proper Response
+    return new Response(zipBuffer, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Length": zipBuffer.length.toString(),
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache"
+      }
+    })
+  } catch (error) {
+    Logger.error(error, "Failed to download review files")
+    throw error
   }
 }

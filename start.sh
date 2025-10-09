@@ -8,6 +8,11 @@ fi
 
 echo "Starting Xyne application..."
 
+# Verify script execution languages are available
+python3 --version
+node --version
+Rscript --version
+
 # Load environment variables
 if [ -f /usr/src/app/server/.env ]; then
   echo "Loading environment variables..."

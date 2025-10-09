@@ -20,6 +20,9 @@ export enum ToolType {
   FORM = "form",
   EMAIL = "email",
   AI_AGENT = "ai_agent",
+  REVIEW = "review",
+  TRIGGER = "trigger",
+  SCRIPT = "script",
 }
 
 export enum ToolExecutionStatus {
