@@ -1246,7 +1246,7 @@ const Header = ({
                 : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
             }`}
           >
-            Save Changes
+            Save as Private
           </button>
           <button
             onClick={() => onSaveChanges(true)}
