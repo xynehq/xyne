@@ -61,6 +61,7 @@ import CsvViewer from "@/components/CsvViewer"
 import TxtViewer from "@/components/TxtViewer"
 import { useUploadProgress } from "@/store/useUploadProgressStore"
 import { DebugDocModal } from "@/components/DebugDocModal"
+import kbEmptyStateIcon from "@/assets/emptystateIcons/kb.png"
 
 // Persistent storage for documentId -> tempChatId mapping using sessionStorage
 const DOCUMENT_CHAT_MAP_KEY = "documentToTempChatMap"
@@ -755,7 +756,7 @@ function KnowledgeManagementContent() {
         id: updatedCl.id,
         name: updatedCl.name,
         description: updatedCl.description,
-        files: updatedCl.totalCount || selectedFiles.length,
+        files: updatedCl.totalCount || validFiles.length,
         lastUpdated: new Date(updatedCl.updatedAt).toLocaleString("en-GB", {
           day: "numeric",
           month: "short",
@@ -1774,21 +1775,50 @@ function KnowledgeManagementContent() {
                 <h1 className="text-[32px] font-display text-gray-700 dark:text-gray-100 tracking-wider">
                   KNOWLEDGE MANAGEMENT
                 </h1>
-                <div className="flex items-center gap-4">
-                  {/* <Search className="text-gray-400 dark:text-gray-500 h-6 w-6" /> */}
+                {(collections.length > 0 || isUploading) && (
+                  <div className="flex items-center gap-4">
+                    {/* <Search className="text-gray-400 dark:text-gray-500 h-6 w-6" /> */}
+                    <Button
+                      onClick={() => setShowNewCollection(true)}
+                      disabled={isUploading}
+                      className="bg-slate-800 hover:bg-slate-700 dark:bg-[#2d2d2d] dark:hover:bg-[#404040] text-white rounded-full px-4 py-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus size={16} />
+                      <span className="font-mono text-[12px] font-medium">
+                        NEW COLLECTION
+                      </span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {collections.length === 0 && !isUploading ? (
+                // Empty state - centered layout
+                <div className="flex flex-col items-center justify-center min-h-[70vh]">
+                  <img 
+                    src={kbEmptyStateIcon} 
+                    alt="No collections" 
+                    className="w-32 h-32 mb-6 opacity-60"
+                  />
+                  <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    No collections available yet
+                  </h2>
+                  <p className="text-gray-500 dark:text-gray-400 mb-8 text-center ">
+                    Add your first collection to structure and manage information
+                  </p>
                   <Button
                     onClick={() => setShowNewCollection(true)}
                     disabled={isUploading}
-                    className="bg-slate-800 hover:bg-slate-700 dark:bg-[#2d2d2d] dark:hover:bg-[#404040] text-white rounded-full px-4 py-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-slate-800 hover:bg-slate-700 dark:bg-[#2d2d2d] dark:hover:bg-[#404040] text-white rounded-full px-6 py-3 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Plus size={16} />
                     <span className="font-mono text-[12px] font-medium">
-                      NEW COLLECTION
+                      ADD COLLECTION
                     </span>
                   </Button>
                 </div>
-              </div>
-              <div className="mt-12">
+              ) : (
+                <div className="mt-12">
                 {/* Show skeleton loader when uploading to NEW collection */}
                 {isUploading && batchProgress.total > 0 && isNewCollectionUpload && (
                   <div className="mb-8">
@@ -2070,7 +2100,8 @@ function KnowledgeManagementContent() {
                     )}
                   </div>
                 ))}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         )}

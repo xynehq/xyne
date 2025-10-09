@@ -58,6 +58,8 @@ import {
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
 import { ApiKeyScopes, UploadStatus } from "@/shared/types"
+import { expandSheetIds } from "@/search/utils"
+import { checkFileSize } from "@/integrations/dataSource"
 
 const EXTENSION_MIME_MAP: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -101,7 +103,7 @@ const { JwtPayloadKey } = config
 
 // Storage configuration for Knowledge Base feature files
 const KB_STORAGE_ROOT = join(process.cwd(), "storage", "kb_files")
-const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB max file size
+const MAX_FILE_SIZE = 100 // 100MB max file size
 const MAX_FILES_PER_REQUEST = 100 // Maximum files per upload request
 
 // Initialize storage directory for Knowledge Base files
@@ -562,25 +564,28 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
     agentExternalId,
     user.workspaceId,
   )
+  
 
   if (!agent) {
     throw new HTTPException(404, { message: "Agent not found" })
   }
-  const hasPermission = await db
-    .select()
-    .from(userAgentPermissions)
-    .where(
-      and(
-        eq(userAgentPermissions.userId, user.id),
-        eq(userAgentPermissions.agentId, agent.id),
-      ),
-    )
-    .limit(1)
+  if (!agent.isPublic) {
+    const hasPermission = await db
+      .select()
+      .from(userAgentPermissions)
+      .where(
+        and(
+          eq(userAgentPermissions.userId, user.id),
+          eq(userAgentPermissions.agentId, agent.id),
+        ),
+      )
+      .limit(1)
 
-  if (!hasPermission || hasPermission.length === 0) {
-    throw new HTTPException(403, {
-      message: "You don't have shared access to this agent",
-    })
+    if (!hasPermission || hasPermission.length === 0) {
+      throw new HTTPException(403, {
+        message: "You don't have shared access to this agent",
+      })
+    }
   }
   try {
     const collection = await getCollectionById(db, collectionId)
@@ -1269,12 +1274,14 @@ export const UploadFilesApi = async (c: Context) => {
       let storagePath = ""
       try {
         // Validate file size
-        if (file.size > MAX_FILE_SIZE) {
+        try{
+          checkFileSize(file.size, MAX_FILE_SIZE)
+        } catch (error) {
           uploadResults.push({
             success: false,
             fileName: file.name,
             parentId: targetParentId,
-            message: `Skipped: File too large (${Math.round(file.size / 1024 / 1024)}MB). Maximum size is ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`,
+            message: `Skipped: File too large (${Math.round(file.size / 1024 / 1024)}MB). Maximum size is ${MAX_FILE_SIZE}MB`,
           })
           loggerWithChild({ email: userEmail }).info(
             `Skipped large file: ${file.name} (${file.size} bytes)`,
@@ -1672,10 +1679,20 @@ export const DeleteItemApi = async (c: Context) => {
         try {
           // Delete from Vespa
           if (itemToDelete.vespaDocId) {
-            await DeleteDocument(itemToDelete.vespaDocId, KbItemsSchema)
-            loggerWithChild({ email: userEmail }).info(
-              `Deleted file from Vespa: ${itemToDelete.vespaDocId}`,
-            )
+            const vespaDocIds = expandSheetIds(itemToDelete.vespaDocId)
+            for (const id of vespaDocIds) {
+              try {
+                await DeleteDocument(id, KbItemsSchema)
+                loggerWithChild({ email: userEmail }).info(
+                  `Deleted file from Vespa: ${id}`,
+                )
+              } catch (error) {
+                loggerWithChild({ email: userEmail }).error(
+                  `Failed to delete file from Vespa: ${id}`,
+                  { error: getErrorMessage(error) }
+                )
+              }
+            }
           }
         } catch (error) {
           loggerWithChild({ email: userEmail }).warn(
@@ -2055,7 +2072,7 @@ export const DownloadFileApi = async (c: Context) => {
     const storagePath = collectionFile.storagePath
 
     if (!collectionFile.originalName) {
-      throw new HTTPException(500, { message: "File original name is missing" })
+      throw new HTTPException(400, { message: "File original name is missing" })
     }
 
     // Filename sanitization helper functions for download functionality

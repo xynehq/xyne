@@ -1894,11 +1894,11 @@ export const EvaluateDatasetHandler = async (
         userEmail,
       },
     )
-    return c.json({ error: "Failed to verify user workspace" }, 500)
+    return c.json({ error: "Failed to verify user workspace" }, 403)
   }
 
   if (workspaceId === null) {
-    return c.json({ error: "Could not resolve workspace ID" }, 500)
+    return c.json({ error: "Could not resolve workspace ID" }, 400)
   }
 
   // Validate incoming JSON body for datasetFilename

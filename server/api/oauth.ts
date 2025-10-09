@@ -45,11 +45,11 @@ export const OAuthCallback = async (c: Context) => {
     email = sub
     const { state, code } = c.req.query()
     if (!state) {
-      throw new HTTPException(500)
+      throw new HTTPException(400, { message: "Missing 'state' parameter." })
     }
     const { app, random } = JSON.parse(state)
     if (!app) {
-      throw new HTTPException(500)
+      throw new HTTPException(400, { message: "Invalid 'state': missing 'app'." })
     }
     const stateInCookie = getCookie(c, `${app}-state`)
     if (random !== stateInCookie) {
@@ -89,7 +89,9 @@ export const OAuthCallback = async (c: Context) => {
 
       const tokenData = (await response.json()) as any
       if (!tokenData.ok) {
-        throw new Error("Could not get Slack token")
+        throw new HTTPException(400, {
+          message: `Could not get Slack token`,
+        })
       }
 
       tokens = {
@@ -127,7 +129,7 @@ export const OAuthCallback = async (c: Context) => {
       tokens = oauthTokens as OAuthCredentials
       tokens.data.accessTokenExpiresAt = oauthTokens.accessTokenExpiresAt()
     } else {
-      throw new HTTPException(500, { message: "Invalid App" })
+      throw new HTTPException(400, { message: "Unsupported OAuth app" })
     }
     const connectorId = provider.connectorId
     const connector: SelectConnector = await updateConnector(db, connectorId, {

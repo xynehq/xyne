@@ -219,6 +219,9 @@ const CollectionFileUpload = ({
     }
   }
 
+  // Calculate supported files count 
+  const supportedFilesCount = selectedFiles.filter(f => isValidFile(f.file)).length
+
   // Show skeleton loader when uploading
   if (isUploading && batchProgress && batchProgress.total > 0) {
     return (
@@ -269,6 +272,7 @@ const CollectionFileUpload = ({
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
+          onClick={handleFileClick}
         >
           <div
             className={`border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg p-8 w-full mx-auto h-80 min-h-80 flex flex-col items-center justify-center transition-colors relative bg-gray-50 dark:bg-slate-800 ${
@@ -276,7 +280,7 @@ const CollectionFileUpload = ({
                 ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10"
                 : isUploading
                   ? "cursor-not-allowed"
-                  : "hover:border-gray-400 dark:hover:border-gray-500"
+                  : "hover:border-gray-400 dark:hover:border-gray-500 cursor-pointer"
             }`}
           >
             <div className="flex flex-col items-center justify-center w-full h-full">
@@ -325,7 +329,7 @@ const CollectionFileUpload = ({
                 UPLOAD QUEUE
               </h3>
               <span className="text-xs text-gray-500 dark:text-gray-400">
-                {selectedFiles.length} file{selectedFiles.length !== 1 ? "s" : ""}
+                {supportedFilesCount} supported file{supportedFilesCount !== 1 ? "s" : ""}
               </span>
               <Button
                 onClick={onRemoveAllFiles}

@@ -452,7 +452,7 @@ export const updateUserTimezone = async (
       .returning({ id: users.id, email: users.email, timeZone: users.timeZone })
 
     if (!result || result.length === 0) {
-      throw new HTTPException(400, { message: "User not found" })
+      throw new HTTPException(404, { message: "User not found" })
     }
 
     return {

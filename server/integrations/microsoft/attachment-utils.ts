@@ -11,14 +11,15 @@ import {
   MAX_ATTACHMENT_TEXT_SIZE,
   MAX_ATTACHMENT_DOCX_SIZE,
   MAX_ATTACHMENT_PPTX_SIZE,
-  MAX_ATTACHMENT_SHEET_ROWS,
-  MAX_ATTACHMENT_SHEET_TEXT_LEN,
+  MAX_ATTACHMENT_SHEET_SIZE,
 } from "@/integrations/google/config"
 import * as XLSX from "xlsx"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
 import { makeGraphApiCall, type MicrosoftGraphClient } from "./client"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
+import { checkFileSize } from "../dataSource"
 
 const Logger = getLogger(Subsystem.Integrations).child({
   module: "microsoft-attachments",
@@ -194,8 +195,9 @@ export const getOutlookAttachmentChunks = async (
 
     // Process based on MIME type
     if (mimeType === "application/pdf") {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_PDF_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_PDF_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_PDF_SIZE} MB`,
         )
@@ -215,8 +217,9 @@ export const getOutlookAttachmentChunks = async (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       mimeType === "application/msword"
     ) {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_DOCX_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_DOCX_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_DOCX_SIZE} MB`,
         )
@@ -236,8 +239,9 @@ export const getOutlookAttachmentChunks = async (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
       mimeType === "application/vnd.ms-powerpoint"
     ) {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_PPTX_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_PPTX_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_PPTX_SIZE} MB`,
         )
@@ -257,8 +261,9 @@ export const getOutlookAttachmentChunks = async (
       mimeType === "text/html" ||
       mimeType === "text/markdown"
     ) {
-      const fileSizeMB = size / (1024 * 1024)
-      if (fileSizeMB > MAX_ATTACHMENT_TEXT_SIZE) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_TEXT_SIZE)
+      } catch (error) {
         Logger.error(
           `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_TEXT_SIZE} MB`,
         )
@@ -360,6 +365,14 @@ export const getOutlookSpreadsheetSheets = async (
       mimeType === "application/vnd.ms-excel" ||
       mimeType === "text/csv"
     ) {
+      try {
+        checkFileSize(size, MAX_ATTACHMENT_SHEET_SIZE)
+      } catch (error) {
+        Logger.error(
+          `Ignoring ${filename} as its more than ${MAX_ATTACHMENT_SHEET_SIZE} MB`,
+        )
+        return null
+      }
       const sheetsData = await processSpreadsheetFileWithSheetInfo(
         attachmentBuffer,
         filename,
@@ -441,39 +454,7 @@ export const processSpreadsheetFileWithSheetInfo = async (
         const worksheet = workbook.Sheets[sheetName]
         if (!worksheet) continue
 
-        // Get the range of the worksheet
-        const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1")
-        const totalRows = range.e.r - range.s.r + 1
-
-        // Skip sheets with too many rows
-        if (totalRows > MAX_ATTACHMENT_SHEET_ROWS) {
-          Logger.warn(
-            `Sheet "${sheetName}" in ${filename} has ${totalRows} rows (max: ${MAX_ATTACHMENT_SHEET_ROWS}), skipping`,
-          )
-          continue
-        }
-
-        // Convert sheet to JSON array of arrays with a row limit
-        const sheetData: string[][] = XLSX.utils.sheet_to_json(worksheet, {
-          header: 1,
-          defval: "",
-          raw: false,
-          range: 0, // Start from first row
-          blankrows: false,
-        })
-
-        // Clean and get valid rows
-        const validRows = sheetData.filter((row) =>
-          row.some((cell) => cell && cell.toString().trim().length > 0),
-        )
-
-        if (validRows.length === 0) {
-          Logger.debug(`Sheet "${sheetName}" has no valid content, skipping`)
-          continue
-        }
-
-        // Chunk the rows for this specific sheet
-        const sheetChunks = chunkSheetRows(validRows)
+        const sheetChunks = chunkSheetWithHeaders(worksheet)
         const filteredSheetChunks = sheetChunks.filter(
           (chunk) => chunk.trim().length > 0,
         )
@@ -553,54 +534,6 @@ export const processSpreadsheetFileWithSheetInfo = async (
       workbook = null
     }
   }
-}
-
-// Function to chunk sheet rows (simplified version of chunkFinalRows)
-const chunkSheetRows = (allRows: string[][]): string[] => {
-  const chunks: string[] = []
-  let currentChunk = ""
-  let totalTextLength = 0
-  const MAX_CHUNK_SIZE = 512
-
-  for (const row of allRows) {
-    // Filter out numerical cells and empty strings, join textual cells
-    const textualCells = row
-      .filter(
-        (cell) =>
-          cell && isNaN(Number(cell)) && cell.toString().trim().length > 0,
-      )
-      .map((cell) => cell.toString().trim())
-
-    if (textualCells.length === 0) continue
-
-    const rowText = textualCells.join(" ")
-
-    // Check if adding this rowText would exceed the maximum text length
-    if (totalTextLength + rowText.length > MAX_ATTACHMENT_SHEET_TEXT_LEN) {
-      Logger.warn(
-        `Text length exceeded for spreadsheet, stopping at ${totalTextLength} characters`,
-      )
-      // If we have some chunks, return them; otherwise return empty
-      return chunks.length > 0 ? chunks : []
-    }
-
-    totalTextLength += rowText.length
-
-    if ((currentChunk + " " + rowText).trim().length > MAX_CHUNK_SIZE) {
-      if (currentChunk.trim().length > 0) {
-        chunks.push(currentChunk.trim())
-      }
-      currentChunk = rowText
-    } else {
-      currentChunk += (currentChunk ? " " : "") + rowText
-    }
-  }
-
-  if (currentChunk.trim().length > 0) {
-    chunks.push(currentChunk.trim())
-  }
-
-  return chunks
 }
 
 // Helper function to check if a file is a spreadsheet

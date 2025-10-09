@@ -266,6 +266,7 @@ export const ChatPage = ({
     startStream,
     stopStream,
     retryMessage,
+    displayPartial,
   } = useChatStream(
     chatId,
     (title: string) => setChatTitle(title),
@@ -311,7 +312,7 @@ export const ChatPage = ({
   // merging the real stream IDs once available
   const currentResp = isStreaming
     ? {
-        resp: partial,
+        resp: displayPartial ?? partial,
         thinking,
         deepResearchSteps,
         sources,
@@ -2100,7 +2101,10 @@ const VirtualizedMessages = React.forwardRef<
                       }
                       message={message.message}
                       isUser={message.messageRole === "user"}
-                      responseDone={message.externalId !== "current-resp"}
+                      responseDone={
+                        message.isStreaming !== true &&
+                        message.externalId !== "current-resp"
+                      }
                       thinking={message.thinking}
                       deepResearchSteps={message.deepResearchSteps}
                       citations={message.sources}
@@ -2444,7 +2448,7 @@ export const ChatMessage = ({
                 ) : null}
               </div>
             </div>
-            {responseDone && !isRetrying && (
+            {!isStreaming && responseDone && !isRetrying && (
               <div className="flex flex-col">
                 {isDebugMode && messageId && (
                   <button
