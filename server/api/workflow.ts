@@ -1587,6 +1587,44 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
       .leftJoin(workflowTool, eq(toolExecution.workflowToolId, workflowTool.id))
       .where(eq(toolExecution.workflowExecutionId, executionId))
 
+    // Get workflow template to access workflow tools
+    const workflowTemplateData = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, execution[0].workflowTemplateId))
+
+    // Get step templates to map toolIds to workflow_tool_ids
+    const stepTemplates = workflowTemplateData.length > 0 ? await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, workflowTemplateData[0].id))
+      : []
+
+    // Get all workflow tools for the template through step templates
+    const allToolIds: string[] = []
+    stepTemplates.forEach(stepTemplate => {
+      if (stepTemplate.toolIds) {
+        allToolIds.push(...stepTemplate.toolIds)
+      }
+    })
+    
+    const workflowTools = allToolIds.length > 0 ? await db
+      .select()
+      .from(workflowTool)
+      .where(inArray(workflowTool.id, allToolIds))
+      : []
+
+    // Enhance step executions with workflow_tool_ids
+    const enhancedStepExecutions = stepExecutions.map(stepExec => {
+      // Find the corresponding step template
+      const stepTemplate = stepTemplates.find(st => st.id === stepExec.workflowStepTemplateId)
+      
+      return {
+        ...stepExec,
+        workflow_tool_ids: stepTemplate?.toolIds || []
+      }
+    })
+
     // Process toolExecutions to only include config for review tools
     const processedToolExecutions = toolExecutions.map(te => ({
       ...te,
@@ -1597,8 +1635,9 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
       success: true,
       data: {
         ...execution[0],
-        stepExecutions: stepExecutions,
+        stepExecutions: enhancedStepExecutions,
         toolExecutions: processedToolExecutions,
+        workflow_tools: workflowTools,
       },
     })
   } catch (error) {

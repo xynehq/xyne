@@ -89,10 +89,12 @@ const StepNode: React.FC<NodeProps> = ({
   }
 
   // Special rendering for steps with review tools (same as builder mode)
-  const hasReviewTool = tools && tools.length > 0 && tools[0].type === "review"
+  const hasReviewTool = tools && tools.length > 0 && tools.some(tool => tool.type === "review")
+  
   if (hasReviewTool) {
     // Get config from review tool
-    const reviewConfig = tools[0]?.config || {}
+    const reviewTool = tools.find(tool => tool.type === "review")
+    const reviewConfig = reviewTool?.config || {}
     
     const isConfigured = reviewConfig.approved && reviewConfig.rejected
     const isAwaitingReview = step.status === "active"
@@ -247,6 +249,7 @@ const StepNode: React.FC<NodeProps> = ({
     const hasFailedToolExecution =
       tools && tools.some((tool) => (tool as any).status === "failed")
     const isFailed = step.status === "failed" || hasFailedToolExecution
+    const isActive = step.status === "active"
 
     if (!forceConfiguredLayout) {
       // Show only icon when not configured (template mode only)
@@ -429,6 +432,7 @@ const StepNode: React.FC<NodeProps> = ({
     // Get config from step or tool
     const emailConfig =
       (step as any).config || {}
+    const isActive = step.status === "active"
     const emailAddresses =
       emailConfig?.emailAddresses ||
       emailConfig?.to_email ||
@@ -631,6 +635,7 @@ const StepNode: React.FC<NodeProps> = ({
     const hasFailedToolExecution =
       tools && tools.some((tool) => (tool as any).status === "failed")
     const isFailed = step.status === "failed" || hasFailedToolExecution
+    const isActive = step.status === "active"
     return (
       <>
         <div
@@ -644,18 +649,24 @@ const StepNode: React.FC<NodeProps> = ({
                 ? "2px solid #DC2626"
                 : isCompleted
                   ? "2px solid #059669"
-                  : "2px solid #111827"
+                  : isActive
+                    ? "2px solid #D97706"
+                    : "2px solid #111827"
               : isFailed
                 ? "2px solid #F87171"
                 : isCompleted
                   ? "2px solid #34D399"
-                  : "2px solid #6B7280",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+                  : isActive
+                    ? "2px solid #F59E0B"
+                    : "2px solid #6B7280",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : isActive ? "#FFFBEB" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
               : isCompleted
                 ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
+                : isActive
+                  ? "0 0 0 2px #FED7AA"
+                  : "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -851,6 +862,7 @@ const StepNode: React.FC<NodeProps> = ({
     const hasFailedToolExecution =
       tools && tools.some((tool) => (tool as any).status === "failed")
     const isFailed = step.status === "failed" || hasFailedToolExecution
+    const isActive = step.status === "active"
 
     return (
       <>
@@ -865,18 +877,24 @@ const StepNode: React.FC<NodeProps> = ({
                 ? "2px solid #DC2626"
                 : isCompleted
                   ? "2px solid #059669"
-                  : "2px solid #111827"
+                  : isActive
+                    ? "2px solid #D97706"
+                    : "2px solid #111827"
               : isFailed
                 ? "2px solid #F87171"
                 : isCompleted
                   ? "2px solid #34D399"
-                  : "2px solid #6B7280",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+                  : isActive
+                    ? "2px solid #F59E0B"
+                    : "2px solid #6B7280",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : isActive ? "#FFFBEB" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
               : isCompleted
                 ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
+                : isActive
+                  ? "0 0 0 2px #FED7AA"
+                  : "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -972,6 +990,7 @@ const StepNode: React.FC<NodeProps> = ({
     const hasFailedToolExecution =
       tools && tools.some((tool) => (tool as any).status === "failed")
     const isFailed = step.status === "failed" || hasFailedToolExecution
+    const isActive = step.status === "active"
 
     // Extract title and description from script tool data
     const scriptTool = hasScriptTool ? tools[0] : null
@@ -993,18 +1012,24 @@ const StepNode: React.FC<NodeProps> = ({
                 ? "2px solid #DC2626"
                 : isCompleted
                   ? "2px solid #059669"
-                  : "2px solid #111827"
+                  : isActive
+                    ? "2px solid #D97706"
+                    : "2px solid #111827"
               : isFailed
                 ? "2px solid #F87171"
                 : isCompleted
                   ? "2px solid #34D399"
-                  : "2px solid #6B7280",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+                  : isActive
+                    ? "2px solid #F59E0B"
+                    : "2px solid #6B7280",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : isActive ? "#FFFBEB" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
               : isCompleted
                 ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
+                : isActive
+                  ? "0 0 0 2px #FED7AA"
+                  : "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -1099,6 +1124,7 @@ const StepNode: React.FC<NodeProps> = ({
     const hasFailedToolExecution =
       tools && tools.some((tool) => (tool as any).status === "failed")
     const isFailed = step.status === "failed" || hasFailedToolExecution
+    const isActive = step.status === "active"
     // Use template-style design for any execution node that didn't match above types
     return (
       <>
@@ -1113,18 +1139,24 @@ const StepNode: React.FC<NodeProps> = ({
                 ? "2px solid #DC2626"
                 : isCompleted
                   ? "2px solid #059669"
-                  : "2px solid #111827"
+                  : isActive
+                    ? "2px solid #D97706"
+                    : "2px solid #111827"
               : isFailed
                 ? "2px solid #F87171"
                 : isCompleted
                   ? "2px solid #34D399"
-                  : "2px solid #6B7280",
-            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : "#FFF",
+                  : isActive
+                    ? "2px solid #F59E0B"
+                    : "2px solid #6B7280",
+            background: isFailed ? "#FEF2F2" : isCompleted ? "#F0FDF4" : isActive ? "#FFFBEB" : "#FFF",
             boxShadow: isFailed
               ? "0 0 0 2px #FECACA"
               : isCompleted
                 ? "0 0 0 2px #BBF7D0"
-                : "0 0 0 2px #E2E2E2",
+                : isActive
+                  ? "0 0 0 2px #FED7AA"
+                  : "0 0 0 2px #E2E2E2",
           }}
         >
           {/* Header with icon and title */}
@@ -1219,7 +1251,7 @@ const StepNode: React.FC<NodeProps> = ({
     }
 
     if (isActive) {
-      return `${baseClasses} border-blue-600 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 text-blue-900 dark:text-blue-300 shadow-lg shadow-blue-500/15`
+      return `${baseClasses} border-amber-600 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/20 text-amber-900 dark:text-amber-300 shadow-lg shadow-amber-500/15`
     }
 
     if (selected) {
@@ -1241,7 +1273,7 @@ const StepNode: React.FC<NodeProps> = ({
             isCompleted
               ? "bg-emerald-600"
               : isActive
-                ? "bg-blue-600"
+                ? "bg-amber-600"
                 : "bg-gray-400 dark:bg-gray-500"
           }`}
         />
@@ -1253,14 +1285,14 @@ const StepNode: React.FC<NodeProps> = ({
             </div>
           )}
           {isActive && !isCompleted && (
-            <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+            <div className="w-2 h-2 rounded-full bg-amber-600 animate-pulse" />
           )}
           <div className="font-semibold text-base leading-tight">
             {step.name || "Unnamed Step"}
           </div>
           {isActive && !isCompleted && (
-            <div className="text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 px-2 py-1 rounded-full">
-              Running
+            <div className="text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 px-2 py-1 rounded-full">
+              Action Required
             </div>
           )}
         </div>
@@ -1287,7 +1319,7 @@ const StepNode: React.FC<NodeProps> = ({
             isCompleted
               ? "bg-emerald-600"
               : isActive
-                ? "bg-blue-600"
+                ? "bg-amber-600"
                 : "bg-gray-400 dark:bg-gray-500"
           }`}
         />
@@ -1421,7 +1453,7 @@ const ExecutionSidebar = ({
     // Get previous step's tool outputs
     const prevStepTools =
       workflowData.toolExecutions?.filter((toolExec: any) =>
-        prevStep.toolExecIds?.includes(toolExec.id),
+        prevStep.workflow_tool_ids?.includes(toolExec.workflowToolId),
       ) || []
 
     if (prevStepTools.length === 0) return null
@@ -1979,6 +2011,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
   // Update local data when selectedTemplate changes
   useEffect(() => {
+    console.log("📝 selectedTemplate changed, updating workflowData:", {
+      selectedTemplateId: selectedTemplate?.id,
+      selectedTemplateStatus: selectedTemplate?.status,
+      stepExecutionsCount: selectedTemplate?.stepExecutions?.length
+    })
     setWorkflowData(selectedTemplate || null)
   }, [selectedTemplate])
 
@@ -1994,6 +2031,21 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   useEffect(() => {
     // Use workflowData for rendering, fallback to selectedTemplate for initial load
     const dataToRender = workflowData || selectedTemplate
+    
+    // Debug: Log the workflow data structure
+    console.log("🔍 Workflow data structure:", {
+      workflowData,
+      stepExecutions: dataToRender?.stepExecutions?.slice(0, 2), // First 2 steps only
+      workflow_tools: dataToRender?.workflow_tools?.slice(0, 3) // First 3 tools only
+    })
+    
+    // Debug: Log when nodes are being recreated
+    console.log("🔄 Recreating nodes with data:", {
+      workflowDataExists: !!workflowData,
+      selectedTemplateExists: !!selectedTemplate,
+      stepExecutionsCount: dataToRender?.stepExecutions?.length,
+      stepStatuses: dataToRender?.stepExecutions?.map((s: any) => ({ id: s.id, status: s.status }))
+    })
     if (
       dataToRender &&
       (dataToRender.steps || dataToRender.stepExecutions)
@@ -2101,24 +2153,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         let toolExecutions: any[] = []
 
         if (isExecution) {
-          // For executions, get tool executions from toolExecIds
+          // For executions, use workflow_tool_ids to get tools from workflow_tools
           const executionStep = step as any
+          
+          // Get tools using workflow_tool_ids from workflow_tools
+          stepTools = dataToRender.workflow_tools?.filter((tool: any) =>
+            executionStep.workflow_tool_ids?.includes(tool.id)
+          ) || []
+
+          // Also get tool executions for status/results (if available)
           toolExecutions =
             dataToRender.toolExecutions?.filter((toolExec: any) =>
               executionStep.toolExecIds?.includes(toolExec.id),
             ) || []
-
-
-
-          // Create tool info from executions
-          stepTools = toolExecutions.map((toolExec: any) => ({
-            id: toolExec.id,
-            type: toolExec.toolType || toolExec.type || "execution_tool", // Use new toolType field first
-            config: toolExec.toolConfig || {},
-            toolExecutionId: toolExec.id,
-            status: toolExec.status,
-            result: toolExec.result,
-          }))
 
         } else {
           // For templates, use workflow_tools
@@ -2132,10 +2179,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         // Execution workflows don't show plus buttons
         const hasNextFlag = false
 
-        return {
+        const nodeData = {
           id: step.id,
           type: "stepNode",
           position: calculatePosition(step),
+          key: `${step.id}-${isExecution ? (step as any).status : "pending"}`, // Force re-render when status changes
           data: {
             step: {
               id: step.id,
@@ -2162,6 +2210,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           },
           draggable: true,
         }
+        
+        // Debug: Log node data creation for first few steps
+        if (index < 3) {
+          console.log(`🔧 Creating node ${index + 1}:`, {
+            stepId: step.id,
+            stepName: step.name,
+            stepStatus: isExecution ? (step as any).status : "pending",
+            isActive: isExecution && (step as any).status === "running",
+            isCompleted: isExecution && (step as any).status === "completed"
+          })
+        }
+        
+        return nodeData
       })
 
       // Create edges from nextStepIds
@@ -2190,9 +2251,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             
             // Get tools for this step - check if this step has review tools
             const hasReviewTools = isExecution 
-              ? dataToRender.toolExecutions?.some(toolExec =>
-                  step.toolExecIds?.includes(toolExec.id) && 
-                  (toolExec.toolType === "review" || toolExec.type === "review")
+              ? dataToRender.workflow_tools?.some(tool =>
+                  step.workflow_tool_ids?.includes(tool.id) && tool.type === "review"
                 )
               : dataToRender.workflow_tools?.some(tool =>
                   step.toolIds?.includes(tool.id) && tool.type === "review"
@@ -2203,11 +2263,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               let config = {}
               
               if (isExecution) {
-                const toolExecution = dataToRender.toolExecutions?.find(toolExec =>
-                  step.toolExecIds?.includes(toolExec.id) && 
-                  (toolExec.toolType === "review" || toolExec.type === "review")
+                const workflowTool = dataToRender.workflow_tools?.find(tool =>
+                  step.workflow_tool_ids?.includes(tool.id) && tool.type === "review"
                 )
-                config = toolExecution?.toolConfig || {}
+                config = workflowTool?.config || {}
               } else {
                 const workflowTool = dataToRender.workflow_tools?.find(tool =>
                   step.toolIds?.includes(tool.id) && tool.type === "review"
@@ -2303,6 +2362,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }
 
 
+      console.log("🚀 Setting nodes and edges at:", new Date().toISOString(), {
+        nodeCount: templateNodes.length,
+        edgeCount: templateEdges.length
+      })
       setNodes(templateNodes)
       setEdges(templateEdges)
 
@@ -2348,7 +2411,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     (_: React.MouseEvent, node: Node) => {
       // Node click handler for execution workflows
       const step = node.data?.step as Step
-      const tools = (node.data?.tools as Tool[]) || []
 
       if (!step) return
 
@@ -2364,17 +2426,43 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
       // Handle execution workflows
       if (isExecution) {
-        // Check for trigger step first (trigger steps might also come as "manual" type)
-        if (step.type === "trigger" || (step.type === "manual" && step.name === "Manual Trigger")) {
-          console.log("🔍 Trigger execution node clicked:", { stepId: step.id, stepType: step.type, stepName: step.name })
+        // Get tools for this step to determine sidebar based on toolType
+        const stepData = step as any
+        const workflowDataForTools = workflowData || selectedTemplate
+        
+        // Find the actual step execution data to get workflow_tool_ids
+        const stepExecution = workflowDataForTools?.stepExecutions?.find((se: any) => se.id === step.id) as any
+        const workflowToolIds = stepExecution?.workflow_tool_ids || []
+        
+        const stepTools = workflowDataForTools?.workflow_tools?.filter((tool: any) =>
+          workflowToolIds.includes(tool.id)
+        ) || []
+
+        // Check for trigger tool first
+        console.log("🔍 Checking for trigger tools:", { 
+          stepId: step.id, 
+          stepTools: stepTools, 
+          stepExecution: stepExecution,
+          workflowToolIds: workflowToolIds,
+          foundTools: stepTools.map((t: any) => ({ id: t.id, type: t.type }))
+        })
+        
+        const hasTriggerTool = stepTools.some((tool: any) => tool.type === "trigger")
+        console.log("🔍 Has trigger tool?", hasTriggerTool)
+        
+        if (hasTriggerTool) {
+          console.log("🔍 Trigger tool node clicked:", { stepId: step.id, tools: stepTools })
           setSelectedTriggerStepId(step.id)
           setShowTriggerExecutionUI(true)
           return
         }
 
-        // Check for review step
-        if (step.type === "review" || (step.type === "manual" && step.name === "Review Step")) {
-          console.log("🔍 Review execution node clicked:", { stepId: step.id, stepType: step.type, stepName: step.name })
+        // Check for review tool
+        const hasReviewTool = stepTools.some((tool: any) => tool.type === "review")
+        console.log("🔍 Has review tool?", hasReviewTool, { stepTools: stepTools.map(t => ({ id: t.id, type: t.type })) })
+        
+        if (hasReviewTool) {
+          console.log("🔍 Review tool node clicked:", { stepId: step.id, tools: stepTools })
           
           // Extract previous step result for review content
           let previousStepResult = null
@@ -2414,7 +2502,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         }
 
         // Default execution sidebar for other steps
-        setSelectedExecutionNode({ step, tools, node })
+        // Get the actual tool executions for this step
+        const workflowDataForExecution = workflowData || selectedTemplate
+        const toolExecutions = workflowDataForExecution?.toolExecutions?.filter((toolExec: any) =>
+          stepData.workflow_tool_ids?.includes(toolExec.workflowToolId)
+        ) || []
+        
+        setSelectedExecutionNode({ step, tools: toolExecutions, node })
         setShowExecutionSidebar(true)
         return
       }
@@ -2424,7 +2518,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         onStepClick(step)
       }
     },
-    [onStepClick],
+    [onStepClick, workflowData, selectedTemplate, setShowExecutionSidebar, setShowReviewExecutionUI, setShowTriggerExecutionUI, setSelectedReviewStepId, setSelectedTriggerStepId, setReviewPreviousStepResult, setSelectedExecutionNode],
   )
 
   const onNodesDelete = useCallback<OnNodesDelete>(
@@ -2509,6 +2603,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       }
       
       // Update local workflow data to trigger re-renders
+      console.log("🔄 Updating workflowData with new polling data:", {
+        stepExecutionsCount: extractedData?.stepExecutions?.length,
+        newStepStatuses: extractedData?.stepExecutions?.map((s: any) => ({ id: s.id, status: s.status }))
+      })
       setWorkflowData(extractedData)
       
       // Check if workflow is completed or failed at workflow level
@@ -2532,9 +2630,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           return extractedData
         }
         
-        // Find manual steps first (higher priority)
+        // Find steps requiring user action (manual steps or active steps waiting for user interaction)
         const manualStep = extractedData.stepExecutions.find((step: any) => 
           step.type?.toLowerCase() === 'manual' && step.status !== 'completed'
+        )
+        
+        // Find steps that are active and waiting for user action (review, trigger, etc.)
+        const activeUserStep = extractedData.stepExecutions.find((step: any) => 
+          step.status === 'active'
         )
         
         if (manualStep) {
@@ -2545,12 +2648,33 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             stepStatus: manualStep.status
           })
           
-          console.log("⏸️ MANUAL STEP DETECTED - STOPPING POLLING")
-          
           // Show appropriate UI for manual steps
           console.log("🔧 Opening manual step UI")
           setSelectedTriggerStepId(manualStep.id)
           setShowTriggerExecutionUI(true)
+          
+          // Continue polling at longer intervals for manual steps
+          console.log("⏰ Continuing polling at 10 second intervals for manual step")
+          pollingTimeoutRef.current = setTimeout(() => {
+            fetchWorkflowStatus(executionId)
+          }, 10000)
+          
+          return extractedData
+        }
+        
+        if (activeUserStep) {
+          console.log("🔍 Active user step found:", {
+            stepId: activeUserStep.id,
+            stepName: activeUserStep.name,
+            stepType: activeUserStep.type,
+            stepStatus: activeUserStep.status
+          })
+          
+          // Continue polling at longer intervals for active steps requiring user action
+          console.log("⏰ Continuing polling at 10 second intervals for active user step")
+          pollingTimeoutRef.current = setTimeout(() => {
+            fetchWorkflowStatus(executionId)
+          }, 10000)
           
           return extractedData
         }
@@ -2681,7 +2805,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         <ExecutionSidebar
           isVisible={showExecutionSidebar}
           executionNode={selectedExecutionNode}
-          workflowData={selectedTemplate}
+          workflowData={workflowData || selectedTemplate}
           onClose={() => setShowExecutionSidebar(false)}
           onResultClick={handleResultClick}
         />
@@ -2700,6 +2824,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           builder={false} // Always execution mode in this component
           previousStepResult={reviewPreviousStepResult}
           workflowExecutionId={selectedTemplate?.id}
+          isStepActive={(() => {
+            if (!selectedReviewStepId || !workflowData?.stepExecutions) return false
+            const step = workflowData.stepExecutions.find((s: any) => s.id === selectedReviewStepId)
+            return step?.status === "active"
+          })()}
           onReviewSubmitted={() => {
             console.log("Review submitted, workflow will continue")
             // Resume polling - it will handle execution data refresh
@@ -2718,8 +2847,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             setSelectedTriggerStepId(null)
           }}
           stepExecutionId={selectedTriggerStepId || ""}
-          stepName="Manual Trigger"
+          stepName={selectedExecutionNode?.step?.name || "Manual Trigger Step"}
           builder={false} // Always execution mode in this component
+          isStepActive={(() => {
+            if (!selectedTriggerStepId || !workflowData?.stepExecutions) return false
+            const step = workflowData.stepExecutions.find((s: any) => s.id === selectedTriggerStepId)
+            return step?.status === "active"
+          })()}
           onTriggerSubmitted={() => {
             console.log("Trigger submitted, workflow will continue")
             // Resume polling - it will handle execution data refresh
@@ -2727,6 +2861,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               fetchWorkflowStatus(selectedTemplate.id)
             }
           }}
+          path={"execution"}
         />
 
 

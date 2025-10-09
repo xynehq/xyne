@@ -22,6 +22,7 @@ interface ReviewExecutionUIProps {
   toolId?: string // Tool ID for API updates
   toolData?: any // Tool data for loading existing configuration
   workflowExecutionId?: string // Workflow execution ID for file downloads
+  isStepActive?: boolean // Whether the step is currently active and can be reviewed
 }
 
 interface ReviewEmailConfig {
@@ -44,10 +45,29 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
   toolId,
   toolData,
   workflowExecutionId,
+  isStepActive = true,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submissionStatus, setSubmissionStatus] = useState<'pending' | 'approved' | 'rejected' | 'error'>('pending')
+  
+  // Debug logging
+  React.useEffect(() => {
+    console.log("🔍 ReviewExecutionUI props changed:", { 
+      isVisible, 
+      stepExecutionId, 
+      stepName, 
+      builder, 
+      submissionStatus: submissionStatus 
+    })
+  }, [isVisible, stepExecutionId, stepName, builder, submissionStatus])
+
+  console.log("🔍 ReviewExecutionUI render:", { 
+    isVisible, 
+    builder, 
+    stepExecutionId, 
+    submissionStatus 
+  })
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const [showFileSelection, setShowFileSelection] = useState(false)
@@ -811,42 +831,82 @@ const ReviewExecutionUI: React.FC<ReviewExecutionUIProps> = ({
                 )}
               </Button>
             )}
-            <Button
-              onClick={() => handleReviewDecision('approved')}
-              disabled={isSubmitting}
-              className="w-full bg-green-600 hover:bg-green-700 text-white"
-            >
-              {isSubmitting ? (
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Submitting...</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="w-4 h-4" />
-                  <span>Approve</span>
-                </div>
-              )}
-            </Button>
             
-            <Button
-              onClick={() => handleReviewDecision('rejected')}
-              disabled={isSubmitting}
-              variant="outline"
-              className="w-full border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400"
-            >
-              {isSubmitting ? (
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-                  <span>Submitting...</span>
+            {isStepActive ? (
+              <>
+                <Button
+                  onClick={() => handleReviewDecision('approved')}
+                  disabled={isSubmitting}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Submitting...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Approve</span>
+                    </div>
+                  )}
+                </Button>
+                
+                <Button
+                  onClick={() => handleReviewDecision('rejected')}
+                  disabled={isSubmitting}
+                  variant="outline"
+                  className="w-full border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400"
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                      <span>Submitting...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <XCircle className="w-4 h-4" />
+                      <span>Reject</span>
+                    </div>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="relative group">
+                  <Button
+                    disabled={true}
+                    className="w-full bg-gray-400 hover:bg-gray-400 text-gray-600 cursor-not-allowed"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Approve</span>
+                    </div>
+                  </Button>
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
+                    Complete previous steps to activate this node
+                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                  </div>
                 </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <XCircle className="w-4 h-4" />
-                  <span>Reject</span>
+                
+                <div className="relative group">
+                  <Button
+                    disabled={true}
+                    variant="outline"
+                    className="w-full bg-gray-400 hover:bg-gray-400 text-gray-600 cursor-not-allowed border-gray-400"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <XCircle className="w-4 h-4" />
+                      <span>Reject</span>
+                    </div>
+                  </Button>
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
+                    Complete previous steps to activate this node
+                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                  </div>
                 </div>
-              )}
-            </Button>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -10,7 +10,9 @@ interface TriggerExecutionUIProps {
   stepExecutionId: string
   stepName?: string
   builder?: boolean // true for builder mode, false for execution mode
+  path?: string // "builder" or "execution"
   onTriggerSubmitted?: () => void // Callback to restart polling
+  isStepActive?: boolean // Whether the step is currently active and can be triggered
 }
 
 const TriggerExecutionUI: React.FC<TriggerExecutionUIProps> = ({
@@ -21,10 +23,25 @@ const TriggerExecutionUI: React.FC<TriggerExecutionUIProps> = ({
   stepName = "Trigger Step",
   builder = true,
   onTriggerSubmitted,
+  path="",
+  isStepActive = true,
 }) => {
   const [isTriggering, setIsTriggering] = useState(false)
   const [triggerError, setTriggerError] = useState<string | null>(null)
   const [triggerStatus, setTriggerStatus] = useState<'pending' | 'triggered' | 'error'>('pending')
+  React.useEffect(() => {
+    console.log("🔍 TriggerExecutionUI props changed:", { isVisible, stepExecutionId, stepName, builder, path })
+      // Debug logging
+  console.log("🔍 TriggerExecutionUI render:", { 
+    isVisible, 
+    builder, 
+    stepExecutionId, 
+    triggerStatus 
+  })
+
+  }
+
+)
 
   const handleTrigger = async () => {
     console.log("🔍 Trigger button clicked:", { stepExecutionId })
@@ -90,6 +107,8 @@ const TriggerExecutionUI: React.FC<TriggerExecutionUIProps> = ({
   }
 
   if (!isVisible) return null
+
+
 
   // In builder mode, don't show any sidebar (return null or empty div)
   if (builder) {
@@ -168,23 +187,41 @@ const TriggerExecutionUI: React.FC<TriggerExecutionUIProps> = ({
       {/* Trigger Button - Only show in execution mode when pending */}
       {triggerStatus === 'pending' && (
         <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-          <Button
-            onClick={handleTrigger}
-            disabled={isTriggering}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {isTriggering ? (
-              <div className="flex items-center space-x-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Triggering...</span>
+          {isStepActive ? (
+            <Button
+              onClick={handleTrigger}
+              disabled={isTriggering}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {isTriggering ? (
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Triggering...</span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <Play className="w-4 h-4" />
+                  <span>Trigger</span>
+                </div>
+              )}
+            </Button>
+          ) : (
+            <div className="relative group">
+              <Button
+                disabled={true}
+                className="w-full bg-gray-400 hover:bg-gray-400 text-gray-600 cursor-not-allowed"
+              >
+                <div className="flex items-center space-x-2">
+                  <Play className="w-4 h-4" />
+                  <span>Trigger</span>
+                </div>
+              </Button>
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
+                Complete previous steps to activate this node
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
               </div>
-            ) : (
-              <div className="flex items-center space-x-2">
-                <Play className="w-4 h-4" />
-                <span>Trigger</span>
-              </div>
-            )}
-          </Button>
+            </div>
+          )}
         </div>
       )}
 
