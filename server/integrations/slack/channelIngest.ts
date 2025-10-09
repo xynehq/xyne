@@ -80,6 +80,7 @@ import {
 } from "@/metrics/slack/slack-metrics"
 import { start } from "repl"
 import { NAMESPACE } from "@/config"
+import type { FileElement } from "@slack/web-api/dist/types/response/ConversationsHistoryResponse"
 
 const Logger = getLogger(Subsystem.Integrations).child({ module: "slack" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Integrations, {
@@ -734,7 +735,7 @@ export const getTeam = async (
 }
 
 export const insertChatAttachment = async (
-  file: any,
+  file: FileElement,
   messageId: string,
   teamId: string,
   userId: string,
@@ -743,9 +744,9 @@ export const insertChatAttachment = async (
   // Extract dimensions for images
   let dimensions: number[] | undefined
   if (file.thumb_pdf_w && file.thumb_pdf_h) {
-    dimensions = [file.thumb_pdf_w, file.thumb_pdf_h]
+    dimensions = [parseFloat(file.thumb_pdf_w), parseFloat(file.thumb_pdf_h)]
   } else if (file.original_w && file.original_h) {
-    dimensions = [file.original_w, file.original_h]
+    dimensions = [parseFloat(file.original_w), parseFloat(file.original_h)]
   }
 
   // Get thumbnail URL (prioritize specific format thumbnails)
@@ -759,23 +760,27 @@ export const insertChatAttachment = async (
   }
 
   const vespaChatAttachment: VespaChatAttachment = {
-    docId: file.id,
+    docId: file.id!,
     messageId: messageId,
-    title: file.title || file.name,
-    filename: file.name,
+    title: file.title || file.name || "",
+    filename: file.name || "",
     mimeType: file.mimetype || "",
     fileType: file.filetype || "",
     size: file.size || 0,
     url: file.permalink_public,
-    urlPrivate: file.url_private,
-    urlPrivateDownload: file.url_private_download,
+    urlPrivate: file.url_private || "",
+    urlPrivateDownload: file.url_private_download || "",
     thumbnailUrl,
-    createdAt: file.timestamp ? file.timestamp * 1000 : file.created * 1000, // Convert to milliseconds
+    createdAt: file.timestamp
+      ? file.timestamp * 1000
+      : file.created
+        ? file.created * 1000
+        : 0, // Convert to milliseconds
     teamId: teamId,
     userId: userId,
     chatRef: `id:${NAMESPACE}:${chatContainerSchema}::${channelId}`,
     dimensions,
-    duration: file.duration,
+    duration: file.duration_ms,
     metadata: JSON.stringify({
       pretty_type: file.pretty_type,
       mode: file.mode,
