@@ -23,7 +23,7 @@ const ExistingAgentConfigUI: React.FC<ExistingAgentConfigUIProps> = ({
 
     const handleEditAgent = () => {
         if (agentId) {
-            window.open(`/agent/${agentId}/edit`, '_blank')
+            window.open(`/agent?agentId=${agentId}&mode=edit`, '_blank')  // ✅ Correct URL format
         }
     }
 

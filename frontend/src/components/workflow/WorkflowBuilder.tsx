@@ -1987,7 +1987,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         // ✅ Use isExistingAgent pattern for referencing existing agents
         const agentTool = {
           id: `tool-${newNodeId}`,
-          type: "existing_agent",
+          type: "ai_agent",
           val: {
             agentId: agent.externalId,
             name: agent.name,
@@ -2382,16 +2382,23 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setShowEmailConfigUI(true)
           break
 
-        case "ai_agent":
-          // Open AI Agent config sidebar
-          setSelectedAgentNodeId(node.id)
-          setShowAIAgentConfigUI(true)
-          break
+case "ai_agent":
+    // Check if this is an existing agent or workflow agent
+    const tools = node.data?.tools as Tool[] | undefined
+    const isExistingAgent =  tools?.[0]?.config?.isExistingAgent
 
-        case "existing_agent":  // ✅ NEW CASE
-          setSelectedExistingAgentNodeId(node.id)
-          setShowExistingAgentConfigUI(true)
-          break
+    if (isExistingAgent) {
+      // Existing agent → open ExistingAgentConfigUI
+      setSelectedExistingAgentNodeId(node.id)
+      setShowExistingAgentConfigUI(true)
+    } else {
+      // Workflow agent → open AIAgentConfigUI
+      setSelectedAgentNodeId(node.id)
+      setShowAIAgentConfigUI(true)
+    }
+    break
+
+
 
         default:
           if (onStepClick) {
