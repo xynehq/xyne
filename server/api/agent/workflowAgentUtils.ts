@@ -78,19 +78,6 @@ export type ExecuteAgentResponse =
   | NonStreamingExecuteAgentResponse
   | ExecuteAgentErrorResponse
 
-/**
-   * Parameters for executing an agent with full features (RAG, integrations, etc.)
-   */
-export interface ExecuteAgentFullParams {
-  agentId: string
-  userQuery: string
-  userEmail: string
-  workspaceId: string
-  streamable?: boolean
-  temperature?: number
-  attachmentFileIds?: string[]        // Image attachments (for context)
-  nonImageAttachmentFileIds?: string[] // Document attachments (for context)         
-}
 
 /**
  * Response from agent execution with full features
@@ -547,10 +534,13 @@ async function* createStreamingWithDBSave(
 
 
 export const executeAgentWithFullFeatures = async (
-    params: ExecuteAgentFullParams
+    params: ExecuteAgentParams
 ): Promise<ExecuteAgentFullResponse> => {
     try {
         Logger.info(`[agentCore] Starting execution for agent ${params.agentId}`)
+
+         // Validate with Zod schema
+          const validatedParams = executeAgentSchema.parse(params)
 
         // Initialize tracer for performance monitoring
         const tracer = getTracer("agentCore")

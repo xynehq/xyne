@@ -2041,11 +2041,13 @@ const executeWorkflowTool = async (
 
             const fullResult = await executeAgentWithFullFeatures({
               agentId,
-              userQuery: "Analyze this resume and suggest improvements.",
+              userQuery,
               userEmail,
               workspaceId,
-              streamable: false,
+              isStreamable: false,
               temperature,
+              attachmentFileIds: imageAttachmentIds,
+              nonImageAttachmentFileIds: documentAttachmentIds,
             })
 
             if (!fullResult.success) {
