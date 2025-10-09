@@ -4,7 +4,7 @@ import { z } from "zod"
 import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
 import { type SelectAgent } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
-import { executeAgentWithFullFeatures } from "./agent/agentCoreExecution"
+
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
@@ -15,7 +15,7 @@ const listWorkflowExecutionsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(10),
   page: z.coerce.number().min(1).optional().default(1),
 })
-import { ExecuteAgentForWorkflow } from "./agent/workflowAgentUtils"
+import { ExecuteAgentForWorkflow, executeAgentWithFullFeatures } from "./agent/workflowAgentUtils"
 import { db } from "@/db/client"
 import {
   workflowTemplate,
