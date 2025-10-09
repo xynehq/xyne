@@ -83,6 +83,7 @@ import {
   VespaChatUserSchema,
   type VespaSearchResult,
   type VespaSearchResults,
+  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
@@ -121,7 +122,6 @@ import { getModelValueFromLabel } from "@/ai/modelConfig"
 import {
   buildContext,
   buildUserQuery,
-  expandSheetIds,
   getThreadContext,
   isContextSelected,
   UnderstandMessageAndAnswer,
@@ -156,6 +156,7 @@ import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
 import { applyFollowUpContext } from "@/utils/parseAttachment"
+import { expandSheetIds } from "@/search/utils"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -392,7 +393,7 @@ const checkAndYieldCitationsForAgent = async function* (
           }
 
           // we dont want citations for attachments in the chat
-          if (item.source.entity === KnowledgeBaseEntity.Attachment) {
+          if (Object.values(AttachmentEntity).includes(item.source.entity as AttachmentEntity)) {
             continue
           }
 

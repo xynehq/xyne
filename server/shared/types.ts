@@ -27,7 +27,7 @@ import {
   GooglePeopleEntity,
   SlackEntity,
   MicrosoftPeopleEntity,
-  
+  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 export {
   GooglePeopleEntity,
@@ -36,6 +36,7 @@ export {
   CalendarEntity,
   MailAttachmentEntity,
   SlackEntity,
+  AttachmentEntity,
   Apps,
   isMailAttachment,
   SystemEntity,
@@ -57,7 +58,10 @@ export type {
 } from "@xyne/vespa-ts/types"
 
 export type VespaFile = z.infer<typeof VespaFileSchema>
-export const FileEntitySchema = z.nativeEnum(DriveEntity)
+export const FileEntitySchema = z.union([
+  z.nativeEnum(DriveEntity),
+  z.nativeEnum(AttachmentEntity),
+])
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
@@ -202,6 +206,16 @@ export const EXTENSION_MAPPINGS = {
   [FileType.PDF]: [".pdf"],
   [FileType.TEXT]: [".txt", ".md"],
 } as const
+
+export const attachmentFileTypeMap: Record<string, AttachmentEntity> = {
+  [FileType.DOCUMENT]: AttachmentEntity.Docs,
+  [FileType.SPREADSHEET]: AttachmentEntity.Sheets,
+  [FileType.PRESENTATION]: AttachmentEntity.PPT,
+  [FileType.PDF]: AttachmentEntity.PDF,
+  [FileType.TEXT]: AttachmentEntity.Text,
+  [FileType.IMAGE]: AttachmentEntity.Image,
+  [FileType.FILE]: AttachmentEntity.File,
+}
 
 export enum ApiKeyScopes {
   CREATE_AGENT = "CREATE_AGENT",

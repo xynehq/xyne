@@ -58,7 +58,7 @@ import {
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
 import { ApiKeyScopes, UploadStatus } from "@/shared/types"
-import { expandSheetIds } from "./chat/chat"
+import { expandSheetIds } from "@/search/utils"
 import { checkFileSize } from "@/integrations/dataSource"
 
 const EXTENSION_MIME_MAP: Record<string, string> = {
