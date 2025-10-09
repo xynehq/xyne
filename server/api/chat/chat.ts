@@ -1193,7 +1193,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             lowerIntegration.startsWith("ds_")
           ) {
             // ds- is the prefix for datasource externalId
-            agentSpecificDataSourceIds.push(integration)
+            agentSpecificDataSourceIds.push(...expandSheetIds(integration))
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
@@ -1255,6 +1255,14 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         agentPromptData.appIntegrations,
       )
       // Use selectedApps and selectedItems
+      for (const app in selectedItems) {
+        const fileIds = selectedItems[app];
+        // Expand each fileId and flatten
+        if(app !== Apps.KnowledgeBase) {
+          selectedItems[app] = fileIds.flatMap(expandSheetIds);
+        }
+      }
+
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
@@ -1275,7 +1283,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
           }
         }
 
@@ -2396,7 +2404,7 @@ async function* generatePointQueryTimeExpansion(
             lowerIntegration.startsWith("ds-") ||
             lowerIntegration.startsWith("ds_")
           ) {
-            agentSpecificDataSourceIds.push(integration)
+            agentSpecificDataSourceIds.push(...expandSheetIds(integration))
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
@@ -2457,6 +2465,14 @@ async function* generatePointQueryTimeExpansion(
         agentPromptData.appIntegrations,
       )
       // Use selectedApps and selectedItems
+      for (const app in selectedItems) {
+        const fileIds = selectedItems[app];
+        // Expand each fileId and flatten
+        if(app !== Apps.KnowledgeBase) {
+          selectedItems[app] = fileIds.flatMap(expandSheetIds);
+        }
+      }
+
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
@@ -2476,7 +2492,7 @@ async function* generatePointQueryTimeExpansion(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
           }
         }
 
@@ -2990,7 +3006,7 @@ async function* generateMetadataQueryAnswer(
             lowerIntegration.startsWith("ds-") ||
             lowerIntegration.startsWith("ds_")
           ) {
-            agentSpecificDataSourceIds.push(integration)
+            agentSpecificDataSourceIds.push(...expandSheetIds(integration))
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
@@ -3050,6 +3066,14 @@ async function* generateMetadataQueryAnswer(
         agentPromptData.appIntegrations,
       )
       // Use selectedApps and selectedItems
+      for (const app in selectedItems) {
+        const fileIds = selectedItems[app];
+        // Expand each fileId and flatten
+        if(app !== Apps.KnowledgeBase) {
+          selectedItems[app] = fileIds.flatMap(expandSheetIds);
+        }
+      }
+      
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
@@ -3069,7 +3093,7 @@ async function* generateMetadataQueryAnswer(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
           }
         }
 
