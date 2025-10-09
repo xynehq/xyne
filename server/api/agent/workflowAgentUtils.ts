@@ -82,7 +82,7 @@ export type ExecuteAgentResponse =
 /**
  * Response from agent execution with full features
  */
-export interface ExecuteAgentFullResponse {
+export interface ExecuteAgentWithRagResponse {
   success: boolean
   response?: string                    // AI's answer
   citations?: any[]                    // Document citations
@@ -533,9 +533,9 @@ async function* createStreamingWithDBSave(
 }
 
 
-export const executeAgentWithFullFeatures = async (
+export const executeAgentForWorkflowWithRag = async (
     params: ExecuteAgentParams
-): Promise<ExecuteAgentFullResponse> => {
+): Promise<ExecuteAgentWithRagResponse> => {
     try {
         Logger.info(`[agentCore] Starting execution for agent ${params.agentId}`)
 

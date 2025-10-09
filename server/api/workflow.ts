@@ -15,7 +15,7 @@ const listWorkflowExecutionsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(10),
   page: z.coerce.number().min(1).optional().default(1),
 })
-import { ExecuteAgentForWorkflow, executeAgentWithFullFeatures } from "./agent/workflowAgentUtils"
+import { ExecuteAgentForWorkflow, executeAgentForWorkflowWithRag } from "./agent/workflowAgentUtils"
 import { db } from "@/db/client"
 import {
   workflowTemplate,
@@ -2036,10 +2036,10 @@ const executeWorkflowTool = async (
 
           if (isExistingAgent) {
             // ===== Path 1: Existing Direct Agent with Full Features =====
-            // Use executeAgentWithFullFeatures for RAG, KB, and integrations
+            // Use executeAgentForWorkflowWithRag for RAG, KB, and integrations
             Logger.info(`[workflow] Using full-featured agent execution for existing agent: ${agentId}`)
 
-            const fullResult = await executeAgentWithFullFeatures({
+            const fullResult = await executeAgentForWorkflowWithRag({
               agentId,
               userQuery,
               userEmail,
