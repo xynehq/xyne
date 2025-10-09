@@ -1,3 +1,10 @@
+## [3.12.2](https://github.com/xynehq/xyne/compare/v3.12.1...v3.12.2) (2025-10-09)
+
+
+### Bug Fixes
+
+* **driveFolder:** add script for correcting drive hierarchy ([#1073](https://github.com/xynehq/xyne/issues/1073)) ([8bea9da](https://github.com/xynehq/xyne/commit/8bea9da0891d57e1665a2997dfe408c3f15c73d4))
+
 ## [3.12.1](https://github.com/xynehq/xyne/compare/v3.12.0...v3.12.1) (2025-10-09)
 
 
