@@ -2870,11 +2870,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
           })
 
           const dataSourceSpan = streamSpan.startSpan("get_all_data_sources")
-          const appIntegrations = agentForDb?.appIntegrations as string[]
-          const appIntegrationsWithSheetIds = appIntegrations.flatMap(expandSheetIds)
           const allDataSources = await getAllDocumentsForAgent(
             [Apps.DataSource],
-            appIntegrationsWithSheetIds,
+            agentForDb?.appIntegrations as string[],
             400,
             email,
           )
@@ -3151,11 +3149,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
 
         // Build “context + fragments” (same as streaming path) -----------------------
         const dataSourceSpan = nonStreamSpan.startSpan("get_all_data_sources")
-        const appIntegrations = agentForDb?.appIntegrations as string[]
-        const appIntegrationsWithSheetIds = appIntegrations.flatMap(expandSheetIds)
         const allDataSources = await getAllDocumentsForAgent(
           [Apps.DataSource],
-          appIntegrationsWithSheetIds,
+          agentForDb?.appIntegrations as string[],
           400,
           email,
         )
