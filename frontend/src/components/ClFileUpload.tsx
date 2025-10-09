@@ -237,9 +237,6 @@ const CollectionFileUpload = ({
     )
   }
   const getTooltipContent=()=>{
-    // if(selectedFiles.length === 0 || isUploading || !collectionName.trim()){
-    //   return undefined
-    // }
     if(!collectionName.trim()){
       return "Enter collection name"
     }
