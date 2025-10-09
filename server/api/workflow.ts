@@ -1964,7 +1964,7 @@ const executeWorkflowTool = async (
         }
 
         try {
-          // Get execution context for user info
+          // Get execution context for user infon
           const executionContext = await getExecutionContext(executionId)
           if (!executionContext) {
             return {

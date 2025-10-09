@@ -32,6 +32,7 @@ import {
 import { api } from "../../api"
 
 import { AgentsSidebar } from "./AgentsSidebar"
+import ExistingAgentConfigUI from "./ExistingAgentConfigUI"
 
 // Import WorkflowTemplate type
 interface WorkflowTemplate {
@@ -1847,6 +1848,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
     null,
   )
+  const [showExistingAgentConfigUI, setShowExistingAgentConfigUI] = useState(false)
+  const [selectedExistingAgentNodeId, setSelectedExistingAgentNodeId] = useState<string | null>(null)
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
   const [selectedNodeTools] = useState<Tool[] | null>(
@@ -1984,7 +1987,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         // ✅ Use isExistingAgent pattern for referencing existing agents
         const agentTool = {
           id: `tool-${newNodeId}`,
-          type: "ai_agent",
+          type: "existing_agent",
           val: {
             agentId: agent.externalId,
             name: agent.name,
@@ -2054,7 +2057,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           },
           sourceHandle: "bottom",
           targetHandle: "top",
-        } as any 
+        } as any
 
         // Update workflow state
         setNodes((prevNodes) => [...prevNodes, newNode])
@@ -2361,6 +2364,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
       setSelectedFormNodeId(null)
+      setShowExistingAgentConfigUI(false)
+      setSelectedExistingAgentNodeId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -2381,6 +2386,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open AI Agent config sidebar
           setSelectedAgentNodeId(node.id)
           setShowAIAgentConfigUI(true)
+          break
+
+        case "existing_agent":  // ✅ NEW CASE
+          setSelectedExistingAgentNodeId(node.id)
+          setShowExistingAgentConfigUI(true)
           break
 
         default:
@@ -3692,29 +3702,29 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
 
         {/* What Happens Next Sidebar - stays visible in background when node sidebars open */}
         <WhatHappensNextUI
-              isVisible={showWhatHappensNextUI}
-              onClose={() => {
-                setShowWhatHappensNextUI(false)
-                // Don't clear selectedNodeForNext here since it's needed for node creation
-                // Only clear it when AI Agent/Email config is actually cancelled
-                // Clear all node selections when sidebar closes
-                setNodes((prevNodes) => 
-                  prevNodes.map(node => ({ ...node, selected: false }))
-                )
-                setSelectedNodes([])
-              }}
-              onSelectAction={handleWhatHappensNextAction}
-              selectedNodeId={selectedNodeForNext}
-              toolData={
-                selectedNodeForNext
-                  ? (() => {
-                      const node = nodes.find((n) => n.id === selectedNodeForNext)
-                      const tools = node?.data?.tools as Tool[] | undefined
-                      return tools && tools.length > 0 ? tools[0] : undefined
-                    })()
-                  : undefined
-              }
-            />
+          isVisible={showWhatHappensNextUI}
+          onClose={() => {
+            setShowWhatHappensNextUI(false)
+            // Don't clear selectedNodeForNext here since it's needed for node creation
+            // Only clear it when AI Agent/Email config is actually cancelled
+            // Clear all node selections when sidebar closes
+            setNodes((prevNodes) =>
+              prevNodes.map(node => ({ ...node, selected: false }))
+            )
+            setSelectedNodes([])
+          }}
+          onSelectAction={handleWhatHappensNextAction}
+          selectedNodeId={selectedNodeForNext}
+          toolData={
+            selectedNodeForNext
+              ? (() => {
+                const node = nodes.find((n) => n.id === selectedNodeForNext)
+                const tools = node?.data?.tools as Tool[] | undefined
+                return tools && tools.length > 0 ? tools[0] : undefined
+              })()
+              : undefined
+          }
+        />
 
         {/* AI Agent Config Sidebar */}
         {!showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && (
@@ -3753,7 +3763,28 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }
           />
         )}
-
+        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && (
+          <ExistingAgentConfigUI
+            isVisible={showExistingAgentConfigUI}
+            onClose={() => {
+              setShowExistingAgentConfigUI(false)
+              setSelectedExistingAgentNodeId(null)
+              setNodes((prevNodes) =>
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+            }}
+            toolData={
+              selectedExistingAgentNodeId
+                ? (() => {
+                  const node = nodes.find((n) => n.id === selectedExistingAgentNodeId)
+                  const tools = node?.data?.tools as Tool[] | undefined
+                  return tools && tools.length > 0 ? tools[0] : undefined
+                })()
+                : undefined
+            }
+          />
+        )}
         {/* Agents Sidebar */}
         {!showWhatHappensNextUI &&
           !showAIAgentConfigUI &&
