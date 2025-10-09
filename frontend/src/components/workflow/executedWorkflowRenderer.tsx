@@ -73,7 +73,6 @@ interface ExecutionWorkflowTemplate extends WorkflowTemplate {
   }>
 }
 
-import botLogo from "@/assets/bot-logo.svg"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -1864,14 +1863,14 @@ const ExecutionSidebar = ({
                               step.status === "completed" &&
                               tool.status === "completed"
                             const hasEmailBody =
-                              tool.result?.python_script_output?.body
+                              tool.result?.email_details
 
                             if (isEmailTool && isSuccess && hasEmailBody) {
                               return (
                                 <button
                                   onClick={() =>
                                     onResultClick?.(
-                                      tool.result.python_script_output.body,
+                                      tool.result,
                                     )
                                   }
                                   className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
@@ -1908,10 +1907,10 @@ const ExecutionSidebar = ({
 
                             if (isEmailTool && isSuccess) {
                               const hasEmailBody =
-                                tool.result?.python_script_output?.body
+                                tool.result?.email_details
                               if (hasEmailBody) {
                                 onResultClick?.(
-                                  tool.result.python_script_output.body,
+                                  tool.result,
                                 )
                               } else {
                                 onResultClick?.(tool.result)
@@ -1936,7 +1935,6 @@ const ExecutionSidebar = ({
                               const error =
                                 tool.result?.error ||
                                 tool.result?.message ||
-                                tool.result?.python_script_output?.error ||
                                 tool.result?.stderr ||
                                 tool.result?.exception ||
                                 `${tool.type} execution failed`

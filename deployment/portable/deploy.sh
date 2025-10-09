@@ -20,9 +20,13 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  start              Start all services"
+    echo "  start-infra        Start only infrastructure services (DB, Vespa, monitoring)"
     echo "  stop               Stop all services"
     echo "  restart            Restart all services"
-    echo "  update-app         Update only the app service (efficient for code changes)"
+    echo "  update-app         Update only the main app service (efficient for code changes)"
+    echo "  update-sync        Update only the sync server service"
+    echo "  update-app-version <version>  Update both app and sync to a specific Docker image tag"
+    echo "  update-sync-version <version> Update sync server to a specific Docker image tag"
     echo "  update-infra       Update infrastructure services"
     echo "  logs [service]     Show logs for all services or specific service"
     echo "  status             Show status of all services"
@@ -44,8 +48,10 @@ show_help() {
     echo ""
     echo "Examples:"
     echo "  $0 start           # Start all services (auto-detect GPU/CPU)"
+    echo "  $0 start-infra     # Start only infrastructure for local development"
     echo "  $0 start --force-cpu    # Force CPU-only mode"
-    echo "  $0 update-app      # Quick app update without touching DB/Vespa"
+    echo "  $0 update-app      # Quick main app update without touching other services"
+    echo "  $0 update-sync     # Quick sync server update without touching other services"
     echo "  $0 logs app        # Show app logs"
     echo "  $0 db-generate     # Generate migrations after schema changes"
     echo "  $0 db-migrate      # Apply pending migrations"
@@ -133,9 +139,21 @@ done
 # Initialize data directory from environment or use default
 DATA_DIR="${XYNE_DATA_DIR:-./data}"
 
+# Detect Docker Compose command (docker-compose vs docker compose)
+get_docker_compose_cmd() {
+    if docker compose version >/dev/null 2>&1; then
+        echo "docker compose"
+    elif command -v docker-compose >/dev/null 2>&1; then
+        echo "docker-compose"
+    else
+        echo -e "${RED}ERROR: Neither 'docker-compose' nor 'docker compose' is available${NC}"
+        exit 1
+    fi
+}
+
 setup_environment() {
     echo -e "${YELLOW} Setting up environment...${NC}"
-    
+
     # Create necessary directories with proper permissions
     echo " Creating data directories..."
     mkdir -p "$DATA_DIR"/{postgres-data,vespa-data,app-uploads,app-logs,app-assets,app-migrations,app-downloads,grafana-storage,loki-data,promtail-data,prometheus-data,ollama-data,vespa-models}
@@ -178,6 +196,7 @@ setup_environment() {
     if ! grep -q "DOCKER_GROUP_ID" .env 2>/dev/null; then
         echo "DOCKER_GROUP_ID=$DOCKER_GROUP_ID" >> .env
     fi
+
     
     # Create network if it doesn't exist
     docker network create xyne 2>/dev/null || echo "Network 'xyne' already exists"
@@ -237,7 +256,7 @@ setup_permissions() {
 
 start_infrastructure() {
     echo -e "${YELLOW}  Starting infrastructure services...${NC}"
-    
+
     # Determine which infrastructure compose file to use
     INFRA_COMPOSE=$(get_infrastructure_compose)
     if detect_gpu_support >/dev/null 2>&1; then
@@ -246,20 +265,34 @@ start_infrastructure() {
         echo -e "${BLUE} Using CPU-only Vespa${NC}"
     fi
 
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build $NO_CACHE_FLAG
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --build
     echo -e "${GREEN} Infrastructure services started${NC}"
 }
 
 start_app() {
-    echo -e "${YELLOW} Starting application services...${NC}"
-    INFRA_COMPOSE=$(get_infrastructure_compose)
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d app
-    echo -e "${GREEN} Main application service started${NC}"
-    
-    echo -e "${YELLOW} Starting sync server...${NC}"
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d app-sync
-    echo -e "${GREEN} Sync server started${NC}"
+    echo -e "${YELLOW}Starting application services...${NC}"
+
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+
+    if [ "$APP_DEPLOY_MODE" = "build" ]; then
+        echo -e "${BLUE}Building app locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app
+        echo -e "${BLUE}Building sync server locally (no pull)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES build app-sync
+
+        echo -e "${BLUE}Starting services with locally built images...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app app-sync
+    else
+        echo -e "${BLUE}Using prebuilt image (version mode, may pull from registry)...${NC}"
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d app
+        $DOCKER_COMPOSE $COMPOSE_FILES up -d app-sync
+    fi
+
+    echo -e "${GREEN}Application services started${NC}"
 }
+
 
 get_infrastructure_compose() {
     if detect_gpu_support >/dev/null 2>&1; then
@@ -269,30 +302,78 @@ get_infrastructure_compose() {
     fi
 }
 
+get_compose_files() {
+    local files="-f docker-compose.yml"
+    local infra_compose=$(get_infrastructure_compose)
+    files="$files -f $infra_compose"
+
+    # Add app compose file
+    files="$files -f docker-compose.app.yml"
+
+    # Add sync compose file
+    files="$files -f docker-compose.sync.yml"
+
+    echo "$files"
+}
+
+get_app_compose_files() {
+    local files="-f docker-compose.yml"
+    local infra_compose=$(get_infrastructure_compose)
+    files="$files -f $infra_compose"
+    files="$files -f docker-compose.app.yml"
+    echo "$files"
+}
+
+get_sync_compose_files() {
+    local files="-f docker-compose.yml"
+    local infra_compose=$(get_infrastructure_compose)
+    files="$files -f $infra_compose"
+    files="$files -f docker-compose.sync.yml"
+    echo "$files"
+}
+
 stop_all() {
     echo -e "${YELLOW} Stopping all services...${NC}"
-    INFRA_COMPOSE=$(get_infrastructure_compose)
-    docker-compose -f docker-compose.yml -f docker-compose.app.yml -f "$INFRA_COMPOSE" down
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    $DOCKER_COMPOSE $COMPOSE_FILES down
     echo -e "${GREEN} All services stopped${NC}"
 }
 
 update_app() {
-    echo -e "${YELLOW} Updating application services only...${NC}"
-    
-    # Build new image
+    echo -e "${YELLOW} Updating main application service only...${NC}"
+
+    COMPOSE_FILES=$(get_app_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+
+    # Build new image for production
     echo "  Building new app image..."
-    INFRA_COMPOSE=$(get_infrastructure_compose)
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml build $NO_CACHE_FLAG app
-    
-    # Stop and recreate both app services
+    $DOCKER_COMPOSE $COMPOSE_FILES build app
+
+    # Stop and recreate app service
     echo " Recreating main app service..."
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app
-    
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app
+
+    echo -e "${GREEN} Main application service updated successfully${NC}"
+    echo -e "${BLUE}  Database, Vespa, and Sync services were not affected${NC}"
+}
+
+update_sync() {
+    echo -e "${YELLOW} Updating sync server service only...${NC}"
+
+    COMPOSE_FILES=$(get_sync_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+
+    # Build new image for production
+    echo "  Building new sync image..."
+    $DOCKER_COMPOSE $COMPOSE_FILES build app-sync
+
+    # Stop and recreate sync service
     echo " Recreating sync server..."
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app-sync
-    
-    echo -e "${GREEN} Application services updated successfully${NC}"
-    echo -e "${BLUE}  Database and Vespa services were not affected${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app-sync
+
+    echo -e "${GREEN} Sync server service updated successfully${NC}"
+    echo -e "${BLUE}  Database, Vespa, and main app services were not affected${NC}"
 }
 
 update_infrastructure() {
@@ -304,29 +385,32 @@ update_infrastructure() {
     setup_permissions
 
     # Pull images that are available in registries (ignore failures for custom builds)
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" pull || echo -e "${YELLOW}Some images require building (this is normal for custom images)${NC}"
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" pull || echo -e "${YELLOW}Some images require building (this is normal for custom images)${NC}"
 
     # Build and start all services (--build will handle custom images)
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build $NO_CACHE_FLAG
+    $DOCKER_COMPOSE -f docker-compose.yml -f "$INFRA_COMPOSE" up -d --force-recreate --build
     echo -e "${GREEN} Infrastructure services updated${NC}"
 }
 
 show_logs() {
     local service=$1
-    INFRA_COMPOSE=$(get_infrastructure_compose)
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
     if [ -n "$service" ]; then
         echo -e "${YELLOW} Showing logs for $service...${NC}"
-        docker-compose -f docker-compose.yml -f docker-compose.app.yml -f "$INFRA_COMPOSE" logs -f "$service"
+        $DOCKER_COMPOSE $COMPOSE_FILES logs -f "$service"
     else
         echo -e "${YELLOW} Showing logs for all services...${NC}"
-        docker-compose -f docker-compose.yml -f docker-compose.app.yml -f "$INFRA_COMPOSE" logs -f
+        $DOCKER_COMPOSE $COMPOSE_FILES logs -f
     fi
 }
 
 show_status() {
     echo -e "${YELLOW} Service Status:${NC}"
-    INFRA_COMPOSE=$(get_infrastructure_compose)
-    docker-compose -f docker-compose.yml -f docker-compose.app.yml -f "$INFRA_COMPOSE" ps
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    $DOCKER_COMPOSE $COMPOSE_FILES ps
     echo ""
     echo -e "${YELLOW} Access URLs:${NC}"
     echo "  • Xyne Application: http://localhost:3000"
@@ -334,7 +418,8 @@ show_status() {
     echo "  • Grafana: http://localhost:3002"
     echo "  • Prometheus: http://localhost:9090"
     echo "  • Loki: http://localhost:3100"
-    
+    echo "  • LiveKit Server: http://localhost:7880 (WebRTC: 7881, UDP: 7882)"
+    echo -e "${GREEN}  • Application Mode: Production${NC}"
     # Show GPU/CPU mode
     if detect_gpu_support >/dev/null 2>&1; then
         echo -e "${GREEN}  • Vespa Mode: GPU-accelerated${NC}"
@@ -352,34 +437,36 @@ cleanup() {
 
 db_generate() {
     echo -e "${YELLOW}  Generating database migrations...${NC}"
-    
+
     # Check if main app is running
-    INFRA_COMPOSE=$(get_infrastructure_compose)
-    if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    if ! $DOCKER_COMPOSE $COMPOSE_FILES ps | grep -q "xyne-app.*Up"; then
         echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
-    
+
     # Run drizzle generate inside the container
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml exec app bun run generate
-    
+    $DOCKER_COMPOSE $COMPOSE_FILES exec app bun run generate
+
     echo -e "${GREEN} Migrations generated and saved to ./data/app-migrations/${NC}"
     echo -e "${BLUE}  Generated migrations will persist across container updates${NC}"
 }
 
 db_migrate() {
     echo -e "${YELLOW}  Applying database migrations...${NC}"
-    
+
     # Check if main app is running
-    INFRA_COMPOSE=$(get_infrastructure_compose)
-    if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    if ! $DOCKER_COMPOSE $COMPOSE_FILES ps | grep -q "xyne-app.*Up"; then
         echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
-    
+
     # Run drizzle migrate inside the container
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml exec app bun run migrate
-    
+    $DOCKER_COMPOSE $COMPOSE_FILES exec app bun run migrate
+
     echo -e "${GREEN} Database migrations applied successfully${NC}"
 }
 
@@ -387,16 +474,17 @@ db_studio() {
     echo -e "${YELLOW}  Opening Drizzle Studio...${NC}"
     echo -e "${BLUE}  Drizzle Studio will be available at: http://localhost:4983${NC}"
     echo -e "${BLUE}  Press Ctrl+C to stop Drizzle Studio${NC}"
-    
+
     # Check if main app is running
-    INFRA_COMPOSE=$(get_infrastructure_compose)
-    if ! docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml ps | grep -q "xyne-app.*Up"; then
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    if ! $DOCKER_COMPOSE $COMPOSE_FILES ps | grep -q "xyne-app.*Up"; then
         echo -e "${RED} Main app service is not running. Start with: ./deploy.sh start${NC}"
         exit 1
     fi
-    
+
     # Run drizzle studio in a new container with port forwarding
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml run -p 4983:4983 app bun drizzle-kit studio
+    $DOCKER_COMPOSE $COMPOSE_FILES run -p 4983:4983 app bun drizzle-kit studio
 }
 
 revert_app() {
@@ -408,38 +496,133 @@ revert_app() {
         echo "Example: $0 revert v1.2.3"
         exit 1
     fi
-    
+
+    IMAGE_NAME="xynehq/xyne"
+
     echo -e "${YELLOW}Reverting application to image tag: $target_tag${NC}"
     
     # Check if the image exists locally or can be pulled
-    if ! docker image inspect "xyne:$target_tag" >/dev/null 2>&1; then
-        echo -e "${YELLOW}Image xyne:$target_tag not found locally, attempting to pull...${NC}"
-        if ! docker pull "xyne:$target_tag" 2>/dev/null; then
-            echo -e "${RED}ERROR: Failed to pull image xyne:$target_tag${NC}"
+    if ! docker image inspect "$IMAGE_NAME:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image $IMAGE_NAME:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "$IMAGE_NAME:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image $IMAGE_NAME:$target_tag${NC}"
             echo "Available local images:"
-            docker images xyne --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            docker images $IMAGE_NAME --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
             exit 1
         fi
     fi
     
     # Tag the target image as 'latest' for docker-compose
-    echo -e "${YELLOW}Tagging xyne:$target_tag as xyne:latest${NC}"
-    docker tag "xyne:$target_tag" "xyne:latest"
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
+    docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
     
     # Stop and recreate both app services with the reverted image
-    INFRA_COMPOSE=$(get_infrastructure_compose)
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
     echo -e "${YELLOW}Stopping current app services${NC}"
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml stop app app-sync
-    
+    $DOCKER_COMPOSE $COMPOSE_FILES stop app app-sync
+
     echo -e "${YELLOW}Starting main app service with reverted image${NC}"
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app
-    
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app
+
     echo -e "${YELLOW}Starting sync server with reverted image${NC}"
-    docker-compose -f docker-compose.yml -f "$INFRA_COMPOSE" -f docker-compose.app.yml up -d --force-recreate app-sync
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app-sync
     
     echo -e "${GREEN}Application successfully reverted to tag: $target_tag${NC}"
     echo -e "${BLUE}INFO: Database and Vespa services were not affected${NC}"
     
+    # Show status
+    show_status
+}
+
+# Update both app and app-sync to a given version
+update_app_version() {
+    local target_tag=$1
+    if [ -z "$target_tag" ]; then
+        echo -e "${RED}ERROR: No image tag specified${NC}"
+        echo "Usage: $0 update-app-version <tag>"
+        echo "Example: $0 update-app-version 1.2.3"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}Updating app and sync to image tag: $target_tag${NC}"
+
+    IMAGE_NAME="xynehq/xyne"
+
+    # Check if the image exists locally or can be pulled
+    if ! docker image inspect "$IMAGE_NAME:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image $IMAGE_NAME:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "$IMAGE_NAME:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image $IMAGE_NAME:$target_tag${NC}"
+            echo "Available local images:"
+            docker images $IMAGE_NAME --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            exit 1
+        fi
+    fi
+
+    # Tag the target image as 'latest' for docker-compose
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
+    docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
+
+    # Stop and recreate both app services with the new image
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    echo -e "${YELLOW}Stopping current app services${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES stop app app-sync
+
+    echo -e "${YELLOW}Starting main app service with new image${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app
+
+    echo -e "${YELLOW}Starting sync server with new image${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app-sync
+
+    echo -e "${GREEN}App and sync server updated to tag: $target_tag${NC}"
+    echo -e "${BLUE}INFO: Database and Vespa services were not affected${NC}"
+
+    # Show status
+    show_status
+}
+
+# Update only app-sync to a given version
+update_sync_version() {
+    local target_tag=$1
+    if [ -z "$target_tag" ]; then
+        echo -e "${RED}ERROR: No image tag specified${NC}"
+        echo "Usage: $0 update-sync-version <tag>"
+        echo "Example: $0 update-sync-version 1.2.3"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}Updating sync server to image tag: $target_tag${NC}"
+
+    IMAGE_NAME="xynehq/xyne"
+    # Check if the image exists locally or can be pulled
+    if ! docker image inspect "$IMAGE_NAME:$target_tag" >/dev/null 2>&1; then
+        echo -e "${YELLOW}Image $IMAGE_NAME:$target_tag not found locally, attempting to pull...${NC}"
+        if ! docker pull "$IMAGE_NAME:$target_tag" 2>/dev/null; then
+            echo -e "${RED}ERROR: Failed to pull image $IMAGE_NAME:$target_tag${NC}"
+            echo "Available local images:"
+            docker images $IMAGE_NAME --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+            exit 1
+        fi
+    fi
+
+    # Tag the target image as 'latest' for docker-compose
+    echo -e "${YELLOW}Tagging $IMAGE_NAME:$target_tag as $IMAGE_NAME:latest${NC}"
+    docker tag "$IMAGE_NAME:$target_tag" "$IMAGE_NAME:latest"
+
+    # Stop and recreate only app-sync service with the new image
+    COMPOSE_FILES=$(get_compose_files)
+    DOCKER_COMPOSE=$(get_docker_compose_cmd)
+    echo -e "${YELLOW}Stopping sync server${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES stop app-sync
+
+    echo -e "${YELLOW}Starting sync server with new image${NC}"
+    $DOCKER_COMPOSE $COMPOSE_FILES up -d --force-recreate app-sync
+
+    echo -e "${GREEN}Sync server updated to tag: $target_tag${NC}"
+    echo -e "${BLUE}INFO: Database, Vespa, and main app services were not affected${NC}"
+
     # Show status
     show_status
 }
@@ -451,8 +634,35 @@ case $COMMAND in
         setup_permissions
         start_infrastructure
         sleep 10  # Wait for infrastructure to be ready
+
+        echo -e "${YELLOW}Select app deployment mode:${NC}"
+        echo "  1) build (default)"
+        echo "  2) version"
+        read -p "Enter choice [1/2]: " user_choice
+
+        if [ "$user_choice" = "2" ]; then
+            APP_DEPLOY_MODE="version"
+            echo -e "${BLUE}Using docker-compose.app-version.yml and docker-compose.sync-version.yml${NC}"
+            cp docker-compose.app-version.yml docker-compose.app.yml
+            cp docker-compose.sync-version.yml docker-compose.sync.yml
+        else
+            APP_DEPLOY_MODE="build"
+            echo -e "${BLUE}Using docker-compose.app-build.yml and docker-compose.sync-build.yml${NC}"
+            cp docker-compose.app-build.yml docker-compose.app.yml
+            cp docker-compose.sync-build.yml docker-compose.sync.yml
+        fi
+
         start_app
         show_status
+        ;;
+
+    start-infra)
+        setup_environment
+        setup_permissions
+        start_infrastructure
+        echo -e "${GREEN} Infrastructure services started successfully${NC}"
+        echo -e "${BLUE} You can now run your application locally in development mode${NC}"
+        echo -e "${BLUE} Infrastructure services: PostgreSQL, Vespa, Prometheus, Grafana, Loki${NC}"
         ;;
     stop)
         stop_all
@@ -470,6 +680,11 @@ case $COMMAND in
     update-app)
         setup_environment
         update_app
+        show_status
+        ;;
+    update-sync)
+        setup_environment
+        update_sync
         show_status
         ;;
     update-infra)
@@ -497,6 +712,12 @@ case $COMMAND in
         ;;
     revert)
         revert_app $1
+        ;;
+    update-app-version)
+        update_app_version $1
+        ;;
+    update-sync-version)
+        update_sync_version $1
         ;;
     help|--help|-h)
         show_help

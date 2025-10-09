@@ -76,7 +76,7 @@ export const GenerateUserApiKey = async (c: Context) => {
       apiKey: apiKeys.apiKey,
     })
   } catch (error) {
-    Logger.error(error, "Error fetching agent API keys")
+    Logger.error(error, "Error generating API key")
     return c.json(
       {
         success: false,

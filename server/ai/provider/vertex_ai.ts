@@ -5,9 +5,11 @@ import path from "path"
 import { AnthropicVertex } from "@anthropic-ai/vertex-sdk"
 import { VertexAI, type Tool } from "@google-cloud/vertexai"
 import { getLogger } from "@/logger"
+import { getErrorMessage } from "@/utils"
 import { type Message } from "@aws-sdk/client-bedrock-runtime"
 import {
   AIProviders,
+  Models,
   type ConverseResponse,
   type ModelParams,
   type WebSearchSource,
@@ -16,10 +18,96 @@ import BaseProvider, { findImageByName, regex } from "@/ai/provider/base"
 import { Subsystem } from "@/types"
 import config from "@/config"
 import { createLabeledImageContent } from "../utils"
+import { calculateCost } from "@/utils/index"
+import { modelDetailsMap } from "../mappers"
+
 
 const { MAX_IMAGE_SIZE_BYTES } = config
 
 const Logger = getLogger(Subsystem.AI)
+
+function stringifyToolResultContent(parts: any[] | undefined): string {
+  if (!parts) return ""
+  const out: string[] = []
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue
+    if ("text" in part && typeof part.text === "string") {
+      out.push(part.text)
+    } else if ("json" in part && part.json !== undefined) {
+      try {
+        out.push(JSON.stringify(part.json))
+      } catch {
+        out.push(String(part.json))
+      }
+    }
+  }
+  return out.join("\n")
+}
+
+function extractTextFromContentBlocks(
+  blocks: Message["content"] | undefined,
+): string {
+  if (!blocks) return ""
+  const lines: string[] = []
+  for (const block of blocks) {
+    if (!block || typeof block !== "object") {
+      continue
+    }
+    if ("text" in block && typeof block.text === "string") {
+      lines.push(block.text)
+    } else if ("toolResult" in block && block.toolResult) {
+      const status = block.toolResult.status ?? "executed"
+      const summary = stringifyToolResultContent(block.toolResult.content)
+      const toolUseId = block.toolResult.toolUseId || "tool"
+      lines.push(
+        `Tool result (${toolUseId}, status=${status}): ${summary}`.trim(),
+      )
+    }
+  }
+  const joined = lines.join("\n")
+  return ensureNonEmptyText(joined)
+}
+
+function stringifyUnknown(value: unknown): string {
+  if (value === null || value === undefined) return ""
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function normalizeAnthropicMessages(messages: Message[]): Message[] {
+  return messages.map((message) => {
+    const normalizedContent = (message.content ?? []).map((part: any) => {
+      if (part && typeof part === "object") {
+        if ("type" in part) {
+          return part
+        }
+        if ("text" in part) {
+          return { type: "text", text: ensureNonEmptyText(part.text ?? "") }
+        }
+      } else if (typeof part === "string") {
+        return { type: "text", text: ensureNonEmptyText(part) }
+      }
+      return { type: "text", text: ensureNonEmptyText(stringifyUnknown(part)) }
+    })
+    return {
+      ...message,
+      content: normalizedContent.length
+        ? (normalizedContent as any)
+        : [{ type: "text", text: "[no content]" }],
+    }
+  })
+}
+
+function ensureNonEmptyText(text: string): string {
+  return text && text.trim().length > 0 ? text : "[no content]"
+}
 
 export enum VertexProvider {
   ANTHROPIC = "anthropic",
@@ -112,11 +200,11 @@ export class VertexAiProvider extends BaseProvider {
     if (provider === VertexProvider.GOOGLE) {
       client = new VertexAI({ project: projectId, location: region })
     } else {
-      client = new AnthropicVertex({ 
-        projectId, 
+      client = new AnthropicVertex({
+        projectId,
         region,
-        timeout: parseInt(process.env.VERTEX_AI_TIMEOUT || '240000'), // Default 4 minutes timeout
-        maxRetries: 3
+        timeout: parseInt(process.env.VERTEX_AI_TIMEOUT || "240000"), // Default 4 minutes timeout
+        maxRetries: 3,
       })
     }
 
@@ -157,6 +245,9 @@ export class VertexAiProvider extends BaseProvider {
       ? await buildVertexAIImageParts(params.imageFileNames)
       : []
     const transformedMessages = this.injectImages(messages, imageParts)
+    const normalizedMessages = normalizeAnthropicMessages(
+      transformedMessages as Message[],
+    )
 
     try {
       Logger.info(`Starting VertexAI Anthropic request with model: ${modelId}`)
@@ -166,14 +257,18 @@ export class VertexAiProvider extends BaseProvider {
         max_tokens: maxTokens,
         temperature,
         system: systemPrompt,
-        messages: transformedMessages,
-        tools: params.tools && params.tools.length
-          ? params.tools.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.parameters || { type: 'object', properties: {} },
-            }))
-          : undefined,
+        messages: normalizedMessages as any,
+        tools:
+          params.tools && params.tools.length
+            ? params.tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.parameters || {
+                  type: "object",
+                  properties: {},
+                },
+              }))
+            : undefined,
       })
 
       const text = response.content
@@ -181,22 +276,35 @@ export class VertexAiProvider extends BaseProvider {
         .map((c: any) => c.text)
         .join("")
       const toolCalls = response.content
-        .filter((c: any) => c.type === 'tool_use')
+        .filter((c: any) => c.type === "tool_use")
         .map((c: any) => ({
-          id: c.id || '',
-          type: 'function' as const,
+          id: c.id || "",
+          type: "function" as const,
           function: {
-            name: c.name || '',
-            arguments: c.input ? JSON.stringify(c.input) : '{}',
+            name: c.name || "",
+            arguments: c.input ? JSON.stringify(c.input) : "{}",
           },
         }))
       const usage = response.usage || { input_tokens: 0, output_tokens: 0 }
-      const cost = 0
+      const cost =
+        (usage.input_tokens > 0 || usage.output_tokens > 0) && modelId
+          ? calculateCost(
+              {
+                inputTokens: usage.input_tokens,
+                outputTokens: usage.output_tokens,
+              },
+              modelDetailsMap[modelId].cost.onDemand,
+            )
+          : 0
 
-      return { text, cost, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) }
+      return {
+        text,
+        cost,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      }
     } catch (error) {
       Logger.error(`VertexAI Anthropic request failed:`, error)
-      if (error instanceof Error && error.message?.includes('timeout')) {
+      if (error instanceof Error && error.message?.includes("timeout")) {
         throw new Error(`VertexAI request timed out after 4 minutes`)
       }
       throw error
@@ -213,6 +321,9 @@ export class VertexAiProvider extends BaseProvider {
       ? await buildVertexAIImageParts(params.imageFileNames)
       : []
     const transformedMessages = this.injectImages(messages, imageParts)
+    const normalizedMessages = normalizeAnthropicMessages(
+      transformedMessages as Message[],
+    )
 
     const client = this.client as AnthropicVertex
     const stream = await client.beta.messages.create({
@@ -220,15 +331,16 @@ export class VertexAiProvider extends BaseProvider {
       max_tokens: maxTokens,
       temperature,
       system: systemPrompt,
-      messages: transformedMessages,
+      messages: normalizedMessages as any,
       stream: true,
-      tools: params.tools && params.tools.length
-        ? params.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.parameters || { type: 'object', properties: {} },
-          }))
-        : undefined,
+      tools:
+        params.tools && params.tools.length
+          ? params.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters || { type: "object", properties: {} },
+            }))
+          : undefined,
     })
 
     let totalInputTokens = 0
@@ -270,10 +382,7 @@ export class VertexAiProvider extends BaseProvider {
         if (typeof d.partial_json === "string") {
           currentTool.args += d.partial_json
         }
-      } else if (
-        chunk?.type === "content_block_stop" &&
-        currentTool
-      ) {
+      } else if (chunk?.type === "content_block_stop" && currentTool) {
         // Flush tool call
         const toolCalls = [
           {
@@ -292,7 +401,18 @@ export class VertexAiProvider extends BaseProvider {
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens,
         }
-        const cost = 0 //TODO :  explitly set cost to 0 for now
+
+        const cost =
+          (usage.inputTokens > 0 || usage.outputTokens > 0) && modelId
+            ? calculateCost(
+                {
+                  inputTokens: usage.inputTokens,
+                  outputTokens: usage.outputTokens,
+                },
+                modelDetailsMap[modelId].cost.onDemand,
+              )
+            : 0
+
         yield {
           text: "",
           cost,
@@ -322,7 +442,7 @@ export class VertexAiProvider extends BaseProvider {
 
       const history = messages.map((v) => ({
         role: v.role === "assistant" ? "model" : "user",
-        parts: [{ text: v.content?.[0]?.text || "" }],
+        parts: [{ text: extractTextFromContentBlocks(v.content) }],
       }))
 
       const tools: any[] = []
@@ -377,7 +497,8 @@ export class VertexAiProvider extends BaseProvider {
         )
       } else {
         // otherwise just pass along the raw blocks
-        messageParts = allBlocks.map((block) => ({ text: block.text }))
+        const text = extractTextFromContentBlocks(allBlocks)
+        messageParts = [{ text }]
       }
 
       const response = await chat.sendMessage(messageParts)
@@ -389,8 +510,20 @@ export class VertexAiProvider extends BaseProvider {
         .filter((part: any) => part.text)
         .map((part: any) => part.text)
         .join("")
+      const usageMetadata = response.response.usageMetadata || {}
+      const inputTokens = usageMetadata.promptTokenCount || 0
+      const outputTokens = usageMetadata.candidatesTokenCount || 0
 
-      const cost = 0
+      const cost =
+        (inputTokens > 0 || outputTokens > 0) && modelId
+          ? calculateCost(
+              {
+                inputTokens,
+                outputTokens,
+              },
+              modelDetailsMap[modelId].cost.onDemand,
+            )
+          : 0
 
       let sources: WebSearchSource[] = []
       const groundingMetadata =
@@ -417,6 +550,9 @@ export class VertexAiProvider extends BaseProvider {
     params: ModelParams,
   ): AsyncIterableIterator<ConverseResponse> {
     const modelParams = this.getModelParams(params)
+    let aggregatedText = ""
+    const aggregatedSources: WebSearchSource[] = []
+    const aggregatedGroundingSupports: any[] = []
 
     try {
       const client = this.client as VertexAI
@@ -427,12 +563,10 @@ export class VertexAiProvider extends BaseProvider {
 
       const history = messages.map((v) => ({
         role: v.role === "assistant" ? "model" : "user",
-        parts: [{ text: v.content?.[0]?.text || "" }],
+        parts: [{ text: extractTextFromContentBlocks(v.content) }],
       }))
 
       const tools: any[] = []
-
-      // web search grounding
       if (params.webSearch) {
         tools.push({
           googleSearch: {},
@@ -467,12 +601,11 @@ export class VertexAiProvider extends BaseProvider {
       const lastMessage = messages[messages.length - 1]
       const allBlocks = lastMessage?.content || []
 
-      let messageParts
-      if (lastMessage?.role == "user" && imageParts.length > 0) {
-        // only build labeled image content when we actually have images
+      let messageParts: any
+      if (lastMessage?.role === "user" && imageParts.length > 0) {
         const textBlocks = allBlocks.filter((c) => "text" in c)
         const otherBlocks = allBlocks.filter((c) => !("text" in c))
-        const latestText = textBlocks.map((tb) => tb.text).join("\n")
+        const latestText = textBlocks.map((tb: any) => tb.text).join("\n")
 
         messageParts = createLabeledImageContent(
           latestText,
@@ -481,43 +614,36 @@ export class VertexAiProvider extends BaseProvider {
           params.imageFileNames || [],
         )
       } else {
-        // otherwise just pass along the raw blocks
-        messageParts = allBlocks.map((block) => ({ text: block.text }))
+        const text = extractTextFromContentBlocks(allBlocks)
+        messageParts = [{ text }]
       }
 
       const result = await chat.sendMessageStream(messageParts)
-
-      let accumulatedSources: any[] = []
-      let accumulatedGroundingSupports: any[] = []
 
       for await (const chunk of result.stream) {
         let chunkText = ""
         const groundingMetadata = chunk.candidates?.[0]?.groundingMetadata
         if (groundingMetadata?.groundingChunks) {
           const chunkSources = groundingMetadata.groundingChunks
-            .filter((chunk: any) => chunk.web) // Only include web sources
+            .filter((chunk: any) => chunk.web)
             .map((chunk: any) => ({
               uri: chunk.web.uri,
               title: chunk.web.title,
               searchQuery: groundingMetadata.webSearchQueries?.[0] || undefined,
             }))
 
-          // Merge sources (avoid duplicates based on URI)
-          chunkSources.forEach((source: any) => {
+          chunkSources.forEach((source: WebSearchSource) => {
             if (
-              !accumulatedSources.some(
-                (existing) => existing.uri === source.uri,
-              )
+              !aggregatedSources.some((existing) => existing.uri === source.uri)
             ) {
-              accumulatedSources.push(source)
+              aggregatedSources.push(source)
             }
           })
         }
 
-        // Extract grounding supports with proper type checking
         if (groundingMetadata?.groundingSupports) {
-          const chunkGroundingSupports = groundingMetadata.groundingSupports
-            .filter((support: any) => support.segment) // Only include supports with segments
+          const chunkSupports = groundingMetadata.groundingSupports
+            .filter((support: any) => support.segment)
             .map((support: any) => ({
               segment: {
                 startIndex: support.segment.startIndex || 0,
@@ -527,7 +653,7 @@ export class VertexAiProvider extends BaseProvider {
               groundingChunkIndices: support.groundingChunkIndices || [],
             }))
 
-          accumulatedGroundingSupports.push(...chunkGroundingSupports)
+          aggregatedGroundingSupports.push(...chunkSupports)
         }
 
         if (chunk.candidates?.[0]?.content?.parts) {
@@ -536,16 +662,35 @@ export class VertexAiProvider extends BaseProvider {
             .map((part: any) => part.text)
           chunkText += textParts.join("")
         }
+        let totalInputTokens = 0
+        let totalOutputTokens = 0
+        const usageMetadata = chunk.usageMetadata
+        if (usageMetadata) {
+          totalInputTokens = usageMetadata.promptTokenCount || 0
+          totalOutputTokens = usageMetadata.candidatesTokenCount || 0
+        }
 
         if (chunkText) {
+          const cost =
+            (totalInputTokens > 0 || totalOutputTokens > 0) && modelParams.modelId
+              ? calculateCost(
+                  {
+                    inputTokens: totalInputTokens,
+                    outputTokens: totalOutputTokens,
+                  },
+                  modelDetailsMap[modelParams.modelId].cost.onDemand,
+                )
+              : 0
+
+          aggregatedText += chunkText
           yield {
             text: chunkText,
-            cost: 0,
+            cost,
             sources:
-              accumulatedSources.length > 0 ? accumulatedSources : undefined,
+              aggregatedSources.length > 0 ? aggregatedSources : undefined,
             groundingSupports:
-              accumulatedGroundingSupports.length > 0
-                ? accumulatedGroundingSupports
+              aggregatedGroundingSupports.length > 0
+                ? aggregatedGroundingSupports
                 : undefined,
           }
         }
@@ -565,23 +710,34 @@ export class VertexAiProvider extends BaseProvider {
 
     return messages.map((msg, i) => {
       if (i === actualIndex && imageParts.length) {
-        const userText = msg.content?.[0]?.text
+        const userText = msg.content?.[0]?.text ?? ""
+        const newContent = [
+          {
+            type: "text",
+            text:
+              "You may receive image(s) as part of the conversation. If images are attached, treat them as essential context for the user's question." +
+              "\n\n" +
+              userText,
+          },
+          ...imageParts,
+        ].map((block) => {
+          if (
+            block &&
+            typeof block === "object" &&
+            "text" in block &&
+            !("type" in block)
+          ) {
+            return { type: "text", text: (block as any).text }
+          }
+          return block
+        })
+
         return {
           role: msg.role,
-          content: [
-            {
-              type: "text",
-              text: `You may receive image(s)as part of the conversation. If images are attached, treat them as essential context for the user's question.\n\n"
-              ${userText}`,
-            },
-            ...imageParts,
-          ],
+          content: newContent,
         }
       }
-      return {
-        role: msg.role,
-        content: [{ type: "text", text: msg.content[0]?.text }],
-      }
+      return msg
     })
   }
 }

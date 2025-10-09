@@ -96,7 +96,6 @@ import {
   GetDocumentsByDocIds,
   searchSlackInVespa,
   getDocumentOrNull,
-  searchVespaThroughAgent,
   searchVespaAgent,
   GetDocument,
   SearchEmailThreads,
@@ -129,6 +128,8 @@ import {
   type VespaSearchResultsSchema,
   KnowledgeBaseEntity,
   KbItemsSchema,
+  AttachmentEntity,
+  fileSchema,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import {
@@ -179,6 +180,7 @@ import {
   textToImageCitationIndex,
   isValidApp,
   isValidEntity,
+  collectFollowupContext,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -212,6 +214,9 @@ import {
 import { getDateForAI } from "@/utils/index"
 import type { User } from "@microsoft/microsoft-graph-types"
 import { getAuth, safeGet } from "../agent"
+import { getChunkCountPerDoc } from "./chunk-selection"
+import { handleAttachmentDelete } from "../files"
+import { expandSheetIds } from "@/search/utils"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -282,7 +287,7 @@ export async function resolveNamesToEmails(
     searchSpan?.end()
 
     const resultCount = searchResults.root.children?.length || 0
-
+    Logger.info(`resolveNamesToEmails result count: ${resultCount}`)
     if (
       !searchResults.root.children ||
       searchResults.root.children.length === 0
@@ -295,7 +300,7 @@ export async function resolveNamesToEmails(
         const fields = result.fields as VespaMail
         const contextLine = `
         [Index ${index}]: 
-        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userMetadata.userTimezone})})
+        Sent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", { timeZone: userMetadata.userTimezone })})
         Subject: ${fields.subject || "Unknown"}
         From: <${fields.from}>
         To: <${fields.to}>
@@ -359,7 +364,7 @@ export const GetChatTraceApi = async (c: Context) => {
 
     if (!trace) {
       // Return 404 if the trace is not found for the given IDs
-      throw new HTTPException(500, { message: "Chat trace not found" })
+      throw new HTTPException(404, { message: "Chat trace not found" })
     }
 
     // The traceJson is likely already a JSON object/string in the DB, return it directly
@@ -484,7 +489,7 @@ const checkAndYieldCitations = async function* (
           const f = (item as any)?.fields
           if (
             f?.sddocname === dataSourceFileSchema ||
-            f?.entity === KnowledgeBaseEntity.Attachment
+            Object.values(AttachmentEntity).includes(f?.entity)
           ) {
             // Skip datasource and attachment files from citations
             continue
@@ -762,6 +767,7 @@ export const ChatDeleteApi = async (c: Context) => {
     email = sub || ""
     // @ts-ignore
     const { chatId } = c.req.valid("json")
+    const attachmentsToDelete: AttachmentMetadata[] = []
     await db.transaction(async (tx) => {
       // Get the chat's internal ID first
       const chat = await getChatByExternalIdWithAuth(tx, chatId, email)
@@ -769,106 +775,13 @@ export const ChatDeleteApi = async (c: Context) => {
         throw new HTTPException(404, { message: "Chat not found" })
       }
 
-      // Get all messages for the chat to find attachments
+      // Get all messages for the chat to delete attachments
       const messagesToDelete = await getChatMessagesWithAuth(tx, chatId, email)
-
-      // Collect all attachment file IDs that need to be deleted
-      const imageAttachmentFileIds: string[] = []
-      const nonImageAttachmentFileIds: string[] = []
 
       for (const message of messagesToDelete) {
         if (message.attachments && Array.isArray(message.attachments)) {
-          const attachments =
-            message.attachments as unknown as AttachmentMetadata[]
-          for (const attachment of attachments) {
-            if (attachment && typeof attachment === "object") {
-              if (attachment.fileId) {
-                // Check if this is an image attachment using both isImage field and fileType
-                const isImageAttachment =
-                  attachment.isImage ||
-                  (attachment.fileType && isImageFile(attachment.fileType))
-
-                if (isImageAttachment) {
-                  imageAttachmentFileIds.push(attachment.fileId)
-                } else {
-                  nonImageAttachmentFileIds.push(attachment.fileId)
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Delete image attachments and their thumbnails from disk
-      if (imageAttachmentFileIds.length > 0) {
-        loggerWithChild({ email: email }).info(
-          `Deleting ${imageAttachmentFileIds.length} image attachment files and their thumbnails for chat ${chatId}`,
-        )
-
-        for (const fileId of imageAttachmentFileIds) {
-          try {
-            // Validate fileId to prevent path traversal
-            if (
-              fileId.includes("..") ||
-              fileId.includes("/") ||
-              fileId.includes("\\")
-            ) {
-              loggerWithChild({ email: email }).error(
-                `Invalid fileId detected: ${fileId}. Skipping deletion for security.`,
-              )
-              continue
-            }
-            const imageBaseDir = path.resolve(
-              process.env.IMAGE_DIR || "downloads/xyne_images_db",
-            )
-
-            const imageDir = path.join(imageBaseDir, fileId)
-            try {
-              await fs.access(imageDir)
-              await fs.rm(imageDir, { recursive: true, force: true })
-              loggerWithChild({ email: email }).info(
-                `Deleted image attachment directory: ${imageDir}`,
-              )
-            } catch (attachmentError) {
-              loggerWithChild({ email: email }).warn(
-                `Image attachment file ${fileId} not found in either directory during chat deletion`,
-              )
-            }
-          } catch (error) {
-            loggerWithChild({ email: email }).error(
-              error,
-              `Failed to delete image attachment file ${fileId} during chat deletion: ${getErrorMessage(error)}`,
-            )
-          }
-        }
-      }
-
-      // Delete non-image attachments from Vespa kb_items schema
-      if (nonImageAttachmentFileIds.length > 0) {
-        loggerWithChild({ email: email }).info(
-          `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa kb_items schema for chat ${chatId}`,
-        )
-
-        for (const fileId of nonImageAttachmentFileIds) {
-          try {
-            // Delete from Vespa kb_items schema using the proper Vespa function
-            await DeleteDocument(fileId, KbItemsSchema)
-            loggerWithChild({ email: email }).info(
-              `Successfully deleted non-image attachment ${fileId} from Vespa kb_items schema`,
-            )
-          } catch (error) {
-            const errorMessage = getErrorMessage(error)
-            if (errorMessage.includes("404 Not Found")) {
-              loggerWithChild({ email: email }).warn(
-                `Non-image attachment ${fileId} not found in Vespa kb_items schema (may have been already deleted)`,
-              )
-            } else {
-              loggerWithChild({ email: email }).error(
-                error,
-                `Failed to delete non-image attachment ${fileId} from Vespa kb_items schema: ${errorMessage}`,
-              )
-            }
-          }
+          const attachments = message.attachments as AttachmentMetadata[]
+          attachmentsToDelete.push(...attachments)
         }
       }
 
@@ -881,6 +794,9 @@ export const ChatDeleteApi = async (c: Context) => {
       await deleteMessagesByChatId(tx, chatId)
       await deleteChatByExternalIdWithAuth(tx, chatId, email)
     })
+    if (attachmentsToDelete.length) {
+      await handleAttachmentDelete(attachmentsToDelete, email)
+    }
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -1188,24 +1104,26 @@ export const replaceDocIdwithUserDocId = async (
   return userMap[email] ?? docId
 }
 
-export function buildContext(
+export async function buildContext(
   results: VespaSearchResult[],
   maxSummaryCount: number | undefined,
   userMetadata: UserMetadataType,
   startIndex: number = 0,
-): string {
-  return cleanContext(
-    results
-      ?.map(
-        (v, i) =>
-          `Index ${i + startIndex} \n ${answerContextMap(
-            v as VespaSearchResults,
-            userMetadata,
-            maxSummaryCount,
-          )}`,
-      )
-      ?.join("\n"),
+  builtUserQuery?: string,
+): Promise<string> {
+  const contextPromises = results?.map(
+    async (v, i) =>
+      `Index ${i + startIndex} \n ${await answerContextMap(
+        v as VespaSearchResults,
+        userMetadata,
+        maxSummaryCount,
+        undefined,
+        undefined,
+        builtUserQuery,
+      )}`,
   )
+  const contexts = await Promise.all(contextPromises || [])
+  return cleanContext(contexts.join("\n"))
 }
 
 async function* generateIterativeTimeFilterAndQueryRewrite(
@@ -1222,6 +1140,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
   userRequestsReasoning?: boolean,
   queryRagSpan?: Span,
   agentPrompt?: string,
+  pathExtractedInfo?: PathExtractedInfo,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -1345,8 +1264,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
+        const source = getCollectionSource(pathExtractedInfo, selectedItems)
 
-        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+        for (const itemId of source) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
             collectionIds.push(itemId.replace(/^cl[-_]/, ""))
@@ -1355,7 +1275,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
           }
         }
 
@@ -1560,10 +1480,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
       vespaSearchSpan?.end()
 
-      const initialContext = buildContext(
+      const initialContext = await buildContext(
         results?.root?.children,
         maxSummaryCount,
-        userMetadata
+        userMetadata,
+        0,
+        message,
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -1692,7 +1614,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(totalResults, maxSummaryCount, userMetadata)
+        const initialContext = await buildContext(totalResults, maxSummaryCount, userMetadata, 0, message)
 
         const { imageFileNames } = extractImageFileNames(
           initialContext,
@@ -1880,11 +1802,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     pageSearchSpan?.end()
     const startIndex = isReasoning ? previousResultsLength : 0
     const contextSpan = pageSpan?.startSpan("build_context")
-    const initialContext = buildContext(
+    const initialContext = await buildContext(
       results?.root?.children,
       maxSummaryCount,
       userMetadata,
       startIndex,
+      message,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -1907,14 +1830,20 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
 
     const ragSpan = pageSpan?.startSpan("baseline_rag")
 
-    const iterator = baselineRAGJsonStream(input, userCtx, userMetadata, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-      agentPrompt,
-      messages,
-      imageFileNames,
-    })
+    const iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      userMetadata,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        agentPrompt,
+        messages,
+        imageFileNames,
+      },
+    )
 
     const answer = yield* processIterator(
       iterator,
@@ -2012,22 +1941,57 @@ async function* generateAnswerFromGivenContext(
     "generateAnswerFromGivenContext",
   )
 
+  const selectedContext = isContextSelected(message)
+  const builtUserQuery = selectedContext
+    ? buildUserQuery(selectedContext)
+    : message
+
   let previousResultsLength = 0
   const combinedSearchResponse: VespaSearchResult[] = []
+  let chunksPerDocument: number[] = []
+  const targetChunks = 120
 
   if (fileIds.length > 0 || (folderIds && folderIds.length > 0)) {
+    const fileSearchSpan = generateAnswerSpan?.startSpan("file_search")
     let results
     if (isValidPath) {
       if (folderIds?.length) {
         results = await searchCollectionRAG(messageText, undefined, folderIds)
-      } else
+      } else {
         results = await searchCollectionRAG(messageText, fileIds, undefined)
+      }
+      if (results.root.children) {
+        combinedSearchResponse.push(...results.root.children)
+      }
     } else {
-      results = await GetDocumentsByDocIds(fileIds, generateAnswerSpan!)
+      const collectionFileIds = fileIds.filter((fid) => fid.startsWith("clf-") || fid.startsWith("att_"))
+      const nonCollectionFileIds = fileIds.filter((fid) => !fid.startsWith("clf-") && !fid.startsWith("att_"))
+      if(nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+        results = await searchVespaInFiles(builtUserQuery, email, nonCollectionFileIds, {
+            limit: fileIds?.length,
+            alpha: userAlpha,
+            rankProfile: SearchModes.attachmentRank,
+          })
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+      if (collectionFileIds && collectionFileIds.length > 0) {
+        results = await searchCollectionRAG(messageText, collectionFileIds, undefined)
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
     }
-    if (results.root.children) {
-      combinedSearchResponse.push(...results.root.children)
-    }
+    
+    // Apply intelligent chunk selection based on document relevance and chunk scores
+    chunksPerDocument = await getChunkCountPerDoc(
+      combinedSearchResponse,
+      targetChunks,
+      email,
+      fileSearchSpan
+    )
+    fileSearchSpan?.end()
   }
 
   loggerWithChild({ email: email }).info(
@@ -2135,12 +2099,13 @@ async function* generateAnswerFromGivenContext(
 
   const startIndex = isReasoning ? previousResultsLength : 0
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
-    let content = answerContextMap(
+    let content = await answerContextMap(
       v as VespaSearchResults,
       userMetadata,
-      0,
+      i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
       isMsgWithSources,
+      message,
     )
     if (
       v.fields &&
@@ -2202,10 +2167,6 @@ async function* generateAnswerFromGivenContext(
     }`,
   )
 
-  const selectedContext = isContextSelected(message)
-  const builtUserQuery = selectedContext
-    ? buildUserQuery(selectedContext)
-    : message
   const iterator = baselineRAGJsonStream(
     builtUserQuery,
     userCtx,
@@ -2234,114 +2195,18 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.setAttribute("answer_found", true)
     generateAnswerSpan?.end()
     return
-  } else if (!answer) {
-    if (
-      isMsgWithSources ||
-      (attachmentFileIds && attachmentFileIds.length > 0)
-    ) {
-      yield {
-        text: "From the selected context, I could not find any information to answer it, please change your query",
-      }
-      generateAnswerSpan?.setAttribute("answer_found", false)
-      generateAnswerSpan?.end()
-      return
-    }
-    // If we give the whole context then also if there's no answer then we can just search once and get the best matching chunks with the query and then make context try answering
-    loggerWithChild({ email: email }).info(
-      "No answer was found when all chunks were given, trying to answer after searching vespa now",
-    )
-    let results = await searchVespaInFiles(builtUserQuery, email, fileIds, {
-      limit: fileIds?.length,
-      alpha: userAlpha,
-    })
-
-    const searchVespaSpan = generateAnswerSpan?.startSpan("searchVespaSpan")
-    searchVespaSpan?.setAttribute("parsed_message", message)
-    searchVespaSpan?.setAttribute("msgToSearch", builtUserQuery)
-    searchVespaSpan?.setAttribute("limit", fileIds?.length)
-    searchVespaSpan?.setAttribute(
-      "results length",
-      results?.root?.children?.length || 0,
-    )
-
-    if (!results.root.children) {
-      results.root.children = []
-    }
-    const startIndex = isReasoning ? previousResultsLength : 0
-    const initialContext = cleanContext(
-      results?.root?.children
-        ?.map(
-          (v, i) =>
-            `Index ${i + startIndex} \n ${answerContextMap(
-              v as VespaSearchResults,
-              userMetadata,
-              20,
-              true,
-            )}`,
-        )
-        ?.join("\n"),
-    )
-    loggerWithChild({ email: email }).info(
-      `[Selected Context Path] Number of contextual chunks being passed: ${
-        results?.root?.children?.length || 0
-      }`,
-    )
-
-    const { imageFileNames } = extractImageFileNames(
-      initialContext,
-      results?.root?.children,
-    )
-
-    searchVespaSpan?.setAttribute("context_length", initialContext?.length || 0)
-    searchVespaSpan?.setAttribute("context", initialContext || "")
-    searchVespaSpan?.setAttribute(
-      "number_of_chunks",
-      results.root?.children?.length || 0,
-    )
-
-    const iterator = baselineRAGJsonStream(
-      builtUserQuery,
-      userCtx,
-      userMetadata,
-      initialContext,
-      {
-        stream: true,
-        modelId: defaultBestModel,
-        reasoning: config.isReasoning && userRequestsReasoning,
-        imageFileNames,
-      },
-      true,
-    )
-
-    const answer = yield* processIterator(
-      iterator,
-      results?.root?.children,
-      previousResultsLength,
-      userRequestsReasoning,
-      email,
-    )
-    if (answer) {
-      searchVespaSpan?.setAttribute("answer_found", true)
-      searchVespaSpan?.end()
-      generateAnswerSpan?.end()
-      return
-    } else if (
+  } else if (
       // If no answer found, exit and yield nothing related to selected context found
       !answer
     ) {
-      const noAnswerSpan = searchVespaSpan?.startSpan("no_answer_response")
+      const noAnswerSpan = generateAnswerSpan?.startSpan("no_answer_response")
       yield {
         text: "From the selected context, I could not find any information to answer it, please change your query",
       }
       noAnswerSpan?.end()
-      searchVespaSpan?.end()
       generateAnswerSpan?.end()
       return
     }
-    if (config.isReasoning && userRequestsReasoning) {
-      previousResultsLength += results?.root?.children?.length || 0
-    }
-  }
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += combinedSearchResponse?.length || 0
   }
@@ -2483,6 +2348,7 @@ async function* generatePointQueryTimeExpansion(
   userRequestsReasoning: boolean,
   eventRagSpan?: Span,
   agentPrompt?: string,
+  pathExtractedInfo?: PathExtractedInfo,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -2600,8 +2466,8 @@ async function* generatePointQueryTimeExpansion(
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
-
-        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+        const source = getCollectionSource(pathExtractedInfo, selectedItems)
+        for (const itemId of source) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
             collectionIds.push(itemId.replace(/^cl[-_]/, ""))
@@ -2610,7 +2476,7 @@ async function* generatePointQueryTimeExpansion(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
           }
         }
 
@@ -2694,8 +2560,18 @@ async function* generatePointQueryTimeExpansion(
         to,
       )}`,
     )
-    iterationSpan?.setAttribute("from", new Date(from).toLocaleString("en-US", { timeZone: userMetadata.userTimezone}))
-    iterationSpan?.setAttribute("to", new Date(to).toLocaleString("en-US", { timeZone: userMetadata.userTimezone}))
+    iterationSpan?.setAttribute(
+      "from",
+      new Date(from).toLocaleString("en-US", {
+        timeZone: userMetadata.userTimezone,
+      }),
+    )
+    iterationSpan?.setAttribute(
+      "to",
+      new Date(to).toLocaleString("en-US", {
+        timeZone: userMetadata.userTimezone,
+      }),
+    )
     // Search in both calendar events and emails
     const searchSpan = iterationSpan?.startSpan("search_vespa")
     const emailSearchSpan = searchSpan?.startSpan("email_search")
@@ -2870,11 +2746,12 @@ async function* generatePointQueryTimeExpansion(
     // Prepare context for LLM
     const contextSpan = iterationSpan?.startSpan("build_context")
     const startIndex = isReasoning ? previousResultsLength : 0
-    const initialContext = buildContext(
+    const initialContext = await buildContext(
       combinedResults?.root?.children,
       maxSummaryCount,
       userMetadata,
       startIndex,
+      message,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -2893,13 +2770,19 @@ async function* generatePointQueryTimeExpansion(
     // Stream LLM response
     const ragSpan = iterationSpan?.startSpan("meeting_prompt_stream")
     loggerWithChild({ email: email }).info("Using meetingPromptJsonStream")
-    const iterator = meetingPromptJsonStream(input, userCtx, userMetadata.dateForAI, initialContext, {
-      stream: true,
-      modelId: defaultBestModel,
-      reasoning: config.isReasoning && userRequestsReasoning,
-      agentPrompt,
-      imageFileNames,
-    })
+    const iterator = meetingPromptJsonStream(
+      input,
+      userCtx,
+      userMetadata.dateForAI,
+      initialContext,
+      {
+        stream: true,
+        modelId: defaultBestModel,
+        reasoning: config.isReasoning && userRequestsReasoning,
+        agentPrompt,
+        imageFileNames,
+      },
+    )
 
     const answer = yield* processIterator(
       iterator,
@@ -3005,7 +2888,7 @@ async function* processResultsForMetadata(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
   )
-  const context = buildContext(items, chunksCount, userMetadata)
+  const context = await buildContext(items, chunksCount, userMetadata, 0, input)
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
@@ -3018,10 +2901,22 @@ async function* processResultsForMetadata(
   let iterator: AsyncIterableIterator<ConverseResponse>
   if (app?.length == 1 && app[0] === Apps.Gmail) {
     loggerWithChild({ email: email ?? "" }).info(`Using mailPromptJsonStream `)
-    iterator = mailPromptJsonStream(input, userCtx, userMetadata.dateForAI, context, streamOptions)
+    iterator = mailPromptJsonStream(
+      input,
+      userCtx,
+      userMetadata.dateForAI,
+      context,
+      streamOptions,
+    )
   } else {
     loggerWithChild({ email: email ?? "" }).info(`Using baselineRAGJsonStream`)
-    iterator = baselineRAGJsonStream(input, userCtx, userMetadata, context, streamOptions)
+    iterator = baselineRAGJsonStream(
+      input,
+      userCtx,
+      userMetadata,
+      context,
+      streamOptions,
+    )
   }
 
   return yield* processIterator(
@@ -3047,6 +2942,7 @@ async function* generateMetadataQueryAnswer(
   agentPrompt?: string,
   maxIterations = 5,
   modelId?: string,
+  pathExtractedInfo?: PathExtractedInfo,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3163,8 +3059,8 @@ async function* generateMetadataQueryAnswer(
         const collectionIds: string[] = []
         const collectionFolderIds: string[] = []
         const collectionFileIds: string[] = []
-
-        for (const itemId of selectedItems[Apps.KnowledgeBase]) {
+        const source = getCollectionSource(pathExtractedInfo, selectedItems)
+        for (const itemId of source) {
           if (itemId.startsWith("cl-")) {
             // Entire collection - remove cl- prefix
             collectionIds.push(itemId.replace(/^cl[-_]/, ""))
@@ -3173,7 +3069,7 @@ async function* generateMetadataQueryAnswer(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
           }
         }
 
@@ -3250,7 +3146,13 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3337,7 +3239,7 @@ async function* generateMetadataQueryAnswer(
         ),
       )
 
-      pageSpan?.setAttribute("context", buildContext(items, 20, userMetadata))
+      pageSpan?.setAttribute("context", await buildContext(items, 20, userMetadata, 0, input))
       if (!items.length) {
         loggerWithChild({ email: email }).info(
           `No documents found on iteration ${iteration}${
@@ -3415,7 +3317,13 @@ async function* generateMetadataQueryAnswer(
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata,span)
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3440,6 +3348,13 @@ async function* generateMetadataQueryAnswer(
     if (agentPrompt) {
       const agentApps = agentAppEnums.filter((a) => apps?.includes(a))
       if (agentApps.length) {
+        // Hot fix added due to integration issue with Google Drive agent
+        // we fix this in the short term by blocking all Google Drive agent queries 
+        // to go through getItems
+        if(agentApps.includes(Apps.GoogleDrive)){
+          yield { text: METADATA_FALLBACK_TO_RAG }
+          return
+        }
         loggerWithChild({ email: email }).info(
           `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
@@ -3508,7 +3423,7 @@ async function* generateMetadataQueryAnswer(
       ),
     )
 
-    span?.setAttribute("context", buildContext(items, 20, userMetadata))
+    span?.setAttribute("context", await buildContext(items, 20, userMetadata, 0, input))
     span?.end()
     loggerWithChild({ email: email }).info(
       `Retrieved Documents : ${QueryType.GetItems} - ${items.length}`,
@@ -3563,11 +3478,21 @@ async function* generateMetadataQueryAnswer(
         : SearchModes.NativeRank
 
     let resolvedIntent = {} as Intent
-    if (intent && Object.keys(intent).length > 0) {
+    if (
+      intent &&
+      Object.keys(intent).length > 0 &&
+      apps?.includes(Apps.Gmail)
+    ) {
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(intent, email, userCtx, userMetadata, span)
+      resolvedIntent = await resolveNamesToEmails(
+        intent,
+        email,
+        userCtx,
+        userMetadata,
+        span,
+      )
       loggerWithChild({ email: email }).info(
         `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
       )
@@ -3644,7 +3569,7 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
-      iterationSpan?.setAttribute(`context`, buildContext(items, 20, userMetadata))
+      iterationSpan?.setAttribute(`context`, await buildContext(items, 20, userMetadata, 0, input))
       iterationSpan?.end()
 
       loggerWithChild({ email: email }).info(
@@ -3777,6 +3702,34 @@ const fallbackText = (classification: QueryRouterLLMResponse): string => {
   return `${searchDescription}${timeDescription}`
 }
 
+export type PathExtractedInfo = {
+  collectionFileIds: string[]
+  collectionFolderIds: string[]
+  collectionIds: string[]
+}
+
+export function getCollectionSource(
+  pathExtractedInfo: PathExtractedInfo | undefined,
+  selectedItems: Record<string, any>,
+): string[] {
+  if (
+    pathExtractedInfo &&
+    (pathExtractedInfo.collectionFileIds.length ||
+      pathExtractedInfo.collectionFolderIds.length ||
+      pathExtractedInfo.collectionIds.length)
+  ) {
+    if (pathExtractedInfo.collectionFolderIds.length) {
+      return pathExtractedInfo.collectionFolderIds
+    } else if (pathExtractedInfo.collectionFileIds.length) {
+      return pathExtractedInfo.collectionFileIds
+    } else {
+      return pathExtractedInfo.collectionIds
+    }
+  } else {
+    return selectedItems[Apps.KnowledgeBase] || []
+  }
+}
+
 export async function* UnderstandMessageAndAnswer(
   email: string,
   userCtx: string,
@@ -3789,6 +3742,7 @@ export async function* UnderstandMessageAndAnswer(
   passedSpan?: Span,
   agentPrompt?: string,
   modelId?: string,
+  pathExtractedInfo?: PathExtractedInfo,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -3836,6 +3790,7 @@ export async function* UnderstandMessageAndAnswer(
       agentPrompt,
       5,
       modelId,
+      pathExtractedInfo,
     )
 
     let hasYieldedAnswer = false
@@ -3884,6 +3839,7 @@ export async function* UnderstandMessageAndAnswer(
       userRequestsReasoning,
       eventRagSpan,
       agentPrompt,
+      pathExtractedInfo,
     )
   } else {
     loggerWithChild({ email: email }).info(
@@ -3906,6 +3862,7 @@ export async function* UnderstandMessageAndAnswer(
       userRequestsReasoning,
       ragSpan,
       agentPrompt, // Pass agentPrompt to generateIterativeTimeFilterAndQueryRewrite
+      pathExtractedInfo,
     )
   }
 }
@@ -4195,13 +4152,13 @@ export const MessageApi = async (c: Context) => {
       return MessageWithToolsApi(c)
     }
 
-    const attachmentMetadata = parseAttachmentMetadata(c)
-    const imageAttachmentFileIds = attachmentMetadata
+    let attachmentMetadata = parseAttachmentMetadata(c)
+    let imageAttachmentFileIds = attachmentMetadata
       .filter((m) => m.isImage)
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
-      .map((m) => m.fileId)
+      .flatMap((m) => expandSheetIds(m.fileId))
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -4239,7 +4196,6 @@ export const MessageApi = async (c: Context) => {
         userAndWorkspaceCheck.workspace.id,
       )
     }
-
     // If none of the above, proceed with default RAG flow
     const userRequestsReasoning = isReasoningEnabled
     if (!message) {
@@ -4258,7 +4214,7 @@ export const MessageApi = async (c: Context) => {
       try {
         const resp = await getCollectionFilesVespaIds(JSON.parse(kbItems), db)
         fileIds = resp
-          .map((file) => file.vespaDocId || "")
+          .flatMap((file) => expandSheetIds(file.vespaDocId || ""))
           .filter((id) => id !== "")
       } catch {
         fileIds = []
@@ -4293,8 +4249,8 @@ export const MessageApi = async (c: Context) => {
     const tokenArr: { inputTokens: number; outputTokens: number }[] = []
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata: UserMetadataType = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
     let chat: SelectChat
 
     const chatCreationSpan = rootSpan.startSpan("chat_creation")
@@ -4462,6 +4418,30 @@ export const MessageApi = async (c: Context) => {
                 details: attachmentStorageError.message,
               }),
             })
+          }
+
+          let filteredMessages = messages
+              .slice(0, messages.length - 1)
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              )
+
+          // Check for follow-up context carry-forward
+          const lastIdx = filteredMessages.length - 1;
+          const workingSet = collectFollowupContext(filteredMessages, lastIdx);
+
+          const hasCarriedContext =
+            workingSet.fileIds.length > 0 ||
+            workingSet.attachmentFileIds.length > 0;
+          if (hasCarriedContext) {
+            fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]));
+            imageAttachmentFileIds = Array.from(
+              new Set([...imageAttachmentFileIds, ...workingSet.attachmentFileIds])
+            );
+            loggerWithChild({ email: email }).info(
+              `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
+            );
           }
           if (
             (fileIds && fileIds?.length > 0) ||
@@ -4724,14 +4704,7 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            const filteredMessages = messages
-              .slice(0, messages.length - 1)
-              .filter((msg) => !msg?.errorMessage)
-              .filter(
-                (msg) =>
-                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
-              )
-
+            filteredMessages = filteredMessages.filter((msg) => !msg?.errorMessage)
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
@@ -5853,8 +5826,8 @@ export const MessageRetryApi = async (c: Context) => {
     const { user, workspace } = userAndWorkspace
     const ctx = userContext(userAndWorkspace)
     const userTimezone = user?.timeZone || "Asia/Kolkata"
-    const dateForAI = getDateForAI({ userTimeZone: userTimezone})
-    const userMetadata = {userTimezone, dateForAI}
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata = { userTimezone, dateForAI }
 
     // Extract sources from search parameters
     const kbItems = c.req.query("selectedKbItems")
@@ -7194,7 +7167,7 @@ export const GetAvailableModelsApi = async (c: Context) => {
     email = sub || ""
 
     if (!email) {
-      throw new HTTPException(401, { message: "Unauthorized" })
+      throw new HTTPException(400, { message: "Email is required" })
     }
 
     const availableModels = getAvailableModels({

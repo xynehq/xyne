@@ -78,8 +78,8 @@ services:
         max-size: "50m"
         max-file: "6"
     environment:
-      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx8g -XX:+UseG1GC -XX:G1HeapRegionSize=32M -Djava.io.tmpdir=/opt/vespa/var/tmp
-      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx4g -XX:+UseG1GC -Djava.io.tmpdir=/opt/vespa/var/tmp
+      - VESPA_CONFIGSERVER_JVMARGS=-Xms512m -Xmx2g -XX:+UseG1GC -XX:G1HeapRegionSize=16M -Djava.io.tmpdir=/opt/vespa/var/tmp
+      - VESPA_CONFIGPROXY_JVMARGS=-Xms256m -Xmx1g -XX:+UseG1GC -Djava.io.tmpdir=/opt/vespa/var/tmp
       - TMPDIR=/opt/vespa/var/tmp
       - VESPA_LOG_LEVEL=info
       - VESPA_LOG_FILE_SIZE=50M
@@ -92,7 +92,7 @@ services:
     container_name: vespa-deploy
     depends_on:
       vespa:
-        condition: service_healthy
+        condition: service_started
     environment:
       - VESPA_CONFIGSERVERS=vespa
     volumes:
@@ -127,6 +127,22 @@ services:
       options:
         max-size: "50m"
         max-file: "6"
+
+  livekit:
+    image: livekit/livekit-server:v1.9.1
+    command: --config /etc/livekit.yaml
+    container_name: livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ../livekit.yaml:/etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret}"
+    networks:
+      - xyne
 
   loki-init:
     image: busybox

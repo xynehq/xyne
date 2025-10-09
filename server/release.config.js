@@ -1,27 +1,34 @@
 // release.config.js
 export default {
-  branches: ['main'],
+  branches: [
+    "main",
+    {
+      name: "release-*",
+      prerelease: true,
+    },
+  ],
   plugins: [
-    '@semantic-release/commit-analyzer', // decides bump (major/minor/patch)
-    '@semantic-release/release-notes-generator', // generates human-readable notes
+    "@semantic-release/commit-analyzer", // decides bump (major/minor/patch)
+    "@semantic-release/release-notes-generator", // generates human-readable notes
     [
-      '@semantic-release/changelog', // writes to CHANGELOG.md
+      "@semantic-release/changelog", // writes to CHANGELOG.md
       {
-        changelogFile: '../CHANGELOG.md',
+        changelogFile: "CHANGELOG.md",
       },
     ],
     [
-      '@semantic-release/npm',
+      "@semantic-release/npm",
       {
         npmPublish: false, // no npm publish
       },
     ],
     [
-      '@semantic-release/git',
+      "@semantic-release/git",
       {
-        assets: ['package.json', '../CHANGELOG.md'], // commit changelog + version
-        message: 'chore(release): ${nextRelease.version} [skip ci]',
+        assets: ["package.json", "CHANGELOG.md"], // commit changelog + version
+        message:
+          "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
       },
     ],
   ],
-};
+}

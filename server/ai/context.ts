@@ -32,6 +32,152 @@ import {
   getSortedScoredImageChunks,
 } from "@xyne/vespa-ts/mappers"
 import type { UserMetadataType } from "@/types"
+import { querySheetChunks } from "@/lib/duckdb"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
+
+// Utility function to extract header from chunks and remove headers from each chunk
+const extractHeaderAndDataChunks = (
+  chunks_summary: (string | { chunk: string; score: number; index: number })[] | undefined,
+  matchfeatures?: any
+): { 
+  chunks_summary: (string | { chunk: string; score: number; index: number })[];
+  matchfeatures?: any;
+} => {
+  if (!chunks_summary || chunks_summary.length === 0) {
+    return { chunks_summary: [], matchfeatures };
+  }
+
+  // Find the header from the first chunk
+  let headerChunk = '';
+  if (chunks_summary.length > 0) {
+    const firstChunk = typeof chunks_summary[0] === "string" ? chunks_summary[0] : chunks_summary[0].chunk;
+    const lines = firstChunk.split('\n');
+    if (lines.length > 0 && lines[0].includes('\t')) {
+      headerChunk = lines[0]; // Extract the header line
+    }
+  }
+  
+  // Process all chunks: remove header from each and keep only data rows
+  const processedChunks: (string | { chunk: string; score: number; index: number })[] = [];
+  let newMatchfeatures = matchfeatures;
+  
+  // Add header as first chunk if found, using the same structure as original
+  if (headerChunk) {
+    if (typeof chunks_summary[0] === "string") {
+      processedChunks.push(headerChunk);
+    } else {
+      processedChunks.push({
+        chunk: headerChunk,
+        score: 1,
+        index: 0,
+      });
+    }
+
+     // Update matchfeatures to include the header chunk score
+     if (newMatchfeatures) {
+        const existingCells = newMatchfeatures.chunk_scores?.cells || {};
+        const scores = Object.values(existingCells) as number[];
+        const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
+        // Create new chunk_scores that match the new chunks
+        const newChunkScores: Record<string, number> = {}
+        newChunkScores["0"] = maxScore + 1
+        Object.entries(existingCells).forEach(([idx, score]) => {
+          newChunkScores[(parseInt(idx) + 1).toString()] = score as number
+        })
+       
+       newMatchfeatures = {
+         ...newMatchfeatures,
+         chunk_scores: {
+           cells: newChunkScores
+         }
+       };
+     }
+  }
+  
+  // Process each original chunk: remove header and add data rows
+  for (let i = 0; i < chunks_summary.length; i++) {
+    const originalChunk = chunks_summary[i];
+    const chunkContent = typeof originalChunk === "string" ? originalChunk : originalChunk.chunk;
+    const lines = chunkContent.split('\n');
+    
+    // Skip the first line (header) and keep only data rows
+    const dataRows = lines.slice(1).filter(line => line.trim().length > 0);
+    if (dataRows.length > 0) {
+      const dataContent = dataRows.join('\n');
+      
+      if (typeof originalChunk === "string") {
+        processedChunks.push(dataContent);
+      } else {
+        processedChunks.push({
+          chunk: dataContent,
+          score: originalChunk.score,
+          index: originalChunk.index
+        });
+      }
+    }
+  }
+  
+  return { chunks_summary: processedChunks, matchfeatures: newMatchfeatures };
+};
+
+// Utility function to process sheet queries for spreadsheet files
+const processSheetQuery = async (
+  chunks_summary: (string | { chunk: string; score: number; index: number })[] | undefined,
+  query: string,
+  matchfeatures: any
+): Promise<{
+  chunks_summary: { chunk: string; score: number; index: number }[];
+  matchfeatures: any;
+  maxSummaryChunks: number;
+} | null> => {
+  const duckDBResult = await querySheetChunks(
+    chunks_summary?.map((c) => typeof c === "string" ? c : c.chunk) || [], 
+    query
+  )
+  
+  // If DuckDB query failed (null means not metric-related or SQL generation failed), return null to fallback to original approach
+  if (!duckDBResult) {
+    return null;
+  }
+  
+  // Create metadata chunk with query information (excluding data)
+  const metadataChunk = JSON.stringify({
+    assumptions: duckDBResult.assumptions,
+    schema_fragment: duckDBResult.schema_fragment
+  }, null, 2)
+  
+  // Use chunkSheetWithHeaders to chunk the 2D array data
+  const dataChunks = chunkSheetWithHeaders(duckDBResult.data.rows, {headerRows: 1})
+  
+  // Combine metadata chunk with data chunks
+  const allChunks = [metadataChunk, ...dataChunks]
+  
+  const newChunksSummary = allChunks.map((c, idx) => ({chunk: c, score: 0, index: idx}))
+  
+  // Update matchfeatures to correspond to the new chunks
+  let newMatchfeatures = matchfeatures
+  if (matchfeatures) {
+    // Create new chunk_scores that match the new chunks
+    const newChunkScores: Record<string, number> = {}
+    allChunks.forEach((_, idx) => {
+      newChunkScores[idx.toString()] = 0 // All new chunks get score 0
+    })
+    
+    // Update the matchfeatures with new chunk_scores
+    newMatchfeatures = {
+      ...matchfeatures,
+      chunk_scores: {
+        cells: newChunkScores
+      }
+    }
+  }
+  
+  return {
+    chunks_summary: newChunksSummary,
+    matchfeatures: newMatchfeatures,
+    maxSummaryChunks: allChunks.length
+  }
+}
 
 // Utility to capitalize the first letter of a string
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
@@ -572,7 +718,8 @@ const constructCollectionFileContext = (
   isSelectedFiles?: boolean,
   isMsgWithSources?: boolean,
 ): string => {
-  if ((!maxSummaryChunks && !isSelectedFiles) || isMsgWithSources) {
+ 
+  if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
   let chunks: ScoredChunk[] = []
@@ -625,6 +772,46 @@ const constructCollectionFileContext = (
       .join("\n")
   }
 
+  let imageChunks: ScoredChunk[] = []
+  const maxImageChunks =
+    fields.image_chunks_summary?.length &&
+    fields.image_chunks_summary?.length < 5
+      ? fields.image_chunks_summary?.length
+      : 5
+
+
+  if (fields.matchfeatures) {
+
+    const summaryStrings = fields.image_chunks_summary?.map((c) =>
+      typeof c === "string" ? c : c.chunk,
+    ) || []
+    
+    imageChunks = getSortedScoredImageChunks(
+      fields.matchfeatures,
+      fields.image_chunks_pos_summary as number[],
+      summaryStrings as string[],
+      fields.docId,
+    )
+  } else {
+    const imageChunksPos = fields.image_chunks_pos_summary as number[]
+  
+    imageChunks =
+      fields.image_chunks_summary?.map((chunk, idx) => {
+        const result = {
+          chunk: `${fields.docId}_${imageChunksPos[idx]}`,
+          index: idx,
+          score: 0,
+        }
+        return result
+      }) || []
+  }
+
+  let imageContent = imageChunks
+      .slice(0, maxImageChunks)
+      .map((v) => v.chunk)
+      .join("\n")
+
+
   return `Source: Knowledge Base
 File: ${fields.fileName || "N/A"}
 Knowledge Base ID: ${fields.clId || "N/A"}
@@ -632,6 +819,7 @@ Mime Type: ${fields.mimeType || "N/A"}
 ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)}` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)}` : ""}
 ${fields.createdBy ? `Uploaded By: ${fields.createdBy}` : ""}
 ${content ? `Content: ${content}` : ""}
+${fields.image_chunks_summary && fields.image_chunks_summary.length ? `Image File Names: ${imageContent}` : ""}
 \nvespa relevance score: ${relevance}\n`
 }
 
@@ -696,13 +884,43 @@ export const answerColoredContextMap = (
 }
 
 type AiContext = string
-export const answerContextMap = (
+export const answerContextMap = async (
   searchResult: VespaSearchResults,
   userMetadata: UserMetadataType,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
   isMsgWithSources?: boolean,
-): AiContext => {
+  query?: string,
+): Promise<AiContext> => {
+  if(searchResult.fields.sddocname === fileSchema || searchResult.fields.sddocname === dataSourceFileSchema || searchResult.fields.sddocname === KbItemsSchema || searchResult.fields.sddocname === mailAttachmentSchema) {
+    let mimeType
+    if(searchResult.fields.sddocname === mailAttachmentSchema) {
+      mimeType = searchResult.fields.fileType
+    } else {
+      mimeType = searchResult.fields.mimeType
+    }
+    if(mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      mimeType === "application/vnd.ms-excel" ||
+      mimeType === "text/csv") {
+        const result = extractHeaderAndDataChunks(searchResult.fields.chunks_summary, searchResult.fields.matchfeatures);
+        searchResult.fields.chunks_summary = result.chunks_summary;
+        if (result.matchfeatures) {
+          searchResult.fields.matchfeatures = result.matchfeatures;
+        }
+        
+        if (query) {
+          const sheetResult = await processSheetQuery(searchResult.fields.chunks_summary, query, searchResult.fields.matchfeatures)
+          if (sheetResult) {
+            const { chunks_summary, matchfeatures, maxSummaryChunks: newMaxSummaryChunks } = sheetResult
+            searchResult.fields.chunks_summary = chunks_summary
+            searchResult.fields.matchfeatures = matchfeatures
+            maxSummaryChunks = newMaxSummaryChunks
+          } else {
+            maxSummaryChunks = Math.min(searchResult.fields.chunks_summary?.length || 0, 100)
+          }
+        }
+    }
+  }
   if (searchResult.fields.sddocname === fileSchema) {
     return constructFileContext(
       searchResult.fields,

@@ -14,7 +14,7 @@ import {
   Layers,
   Square,
   ChevronDown,
-  // Infinity,
+  Infinity,
   Check,
   Link,
   Search,
@@ -48,6 +48,7 @@ import {
   AttachmentMetadata,
   FileType,
   ModelConfiguration,
+  UploadStatus,
 } from "shared/types" // Add SelectPublicAgent, PublicUser
 import {
   DropdownMenu,
@@ -73,8 +74,8 @@ import {
   validateAndDeduplicateFiles,
   createImagePreview,
   cleanupPreviewUrls,
-  getFileType,
 } from "@/utils/fileUtils"
+import { getFileType } from "shared/fileUtils"
 import { authFetch } from "@/utils/authFetch"
 
 interface SelectedFile {
@@ -196,6 +197,8 @@ interface ChatBoxProps {
     agentId?: string | null,
     toolsList?: ToolsListItem[],
     selectedModel?: string,
+    isFollowup?: boolean,
+    selectedKbItems?: string[],
   ) => void // Expects agentId string and optional fileIds
   isStreaming?: boolean
   retryIsStreaming?: boolean
@@ -206,6 +209,7 @@ interface ChatBoxProps {
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
   hideButtons?: boolean // Add prop to hide mark step as done section
+  uploadStatus?: UploadStatus
 }
 
 const availableSources: SourceItem[] = [
@@ -368,10 +372,11 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       chatId,
       agentIdFromChatData, // Destructure new prop
       user, // Destructure user prop
-      // setIsAgenticMode,
+      setIsAgenticMode,
       isAgenticMode = false,
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
+      uploadStatus,
     } = props
     // Interface for fetched tools
     interface FetchedTool {
@@ -535,7 +540,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     } | null>(null)
     const [initialLoadComplete, setInitialLoadComplete] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
-    const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+    const [uploadingFilesCount, setUploadingFilesCount] = useState(0)
+    const uploadCompleteResolver = useRef<(() => void) | null>(null)
 
     // Model selection state
     const [availableModels, setAvailableModels] = useState<
@@ -636,6 +642,38 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       !hideButtons &&
       (overrideIsRagOn ??
         (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
+
+    // Check if document is ready for chat based on upload status
+    const isDocumentReady = !uploadStatus || uploadStatus === UploadStatus.COMPLETED
+    
+    // Determine if send should be disabled
+    const isSendDisabled = isStreaming || 
+                          retryIsStreaming || 
+                          uploadingFilesCount > 0 ||
+                          !isDocumentReady
+
+    // Helper function to get tooltip content for disabled send button
+    const getSendButtonTooltipContent = (): string | undefined => {
+      if (uploadingFilesCount > 0) {
+        return "Uploading files..."
+      }
+      if (uploadStatus && uploadStatus !== UploadStatus.COMPLETED) {
+        switch (uploadStatus) {
+          case UploadStatus.PENDING:
+            return "Upload pending"
+          case UploadStatus.PROCESSING:
+            return "Processing document"
+          case UploadStatus.FAILED:
+            return "Upload failed"
+          default:
+            return "Document not ready"
+        }
+      }
+      if (isStreaming || retryIsStreaming) {
+        return "Generating response"
+      }
+      return undefined
+    }
 
     // localStorage keys for tool selection persistence
     const SELECTED_CONNECTOR_TOOLS_KEY = "selectedConnectorTools"
@@ -787,6 +825,90 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // File upload utility functions
 
+    const uploadFiles = useCallback(
+      async (files: SelectedFile[]) => {
+        if (files.length === 0) return []
+
+        setUploadingFilesCount((prev) => prev + files.length)
+        const uploadedMetadata: AttachmentMetadata[] = []
+
+        // Set all files to uploading state
+        setSelectedFiles((prev) =>
+          prev.map((f) =>
+            files.some((file) => file.id === f.id)
+              ? { ...f, uploading: true, uploadError: undefined }
+              : f,
+          ),
+        )
+
+        const uploadPromises = files.map(async (selectedFile) => {
+          try {
+            const formData = new FormData()
+            formData.append("attachment", selectedFile.file)
+            const response = await authFetch(
+              "/api/v1/files/upload-attachment",
+              {
+                method: "POST",
+                body: formData,
+              },
+            )
+
+            if (!response.ok) {
+              const error = await response.json()
+              throw new Error(error.message || "Upload failed")
+            }
+
+            const result = await response.json()
+            const metadata = result.attachments?.[0]
+
+            if (metadata) {
+              setSelectedFiles((prev) =>
+                prev.map((f) =>
+                  f.id === selectedFile.id
+                    ? { ...f, uploading: false, metadata }
+                    : f,
+                ),
+              )
+              return metadata
+            } else {
+              throw new Error("No document ID returned from upload")
+            }
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error ? error.message : "Upload failed"
+            setSelectedFiles((prev) =>
+              prev.map((f) =>
+                f.id === selectedFile.id
+                  ? { ...f, uploading: false, uploadError: errorMessage }
+                  : f,
+              ),
+            )
+            toast.error({
+              title: "Upload failed",
+              description: `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
+            })
+            return null
+          } finally {
+            setUploadingFilesCount((prev) => prev - 1)
+          }
+        })
+
+        const results = await Promise.all(uploadPromises)
+        uploadedMetadata.push(
+          ...results.filter(
+            (metadata): metadata is AttachmentMetadata => metadata !== null,
+          ),
+        )
+        return uploadedMetadata
+      },
+      [toast],
+    )
+    useEffect(() => {
+      if (uploadingFilesCount === 0 && uploadCompleteResolver.current) {
+        uploadCompleteResolver.current()
+        uploadCompleteResolver.current = null
+      }
+    }, [uploadingFilesCount])
     const processFiles = useCallback(
       (files: FileList | File[]) => {
         // Check attachment limit
@@ -833,92 +955,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               description: `${filteredCount} file(s) were already selected and skipped.`,
             })
           }
-
           return [...prev, ...filteredNewFiles]
         })
-      },
-      [selectedFiles.length],
-    )
 
-    const uploadFiles = useCallback(
-      async (files: SelectedFile[]) => {
-        if (files.length === 0) return []
-
-        setIsUploadingFiles(true)
-        const uploadedMetadata: AttachmentMetadata[] = []
-
-        // Set all files to uploading state
-        setSelectedFiles((prev) =>
-          prev.map((f) =>
-            files.some((file) => file.id === f.id)
-              ? { ...f, uploading: true, uploadError: undefined }
-              : f,
-          ),
+        const filesToUpload = newFiles.filter(
+          (f) =>
+            !selectedFiles.some(
+              (existing) => existing.file.name === f.file.name,
+            ),
         )
-
-        const uploadPromises = files.map(async (selectedFile) => {
-          try {
-            const formData = new FormData()
-            formData.append("attachment", selectedFile.file)
-
-            // Use the new attachment upload endpoint
-            const response = await authFetch(
-              "/api/v1/files/upload-attachment",
-              {
-                method: "POST",
-                body: formData,
-              },
-            )
-
-            if (!response.ok) {
-              const error = await response.json()
-              throw new Error(error.message || "Upload failed")
-            }
-
-            const result = await response.json()
-            const metadata = result.attachments?.[0]
-
-            if (metadata) {
-              setSelectedFiles((prev) =>
-                prev.map((f) =>
-                  f.id === selectedFile.id
-                    ? { ...f, uploading: false, metadata }
-                    : f,
-                ),
-              )
-              return metadata
-            } else {
-              throw new Error("No document ID returned from upload")
-            }
-          } catch (error) {
-            const errorMessage =
-              error instanceof Error ? error.message : "Upload failed"
-            setSelectedFiles((prev) =>
-              prev.map((f) =>
-                f.id === selectedFile.id
-                  ? { ...f, uploading: false, uploadError: errorMessage }
-                  : f,
-              ),
-            )
-            toast.error({
-              title: "Upload failed",
-              description: `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
-            })
-            return null
-          }
-        })
-
-        const results = await Promise.all(uploadPromises)
-        uploadedMetadata.push(
-          ...results.filter(
-            (metadata): metadata is AttachmentMetadata => metadata !== null,
-          ),
-        )
-
-        setIsUploadingFiles(false)
-        return uploadedMetadata
+        uploadFiles(filesToUpload)
       },
-      [toast],
+      [selectedFiles.length, uploadFiles, toast],
     )
 
     const getExtension = (file: File) => {
@@ -929,15 +977,37 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return ext || "file"
     }
 
-    const removeFile = useCallback((id: string) => {
+    const removeFile = useCallback(async (id: string) => {
+      const fileToRemove = selectedFiles.find((f) => f.id === id)
+      
+      // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
+      if (fileToRemove?.metadata?.fileId) {
+        try {
+          const response = await api.files.delete.$post({
+            json: {
+              attachment: fileToRemove.metadata
+            }
+          })
+          
+          if (!response.ok) {
+            const errorText = await response.text()
+            console.error(`Failed to delete attachment: ${errorText}`)
+            // Still remove from UI even if server deletion fails
+          }
+        } catch (error) {
+          console.error('Error deleting attachment:', error)
+          // Still remove from UI even if server deletion fails
+        }
+      }
+      
+      // Remove from UI
       setSelectedFiles((prev) => {
-        const fileToRemove = prev.find((f) => f.id === id)
         if (fileToRemove?.preview) {
           URL.revokeObjectURL(fileToRemove.preview)
         }
         return prev.filter((f) => f.id !== id)
       })
-    }, [])
+    }, [selectedFiles])
 
     const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
       fileInputRef,
@@ -951,14 +1021,14 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         e.preventDefault()
         const files = Array.from(e.dataTransfer.files)
         if (files.length > 0) {
-                        // Check attachment limit before processing
-                        if (selectedFiles.length >= MAX_ATTACHMENTS) {
-                          toast.error({
-                            title: "Attachment limit reached",
-                            description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
-                          })
-                          return
-                        }
+          // Check attachment limit before processing
+          if (selectedFiles.length >= MAX_ATTACHMENTS) {
+            toast.error({
+              title: "Attachment limit reached",
+              description: `You can only attach up to ${MAX_ATTACHMENTS} files at a time.`,
+            })
+            return
+          }
           processFiles(files)
         }
       },
@@ -1937,7 +2007,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return () => document.removeEventListener("mousedown", handleOutsideClick)
     }, [showReferenceBox])
 
-    const handleSendMessage = useCallback(async () => {
+    const handleSendMessage = useCallback(async (isFollowUp: boolean = false) => {
       const activeSourceIds = Object.entries(selectedSources)
         .filter(([, isSelected]) => isSelected)
         .map(([id]) => id)
@@ -1982,22 +2052,21 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       // Handle Attachments Metadata
       let attachmentsMetadata: AttachmentMetadata[] = []
       if (selectedFiles.length > 0) {
-        const filesToUpload = selectedFiles.filter(
-          (f) => !f.metadata && !f.uploading,
-        )
+        if (uploadingFilesCount > 0) {
+          await new Promise<void>((resolve) => {
+            uploadCompleteResolver.current = resolve
+            if(uploadingFilesCount==0){
+              resolve();
+              uploadCompleteResolver.current=null
+            }
+          })
+
+        }
         const alreadyUploadedMetadata = selectedFiles
           .map((f) => f.metadata)
           .filter((m): m is AttachmentMetadata => !!m)
 
-        if (filesToUpload.length > 0) {
-          const newUploadedMetadata = await uploadFiles(filesToUpload)
-          attachmentsMetadata = [
-            ...alreadyUploadedMetadata,
-            ...newUploadedMetadata,
-          ]
-        } else {
-          attachmentsMetadata = alreadyUploadedMetadata
-        }
+        attachmentsMetadata = alreadyUploadedMetadata
       }
 
       // Replace data-doc-id and data-reference-id with mailId
@@ -2058,6 +2127,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         persistedAgentId,
         toolsListToSend,
         JSON.stringify(modelConfig), // Send model config as JSON string
+        isFollowUp,
       )
 
       // Clear the input and attached files after sending
@@ -2163,7 +2233,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           setTimeout(() => {
             // Call handleSendMessage which will use the current state values
             // for agents, tools, connectors, etc.
-            handleSendMessage()
+            handleSendMessage(true)
           }, 0)
         },
         getCurrentModelConfig: () => {
@@ -2419,7 +2489,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           <div className="relative flex items-center">
             {isPlaceholderVisible && (
               <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#ACBCCC] dark:text-gray-500 pointer-events-none">
-                Ask a question {hideButtons ? "" : "or type @ to search your apps"}
+                Ask a question{" "}
+                {hideButtons ? "" : "or type @ to search your apps"}
               </div>
             )}
             <div
@@ -2680,12 +2751,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault() // Always prevent default for Enter (unless Shift+Enter)
-                  
+
                   if (
                     query.trim().length > 0 &&
                     !isStreaming &&
                     !retryIsStreaming &&
-                    !isUploadingFiles
+                    uploadingFilesCount === 0 &&
+                    isDocumentReady
                   ) {
                     handleSendMessage()
                   }
@@ -2856,7 +2928,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                   </div>
                 ))}
               </div>
-              {isUploadingFiles && (
+              {uploadingFilesCount > 0 && (
                 <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                   <Loader2 size={12} className="animate-spin" />
                   Uploading files...
@@ -3555,27 +3627,29 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {/* {showAdvancedOptions && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIsAgenticMode(!isAgenticMode)
-                }}
-                disabled={selectedAgent ? !selectedAgent.isRagOn : false}
-                className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px] disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                <Infinity
-                  size={14}
-                  strokeWidth={2.4}
-                  className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
-                />
-                <span
-                  className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+            {showAdvancedOptions &&
+              (user?.role === UserRole.Admin ||
+                user?.role === UserRole.SuperAdmin) && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setIsAgenticMode(!isAgenticMode)
+                  }}
+                  disabled={selectedAgent ? !selectedAgent.isRagOn : false}
+                  className={`flex items-center justify-center rounded-full cursor-pointer mr-[18px] disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  Agent
-                </span>
-              </button>
-            )} */}
+                  <Infinity
+                    size={14}
+                    strokeWidth={2.4}
+                    className={`${isAgenticMode ? "text-blue-500" : "text-[#464D53]"} ${isAgenticMode ? "font-medium" : ""}`}
+                  />
+                  <span
+                    className={`text-[14px] leading-[16px] ml-[4px] select-none font-medium ${isAgenticMode ? "text-blue-500" : "text-[#464D53]"}`}
+                  >
+                    Agent
+                  </span>
+                </button>
+              )}
 
             {/* Model Selection Dropdown */}
             {(showAdvancedOptions || hideButtons) && (
@@ -3864,20 +3938,27 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                 <Square className="text-white dark:text-gray-200" size={16} />
               </button>
             ) : (
-              <button
-                disabled={isStreaming || retryIsStreaming || isUploadingFiles}
-                onClick={() => handleSendMessage()}
-                className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50"
-              >
-                {isUploadingFiles ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <ArrowRight
-                    className="text-white dark:text-slate-200"
-                    size={16}
-                  />
-                )}
-              </button>
+              (() => {
+                const tooltipContent = isSendDisabled ? getSendButtonTooltipContent() : undefined;
+                const button = (
+                  <button
+                    disabled={isSendDisabled}
+                    onClick={() => handleSendMessage()}
+                    className="flex mr-6 bg-[#464B53] dark:bg-slate-700 text-white dark:text-slate-200 hover:bg-[#5a5f66] dark:hover:bg-slate-600 rounded-full w-[32px] h-[32px] items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {uploadingFilesCount > 0 ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <ArrowRight
+                        className="text-white dark:text-slate-200"
+                        size={16}
+                      />
+                    )}
+                  </button>
+                );
+
+                return tooltipContent ? <SmartTooltip content={tooltipContent}>{button}</SmartTooltip> : button;
+              })()
             )}
           </div>
         </div>

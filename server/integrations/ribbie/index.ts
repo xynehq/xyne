@@ -433,9 +433,9 @@ class RIBBIECircularDownloader {
                     storagePath: "",
                     chunks: [],
                     chunks_pos: [],
-                    chunks_map: [],
                     image_chunks: [],
                     image_chunks_pos: [],
+                    chunks_map: [],
                     image_chunks_map: [],
                     metadata: JSON.stringify({ source: 'RIBBIE-automation', vespaDocId: vespaDocId }),
                     createdBy: userEmail,
@@ -488,7 +488,7 @@ class RIBBIECircularDownloader {
 
             // STEP 3: Process PDF into chunks
             Logger.info('⚙️ Extracting text and chunks from PDF...');
-            const processingResult = await FileProcessorService.processFile(
+            const processingResults = await FileProcessorService.processFile(
                 pdfBuffer,
                 'application/pdf',
                 fileName,
@@ -497,6 +497,12 @@ class RIBBIECircularDownloader {
                 true,       // Extract images
                 false       // Don't describe images
             );
+
+            // For PDFs, we expect only one result, but handle array for consistency
+            const processingResult = processingResults[0];
+            if (!processingResult) {
+                throw new Error('No processing result returned for PDF');
+            }
 
             Logger.info(`✅ Extracted ${processingResult.chunks.length} text chunks and ${processingResult.image_chunks.length} image chunks`);
 
@@ -556,10 +562,10 @@ class RIBBIECircularDownloader {
                     storagePath: storagePath,
                     chunks: processingResult.chunks,
                     chunks_pos: processingResult.chunks_pos,
-                    chunks_map: [],
                     image_chunks: processingResult.image_chunks || [],
                     image_chunks_pos: processingResult.image_chunks_pos || [],
-                    image_chunks_map: [],
+                    chunks_map: processingResult.chunks_map || [],
+                    image_chunks_map: processingResult.image_chunks_map || [],
                     metadata: JSON.stringify({
                         source: 'RIBBIE-automation',
                         circularNumber: circular.id,

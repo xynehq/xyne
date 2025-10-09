@@ -52,6 +52,7 @@ import {
   ChevronLeft,
   ChevronRight,
   BookOpen,
+  Eye,
 } from "lucide-react"
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useTheme } from "@/components/ThemeContext"
@@ -73,9 +74,11 @@ import { ConfirmModal } from "@/components/ui/confirmModal"
 import { AgentCard, AgentIconDisplay } from "@/components/AgentCard"
 import { AttachmentGallery } from "@/components/AttachmentGallery"
 import { createAuthEventSource } from "@/hooks/useChatStream"
-import { textToCitationIndex } from "@/utils/chatUtils"
+import { textToCitationIndex } from "@/utils/chatUtils.tsx"
 import { GoogleDriveNavigation } from "@/components/GoogleDriveNavigation"
 import { CollectionNavigation } from "@/components/CollectionNavigation"
+import ViewAgent from "@/components/ViewAgent"
+import agentEmptyStateIcon from "@/assets/emptystateIcons/agent.png"
 
 type CurrentResp = {
   resp: string
@@ -106,6 +109,7 @@ interface FetchedDataSource {
   entity: string
 }
 
+
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, onRemove, icon }) => {
   return (
     <div className="flex items-center justify-center bg-slate-100 dark:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium pl-2 pr-1 py-1 rounded-md border border-slate-200 dark:border-slate-500">
@@ -130,7 +134,7 @@ interface IntegrationSource {
   icon: React.ReactNode
 }
 
-const availableIntegrationsList: IntegrationSource[] = [
+export const availableIntegrationsList: IntegrationSource[] = [
   {
     id: "googledrive",
     name: "Google Drive",
@@ -197,12 +201,73 @@ interface User {
   email: string
 }
 
-interface CollectionItem {
+export interface CollectionItem {
   id: string
   collectionId: string
   path?: string
   type?: "collection" | "folder" | "file"
   name?: string
+}
+// Icon components
+export const FileIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+    <polyline points="13 2 13 9 20 9"></polyline>
+  </svg>
+)
+
+export const FolderIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+  </svg>
+)
+
+export const CollectionIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="mr-2 text-blue-600"
+  >
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+  </svg>
+)
+export const getItemIcon = (itemType: string): React.ReactNode => {
+  switch (itemType) {
+    case "folder":
+      return <FolderIcon />
+    case "collection":
+      return <CollectionIcon />
+    case "file":
+    default:
+      return <FileIcon />
+  }
 }
 
 // Utility function to check if an item is selected either directly or through parent inheritance
@@ -263,11 +328,14 @@ function isItemSelectedWithInheritance(
 
   return false
 }
+ 
 
 function AgentComponent() {
   const { agentId } = Route.useSearch()
   const navigate = useNavigate()
-  const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list")
+  const [viewMode, setViewMode] = useState<
+    "list" | "create" | "edit" | "viewAgent"
+  >("list")
   const [allAgentsList, setAllAgentsList] = useState<SelectPublicAgent[]>([])
   const [madeByMeAgentsList, setMadeByMeAgentsList] = useState<
     SelectPublicAgent[]
@@ -276,6 +344,9 @@ function AgentComponent() {
     SelectPublicAgent[]
   >([])
   const [editingAgent, setEditingAgent] = useState<SelectPublicAgent | null>(
+    null,
+  )
+  const [viewingAgent, setViewingAgent] = useState<SelectPublicAgent | null>(
     null,
   )
   const [selectedChatAgentExternalId, setSelectedChatAgentExternalId] =
@@ -350,7 +421,7 @@ function AgentComponent() {
   const getDriveEntityIcon = (entity: string) => {
     return getIcon(Apps.GoogleDrive, entity as any, { w: 16, h: 16, mr: 8 })
   }
-
+  
   // Google Drive navigation functions
   const navigateToGoogleDrive = async () => {
     setNavigationPath([
@@ -366,6 +437,8 @@ function AgentComponent() {
         const data = await response.json()
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
+        
+     
         setCurrentItems(items)
       }
     } catch (error) {
@@ -379,10 +452,13 @@ function AgentComponent() {
     folderId: string,
     folderName: string,
   ) => {
-    setNavigationPath((prev) => [
-      ...prev,
-      { id: folderId, name: folderName, type: "drive-folder" },
-    ])
+    setNavigationPath((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].id === folderId) {
+        return prev
+      }
+      return [...prev, { id: folderId, name: folderName, type: "drive-folder" }]
+    })
+
     setIsLoadingItems(true)
     try {
       const response = await api.search.driveitem.$post({
@@ -392,6 +468,8 @@ function AgentComponent() {
         const data = await response.json()
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
+       
+     
         setCurrentItems(items)
       }
     } catch (error) {
@@ -478,12 +556,12 @@ function AgentComponent() {
 
         let response
         if (isInGoogleDriveContext) {
-          // Search Google Drive items
           response = await api.search.$get({
             query: {
               query: dropdownSearchQuery,
               app: Apps.GoogleDrive,
               isAgentIntegSearch: true,
+              entity: Object.values(DriveEntity),
             },
           })
         } else {
@@ -1090,6 +1168,10 @@ function AgentComponent() {
     setEditingAgent(agent)
     setViewMode("create")
   }
+  const handleViewAgent = (agent: SelectPublicAgent) => {
+    setViewingAgent(agent)
+    setViewMode("viewAgent")
+  }
 
   const allAvailableIntegrations = useMemo(() => {
     const dynamicDataSources: IntegrationSource[] = fetchedDataSources.map(
@@ -1101,7 +1183,6 @@ function AgentComponent() {
         icon: getIcon(Apps.DataSource, "datasource", { w: 16, h: 16, mr: 8 }),
       }),
     )
-
     const collectionSources: IntegrationSource[] = fetchedCollections.map(
       (cl) => ({
         id: `cl_${cl.id}`,
@@ -1569,6 +1650,7 @@ function AgentComponent() {
             const existingUsers = users.filter((user) =>
               data.userEmails.includes(user.email),
             )
+
             setSelectedUsers(existingUsers)
           }
         } catch (error) {
@@ -1815,7 +1897,10 @@ function AgentComponent() {
   const toggleIntegrationSelection = (integrationId: string) => {
     setSelectedIntegrations((prev) => {
       const newValue = !prev[integrationId]
-
+      if(integrationId === "googledrive" && !newValue ){
+         setSelectedItemsInGoogleDrive(new Set())
+          setSelectedItemDetailsInGoogleDrive({})
+      }
       // If it's a collection integration and we're deselecting it, clear its items
       if (integrationId.startsWith("cl_") && !newValue) {
         const clId = integrationId.replace("cl_", "")
@@ -1988,9 +2073,22 @@ function AgentComponent() {
 
     // Handle Google Drive items
     if (
-      selectedIntegrations["googledrive"] &&
-      selectedItemsInGoogleDrive.size > 0
+      selectedIntegrations["googledrive"] 
     ) {
+      if(selectedItemsInGoogleDrive.size === 0){
+        const googleDriveIntegration = allAvailableIntegrations.find(
+          (int) => int.id === "googledrive",
+        )
+        if (googleDriveIntegration) {
+          result.push({
+            ...googleDriveIntegration,
+            type: "integration",
+          })
+        }
+      }
+      else{
+
+      
       // If specific Google Drive items are selected, show individual file/folder pills
       for (const itemId of selectedItemsInGoogleDrive) {
         const item = selectedItemDetailsInGoogleDrive[itemId]
@@ -2013,20 +2111,9 @@ function AgentComponent() {
           })
         }
       }
-    } else if (selectedIntegrations["googledrive"]) {
-      // If no specific items are selected but Google Drive is checked, show the main Google Drive pill
-      const googleDriveIntegration = allAvailableIntegrations.find(
-        (int) => int.id === "googledrive",
-      )
-      if (googleDriveIntegration) {
-        result.push({
-          ...googleDriveIntegration,
-          type: "integration",
-        })
-      }
     }
+    } 
 
-    // Handle collections
     allAvailableIntegrations.forEach((integration) => {
       if (
         integration.id.startsWith("cl_") &&
@@ -2036,13 +2123,11 @@ function AgentComponent() {
         const selectedItems = selectedItemsInCollection[clId] || new Set()
 
         if (selectedItems.size === 0) {
-          // If no specific items are selected, show the whole CL pill
           result.push({
             ...integration,
             type: "cl",
           })
         } else {
-          // If specific items are selected, show individual file/folder pills
           const itemDetails = selectedItemDetailsInCollection[clId] || {}
 
           selectedItems.forEach((itemId) => {
@@ -2054,53 +2139,7 @@ function AgentComponent() {
 
               // Determine the icon based on the type from the mapping or the item type
               const itemType = integrationIdToNameMap[itemId]?.type || item.type
-              const itemIcon =
-                itemType === "folder" ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-gray-700"
-                  >
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                  </svg>
-                ) : itemType === "collection" ? (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-blue-600"
-                  >
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                  </svg>
-                ) : (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="mr-2 text-gray-600"
-                  >
-                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                    <polyline points="13 2 13 9 20 9"></polyline>
-                  </svg>
-                )
-
+              const itemIcon = getItemIcon(itemType)
               result.push({
                 id: `${clId}_${itemId}`,
                 name: displayName,
@@ -2721,26 +2760,40 @@ function AgentComponent() {
               <div className="w-full max-w-3xl mx-auto px-4 pt-0 pb-6">
                 <div className="flex flex-col space-y-6">
                   <div className="flex justify-between items-center">
-                    <h1 className="text-4xl tracking-wider font-display text-gray-700 dark:text-gray-100">
+                    <h1 className="text-[32px] tracking-wider font-display text-gray-700 dark:text-gray-100">
                       AGENTS
                     </h1>
                     <div className="flex items-center gap-4 ">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                        <input
-                          type="text"
-                          placeholder="Search agents.."
-                          value={listSearchQuery}
-                          onChange={handleListSearchChange}
-                          className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
-                        />
-                      </div>
-                      <Button
-                        onClick={handleCreateNewAgent}
-                        className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
-                      >
-                        <Plus size={18} /> CREATE
-                      </Button>
+                      {(() => {
+                        // Calculate whether current tab has agents
+                        const agentLists: Record<string, SelectPublicAgent[]> = {
+                          "all": allAgentsList,
+                          "made-by-me": madeByMeAgentsList,
+                          "shared-to-me": sharedToMeAgentsList,
+                        }
+                        const currentTabHasAgents = (agentLists[activeTab]?.length ?? 0) > 0
+                        
+                        return currentTabHasAgents && (
+                          <>
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                              <input
+                                type="text"
+                                placeholder="Search agents.."
+                                value={listSearchQuery}
+                                onChange={handleListSearchChange}
+                                className="pl-10 pr-4 py-2 rounded-full border border-gray-200 dark:border-slate-600 w-[300px] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-slate-500 bg-white dark:bg-slate-700 dark:text-gray-100"
+                              />
+                            </div>
+                            <Button
+                              onClick={handleCreateNewAgent}
+                              className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                            >
+                              <Plus size={18} /> CREATE
+                            </Button>
+                          </>
+                        )
+                      })()}
                     </div>
                   </div>
 
@@ -2794,46 +2847,42 @@ function AgentComponent() {
                     )
                   })()}
 
-                  {(allAgentsList.length > 0 ||
-                    madeByMeAgentsList.length > 0 ||
-                    sharedToMeAgentsList.length > 0) && ( // Only show tabs if there are agents in any list
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex space-x-2">
-                        <TabButton
-                          active={activeTab === "all"}
-                          onClick={() => handleTabChange("all")}
-                          icon="asterisk"
-                          label="ALL"
-                        />
-                        <TabButton
-                          active={activeTab === "shared-to-me"}
-                          onClick={() => handleTabChange("shared-to-me")}
-                          icon="users"
-                          label="SHARED-WITH-ME"
-                        />
-                        <TabButton
-                          active={activeTab === "made-by-me"}
-                          onClick={() => handleTabChange("made-by-me")}
-                          icon="user"
-                          label="MADE-BY-ME"
-                        />
-                      </div>
-                      <div>
-                        <Button
-                          onClick={fetchAllAgentData}
-                          variant="outline"
-                          size="sm"
-                          className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700"
-                          disabled={isLoadingAgents}
-                        >
-                          <RefreshCw
-                            size={14}
-                            className={`${isLoadingAgents ? "animate-spin" : ""}`}
-                          />
-                        </Button>
-                      </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex space-x-2">
+                      <TabButton
+                        active={activeTab === "all"}
+                        onClick={() => handleTabChange("all")}
+                        icon="asterisk"
+                        label="ALL"
+                      />
+                      <TabButton
+                        active={activeTab === "shared-to-me"}
+                        onClick={() => handleTabChange("shared-to-me")}
+                        icon="users"
+                        label="SHARED-WITH-ME"
+                      />
+                      <TabButton
+                        active={activeTab === "made-by-me"}
+                        onClick={() => handleTabChange("made-by-me")}
+                        icon="user"
+                        label="MADE-BY-ME"
+                      />
                     </div>
-                  )}
+                    <div>
+                      <Button
+                        onClick={fetchAllAgentData}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                        disabled={isLoadingAgents}
+                      >
+                        <RefreshCw
+                          size={14}
+                          className={`${isLoadingAgents ? "animate-spin" : ""}`}
+                        />
+                      </Button>
+                    </div>
+                  </div>
 
                   {(() => {
                     let currentListToDisplay: SelectPublicAgent[] = []
@@ -2884,13 +2933,36 @@ function AgentComponent() {
                     }
 
                     if (currentListToDisplay.length === 0 && !listSearchQuery) {
+                      const isSharedTab = activeTab === "shared-to-me"
+                      const title = isSharedTab
+                        ? "No agents shared with you yet"
+                        : "No agents created yet"
+                      const description = isSharedTab
+                        ? null
+                        : "Click 'Create Agent' to add your first agent"
+
                       return (
-                        <div className="text-center py-10 text-gray-500 dark:text-gray-400">
-                          <p className="text-lg mb-2">
-                            No agents in this category yet.
+                        <div className="flex flex-col items-center justify-center min-h-[60vh]">
+                          <img
+                            src={agentEmptyStateIcon}
+                            alt="No agents"
+                            className="w-32 h-32 mb-6 opacity-60"
+                          />
+                          <p className="text-xl font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            {title}
                           </p>
-                          {activeTab === "all" && (
-                            <p>Click "CREATE" to get started.</p>
+                          {description && (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                              {description}
+                            </p>
+                          )}
+                          {!isSharedTab && (
+                            <Button
+                              onClick={handleCreateNewAgent}
+                              className="bg-slate-800 hover:bg-slate-700 text-white font-mono font-medium rounded-full px-6 py-2 flex items-center gap-2"
+                            >
+                              <Plus size={18} /> CREATE AGENT
+                            </Button>
                           )}
                         </div>
                       )
@@ -2899,37 +2971,44 @@ function AgentComponent() {
                     return (
                       <>
                         <div className="space-y-0">
-                          {paginatedList.map((agent) => (
-                            <AgentListItem
-                              key={agent.externalId}
-                              agent={agent}
-                              isFavorite={favoriteAgents.includes(
-                                agent.externalId,
-                              )}
-                              isShared={
-                                activeTab === "all" &&
-                                sharedToMeAgentsList.some(
-                                  (sharedAgent) =>
-                                    sharedAgent.externalId === agent.externalId,
-                                )
-                              }
-                              isMadeByMe={madeByMeAgentsList.some(
-                                (madeByMeAgent) =>
-                                  madeByMeAgent.externalId === agent.externalId,
-                              )}
-                              onToggleFavorite={toggleFavorite}
-                              onEdit={() => handleEditAgent(agent)}
-                              onDelete={() =>
-                                handleDeleteAgent(agent.externalId)
-                              }
-                              onClick={() =>
-                                navigate({
-                                  to: "/",
-                                  search: { agentId: agent.externalId },
-                                })
-                              }
-                            />
-                          ))}
+                          {paginatedList.map((agent) => {
+                            const isShared =
+                              (activeTab === "all" ||
+                                activeTab === "shared-to-me") &&
+                              sharedToMeAgentsList.some(
+                                (sharedAgent) =>
+                                  sharedAgent.externalId === agent.externalId,
+                              )
+
+                            return (
+                              <AgentListItem
+                                key={agent.externalId}
+                                agent={agent}
+                                isFavorite={favoriteAgents.includes(
+                                  agent.externalId,
+                                )}
+                                isAgentPublic={agent.isPublic}
+                                isShared={isShared}
+                                isMadeByMe={madeByMeAgentsList.some(
+                                  (madeByMeAgent) =>
+                                    madeByMeAgent.externalId ===
+                                    agent.externalId,
+                                )}
+                                onToggleFavorite={toggleFavorite}
+                                onEdit={() => handleEditAgent(agent)}
+                                onView={() => handleViewAgent(agent)}
+                                onDelete={() =>
+                                  handleDeleteAgent(agent.externalId)
+                                }
+                                onClick={() =>
+                                  navigate({
+                                    to: "/",
+                                    search: { agentId: agent.externalId },
+                                  })
+                                }
+                              />
+                            )
+                          })}
                         </div>
                         {totalPages > 1 && (
                           <div className="flex justify-between items-center mt-6">
@@ -2968,6 +3047,11 @@ function AgentComponent() {
                 </div>
               </div>
             </div>
+          ) : viewMode === "viewAgent" && viewingAgent ? (
+            <ViewAgent
+              agent={viewingAgent}
+              onBack={() => setViewMode("list")}
+            />
           ) : (
             <>
               <div className="flex items-center mb-4 w-full max-w-xl">
@@ -3130,15 +3214,15 @@ function AgentComponent() {
                       </p>
                     </div>
                     {/* <div className="flex items-center gap-3">
-                      <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        RAG
-                      </Label>
-                      <Switch
-                        checked={isRagOn}
-                        onCheckedChange={setIsRagOn}
-                        id="rag-toggle"
-                      />
-                    </div> */}
+                        <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          RAG
+                        </Label>
+                        <Switch
+                          checked={isRagOn}
+                          onCheckedChange={setIsRagOn}
+                          id="rag-toggle"
+                        />
+                      </div> */}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
                     {currentSelectedIntegrationObjects.length === 0 && (
@@ -3295,6 +3379,8 @@ function AgentComponent() {
                                                     // Extract the actual items from the Vespa response structure
                                                     const items =
                                                       data?.root?.children || []
+                                                    
+                                                    
                                                     setCurrentItems(items)
                                                     setIsLoadingItems(false)
                                                   })
@@ -3336,7 +3422,9 @@ function AgentComponent() {
                                             )
 
                                       return itemsToShow.map((item, index) => (
-                                        <React.Fragment key={item.id}>
+                                        <React.Fragment
+                                          key={`${item.id}-${index}`}
+                                        >
                                           <span className="mx-2 flex-shrink-0">
                                             /
                                           </span>
@@ -3353,6 +3441,7 @@ function AgentComponent() {
                                                   navigationPath.findIndex(
                                                     (p) => p.id === item.id,
                                                   )
+
                                                 if (newPathIndex >= 0) {
                                                   const newPath =
                                                     navigationPath.slice(
@@ -3368,7 +3457,9 @@ function AgentComponent() {
                                                   ) {
                                                     setCurrentItems([])
                                                   } else if (
-                                                    newPath.length > 1
+                                                    newPath.length > 1 &&
+                                                    newPath[0].type ===
+                                                      "cl-root"
                                                   ) {
                                                     const clId = newPath.find(
                                                       (item) =>
@@ -3420,6 +3511,35 @@ function AgentComponent() {
                                                           ),
                                                         )
                                                     }
+                                                  } else if (
+                                                    newPath.length === 1 &&
+                                                    newPath[0].type ===
+                                                      "drive-root"
+                                                  ) {
+                                                    navigateToGoogleDrive()
+                                                  } else if (
+                                                    newPath.length > 1 &&
+                                                    newPath[0].type ===
+                                                      "drive-root"
+                                                  ) {
+                                                    if (
+                                                      newPath[
+                                                        newPath.length - 1
+                                                      ].type === "drive-folder"
+                                                    ) {
+                                                      const FolderId =
+                                                        newPath[
+                                                          newPath.length - 1
+                                                        ].id
+                                                      const FolderName =
+                                                        newPath[
+                                                          newPath.length - 1
+                                                        ].name
+                                                      navigateToDriveFolder(
+                                                        FolderId,
+                                                        FolderName,
+                                                      )
+                                                    }
                                                   }
                                                 }
                                               }
@@ -3468,17 +3588,46 @@ function AgentComponent() {
 
                                 return (
                                   <>
-                                    {/* Regular integrations */}
+                                      {collections.length > 0 && (
+                                      <DropdownMenuItem
+                                        onSelect={(e) => {
+                                          e.preventDefault()
+                                          setNavigationPath([
+                                            {
+                                              id: "cl-root",
+                                              name: "Collections",
+                                              type: "cl-root",
+                                            },
+                                          ])
+                                          setDropdownSearchQuery("")
+                                        }}
+                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                      >
+                                        <div className="flex items-center">
+                                          <div className="w-4 h-4 mr-3">  </div>
+                                          <span className="mr-2 flex items-center">
+                                          <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
+                                          </span>
+                                          <span className="text-gray-700 dark:text-gray-200">
+                                            Collections
+                                          </span>
+                                        </div>
+                                        <ChevronRight className="h-4 w-4 text-gray-400" />
+                                      </DropdownMenuItem>
+                                    )}
+                                   
                                     {otherIntegrations.map((integration) => {
                                       const isGoogleDrive =
                                         integration.app === Apps.GoogleDrive &&
                                         integration.entity === "file"
                                       const showChevron = isGoogleDrive
+                                      
 
                                       return (
                                         <DropdownMenuItem
                                           key={integration.id}
                                           onSelect={(e) => {
+                                           
                                             e.preventDefault()
                                             toggleIntegrationSelection(
                                               integration.id,
@@ -3522,31 +3671,7 @@ function AgentComponent() {
                                       )
                                     })}
 
-                                    {/* Collections item */}
-                                    {collections.length > 0 && (
-                                      <DropdownMenuItem
-                                        onSelect={(e) => {
-                                          e.preventDefault()
-                                          setNavigationPath([
-                                            {
-                                              id: "cl-root",
-                                              name: "Collections",
-                                              type: "cl-root",
-                                            },
-                                          ])
-                                          setDropdownSearchQuery("")
-                                        }}
-                                        className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                      >
-                                        <div className="flex items-center">
-                                          <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
-                                          <span className="text-gray-700 dark:text-gray-200">
-                                            Collections
-                                          </span>
-                                        </div>
-                                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                                      </DropdownMenuItem>
-                                    )}
+
                                   </>
                                 )
                               })()
@@ -4152,6 +4277,7 @@ function AgentComponent() {
                                             setSelectedIntegrations={
                                               setSelectedIntegrations
                                             }
+                                            selectedIntegrations={selectedIntegrations}
                                           />
                                         )
                                       } else {
@@ -4552,10 +4678,12 @@ interface AgentListItemProps {
   isFavorite: boolean
   onToggleFavorite: (id: string) => void
   onEdit: () => void
+  onView: () => void
   onDelete: () => void
   onClick: () => void
   isShared?: boolean
   isMadeByMe?: boolean // New prop
+  isAgentPublic?: boolean
 }
 
 function AgentListItem({
@@ -4565,8 +4693,10 @@ function AgentListItem({
   isMadeByMe, // Added
   onToggleFavorite,
   onEdit,
+  onView,
   onDelete,
   onClick,
+  isAgentPublic,
 }: AgentListItemProps): JSX.Element {
   return (
     <div
@@ -4603,6 +4733,20 @@ function AgentListItem({
         </div>
       </div>
       <div className="flex items-center gap-3 ml-4 flex-shrink-0">
+        {(isShared || (isAgentPublic && !isMadeByMe)) && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation()
+              onView()
+            }}
+            className="h-8 w-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+            title="View Agent"
+          >
+            <Eye size={16} />
+          </Button>
+        )}
         {isMadeByMe && (
           <>
             <Button

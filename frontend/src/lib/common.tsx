@@ -8,7 +8,8 @@ import {
   Github,
   BookOpen,
   Globe,
-} from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github, BookOpen
+  File as FileIcon,
+} from "lucide-react" // Added FileText, CalendarDays, PlugZap, Github, BookOpen, File
 import DocsSvg from "@/assets/docs.svg" // Added this line
 import SlidesSvg from "@/assets/slides.svg"
 import SheetsSvg from "@/assets/sheets.svg"
@@ -21,6 +22,14 @@ import Slides from "@/assets/slides.svg"
 import Image from "@/assets/images.svg"
 import GoogleCalendarSvg from "@/assets/googleCalendar.svg"
 import SlackSvg from "@/assets/slack.svg"
+
+// Collection icon imports for file upload
+import TextIcon from "@/assets/collectionIcons/text.svg"
+import ImageIcon from "@/assets/collectionIcons/image.svg"
+import PdfIcon from "@/assets/collectionIcons/pdf.svg"
+import DocumentIcon from "@/assets/collectionIcons/document.svg"
+import SpreadsheetIcon from "@/assets/collectionIcons/spreadsheet.svg"
+import PresentationIcon from "@/assets/collectionIcons/ppt.svg"
 import type { Entity } from "shared/types"
 import {
   Apps,
@@ -33,8 +42,10 @@ import {
   SystemEntity,
   DataSourceEntity,
   WebSearchEntity,
+  FileType,
 } from "shared/types"
 import { LoadingSpinner } from "@/routes/_authenticated/admin/integrations/google"
+import { getFileType } from "shared/fileUtils"
 
 // Define placeholder entities if they don't exist in shared/types
 const PdfEntity = { Default: "pdf_default" } as const
@@ -150,6 +161,28 @@ export const getIcon = (
     return <FileText size={12} className={classNameVal} />
   } else {
     return <FileText size={12} className={classNameVal} /> // Generic fallback icon
+  }
+}
+
+// Icon mapping from FileType to SVG component
+export const getFileIcon = (file: File) => {
+  const fileType = getFileType({type: file.type, name: file.name})
+  
+  switch (fileType) {
+    case FileType.TEXT:
+      return <img src={TextIcon} alt="Text file" className="w-8 h-8" />
+    case FileType.IMAGE:
+      return <img src={ImageIcon} alt="Image file" className="w-8 h-8" />
+    case FileType.PDF:
+      return <img src={PdfIcon} alt="PDF file" className="w-8 h-8" />
+    case FileType.DOCUMENT:
+      return <img src={DocumentIcon} alt="Document file" className="w-8 h-8" />
+    case FileType.SPREADSHEET:
+      return <img src={SpreadsheetIcon} alt="Spreadsheet file" className="w-8 h-8" />
+    case FileType.PRESENTATION:
+      return <img src={PresentationIcon} alt="Presentation file" className="w-8 h-8" />
+    default:
+      return <FileIcon className="w-8 h-8 text-gray-500" />
   }
 }
 

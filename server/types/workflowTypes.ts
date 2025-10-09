@@ -13,8 +13,6 @@ export enum StepType {
 
 export enum ToolType {
   DELAY = "delay",
-  PYTHON_SCRIPT = "python_script",
-  SCRIPT = "script",
   SLACK = "slack",
   GMAIL = "gmail",
   AGENT = "agent",
@@ -24,6 +22,7 @@ export enum ToolType {
   AI_AGENT = "ai_agent",
   REVIEW = "review",
   TRIGGER = "trigger",
+  SCRIPT = "script",
 }
 
 export enum ToolExecutionStatus {

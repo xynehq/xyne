@@ -193,13 +193,10 @@ export class BedrockProvider extends BaseProvider {
       throw new Error("Invalid bedrock response")
     }
 
-    let fullResponse = response.output?.message?.content?.reduce(
-      (prev: string, current) => {
-        prev += current.text
-        return prev
-      },
-      "",
-    )
+    const contentBlocks = response.output?.message?.content ?? []
+    const fullResponse = contentBlocks
+      .map((block) => (typeof block?.text === "string" ? block.text : ""))
+      .join("")
     // Extract tool use calls if present
     const toolCalls = (response.output?.message?.content || [])
       .filter((c: any) => (c as any).toolUse)

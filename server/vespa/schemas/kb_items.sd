@@ -1,4 +1,12 @@
 schema kb_items {
+
+
+  struct chunk_meta {
+    field chunk_index type int {}
+    field page_numbers type array<int> {}
+    field block_labels type array<string> {}
+  }
+
   document kb_items {
 
     field docId type string {
@@ -62,12 +70,24 @@ schema kb_items {
       index { enable-bm25 }
     }
 
+
     field chunks_pos type array<long> {
       indexing: attribute | summary
     }
 
     field image_chunks_pos type array<long> {
       indexing: attribute | summary
+    }
+
+
+    field chunks_map type array<chunk_meta> {
+      indexing: summary
+      struct-field chunk_index { indexing: attribute | summary }
+    }
+
+    field image_chunks_map type array<chunk_meta> {
+      indexing: summary
+      struct-field chunk_index { indexing: attribute | summary }
     }
     
     field metadata type string {
