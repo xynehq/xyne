@@ -53,7 +53,7 @@ interface DocumentChatProps {
   onChatCreated?: (chatId: string) => void
   onChunkIndexChange?: (chunkIndex: number | null, documentId: string) => void
   uploadStatus?: UploadStatus
-  isKnowledgeBaseChat?: boolean | false
+  isKnowledgeBaseChat?: boolean 
 }
 
 const ChatMessage = React.memo(
@@ -462,7 +462,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
   onChatCreated,
   onChunkIndexChange,
   uploadStatus,
-  isKnowledgeBaseChat
+  isKnowledgeBaseChat = false,
 }) => {
   const { toast } = useToast()
   const queryClient = useQueryClient()

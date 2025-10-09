@@ -209,8 +209,8 @@ interface ChatBoxProps {
   user: PublicUser // Added user prop
   overrideIsRagOn?: boolean
   hideButtons?: boolean // Add prop to hide mark step as done section
-  uploadStatus?: UploadStatus,
-  isKnowledgeBaseChat?: boolean | false
+  uploadStatus?: UploadStatus
+  isKnowledgeBaseChat?: boolean 
 }
 
 const availableSources: SourceItem[] = [
@@ -378,7 +378,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
       uploadStatus,
-      isKnowledgeBaseChat
+      isKnowledgeBaseChat = false,
     } = props
     // Interface for fetched tools
     interface FetchedTool {
@@ -646,13 +646,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
 
     // Check if document is ready for chat based on upload status
-    const isDocumentReady = !uploadStatus || uploadStatus === UploadStatus.COMPLETED
-    
+    const isDocumentReady =
+      !uploadStatus || uploadStatus === UploadStatus.COMPLETED
+
     // Determine if send should be disabled
-    const isSendDisabled = isStreaming || 
-                          retryIsStreaming || 
-                          uploadingFilesCount > 0 ||
-                          !isDocumentReady
+    const isSendDisabled =
+      isStreaming ||
+      retryIsStreaming ||
+      uploadingFilesCount > 0 ||
+      !isDocumentReady
 
     // Helper function to get tooltip content for disabled send button
     const getSendButtonTooltipContent = (): string | undefined => {
@@ -828,10 +830,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     // File upload utility functions
 
     const uploadFiles = useCallback(
-      
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
-        if(isKnowledgeBaseChat){
+        if (isKnowledgeBaseChat) {
           return []
         }
         setUploadingFilesCount((prev) => prev + files.length)
@@ -916,7 +917,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [uploadingFilesCount])
     const processFiles = useCallback(
       (files: FileList | File[]) => {
-        if(isKnowledgeBaseChat){
+        if (isKnowledgeBaseChat) {
           return
         }
         // Check attachment limit
@@ -1993,157 +1994,159 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return () => document.removeEventListener("mousedown", handleOutsideClick)
     }, [showReferenceBox])
 
-    const handleSendMessage = useCallback(async (isFollowUp: boolean = false) => {
-      const activeSourceIds = Object.entries(selectedSources)
-        .filter(([, isSelected]) => isSelected)
-        .map(([id]) => id)
+    const handleSendMessage = useCallback(
+      async (isFollowUp: boolean = false) => {
+        const activeSourceIds = Object.entries(selectedSources)
+          .filter(([, isSelected]) => isSelected)
+          .map(([id]) => id)
 
-      let htmlMessage = inputRef.current?.innerHTML || ""
-      htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
-      htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "")
-      htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
+        let htmlMessage = inputRef.current?.innerHTML || ""
+        htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
+        htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "")
+        htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
 
-      let toolsListToSend: ToolsListItem[] | undefined = undefined
+        let toolsListToSend: ToolsListItem[] | undefined = undefined
 
-      // Build toolsList from all selected connectors
-      if (selectedConnectorIds.size > 0) {
-        const toolsListArray: ToolsListItem[] = []
+        // Build toolsList from all selected connectors
+        if (selectedConnectorIds.size > 0) {
+          const toolsListArray: ToolsListItem[] = []
 
-        // Include tools from all selected connectors
-        selectedConnectorIds.forEach((connectorId) => {
-          const toolsSet = selectedConnectorTools[connectorId]
+          // Include tools from all selected connectors
+          selectedConnectorIds.forEach((connectorId) => {
+            const toolsSet = selectedConnectorTools[connectorId]
 
-          if (toolsSet && toolsSet.size > 0) {
-            // Find the connector to get its internal connectorId
-            const connector = allConnectors.find((c) => c.id === connectorId)
-            if (connector) {
-              const toolsArray = Array.from(toolsSet)
-              toolsListArray.push({
-                connectorId: connector.connectorId.toString(), // Use internal DB id
-                tools: toolsArray,
-              })
-            }
-          }
-        })
-
-        // Only send toolsList if we actually have tools selected
-        if (
-          toolsListArray.length > 0 &&
-          toolsListArray.some((item) => item.tools.length > 0)
-        ) {
-          toolsListToSend = toolsListArray
-        }
-      }
-
-      // Handle Attachments Metadata
-      let attachmentsMetadata: AttachmentMetadata[] = []
-      if (selectedFiles.length > 0) {
-        if (uploadingFilesCount > 0) {
-          await new Promise<void>((resolve) => {
-            uploadCompleteResolver.current = resolve
-            if(uploadingFilesCount==0){
-              resolve();
-              uploadCompleteResolver.current=null
+            if (toolsSet && toolsSet.size > 0) {
+              // Find the connector to get its internal connectorId
+              const connector = allConnectors.find((c) => c.id === connectorId)
+              if (connector) {
+                const toolsArray = Array.from(toolsSet)
+                toolsListArray.push({
+                  connectorId: connector.connectorId.toString(), // Use internal DB id
+                  tools: toolsArray,
+                })
+              }
             }
           })
 
-        }
-        const alreadyUploadedMetadata = selectedFiles
-          .map((f) => f.metadata)
-          .filter((m): m is AttachmentMetadata => !!m)
-
-        attachmentsMetadata = alreadyUploadedMetadata
-      }
-
-      // Replace data-doc-id and data-reference-id with mailId
-      const tempDiv = document.createElement("div")
-      tempDiv.innerHTML = htmlMessage
-      const pills = tempDiv.querySelectorAll("a.reference-pill")
-
-      pills.forEach((pill) => {
-        const mailId = pill.getAttribute("data-mail-id")
-        const userMap = pill.getAttribute("user-map")
-        const threadId = pill.getAttribute("data-thread-id")
-        const docId =
-          pill.getAttribute("data-doc-id") ||
-          pill.getAttribute("data-reference-id")
-        if (userMap) {
-          try {
-            const parsedUserMap = JSON.parse(userMap)
-            if (user?.email && parsedUserMap[user.email]) {
-              pill.setAttribute(
-                "href",
-                `https://mail.google.com/mail/u/0/#inbox/${parsedUserMap[user.email]}`,
-              )
-            } else {
-              console.warn(
-                `No mapping found for user email: ${user?.email} in userMap.`,
-              )
-            }
-          } catch (error) {
-            console.error("Failed to parse userMap:", error)
+          // Only send toolsList if we actually have tools selected
+          if (
+            toolsListArray.length > 0 &&
+            toolsListArray.some((item) => item.tools.length > 0)
+          ) {
+            toolsListToSend = toolsListArray
           }
         }
 
-        if (mailId) {
-          pill.setAttribute("data-doc-id", mailId)
-          pill.setAttribute("data-reference-id", mailId)
-          pill.setAttribute("data-thread-id", threadId || "")
-        } else {
-          console.warn(
-            `No mailId found for pill with docId: ${docId}. Skipping replacement.`,
-          )
+        // Handle Attachments Metadata
+        let attachmentsMetadata: AttachmentMetadata[] = []
+        if (selectedFiles.length > 0) {
+          if (uploadingFilesCount > 0) {
+            await new Promise<void>((resolve) => {
+              uploadCompleteResolver.current = resolve
+              if (uploadingFilesCount == 0) {
+                resolve()
+                uploadCompleteResolver.current = null
+              }
+            })
+          }
+          const alreadyUploadedMetadata = selectedFiles
+            .map((f) => f.metadata)
+            .filter((m): m is AttachmentMetadata => !!m)
+
+          attachmentsMetadata = alreadyUploadedMetadata
         }
-      })
 
-      htmlMessage = tempDiv.innerHTML
+        // Replace data-doc-id and data-reference-id with mailId
+        const tempDiv = document.createElement("div")
+        tempDiv.innerHTML = htmlMessage
+        const pills = tempDiv.querySelectorAll("a.reference-pill")
 
-      // Prepare model configuration with capability flags
-      const modelConfig = {
-        model: selectedModel,
-        reasoning: selectedCapability === "reasoning",
-        websearch: selectedCapability === "websearch",
-        deepResearch: selectedCapability === "deepResearch",
-      }
+        pills.forEach((pill) => {
+          const mailId = pill.getAttribute("data-mail-id")
+          const userMap = pill.getAttribute("user-map")
+          const threadId = pill.getAttribute("data-thread-id")
+          const docId =
+            pill.getAttribute("data-doc-id") ||
+            pill.getAttribute("data-reference-id")
+          if (userMap) {
+            try {
+              const parsedUserMap = JSON.parse(userMap)
+              if (user?.email && parsedUserMap[user.email]) {
+                pill.setAttribute(
+                  "href",
+                  `https://mail.google.com/mail/u/0/#inbox/${parsedUserMap[user.email]}`,
+                )
+              } else {
+                console.warn(
+                  `No mapping found for user email: ${user?.email} in userMap.`,
+                )
+              }
+            } catch (error) {
+              console.error("Failed to parse userMap:", error)
+            }
+          }
 
-      handleSend(
-        htmlMessage,
-        attachmentsMetadata,
-        activeSourceIds.length > 0 ? activeSourceIds : undefined,
+          if (mailId) {
+            pill.setAttribute("data-doc-id", mailId)
+            pill.setAttribute("data-reference-id", mailId)
+            pill.setAttribute("data-thread-id", threadId || "")
+          } else {
+            console.warn(
+              `No mailId found for pill with docId: ${docId}. Skipping replacement.`,
+            )
+          }
+        })
+
+        htmlMessage = tempDiv.innerHTML
+
+        // Prepare model configuration with capability flags
+        const modelConfig = {
+          model: selectedModel,
+          reasoning: selectedCapability === "reasoning",
+          websearch: selectedCapability === "websearch",
+          deepResearch: selectedCapability === "deepResearch",
+        }
+
+        handleSend(
+          htmlMessage,
+          attachmentsMetadata,
+          activeSourceIds.length > 0 ? activeSourceIds : undefined,
+          persistedAgentId,
+          toolsListToSend,
+          JSON.stringify(modelConfig), // Send model config as JSON string
+          isFollowUp,
+        )
+
+        // Clear the input and attached files after sending
+        if (inputRef.current) {
+          inputRef.current.innerHTML = ""
+        }
+        setQuery("")
+
+        // Cleanup preview URLs before clearing files
+        const previewUrls = selectedFiles
+          .map((f) => f.preview)
+          .filter(Boolean) as string[]
+        cleanupPreviewUrls(previewUrls)
+        setSelectedFiles([])
+      },
+      [
+        selectedSources,
+        selectedConnectorIds,
+        selectedConnectorTools,
+        allConnectors,
+        selectedFiles,
         persistedAgentId,
-        toolsListToSend,
-        JSON.stringify(modelConfig), // Send model config as JSON string
-        isFollowUp,
-      )
-
-      // Clear the input and attached files after sending
-      if (inputRef.current) {
-        inputRef.current.innerHTML = ""
-      }
-      setQuery("")
-
-      // Cleanup preview URLs before clearing files
-      const previewUrls = selectedFiles
-        .map((f) => f.preview)
-        .filter(Boolean) as string[]
-      cleanupPreviewUrls(previewUrls)
-      setSelectedFiles([])
-    }, [
-      selectedSources,
-      selectedConnectorIds,
-      selectedConnectorTools,
-      allConnectors,
-      selectedFiles,
-      persistedAgentId,
-      selectedModel,
-      selectedCapability,
-      handleSend,
-      uploadFiles,
-      user,
-      setQuery,
-      setSelectedFiles,
-      cleanupPreviewUrls,
-    ])
+        selectedModel,
+        selectedCapability,
+        handleSend,
+        uploadFiles,
+        user,
+        setQuery,
+        setSelectedFiles,
+        cleanupPreviewUrls,
+      ],
+    )
 
     const handleSourceSelectionChange = (
       sourceId: string,
@@ -2930,26 +2933,27 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           )}
 
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-            {!isKnowledgeBaseChat && <SmartTooltip content="attachment">
-              <Attach
-                className={`${
-                  selectedFiles.length >= MAX_ATTACHMENTS
-                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                    : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
-                } transition-colors`}
-                onClick={
-                  selectedFiles.length >= MAX_ATTACHMENTS
-                    ? undefined
-                    : handleFileSelect
-                }
-                title={
-                  selectedFiles.length >= MAX_ATTACHMENTS
-                    ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
-                    : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
-                }
-              />
-            </SmartTooltip>
-  }
+            {!isKnowledgeBaseChat && (
+              <SmartTooltip content="attachment">
+                <Attach
+                  className={`${
+                    selectedFiles.length >= MAX_ATTACHMENTS
+                      ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                      : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
+                  } transition-colors`}
+                  onClick={
+                    selectedFiles.length >= MAX_ATTACHMENTS
+                      ? undefined
+                      : handleFileSelect
+                  }
+                  title={
+                    selectedFiles.length >= MAX_ATTACHMENTS
+                      ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
+                      : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
+                  }
+                />
+              </SmartTooltip>
+            )}
 
             {showAdvancedOptions && (
               <>
@@ -3926,7 +3930,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               </button>
             ) : (
               (() => {
-                const tooltipContent = isSendDisabled ? getSendButtonTooltipContent() : undefined;
+                const tooltipContent = isSendDisabled
+                  ? getSendButtonTooltipContent()
+                  : undefined
                 const button = (
                   <button
                     disabled={isSendDisabled}
@@ -3942,9 +3948,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       />
                     )}
                   </button>
-                );
+                )
 
-                return tooltipContent ? <SmartTooltip content={tooltipContent}>{button}</SmartTooltip> : button;
+                return tooltipContent ? (
+                  <SmartTooltip content={tooltipContent}>{button}</SmartTooltip>
+                ) : (
+                  button
+                )
               })()
             )}
           </div>
