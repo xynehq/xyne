@@ -1193,7 +1193,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             lowerIntegration.startsWith("ds_")
           ) {
             // ds- is the prefix for datasource externalId
-            agentSpecificDataSourceIds.push(...expandSheetIds(integration))
+            agentSpecificDataSourceIds.push(integration)
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
@@ -1255,14 +1255,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         agentPromptData.appIntegrations,
       )
       // Use selectedApps and selectedItems
-      for (const app in selectedItems) {
-        const fileIds = selectedItems[app];
-        // Expand each fileId and flatten
-        if(app !== Apps.KnowledgeBase) {
-          selectedItems[app] = fileIds.flatMap(expandSheetIds);
-        }
-      }
-
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
@@ -2404,7 +2396,7 @@ async function* generatePointQueryTimeExpansion(
             lowerIntegration.startsWith("ds-") ||
             lowerIntegration.startsWith("ds_")
           ) {
-            agentSpecificDataSourceIds.push(...expandSheetIds(integration))
+            agentSpecificDataSourceIds.push(integration)
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
@@ -2465,14 +2457,6 @@ async function* generatePointQueryTimeExpansion(
         agentPromptData.appIntegrations,
       )
       // Use selectedApps and selectedItems
-      for (const app in selectedItems) {
-        const fileIds = selectedItems[app];
-        // Expand each fileId and flatten
-        if(app !== Apps.KnowledgeBase) {
-          selectedItems[app] = fileIds.flatMap(expandSheetIds);
-        }
-      }
-
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
@@ -3006,7 +2990,7 @@ async function* generateMetadataQueryAnswer(
             lowerIntegration.startsWith("ds-") ||
             lowerIntegration.startsWith("ds_")
           ) {
-            agentSpecificDataSourceIds.push(...expandSheetIds(integration))
+            agentSpecificDataSourceIds.push(integration)
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
             }
@@ -3066,14 +3050,6 @@ async function* generateMetadataQueryAnswer(
         agentPromptData.appIntegrations,
       )
       // Use selectedApps and selectedItems
-      for (const app in selectedItems) {
-        const fileIds = selectedItems[app];
-        // Expand each fileId and flatten
-        if(app !== Apps.KnowledgeBase) {
-          selectedItems[app] = fileIds.flatMap(expandSheetIds);
-        }
-      }
-      
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
       agentAppEnums = [...new Set(selectedApps)]
