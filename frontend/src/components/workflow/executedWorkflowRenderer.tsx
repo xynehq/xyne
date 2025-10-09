@@ -81,11 +81,12 @@ const StepNode: React.FC<NodeProps> = ({
   isConnectable,
   selected,
 }) => {
-  const { step, isActive, isCompleted, tools } = data as {
+  const { step, isActive, isCompleted, tools, toolExecutions } = data as {
     step: Step
     isActive?: boolean
     isCompleted?: boolean
     tools?: Tool[]
+    toolExecutions?: any[]
   }
 
   // Special rendering for steps with review tools (same as builder mode)
@@ -99,6 +100,15 @@ const StepNode: React.FC<NodeProps> = ({
     const isConfigured = reviewConfig.approved && reviewConfig.rejected
     const isAwaitingReview = step.status === "active"
     const isReviewCompleted = step.status === "completed"
+    
+    // Get review decision from tool execution results when completed
+    let reviewDecision = null
+    if (isReviewCompleted && toolExecutions) {
+      const reviewToolExecution = toolExecutions.find((toolExec: any) => 
+        toolExec.result && (toolExec.result.input === "approved" || toolExec.result.input === "rejected")
+      )
+      reviewDecision = reviewToolExecution?.result?.input
+    }
 
     return (
       <>
@@ -106,6 +116,10 @@ const StepNode: React.FC<NodeProps> = ({
           className={`relative cursor-pointer hover:shadow-lg transition-all ${
             isAwaitingReview
               ? "bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600"
+              : isReviewCompleted && reviewDecision === "approved"
+              ? "bg-green-50 dark:bg-green-900/20 border-2 border-green-300 dark:border-green-600"
+              : isReviewCompleted && reviewDecision === "rejected"
+              ? "bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-600"
               : isReviewCompleted
               ? "bg-green-50 dark:bg-green-900/20 border-2 border-green-300 dark:border-green-600"
               : "bg-white dark:bg-gray-800 border-2"
@@ -114,6 +128,10 @@ const StepNode: React.FC<NodeProps> = ({
               ? "border-purple-600 shadow-xl shadow-purple-500/15" 
               : isAwaitingReview
               ? "border-amber-300 dark:border-amber-600"
+              : isReviewCompleted && reviewDecision === "approved"
+              ? "border-green-300 dark:border-green-600"
+              : isReviewCompleted && reviewDecision === "rejected"
+              ? "border-red-300 dark:border-red-600"
               : isReviewCompleted
               ? "border-green-300 dark:border-green-600"
               : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
@@ -124,6 +142,10 @@ const StepNode: React.FC<NodeProps> = ({
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
               isAwaitingReview 
                 ? "bg-amber-100 dark:bg-amber-800" 
+                : isReviewCompleted && reviewDecision === "approved"
+                ? "bg-green-100 dark:bg-green-800"
+                : isReviewCompleted && reviewDecision === "rejected"
+                ? "bg-red-100 dark:bg-red-800"
                 : isReviewCompleted
                 ? "bg-green-100 dark:bg-green-800"
                 : "bg-orange-100 dark:bg-orange-800"
@@ -132,6 +154,10 @@ const StepNode: React.FC<NodeProps> = ({
                 className={`w-4 h-4 ${
                   isAwaitingReview 
                     ? "text-amber-600 dark:text-amber-300" 
+                    : isReviewCompleted && reviewDecision === "approved"
+                    ? "text-green-600 dark:text-green-300"
+                    : isReviewCompleted && reviewDecision === "rejected"
+                    ? "text-red-600 dark:text-red-300"
                     : isReviewCompleted
                     ? "text-green-600 dark:text-green-300"
                     : "text-orange-600 dark:text-orange-300"
@@ -167,6 +193,15 @@ const StepNode: React.FC<NodeProps> = ({
                   Action Required
                 </div>
               )}
+              {isReviewCompleted && reviewDecision && (
+                <div className={`text-xs font-medium ${
+                  reviewDecision === "approved" 
+                    ? "text-green-600 dark:text-green-400" 
+                    : "text-red-600 dark:text-red-400"
+                }`}>
+                  {reviewDecision === "approved" ? "✓ Approved" : "✗ Rejected"}
+                </div>
+              )}
             </div>
           </div>
 
@@ -181,7 +216,10 @@ const StepNode: React.FC<NodeProps> = ({
                 if (isAwaitingReview) {
                   return "Review is required to continue the workflow. Click to approve or reject."
                 }
-              
+                
+                if (isReviewCompleted && reviewDecision) {
+                  return `Review has been ${reviewDecision}. The workflow will continue on the ${reviewDecision} path.`
+                }
                 
                 if (isConfigured) {
                   return `Review step configured with approval and rejection paths.`
@@ -2012,12 +2050,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   // Update local data when selectedTemplate changes
   useEffect(() => {
     console.log("📝 selectedTemplate changed, updating workflowData:", {
-      selectedTemplateId: selectedTemplate?.id,
-      selectedTemplateStatus: selectedTemplate?.status,
-      stepExecutionsCount: selectedTemplate?.stepExecutions?.length
+      selectedTemplate
+      
     })
     setWorkflowData(selectedTemplate || null)
   }, [selectedTemplate])
+
+  // Fetch workflow status when component mounts
+  useEffect(() => {
+    if (selectedTemplate?.id) {
+      console.log("🚀 Component mounted, fetching initial workflow status for:", selectedTemplate.id)
+      fetchWorkflowStatus(selectedTemplate.id)
+    }
+  }, []) // Empty dependency array means this runs only on mount
 
   // Empty initial state
   const initialNodes: Node[] = []
@@ -2195,7 +2240,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               contents: [],
               metadata: step.metadata,
               isExecution,
-              toolExecutions: isExecution ? toolExecutions : undefined,
               // Properly extract prevStepIds and nextStepIds for executions
               prevStepIds: step.prevStepIds || [],
               nextStepIds: step.nextStepIds || [],
@@ -2204,6 +2248,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 : step.id,
             },
             tools: stepTools,
+            toolExecutions: isExecution ? toolExecutions : undefined,
             isActive: isExecution && (step as any).status === "running",
             isCompleted: isExecution && (step as any).status === "completed",
             hasNext: hasNextFlag, // Show plus button on last step
@@ -2597,17 +2642,43 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       
       console.log("📊 Extracted execution data:", extractedData)
       
-      // Update UI with fresh execution data
-      if (extractedData && onTemplateUpdate) {
-        onTemplateUpdate(extractedData)
+      // Removed onTemplateUpdate call to prevent parent component interference
+      
+      // Consume full polling response and normalize for UI compatibility
+      console.log("🔄 Raw polling response structure:", {
+        extractedDataKeys: Object.keys(extractedData || {}),
+        stepExecutionsCount: extractedData?.stepExecutions?.length,
+        workflowToolsCount: extractedData?.workflow_tools?.length,
+        hasSteps: !!extractedData?.steps,
+        status: extractedData?.status
+      })
+      
+      // Transform polling response to ensure UI compatibility  
+      const normalizedData = {
+        ...extractedData, // Use full polling response as base
+        // Explicitly ensure critical arrays are never undefined
+        stepExecutions: Array.isArray(extractedData?.stepExecutions) ? extractedData.stepExecutions : [],
+        toolExecutions: Array.isArray(extractedData?.toolExecutions) ? extractedData.toolExecutions : [],
+        workflow_tools: Array.isArray(extractedData?.workflow_tools) ? extractedData.workflow_tools : [],
+        // Ensure required fields exist
+        status: extractedData?.status || 'pending',
+        id: extractedData?.id || '',
+        name: extractedData?.name || 'Untitled Workflow',
+        // Preserve metadata and other important fields
+        metadata: extractedData?.metadata || {},
+        workflowTemplateId: extractedData?.workflowTemplateId || '',
+        rootWorkflowStepExeId: extractedData?.rootWorkflowStepExeId || ''
       }
       
-      // Update local workflow data to trigger re-renders
-      console.log("🔄 Updating workflowData with new polling data:", {
-        stepExecutionsCount: extractedData?.stepExecutions?.length,
-        newStepStatuses: extractedData?.stepExecutions?.map((s: any) => ({ id: s.id, status: s.status }))
+      console.log("✅ Normalized polling data:", {
+        stepExecutionsCount: normalizedData.stepExecutions?.length,
+        workflowToolsCount: normalizedData.workflow_tools?.length,
+        stepsCount: normalizedData.steps?.length,
+        toolExecutionsCount: normalizedData.toolExecutions?.length,
+        status: normalizedData.status
       })
-      setWorkflowData(extractedData)
+      
+      setWorkflowData(normalizedData)
       
       // Check if workflow is completed or failed at workflow level
       if (extractedData.status === 'completed' || extractedData.status === 'failed') {
@@ -2630,52 +2701,52 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           return extractedData
         }
         
-        // Find steps requiring user action (manual steps or active steps waiting for user interaction)
-        const manualStep = extractedData.stepExecutions.find((step: any) => 
-          step.type?.toLowerCase() === 'manual' && step.status !== 'completed'
-        )
+        // Find steps that are active and require manual intervention (trigger, review, etc.)
+        const activeManualStep = extractedData.stepExecutions.find((step: any) => {
+          if (step.status !== 'active') return false
+          
+          // Check if step has manual tools (trigger or review)
+          const stepTools = extractedData.workflow_tools?.filter((tool: any) =>
+            step.workflow_tool_ids?.includes(tool.id)
+          ) || []
+          
+          const hasManualTool = stepTools.some((tool: any) => 
+            tool.type === "trigger" || tool.type === "review"
+          )
+          
+          return hasManualTool
+        })
         
-        // Find steps that are active and waiting for user action (review, trigger, etc.)
-        const activeUserStep = extractedData.stepExecutions.find((step: any) => 
-          step.status === 'active'
-        )
         
-        if (manualStep) {
-          console.log("🔍 Manual step found:", {
-            stepId: manualStep.id,
-            stepName: manualStep.name,
-            stepType: manualStep.type,
-            stepStatus: manualStep.status
+        // 1) Stop execution when active step is manual
+        if (activeManualStep) {
+          console.log("🛑 Manual step found - STOPPING execution:", {
+            stepId: activeManualStep.id,
+            stepName: activeManualStep.name,
+            stepStatus: activeManualStep.status,
+            toolTypes: extractedData.workflow_tools?.filter((tool: any) =>
+              activeManualStep.workflow_tool_ids?.includes(tool.id)
+            ).map((tool: any) => tool.type)
           })
           
-          // Show appropriate UI for manual steps
-          console.log("🔧 Opening manual step UI")
-          setSelectedTriggerStepId(manualStep.id)
-          setShowTriggerExecutionUI(true)
+          // Determine which UI to show based on tool type
+          const stepTools = extractedData.workflow_tools?.filter((tool: any) =>
+            activeManualStep.workflow_tool_ids?.includes(tool.id)
+          ) || []
           
-          // Continue polling at longer intervals for manual steps
-          console.log("⏰ Continuing polling at 10 second intervals for manual step")
-          pollingTimeoutRef.current = setTimeout(() => {
-            fetchWorkflowStatus(executionId)
-          }, 10000)
+          const hasTriggerTool = stepTools.some((tool: any) => tool.type === "trigger")
+          const hasReviewTool = stepTools.some((tool: any) => tool.type === "review")
           
-          return extractedData
-        }
-        
-        if (activeUserStep) {
-          console.log("🔍 Active user step found:", {
-            stepId: activeUserStep.id,
-            stepName: activeUserStep.name,
-            stepType: activeUserStep.type,
-            stepStatus: activeUserStep.status
-          })
+          if (hasTriggerTool) {
+            setSelectedTriggerStepId(activeManualStep.id)
+            setShowTriggerExecutionUI(true)
+          } else if (hasReviewTool) {
+            setSelectedReviewStepId(activeManualStep.id)
+            setShowReviewExecutionUI(true)
+          }
           
-          // Continue polling at longer intervals for active steps requiring user action
-          console.log("⏰ Continuing polling at 10 second intervals for active user step")
-          pollingTimeoutRef.current = setTimeout(() => {
-            fetchWorkflowStatus(executionId)
-          }, 10000)
-          
+          // STOP polling - don't continue until manual action is taken
+          console.log("⏹️ STOPPING polling - waiting for manual action")
           return extractedData
         }
         

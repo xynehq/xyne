@@ -2650,7 +2650,7 @@ const executeWorkflowTool = async (
               result: {
                 output: executionResult.output,
                 consoleLogs: executionResult.consoleLogs,
-                exportedFiles: executionResult.extractedFiles,
+                extractedFiles: executionResult.extractedFiles,
                 language: language,
                 exitCode: executionResult.exitCode,
                 processedAt: new Date().toISOString(),
@@ -4475,7 +4475,7 @@ export const DownloadReviewFilesApi = async (c: Context) => {
     const zip = new JSZip()
     
     // Use the correct directory structure as mentioned by user
-    const baseDir = path.resolve(process.cwd(), "script_executor_utils", executionId)
+    const baseDir = path.resolve(process.cwd(), "script_executor_utils","workflow_files", executionId)
     
     let filesAdded = 0
     const errors: string[] = []
