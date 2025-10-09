@@ -170,26 +170,47 @@ schema file {
     }
 
     function vector_score() {
-      expression: closeness(field, chunk_embeddings) + closeness(field, image_chunk_embeddings)
+      expression: closeness(field, chunk_embeddings)
     }
 
     function combined_bm25() {
-      expression: bm25(title) + bm25(chunks) + bm25(image_chunks)
+      expression: bm25(title) + bm25(chunks)
     }
 
     function matchedFieldCount() {
       expression {
         # The `matches` returns 1 if the field contains a match, otherwise 0
-        matches(title) + matches(chunks) + matches(image_chunks)
+        matches(title) + matches(chunks)
       }
     }
 
     function combined_nativeRank() {
-      expression: (nativeRank(title) + nativeRank(chunks) + nativeRank(image_chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
+      expression: (nativeRank(title) + nativeRank(chunks)) / if(matchedFieldCount == 0, 1, matchedFieldCount)
     }
 
     function chunk_scores() {
       expression: elementwise(bm25(chunks), x, double)
+    }
+  }
+
+  rank-profile initial_image inherits initial {
+    function vector_score_image() {
+      expression: vector_score() + closeness(field, image_chunk_embeddings)
+    }
+
+    function combined_bm25_image() {
+      expression: combined_bm25() + bm25(image_chunks)
+    }
+
+    function matchedFieldCount_image() {
+      expression {
+        # The `matches` returns 1 if the field contains a match, otherwise 0
+        matchedFieldCount() + matches(image_chunks)
+      }
+    }
+
+    function combined_nativeRank_image() {
+      expression: (nativeRank(title) + nativeRank(chunks) + nativeRank(image_chunks)) / if(matchedFieldCount_image == 0, 1, matchedFieldCount_image)
     }
 
     function image_chunk_scores() {
@@ -202,6 +223,33 @@ schema file {
 
     first-phase {
       expression: (query(alpha) * vector_score) + ((1 - query(alpha)) *  combined_nativeRank)
+    }
+
+    global-phase {
+      expression {
+        (
+          (query(alpha) * vector_score) + 
+          ((1 - query(alpha)) *  combined_nativeRank)
+        ) * doc_recency
+      }
+      rerank-count: 1000
+    }
+
+    match-features {
+      matchedFieldCount
+      vector_score
+      combined_nativeRank
+      nativeRank(title)
+      nativeRank(chunks)
+      chunk_scores
+      doc_recency
+    }
+  }
+
+  rank-profile default_native_image inherits initial_image {
+
+    first-phase {
+      expression: (query(alpha) * (vector_score + )) + ((1 - query(alpha)) *  combined_nativeRank)
     }
 
     global-phase {
@@ -290,7 +338,6 @@ schema file {
       nativeRank(title)
       nativeRank(chunks)
       chunk_scores
-      image_chunk_scores
       document_age_days_gs
       query(bin_size_days_gs)  
       recency_bin_index_gs
@@ -327,7 +374,6 @@ schema file {
       bm25(title)
       scale(combined_bm25)
       chunk_scores
-      image_chunk_scores
     }
   }
 
@@ -354,7 +400,6 @@ schema file {
       nativeRank(title)
       nativeRank(chunks)
       chunk_scores
-      image_chunk_scores
       doc_recency
     }
   }
@@ -369,7 +414,6 @@ schema file {
       nativeRank(title)
       nativeRank(chunks)
       chunk_scores
-      image_chunk_scores
       doc_recency
     }
   }
