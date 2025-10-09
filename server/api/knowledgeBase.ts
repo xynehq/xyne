@@ -119,6 +119,13 @@ const MAX_FILES_PER_REQUEST = 100 // Maximum files per upload request
   }
 })()
 
+// Duplicate handling strategies
+enum DuplicateStrategy {
+  SKIP = "skip",
+  RENAME = "rename",
+  OVERWRITE = "overwrite",
+}
+
 // Schema definitions for Knowledge Base feature
 const createCollectionSchema = z.object({
   name: z.string().min(1).max(255),
@@ -184,6 +191,22 @@ const listCollectionsQuerySchema = z.object({
   includeItems: z.string().optional(),
 })
 
+// Form schemas for file upload endpoints
+// Note: 'files' and 'paths' fields are validated manually in the handler
+// because they are File objects and string arrays that can't be effectively
+// validated with Zod schemas (size, MIME type, binary content validation required)
+const uploadFilesFormSchema = z.object({
+  parentId: z.string().optional().nullable(),
+  duplicateStrategy: z
+    .enum([
+      DuplicateStrategy.SKIP,
+      DuplicateStrategy.RENAME,
+      DuplicateStrategy.OVERWRITE,
+    ])
+    .optional(),
+  sessionId: z.string().optional().nullable(),
+})
+
 // Export schemas for use in server.ts
 export {
   createCollectionSchema,
@@ -199,6 +222,7 @@ export {
   fileOperationParamsSchema,
   chunkContentParamsSchema,
   listCollectionsQuerySchema,
+  uploadFilesFormSchema,
 }
 
 // Helper functions
@@ -950,13 +974,6 @@ export const CreateFolderApi = async (c: Context) => {
       message: "Failed to create folder",
     })
   }
-}
-
-// Duplicate handling strategies
-enum DuplicateStrategy {
-  SKIP = "skip",
-  RENAME = "rename",
-  OVERWRITE = "overwrite",
 }
 
 // Helper function to generate unique name

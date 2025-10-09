@@ -290,6 +290,7 @@ import {
   fileOperationParamsSchema,
   chunkContentParamsSchema,
   listCollectionsQuerySchema,
+  uploadFilesFormSchema,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -1264,18 +1265,11 @@ export const AppRoutes = app
   .post(
     "/cl/:clId/items/upload",
     zValidator("param", collectionParamsSchema),
+    zValidator("form", uploadFilesFormSchema),
     UploadFilesApi,
   )
-  .post(
-    "/cl/:clId/items/upload/batch",
-    zValidator("param", collectionParamsSchema),
-    UploadFilesApi,
-  ) // Batch upload endpoint
-  .post(
-    "/cl/:clId/items/upload/complete",
-    zValidator("param", collectionParamsSchema),
-    UploadFilesApi,
-  ) // Complete batch session
+  .post("/cl/:clId/items/upload/batch", UploadFilesApi) // Batch upload endpoint
+  .post("/cl/:clId/items/upload/complete", UploadFilesApi) // Complete batch session
   .delete(
     "/cl/:clId/items/:itemId",
     zValidator("param", deleteItemParamsSchema),
@@ -1527,6 +1521,7 @@ app
   .post(
     "/cl/:clId/items/upload",
     zValidator("param", collectionParamsSchema),
+    zValidator("form", uploadFilesFormSchema),
     UploadFilesApi,
   ) // Upload files to KB
   .delete(
