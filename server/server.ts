@@ -289,6 +289,7 @@ import {
   deleteItemParamsSchema,
   fileOperationParamsSchema,
   chunkContentParamsSchema,
+  listCollectionsQuerySchema,
 } from "@/api/knowledgeBase"
 import {
   searchKnowledgeBaseSchema,
@@ -1211,7 +1212,11 @@ export const AppRoutes = app
 
   // Collection Routes
   .post("/cl", zValidator("json", createCollectionSchema), CreateCollectionApi)
-  .get("/cl", ListCollectionsApi)
+  .get(
+    "/cl",
+    zValidator("query", listCollectionsQuerySchema),
+    ListCollectionsApi,
+  )
   .get(
     "/cl/search",
     zValidator("query", searchKnowledgeBaseSchema),
@@ -1497,18 +1502,38 @@ app
     zValidator("json", updateAgentSchema), // Update Agent
     UpdateAgentApi,
   )
-  .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
+  .delete(
+    "/agent/:agentExternalId",
+    zValidator("param", getAgentParamsSchema),
+    DeleteAgentApi,
+  ) // Delete Agent
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
-  .post("/cl", CreateCollectionApi) // Create collection (KB)
-  .get("/cl", ListCollectionsApi) // List all collections
+  .post("/cl", zValidator("json", createCollectionSchema), CreateCollectionApi) // Create collection (KB)
+  .get(
+    "/cl",
+    zValidator("query", listCollectionsQuerySchema),
+    ListCollectionsApi,
+  ) // List all collections
   .get(
     "/cl/search",
     zValidator("query", searchKnowledgeBaseSchema), // Search over KB
     SearchKnowledgeBaseApi,
   )
-  .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
-  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB
-  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB
+  .delete(
+    "/cl/:clId",
+    zValidator("param", collectionParamsSchema),
+    DeleteCollectionApi,
+  ) // Delete collection (KB)
+  .post(
+    "/cl/:clId/items/upload",
+    zValidator("param", collectionParamsSchema),
+    UploadFilesApi,
+  ) // Upload files to KB
+  .delete(
+    "/cl/:clId/items/:itemId",
+    zValidator("param", deleteItemParamsSchema),
+    DeleteItemApi,
+  ) // Delete Item in KB
 
 const generateTokens = async (
   email: string,

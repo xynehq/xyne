@@ -179,6 +179,11 @@ const chunkContentParamsSchema = z.object({
   itemId: z.string().min(1),
 })
 
+const listCollectionsQuerySchema = z.object({
+  ownOnly: z.string().optional(),
+  includeItems: z.string().optional(),
+})
+
 // Export schemas for use in server.ts
 export {
   createCollectionSchema,
@@ -193,6 +198,7 @@ export {
   deleteItemParamsSchema,
   fileOperationParamsSchema,
   chunkContentParamsSchema,
+  listCollectionsQuerySchema,
 }
 
 // Helper functions
