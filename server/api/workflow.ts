@@ -2707,6 +2707,55 @@ export const CreateWorkflowToolApi = async (c: Context) => {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const requestData = await c.req.json()
 
+    // For JIRA tools, check if a tool with the same webhook URL already exists
+    if (requestData.type === 'jira') {
+      const productionWebhookUrl = requestData.config?.productionWebhookUrl || requestData.value?.productionWebhookUrl || requestData.value?.webhookUrl
+      const webhookId = requestData.config?.webhookId || requestData.value?.webhookId
+
+      if (productionWebhookUrl || webhookId) {
+        // Get all JIRA tools
+        const existingJiraTools = await db
+          .select()
+          .from(workflowTool)
+          .where(eq(workflowTool.type, 'jira'))
+
+        // Check if any tool has the same webhook URL or ID
+        const duplicateTool = existingJiraTools.find((tool) => {
+          const config = tool.config as any
+          const value = tool.value as any
+
+          const existingProductionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+          const existingWebhookId = config?.webhookId || value?.webhookId
+
+          // Check if webhook URL matches
+          if (productionWebhookUrl && existingProductionUrl === productionWebhookUrl) {
+            return true
+          }
+
+          // Check if webhook ID matches
+          if (webhookId && existingWebhookId === webhookId) {
+            return true
+          }
+
+          return false
+        })
+
+        if (duplicateTool) {
+          Logger.warn({
+            existingToolId: duplicateTool.id,
+            productionWebhookUrl,
+            webhookId,
+          }, "⚠️ JIRA tool with same webhook URL already exists, returning existing tool instead of creating duplicate")
+
+          return c.json({
+            success: true,
+            data: duplicateTool,
+            message: "Tool with this webhook already exists",
+          })
+        }
+      }
+    }
+
     const [tool] = await db
       .insert(workflowTool)
       .values({
@@ -3395,6 +3444,890 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
 export const GetGeminiModelEnumsApi = async (c: Context) => {
   Logger.warn("GetGeminiModelEnumsApi is deprecated, use GetVertexAIModelEnumsApi instead")
   return GetVertexAIModelEnumsApi(c)
+}
+
+// Test Jira connection
+export const TestJiraConnectionApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken } = body
+
+    if (!domain || !email || !apiToken) {
+      throw new HTTPException(400, {
+        message: "domain, email, and apiToken are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and test connection
+    const client = new JiraClient({ domain, email, apiToken })
+    await client.testConnection()
+
+    return c.json({
+      success: true,
+      message: "Connection tested successfully",
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to test Jira connection")
+
+    // Return user-friendly error messages
+    if (error.response?.status === 401) {
+      throw new HTTPException(401, {
+        message: "Invalid credentials. Please check your email and API token.",
+      })
+    }
+
+    if (error.response?.status === 403) {
+      throw new HTTPException(403, {
+        message: "Access denied. Please check your permissions.",
+      })
+    }
+
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      throw new HTTPException(400, {
+        message: "Invalid Jira domain. Please check the domain name.",
+      })
+    }
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to test connection",
+    })
+  }
+}
+
+// Register Jira webhook
+export const RegisterJiraWebhookApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken, webhookUrl, events, name, filters } = body
+
+    Logger.info({
+      domain,
+      email: email?.substring(0, 10) + "...",
+      webhookUrl,
+      events,
+      name,
+      hasFilters: !!filters,
+    }, "🔗 Attempting to register Jira webhook")
+
+    if (!domain || !email || !apiToken || !webhookUrl || !events || events.length === 0) {
+      Logger.error({ domain, email, webhookUrl, eventsCount: events?.length }, "❌ Missing required fields for webhook registration")
+      throw new HTTPException(400, {
+        message: "domain, email, apiToken, webhookUrl, and events are required",
+      })
+    }
+
+    // Import Jira trigger
+    const { JiraTrigger } = await import("@/integrations/jira/trigger")
+
+    Logger.info("📦 JiraTrigger imported successfully")
+
+    // Create trigger and register webhook
+    const trigger = new JiraTrigger({
+      credentials: { domain, email, apiToken },
+      webhookUrl,
+      events,
+      filters,
+      name: name || `xyne-webhook-${Date.now()}`,
+    })
+
+    Logger.info("🎯 JiraTrigger instance created, calling register()...")
+
+    const result = await trigger.register()
+
+    Logger.info({ webhookId: result.webhookId }, "✅ Webhook registered successfully with Jira")
+
+    return c.json({
+      success: true,
+      webhookId: result.webhookId,
+      message: "Webhook registered successfully",
+    })
+  } catch (error: any) {
+    Logger.error({
+      error: error.message,
+      stack: error.stack,
+      response: error.response?.data,
+      status: error.response?.status,
+    }, "❌ Failed to register Jira webhook")
+
+    // Return user-friendly error messages
+    if (error.response?.status === 401) {
+      throw new HTTPException(401, {
+        message: "Invalid credentials. Please check your email and API token.",
+      })
+    }
+
+    if (error.response?.status === 403) {
+      throw new HTTPException(403, {
+        message: "Access denied. Please check your permissions.",
+      })
+    }
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to register webhook",
+    })
+  }
+}
+
+// Get all Jira webhooks
+export const GetJiraWebhooksApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken } = body
+
+    if (!domain || !email || !apiToken) {
+      throw new HTTPException(400, {
+        message: "domain, email, and apiToken are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and get webhooks
+    const client = new JiraClient({ domain, email, apiToken })
+    const webhooks = await client.getWebhooks()
+
+    return c.json({
+      success: true,
+      data: webhooks,
+      count: webhooks.length,
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to get Jira webhooks")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to get webhooks",
+    })
+  }
+}
+
+// Delete Jira webhook
+export const DeleteJiraWebhookApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken, webhookId } = body
+
+    if (!domain || !email || !apiToken || !webhookId) {
+      throw new HTTPException(400, {
+        message: "domain, email, apiToken, and webhookId are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and delete webhook
+    const client = new JiraClient({ domain, email, apiToken })
+    await client.deleteWebhook(webhookId)
+
+    return c.json({
+      success: true,
+      message: "Webhook deleted successfully",
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to delete Jira webhook")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to delete webhook",
+    })
+  }
+}
+
+// Get Jira metadata for dynamic dropdowns
+export const GetJiraMetadataApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken, projectKeys } = body
+
+    if (!domain || !email || !apiToken) {
+      throw new HTTPException(400, {
+        message: "domain, email, and apiToken are required",
+      })
+    }
+
+    Logger.info({ domain, hasProjectKeys: !!projectKeys }, "🔍 Fetching Jira metadata")
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+    const client = new JiraClient({ domain, email, apiToken })
+
+    // Fetch base metadata in parallel (always needed)
+    const [projects, priorities, statuses] = await Promise.all([
+      client.getProjects(),
+      client.getPriorities(),
+      client.getStatuses(),
+    ])
+
+    Logger.info({
+      projectsCount: projects.length,
+      prioritiesCount: priorities.length,
+      statusesCount: statuses.length,
+    }, "✅ Base metadata fetched")
+
+    // Prepare response
+    const metadata: any = {
+      projects: projects.map((p: any) => ({
+        key: p.key,
+        name: p.name,
+        id: p.id,
+      })),
+      priorities: priorities.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+      })),
+      statuses: statuses.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+      })),
+      issueTypes: [],
+      epics: [],
+      components: [],
+      issues: [],
+    }
+
+    // If specific projects are provided, fetch project-specific data
+    if (projectKeys && Array.isArray(projectKeys) && projectKeys.length > 0) {
+      Logger.info({ projectKeys }, "🔍 Fetching project-specific metadata")
+
+      // Fetch data for each project in parallel
+      const projectDataPromises = projectKeys.map(async (projectKey: string) => {
+        try {
+          const [issueTypes, epics, components] = await Promise.all([
+            client.getIssueTypes(projectKey),
+            client.getEpics(projectKey),
+            client.getComponents(projectKey),
+          ])
+
+          return {
+            projectKey,
+            issueTypes,
+            epics,
+            components,
+          }
+        } catch (error: any) {
+          Logger.error({ projectKey, error: error.message }, "Failed to fetch data for project")
+          return {
+            projectKey,
+            issueTypes: [],
+            epics: [],
+            components: [],
+          }
+        }
+      })
+
+      // Also fetch recent issues from selected projects (for dropdown)
+      let recentIssues: any[] = []
+      try {
+        recentIssues = await client.searchIssuesByProjects(projectKeys, undefined, 100)
+      } catch (error: any) {
+        Logger.error({ error: error.message }, "Failed to fetch recent issues")
+      }
+
+      const projectDataResults = await Promise.all(projectDataPromises)
+
+      // Merge all project-specific data
+      const allIssueTypes = new Map()
+      const allEpics: any[] = []
+      const allComponents = new Map()
+
+      projectDataResults.forEach((result) => {
+        // Collect unique issue types
+        result.issueTypes.forEach((it: any) => {
+          if (!allIssueTypes.has(it.id)) {
+            allIssueTypes.set(it.id, { id: it.id, name: it.name })
+          }
+        })
+
+        // Collect all epics
+        result.epics.forEach((epic: any) => {
+          allEpics.push({
+            key: epic.key,
+            summary: epic.fields?.summary || epic.key,
+            projectKey: result.projectKey,
+          })
+        })
+
+        // Collect unique components
+        result.components.forEach((c: any) => {
+          if (!allComponents.has(c.id)) {
+            allComponents.set(c.id, { id: c.id, name: c.name })
+          }
+        })
+      })
+
+      metadata.issueTypes = Array.from(allIssueTypes.values())
+      metadata.epics = allEpics
+      metadata.components = Array.from(allComponents.values())
+      metadata.issues = recentIssues.map((issue: any) => ({
+        key: issue.key,
+        summary: issue.fields?.summary || issue.key,
+        status: issue.fields?.status?.name,
+        issuetype: issue.fields?.issuetype?.name,
+        priority: issue.fields?.priority?.name,
+      }))
+
+      Logger.info({
+        issueTypesCount: metadata.issueTypes.length,
+        epicsCount: metadata.epics.length,
+        componentsCount: metadata.components.length,
+        issuesCount: metadata.issues.length,
+      }, "✅ Project-specific metadata fetched")
+    }
+
+    return c.json({
+      success: true,
+      data: metadata,
+    })
+  } catch (error: any) {
+    Logger.error({ error: error.message }, "❌ Failed to get Jira metadata")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to fetch Jira metadata",
+    })
+  }
+}
+
+/**
+ * Execute workflow from webhook trigger (following reference pattern)
+ */
+async function executeWorkflowFromWebhook(
+  templateId: string,
+  requestData: any,
+  config: { webhookId: string; createdBy: string; rawPayload?: any }
+): Promise<string> {
+  try {
+    const { executionId } = await triggerWorkflowFromWebhook(
+      config.webhookId,
+      requestData,
+      templateId,
+      config.createdBy,
+      config.rawPayload
+    )
+
+    Logger.info(`Created workflow execution ${executionId} from webhook ${config.webhookId}`)
+    return executionId
+
+  } catch (error) {
+    Logger.error(`Failed to execute workflow from webhook: ${error}`)
+    throw new Error("Failed to execute workflow")
+  }
+}
+
+/**
+ * Build webhook response
+ */
+function buildWebhookResponse(executionId: string, requestData: any) {
+  return {
+    success: true,
+    message: "Webhook event received and workflow triggered",
+    data: {
+      executionId,
+      event: requestData.event,
+      issueKey: requestData.issue?.key,
+      timestamp: new Date().toISOString(),
+    },
+  }
+}
+
+/**
+ * Helper function to trigger workflow execution from webhook event
+ */
+async function triggerWorkflowFromWebhook(
+  webhookId: string,
+  eventData: any,
+  workflowTemplateId: string,
+  createdBy: string,
+  rawPayload?: any
+): Promise<{ executionId: string; rootStepId: string }> {
+  try {
+    Logger.info({
+      webhookId,
+      workflowTemplateId,
+      eventType: eventData.event,
+    }, "🚀 Triggering workflow from webhook event")
+
+    // Get template and validate
+    const template = await db
+      .select()
+      .from(workflowTemplate)
+      .where(eq(workflowTemplate.id, workflowTemplateId))
+
+    if (!template || template.length === 0) {
+      throw new Error("Workflow template not found")
+    }
+
+    if (!template[0].rootWorkflowStepTemplateId) {
+      throw new Error("Template has no root step configured")
+    }
+
+    // Create workflow execution with webhook event data
+    const [execution] = await db
+      .insert(workflowExecution)
+      .values({
+        workflowTemplateId: template[0].id,
+        userId: template[0].userId, // Use the template's user ID
+        workspaceId: template[0].workspaceId, // Use the template's workspace ID
+        completedBy: createdBy || "webhook",
+        name: `${template[0].name} - ${eventData.issue?.key || 'Webhook Event'}`,
+        description: `Triggered by ${eventData.event} on ${eventData.issue?.key || 'unknown issue'}`,
+        metadata: {
+          webhookId,
+          webhookEvent: eventData.event,
+          jiraIssue: {
+            key: eventData.issue?.key,
+            summary: eventData.issue?.fields?.summary,
+            status: eventData.issue?.fields?.status?.name,
+            issueType: eventData.issue?.fields?.issuetype?.name,
+          },
+          jiraUser: {
+            name: eventData.user?.displayName,
+            email: eventData.user?.emailAddress,
+          },
+          changelog: eventData.changelog,
+          timestamp: eventData.timestamp,
+        },
+        status: WorkflowStatus.ACTIVE,
+        rootWorkflowStepExeId: null,
+      })
+      .returning()
+
+    // Get all step templates
+    const steps = await db
+      .select()
+      .from(workflowStepTemplate)
+      .where(eq(workflowStepTemplate.workflowTemplateId, workflowTemplateId))
+
+    // Create step executions for all template steps
+    const stepExecutionsData = steps.map((step) => ({
+      workflowExecutionId: execution.id,
+      workflowStepTemplateId: step.id,
+      name: step.name,
+      type: step.type,
+      status: WorkflowStatus.DRAFT as const,
+      parentStepId: step.parentStepId,
+      prevStepIds: step.prevStepIds || [],
+      nextStepIds: step.nextStepIds || [],
+      toolExecIds: [],
+      timeEstimate: step.timeEstimate,
+      metadata: {
+        ...((step.metadata as Record<string, any>) || {}),
+        triggeredByWebhook: true,
+        webhookEventType: eventData.event,
+      },
+    }))
+
+    const stepExecutions = await db
+      .insert(workflowStepExecution)
+      .values(stepExecutionsData)
+      .returning()
+
+    // Find root step execution
+    const rootStepExecution = stepExecutions.find(
+      (se) =>
+        se.workflowStepTemplateId === template[0].rootWorkflowStepTemplateId,
+    )
+
+    if (!rootStepExecution) {
+      throw new Error("Failed to create root step execution")
+    }
+
+    // Update workflow with root step execution ID
+    await db
+      .update(workflowExecution)
+      .set({ rootWorkflowStepExeId: rootStepExecution.id })
+      .where(eq(workflowExecution.id, execution.id))
+
+    Logger.info({
+      executionId: execution.id,
+      rootStepId: rootStepExecution.id,
+      workflowName: template[0].name,
+    }, "✅ Workflow execution created from webhook")
+
+    // Mark root step (JIRA trigger) as completed since webhook was received
+    await db
+      .update(workflowStepExecution)
+      .set({
+        status: WorkflowStatus.COMPLETED,
+        metadata: {
+          ...((rootStepExecution.metadata as Record<string, any>) || {}),
+          webhookData: rawPayload || eventData, // Store full raw payload if available, otherwise processed event
+          processedEvent: eventData, // Also store the processed/normalized event
+          completedAt: new Date().toISOString(),
+          triggeredByWebhook: true,
+        },
+      })
+      .where(eq(workflowStepExecution.id, rootStepExecution.id))
+
+    Logger.info({
+      rootStepId: rootStepExecution.id,
+    }, "✅ Root step (JIRA trigger) marked as completed")
+
+    // Execute automated workflow steps in background if root step has next steps
+    if (
+      rootStepExecution.nextStepIds &&
+      Array.isArray(rootStepExecution.nextStepIds) &&
+      rootStepExecution.nextStepIds.length > 0
+    ) {
+      Logger.info({
+        executionId: execution.id,
+        nextStepIds: rootStepExecution.nextStepIds,
+      }, "🚀 Starting automated workflow execution in background")
+
+      // Get all tools for step execution
+      const allTools = await db.select().from(workflowTool)
+
+      // Initialize results with webhook event data
+      const rootStepName = rootStepExecution.name || "JIRA Trigger"
+      const currentResults: Record<string, any> = {}
+      currentResults[rootStepName] = {
+        stepId: rootStepExecution.id,
+        webhookData: eventData,
+        completedAt: new Date().toISOString(),
+      }
+
+      // Execute automated steps in background (non-blocking)
+      executeAutomatedWorkflowSteps(
+        execution.id,
+        rootStepExecution.nextStepIds,
+        stepExecutions,
+        allTools,
+        currentResults,
+      ).catch((error) => {
+        Logger.error(
+          error,
+          `❌ Background workflow execution failed for ${execution.id}`,
+        )
+      })
+    } else {
+      // No next steps - check if all steps are completed and mark workflow as completed
+      Logger.info({
+        executionId: execution.id,
+      }, "ℹ️ No next steps to execute - checking workflow completion")
+
+      const allStepExecutions = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, execution.id))
+
+      const allStepsCompleted = allStepExecutions.every(
+        (step) => step.status === WorkflowStatus.COMPLETED,
+      )
+
+      if (allStepsCompleted) {
+        Logger.info({
+          executionId: execution.id,
+        }, "✅ All steps completed - marking workflow as completed")
+
+        await db
+          .update(workflowExecution)
+          .set({
+            status: ToolExecutionStatus.COMPLETED,
+            completedAt: new Date(),
+            completedBy: "system",
+          })
+          .where(eq(workflowExecution.id, execution.id))
+      } else {
+        Logger.warn({
+          executionId: execution.id,
+          stepStatuses: allStepExecutions.map(s => ({ name: s.name, status: s.status })),
+        }, "⚠️ Workflow has no next steps but not all steps are completed")
+      }
+    }
+
+    return {
+      executionId: execution.id,
+      rootStepId: rootStepExecution.id,
+    }
+  } catch (error: any) {
+    Logger.error({
+      error: error.message,
+      webhookId,
+      workflowTemplateId,
+    }, "❌ Failed to trigger workflow from webhook")
+    throw error
+  }
+}
+
+// Receive Jira webhook event
+export const ReceiveJiraWebhookApi = async (c: Context) => {
+  try {
+    const webhookId = c.req.param('webhookId')
+    const body = await c.req.json()
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('🎯 JIRA WEBHOOK EVENT RECEIVED!')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('📍 Webhook ID:', webhookId)
+    console.log('📦 Full payload:', JSON.stringify(body, null, 2))
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+
+    if (!webhookId) {
+      throw new HTTPException(400, {
+        message: "webhookId is required",
+      })
+    }
+
+    // Import Jira trigger
+    const { JiraTrigger } = await import("@/integrations/jira/trigger")
+
+    // Process webhook event
+    const processedEvent = JiraTrigger.processWebhookEvent(body)
+
+    console.log('✨ Processed Event Details:')
+    console.log('   Event Type:', processedEvent.event)
+    console.log('   Issue Key:', processedEvent.issue?.key)
+    console.log('   Issue Summary:', processedEvent.issue?.fields?.summary)
+    console.log('   User:', processedEvent.user?.displayName, `(${processedEvent.user?.emailAddress})`)
+    console.log('   Timestamp:', new Date(processedEvent.timestamp).toISOString())
+
+    if (processedEvent.changelog) {
+      console.log('   📝 Changes:')
+      processedEvent.changelog.items?.forEach((item: any) => {
+        console.log(`      - ${item.field}: "${item.fromString}" → "${item.toString}"`)
+      })
+    }
+
+    // Log the event for debugging
+    Logger.info({
+      webhookId,
+      event: processedEvent.event,
+      issueKey: processedEvent.issue?.key,
+      issueSummary: processedEvent.issue?.fields?.summary,
+      user: processedEvent.user?.displayName,
+      timestamp: processedEvent.timestamp,
+    }, "🎯 Received Jira webhook event")
+
+    // Find workflow template associated with this webhook
+    // Look for a JIRA trigger tool with this webhookId in its config
+    const jiraTools = await db
+      .select({
+        toolId: workflowTool.id,
+        config: workflowTool.config,
+        value: workflowTool.value,
+      })
+      .from(workflowTool)
+      .where(eq(workflowTool.type, ToolType.JIRA))
+
+    Logger.info({
+      webhookId,
+      jiraToolsCount: jiraTools.length,
+    }, "🔍 Searching for workflow template with matching webhook ID")
+
+    // Find the tool that matches this webhookId
+    // Check both config.webhookId and if the webhook URL contains the ID
+    const matchingTool = jiraTools.find((tool) => {
+      const config = tool.config as any
+      const value = tool.value as any
+
+      // First check if webhookId is explicitly set in config
+      if (config?.webhookId === webhookId) {
+        return true
+      }
+
+      // Also check if the production or test webhook URL contains this webhookId
+      const productionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+      const testUrl = config?.testWebhookUrl || value?.testWebhookUrl
+
+      if (productionUrl && productionUrl.includes(webhookId)) {
+        Logger.info({ toolId: tool.toolId, productionUrl }, "✅ Matched via production webhook URL")
+        return true
+      }
+
+      if (testUrl && testUrl.includes(webhookId)) {
+        Logger.info({ toolId: tool.toolId, testUrl }, "✅ Matched via test webhook URL")
+        return true
+      }
+
+      return false
+    })
+
+    if (!matchingTool) {
+      Logger.warn({
+        webhookId,
+        availableWebhookIds: jiraTools.map((t: any) => (t.config as any)?.webhookId),
+        availableWebhookUrls: jiraTools.map((t: any) => ({
+          config: (t.config as any)?.productionWebhookUrl,
+          value: (t.value as any)?.webhookUrl
+        })),
+      }, "⚠️  No workflow template found for this webhook ID")
+
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('⚠️  Event acknowledged but no workflow triggered')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+
+      return c.json({
+        success: true,
+        message: "Webhook event received but no workflow configured",
+      })
+    }
+
+    Logger.info({
+      webhookId,
+      toolId: matchingTool.toolId,
+    }, "✅ Found matching JIRA tool")
+
+    // Find the workflow step template that uses this tool
+    // Get all step templates and filter by toolIds in JavaScript
+    const allStepTemplates = await db
+      .select({
+        id: workflowStepTemplate.id,
+        workflowTemplateId: workflowStepTemplate.workflowTemplateId,
+        name: workflowStepTemplate.name,
+        toolIds: workflowStepTemplate.toolIds,
+      })
+      .from(workflowStepTemplate)
+
+    // Debug: Log all step templates with their toolIds
+    console.log('🔍 All step templates:', JSON.stringify(allStepTemplates.map(st => ({
+      id: st.id,
+      name: st.name,
+      toolIds: st.toolIds,
+      toolIdsType: typeof st.toolIds,
+      toolIdsIsArray: Array.isArray(st.toolIds),
+    })), null, 2))
+
+    console.log('🎯 Looking for tool ID:', matchingTool.toolId)
+
+    // Filter for steps that have this tool in their toolIds array
+    const stepTemplate = allStepTemplates.filter(st => {
+      const hasToolIds = st.toolIds && Array.isArray(st.toolIds)
+      const includesToolId = hasToolIds && (st.toolIds ?? []).includes(matchingTool.toolId)
+
+      console.log(`  Step "${st.name}":`, {
+        hasToolIds,
+        toolIdsLength: st.toolIds?.length,
+        toolIds: st.toolIds,
+        includesToolId,
+      })
+
+      return includesToolId
+    })
+
+    Logger.info({
+      webhookId,
+      toolId: matchingTool.toolId,
+      allStepTemplatesCount: allStepTemplates.length,
+      stepTemplateCount: stepTemplate.length,
+      stepTemplates: stepTemplate.map(s => ({ id: s.id, name: s.name, toolIds: s.toolIds })),
+    }, "🔍 Step template query result")
+
+    // AUTO-FIX duplicate tool issue
+    if (!stepTemplate || stepTemplate.length === 0) {
+      Logger.warn({
+        webhookId,
+        toolId: matchingTool.toolId,
+      }, "⚠️  No workflow step template uses this JIRA tool - attempting auto-fix")
+
+      // Check if there's a duplicate tool with same webhook URL
+      const duplicateTools = jiraTools.filter((tool) => {
+        const config = tool.config as any
+        const value = tool.value as any
+        const productionUrl = config?.productionWebhookUrl || value?.productionWebhookUrl || value?.webhookUrl
+
+        const matchedUrl = (matchingTool.config as any)?.productionWebhookUrl ||
+                           (matchingTool.value as any)?.productionWebhookUrl ||
+                           (matchingTool.value as any)?.webhookUrl
+
+        return productionUrl && matchedUrl && productionUrl === matchedUrl
+      })
+
+      if (duplicateTools.length > 1) {
+        Logger.info({
+          webhookId,
+          duplicateToolIds: duplicateTools.map(t => t.toolId),
+        }, "🔧 Found duplicate tools - searching for workflow using any of them")
+
+        // Try to find workflow using any of the duplicate tools
+        for (const dupTool of duplicateTools) {
+          const stepsWithDupTool = allStepTemplates.filter(st => {
+            return st.toolIds && Array.isArray(st.toolIds) && st.toolIds.includes(dupTool.toolId)
+          })
+
+          if (stepsWithDupTool.length > 0) {
+            Logger.info({
+              foundToolId: dupTool.toolId,
+              matchedToolId: matchingTool.toolId,
+              stepId: stepsWithDupTool[0].id,
+            }, "✅ Found workflow using duplicate tool - auto-fixing reference")
+
+            // Update the step to use the correct tool (the one webhook matched)
+            await db
+              .update(workflowStepTemplate)
+              .set({
+                toolIds: [matchingTool.toolId],
+                updatedAt: new Date(),
+              })
+              .where(eq(workflowStepTemplate.id, stepsWithDupTool[0].id))
+
+            // Delete the duplicate tool
+            await db
+              .delete(workflowTool)
+              .where(eq(workflowTool.id, dupTool.toolId))
+
+            Logger.info({
+              deletedToolId: dupTool.toolId,
+              keptToolId: matchingTool.toolId,
+            }, "🧹 Cleaned up duplicate tool")
+
+            // Use the found step
+            stepTemplate.push(stepsWithDupTool[0])
+            break
+          }
+        }
+      }
+
+      // If still no workflow found after auto-fix attempt
+      if (!stepTemplate || stepTemplate.length === 0) {
+        return c.json({
+          success: true,
+          message: "Webhook event received but tool not attached to workflow",
+        })
+      }
+
+      Logger.info("✅ Auto-fix successful - proceeding with workflow execution")
+    }
+
+    const workflowTemplateId = stepTemplate[0].workflowTemplateId
+
+    Logger.info({
+      webhookId,
+      workflowTemplateId,
+      stepName: stepTemplate[0].name,
+    }, "🎯 Found workflow template to trigger")
+
+    // Execute workflow from webhook (following reference pattern)
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('🚀 EXECUTING WORKFLOW FROM WEBHOOK')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+
+    const executionId = await executeWorkflowFromWebhook(
+      workflowTemplateId,
+      processedEvent,
+      {
+        webhookId,
+        createdBy: processedEvent.user?.emailAddress || "webhook",
+        rawPayload: body, // Pass raw JIRA payload for full data storage
+      }
+    )
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('✅ Workflow execution created and started!')
+    console.log(`   Execution ID: ${executionId}`)
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+
+    // Build webhook response
+    return c.json(buildWebhookResponse(executionId, processedEvent))
+  } catch (error: any) {
+    console.error('❌ Failed to process webhook:', error)
+    Logger.error(error, "Failed to process Jira webhook")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to process webhook",
+    })
+  }
 }
 
 // Serve workflow file
