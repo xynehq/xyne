@@ -310,6 +310,7 @@ import { AgentMessageApi } from "./api/chat/agents"
 import { eq } from "drizzle-orm"
 import {
   checkOverallSystemHealth,
+  checkPaddleOCRHealth,
   checkPostgresHealth,
   checkVespaHealth,
 } from "./health"
@@ -1803,6 +1804,12 @@ app.get(
 app.get(
   "/health/vespa",
   createHealthCheckHandler(checkVespaHealth, ServiceName.vespa),
+)
+
+// PaddleOCR health check endpoint
+app.get(
+  "/health/paddle",
+  createHealthCheckHandler(checkPaddleOCRHealth, ServiceName.paddleOCR),
 )
 
 // Serving exact frontend routes and adding AuthRedirect wherever needed
