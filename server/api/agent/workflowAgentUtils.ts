@@ -186,11 +186,11 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         //fetching document from VESPA
         const results = await GetDocumentsByDocIds(nonImageAttachmentFileIds, executeAgentSpan!)
 
-        Logger.info(`📊 GetDocumentsByDocIds returned:`, {
-          hasRoot: !!results.root,
-          hasChildren: !!(results.root?.children),
-          childrenCount: results.root?.children?.length || 0,
-        })
+        Logger.info(`📊 GetDocumentsByDocIds returned: {
+          hasRoot: ${!!results.root},
+          hasChildren: ${!!(results.root?.children)},
+          childrenCount: ${results.root?.children?.length || 0},
+        }`)
 
         if (results.root.children && results.root.children.length > 0) {
           Logger.info(`📚 Found ${results.root.children.length} documents, transforming to readable context...`)
@@ -279,28 +279,28 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       ...(max_new_tokens !== undefined ? { max_new_tokens } : {}),
     }
 
-    Logger.info("🔧 Model parameters built:", {
-      modelId: modelParams.modelId || defaultBestModel,
-      hasImages: !!(modelParams as any).imageFileNames,
-      imageCount: ((modelParams as any).imageFileNames || []).length,
-      systemPromptLength: modelParams.systemPrompt.length,
-      hasTemperature: temperature !== undefined,
-      hasMaxTokens: max_new_tokens !== undefined,
-    })
+    Logger.info(`🔧 Model parameters built: {
+      modelId: ${modelParams.modelId || defaultBestModel},
+      hasImages: ${!!(modelParams as any).imageFileNames},
+      imageCount: ${((modelParams as any).imageFileNames || []).length},
+      systemPromptLength: ${modelParams.systemPrompt.length},
+      hasTemperature: ${temperature !== undefined},
+      hasMaxTokens: ${max_new_tokens !== undefined},
+    }`)
 
-    Logger.info("💬 Constructing LLM messages...")
+    Logger.info("💬 Constructing LLM messages...")  
 
     // UPDATE MESSAGE CONSTRUCTION TO INCLUDE CONTEXT:
     const userContent = contextualContent
       ? `Context from attached documents:\n${contextualContent}\n\nUser Query: ${userQuery}`  // Include document context
       : userQuery  // No context, just user query
 
-    Logger.info("💬 Message construction details:", {
-      hasContext: !!contextualContent,
-      contextLength: contextualContent.length,
-      userQueryLength: userQuery.length,
-      finalContentLength: userContent.length,
-    })
+    Logger.info(`💬 Message construction details: {
+      hasContext: ${!!contextualContent},
+      contextLength: ${contextualContent.length},
+      userQueryLength: ${userQuery.length},
+      finalContentLength: ${userContent.length},
+    }`)
 
     Logger.info("💬 Final user content preview (first 300 chars):")
     Logger.info(userContent.substring(0, 300) + (userContent.length > 300 ? "..." : ""))
@@ -341,16 +341,16 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     // Step 6: Call LLM and return based on streaming preference
     if (isStreamable) {
       Logger.info("🌊 Agent execution started (streaming mode)")
-      Logger.info("🌊 About to call LLM with attachments:", {
-        hasImages: finalImageFileNames.length > 0,
-        imageFiles: finalImageFileNames,
-        hasContext: contextualContent.length > 0,
-        contextLength: contextualContent.length,
-      })
+      Logger.info(`🌊 About to call LLM with attachments: {
+        hasImages: ${finalImageFileNames.length > 0},
+        imageFiles: ${finalImageFileNames},
+        hasContext: ${contextualContent.length > 0},
+        contextLength: ${contextualContent.length},
+      }`)
 
       // Add provider debugging
       const provider = getProviderByModel(agent.model as Models || defaultBestModel)
-      Logger.info(`🤖 Provider for model ${agent.model}:`, typeof provider)
+      Logger.info(`🤖 Provider for model ${agent.model}: ${typeof provider}`)
 
       try {
         Logger.info("🔄 Creating original iterator...")
@@ -383,12 +383,12 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       }
     } else {
       Logger.info("💫 Agent execution started (non-streaming mode)")
-      Logger.info("💫 About to call LLM with attachments:", {
-        hasImages: finalImageFileNames.length > 0,
-        imageFiles: finalImageFileNames,
-        hasContext: contextualContent.length > 0,
-        contextLength: contextualContent.length,
-      })
+      Logger.info(`💫 About to call LLM with attachments: {
+        hasImages: ${finalImageFileNames.length > 0},
+        imageFiles: ${finalImageFileNames},
+        hasContext: ${contextualContent.length > 0},
+        contextLength: ${contextualContent.length},
+      }`)
 
       // Get non-streaming response
       const response = await getProviderByModel(agent.model as Models || defaultBestModel).converse(
@@ -396,12 +396,12 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         modelParams
       )
 
-      Logger.info("💫 LLM response received:", {
-        hasText: !!response.text,
-        textLength: response.text?.length || 0,
-        hasCost: !!response.cost,
-        cost: response.cost,
-      })
+      Logger.info(`💫 LLM response received: {
+        hasText: ${!!response.text},
+        textLength: ${response.text?.length || 0},
+        hasCost: ${!!response.cost},
+        cost: ${response.cost},
+      }`)
 
       if (!response.text) {
         return {
@@ -482,7 +482,7 @@ async function* createStreamingWithDBSave(
         answer += chunk.text  // Accumulate full response
         yield { text: chunk.text }  // Forward to client
       }
-      Logger.info("🌊 createStreamingWithDBSave: Forwarded chunk to client:", chunk.text)
+      Logger.info(`🌊 createStreamingWithDBSave: Forwarded chunk to client: ${chunk.text}`)
 
       if (chunk.cost) {
         costArr.push(chunk.cost)  // Accumulate costs

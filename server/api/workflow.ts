@@ -1120,7 +1120,7 @@ const executeWorkflowChain = async (
           .returning()
         toolExecutionRecord = execution
       } catch (dbError) {
-        Logger.warn("Database insert failed for failed tool, creating minimal record:", dbError)
+        Logger.warn(`Database insert failed for failed tool, creating minimal record: ${dbError}`)
         const [execution] = await db
           .insert(toolExecution)
           .values({
@@ -1182,7 +1182,7 @@ const executeWorkflowChain = async (
       toolExecutionRecord = execution
     } catch (dbError) {
       // If database insert fails (e.g., unicode issues), sanitize the result and try again
-      Logger.warn("Database insert failed, sanitizing result:", dbError)
+      Logger.warn(`Database insert failed, sanitizing result: ${dbError}`)
 
       const sanitizedResult = JSON.parse(
         JSON.stringify(toolResult.result)
@@ -1210,8 +1210,7 @@ const executeWorkflowChain = async (
       } catch (secondError) {
         // If it still fails, create a minimal record
         Logger.error(
-          "Second database insert failed, creating minimal record:",
-          secondError,
+          `Second database insert failed, creating minimal record: ${secondError}`,
         )
         const [execution] = await db
           .insert(toolExecution)
