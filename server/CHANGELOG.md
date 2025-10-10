@@ -1,3 +1,10 @@
+## [3.13.4](https://github.com/xynehq/xyne/compare/v3.13.3...v3.13.4) (2025-10-10)
+
+
+### Bug Fixes
+
+* XYN-175 chatpage space buffer reducer for sources/followps divs ([#1087](https://github.com/xynehq/xyne/issues/1087)) ([6ed3d75](https://github.com/xynehq/xyne/commit/6ed3d750455ac20d40943690d0eb5425e7d2665e))
+
 ## [3.13.3](https://github.com/xynehq/xyne/compare/v3.13.2...v3.13.3) (2025-10-10)
 
 
