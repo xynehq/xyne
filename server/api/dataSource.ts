@@ -232,6 +232,18 @@ export const deleteDocumentSchema = z.object({
   schema: z.string().min(1),
 })
 
+export const getDataSourceFileParamsSchema = z.object({
+  docId: z.string().min(1),
+})
+
+export const listDataSourceFilesParamsSchema = z.object({
+  dataSourceName: z.string().min(1),
+})
+
+export const getAgentsForDataSourceParamsSchema = z.object({
+  dataSourceId: z.string().min(1),
+})
+
 export const DeleteImages = async (docId: string) => {
   const imageDir = path.resolve(
     process.env.IMAGE_DIR || "downloads/xyne_images_db",

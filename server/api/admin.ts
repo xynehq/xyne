@@ -200,6 +200,11 @@ export const agentAnalysisQuerySchema = z.object({
   workspaceExternalId: z.string().optional(),
 })
 
+// Schema for connector ID parameter
+export const connectorIdParamsSchema = z.object({
+  connectorId: z.string().min(1),
+})
+
 export const GetConnectors = async (c: Context) => {
   const { workspaceId, sub } = c.get(JwtPayloadKey)
   const users: SelectUser[] = await getUserByEmail(db, sub)
