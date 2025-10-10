@@ -856,11 +856,14 @@ export const ChatPage = ({
 
       // During streaming, only update if there's a significant change (>10px) to avoid jitter
       // After streaming, always update to ensure accurate spacing
-      if (forceUpdate || Math.abs(bottomSpace - newBottomSpace) > 10) {
-        setBottomSpace(newBottomSpace)
-      }
+      setBottomSpace((prevBottomSpace) => {
+        if (forceUpdate || Math.abs(prevBottomSpace - newBottomSpace) > 10) {
+          return newBottomSpace
+        }
+        return prevBottomSpace
+      })
     },
-    [initialBottomSpace, bottomSpace],
+    [initialBottomSpace],
   )
 
   // Adjust bottom space during streaming as content grows
@@ -892,9 +895,7 @@ export const ChatPage = ({
   useEffect(() => {
     if (isStreaming || retryIsStreaming || initialBottomSpace === 0) return
 
-    const observer = new ResizeObserver(() =>
-      adjustBottomSpaceForContent(true),
-    )
+    const observer = new ResizeObserver(() => adjustBottomSpaceForContent(true))
 
     const container = messagesContainerRef.current
     if (container) observer.observe(container)
