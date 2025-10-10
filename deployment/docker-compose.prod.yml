@@ -140,7 +140,7 @@ services:
     container_name: xyne-nginx
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "3000:80"
       - "443:443"
     volumes:
       - ./portable/nginx.conf:/etc/nginx/nginx.conf:ro
