@@ -70,9 +70,7 @@ import type {
 import { XyneTools } from "@/shared/types"
 import { expandEmailThreadsInResults } from "./utils"
 import { resolveNamesToEmails } from "./chat"
-import type { MailParticipant } from "@/ai/types"
-import type { GetThreadItemsParams } from "@xyne/vespa-ts"
-import { time } from "console"
+import type { EventStatusType, GetThreadItemsParams, MailParticipant, VespaQueryConfig } from "@xyne/vespa-ts"
 import { getDateForAI } from "@/utils/index"
 
 const { maxDefaultSummary, defaultFastModel } = config
@@ -240,8 +238,8 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
 interface UnifiedSearchOptions {
   email: string
   query?: string | null
-  app?: Apps | null
-  entity?: Entity | null
+  app?: Apps | Apps[] | null
+  entity?: Entity | Entity[] | null
   timestampRange?: {
     from?: number | string | null
     to?: number | string | null
@@ -255,6 +253,10 @@ interface UnifiedSearchOptions {
   schema?: VespaSchema | null
   dataSourceIds?: string[] | undefined
   mailParticipant?: MailParticipant | null
+  orderBy?: "asc" | "desc"
+  owner? : string | null
+  eventStatus? : EventStatusType | null
+  eventAttendees? : string[] | null
   channelIds?: string[]
   selectedItems?: {}
   collectionIds?: string[]
@@ -291,13 +293,22 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     collectionFolderIds,
     collectionFileIds,
     selectedItems,
+    orderBy,
+    owner,
+    eventStatus,
+    eventAttendees
   } = options
 
   const execSpan = span?.startSpan("execute_vespa_search_helper")
   execSpan?.setAttribute("email", email)
   if (query) execSpan?.setAttribute("query", query)
-  if (app) execSpan?.setAttribute("app", app)
-  if (entity) execSpan?.setAttribute("entity", entity)
+  if (app)
+    execSpan?.setAttribute("app", Array.isArray(app) ? app.join(",") : app)
+  if (entity)
+    execSpan?.setAttribute(
+      "entity",
+      Array.isArray(entity) ? entity.join(",") : entity,
+    )
   if (limit) execSpan?.setAttribute("limit", limit)
   if (offset) execSpan?.setAttribute("offset", offset)
   if (orderDirection) execSpan?.setAttribute("orderDirection", orderDirection)
@@ -321,7 +332,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   }
 
   let searchResults: VespaSearchResponse | null = null
-  const commonSearchOptions = {
+  const commonSearchOptions: Partial<VespaQueryConfig> = {
     limit,
     alpha: 0.5,
     excludedIds,
@@ -331,7 +342,11 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       orderDirection === "desc"
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank,
-    mailParticipant,
+    mailParticipants: mailParticipant || null,
+    orderBy,
+    owner,
+    eventStatus,
+    attendees: eventAttendees || null,
   }
 
   const fromTimestamp = timestampRange?.from
@@ -343,8 +358,11 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
 
   if (query && query.trim() !== "") {
     if (agentAppEnums && agentAppEnums.length > 0) {
-      if (app && !agentAppEnums.includes(app)) {
-        const errorMsg = `${app} is not an allowed app for this agent. Cannot search.`
+      // Handle both single app and array of apps
+      const appsToCheck = Array.isArray(app) ? app : app ? [app] : []
+      const invalidApps = appsToCheck.filter(a => !agentAppEnums.includes(a))
+      if (invalidApps.length > 0) {
+        const errorMsg = `${invalidApps.join(", ")} ${invalidApps.length > 1 ? 'are' : 'is'} not allowed app${invalidApps.length > 1 ? 's' : ''} for this agent. Cannot search.`
         execSpan?.setAttribute("error", errorMsg)
         return { result: errorMsg, contexts: [] }
       }
@@ -401,8 +419,11 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
   } else if (schema) {
     // If no query, but a schema is provided, use getItems
     if (agentAppEnums && agentAppEnums.length > 0) {
-      if (app && !agentAppEnums.includes(app)) {
-        const errorMsg = `${app} is not an allowed app for this agent. Cannot retrieve items.`
+      // Handle both single app and array of apps
+      const appsToCheck = Array.isArray(app) ? app : app ? [app] : []
+      const invalidApps = appsToCheck.filter(a => !agentAppEnums.includes(a))
+      if (invalidApps.length > 0) {
+        const errorMsg = `${invalidApps.join(", ")} ${invalidApps.length > 1 ? 'are' : 'is'} not allowed app${invalidApps.length > 1 ? 's' : ''} for this agent. Cannot retrieve items.`
         execSpan?.setAttribute("error", errorMsg)
         return { result: errorMsg, contexts: [] }
       }
@@ -421,7 +442,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       offset,
       asc: orderDirection === "asc",
       excludedIds,
-      mailParticipants: options.mailParticipant || null,
+      mailParticipants:options.mailParticipant || null,
     })
   } else {
     const errorMsg = "No query or schema provided for search."
@@ -479,7 +500,10 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
 
   let summaryText = `Found ${fragments.length} results`
   if (query) summaryText += ` matching '${query}'`
-  if (app) summaryText += ` in \`${app}\``
+  if (app) {
+    const appText = Array.isArray(app) ? app.join(", ") : app
+    summaryText += ` in \`${appText}\``
+  }
   if (timestampRange?.from && timestampRange?.to) {
     summaryText += ` from ${new Date(timestampRange.from).toLocaleDateString()} to ${new Date(timestampRange.to).toLocaleDateString()}`
   }
@@ -857,257 +881,6 @@ export const userInfoTool: AgentTool = {
   },
 }
 
-export const getSlackThreads: AgentTool = {
-  name: "get_slack_threads",
-  description:
-    "Retrieves Slack thread messages for a specific message to provide conversational context. Use when users need to understand the full conversation history around a particular message.",
-  parameters: {
-    filter_query: {
-      type: "string",
-      description: "Optional keywords to filter thread messages",
-      required: true,
-    },
-    limit: {
-      type: "number",
-      description:
-        "Maximum number of thread messages to retrieve. default (10)",
-      required: false,
-    },
-    offset: {
-      type: "number",
-      description: "Number of messages to skip for pagination",
-      required: false,
-    },
-    order_direction: {
-      type: "string",
-      description: "Sort direction for thread messages",
-      required: false,
-    },
-  },
-  execute: async (
-    params: any,
-    span?: Span,
-    email?: string,
-    ctx?: string,
-    agentPrompt?: string,
-  ) => {
-    const execSpan = span?.startSpan("slack_message")
-    if (!email) {
-      const errorMsg = "email is required for search tool execution."
-      execSpan?.setAttribute("error", errorMsg)
-      return { result: errorMsg, error: "Missing user email" }
-    }
-
-    if (agentPrompt) {
-      const { agentAppEnums, selectedItems } =
-        parseAgentAppIntegrations(agentPrompt)
-      execSpan?.setAttribute("agent_app_enums", JSON.stringify(agentAppEnums))
-      const channelIds = (selectedItems as Record<string, unknown>)[
-        Apps.Slack
-      ] as any
-      // if(selectedItems[Apps.Slack])
-      if (
-        !agentAppEnums.includes(Apps.Slack) &&
-        channelIds &&
-        channelIds.length === 0
-      ) {
-        return {
-          result:
-            "Slack is not an allowed app for this agent neither the agent is not configured for any Slack channel, please select a channel to search in. .. Cannot retrieve Slack threads.",
-          contexts: [],
-        }
-      }
-    }
-
-    try {
-      let appToUse: Apps = Apps.Slack // This tool is specific to Slack
-
-      let searchResults: VespaSearchResponse | null = null
-      const searchOptionsVespa: {
-        limit: number
-        offset: number
-        span: Span | undefined
-      } = {
-        limit: params.limit || 10,
-        offset: params.offset || 0,
-        span: execSpan,
-      }
-
-      console.log(
-        "[Retrieve Slack Thread] Common Vespa searchOptions:",
-        JSON.stringify(
-          {
-            app: appToUse,
-            filterQuery: params.filter_query,
-            limit: searchOptionsVespa.limit,
-            offset: searchOptionsVespa.offset,
-          },
-          null,
-          2,
-        ),
-      )
-
-      const searchQuery = params.filter_query
-      Logger.debug(`[getSlackThreads] Using filter_query: '${searchQuery}'`)
-
-      if (!searchQuery || searchQuery.trim() === "") {
-        execSpan?.setAttribute("vespa_call_type", "getItems_no_keyword_filter")
-        searchResults = await getItems({
-          email,
-          schema: chatMessageSchema, // Assuming thread roots are chat messages
-          app: appToUse,
-          entity: SlackEntity.Message, // Implicitly searching for messages
-          timestampRange: null,
-          limit: searchOptionsVespa.limit,
-          offset: searchOptionsVespa.offset,
-          asc: params.order_direction === "asc",
-          excludedIds: undefined, // getSlackThreads doesn't have excludedIds param
-        })
-      } else {
-        // The search is always for Slack messages (appToUse = Apps.Slack)
-        // The entity is implicitly SlackEntity.Message when fetching threads.
-        if (params.order_direction === "desc") {
-          execSpan?.setAttribute("vespa_call_type", "searchVespa_GlobalSorted")
-          searchResults = await searchVespa(
-            searchQuery,
-            email,
-            appToUse,
-            SlackEntity.Message,
-            {
-              limit: searchOptionsVespa.limit,
-              offset: searchOptionsVespa.offset,
-              rankProfile: SearchModes.GlobalSorted,
-              span: execSpan?.startSpan(
-                "vespa_search_slack_threads_globalsorted",
-              ),
-            },
-          )
-        } else {
-          execSpan?.setAttribute(
-            "vespa_call_type",
-            "searchVespa_filter_no_sort",
-          )
-          searchResults = await searchVespa(
-            searchQuery,
-            email,
-            appToUse,
-            SlackEntity.Message,
-            {
-              limit: searchOptionsVespa.limit,
-              offset: searchOptionsVespa.offset,
-              rankProfile: SearchModes.NativeRank,
-              span: execSpan?.startSpan("vespa_search_slack_threads_native"),
-            },
-          )
-        }
-      }
-      const children = (searchResults?.root?.children || []).filter(
-        (item): item is VespaSearchResults =>
-          !!(item.fields && "sddocname" in item.fields),
-      )
-
-      if (!children.length) {
-        return {
-          result: `No messages found matching the filter query. ${params.filter_query ? `Query: '${params.filter_query}'` : ""}`,
-          contexts: [],
-        }
-      }
-
-      const threadIdsToFetch: string[] = []
-      for (const child of children) {
-        if (child.fields && child.fields.sddocname === chatMessageSchema) {
-          const messageFields = child.fields as VespaChatMessage
-          if (messageFields.app === Apps.Slack) {
-            const createdAtNum = messageFields.createdAt
-            const threadIdStr = messageFields.threadId
-            if (String(createdAtNum) === threadIdStr) {
-              threadIdsToFetch.push(threadIdStr)
-            }
-          }
-        }
-      }
-
-      if (threadIdsToFetch.length === 0) {
-        return {
-          result: `No primary thread messages found matching the criteria. ${params.filter_query ? `Query: '${params.filter_query}'` : ""}`,
-          contexts: [],
-        }
-      }
-      const resp = await SearchVespaThreads(threadIdsToFetch, execSpan!)
-      const allChildrenFromResp = resp.root?.children || []
-      const threads: VespaSearchResults[] = allChildrenFromResp.filter(
-        (item): item is VespaSearchResults =>
-          !!(item.fields && "sddocname" in item.fields),
-      )
-      if (threads.length > 0) {
-        const fragments: MinimalAgentFragment[] = threads.map(
-          (item: VespaSearchResults): MinimalAgentFragment => {
-            const citation = searchToCitation(item)
-            Logger.debug({ item }, "Processing item in metadata_retrieval tool")
-
-            const content = item.fields
-              ? answerContextMap(item, userMetadata, maxDefaultSummary)
-              : `Context unavailable for ${citation.title || citation.docId}`
-
-            return {
-              id: `${citation.docId}`,
-              content: content,
-              source: citation,
-              confidence: item.relevance || 0.7, // Use item.relevance if available
-            }
-          },
-        )
-
-        let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
-        if (params.filter_query) {
-          responseText += ` matching '${params.filter_query}'`
-        }
-
-        const appNameForText = appToUse
-        responseText += ` in \`${appNameForText}\``
-
-        if (params.offset && params.offset > 0) {
-          const currentOffset = params.offset || 0
-          responseText += ` (showing items ${currentOffset + 1} to ${currentOffset + fragments.length})`
-        }
-        const topItemsList = fragments
-          .slice(0, 3)
-          .map((f) => `- \"${f.source.title || "Untitled"}\"`)
-          .join("\n")
-        responseText += `.\nTop items:\n${topItemsList}`
-
-        const successResult: {
-          result: string
-          contexts: MinimalAgentFragment[]
-        } = {
-          result: responseText,
-          contexts: fragments,
-        }
-        return successResult
-      } else {
-        let notFoundMsg = `Could not find the slack messages`
-        if (params.filter_query)
-          notFoundMsg += ` matching '${params.filter_query}'`
-        // Use the processed app name if available
-        const appNameForText = appToUse
-        if (params.app) notFoundMsg += ` in ${appNameForText}`
-        notFoundMsg += `.`
-        return { result: notFoundMsg, contexts: [] }
-      }
-    } catch (error) {
-      const errMsg = getErrorMessage(error)
-      execSpan?.setAttribute("error", errMsg)
-      Logger.error(error, `Metadata retrieval tool error: ${errMsg}`)
-      // Ensure this return type matches the interface
-      return {
-        result: `Error retrieving metadata: ${errMsg}`,
-        error: errMsg,
-      }
-    } finally {
-      execSpan?.end()
-    }
-  },
-}
 
 export const getSlackMessagesFromUser: AgentTool = {
   name: "get_slack_messages_from_user",
@@ -1327,7 +1100,7 @@ export const getSlackMessagesFromUser: AgentTool = {
 export const getSlackRelatedMessages: AgentTool = {
   name: "get_slack_related_messages",
   description:
-    "Unified tool to retrieve Slack messages with flexible filtering options. Can search by channel, user, time range, thread, or any combination. Use this single tool for all Slack message retrieval needs.",
+    "Unified tool to retrieve Slack messages with flexible filtering options. Can search by channel, user, time range, thread, or any combination. Automatically includes thread messages when found. Use this single tool for all Slack message retrieval needs.",
   parameters: {
     filter_query: {
       type: "string",
@@ -1493,8 +1266,49 @@ export const getSlackRelatedMessages: AgentTool = {
         }
       }
 
+      // Check for thread messages and fetch them automatically
+      const threadIdsToFetch: string[] = []
+      for (const item of items) {
+        if (item.fields && item.fields.sddocname === chatMessageSchema) {
+          const messageFields = item.fields as VespaChatMessage
+          if (messageFields.app === Apps.Slack) {
+            const createdAtNum = messageFields.createdAt
+            const threadIdStr = messageFields.threadId
+            // If this message is a thread root (createdAt equals threadId)
+            if (String(createdAtNum) === threadIdStr) {
+              threadIdsToFetch.push(threadIdStr)
+            }
+          }
+        }
+      }
+
+      let allItems = items
+      let threadMessagesCount = 0
+
+      // Fetch thread messages if any thread roots were found
+      if (threadIdsToFetch.length > 0) {
+        Logger.debug(`[get_slack_messages] Fetching threads for ${threadIdsToFetch.length} thread roots`)
+        try {
+          const threadResponse = await SearchVespaThreads(threadIdsToFetch, execSpan!)
+          const threadItems = (threadResponse?.root?.children || []).filter(
+            (item): item is VespaSearchResults =>
+              !!(item.fields && "sddocname" in item.fields),
+          )
+          
+          if (threadItems.length > 0) {
+            // Combine original messages with thread messages
+            allItems = [...items, ...threadItems]
+            threadMessagesCount = threadItems.length
+            Logger.debug(`[get_slack_messages] Added ${threadMessagesCount} thread messages`)
+          }
+        } catch (error) {
+          Logger.warn(`[get_slack_messages] Failed to fetch thread messages: ${getErrorMessage(error)}`)
+          // Continue with original messages even if thread fetching fails
+        }
+      }
+
       // Process results into fragments
-      const fragments: MinimalAgentFragment[] = items.map(
+      const fragments: MinimalAgentFragment[] = allItems.map(
         (item: VespaSearchResults): MinimalAgentFragment => {
           const citation = searchToCitation(item)
           Logger.debug({ item }, "Processing Slack message item")
@@ -1514,6 +1328,10 @@ export const getSlackRelatedMessages: AgentTool = {
 
       // Build response message
       let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
+      
+      if (threadMessagesCount > 0) {
+        responseText += ` (including ${threadMessagesCount} thread message${threadMessagesCount !== 1 ? 's' : ''})`
+      }
 
       // Add context about what was searched
       if (searchStrategy.length > 0) {
@@ -1539,8 +1357,8 @@ export const getSlackRelatedMessages: AgentTool = {
       }
 
       // Add pagination guidance if there might be more results
-      if (fragments.length === searchOptions.limit) {
-        responseText += `\n\n💡 Showing ${searchOptions.limit} results. Use offset parameter to see more.`
+      if (items.length === searchOptions.limit) {
+        responseText += `\n\n💡 Showing ${searchOptions.limit} main results. Use offset parameter to see more.`
       }
 
       return {
@@ -2214,6 +2032,7 @@ export const searchGmail: AgentTool = {
     userCtx?: string,
     agentPrompt?: string,
   ) => {
+    console.log("Executing searchGmail tool with params:", params)
     const execSpan = span?.startSpan("execute_search_gmail_tool")
     try {
       if (!email) {
@@ -2242,16 +2061,17 @@ export const searchGmail: AgentTool = {
           cc: params.participants.cc,
           bcc: params.participants.bcc,
         }
+
         // Resolve names to emails if needed
-        if (mailParticipant && Object.keys(mailParticipant).length > 0) {
-          mailParticipant = await resolveNamesToEmails(
-            mailParticipant,
-            email,
-            userCtx ?? "",
-            userMetadata,
-            span,
-          )
-        }
+        // if (mailParticipant && Object.keys(mailParticipant).length > 0) {
+        //   mailParticipant = await resolveNamesToEmails(
+        //     mailParticipant,
+        //     email,
+        //     userCtx ?? "",
+        //     userMetadata,
+        //     span,
+        //   )
+        // }
       }
 
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
@@ -2366,7 +2186,7 @@ export const searchDriveFiles: AgentTool = {
       limit?: number
       offset?: number
       sortBy?: "asc" | "desc"
-      filetype?: string[]
+      filetype?: Entity[]
       timeRange?: { startTime: string; endTime: string }
     },
     span?: Span,
@@ -2392,26 +2212,22 @@ export const searchDriveFiles: AgentTool = {
         }
       }
 
-      let enhancedQuery = params.query
-      if (params.owner) {
-        enhancedQuery += ` owner:${params.owner}`
-      }
-      if (params.filetype && params.filetype.length > 0) {
-        enhancedQuery += ` filetype:(${params.filetype.join(" OR ")})`
-      }
+      let query = params.query ? params.query : null
 
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
 
       return await executeVespaSearch({
         email,
-        query: enhancedQuery,
+        query: query,
         app: Apps.GoogleDrive,
-        entity: null, // Let the system determine the entity
+        entity: params.filetype ? params.filetype : null,
         limit: params.limit || 25,
         offset: params.offset || 0,
         orderDirection: params.sortBy === "asc" ? "asc" : "desc",
         agentAppEnums,
         span: execSpan,
+        owner: params.owner,
+        schema: !params.query ? fileSchema : null,
         timestampRange,
       })
     } catch (error) {
@@ -2451,7 +2267,6 @@ export const searchCalendarEvents: AgentTool = {
         return { result: errorMsg, error: "Missing email" }
       }
 
-      // Convert timeRange format if provided
       let timestampRange: { from?: string; to?: string } | undefined
       if (params.timeRange) {
         timestampRange = {
@@ -2462,21 +2277,13 @@ export const searchCalendarEvents: AgentTool = {
         }
       }
 
-      // Build enhanced query with attendees and status filters
-      let enhancedQuery = params.query || ""
-
-      // if (params.attendees && params.attendees.length > 0) {
-      //   enhancedQuery += ` attendees:(${params.attendees.join(" OR ")})`
-      // }
-      // if (params.status && params.status.length > 0) {
-      //   enhancedQuery += ` status:(${params.status.join(" OR ")})`
-      // }
+      let query = params.query || ""
 
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)
 
       return await executeVespaSearch({
         email,
-        query: enhancedQuery,
+        query: query,
         app: Apps.GoogleCalendar,
         entity: CalendarEntity.Event,
         limit: params.limit || 25,
@@ -2553,12 +2360,11 @@ export const agentTools: Record<string, AgentTool> = {
   // metadata_retrieval: metadataRetrievalTool,
   // search: searchTool,
   // // Slack-specific tools
-  // get_slack_threads: getSlackThreads,
-  // get_slack_related_messages: getSlackRelatedMessages,
-  // get_user_slack_profile: getUserSlackProfile,
+  getSlackMessages: getSlackRelatedMessages,
+  get_user_slack_profile: getUserSlackProfile,
   // Google-specific tools
   searchGmail: searchGmail,
-  searchGmailAttachment: searchGmailAttachment,
+  // searchGmailAttachment: searchGmailAttachment,
   searchDriveFiles: searchDriveFiles,
   searchCalendarEvents: searchCalendarEvents,
   searchGoogleContacts: searchGoogleContacts,

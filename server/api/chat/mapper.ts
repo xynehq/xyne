@@ -984,7 +984,8 @@ export const searchGlobalTool: ToolDefinition = {
       type: "string",
       required: true,
       description:
-        "The search query string that specifies what you want to find.",
+        `The search query string that specifies what you want to find.
+         - query should be keywords focus to retireve the most relevant content from corpus.`,
     },
     {
       name: "limit",
@@ -1028,7 +1029,8 @@ export const googleTools: ToolDefinition[] = [
         type: "string",
         required: false,
         description: `Extracted search terms from the user's query to find emails if query doesn't contain important semantic terms, will fetch based on different params e.g. timeRange, participants, labels etc.
-           - 
+           - don't apply filters in the query like "from:sahebjot" or "subject:meeting".
+           - query should be keywords focus to retireve the most relevant content from corpus.
           `,
       },
       {
@@ -1053,7 +1055,7 @@ export const googleTools: ToolDefinition[] = [
         name: "labels",
         type: "string[]",
         required: false,
-        description: "Filter emails by Gmail labels.",
+        description: "Filter emails by Gmail labels. labels are 'IMPORTANT', 'STARRED', 'UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS', 'DRAFT', 'SENT', 'INBOX', 'SPAM', 'TRASH'.",
       },
       {
         name: "timeRange",
@@ -1169,7 +1171,7 @@ export const googleTools: ToolDefinition[] = [
         name: "filetype",
         type: "string[]",
         required: false,
-        description: "Filter files by type (e.g., PDF, DOCX).",
+        description: `Filter files by type (e.g., ${Object.values(DriveEntity).map((e) => `- ${e}\n`)}).`,
       },
       {
         name: "timeRange",
