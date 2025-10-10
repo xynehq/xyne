@@ -598,6 +598,8 @@ export default function FileUpload({
                           className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 dark:bg-slate-600 text-white dark:text-gray-200 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black dark:hover:bg-slate-500"
                           title="Remove file"
                         >
+                          <X className="w-3 h-3" />
+                        </button>
 
                         <div className="flex flex-col items-center justify-center w-full">
                           {selectedFile.preview ? (
