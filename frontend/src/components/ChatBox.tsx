@@ -2960,10 +2960,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           )}
                           <button
                             onClick={() => removeFile(selectedFile.id)}
-                            className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                            disabled={selectedFile.uploading}
+                            className={`transition-colors p-1 ${
+                              selectedFile.uploading
+                                ? 'text-red-500 hover:text-red-600'
+                                : 'text-gray-400 hover:text-red-500'
+                            }`}
+                            title={selectedFile.uploading ? 'Cancel upload' : 'Remove file'}
                           >
-                            <X size={12} />
+                            {selectedFile.uploading ? (
+                              <X size={12} className="animate-pulse" />
+                            ) : (
+                              <X size={12} />
+                            )}
                           </button>
                         </div>
                       </div>
