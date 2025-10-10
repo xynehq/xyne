@@ -1,3 +1,4 @@
+import React from "react"
 import {
   Bot,
   Mail,
@@ -14,7 +15,6 @@ interface WhatHappensNextUIProps {
   isVisible: boolean
   onClose: () => void
   onSelectAction: (actionId: string) => void
-  selectedNodeId?: string | null
   toolData?: any
 }
 
@@ -30,8 +30,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
   isVisible,
   onClose,
   onSelectAction,
-  selectedNodeId,
-}) => {
+}: WhatHappensNextUIProps) => {
   // Available actions (currently functional)
   const availableActions: NextAction[] = [
     {
@@ -65,7 +64,8 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
             d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
           />
         </svg>
-      ),},
+      ),
+    },
     {
       id: "trigger",
       name: "Manual Trigger",
@@ -133,8 +133,8 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "email" || action.id === "review" || action.id === "trigger") {
-                // For AI Agent and Email, trigger custom event to open respective ConfigUI
+              if (action.id === "ai_agent" || action.id === "email" || action.id === "review" || action.id === "trigger" || action.id === "run_script") {
+                // Trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI
               }

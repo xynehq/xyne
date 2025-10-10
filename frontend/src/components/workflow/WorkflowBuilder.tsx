@@ -4358,7 +4358,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 setSelectedNodes([])
               }}
               onSelectAction={handleWhatHappensNextAction}
-              selectedNodeId={selectedNodeForNext}
               toolData={
                 selectedNodeForNext
                   ? (() => {

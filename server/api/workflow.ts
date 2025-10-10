@@ -6,6 +6,7 @@ import { type SelectAgent } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 import JSZip from "jszip"
 import { readFile } from "node:fs/promises"
+import path from "node:path"
 
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({

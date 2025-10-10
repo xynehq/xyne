@@ -950,7 +950,7 @@ const StepNode: React.FC<NodeProps> = ({
                 background: "#EBF4FF",
               }}
             >
-              <img src={botLogo} alt="Bot" width={16} height={16} />
+              {/* <img src={botLogo} alt="Bot" width={16} height={16} /> */}
             </div>
 
             <h3

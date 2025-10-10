@@ -100,7 +100,7 @@ function getLanguageConfig(language: ScriptLanguage): LanguageConfig {
           "itertools", "functools", "operator", "string", "uuid",
           "hashlib", "base64", "urllib.parse", "statistics", "requests",
           "urllib", "http", "urllib.request", "urllib.error", "http.client",
-          "csv", "io", "pathlib"
+          "csv", "io", "pathlib","pandas","requests"
         ],
         restrictedKeywords: [
            "import os","from os", "import sys", "import subprocess", "import socket",
@@ -580,7 +580,11 @@ function createBubblewrapArgs(scriptPath: string, exportDir?: string,importDir?:
 
   const baseArgs = [
     // Create new namespace for security
-    '--unshare-all',
+    '--unshare-user',
+  '--unshare-ipc',
+  '--unshare-pid',
+  '--unshare-uts',
+  '--unshare-cgroup-try',
 
     // Essential system directories (read-only)
     '--ro-bind', '/bin', '/bin',
