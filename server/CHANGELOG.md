@@ -1,3 +1,10 @@
+## [3.13.1](https://github.com/xynehq/xyne/compare/v3.13.0...v3.13.1) (2025-10-10)
+
+
+### Bug Fixes
+
+* XYN-175 chatPage height bug ([#1079](https://github.com/xynehq/xyne/issues/1079)) ([57ce80d](https://github.com/xynehq/xyne/commit/57ce80dc900d11f75f440b43ac96060d3f7c0328))
+
 # [3.13.0](https://github.com/xynehq/xyne/compare/v3.12.2...v3.13.0) (2025-10-10)
 
 
