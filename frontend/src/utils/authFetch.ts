@@ -12,6 +12,7 @@ export async function authFetch(
       refreshPromise = fetch("/api/v1/refresh-token", {
         method: "POST",
         credentials: "include",
+        signal: init?.signal, // Pass the abort signal to refresh request
       }).finally(() => {
         isRefreshing = false
       })
