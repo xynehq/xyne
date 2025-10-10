@@ -325,6 +325,26 @@ const createMockAgentFromFormData = (
   }
 }
 
+export const hasNoIntegrations = (
+  appIntegrations: string[] | Record<string, {
+    itemIds: string[];
+    selectedAll: boolean;
+  }> | undefined
+): boolean => {
+  if (!appIntegrations) return true
+
+  if (typeof appIntegrations === "object") {
+    if (Object.keys(appIntegrations).length === 0) return true
+
+    return Object.values(appIntegrations).every(
+      (config) =>
+        !config.selectedAll && (!config.itemIds || config.itemIds.length === 0),
+    )
+  }
+
+  return false
+}
+
 // Check if agent has no app integrations and should use the no-integrations flow
 export const checkAgentWithNoIntegrations = (
   agentForDb: SelectAgent | null,
@@ -2636,6 +2656,7 @@ async function* nonRagIterator(
 }
 
 export const AgentMessageApiRagOff = async (c: Context) => {
+  console.log("arundhadhiiii")
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
 
@@ -4101,6 +4122,7 @@ export const AgentMessageApi = async (c: Context) => {
                   "Using agent with no integrations for the question",
                 )
 
+                console.log("yessss,,,,yessss")
                 searchOrAnswerIterator = agentWithNoIntegrationsQuestion(
                   message,
                   ctx,
@@ -4349,6 +4371,7 @@ export const AgentMessageApi = async (c: Context) => {
                   `Classifying the query as:, ${JSON.stringify(classification)}`,
                 )
                 const understandSpan = ragSpan.startSpan("understand_message")
+                console.log("adiye arundhadhiiiiiiii")
                 const iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,

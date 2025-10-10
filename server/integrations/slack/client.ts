@@ -38,6 +38,10 @@ import { QueryType } from "@/ai/types"
 import { Apps } from "@xyne/vespa-ts/types"
 import { getTracer } from "@/tracer"
 import { getDateForAI } from "@/utils/index"
+import type { SelectPublicAgent } from "@/db/schema"
+import { hasNoIntegrations } from "@/api/chat/agents"
+import { agentWithNoIntegrationsQuestion } from "@/ai/provider"
+import type { ConverseResponseWithCitations } from "@/api/chat/types"
 
 const Logger = getLogger(Subsystem.Slack)
 
@@ -557,7 +561,7 @@ const handleAgentSearchCommand = async (
     )
 
     const lowerCaseAgentName = agentName.toLowerCase()
-    let selectedAgent: any = null
+    let selectedAgent: SelectPublicAgent | undefined = undefined
 
     // 1. Exact match (case-insensitive)
     selectedAgent = agents.find(
@@ -775,19 +779,41 @@ const handleAgentSearchCommand = async (
 
         const tracer = getTracer("slack-agent")
         const span = tracer.startSpan("slack_agent_rag")
+        let iterator: AsyncIterableIterator<ConverseResponseWithCitations>;
 
-        const iterator = UnderstandMessageAndAnswer(
-          dbUser.email,
-          ctx,
-          userMetadata,
-          searchQuery,
-          classification as any,
-          limitedMessages,
-          0.5,
-          false,
-          span,
-          agentPrompt,
-        )
+        if (hasNoIntegrations(selectedAgent.appIntegrations)) {
+          iterator = agentWithNoIntegrationsQuestion(
+            searchQuery,
+            ctx,
+            {
+              modelId: config.defaultBestModel,
+              stream: true,
+              json: false,
+              agentPrompt,
+              reasoning: false,
+              messages: limitedMessages,
+              agentWithNoIntegrations: true,
+            },
+          )
+        }
+        else {
+          iterator = UnderstandMessageAndAnswer(
+            dbUser.email,
+            ctx,
+            userMetadata,
+            searchQuery,
+            classification as any,
+            limitedMessages,
+            0.5,
+            false,
+            span,
+            agentPrompt,
+          )
+        }
+
+        if (!iterator) {
+          throw new Error(`Failed to initialize response iterator for agent "${selectedAgent.name}"`)
+        }
 
         let response = ""
         const ragCitations: any[] = []
