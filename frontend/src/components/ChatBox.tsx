@@ -1003,6 +1003,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const removeFile = useCallback(async (id: string) => {
       const fileToRemove = selectedFiles.find((f) => f.id === id)
       
+      // Abort ongoing upload if in progress
+      if (fileToRemove?.uploading) {
+        const controller = uploadControllers.get(id)
+        controller?.abort()
+        setUploadControllers((prev) => {
+          const newMap = new Map(prev)
+          newMap.delete(id)
+          return newMap
+        })
+        setUploadingFilesCount((prev) => Math.max(0, prev - 1))
+      }
+      
       // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
       if (fileToRemove?.metadata?.fileId) {
         try {
@@ -1030,7 +1042,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         }
         return prev.filter((f) => f.id !== id)
       })
-    }, [selectedFiles])
+    }, [selectedFiles, uploadControllers])
 
     const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
       fileInputRef,
