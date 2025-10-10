@@ -826,6 +826,73 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     // File upload utility functions
 
+    const uploadFile = useCallback(
+      async (selectedFile: SelectedFile, signal: AbortSignal) => {
+        try {
+          const formData = new FormData()
+          formData.append("attachment", selectedFile.file)
+          
+          const response = await authFetch(
+            "/api/v1/files/upload-attachment",
+            {
+              method: "POST",
+              body: formData,
+              signal,
+            },
+          )
+
+          if (!response.ok) {
+            const error = await response.json()
+            throw new Error(error.message || "Upload failed")
+          }
+
+          const result = await response.json()
+          const metadata = result.attachments?.[0]
+
+          if (metadata) {
+            setSelectedFiles((prev) =>
+              prev.map((f) =>
+                f.id === selectedFile.id
+                  ? { ...f, uploading: false, metadata }
+                  : f,
+              ),
+            )
+            return metadata
+          } else {
+            throw new Error("No document ID returned from upload")
+          }
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.log('Upload cancelled for file:', selectedFile.id)
+            return null
+          }
+          
+          const errorMessage =
+            error instanceof Error ? error.message : "Upload failed"
+          setSelectedFiles((prev) =>
+            prev.map((f) =>
+              f.id === selectedFile.id
+                ? { ...f, uploading: false, uploadError: errorMessage }
+                : f,
+            ),
+          )
+          toast.error({
+            title: "Upload failed",
+            description: `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
+          })
+          return null
+        } finally {
+          setUploadControllers((prev) => {
+            const newMap = new Map(prev)
+            newMap.delete(selectedFile.id)
+            return newMap
+          })
+          setUploadingFilesCount((prev) => prev - 1)
+        }
+      },
+      [toast],
+    )
+
     const uploadFiles = useCallback(
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
@@ -843,55 +910,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         )
 
         const uploadPromises = files.map(async (selectedFile) => {
-          try {
-            const formData = new FormData()
-            formData.append("attachment", selectedFile.file)
-            const response = await authFetch(
-              "/api/v1/files/upload-attachment",
-              {
-                method: "POST",
-                body: formData,
-              },
-            )
-
-            if (!response.ok) {
-              const error = await response.json()
-              throw new Error(error.message || "Upload failed")
-            }
-
-            const result = await response.json()
-            const metadata = result.attachments?.[0]
-
-            if (metadata) {
-              setSelectedFiles((prev) =>
-                prev.map((f) =>
-                  f.id === selectedFile.id
-                    ? { ...f, uploading: false, metadata }
-                    : f,
-                ),
-              )
-              return metadata
-            } else {
-              throw new Error("No document ID returned from upload")
-            }
-          } catch (error) {
-            const errorMessage =
-              error instanceof Error ? error.message : "Upload failed"
-            setSelectedFiles((prev) =>
-              prev.map((f) =>
-                f.id === selectedFile.id
-                  ? { ...f, uploading: false, uploadError: errorMessage }
-                  : f,
-              ),
-            )
-            toast.error({
-              title: "Upload failed",
-              description: `Failed to upload ${selectedFile.file.name}: ${errorMessage}`,
-            })
-            return null
-          } finally {
-            setUploadingFilesCount((prev) => prev - 1)
-          }
+          const controller = new AbortController()
+          setUploadControllers((prev) => new Map(prev).set(selectedFile.id, controller))
+          
+          return uploadFile(selectedFile, controller.signal)
         })
 
         const results = await Promise.all(uploadPromises)
@@ -902,7 +924,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         )
         return uploadedMetadata
       },
-      [toast],
+      [uploadFile],
     )
     useEffect(() => {
       if (uploadingFilesCount === 0 && uploadCompleteResolver.current) {
