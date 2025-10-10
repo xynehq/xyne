@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
-import { Bot, Mail, FileText } from "lucide-react"
+import { Bot, Mail } from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -139,19 +139,24 @@ import {
   ManualTriggerIcon,
   AppEventIcon,
   ScheduleIcon,
+  FormSubmissionIcon,
   WorkflowExecutionIcon,
   ChatMessageIcon,
   HelpIcon,
   TemplatesIcon,
   AddIcon,
+  FormDocumentIcon,
+  JiraIcon,
 } from "./WorkflowIcons"
 import {
   workflowExecutionsAPI,
+  workflowToolsAPI,
 } from "./api/ApiHandlers"
 import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
+import { JiraConfigurationUI, JiraConfig } from "./JiraConfigurationUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
@@ -745,6 +750,7 @@ const StepNode: React.FC<NodeProps> = ({
     )
   }
 
+
   // Special rendering for form submission nodes and steps with form tools
   const hasFormTool = tools && tools.length > 0 && tools[0].type === "form"
   if (step.type === "form_submission" || hasFormTool) {
@@ -778,7 +784,7 @@ const StepNode: React.FC<NodeProps> = ({
                 borderRadius: "4.8px",
               }}
             >
-              <FileText size={16} />
+              <FormDocumentIcon width={16} height={16} />
             </div>
 
             <h3
@@ -1580,7 +1586,14 @@ const TriggersSidebar = ({
       name: "On Form Submission",
       description:
         "Generate webforms in Xyne and pass their responses to the workflow",
-      icon: <FileText size={20} />,
+      icon: <FormSubmissionIcon width={20} height={20} />,
+      enabled: true,
+    },
+    {
+      id: "jira",
+      name: "Jira",
+      description: "Trigger workflow when Jira events occur (issue created, updated, etc.)",
+      icon: <JiraIcon width={20} height={20} />,
       enabled: true,
     },
     {
@@ -1853,6 +1866,10 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
     null,
   )
+  const [showJiraConfigUI, setShowJiraConfigUI] = useState(false)
+  const [selectedJiraNodeId, setSelectedJiraNodeId] = useState<string | null>(
+    null,
+  )
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
   const [selectedNodeTools] = useState<Tool[] | null>(
@@ -2077,6 +2094,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               type: step.type,
               contents: [],
               metadata: step.metadata,
+              config: step.metadata, // Use metadata as config for trigger nodes (jira, webhook, etc.)
               isExecution,
               toolExecutions: isExecution ? toolExecutions : undefined,
             },
@@ -2162,12 +2180,13 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       // Check if we have a valid trigger node (not just the trigger selector)
       const hasValidTrigger = nodes.some(node => {
         const nodeData = node.data as any
-        return nodeData?.step?.type && 
-               nodeData.step.type !== "trigger_selector" && 
-               (nodeData.step.type === "form_submission" || 
-                nodeData.step.type === "manual" || 
+        return nodeData?.step?.type &&
+               nodeData.step.type !== "trigger_selector" &&
+               (nodeData.step.type === "form_submission" ||
+                nodeData.step.type === "manual" ||
                 nodeData.step.type === "schedule" ||
-                nodeData.step.type === "app_event")
+                nodeData.step.type === "app_event" ||
+                nodeData.step.type === "jira")
       })
       
       if (lastSavedHash === "" && hasValidTrigger) {
@@ -2245,10 +2264,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowJiraConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
       setSelectedFormNodeId(null)
+      setSelectedJiraNodeId(null)
 
       // Handle different tool types
       switch (toolType) {
@@ -2258,11 +2279,23 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setShowOnFormSubmissionUI(true)
           break
 
+        case "python_code":
+        case "python_script":
+          // Open What Happens Next sidebar for Python code configuration
+          setSelectedNodeForNext(node.id)
+          setShowWhatHappensNextUI(true)
+          break
 
         case "email":
           // Open Email config sidebar
           setSelectedEmailNodeId(node.id)
           setShowEmailConfigUI(true)
+          break
+
+        case "jira":
+          // Open Jira config sidebar
+          setSelectedJiraNodeId(node.id)
+          setShowJiraConfigUI(true)
           break
 
         case "ai_agent":
@@ -2468,6 +2501,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowJiraConfigUI(false)
       
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
@@ -2480,6 +2514,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
+      setShowJiraConfigUI(false)
       
       // Open Triggers sidebar
       setShowTriggersSidebar(true)
@@ -2725,6 +2760,17 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         setShowOnFormSubmissionUI(true)
         setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
 
+        // Reset zoom to 100%
+        setZoomLevel(100)
+        setTimeout(() => {
+          zoomTo(1)
+        }, 50)
+      } else if (triggerId === "jira") {
+        // Close TriggersSidebar with slide-out animation when JiraConfigurationUI opens
+        setShowTriggersSidebar(false)
+        setSelectedJiraNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowJiraConfigUI(true)
+        setShowEmptyCanvas(false) // Hide empty canvas since we're configuring
         // Reset zoom to 100%
         setZoomLevel(100)
         setTimeout(() => {
@@ -3227,6 +3273,164 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     [selectedFormNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges],
   )
 
+  const handleJiraConfigBack = useCallback(() => {
+    setShowJiraConfigUI(false)
+
+    // If we're in creation mode (pending), go back to triggers sidebar
+    if (selectedJiraNodeId === "pending") {
+      setShowTriggersSidebar(true)
+      setSelectedJiraNodeId(null)
+      // If we were in pending mode (creating new trigger), show empty canvas again
+      if (nodes.length === 0) {
+        setShowEmptyCanvas(true)
+      }
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedJiraNodeId(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) =>
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedJiraNodeId, nodes.length, setNodes])
+
+  const handleJiraConfigSave = useCallback(
+    async (jiraConfig: JiraConfig) => {
+      try {
+        let savedJiraData: any
+
+        if (selectedJiraNodeId === "pending") {
+          // Create new Jira trigger - call API to save to workflow_tool table
+          savedJiraData = await workflowToolsAPI.saveJiraConfig({
+            domain: jiraConfig.domain,
+            email: jiraConfig.email,
+            apiToken: jiraConfig.apiToken,
+            events: jiraConfig.events,
+            webhookUrl: jiraConfig.webhookUrl,
+            testWebhookUrl: jiraConfig.testWebhookUrl,
+            productionWebhookUrl: jiraConfig.productionWebhookUrl,
+            webhookId: jiraConfig.webhookId,
+            title: jiraConfig.title,
+            description: jiraConfig.description,
+          })
+
+          console.log("Jira saved to backend:", savedJiraData)
+
+          // Create new Jira trigger node
+          const newNodeId = "jira-trigger"
+
+          // Create the tool object for Jira with backend response
+          const jiraTool = {
+            id: savedJiraData?.id || `tool-${newNodeId}`,
+            type: "jira",
+            val: savedJiraData?.value || jiraConfig,
+            value: savedJiraData?.value || jiraConfig,
+            config: savedJiraData?.config || jiraConfig,
+          }
+
+          // Build description from selected events
+          const eventsText = jiraConfig.events.length > 0
+            ? jiraConfig.events.map(e => e.split(':').pop()?.replace(/_/g, ' ')).join(', ')
+            : 'No events selected'
+
+          // Create Jira trigger node
+          const jiraNode: Node = {
+            id: newNodeId,
+            type: "stepNode",
+            position: { x: 400, y: 100 },
+            data: {
+              step: {
+                id: newNodeId,
+                name: jiraConfig.title || "Jira Trigger",
+                status: "PENDING",
+                contents: [],
+                type: "jira",
+                config: savedJiraData?.config || jiraConfig,
+              },
+              tools: [jiraTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true,
+              anyNodeSelected: false,
+            },
+            draggable: true,
+            selectable: true,
+            selected: true,
+          }
+
+          setNodes([jiraNode])
+          setNodeCounter(2)
+          setSelectedNodes([jiraNode])
+
+        } else if (selectedJiraNodeId && selectedJiraNodeId !== "pending") {
+          // Update existing Jira trigger - call API to update workflow_tool table
+          const toolId = getToolIdFromStepId(selectedJiraNodeId)
+
+          if (!toolId) {
+            throw new Error("Tool ID not found for Jira node")
+          }
+
+          savedJiraData = await workflowToolsAPI.updateJiraConfig(toolId, {
+            domain: jiraConfig.domain,
+            email: jiraConfig.email,
+            apiToken: jiraConfig.apiToken,
+            events: jiraConfig.events,
+            webhookUrl: jiraConfig.webhookUrl,
+            testWebhookUrl: jiraConfig.testWebhookUrl,
+            productionWebhookUrl: jiraConfig.productionWebhookUrl,
+            webhookId: jiraConfig.webhookId,
+            title: jiraConfig.title,
+            description: jiraConfig.description,
+          })
+
+          console.log("Jira updated in backend:", savedJiraData)
+
+          // Update existing Jira trigger node
+          const jiraTool = {
+            id: toolId,
+            type: "jira",
+            val: savedJiraData?.value || jiraConfig,
+            value: savedJiraData?.value || jiraConfig,
+            config: savedJiraData?.config || jiraConfig,
+          }
+
+          setNodes((nds) =>
+            nds.map((node) =>
+              node.id === selectedJiraNodeId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      step: {
+                        ...(node.data.step || {}),
+                        name: jiraConfig.title || "Jira Trigger",
+                        config: savedJiraData?.config || jiraConfig,
+                      },
+                      tools: [jiraTool],
+                      hasNext: !edges.some(edge => edge.source === selectedJiraNodeId),
+                    },
+                  }
+                : node,
+            ),
+          )
+        }
+
+        setShowJiraConfigUI(false)
+        setSelectedJiraNodeId(null)
+        setZoomLevel(100)
+
+        setTimeout(() => {
+          smartFitWorkflow()
+        }, 50)
+      } catch (error) {
+        console.error("Failed to save Jira configuration:", error)
+        alert("Failed to save Jira configuration. Please try again.")
+      }
+    },
+    [selectedJiraNodeId, setNodes, setNodeCounter, setSelectedNodes, smartFitWorkflow, edges, getToolIdFromStepId],
+  )
+
   const handleResultClick = useCallback((result: any) => {
     setSelectedResult(result)
     setShowResultModal(true)
@@ -3555,7 +3759,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         {!showWhatHappensNextUI &&
           !showAIAgentConfigUI &&
           !showEmailConfigUI &&
-          !showOnFormSubmissionUI && (
+          !showOnFormSubmissionUI &&
+          !showJiraConfigUI && (
             <TriggersSidebar
               isVisible={showTriggersSidebar}
               onTriggerClick={handleTriggerClick}
@@ -3585,6 +3790,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
               }}
               onSelectAction={handleWhatHappensNextAction}
               selectedNodeId={selectedNodeForNext}
+              toolType={
+                selectedNodeForNext
+                  ? (() => {
+                      const node = nodes.find((n) => n.id === selectedNodeForNext)
+                      const tools = node?.data?.tools as Tool[] | undefined
+                      return tools && tools.length > 0 ? tools[0]?.type : undefined
+                    })()
+                  : undefined
+              }
               toolData={
                 selectedNodeForNext
                   ? (() => {
@@ -3594,10 +3808,85 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                     })()
                   : undefined
               }
+              selectedTemplate={selectedTemplate}
+              onStepCreated={(stepData) => {
+                // Create visual step below the selected node
+                if (selectedNodeForNext && stepData) {
+                  const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+                  if (sourceNode) {
+                    const newNodeId = `step-${nodeCounter}`
+                    
+                    // Create new node positioned below the source node
+                    const newNode = {
+                      id: newNodeId,
+                      type: "stepNode",
+                      position: {
+                        x: 400, // Consistent X position for perfect straight line alignment
+                        y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+                      },
+                      data: {
+                        step: {
+                          id: newNodeId,
+                          name: stepData.name,
+                          description: stepData.description,
+                          type: stepData.type,
+                          status: "pending",
+                          contents: [],
+                          config: stepData.tool?.val || {},
+                        },
+                        tools: stepData.tool ? [stepData.tool] : [],
+                        isActive: false,
+                        isCompleted: false,
+                        hasNext: true, // Show + button on new step
+                      },
+                      draggable: true,
+                    }
+
+                    // Create edge connecting source to new node
+                    const newEdge = {
+                      id: `${selectedNodeForNext}-${newNodeId}`,
+                      source: selectedNodeForNext,
+                      target: newNodeId,
+                      type: "smoothstep",
+                      animated: false,
+                      style: {
+                        stroke: "#D1D5DB",
+                        strokeWidth: 2,
+                      },
+                      markerEnd: {
+                        type: "arrowclosed" as const,
+                        color: "#D1D5DB",
+                      },
+                      sourceHandle: "bottom",
+                      targetHandle: "top",
+                    }
+
+                    // Update nodes and edges
+                    setNodes((prevNodes) => [...prevNodes, newNode])
+                    setEdges((prevEdges) => [...prevEdges, newEdge])
+                    setNodeCounter((prev) => prev + 1)
+
+                    // Remove hasNext from source node since it now has a next step
+                    setNodes((prevNodes) =>
+                      prevNodes.map((node) =>
+                        node.id === selectedNodeForNext
+                          ? {
+                              ...node,
+                              data: {
+                                ...node.data,
+                                hasNext: false,
+                              },
+                            }
+                          : node,
+                      ),
+                    )
+                  }
+                }
+              }}
             />
 
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && !showOnFormSubmissionUI && (
+        {!showEmailConfigUI && !showOnFormSubmissionUI && !showJiraConfigUI && (
           <AIAgentConfigUI
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
@@ -3635,7 +3924,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         )}
 
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && !showOnFormSubmissionUI && (
+        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showJiraConfigUI && (
           <EmailConfigUI
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
@@ -3710,6 +3999,33 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             }
             toolId={selectedFormNodeId ? getToolIdFromStepId(selectedFormNodeId) : undefined}
           />
+
+        {/* Jira Configuration Sidebar */}
+        <JiraConfigurationUI
+          isVisible={showJiraConfigUI}
+          onBack={handleJiraConfigBack}
+          onClose={() => {
+            setShowJiraConfigUI(false)
+            setSelectedJiraNodeId(null)
+            setNodes((prevNodes) =>
+              prevNodes.map(node => ({ ...node, selected: false }))
+            )
+            setSelectedNodes([])
+            // If we were in pending mode (creating new trigger), show empty canvas again
+            if (nodes.length === 0) {
+              setShowEmptyCanvas(true)
+            }
+          }}
+          onSave={handleJiraConfigSave}
+          initialConfig={
+            selectedJiraNodeId
+              ? (
+                  nodes.find((n) => n.id === selectedJiraNodeId)?.data
+                    ?.step as any
+                )?.config
+              : undefined
+          }
+        />
       </div>
 
       {/* Execution Result Modal */}

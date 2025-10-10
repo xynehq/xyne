@@ -404,6 +404,227 @@ export const workflowToolsAPI = {
     })
     return extractResponseData<any>(response)
   },
+
+  /**
+   * Test Jira connection
+   */
+  async testJiraConnection(credentials: {
+    domain: string
+    email: string
+    apiToken: string
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await api.workflow.tools.jira['test-connection'].$post({
+        json: credentials,
+      })
+
+      // Don't use extractResponseData here - we need to preserve the success flag
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("❌ Jira connection test failed:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Register Jira webhook
+   */
+  async registerJiraWebhook(config: {
+    domain: string
+    email: string
+    apiToken: string
+    webhookUrl: string
+    events: string[]
+    name?: string
+    filters?: { jqlFilter?: string }
+  }): Promise<{ success: boolean; webhookId: string; message: string }> {
+    try {
+      const response = await api.workflow.tools.jira['register-webhook'].$post({
+        json: config,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("❌ Jira webhook registration failed:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Get all Jira webhooks
+   */
+  async getJiraWebhooks(credentials: {
+    domain: string
+    email: string
+    apiToken: string
+  }): Promise<{ success: boolean; data: any[]; count: number }> {
+    try {
+      const response = await api.workflow.tools.jira.webhooks.$post({
+        json: credentials,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("❌ Failed to get Jira webhooks:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Delete Jira webhook
+   */
+  async deleteJiraWebhook(config: {
+    domain: string
+    email: string
+    apiToken: string
+    webhookId: string
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await api.workflow.tools.jira['delete-webhook'].$post({
+        json: config,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Network error" }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("❌ Failed to delete Jira webhook:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Save Jira configuration to workflow_tool table
+   */
+  async saveJiraConfig(jiraConfig: {
+    domain: string
+    email: string
+    apiToken: string
+    events: string[]
+    webhookUrl?: string
+    testWebhookUrl?: string
+    productionWebhookUrl?: string
+    webhookId?: string
+    title?: string
+    description?: string
+  }): Promise<any> {
+    console.log("🔗 Starting Jira save process...")
+    console.log("📋 Jira config input:", jiraConfig)
+
+    // Prepare data for workflow_tool table
+    const toolData = {
+      type: "jira",
+      value: {
+        // Store webhook URLs and metadata in value column
+        webhookUrl: jiraConfig.productionWebhookUrl || jiraConfig.webhookUrl,
+        testWebhookUrl: jiraConfig.testWebhookUrl,
+        productionWebhookUrl: jiraConfig.productionWebhookUrl,
+        webhookId: jiraConfig.webhookId,
+        title: jiraConfig.title || 'Jira Trigger',
+        description: jiraConfig.description || `Jira webhook for events: ${jiraConfig.events.join(', ')}`,
+        events: jiraConfig.events,
+      },
+      config: {
+        // Store Jira credentials and configuration in config column
+        domain: jiraConfig.domain,
+        email: jiraConfig.email,
+        apiToken: jiraConfig.apiToken,
+        events: jiraConfig.events,
+        webhookId: jiraConfig.webhookId,
+        testWebhookUrl: jiraConfig.testWebhookUrl,
+        productionWebhookUrl: jiraConfig.productionWebhookUrl,
+      }
+    }
+
+    console.log("📋 Final tool data to send to backend:", JSON.stringify(toolData, null, 2))
+
+    try {
+      console.log("🚀 Attempting to create Jira tool with backend API...")
+      const response = await this.createTool(toolData)
+      console.log("✅ Backend response:", response)
+      return response
+    } catch (error) {
+      console.error("❌ Backend API error:", error)
+      throw error
+    }
+  },
+
+  /**
+   * Update existing Jira configuration
+   */
+  async updateJiraConfig(
+    toolId: string,
+    jiraConfig: {
+      domain: string
+      email: string
+      apiToken: string
+      events: string[]
+      webhookUrl?: string
+      testWebhookUrl?: string
+      productionWebhookUrl?: string
+      webhookId?: string
+      title?: string
+      description?: string
+    }
+  ): Promise<any> {
+    console.log("🔗 Starting Jira update process...")
+    console.log("📋 Jira config input:", jiraConfig)
+
+    // Prepare data for workflow_tool table
+    const toolData = {
+      type: "jira",
+      value: {
+        // Store webhook URLs and metadata in value column
+        webhookUrl: jiraConfig.productionWebhookUrl || jiraConfig.webhookUrl,
+        testWebhookUrl: jiraConfig.testWebhookUrl,
+        productionWebhookUrl: jiraConfig.productionWebhookUrl,
+        webhookId: jiraConfig.webhookId,
+        title: jiraConfig.title || 'Jira Trigger',
+        description: jiraConfig.description || `Jira webhook for events: ${jiraConfig.events.join(', ')}`,
+        events: jiraConfig.events,
+      },
+      config: {
+        // Store Jira credentials and configuration in config column
+        domain: jiraConfig.domain,
+        email: jiraConfig.email,
+        apiToken: jiraConfig.apiToken,
+        events: jiraConfig.events,
+        webhookId: jiraConfig.webhookId,
+        testWebhookUrl: jiraConfig.testWebhookUrl,
+        productionWebhookUrl: jiraConfig.productionWebhookUrl,
+      }
+    }
+
+    console.log("📋 Final tool data to send to backend:", JSON.stringify(toolData, null, 2))
+
+    try {
+      console.log("🚀 Attempting to update Jira tool with backend API...")
+      const response = await this.updateTool(toolId, toolData)
+      console.log("✅ Backend response:", response)
+      return response
+    } catch (error) {
+      console.error("❌ Backend API error:", error)
+      throw error
+    }
+  },
 }
 
 // Workflow Steps API for adding and editing steps

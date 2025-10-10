@@ -222,6 +222,11 @@ import {
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
+  TestJiraConnectionApi,
+  RegisterJiraWebhookApi,
+  GetJiraWebhooksApi,
+  DeleteJiraWebhookApi,
+  ReceiveJiraWebhookApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -1067,6 +1072,12 @@ export const AppRoutes = app
     UpdateWorkflowToolApi,
   )
   .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .post("/workflow/tools/jira/test-connection", TestJiraConnectionApi)
+  .post("/workflow/tools/jira/register-webhook", RegisterJiraWebhookApi)
+  .post("/workflow/tools/jira/webhooks", GetJiraWebhooksApi)
+  .post("/workflow/tools/jira/delete-webhook", DeleteJiraWebhookApi)
+  .post("/webhook/jira/:webhookId", ReceiveJiraWebhookApi)
+  .post("/webhook-test/jira/:webhookId", ReceiveJiraWebhookApi)
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
