@@ -128,6 +128,18 @@ export function collectFollowupContext(
       }
     }
 
+    // 3) sourceIds from assistant messages
+    if (Array.isArray(m.sources) && m.sources.length > 0 && ws.fileIds.length < MAX_FILES) {
+      for (const source of m.sources) {
+        if (!seen.has(`f:${source.docId}`)) {
+          ws.fileIds.push(source.docId);
+          ws.carriedFromMessageIds.push(m.externalId);
+          seen.add(`f:${source.docId}`);
+          if (ws.fileIds.length >= MAX_FILES) break;
+        }
+      }
+    }
+
     // Stop if we hit a chain break (previous conversation topic)
     if (chainBreakIndices.has(i)) break
   }
@@ -1297,7 +1309,7 @@ export function transformMessagesWithErrorHandling(
       msg.messageRole === MessageRole.User &&
       msg.errorMessage &&
       msg.errorMessage.trim() !== "" &&
-      (i + 1 < messages.length && (!messages[i + 1] || messages[i + 1].messageRole !== MessageRole.Assistant))
+      (i + 1 < messages.length || (messages[i + 1] && messages[i + 1].messageRole !== MessageRole.Assistant))
     ) {
       // Create a synthetic assistant message for error consistency
       const syntheticMessage: SelectMessage = {

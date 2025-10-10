@@ -1966,12 +1966,12 @@ async function* generateAnswerFromGivenContext(
       }
     } else {
       const collectionFileIds = fileIds.filter((fid) => fid.startsWith("clf-") || fid.startsWith("att_"))
-      const nonCollectionFileIds = fileIds.filter((fid) => !fid.startsWith("clf-") && !fid.startsWith("att_"))
+      const nonCollectionFileIds = fileIds.filter((fid) => !fid.startsWith("clf-") && !fid.startsWith("att"))
+      const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
       if(nonCollectionFileIds && nonCollectionFileIds.length > 0) {
         results = await searchVespaInFiles(builtUserQuery, email, nonCollectionFileIds, {
             limit: fileIds?.length,
             alpha: userAlpha,
-            rankProfile: SearchModes.attachmentRank,
           })
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
@@ -1979,6 +1979,16 @@ async function* generateAnswerFromGivenContext(
       }
       if (collectionFileIds && collectionFileIds.length > 0) {
         results = await searchCollectionRAG(messageText, collectionFileIds, undefined)
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+      if(attachmentFileIds && attachmentFileIds.length > 0) {
+        results = await searchVespaInFiles(builtUserQuery, email, attachmentFileIds, {
+          limit: fileIds?.length,
+          alpha: userAlpha,
+          rankProfile: SearchModes.attachmentRank,
+        })
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
@@ -5170,7 +5180,7 @@ export const MessageApi = async (c: Context) => {
                   fileIds = workingSet.fileIds;
                   imageAttachmentFileIds = workingSet.attachmentFileIds;
                   loggerWithChild({ email: email }).info(
-                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
+                    `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
                   );
                 }
 
