@@ -542,6 +542,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([])
     const [uploadingFilesCount, setUploadingFilesCount] = useState(0)
     const uploadCompleteResolver = useRef<(() => void) | null>(null)
+    const [uploadControllers, setUploadControllers] = useState<Map<string, AbortController>>(new Map())
 
     // Model selection state
     const [availableModels, setAvailableModels] = useState<
