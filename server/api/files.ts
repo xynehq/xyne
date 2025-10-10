@@ -238,6 +238,11 @@ export const handleAttachmentUpload = async (c: Context) => {
     const attachmentMetadata: AttachmentMetadata[] = []
     
     for (const file of files) {
+      // Check if request was aborted before processing each file
+      if (c.req.raw.signal?.aborted) {
+        return c.json({ error: 'Upload cancelled' }, 499)
+      }
+      
       const fileBuffer = await file.arrayBuffer()
       const fileId = `attf_${crypto.randomUUID()}`
       let vespaId = fileId
@@ -248,6 +253,10 @@ export const handleAttachmentUpload = async (c: Context) => {
       let outputDir: string | undefined
 
       try {
+        // Check if request was aborted during file processing
+        if (c.req.raw.signal?.aborted) {
+          return c.json({ error: 'Upload cancelled' }, 499)
+        }
         if (isImage) {
           // For images: save to disk and generate thumbnail
           const baseDir = path.resolve(
