@@ -1,3 +1,10 @@
+## [3.13.6](https://github.com/xynehq/xyne/compare/v3.13.5...v3.13.6) (2025-10-10)
+
+
+### Bug Fixes
+
+* **calling-feature:** enabling calling button ([#1091](https://github.com/xynehq/xyne/issues/1091)) ([6514fbd](https://github.com/xynehq/xyne/commit/6514fbde9142a1fde880ce035d01a00a8db1ccd0))
+
 ## [3.13.5](https://github.com/xynehq/xyne/compare/v3.13.4...v3.13.5) (2025-10-10)
 
 
