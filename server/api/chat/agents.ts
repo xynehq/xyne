@@ -87,7 +87,6 @@ import {
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
-import type { AttachmentMetadata } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
@@ -115,6 +114,7 @@ import {
   mimeTypeMap,
   processMessage,
   searchToCitation,
+  transformMessagesWithErrorHandling,
 } from "./utils"
 import { textToCitationIndex, textToImageCitationIndex } from "./utils"
 import config from "@/config"
@@ -3755,32 +3755,6 @@ export const AgentMessageApi = async (c: Context) => {
               })
             }
 
-            const filteredMessages = messages
-              .slice(0, messages.length - 1)
-              .filter(
-                (msg) =>
-                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
-              )
-
-            // Check for follow-up context carry-forward
-            const lastIdx = filteredMessages.length - 1
-            const workingSet = collectFollowupContext(filteredMessages, lastIdx)
-
-            const hasCarriedContext =
-              workingSet.fileIds.length > 0 ||
-              workingSet.attachmentFileIds.length > 0
-            if (hasCarriedContext) {
-              fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]))
-              imageAttachmentFileIds = Array.from(
-                new Set([
-                  ...imageAttachmentFileIds,
-                  ...workingSet.attachmentFileIds,
-                ]),
-              )
-              loggerWithChild({ email: email }).info(
-                `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
-              )
-            }
             if (
               (fileIds && fileIds?.length > 0) ||
               (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
@@ -4163,6 +4137,7 @@ export const AgentMessageApi = async (c: Context) => {
                 offset: 0,
               }
               let parsed = {
+                isFollowUp: false,
                 answer: "",
                 queryRewrite: "",
                 temporalDirection: null,
@@ -4317,6 +4292,19 @@ export const AgentMessageApi = async (c: Context) => {
                 parsed.queryRewrite,
               )
               conversationSpan.end()
+              let classification: TemporalClassifier & QueryRouterResponse =
+                  {
+                    direction: parsed.temporalDirection,
+                    type: parsed.type as QueryType,
+                    filterQuery: parsed.filter_query,
+                    isFollowUp: parsed.isFollowUp,
+                    filters: {
+                      ...(parsed?.filters ?? {}),
+                      apps: parsed.filters?.apps || [],
+                      entities: parsed.filters?.entities as any,
+                      intent: parsed.intent || {},
+                    },
+                  }
 
               if (parsed.answer === null || parsed.answer === "") {
                 const ragSpan = streamSpan.startSpan("rag_processing")
@@ -4332,37 +4320,96 @@ export const AgentMessageApi = async (c: Context) => {
                     "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                   )
                 }
-                const classification: TemporalClassifier & QueryRouterResponse =
-                  {
-                    direction: parsed.temporalDirection,
-                    type: parsed.type as QueryType,
-                    filterQuery: parsed.filter_query,
-                    filters: {
-                      ...(parsed?.filters ?? {}),
-                      apps: parsed.filters?.apps || [],
-                      entities: parsed.filters?.entities as any,
-                      intent: parsed.intent || {},
-                    },
-                  }
 
-                Logger.info(
+                loggerWithChild({ email: email }).info(
                   `Classifying the query as:, ${JSON.stringify(classification)}`,
                 )
-                const understandSpan = ragSpan.startSpan("understand_message")
-                const iterator = UnderstandMessageAndAnswer(
-                  email,
-                  ctx,
-                  userMetadata,
-                  message,
-                  classification,
-                  limitedMessages,
-                  0.5,
-                  userRequestsReasoning,
-                  understandSpan,
-                  agentPromptForLLM,
-                  actualModelId,
-                  pathExtractedInfo,
+  
+                ragSpan.setAttribute(
+                  "isFollowUp",
+                  classification.isFollowUp ?? false,
                 )
+                const understandSpan = ragSpan.startSpan("understand_message")
+  
+                let iterator:
+                  | AsyncIterableIterator<
+                      ConverseResponse & {
+                        citation?: { index: number; item: any }
+                        imageCitation?: ImageCitation
+                      }
+                    >
+                  | undefined = undefined
+  
+                if (messages.length < 2) {
+                  classification.isFollowUp = false // First message or not enough history to be a follow-up
+                } else if (classification.isFollowUp) {
+                  // Use the NEW classification that already contains:
+                  // - Updated filters (with proper offset calculation)
+                  // - Preserved app/entity from previous query
+                  // - Updated count/pagination info
+                  // - All the smart follow-up logic from the LLM
+
+                  const filteredMessages = transformMessagesWithErrorHandling(messages)
+  
+                  // Check for follow-up context carry-forward
+                  const workingSet = collectFollowupContext(filteredMessages);
+        
+                  const hasCarriedContext =
+                    workingSet.fileIds.length > 0 ||
+                    workingSet.attachmentFileIds.length > 0;
+                  if (hasCarriedContext) {
+                    fileIds = workingSet.fileIds;
+                    imageAttachmentFileIds = workingSet.attachmentFileIds;
+                    loggerWithChild({ email: email }).info(
+                      `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
+                    );
+                  }
+  
+                  if (fileIds && fileIds.length > 0 || imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
+                    loggerWithChild({ email: email }).info(
+                      `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
+                    )
+                    iterator = UnderstandMessageAndAnswerForGivenContext(
+                      email,
+                      ctx,
+                      userMetadata,
+                      message,
+                      0.5,
+                      fileIds as string[],
+                      userRequestsReasoning,
+                      understandSpan,
+                      undefined,
+                      imageAttachmentFileIds as string[],
+                      agentPromptForLLM,
+                      undefined,
+                      actualModelId || config.defaultBestModel,
+                    )
+                  } else {
+                    loggerWithChild({ email: email }).info(
+                      `Follow-up query detected.`,
+                    )
+                    // Use the new classification directly - it already has all the smart follow-up logic
+                    // No need to reuse old classification, the LLM has generated an updated one
+                  }
+                }
+
+                // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
+                if(!iterator) {
+                    iterator = UnderstandMessageAndAnswer(
+                    email,
+                    ctx,
+                    userMetadata,
+                    message,
+                    classification,
+                    limitedMessages,
+                    0.5,
+                    userRequestsReasoning,
+                    understandSpan,
+                    agentPromptForLLM,
+                    actualModelId,
+                    pathExtractedInfo,
+                  )
+                }
                 stream.writeSSE({
                   event: ChatSSEvents.Start,
                   data: "",

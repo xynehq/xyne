@@ -12,6 +12,23 @@ const Logger = getLogger(Subsystem.Integrations).child({
   module: "duckdb",
 });
 
+// Small helper: retry unlink a few times for EBUSY/EPERM
+const unlinkWithRetry = async (path: string, attempts = 5, delayMs = 50) => {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await fs.unlink(path);
+      return;
+    } catch (e: any) {
+      if (e?.code === 'ENOENT') return;
+      if (e?.code === 'EBUSY' || e?.code === 'EPERM') {
+        await new Promise(res => setTimeout(res, delayMs * (i + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+};
+
 export const querySheetChunks = async (
   sheetChunks: string[],
   userQuery: string,
@@ -40,9 +57,15 @@ export const querySheetChunks = async (
       ws.write('\n');
     }
     await new Promise<void>((resolve, reject) => {
-      ws.on('finish', resolve);
-      ws.on('error', reject);
-      ws.end();
+      const onError = (e: any) => reject(e);
+      ws.once('error', onError);
+      ws.end(() => {
+        // 'finish' has happened; now wait for 'close'
+        ws.once('close', () => {
+          ws.off('error', onError);
+          resolve();
+        });
+      });
     });
     Logger.debug("Large dataset written using streaming");
   } else {
@@ -192,28 +215,33 @@ export const querySheetChunks = async (
     // Clean up
     Logger.debug("Cleaning up DuckDB resources");
     try {
-      if (connection) await connection.close();
+      if (connection) {
+        try {
+          await connection.run(`DROP VIEW IF EXISTS ${tableName}`);
+        } catch (e) {
+          Logger.warn("Ignoring DROP VIEW error:", e);
+        }
+        await connection.close();
+      }
       if (db) await db.close();
       Logger.debug("DuckDB connection and database closed");
     } catch (e) {
       Logger.warn("Error closing DuckDB resources:", e);
     }
     
-    // Clean up temporary TSV file
+    // 3) Clean up temporary TSV file
     try {
-      await fs.unlink(tempFilePath);
+      await unlinkWithRetry(tempFilePath);
       Logger.debug(`Temporary TSV file deleted: ${tempFilePath}`);
     } catch (e) {
       Logger.warn(`Failed to delete temporary TSV file ${tempFilePath}:`, e);
     }
     
-    // Clean up temporary DuckDB file
     try {
-      await fs.stat(dbPath);
-      await fs.unlink(dbPath);
+      await unlinkWithRetry(dbPath);
       Logger.debug(`Temporary DuckDB file deleted: ${dbPath}`);
-    } catch (e) {
-      if (e instanceof Error && 'code' in e && e.code === 'ENOENT') {
+    } catch (e: any) {
+      if (e?.code === 'ENOENT') {
         Logger.debug(`Temporary DuckDB file already removed: ${dbPath}`);
       } else {
         Logger.warn(`Failed to delete temporary DuckDB file ${dbPath}:`, e);
