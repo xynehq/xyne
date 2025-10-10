@@ -206,6 +206,11 @@ export default function FileUpload({
             await new Promise((resolve) => setTimeout(resolve, 200))
           }
         } catch (error) {
+          // Don't show error for aborted uploads
+          if (error instanceof Error && error.name === 'AbortError') {
+            break
+          }
+          
           console.error(`Batch ${i + 1} failed:`, error)
           toast.error({
             title: `Batch ${i + 1} Failed`,
