@@ -2248,8 +2248,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           .map((f) => f.preview)
           .filter(Boolean) as string[]
         cleanupPreviewUrls(previewUrls)
+        
+        // Abort any ongoing uploads
+        uploadControllers.forEach((controller) => {
+          controller.abort()
+        })
       }
-    }, [])
+    }, [uploadControllers])
 
     // Add imperative handle to expose sendMessage method
     React.useImperativeHandle(
