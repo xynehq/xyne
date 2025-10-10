@@ -18,6 +18,7 @@ interface SelectedFile {
   file: File
   id: string
   preview?: string
+  abortController?: AbortController
 }
 
 interface FileUploadProps {
