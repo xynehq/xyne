@@ -409,6 +409,10 @@ export const handleAttachmentUpload = async (c: Context) => {
       message: `Stored ${attachmentMetadata.length} attachment(s) successfully.`,
     })
   } catch (error) {
+    if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted'))) {
+      return c.json({ error: 'Upload cancelled' }, 499)
+    }
+    
     loggerWithChild({ email }).error(
       error,
       "Error in attachment upload handler",
