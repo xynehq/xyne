@@ -479,6 +479,21 @@ function AgentComponent() {
     }
   }
 
+  // Centralized handler for folder navigation from search results
+  const handleNavigateToFolder = (folder: any) => {
+    // Clear search state
+    setIsSearching(false)
+    setSearchResults([])
+    setDropdownSearchQuery("")
+    
+    // Navigate to the folder using existing navigation logic
+    if (folder.fields?.docId) {
+      navigateToDriveFolder(folder.fields.docId, folder.title || folder.name || "Untitled")
+    } else if (folder.docId) {
+      navigateToDriveFolder(folder.docId, folder.title || folder.name || "Untitled")
+    }
+  }
+
   const fetchGoogleDriveItemsByDocIds = async (
     docIds: string[],
   ): Promise<any[]> => {
