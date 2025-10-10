@@ -297,6 +297,7 @@ export default function FileUpload({
         file,
         id: generateFileId(),
         preview: createImagePreview(file),
+        abortController: new AbortController(),
       }))
 
       // Check if any files with the same name already exist in selectedFiles
