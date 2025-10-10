@@ -851,6 +851,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               {
                 method: "POST",
                 body: formData,
+                signal: selectedFile.abortController?.signal,
               },
             )
 
