@@ -1,3 +1,10 @@
+## [3.13.3](https://github.com/xynehq/xyne/compare/v3.13.2...v3.13.3) (2025-10-10)
+
+
+### Bug Fixes
+
+* **ngnix:** ngnix config for calling ([#1054](https://github.com/xynehq/xyne/issues/1054)) ([ade323e](https://github.com/xynehq/xyne/commit/ade323e3835f76c046e42d6d0b75b2698e437924))
+
 ## [3.13.2](https://github.com/xynehq/xyne/compare/v3.13.1...v3.13.2) (2025-10-10)
 
 
