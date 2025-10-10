@@ -87,6 +87,7 @@ interface GoogleDriveNavigationProps {
     React.SetStateAction<Record<string, boolean>>
   >
   selectedIntegrations: Record<string, boolean>
+  onNavigate?: (folder: any) => void
 }
 interface DriveItem {
   fields: VespaFile
