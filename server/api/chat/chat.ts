@@ -1372,11 +1372,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       span: initialSearchSpan,
     })
   } else {
-    Logger.info(`Agent Apps in iterative RAG:  ${agentAppEnums}`);
-    Logger.info(`Agent Specific DataSource Ids in iterative RAG: ${JSON.stringify(agentSpecificDataSourceIds, null, 2)}`);
-    Logger.info(`Agent Specific Collection Selections in iterative RAG: ${JSON.stringify(agentSpecificCollectionSelections, null, 2)}`);
-    Logger.info(`Channel Ids in iterative RAG: ${JSON.stringify(channelIds, null, 2 )}`);
-    Logger.info(`Selected Items in iterative RAG: ${JSON.stringify(selectedItem, null, 2)}`);
     searchResults = await searchVespaAgent(
       message,
       email,
@@ -1395,7 +1390,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       },
     )
   }
-  Logger.info(`Initial Search Results in iterative RAG: ${JSON.stringify(searchResults, null, 2)}`);
 
   // Expand email threads in the results
   // Skip thread expansion if original intent was GetItems (exact count requested)
