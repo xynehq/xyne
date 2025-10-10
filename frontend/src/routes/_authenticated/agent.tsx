@@ -848,14 +848,17 @@ function AgentComponent() {
     fetchInitialAgentForChat()
   }, [agentId, toast])
 
+  let cancelledEditAgentEvent = false
   useEffect(() => {
     const loadAgentForEdit = async () => {
+       cancelledEditAgentEvent = false 
       if (agentId && mode === 'edit') {
         // Fetch the agent data
         try {
           const response = await api.agent[":agentExternalId"].$get({
             param: { agentExternalId: agentId },
           })
+          if (cancelledEditAgentEvent) return
           if (response.ok) {
             const agentData = (await response.json()) as SelectPublicAgent
             handleEditAgent(agentData)  // Trigger edit mode
@@ -866,6 +869,7 @@ function AgentComponent() {
             })
           }
         } catch (error) {
+          if (cancelledEditAgentEvent) return
           toast.error({
             title: "Error",
             description: "An error occurred while loading agent for editing.",
@@ -876,7 +880,11 @@ function AgentComponent() {
     }
 
     loadAgentForEdit()
-  }, [agentId, mode, toast])
+    return () => {
+      cancelledEditAgentEvent = true  // ✅ Mark as cancelled on cleanup
+    }
+    
+  }, [agentId, mode])
 
   // Cleanup EventSource on component unmount to prevent memory leaks
   useEffect(() => {
