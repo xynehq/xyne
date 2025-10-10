@@ -1,3 +1,10 @@
+## [3.13.2](https://github.com/xynehq/xyne/compare/v3.13.1...v3.13.2) (2025-10-10)
+
+
+### Bug Fixes
+
+* **memory:** rebalance JVM heap sizes across Vespa production containers ([#1085](https://github.com/xynehq/xyne/issues/1085)) ([85b493d](https://github.com/xynehq/xyne/commit/85b493d79cbdac0f100f2ad2915eaa52ae124f70))
+
 ## [3.13.1](https://github.com/xynehq/xyne/compare/v3.13.0...v3.13.1) (2025-10-10)
 
 
