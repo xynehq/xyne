@@ -54,6 +54,7 @@ import { getLoggerWithChild, getLogger } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
 import type { SelectMessage } from "@/db/schema"
+import { MessageRole } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
@@ -78,9 +79,9 @@ const MAX_FILES = 12;
 
 export function collectFollowupContext(
   messages: SelectMessage[],
-  startIdx: number,
   maxHops = 12
 ): WorkingSet {
+  const startIdx = messages.length - 1;
   const ws: WorkingSet = {
     fileIds: [],
     attachmentFileIds: [],
@@ -89,6 +90,10 @@ export function collectFollowupContext(
 
   const seen = new Set<string>();
   let hops = 0;
+
+  // Extract chain breaks to understand conversation boundaries
+  const chainBreaks = extractChainBreakClassifications(messages);
+  const chainBreakIndices = new Set(chainBreaks.map(cb => cb.messageIndex));
 
   for (let i = startIdx; i >= 0 && hops < maxHops; i--, hops++) {
     const m = messages[i];
@@ -123,17 +128,8 @@ export function collectFollowupContext(
       }
     }
 
-    // Use existing chain break classification system to detect boundaries
-    if (m.messageRole === "user" && m.queryRouterClassification) {
-      try {
-        const classification = typeof m.queryRouterClassification === "string" 
-          ? JSON.parse(m.queryRouterClassification) 
-          : m.queryRouterClassification;
-        if (classification.isFollowUp === false) break;
-      } catch (error) {
-        // If we can't parse classification, continue processing
-      }
-    }
+    // Stop if we hit a chain break (previous conversation topic)
+    if (chainBreakIndices.has(i)) break
   }
 
   // De-dupe & trim
@@ -1278,4 +1274,58 @@ export const isValidEntity = (entity: string): boolean => {
           .includes(normalizedEntity)
     : // Object.values(NotionEntity).map(v => v.toLowerCase()).includes(normalizedEntity)
       false
+}
+
+/**
+ * Transforms messages to ensure consistency by adding synthetic assistant messages
+ * for user queries that have errorMessage but no corresponding assistant response.
+ * 
+ * @param messages - Array of messages to transform
+ * @returns Transformed messages with synthetic assistant messages for errors
+ */
+export function transformMessagesWithErrorHandling(
+  messages: SelectMessage[]
+): SelectMessage[] {
+  const updatedMessages: SelectMessage[] = []
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    updatedMessages.push(msg)
+
+    // Check if it's a user query that failed
+    if (
+      msg.messageRole === MessageRole.User &&
+      msg.errorMessage &&
+      msg.errorMessage.trim() !== "" &&
+      (i + 1 < messages.length && (!messages[i + 1] || messages[i + 1].messageRole !== MessageRole.Assistant))
+    ) {
+      // Create a synthetic assistant message for error consistency
+      const syntheticMessage: SelectMessage = {
+        ...msg,
+        id: msg.id + messages.length,
+        externalId: `${msg.externalId}-error`,
+        messageRole: MessageRole.Assistant,
+        message: msg.errorMessage,
+        createdAt: new Date(msg.createdAt.getTime() + 1),
+        updatedAt: new Date(),
+        errorMessage: "",
+        thinking: "",
+        sources: [],
+        imageCitations: [],
+        fileIds: [],
+        attachments: [],
+        queryRouterClassification: [],
+        feedback: null,
+        tokensUsed: 0,
+        cost: "0",
+      }
+
+      updatedMessages.push(syntheticMessage)
+    }
+  }
+
+  // Finally, filter out invalid messages (like before)
+  return updatedMessages.filter(
+    (msg) => !(msg.messageRole === MessageRole.Assistant && !msg.message)
+  )
 }
