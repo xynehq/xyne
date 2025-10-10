@@ -590,18 +590,14 @@ export default function FileUpload({
                   {selectedFiles.map((selectedFile) => (
                     <div key={selectedFile.id} className="relative group">
                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-1.5 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors hover:shadow-sm flex flex-col items-center justify-between min-h-[70px]">
-                        {!isUploading && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              removeFile(selectedFile.id)
-                            }}
-                            className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 dark:bg-slate-600 text-white dark:text-gray-200 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black dark:hover:bg-slate-500"
-                            title="Remove file"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeFile(selectedFile.id)
+                          }}
+                          className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 dark:bg-slate-600 text-white dark:text-gray-200 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-black dark:hover:bg-slate-500"
+                          title="Remove file"
+                        >
 
                         <div className="flex flex-col items-center justify-center w-full">
                           {selectedFile.preview ? (
