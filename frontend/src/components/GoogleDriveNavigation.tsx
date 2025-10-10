@@ -238,10 +238,18 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
                 const isFolder = itemEntity === DriveEntity.Folder
 
                 const handleFolderNavigation = () => {
-                  if (isFolder && result.fields?.docId) {
-                    // Clear search query and results when navigating
-                    setDropdownSearchQuery("")
-                    navigateToDriveFolder(result.fields.docId, itemTitle)
+                  if (isFolder) {
+                    // Use the centralized navigation handler if available
+                    if (onNavigate) {
+                      onNavigate(result)
+                    } else {
+                      // Fallback to local logic for backward compatibility
+                      if (result.fields?.docId) {
+                        // Clear search query and results when navigating
+                        setDropdownSearchQuery("")
+                        navigateToDriveFolder(result.fields.docId, itemTitle)
+                      }
+                    }
                   }
                 }
 
