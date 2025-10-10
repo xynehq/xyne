@@ -86,6 +86,7 @@ interface SelectedFile {
   uploadError?: string
   preview?: string // URL for image preview
   fileType?: FileType
+  abortController?: AbortController
 }
 
 export const getFileIcon = (fileType: FileType | string | undefined) => {
@@ -2862,7 +2863,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         <button
                           onClick={() => removeFile(selectedFile.id)}
                           className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
-                          disabled={selectedFile.uploading}
                         >
                           <X size={10} />
                         </button>
@@ -2918,7 +2918,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           <button
                             onClick={() => removeFile(selectedFile.id)}
                             className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                            disabled={selectedFile.uploading}
                           >
                             <X size={12} />
                           </button>
