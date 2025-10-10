@@ -4293,6 +4293,7 @@ function AgentComponent() {
                                               setSelectedIntegrations
                                             }
                                             selectedIntegrations={selectedIntegrations}
+                                            onNavigate={handleNavigateToFolder}
                                           />
                                         )
                                       } else {
