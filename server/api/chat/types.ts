@@ -4,6 +4,7 @@ import { Apps, type Entity } from "@xyne/vespa-ts/types"
 import type { Span } from "@/tracer"
 import { z } from "zod"
 import { entitySchema } from "@/shared/types"
+import type { ConverseResponse } from "@/ai/types"
 
 const {
   JwtPayloadKey,
@@ -83,6 +84,11 @@ export interface ImageCitation {
   imageData: string
   item: Citation
   mimeType?: string
+}
+
+export type ConverseResponseWithCitations = ConverseResponse & {
+  citation?: { index: number; item: any }
+  imageCitation?: ImageCitation
 }
 
 export interface MinimalAgentFragment {

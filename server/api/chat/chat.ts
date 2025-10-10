@@ -156,6 +156,7 @@ import {
   ragPipelineConfig,
   RagPipelineStages,
   type Citation,
+  type ConverseResponseWithCitations,
   type ImageCitation,
 } from "./types"
 import { activeStreams } from "./stream"
@@ -3743,12 +3744,7 @@ export async function* UnderstandMessageAndAnswer(
   agentPrompt?: string,
   modelId?: string,
   pathExtractedInfo?: PathExtractedInfo,
-): AsyncIterableIterator<
-  ConverseResponse & {
-    citation?: { index: number; item: any }
-    imageCitation?: ImageCitation
-  }
-> {
+): AsyncIterableIterator<ConverseResponseWithCitations> {
   passedSpan?.setAttribute("email", email)
   passedSpan?.setAttribute("message", message)
   passedSpan?.setAttribute(
