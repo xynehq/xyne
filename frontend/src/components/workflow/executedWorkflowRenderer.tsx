@@ -32,6 +32,8 @@ import {
 interface ExecutionWorkflowData {
   id: string
   name: string
+  userId: number
+  workspaceId: number
   description?: string
   version?: string
   status: string
@@ -43,7 +45,6 @@ interface ExecutionWorkflowData {
     allowed_file_types?: string[]
     supports_file_upload?: boolean
   }
-  createdBy?: string
   rootWorkflowStepTemplateId?: string
   rootWorkflowStepExeId?: string // For execution workflows
   createdAt: string
@@ -109,7 +110,8 @@ interface ExecutionWorkflowData {
     type: string
     value: any
     config: any
-    createdBy: string
+    workspaceId: number
+    userId: number
     createdAt: string
     updatedAt: string
   }>

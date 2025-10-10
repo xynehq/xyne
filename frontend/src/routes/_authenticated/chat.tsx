@@ -753,6 +753,7 @@ export const ChatPage = ({
 
   const [streamingStarted, setStreamingStarted] = useState(false)
   const [lastUserMessageCount, setLastUserMessageCount] = useState(0)
+  const [initialBottomSpace, setInitialBottomSpace] = useState(0)
 
   // Detect when streaming starts for a new query and calculate exact space needed
   useEffect(() => {
@@ -784,13 +785,14 @@ export const ChatPage = ({
           spaceNeeded = Math.max(300, containerHeight * 0.65)
         } else if (containerHeight <= 900) {
           // Medium screens: good separation without excess
-          spaceNeeded = Math.max(400, containerHeight * 0.72)
+          spaceNeeded = Math.max(400, containerHeight * 0.78)
         } else {
           // Large screens: sufficient space but not excessive
           spaceNeeded = Math.max(800, Math.min(containerHeight * 1, 980))
         }
 
         setBottomSpace(spaceNeeded)
+        setInitialBottomSpace(spaceNeeded)
 
         // Position the latest user message at the top with precise scroll positioning
         setTimeout(() => {
@@ -827,6 +829,67 @@ export const ChatPage = ({
     streamingStarted,
     messages,
     lastUserMessageCount,
+  ])
+
+  // Dynamically adjust bottom space as streaming content grows
+  useEffect(() => {
+    if (!streamingStarted || (!isStreaming && !retryIsStreaming)) return
+    if (initialBottomSpace === 0) return
+
+    const adjustBottomSpace = () => {
+      const container = messagesContainerRef.current
+      if (!container) return
+
+      // Find the streaming message element (last assistant message)
+      const assistantMessages = container.querySelectorAll(
+        '[data-message-role="assistant"]',
+      )
+      if (assistantMessages.length === 0) return
+
+      const streamingMessage = assistantMessages[
+        assistantMessages.length - 1
+      ] as HTMLElement
+      if (!streamingMessage) return
+
+      // Get the height of the streaming content (message + citations + follow-ups)
+      const streamingHeight = streamingMessage.offsetHeight
+
+      // Calculate remaining space: initial space minus content height
+      // Keep a minimum of 50px to prevent content from touching the bottom
+      const newBottomSpace = Math.max(50, initialBottomSpace - streamingHeight)
+
+      // Only update if there's a significant change (more than 10px)
+      if (Math.abs(bottomSpace - newBottomSpace) > 10) {
+        setBottomSpace(newBottomSpace)
+      }
+    }
+
+    // Use ResizeObserver for efficient height tracking
+    const observer = new ResizeObserver(() => {
+      adjustBottomSpace()
+    })
+
+    // Observe the container for any size changes
+    const container = messagesContainerRef.current
+    if (container) {
+      observer.observe(container)
+    }
+
+    // Also check periodically during streaming for smooth adjustments
+    const interval = setInterval(adjustBottomSpace, 100)
+
+    return () => {
+      observer.disconnect()
+      clearInterval(interval)
+    }
+  }, [
+    streamingStarted,
+    isStreaming,
+    retryIsStreaming,
+    initialBottomSpace,
+    bottomSpace,
+    partial,
+    currentResp,
   ])
 
   const handleSend = async (
