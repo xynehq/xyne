@@ -424,12 +424,18 @@ export default function FileUpload({
   const removeFile = useCallback((id: string) => {
     setSelectedFiles((prev) => {
       const fileToRemove = prev.find((f) => f.id === id)
+      
+      // If the file is being uploaded and we have an active upload, abort it
+      if (isUploading && uploadAbortController && fileToRemove) {
+        uploadAbortController.abort()
+      }
+      
       if (fileToRemove?.preview) {
         URL.revokeObjectURL(fileToRemove.preview)
       }
       return prev.filter((f) => f.id !== id)
     })
-  }, [])
+  }, [isUploading, uploadAbortController])
 
   const removeAllFiles = useCallback(() => {
     setSelectedFiles((prev) => {
