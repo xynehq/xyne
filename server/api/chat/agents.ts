@@ -83,6 +83,7 @@ import {
   VespaChatUserSchema,
   type VespaSearchResult,
   type VespaSearchResults,
+  AttachmentEntity,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
@@ -155,6 +156,7 @@ import { getDateForAI } from "@/utils/index"
 import { validateVespaIdInAgentIntegrations } from "@/search/utils"
 import { getAuth, safeGet } from "../agent"
 import { applyFollowUpContext } from "@/utils/parseAttachment"
+import { expandSheetIds } from "@/search/utils"
 const {
   JwtPayloadKey,
   defaultBestModel,
@@ -391,7 +393,7 @@ const checkAndYieldCitationsForAgent = async function* (
           }
 
           // we dont want citations for attachments in the chat
-          if (item.source.entity === KnowledgeBaseEntity.Attachment) {
+          if (Object.values(AttachmentEntity).includes(item.source.entity as AttachmentEntity)) {
             continue
           }
 
@@ -521,13 +523,21 @@ const checkAndYieldCitationsForAgent = async function* (
   }
 }
 
-const vespaResultToMinimalAgentFragment = (
+const vespaResultToMinimalAgentFragment = async (
   child: VespaSearchResult,
   idx: number,
   userMetadata: UserMetadataType,
-): MinimalAgentFragment => ({
+  query: string,
+): Promise<MinimalAgentFragment> => ({
   id: `${(child.fields as any)?.docId || `Frangment_id_${idx}`}`,
-  content: answerContextMap(child as VespaSearchResults, userMetadata, 0, true),
+  content: await answerContextMap(
+    child as VespaSearchResults,
+    userMetadata,
+    0,
+    true,
+    undefined,
+    query,
+  ),
   source: searchToCitation(child as VespaSearchResults),
   confidence: 1.0,
 })
@@ -836,7 +846,7 @@ export const MessageWithToolsApi = async (c: Context) => {
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
-      .map((m) => m.fileId)
+      .flatMap((m) => expandSheetIds(m.fileId))
     let attachmentStorageError: Error | null = null
 
     const contextExtractionSpan = initSpan.startSpan("context_extraction")
@@ -1534,11 +1544,13 @@ export const MessageWithToolsApi = async (c: Context) => {
             if (results?.root?.children && results.root.children.length > 0) {
               const contextPromises = results?.root?.children?.map(
                 async (v, i) => {
-                  let content = answerContextMap(
+                  let content = await answerContextMap(
                     v as VespaSearchResults,
                     userMetadata,
                     0,
                     true,
+                    undefined,
+                    message,
                   )
                   const chatContainerFields =
                     isChatContainerFields(v.fields) &&
@@ -1608,22 +1620,24 @@ export const MessageWithToolsApi = async (c: Context) => {
                   "\n" + buildContext(threadContexts, 10, userMetadata)
               }
 
-              gatheredFragments = results.root.children.map(
-                (child: VespaSearchResult, idx) =>
-                  vespaResultToMinimalAgentFragment(child, idx, userMetadata),
+              gatheredFragments = await Promise.all(
+                results.root.children.map(
+                  async (child: VespaSearchResult, idx) =>
+                    await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message),
+                )
               )
               if (chatContexts.length > 0) {
                 gatheredFragments.push(
-                  ...chatContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
-                  ),
+                  ...(await Promise.all(chatContexts.map(async (child, idx) =>
+                    await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message),
+                  ))),
                 )
               }
               if (threadContexts.length > 0) {
                 gatheredFragments.push(
-                  ...threadContexts.map((child, idx) =>
-                    vespaResultToMinimalAgentFragment(child, idx, userMetadata),
-                  ),
+                  ...(await Promise.all(threadContexts.map(async (child, idx) =>
+                    await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message),
+                  ))),
                 )
               }
               const parseSynthesisOutput = await performSynthesis(
@@ -2896,9 +2910,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chunksSpan.end()
             if (allChunks?.root?.children) {
               const startIndex = 0
-              fragments = allChunks.root.children.map((child, idx) =>
-                vespaResultToMinimalAgentFragment(child, idx, userMetadata),
-              )
+              fragments = await Promise.all(allChunks.root.children.map(async (child, idx) =>
+                await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message)
+              ))
               context = answerContextMapFromFragments(
                 fragments,
                 maxDefaultSummary,
@@ -3166,9 +3180,9 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         if (docIds.length > 0) {
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
           if (allChunks?.root?.children) {
-            fragments = allChunks.root.children.map((child, idx) =>
-              vespaResultToMinimalAgentFragment(child, idx, userMetadata),
-            )
+            fragments = await Promise.all(allChunks.root.children.map(async (child, idx) =>
+              await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message),
+            ))
             context = answerContextMapFromFragments(
               fragments,
               maxDefaultSummary,
@@ -3382,7 +3396,7 @@ export const AgentMessageApi = async (c: Context) => {
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
-      .map((m) => m.fileId)
+      .flatMap((m) => expandSheetIds(m.fileId))
     let attachmentStorageError: Error | null = null
     let {
       message,

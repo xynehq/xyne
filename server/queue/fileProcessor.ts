@@ -1,7 +1,7 @@
 import { getLogger } from "@/logger"
 import { Subsystem, ProcessingJobType } from "@/types"
 import { getErrorMessage } from "@/utils"
-import { FileProcessorService } from "@/services/fileProcessor"
+import { FileProcessorService, type SheetProcessingResult } from "@/services/fileProcessor"
 import { insert } from "@/search/vespa"
 import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
@@ -195,7 +195,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
     const fileBuffer = await readFile(file.storagePath)
 
     // Process file to extract content
-    const processingResult = await FileProcessorService.processFile(
+    const processingResults = await FileProcessorService.processFile(
       fileBuffer,
       file.mimeType || "application/octet-stream",
       file.fileName,
@@ -203,60 +203,91 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       file.storagePath,
     )
 
-    // Create Vespa document with proper fileName (matching original logic)
-    const targetPath = file.path
-    
-    // Reconstruct the original filePath (full path from collection root)
-    const reconstructedFilePath = targetPath === "/" 
-      ? file.fileName 
-      : targetPath.substring(1) + file.fileName // Remove leading "/" and add filename
-    
-    const vespaFileName =
-      targetPath === "/"
-        ? file.collectionName + targetPath + reconstructedFilePath    // Uses full path for root
-        : file.collectionName + targetPath + file.fileName            // Uses filename for nested
+    // Handle multiple processing results (e.g., for spreadsheets with multiple sheets)
+    let totalChunksCount = 0
+    let newVespaDocId = ""
+    if(processingResults.length > 0 && 'totalSheets' in processingResults[0]) {
+      newVespaDocId = `${file.vespaDocId}_sheet_${(processingResults[0] as SheetProcessingResult).totalSheets}`
+    } else {
+      newVespaDocId = file.vespaDocId
+    }
+    for (const [resultIndex, processingResult] of processingResults.entries()) {
+      // Create Vespa document with proper fileName (matching original logic)
+      const targetPath = file.path
+      
+      // Reconstruct the original filePath (full path from collection root)
+      const reconstructedFilePath = targetPath === "/" 
+        ? file.fileName 
+        : targetPath.substring(1) + file.fileName // Remove leading "/" and add filename
+      
+      let vespaFileName =
+        targetPath === "/"
+          ? file.collectionName + targetPath + reconstructedFilePath    // Uses full path for root
+          : file.collectionName + targetPath + file.fileName            // Uses filename for nested
 
-    const vespaDoc = {
-      docId: file.vespaDocId,
-      clId: file.collectionId,
-      itemId: file.id,
-      fileName: vespaFileName,
-      app: Apps.KnowledgeBase as const,
-      entity: KnowledgeBaseEntity.File,
-      description: "",
-      storagePath: file.storagePath,
-      chunks: processingResult.chunks,
-      chunks_pos: processingResult.chunks_pos,
-      image_chunks: processingResult.image_chunks,
-      image_chunks_pos: processingResult.image_chunks_pos,
-      chunks_map: processingResult.chunks_map,
-      image_chunks_map: processingResult.image_chunks_map,
-      metadata: JSON.stringify({
-        originalFileName: file.originalName || file.fileName,
-        uploadedBy: file.uploadedByEmail || "system",
-        chunksCount: processingResult.chunks.length,
-        imageChunksCount: processingResult.image_chunks.length,
-        processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
-        lastModified: Date.now(),
-      }),
-      createdBy: file.uploadedByEmail || "system",
-      duration: 0,
-      mimeType: getBaseMimeType(file.mimeType || "text/plain"),
-      fileSize: file.fileSize || 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      clFd: file.parentId,
+      // For sheet processing results, append sheet information to fileName
+      let docId = file.vespaDocId
+      if ('sheetName' in processingResult) {
+        const sheetResult = processingResult as SheetProcessingResult
+        vespaFileName = processingResults.length > 1 
+          ? `${vespaFileName} / ${sheetResult.sheetName}`
+          : vespaFileName
+        docId = sheetResult.docId
+      } else if (processingResults.length > 1) {
+        // For non-sheet files with multiple results, append index
+        vespaFileName = `${vespaFileName} (${resultIndex + 1})`
+        docId = `${file.vespaDocId}_${resultIndex}`
+      }
+
+      const vespaDoc = {
+        docId: docId,
+        clId: file.collectionId,
+        itemId: file.id,
+        fileName: vespaFileName,
+        app: Apps.KnowledgeBase as const,
+        entity: KnowledgeBaseEntity.File,
+        description: "",
+        storagePath: file.storagePath,
+        chunks: processingResult.chunks,
+        chunks_pos: processingResult.chunks_pos,
+        image_chunks: processingResult.image_chunks,
+        image_chunks_pos: processingResult.image_chunks_pos,
+        chunks_map: processingResult.chunks_map,
+        image_chunks_map: processingResult.image_chunks_map,
+        metadata: JSON.stringify({
+          originalFileName: file.originalName || file.fileName,
+          uploadedBy: file.uploadedByEmail || "system",
+          chunksCount: processingResult.chunks.length,
+          imageChunksCount: processingResult.image_chunks.length,
+          processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
+          lastModified: Date.now(),
+          ...(('sheetName' in processingResult) && {
+            sheetName: (processingResult as SheetProcessingResult).sheetName,
+            sheetIndex: (processingResult as SheetProcessingResult).sheetIndex,
+            totalSheets: (processingResult as SheetProcessingResult).totalSheets,
+          }),
+        }),
+        createdBy: file.uploadedByEmail || "system",
+        duration: 0,
+        mimeType: getBaseMimeType(file.mimeType || "text/plain"),
+        fileSize: file.fileSize || 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        clFd: file.parentId,
+      }
+
+      // Insert into Vespa
+      await insert(vespaDoc, KbItemsSchema)
+
+      totalChunksCount += processingResult.chunks.length + processingResult.image_chunks.length
     }
 
-    // Insert into Vespa
-    await insert(vespaDoc, KbItemsSchema)
-
     // Update status to completed
-    const chunksCount =
-      processingResult.chunks.length + processingResult.image_chunks.length
+    const chunksCount = totalChunksCount
     await db
       .update(collectionItems)
       .set({
+        vespaDocId: newVespaDocId,
         uploadStatus: UploadStatus.COMPLETED,
         statusMessage: `Successfully processed: ${chunksCount} chunks extracted from ${file.fileName}`,
         processedAt: new Date(),
