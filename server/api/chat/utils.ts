@@ -1309,7 +1309,7 @@ export function transformMessagesWithErrorHandling(
       msg.messageRole === MessageRole.User &&
       msg.errorMessage &&
       msg.errorMessage.trim() !== "" &&
-      (i + 1 < messages.length || (messages[i + 1] && messages[i + 1].messageRole !== MessageRole.Assistant))
+      (i + 1 < messages.length && messages[i + 1] && messages[i + 1].messageRole !== MessageRole.Assistant)
     ) {
       // Create a synthetic assistant message for error consistency
       const syntheticMessage: SelectMessage = {
