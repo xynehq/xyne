@@ -197,6 +197,11 @@ export const handleFileUpload = async (c: Context) => {
 export const handleAttachmentUpload = async (c: Context) => {
   let email = ""
   try {
+    // Check if request was aborted
+    if (c.req.raw.signal?.aborted) {
+      return c.json({ error: 'Upload cancelled' }, 499)
+    }
+    
     const { sub } = c.get(JwtPayloadKey)
     email = sub
     const userRes = await getUserByEmail(db, sub)
@@ -209,6 +214,12 @@ export const handleAttachmentUpload = async (c: Context) => {
     }
 
     const formData = await c.req.formData()
+    
+    // Check again if request was aborted during formData parsing
+    if (c.req.raw.signal?.aborted) {
+      return c.json({ error: 'Upload cancelled' }, 499)
+    }
+    
     const files = formData.getAll("attachment") as File[]
 
     if (!files.length) {
