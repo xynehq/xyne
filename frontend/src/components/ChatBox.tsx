@@ -2896,10 +2896,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         </div>
                         <button
                           onClick={() => removeFile(selectedFile.id)}
-                          className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
-                          disabled={selectedFile.uploading}
+                          className={`absolute top-1 right-1 rounded-full p-1 transition-opacity ${
+                            selectedFile.uploading 
+                              ? 'bg-red-500 bg-opacity-80 text-white hover:bg-opacity-100' 
+                              : 'bg-black bg-opacity-60 text-white hover:bg-opacity-80'
+                          }`}
+                          title={selectedFile.uploading ? 'Cancel upload' : 'Remove file'}
                         >
-                          <X size={10} />
+                          {selectedFile.uploading ? (
+                            <X size={10} className="animate-pulse" />
+                          ) : (
+                            <X size={10} />
+                          )}
                         </button>
                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-1">
                           <span
