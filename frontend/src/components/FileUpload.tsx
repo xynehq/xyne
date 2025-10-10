@@ -145,6 +145,7 @@ export default function FileUpload({
     const response = await authFetch("/api/v1/files/upload", {
       method: "POST",
       body: formData,
+      signal: abortSignal,
     })
 
     if (!response.ok) {
