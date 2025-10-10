@@ -24,11 +24,8 @@ import { generateSearchQueryOrAnswerFromConversation, jsonParseLLMOutput } from 
 import type { Citation, ImageCitation } from "@/shared/types"
 import { getAgentByExternalIdWithPermissionCheck } from "@/db/agent"
 import type { QueryRouterLLMResponse } from "@/ai/types"
-import { agentWithNoIntegrationsQuestion } from "@/ai/provider"
 import config from "@/config"
-import { exec } from "child_process"
-import { de } from "zod/v4/locales"
-import { ac } from "@/dist/assets/index-BAfFuDwx"
+
 const {
   defaultBestModel,
 } = config
