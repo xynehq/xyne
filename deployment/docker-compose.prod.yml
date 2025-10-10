@@ -140,17 +140,21 @@ services:
     container_name: xyne-nginx
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "3000:3000"
+      - "3443:3443"
     volumes:
-      - ./portable/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
     environment:
       - NGINX_DOMAIN=${NGINX_DOMAIN:-localhost}
+      - NGINX_PORT=${NGINX_PORT:-3000}
+      - APP_PORT=${APP_PORT:-3001}
     networks:
       - xyne
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: >
       /bin/sh -c "
-      envsubst '$$NGINX_DOMAIN' < /etc/nginx/nginx.conf > /tmp/nginx.conf &&
+      envsubst '$$NGINX_DOMAIN $$NGINX_PORT $$APP_PORT' < /etc/nginx/nginx.conf > /tmp/nginx.conf &&
       nginx -g 'daemon off;' -c /tmp/nginx.conf
       "
 
