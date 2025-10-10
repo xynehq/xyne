@@ -1,3 +1,10 @@
+## [3.13.5](https://github.com/xynehq/xyne/compare/v3.13.4...v3.13.5) (2025-10-10)
+
+
+### Bug Fixes
+
+* **docker-compose:** expose NGINX on host port 3000 instead of 80 ([#1089](https://github.com/xynehq/xyne/issues/1089)) ([08655d4](https://github.com/xynehq/xyne/commit/08655d48008c74ba32689827ec98c7523110e8b2))
+
 ## [3.13.4](https://github.com/xynehq/xyne/compare/v3.13.3...v3.13.4) (2025-10-10)
 
 
