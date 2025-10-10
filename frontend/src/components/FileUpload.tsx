@@ -162,6 +162,8 @@ export default function FileUpload({
     if (selectedFiles.length === 0 || !datasourceName.trim()) return
 
     setIsUploading(true)
+    const abortController = new AbortController()
+    setUploadAbortController(abortController)
 
     try {
       const batches = createBatches(selectedFiles)
