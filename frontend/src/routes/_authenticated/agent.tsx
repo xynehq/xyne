@@ -92,6 +92,7 @@ type CurrentResp = {
 export const Route = createFileRoute("/_authenticated/agent")({
   validateSearch: z.object({
     agentId: z.string().optional(),
+    mode: z.enum(['edit', 'view']).optional(),
   }),
   component: AgentComponent,
 })
@@ -331,7 +332,7 @@ function isItemSelectedWithInheritance(
  
 
 function AgentComponent() {
-  const { agentId } = Route.useSearch()
+   const { agentId, mode } = Route.useSearch()
   const navigate = useNavigate()
   const [viewMode, setViewMode] = useState<
     "list" | "create" | "edit" | "viewAgent"
@@ -846,6 +847,44 @@ function AgentComponent() {
 
     fetchInitialAgentForChat()
   }, [agentId, toast])
+
+  let cancelledEditAgentEvent = false
+  useEffect(() => {
+    const loadAgentForEdit = async () => {
+       cancelledEditAgentEvent = false 
+      if (agentId && mode === 'edit') {
+        // Fetch the agent data
+        try {
+          const response = await api.agent[":agentExternalId"].$get({
+            param: { agentExternalId: agentId },
+          })
+          if (cancelledEditAgentEvent) return
+          if (response.ok) {
+            const agentData = (await response.json()) as SelectPublicAgent
+            handleEditAgent(agentData)  // Trigger edit mode
+          } else {
+            toast.error({
+              title: "Error",
+              description: `Failed to load agent ${agentId} for editing.`,
+            })
+          }
+        } catch (error) {
+          if (cancelledEditAgentEvent) return
+          toast.error({
+            title: "Error",
+            description: "An error occurred while loading agent for editing.",
+          })
+          console.error("Fetch agent for edit error:", error)
+        }
+      }
+    }
+
+    loadAgentForEdit()
+    return () => {
+      cancelledEditAgentEvent = true  // ✅ Mark as cancelled on cleanup
+    }
+    
+  }, [agentId, mode])
 
   // Cleanup EventSource on component unmount to prevent memory leaks
   useEffect(() => {

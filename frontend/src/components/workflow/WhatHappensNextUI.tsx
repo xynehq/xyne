@@ -7,6 +7,7 @@ import {
   Users,
   ChevronRight,
   X,
+  BoomBox,
 } from "lucide-react"
 
 interface WhatHappensNextUIProps {
@@ -44,6 +45,12 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
       name: "Email",
       description: "Send emails to added mails",
       icon: <Mail className="w-5 h-5" />,
+    },
+    {
+      id: "select_agents",
+      name: "Select Agents",
+      description: "Choose from your existing direct agents",
+      icon: <BoomBox className="w-5 h-5" />,
     },
   ]
 
@@ -107,7 +114,7 @@ const WhatHappensNextUI: React.FC<WhatHappensNextUIProps> = ({
           <div
             key={action.id}
             onClick={() => {
-              if (action.id === "ai_agent" || action.id === "email") {
+              if (action.id === "ai_agent" || action.id === "email" ||action.id === "select_agents") {
                 // For AI Agent and Email, trigger custom event to open respective ConfigUI
                 onSelectAction(action.id)
                 onClose() // Close WhatHappensNextUI

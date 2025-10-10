@@ -322,3 +322,24 @@ export interface LegacyWorkflowTemplate {
   created_at?: string
   updated_at?: string
 }
+
+
+export interface AgentToolData {
+  agentId: string
+  name: string
+  description?: string
+  model?: string
+  isExistingAgent?: boolean
+  prompt?: string
+  isRagOn?: boolean
+  appIntegrations?: any
+}
+
+// ✅ Type for the tool object passed as prop
+export interface AgentTool {
+  id: string
+  type: string
+  val?: AgentToolData
+  value?: AgentToolData
+  config?: AgentToolData
+}

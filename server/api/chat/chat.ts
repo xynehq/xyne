@@ -505,9 +505,7 @@ const checkAndYieldCitations = async function* (
           yieldedCitations.add(citationIndex)
         } else {
           loggerWithChild({ email: email }).error(
-            "Found a citation index but could not find it in the search result ",
-            citationIndex,
-            results.length,
+            `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`
           )
         }
       }
@@ -556,9 +554,7 @@ const checkAndYieldCitations = async function* (
             yieldedImageCitations.add(citationIndex)
           } else {
             loggerWithChild({ email: email }).error(
-              "Found a citation index but could not find it in the search result ",
-              citationIndex,
-              results.length,
+              `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`
             )
             continue
           }
@@ -1175,8 +1171,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       agentPromptData = JSON.parse(agentPrompt)
     } catch (error) {
       loggerWithChild({ email: email }).warn(
-        "Failed to parse agentPrompt JSON",
-        { error, agentPrompt },
+        `Failed to parse agentPrompt JSON: ${error} - agentPrompt: ${agentPrompt}`,
       )
     }
     channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
@@ -1193,6 +1188,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             lowerIntegration.startsWith("ds_")
           ) {
             // ds- is the prefix for datasource externalId
+            //what is the difference between datasource and knowledge base
             agentSpecificDataSourceIds.push(integration)
             if (!agentAppEnums.includes(Apps.DataSource)) {
               agentAppEnums.push(Apps.DataSource)
@@ -1244,8 +1240,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       agentAppEnums = [...new Set(agentAppEnums)]
     } else {
       loggerWithChild({ email: email }).warn(
-        "agentPromptData.appIntegrations is not an array or is missing",
-        { agentPromptData },
+        `agentPromptData.appIntegrations is not an array or is missing: ${agentPromptData}`,
       )
     }
 
@@ -1389,7 +1384,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
         collectionSelections: agentSpecificCollectionSelections,
-        selectedItem: selectedItem,
+        selectedItem: selectedItem,//agentIntegration format (app_integrations format)
       },
     )
   }
@@ -2446,8 +2441,7 @@ async function* generatePointQueryTimeExpansion(
       agentAppEnums = [...new Set(agentAppEnums)]
     } else {
       loggerWithChild({ email: email }).warn(
-        "agentPromptData.appIntegrations is not an array or is missing",
-        { agentPromptData },
+        `agentPromptData.appIntegrations is not an array or is missing: ${agentPromptData}`,
       )
     }
 
@@ -2974,8 +2968,7 @@ async function* generateMetadataQueryAnswer(
       agentPromptData = JSON.parse(agentPrompt)
     } catch (error) {
       loggerWithChild({ email: email }).warn(
-        "Failed to parse agentPrompt JSON",
-        { error, agentPrompt },
+        `Failed to parse agentPrompt JSON: ${error}, ${agentPrompt}`,
       )
     }
 
@@ -3040,8 +3033,7 @@ async function* generateMetadataQueryAnswer(
       agentAppEnums = [...new Set(agentAppEnums)]
     } else {
       loggerWithChild({ email: email }).warn(
-        "agentPromptData.appIntegrations is not an array or is missing",
-        { agentPromptData },
+        `agentPromptData.appIntegrations is not an array or is missing: ${agentPromptData}`,
       )
     }
     // parsing for the new type of integration which we are going to save
@@ -6927,14 +6919,15 @@ export const EnhancedMessageFeedbackApi = async (c: Context) => {
 
     // Debug logging
     loggerWithChild({ email: email }).info(
-      `Enhanced feedback request received`,
-      {
+      `Enhanced feedback request received
+      ${JSON.stringify({
         messageId,
         type,
         shareChat,
         customFeedback: !!customFeedback,
         selectedOptionsCount: selectedOptions?.length || 0,
-      },
+      }, null, 2)}
+      },`
     )
 
     const message = await getMessageByExternalId(db, messageId)
