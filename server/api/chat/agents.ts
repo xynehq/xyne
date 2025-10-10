@@ -87,7 +87,7 @@ import {
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import { insertChatTrace } from "@/db/chatTrace"
-import type { AttachmentMetadata } from "@/shared/types"
+import type { AttachmentMetadata, SelectPublicAgent } from "@/shared/types"
 import { storeAttachmentMetadata } from "@/db/attachment"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
 import { isCuid } from "@paralleldrive/cuid2"
@@ -325,29 +325,9 @@ const createMockAgentFromFormData = (
   }
 }
 
-export const hasNoIntegrations = (
-  appIntegrations: string[] | Record<string, {
-    itemIds: string[];
-    selectedAll: boolean;
-  }> | undefined
-): boolean => {
-  if (!appIntegrations) return true
-
-  if (typeof appIntegrations === "object") {
-    if (Object.keys(appIntegrations).length === 0) return true
-
-    return Object.values(appIntegrations).every(
-      (config) =>
-        !config.selectedAll && (!config.itemIds || config.itemIds.length === 0),
-    )
-  }
-
-  return false
-}
-
 // Check if agent has no app integrations and should use the no-integrations flow
 export const checkAgentWithNoIntegrations = (
-  agentForDb: SelectAgent | null,
+  agentForDb: SelectAgent | SelectPublicAgent | null,
 ): boolean => {
   if (!agentForDb?.appIntegrations) return true
 
@@ -2656,7 +2636,6 @@ async function* nonRagIterator(
 }
 
 export const AgentMessageApiRagOff = async (c: Context) => {
-  console.log("arundhadhiiii")
   const tracer: Tracer = getTracer("chat")
   const rootSpan = tracer.startSpan("AgentMessageApiRagOff")
 
@@ -4122,7 +4101,6 @@ export const AgentMessageApi = async (c: Context) => {
                   "Using agent with no integrations for the question",
                 )
 
-                console.log("yessss,,,,yessss")
                 searchOrAnswerIterator = agentWithNoIntegrationsQuestion(
                   message,
                   ctx,
@@ -4371,7 +4349,6 @@ export const AgentMessageApi = async (c: Context) => {
                   `Classifying the query as:, ${JSON.stringify(classification)}`,
                 )
                 const understandSpan = ragSpan.startSpan("understand_message")
-                console.log("adiye arundhadhiiiiiiii")
                 const iterator = UnderstandMessageAndAnswer(
                   email,
                   ctx,

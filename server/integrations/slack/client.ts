@@ -39,7 +39,7 @@ import { Apps } from "@xyne/vespa-ts/types"
 import { getTracer } from "@/tracer"
 import { getDateForAI } from "@/utils/index"
 import type { SelectPublicAgent } from "@/db/schema"
-import { hasNoIntegrations } from "@/api/chat/agents"
+import { checkAgentWithNoIntegrations } from "@/api/chat/agents"
 import { agentWithNoIntegrationsQuestion } from "@/ai/provider"
 import type { ConverseResponseWithCitations } from "@/api/chat/types"
 
@@ -781,7 +781,7 @@ const handleAgentSearchCommand = async (
         const span = tracer.startSpan("slack_agent_rag")
         let iterator: AsyncIterableIterator<ConverseResponseWithCitations>;
 
-        if (hasNoIntegrations(selectedAgent.appIntegrations)) {
+        if (checkAgentWithNoIntegrations(selectedAgent)) {
           iterator = agentWithNoIntegrationsQuestion(
             searchQuery,
             ctx,
