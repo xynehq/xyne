@@ -124,6 +124,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
   setSelectedItemDetailsInGoogleDrive,
   setSelectedIntegrations,
   selectedIntegrations,
+  onNavigate,
 }) => {
   const sortedItems= useMemo(() => {
     return sortDriveItems(currentItems)
