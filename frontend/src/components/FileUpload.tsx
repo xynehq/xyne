@@ -187,7 +187,7 @@ export default function FileUpload({
         }))
 
         try {
-          const result = await uploadBatch(batch, i, batches.length)
+          const result = await uploadBatch(batch, i, batches.length, abortController.signal)
           allResults.push(result)
 
           if (result.processedFiles) {
