@@ -2613,10 +2613,13 @@ case "ai_agent":
       setShowAIAgentConfigUI(false)
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
-
+      setShowAgentsSidebar(false)              // ✅ ADD THIS
+      setShowExistingAgentConfigUI(false)
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
       setShowWhatHappensNextUI(true)
+      
+
     }
 
     const handleOpenTriggersSidebar = (event: CustomEvent) => {
