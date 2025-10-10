@@ -552,9 +552,11 @@ export default function FileUpload({
             <Button
               onClick={(e) => {
                 e.stopPropagation()
+                if (isUploading && uploadAbortController) {
+                  uploadAbortController.abort()
+                }
                 removeAllFiles()
               }}
-              disabled={isUploading}
               className="absolute top-2 right-5 flex items-center space-x-1 bg-gray-800 dark:bg-slate-600 hover:bg-gray-900 dark:hover:bg-slate-500 text-white dark:text-gray-200 h-9 px-3"
             >
               <Trash2 className="w-4 h-4" />
