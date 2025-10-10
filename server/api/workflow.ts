@@ -3382,6 +3382,266 @@ export const GetGeminiModelEnumsApi = async (c: Context) => {
   return GetVertexAIModelEnumsApi(c)
 }
 
+// Test Jira connection
+export const TestJiraConnectionApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken } = body
+
+    if (!domain || !email || !apiToken) {
+      throw new HTTPException(400, {
+        message: "domain, email, and apiToken are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and test connection
+    const client = new JiraClient({ domain, email, apiToken })
+    await client.testConnection()
+
+    return c.json({
+      success: true,
+      message: "Connection tested successfully",
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to test Jira connection")
+
+    // Return user-friendly error messages
+    if (error.response?.status === 401) {
+      throw new HTTPException(401, {
+        message: "Invalid credentials. Please check your email and API token.",
+      })
+    }
+
+    if (error.response?.status === 403) {
+      throw new HTTPException(403, {
+        message: "Access denied. Please check your permissions.",
+      })
+    }
+
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      throw new HTTPException(400, {
+        message: "Invalid Jira domain. Please check the domain name.",
+      })
+    }
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to test connection",
+    })
+  }
+}
+
+// Register Jira webhook
+export const RegisterJiraWebhookApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken, webhookUrl, events, name, filters } = body
+
+    Logger.info({
+      domain,
+      email: email?.substring(0, 10) + "...",
+      webhookUrl,
+      events,
+      name,
+      hasFilters: !!filters,
+    }, "🔗 Attempting to register Jira webhook")
+
+    if (!domain || !email || !apiToken || !webhookUrl || !events || events.length === 0) {
+      Logger.error({ domain, email, webhookUrl, eventsCount: events?.length }, "❌ Missing required fields for webhook registration")
+      throw new HTTPException(400, {
+        message: "domain, email, apiToken, webhookUrl, and events are required",
+      })
+    }
+
+    // Import Jira trigger
+    const { JiraTrigger } = await import("@/integrations/jira/trigger")
+
+    Logger.info("📦 JiraTrigger imported successfully")
+
+    // Create trigger and register webhook
+    const trigger = new JiraTrigger({
+      credentials: { domain, email, apiToken },
+      webhookUrl,
+      events,
+      filters,
+      name: name || `xyne-webhook-${Date.now()}`,
+    })
+
+    Logger.info("🎯 JiraTrigger instance created, calling register()...")
+
+    const result = await trigger.register()
+
+    Logger.info({ webhookId: result.webhookId }, "✅ Webhook registered successfully with Jira")
+
+    return c.json({
+      success: true,
+      webhookId: result.webhookId,
+      message: "Webhook registered successfully",
+    })
+  } catch (error: any) {
+    Logger.error({
+      error: error.message,
+      stack: error.stack,
+      response: error.response?.data,
+      status: error.response?.status,
+    }, "❌ Failed to register Jira webhook")
+
+    // Return user-friendly error messages
+    if (error.response?.status === 401) {
+      throw new HTTPException(401, {
+        message: "Invalid credentials. Please check your email and API token.",
+      })
+    }
+
+    if (error.response?.status === 403) {
+      throw new HTTPException(403, {
+        message: "Access denied. Please check your permissions.",
+      })
+    }
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to register webhook",
+    })
+  }
+}
+
+// Get all Jira webhooks
+export const GetJiraWebhooksApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken } = body
+
+    if (!domain || !email || !apiToken) {
+      throw new HTTPException(400, {
+        message: "domain, email, and apiToken are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and get webhooks
+    const client = new JiraClient({ domain, email, apiToken })
+    const webhooks = await client.getWebhooks()
+
+    return c.json({
+      success: true,
+      data: webhooks,
+      count: webhooks.length,
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to get Jira webhooks")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to get webhooks",
+    })
+  }
+}
+
+// Delete Jira webhook
+export const DeleteJiraWebhookApi = async (c: Context) => {
+  try {
+    const body = await c.req.json()
+    const { domain, email, apiToken, webhookId } = body
+
+    if (!domain || !email || !apiToken || !webhookId) {
+      throw new HTTPException(400, {
+        message: "domain, email, apiToken, and webhookId are required",
+      })
+    }
+
+    // Import Jira client
+    const { JiraClient } = await import("@/integrations/jira/client")
+
+    // Create client and delete webhook
+    const client = new JiraClient({ domain, email, apiToken })
+    await client.deleteWebhook(webhookId)
+
+    return c.json({
+      success: true,
+      message: "Webhook deleted successfully",
+    })
+  } catch (error: any) {
+    Logger.error(error, "Failed to delete Jira webhook")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to delete webhook",
+    })
+  }
+}
+
+// Receive Jira webhook event
+export const ReceiveJiraWebhookApi = async (c: Context) => {
+  try {
+    const webhookId = c.req.param('webhookId')
+    const body = await c.req.json()
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('🎯 JIRA WEBHOOK EVENT RECEIVED!')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('📍 Webhook ID:', webhookId)
+    console.log('📦 Full payload:', JSON.stringify(body, null, 2))
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+
+    if (!webhookId) {
+      throw new HTTPException(400, {
+        message: "webhookId is required",
+      })
+    }
+
+    // Import Jira trigger
+    const { JiraTrigger } = await import("@/integrations/jira/trigger")
+
+    // Process webhook event
+    const processedEvent = JiraTrigger.processWebhookEvent(body)
+
+    console.log('✨ Processed Event Details:')
+    console.log('   Event Type:', processedEvent.event)
+    console.log('   Issue Key:', processedEvent.issue?.key)
+    console.log('   Issue Summary:', processedEvent.issue?.fields?.summary)
+    console.log('   User:', processedEvent.user?.displayName, `(${processedEvent.user?.emailAddress})`)
+    console.log('   Timestamp:', new Date(processedEvent.timestamp).toISOString())
+
+    if (processedEvent.changelog) {
+      console.log('   📝 Changes:')
+      processedEvent.changelog.items?.forEach((item: any) => {
+        console.log(`      - ${item.field}: "${item.fromString}" → "${item.toString}"`)
+      })
+    }
+
+    // Log the event for debugging
+    Logger.info({
+      webhookId,
+      event: processedEvent.event,
+      issueKey: processedEvent.issue?.key,
+      issueSummary: processedEvent.issue?.fields?.summary,
+      user: processedEvent.user?.displayName,
+      timestamp: processedEvent.timestamp,
+    }, "🎯 Received Jira webhook event")
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('✅ Event processed successfully!')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+
+    // TODO: Trigger workflow execution based on event
+    // For now, just acknowledge receipt
+
+    return c.json({
+      success: true,
+      message: "Webhook event received",
+    })
+  } catch (error: any) {
+    console.error('❌ Failed to process webhook:', error)
+    Logger.error(error, "Failed to process Jira webhook")
+
+    throw new HTTPException(500, {
+      message: error.message || "Failed to process webhook",
+    })
+  }
+}
+
 // Serve workflow file
 export const ServeWorkflowFileApi = async (c: Context) => {
   try {
