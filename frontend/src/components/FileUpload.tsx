@@ -127,6 +127,7 @@ export default function FileUpload({
     batch: SelectedFile[],
     batchIndex: number,
     totalBatches: number,
+    abortSignal?: AbortSignal,
   ): Promise<any> => {
     const formData = new FormData()
     formData.append("datasourceName", datasourceName.trim())
