@@ -28,6 +28,7 @@ import {
   Step,
   UserDetail,
   Tool,
+  AgentTool,
 } from "./Types"
 import { api } from "../../api"
 
@@ -161,6 +162,7 @@ import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
 import ConfirmationPopup from "../ui/ConfirmationPopup"
+import { Agent } from "http"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -1230,28 +1232,26 @@ const Header = ({
         </span>
       </div>
 
-     {/* Save Buttons - only show in builder mode (create from blank) */}
+      {/* Save Buttons - only show in builder mode (create from blank) */}
       {onSaveChanges && isEditable && (
         <div className="flex items-center gap-3">
           <button
             onClick={() => onSaveChanges(false)}
             disabled={isSaveDisabled}
-            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
-              isSaveDisabled
+            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${isSaveDisabled
                 ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
                 : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
-            }`}
+              }`}
           >
             Save as Private
           </button>
           <button
             onClick={() => onSaveChanges(true)}
             disabled={isSaveDisabled}
-            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${
-              isSaveDisabled
+            className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${isSaveDisabled
                 ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
                 : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
-            }`}
+              }`}
           >
             Save as Public
           </button>
@@ -2398,21 +2398,21 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           setShowEmailConfigUI(true)
           break
 
-case "ai_agent":
-    // Check if this is an existing agent or workflow agent
-    const tools = node.data?.tools as Tool[] | undefined
-    const isExistingAgent =  tools?.[0]?.config?.isExistingAgent
+        case "ai_agent":
+          // Check if this is an existing agent or workflow agent
+          const tools = node.data?.tools as Tool[] | undefined
+          const isExistingAgent = tools?.[0]?.config?.isExistingAgent
 
-    if (isExistingAgent) {
-      // Existing agent → open ExistingAgentConfigUI
-      setSelectedExistingAgentNodeId(node.id)
-      setShowExistingAgentConfigUI(true)
-    } else {
-      // Workflow agent → open AIAgentConfigUI
-      setSelectedAgentNodeId(node.id)
-      setShowAIAgentConfigUI(true)
-    }
-    break
+          if (isExistingAgent) {
+            // Existing agent → open ExistingAgentConfigUI
+            setSelectedExistingAgentNodeId(node.id)
+            setShowExistingAgentConfigUI(true)
+          } else {
+            // Workflow agent → open AIAgentConfigUI
+            setSelectedAgentNodeId(node.id)
+            setShowAIAgentConfigUI(true)
+          }
+          break
 
 
 
@@ -2618,7 +2618,7 @@ case "ai_agent":
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
       setShowWhatHappensNextUI(true)
-      
+
 
     }
 
@@ -3803,9 +3803,11 @@ case "ai_agent":
             toolData={
               selectedExistingAgentNodeId
                 ? (() => {
-                  const node = nodes.find((n) => n.id === selectedExistingAgentNodeId)
+                  const node = nodes.find((n) => n.id ===
+                    selectedExistingAgentNodeId)
                   const tools = node?.data?.tools as Tool[] | undefined
-                  return tools && tools.length > 0 ? tools[0] : undefined
+                  return tools && tools.length > 0 ? tools[0] as
+                    AgentTool : undefined  
                 })()
                 : undefined
             }

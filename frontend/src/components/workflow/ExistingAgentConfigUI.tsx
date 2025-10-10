@@ -3,19 +3,21 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { X, ExternalLink } from "lucide-react"
 
+import { AgentTool, AgentToolData } from "./Types"
 interface ExistingAgentConfigUIProps {
     isVisible: boolean
     onClose: () => void
-    toolData?: any
+    toolData?: AgentTool
 }
-
+// ✅ Type for AI agent tool data
 const ExistingAgentConfigUI: React.FC<ExistingAgentConfigUIProps> = ({
     isVisible,
     onClose,
     toolData,
 }) => {
     // Extract agent info from toolData
-    const agentData = toolData?.val || toolData?.value || toolData?.config || {}
+    const agentData: Partial<AgentToolData>  = toolData?.val || toolData?.value || toolData?.config || {}
+
     const agentId = agentData.agentId
     const agentName = agentData.name || "Unknown Agent"
     const agentDescription = agentData.description || "No description"
