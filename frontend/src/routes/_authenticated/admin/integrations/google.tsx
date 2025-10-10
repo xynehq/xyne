@@ -1108,6 +1108,8 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+      } else if (connector?.status === ConnectorStatus.Authenticated) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthReadyForIngestion)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
       } else {
@@ -1127,15 +1129,17 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
       const serviceAccountConnector = data.find(
         (c) => c.authType === AuthType.ServiceAccount,
       )
-      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+      const oauthConnector = data.find(
+        (c) => c.app === Apps.GoogleDrive && c.authType === AuthType.OAuth,
+      )
 
       if (serviceAccountConnector) {
         serviceAccountSocket = wsClient.ws.$ws({
-          query: { id: serviceAccountConnector.id },
+          query: { id: serviceAccountConnector.externalId },
         })
         serviceAccountSocket?.addEventListener("open", () => {
           logger.info(
-            `Service Account WebSocket opened for ${serviceAccountConnector.id}`,
+            `Service Account WebSocket opened for ${serviceAccountConnector.externalId}`,
           )
         })
         serviceAccountSocket?.addEventListener("message", (e) => {
@@ -1313,6 +1317,13 @@ const AdminLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
                     updateStatus={updateStatus}
                     handleDelete={handleDelete}
                     userRole={user.role}
+                    connectorId={
+                      data?.find(
+                        (v) =>
+                          v.app === Apps.GoogleDrive &&
+                          v.authType === AuthType.OAuth,
+                      )?.id
+                    }
                   />
                 </TabsContent>
               </div>
