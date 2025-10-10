@@ -1,3 +1,10 @@
+# [3.13.0](https://github.com/xynehq/xyne/compare/v3.12.2...v3.13.0) (2025-10-10)
+
+
+### Features
+
+* add workspaceId to workflow related tables ([#1006](https://github.com/xynehq/xyne/issues/1006)) ([3db80d0](https://github.com/xynehq/xyne/commit/3db80d0e81927fe9177fc7301e56c453f8ae9e1f))
+
 ## [3.12.2](https://github.com/xynehq/xyne/compare/v3.12.1...v3.12.2) (2025-10-09)
 
 
