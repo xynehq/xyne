@@ -28,6 +28,7 @@ import { agentWithNoIntegrationsQuestion } from "@/ai/provider"
 import config from "@/config"
 import { exec } from "child_process"
 import { de } from "zod/v4/locales"
+import { ac } from "@/dist/assets/index-BAfFuDwx"
 const {
   defaultBestModel,
 } = config
@@ -146,6 +147,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     Logger.info(`Fetched user: ${user.id} and workspace: ${workspace.id}`)
 
     Logger.info(`Fetching agent details for ${agentId}...`)
+
     const agent = await getAgentByExternalId(db, agentId, Number(workspace.id))
 
     if (!agent) {
@@ -161,6 +163,8 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         error: `Agent ${agentId} has no model configured`
       }
     }
+    const actualModel = agent.model === "Auto" ? defaultBestModel :agent.model as Models
+
 
     Logger.info(`Found agent: ${agent.name} with model: ${agent.model}`)
 
@@ -257,7 +261,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     Logger.info("Generating chat title...")
 
     const titleResp = await generateTitleUsingQuery(userQuery, {
-      modelId: agent.model as Models|| defaultBestModel,
+      modelId: actualModel  ,
       stream: false,
     })
     const title = titleResp.title
@@ -266,7 +270,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     Logger.info("🔧 Building model parameters...")
 
     const modelParams = {
-      modelId: agent.model as Models || defaultBestModel,
+      modelId:actualModel,
       stream: isStreamable,
       json: false,
       reasoning: false,
@@ -314,7 +318,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
 
     Logger.info("💬 Messages array constructed with 1 user message")
 
-    Logger.info(`Calling LLM with model ${agent.model}...`)
+    Logger.info(`Calling LLM with model ${actualModel}...`)
 
     const insertedChat = await insertChat(db, {
       workspaceId: workspace.id,
@@ -349,8 +353,8 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       }`)
 
       // Add provider debugging
-      const provider = getProviderByModel(agent.model as Models || defaultBestModel)
-      Logger.info(`🤖 Provider for model ${agent.model}: ${typeof provider}`)
+      const provider = getProviderByModel(actualModel)
+      Logger.info(`🤖 Provider for model ${actualModel}: ${typeof provider}`)
 
       try {
         Logger.info("🔄 Creating original iterator...")
@@ -363,7 +367,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
           chatExternalId: insertedChat.externalId,
           workspaceExternalId: workspaceId,
           email: userEmail,
-          modelId: agent.model,
+          modelId: actualModel,
         })
 
         Logger.info("✅ Wrapper created successfully")
@@ -375,7 +379,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
           chatId: insertedChat.externalId,
           title,
           agentName: agent.name,
-          modelId: agent.model,
+          modelId: actualModel,
         }
       } catch (providerError) {
         Logger.error(providerError, "❌ Error creating streaming iterator")
@@ -391,7 +395,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       }`)
 
       // Get non-streaming response
-      const response = await getProviderByModel(agent.model as Models || defaultBestModel).converse(
+      const response = await getProviderByModel(actualModel).converse(
         messages,
         modelParams
       )
@@ -419,7 +423,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         email: userEmail,
         sources: [],
         message: response.text,
-        modelId: agent.model,
+        modelId: actualModel,
         cost: response.cost?.toString(),
       })
 
@@ -432,7 +436,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         title,
         response: response,
         agentName: agent.name,
-        modelId: agent.model,
+        modelId: actualModel,
       }
     }
 
