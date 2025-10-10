@@ -941,6 +941,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           uploading: false,
           preview: createImagePreview(file),
           fileType: getFileType({ type: file.type, name: file.name }),
+          abortController: new AbortController(),
         }))
 
         setSelectedFiles((prev) => {
