@@ -1249,8 +1249,6 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       const { selectedApps, selectedItems } = parseAppSelections(
         agentPromptData.appIntegrations,
       )
-      Logger.info(`selectedApps: ${JSON.stringify(selectedApps, null, 2)}`);
-      Logger.info(`Selected Items: ${JSON.stringify(selectedItems, null, 2)}`);
       // Use selectedApps and selectedItems
       selectedItem = selectedItems
       // agentAppEnums = selectedApps.filter(isValidApp);
