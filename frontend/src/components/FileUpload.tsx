@@ -52,6 +52,7 @@ export default function FileUpload({
   const [datasourceNameError, setDatasourceNameError] = useState<string | null>(
     null,
   )
+  const [uploadAbortController, setUploadAbortController] = useState<AbortController | null>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
