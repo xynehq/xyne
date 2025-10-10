@@ -133,6 +133,25 @@ services:
     networks:
       - xyne
 
+  nginx:
+    image: nginx:1.26-alpine
+    container_name: xyne-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./portable/nginx.conf:/etc/nginx/nginx.conf:ro
+    environment:
+      - NGINX_DOMAIN=${NGINX_DOMAIN:-localhost}
+    networks:
+      - xyne
+    command: >
+      /bin/sh -c "
+      envsubst '$$NGINX_DOMAIN' < /etc/nginx/nginx.conf > /tmp/nginx.conf &&
+      nginx -g 'daemon off;' -c /tmp/nginx.conf
+      "
+
 networks:
   xyne:
     driver: bridge
