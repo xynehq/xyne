@@ -123,7 +123,7 @@
     "secure-json-parse": "^4.0.0",
     "sharp": "^0.34.3",
     "stopword": "^3.1.5",
-    "together-ai": "^0.13.0",
+    "together-ai": "^0.22.0",
     "uuid": "^11.0.0",
     "xlsx": "^0.18.5",
     "zod": "^4.0.15"
