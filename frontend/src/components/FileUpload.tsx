@@ -286,6 +286,7 @@ export default function FileUpload({
         totalFiles: 0,
         isProcessing: false,
       })
+      setUploadAbortController(null)
     }
   }, [
     selectedFiles,
