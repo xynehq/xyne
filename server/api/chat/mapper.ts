@@ -37,6 +37,7 @@ import {
   DriveEntity,
   CalendarEntity,
   GooglePeopleEntity,
+  GoogleApps,
 } from "@xyne/vespa-ts/types"
 import type {
   ConversationalParams,
@@ -47,6 +48,7 @@ import type {
   SlackUserProfileParams,
 } from "@/api/chat/types"
 import config from "@/config"
+import { A } from "ollama/dist/shared/ollama.6319775f.mjs"
 
 const getLoggerForMapper = (emailSub: string) =>
   getLoggerWithChild(Subsystem.Chat, { email: emailSub })
@@ -983,8 +985,7 @@ export const searchGlobalTool: ToolDefinition = {
       name: "query",
       type: "string",
       required: true,
-      description:
-        `The search query string that specifies what you want to find.
+      description: `The search query string that specifies what you want to find.
          - query should be keywords focus to retireve the most relevant content from corpus.`,
     },
     {
@@ -1018,8 +1019,8 @@ export const searchGlobalTool: ToolDefinition = {
   ],
 }
 
-export const googleTools: ToolDefinition[] = [
-  {
+export const googleTools: Record<GoogleApps, ToolDefinition> = {
+  [GoogleApps.Gmail]: {
     name: "searchGmail",
     description:
       "Find and retrieve emails. Can search by keywords, filter by sender/recipient, time period, labels, or simply fetch recent emails when no query is provided.",
@@ -1055,7 +1056,8 @@ export const googleTools: ToolDefinition[] = [
         name: "labels",
         type: "string[]",
         required: false,
-        description: "Filter emails by Gmail labels. labels are 'IMPORTANT', 'STARRED', 'UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS', 'DRAFT', 'SENT', 'INBOX', 'SPAM', 'TRASH'.",
+        description:
+          "Filter emails by Gmail labels. labels are 'IMPORTANT', 'STARRED', 'UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS', 'DRAFT', 'SENT', 'INBOX', 'SPAM', 'TRASH'.",
       },
       {
         name: "timeRange",
@@ -1081,57 +1083,7 @@ export const googleTools: ToolDefinition[] = [
       },
     ],
   },
-  {
-    name: "searchGmailAttachment",
-    description:
-      "Locate email attachments from Gmail. Search by filename, file type, sender, or content keywords. Perfect for finding documents, PDFs, images, and other files shared via email.",
-    params: [
-      {
-        name: "query",
-        type: "string",
-        required: false,
-        description:
-          "Search terms for attachment names, email subjects, or content. When not provided, browses all recent attachments with optional filters.",
-      },
-      {
-        name: "limit",
-        type: "number",
-        required: false,
-        description: "Maximum number of attachments to return.",
-      },
-      {
-        name: "sortBy",
-        type: "asc | desc",
-        required: false,
-        description: "Sort order of results. Accepts 'asc' or 'desc'.",
-      },
-      {
-        name: "offset",
-        type: "number",
-        required: false,
-        description: "Number of results to skip, for pagination.",
-      },
-      {
-        name: "filename",
-        type: "string",
-        required: false,
-        description: "Filter attachments by filename.",
-      },
-      {
-        name: "fileType",
-        type: "string[]",
-        required: false,
-        description: "Filter attachments by file type (e.g., PDF, DOCX).",
-      },
-      {
-        name: "timeRange",
-        type: "object",
-        required: false,
-        description: `Filter attachments within a specific time range.  Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
-      },
-    ],
-  },
-  {
+  [GoogleApps.Drive]: {
     name: "searchDriveFiles",
     description:
       "Access and search files in Google Drive. Find documents, spreadsheets, presentations, PDFs, and folders by name, content, owner, or file type. Essential for document management and collaboration.",
@@ -1139,9 +1091,11 @@ export const googleTools: ToolDefinition[] = [
       {
         name: "query",
         type: "string",
-        required: true,
-        description:
-          "Search terms for file names, content, or metadata. Use specific keywords to find documents, or descriptive terms for content-based search.",
+        required: false,
+        description: `Search terms for file names, content, or metadata. Use specific keywords to find documents, or descriptive terms for content-based search.
+          - don't apply filters in the query like "from:sahebjot" or "subject:meeting" or "*".
+          - query should be keywords focus to retireve the most relevant content from corpus.
+          `,
       },
       {
         name: "owner",
@@ -1181,7 +1135,7 @@ export const googleTools: ToolDefinition[] = [
       },
     ],
   },
-  {
+  [GoogleApps.Calendar]: {
     name: "searchCalendarEvents",
     description:
       "Retrieve calendar events and meetings from Google Calendar. Search by event title, attendees, or time period. Ideal for scheduling analysis, meeting preparation, and availability checking.",
@@ -1201,10 +1155,10 @@ export const googleTools: ToolDefinition[] = [
       },
       {
         name: "status",
-        type: "string[]",
+        type: "string",
         required: false,
         description:
-          "Filter events by status. Example: ['confirmed', 'tentative', 'cancelled'].",
+          "Filter events by status. available status to select: ['confirmed', 'tentative', 'cancelled'].",
       },
       {
         name: "limit",
@@ -1232,17 +1186,17 @@ export const googleTools: ToolDefinition[] = [
       },
     ],
   },
-  {
+  [GoogleApps.Contacts]: {
     name: "searchGoogleContacts",
     description:
-      "Find people and contact information from Google Contacts. Search by name, email, phone number, or organization. Useful for contact lookup, networking, and communication planning.",
+      "Find people and contact information from Google Contacts. Search by name, email or organization. Useful for contact lookup, networking, and communication planning.",
     params: [
       {
         name: "query",
         type: "string",
         required: true,
         description:
-          "Search terms for contact names, companies, email addresses, or phone numbers. Use partial names or organization keywords for broad matching.",
+          "Search terms for contact names, companies, email addresses, or phone numbers. can also use names or organization keywords for broad matching.",
       },
       {
         name: "limit",
@@ -1258,4 +1212,4 @@ export const googleTools: ToolDefinition[] = [
       },
     ],
   },
-]
+}

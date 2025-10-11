@@ -37,11 +37,12 @@ import {
   KnowledgeBaseEntity,
   MailAttachmentEntity,
   WebSearchEntity,
+  type MailParticipant,
 } from "@xyne/vespa-ts/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { Intent, UserQuery, QueryRouterLLMResponse } from "@/ai/types"
+import type { UserQuery, QueryRouterLLMResponse } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,

@@ -128,7 +128,7 @@ export const updateUserQueryHistory = vespa.updateUserQueryHistory.bind(vespa)
 export const ifMailDocumentsExist = vespa.ifMailDocumentsExist.bind(vespa)
 export const IfMailDocExist = vespa.IfMailDocExist.bind(vespa)
 export const SearchEmailThreads = vespa.SearchEmailThreads.bind(vespa)
-
+export const searchGoogleApps = vespa.searchGoogleApps.bind(vespa)
 // Item operations
 export const getItems = vespa.getItems.bind(vespa)
 export const getFolderItems = vespa.getFolderItems.bind(vespa)

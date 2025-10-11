@@ -151,11 +151,15 @@ export interface MetadataRetrievalParams {
 }
 
 export interface SearchParams {
-  filter_query: string
+  query: string
   limit?: number
-  order_direction?: "asc" | "desc"
+  sortBy?: "asc" | "desc"
   offset?: number
   excludedIds?: string[]
+  timeRange?: {
+    startTime?: string
+    endTime?: string
+  }
 }
 
 export interface ConversationalParams {
