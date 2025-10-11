@@ -1168,7 +1168,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     collectionFileIds?: string[]
   }> = []
   let channelIds: string[] = []
-  let selectedItem = {}
+  let selectedItem: Partial<Record<Apps, string[]>> = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1275,7 +1275,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
+            collectionFileIds.push(
+              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
+            )
           }
         }
 
@@ -1614,7 +1616,13 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = await buildContext(totalResults, maxSummaryCount, userMetadata, 0, message)
+        const initialContext = await buildContext(
+          totalResults,
+          maxSummaryCount,
+          userMetadata,
+          0,
+          message,
+        )
 
         const { imageFileNames } = extractImageFileNames(
           initialContext,
@@ -1964,32 +1972,45 @@ async function* generateAnswerFromGivenContext(
         combinedSearchResponse.push(...results.root.children)
       }
     } else {
-      const collectionFileIds = fileIds.filter((fid) => fid.startsWith("clf-") || fid.startsWith("att_"))
-      const nonCollectionFileIds = fileIds.filter((fid) => !fid.startsWith("clf-") && !fid.startsWith("att_"))
-      if(nonCollectionFileIds && nonCollectionFileIds.length > 0) {
-        results = await searchVespaInFiles(builtUserQuery, email, nonCollectionFileIds, {
+      const collectionFileIds = fileIds.filter(
+        (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
+      )
+      const nonCollectionFileIds = fileIds.filter(
+        (fid) => !fid.startsWith("clf-") && !fid.startsWith("att_"),
+      )
+      if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+        results = await searchVespaInFiles(
+          builtUserQuery,
+          email,
+          nonCollectionFileIds,
+          {
             limit: fileIds?.length,
             alpha: userAlpha,
-            rankProfile: SearchModes.attachmentRank,
-          })
+            rankProfile: SearchModes.AttachmentRank,
+          },
+        )
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
       }
       if (collectionFileIds && collectionFileIds.length > 0) {
-        results = await searchCollectionRAG(messageText, collectionFileIds, undefined)
+        results = await searchCollectionRAG(
+          messageText,
+          collectionFileIds,
+          undefined,
+        )
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
       }
     }
-    
+
     // Apply intelligent chunk selection based on document relevance and chunk scores
     chunksPerDocument = await getChunkCountPerDoc(
       combinedSearchResponse,
       targetChunks,
       email,
-      fileSearchSpan
+      fileSearchSpan,
     )
     fileSearchSpan?.end()
   }
@@ -2196,17 +2217,17 @@ async function* generateAnswerFromGivenContext(
     generateAnswerSpan?.end()
     return
   } else if (
-      // If no answer found, exit and yield nothing related to selected context found
-      !answer
-    ) {
-      const noAnswerSpan = generateAnswerSpan?.startSpan("no_answer_response")
-      yield {
-        text: "From the selected context, I could not find any information to answer it, please change your query",
-      }
-      noAnswerSpan?.end()
-      generateAnswerSpan?.end()
-      return
+    // If no answer found, exit and yield nothing related to selected context found
+    !answer
+  ) {
+    const noAnswerSpan = generateAnswerSpan?.startSpan("no_answer_response")
+    yield {
+      text: "From the selected context, I could not find any information to answer it, please change your query",
     }
+    noAnswerSpan?.end()
+    generateAnswerSpan?.end()
+    return
+  }
   if (config.isReasoning && userRequestsReasoning) {
     previousResultsLength += combinedSearchResponse?.length || 0
   }
@@ -2373,7 +2394,7 @@ async function* generatePointQueryTimeExpansion(
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> = []
-  let selectedItem = {}
+  let selectedItem: Partial<Record<Apps, string[]>> = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2476,7 +2497,9 @@ async function* generatePointQueryTimeExpansion(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
+            collectionFileIds.push(
+              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
+            )
           }
         }
 
@@ -3024,6 +3047,10 @@ async function* generateMetadataQueryAnswer(
                 if (!agentAppEnums.includes(Apps.Slack))
                   agentAppEnums.push(Apps.Slack)
                 break
+              case Apps.KnowledgeBase.toLowerCase():
+                if (!agentAppEnums.includes(Apps.KnowledgeBase))
+                  agentAppEnums.push(Apps.KnowledgeBase)
+                break
               default:
                 loggerWithChild({ email: email }).warn(
                   `Unknown integration type in agent prompt: ${integration}`,
@@ -3069,7 +3096,9 @@ async function* generateMetadataQueryAnswer(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(...expandSheetIds(itemId.replace(/^clf[-_]/, "")))
+            collectionFileIds.push(
+              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
+            )
           }
         }
 
@@ -3122,11 +3151,19 @@ async function* generateMetadataQueryAnswer(
   )
   let schema: VespaSchema[] | null = null
   if (!entities?.length && apps?.length) {
-    schema = apps.map((app) => appToSchemaMapper(app)).filter((s) => s !== null)
+    schema = [
+      ...new Set(
+        apps.map((app) => appToSchemaMapper(app)).filter((s) => s !== null),
+      ),
+    ]
   } else if (entities?.length) {
-    schema = entities
-      .map((entity) => entityToSchemaMapper(entity))
-      .filter((s) => s !== null)
+    schema = [
+      ...new Set(
+        entities
+          .map((entity) => entityToSchemaMapper(entity))
+          .filter((s) => s !== null),
+      ),
+    ]
   }
 
   let items: VespaSearchResult[] = []
@@ -3211,6 +3248,7 @@ async function* generateMetadataQueryAnswer(
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             selectedItem: selectedItem,
+            collectionSelections: agentSpecificCollectionSelections,
           },
         )
       }
@@ -3239,7 +3277,10 @@ async function* generateMetadataQueryAnswer(
         ),
       )
 
-      pageSpan?.setAttribute("context", await buildContext(items, 20, userMetadata, 0, input))
+      pageSpan?.setAttribute(
+        "context",
+        await buildContext(items, 20, userMetadata, 0, input),
+      )
       if (!items.length) {
         loggerWithChild({ email: email }).info(
           `No documents found on iteration ${iteration}${
@@ -3347,22 +3388,19 @@ async function* generateMetadataQueryAnswer(
     items = []
     if (agentPrompt) {
       const agentApps = agentAppEnums.filter((a) => apps?.includes(a))
+      if (agentSpecificCollectionSelections.length) {
+        agentApps.push(Apps.KnowledgeBase)
+        schema.push(KbItemsSchema)
+      }
       if (agentApps.length) {
-        // Hot fix added due to integration issue with Google Drive agent
-        // we fix this in the short term by blocking all Google Drive agent queries 
-        // to go through getItems
-        if(agentApps.includes(Apps.GoogleDrive)){
-          yield { text: METADATA_FALLBACK_TO_RAG }
-          return
-        }
         loggerWithChild({ email: email }).info(
-          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
+          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${agentApps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
         )
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
           email,
           schema,
-          app: apps ?? null,
+          app: agentApps ?? null,
           entity: entities ?? null,
           timestampRange,
           limit: userSpecifiedCountLimit + (classification.filters.offset || 0),
@@ -3370,6 +3408,8 @@ async function* generateMetadataQueryAnswer(
           asc: sortDirection === "asc",
           intent: resolvedIntent || {},
           channelIds,
+          selectedItem: selectedItem,
+          collectionSelections: agentSpecificCollectionSelections,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -3391,6 +3431,8 @@ async function* generateMetadataQueryAnswer(
         offset: classification.filters.offset || 0,
         asc: sortDirection === "asc",
         intent: resolvedIntent || {},
+        collectionSelections: agentSpecificCollectionSelections,
+        selectedItem: selectedItem,
       }
 
       loggerWithChild({ email: email }).info(
@@ -3423,7 +3465,10 @@ async function* generateMetadataQueryAnswer(
       ),
     )
 
-    span?.setAttribute("context", await buildContext(items, 20, userMetadata, 0, input))
+    span?.setAttribute(
+      "context",
+      await buildContext(items, 20, userMetadata, 0, input),
+    )
     span?.end()
     loggerWithChild({ email: email }).info(
       `Retrieved Documents : ${QueryType.GetItems} - ${items.length}`,
@@ -3569,7 +3614,10 @@ async function* generateMetadataQueryAnswer(
           items.map((v: VespaSearchResult) => (v.fields as any).docId),
         ),
       )
-      iterationSpan?.setAttribute(`context`, await buildContext(items, 20, userMetadata, 0, input))
+      iterationSpan?.setAttribute(
+        `context`,
+        await buildContext(items, 20, userMetadata, 0, input),
+      )
       iterationSpan?.end()
 
       loggerWithChild({ email: email }).info(
@@ -4421,27 +4469,30 @@ export const MessageApi = async (c: Context) => {
           }
 
           let filteredMessages = messages
-              .slice(0, messages.length - 1)
-              .filter(
-                (msg) =>
-                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
-              )
+            .slice(0, messages.length - 1)
+            .filter(
+              (msg) =>
+                !(msg.messageRole === MessageRole.Assistant && !msg.message),
+            )
 
           // Check for follow-up context carry-forward
-          const lastIdx = filteredMessages.length - 1;
-          const workingSet = collectFollowupContext(filteredMessages, lastIdx);
+          const lastIdx = filteredMessages.length - 1
+          const workingSet = collectFollowupContext(filteredMessages, lastIdx)
 
           const hasCarriedContext =
             workingSet.fileIds.length > 0 ||
-            workingSet.attachmentFileIds.length > 0;
+            workingSet.attachmentFileIds.length > 0
           if (hasCarriedContext) {
-            fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]));
+            fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]))
             imageAttachmentFileIds = Array.from(
-              new Set([...imageAttachmentFileIds, ...workingSet.attachmentFileIds])
-            );
+              new Set([
+                ...imageAttachmentFileIds,
+                ...workingSet.attachmentFileIds,
+              ]),
+            )
             loggerWithChild({ email: email }).info(
               `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
-            );
+            )
           }
           if (
             (fileIds && fileIds?.length > 0) ||
@@ -4704,7 +4755,9 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            filteredMessages = filteredMessages.filter((msg) => !msg?.errorMessage)
+            filteredMessages = filteredMessages.filter(
+              (msg) => !msg?.errorMessage,
+            )
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
