@@ -1168,7 +1168,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     collectionFileIds?: string[]
   }> = []
   let channelIds: string[] = []
-  let selectedItem = {} as Record<Apps, string[]>
+  let selectedItem: Partial<Record<Apps, string[]>> = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1986,7 +1986,7 @@ async function* generateAnswerFromGivenContext(
           {
             limit: fileIds?.length,
             alpha: userAlpha,
-            rankProfile: SearchModes.attachmentRank,
+            rankProfile: SearchModes.AttachmentRank,
           },
         )
         if (results.root.children) {
@@ -2394,7 +2394,7 @@ async function* generatePointQueryTimeExpansion(
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> = []
-  let selectedItem = {} as Record<Apps, string[]>
+  let selectedItem: Partial<Record<Apps, string[]>> = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2990,7 +2990,7 @@ async function* generateMetadataQueryAnswer(
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> = []
-  let selectedItem: Record<Apps, string[]> = {} as Record<Apps, string[]>
+  let selectedItem = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -3048,8 +3048,8 @@ async function* generateMetadataQueryAnswer(
                   agentAppEnums.push(Apps.Slack)
                 break
               case Apps.KnowledgeBase.toLowerCase():
-                if (!agentAppEnums.includes(Apps.Slack))
-                  agentAppEnums.push(Apps.Slack)
+                if (!agentAppEnums.includes(Apps.KnowledgeBase))
+                  agentAppEnums.push(Apps.KnowledgeBase)
                 break
               default:
                 loggerWithChild({ email: email }).warn(

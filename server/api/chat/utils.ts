@@ -180,7 +180,7 @@ export interface AppSelectionMap {
 
 export interface ParsedResult {
   selectedApps: Apps[]
-  selectedItems: Record<Apps, string[]>
+  selectedItems: Partial<Record<Apps, string[]>>
 }
 
 export function parseAppSelections(input: AppSelectionMap): ParsedResult {
