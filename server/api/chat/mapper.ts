@@ -1078,8 +1078,7 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         required: false,
         description: `Advanced email communication filtering with intelligent resolution of names, organizations, and email addresses. Supports complex multi-participant email queries with automatic name-to-email mapping. 
            - Structure: {from?: string[], to?: string[], cc?: string[], bcc?: string[]}. 
-           - Each field accepts arrays containing email addresses, full names, first names, or organization names. 
-            - System performs intelligent resolution: 'John Doe' → 'john.doe@company.com', 'OpenAI' → all known OpenAI email addresses. `,
+           - Each field accepts arrays containing email addresses, full names, first names, or organization names. `,
       },
     ],
   },
@@ -1095,6 +1094,8 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         description: `Search terms for file names, content, or metadata. Use specific keywords to find documents, or descriptive terms for content-based search.
           - don't apply filters in the query like "from:sahebjot" or "subject:meeting" or "*".
           - query should be keywords focus to retireve the most relevant content from corpus.
+          - if query is empty, will fetch the most recent files for user.
+          - Never use the query to filter, query should be only contain keywords to searchFor otherwise don't select this parameter.
           `,
       },
       {

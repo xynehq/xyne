@@ -152,7 +152,6 @@ function formatSearchToolResponse(
 
 export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentAppEnums: Apps[]
-  agentSpecificDataSourceIds: string[]
   agentSpecificCollectionIds: string[]
   agentSpecificCollectionFolderIds: string[]
   agentSpecificCollectionFileIds: string[]
@@ -160,16 +159,14 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
 } {
   Logger.debug({ agentPrompt }, "Parsing agent prompt for app integrations")
   let agentAppEnums: Apps[] = []
-  let agentSpecificDataSourceIds: string[] = []
   let agentSpecificCollectionIds: string[] = []
   let agentSpecificCollectionFolderIds: string[] = []
   let agentSpecificCollectionFileIds: string[] = []
-  let selectedItem = {}
+  let selectedItem: any = {}
 
   if (!agentPrompt) {
     return {
       agentAppEnums,
-      agentSpecificDataSourceIds,
       agentSpecificCollectionIds,
       agentSpecificCollectionFolderIds,
       agentSpecificCollectionFileIds,
@@ -181,7 +178,6 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
 
   try {
     agentPromptData = JSON.parse(agentPrompt)
-    let selectedItem: any = {}
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
       const { selectedApps, selectedItems } = parseAppSelections(
         agentPromptData.appIntegrations,
@@ -193,7 +189,8 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
     }
 
     if (selectedItem[Apps.KnowledgeBase]) {
-      for (const itemId of selectedItem[Apps.KnowledgeBase]) {
+      const source = selectedItem[Apps.KnowledgeBase]
+      for (const itemId of source) {
         if (itemId.startsWith("cl-")) {
           // Entire collection - remove cl- prefix
           agentSpecificCollectionIds.push(itemId.replace(/^cl[-_]/, ""))
@@ -206,93 +203,22 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
         }
       }
     } else {
-      Logger.info("No KnowledgeBase items found in selectedItems")
+      Logger.info("No selected items found ")
     }
-
+    console.log(agentPromptData, "Final parsed apps")
     Logger.debug({ agentPromptData }, "Parsed agent prompt data")
   } catch (error) {
+    console.log("Failed to parse agentPrompt JSON", { error, agentPrompt })
     Logger.warn("Failed to parse agentPrompt JSON", {
       error,
       agentPrompt,
     })
     return {
       agentAppEnums,
-      agentSpecificDataSourceIds,
       agentSpecificCollectionIds,
       agentSpecificCollectionFolderIds,
       agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
-    }
-  }
-
-  if (
-    !agentPromptData.appIntegrations ||
-    !Array.isArray(agentPromptData.appIntegrations)
-  ) {
-    Logger.warn(
-      "agentPromptData.appIntegrations is not an array or is missing",
-      { agentPromptData },
-    )
-    return {
-      agentAppEnums,
-      agentSpecificDataSourceIds,
-      agentSpecificCollectionIds,
-      agentSpecificCollectionFolderIds,
-      agentSpecificCollectionFileIds,
-      selectedItems: selectedItem,
-    }
-  }
-
-  for (const integration of agentPromptData.appIntegrations) {
-    if (typeof integration !== "string") {
-      Logger.warn(
-        `Invalid integration item in agent prompt (not a string): ${integration}`,
-      )
-      continue
-    }
-
-    const integrationApp = integration.toLowerCase()
-
-    // Handle data source IDs
-    if (integrationApp.startsWith("ds-") || integrationApp.startsWith("ds_")) {
-      agentSpecificDataSourceIds.push(integration)
-      if (!agentAppEnums.includes(Apps.DataSource)) {
-        agentAppEnums.push(Apps.DataSource)
-      }
-      continue
-    }
-
-    // Handle collection IDs
-    if (integrationApp.startsWith("cl-")) {
-      // Entire collection - remove cl- prefix
-      const collectionId = integration.replace(/^cl[-_]/, "")
-      agentSpecificCollectionIds.push(collectionId)
-      continue
-    }
-
-    // Handle collection folder IDs
-    if (integrationApp.startsWith("clfd-")) {
-      // Collection folder - remove clfd- prefix
-      const collectionFolderId = integration.replace(/^clfd[-_]/, "")
-      agentSpecificCollectionFolderIds.push(collectionFolderId)
-      continue
-    }
-
-    // Handle collection file IDs
-    if (integrationApp.startsWith("clf-")) {
-      // Collection file - remove clf- prefix
-      const collectionFileId = integration.replace(/^clf[-_]/, "")
-      agentSpecificCollectionFileIds.push(collectionFileId)
-      continue
-    }
-
-    const app = integrationApp as Apps
-    if (app) {
-      if (!agentAppEnums.includes(app)) {
-        agentAppEnums.push(app)
-      }
-    } else {
-      Logger.warn(`Unknown integration type in agent prompt: ${integration}`)
     }
   }
 
@@ -301,7 +227,6 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
 
   return {
     agentAppEnums,
-    agentSpecificDataSourceIds,
     agentSpecificCollectionIds,
     agentSpecificCollectionFolderIds,
     agentSpecificCollectionFileIds,
@@ -625,7 +550,6 @@ export const searchGlobal: AgentTool = {
 
       const {
         agentAppEnums,
-        agentSpecificDataSourceIds,
         agentSpecificCollectionIds,
         agentSpecificCollectionFolderIds,
         agentSpecificCollectionFileIds,
@@ -641,7 +565,6 @@ export const searchGlobal: AgentTool = {
         excludedIds: params.excludedIds,
         agentAppEnums,
         span: execSpan,
-        dataSourceIds: agentSpecificDataSourceIds,
         channelIds,
         collectionIds: agentSpecificCollectionIds,
         collectionFolderIds: agentSpecificCollectionFolderIds,

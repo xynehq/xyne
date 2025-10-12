@@ -1038,7 +1038,7 @@ export const getCitationToImage = async (
 export function extractNamesFromIntent(intent: any): Intent {
   if (!intent || typeof intent !== "object") return {}
 
-  const result: Intent = {}
+  const result: MailParticipant = {}
   const fieldsToCheck = ["from", "to", "cc", "bcc", "subject"] as const
 
   for (const field of fieldsToCheck) {
