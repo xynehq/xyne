@@ -420,15 +420,11 @@ export function extractBotMessageText(message: SlackMessage): string {
   // Extract text from blocks
   if (message.blocks) {
     for (const block of message.blocks) {
-      // @ts-ignore
       if (block.type === "section" && block.text?.text) {
-        // @ts-ignore
         combinedText += block.text.text + "\n"
       }
 
-      // @ts-ignore
       if (block.type === "section" && block.fields) {
-        // @ts-ignore
         for (const field of block.fields) {
           if (field.text) {
             combinedText += field.text + "\n"
