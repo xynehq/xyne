@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import FileUploadSkeleton from "@/components/FileUploadSkeleton"
 import { isValidFile } from "../../../server/shared/fileUtils"
 import { getFileIcon } from "@/lib/common"
+import { SmartTooltip } from "./ui/smart-tooltip"
 
 export interface SelectedFile {
   file: File
@@ -235,6 +236,18 @@ const CollectionFileUpload = ({
       </div>
     )
   }
+  const getTooltipContent=()=>{
+    if(!collectionName.trim()){
+      return "Enter collection name"
+    }
+    else if(isUploading){
+      return "Uploading files..."
+    }
+    else{
+      return "Add files to upload"
+    }
+  }
+
 
   return (
     <div className="w-full">
@@ -395,20 +408,27 @@ const CollectionFileUpload = ({
 
             {/* Upload Button - sticks to bottom */}
             <div className="px-4 pt-4 pb-2 flex-shrink-0">
-              <Button
+               { (() => {
+              const isDisabled= selectedFiles.length === 0 || isUploading || !collectionName.trim()
+              const tooltipContent= isDisabled ? getTooltipContent() : undefined
+              
+            const button=(  <Button
                 onClick={(e) => {
                   e.stopPropagation()
                   onUpload()
                 }}
                 disabled={
-                  selectedFiles.length === 0 ||
-                  isUploading ||
-                  !collectionName.trim()
+                  isDisabled
                 }
-                className="w-full bg-slate-800 hover:bg-slate-700 dark:bg-slate-600 dark:hover:bg-slate-500 text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-full h-10 text-sm font-medium"
+                className={`w-full bg-slate-800 hover:bg-slate-700 dark:bg-slate-600 dark:hover:bg-slate-500 text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-full h-10 text-sm font-medium `}
+                
+                
               >
                 {isUploading ? "Uploading..." : "UPLOAD ITEMS"}
               </Button>
+            )
+            return tooltipContent ? <SmartTooltip content={tooltipContent} className={`w-full block ${isDisabled ? 'cursor-not-allowed' : ''}`} >{button}</SmartTooltip> : button
+              })()}
             </div>
           </div>
         </div>
