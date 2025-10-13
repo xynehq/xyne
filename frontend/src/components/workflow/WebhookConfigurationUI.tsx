@@ -29,7 +29,7 @@ export default function WebhookConfigurationUI({
 }: WebhookConfigurationUIProps) {
   const [config, setConfig] = useState<WebhookConfig>({
     webhookUrl: "",
-    httpMethod: "POST",
+    httpMethod: "GET",
     path: "",
     authentication: "none",
     selectedCredential: undefined,
@@ -37,6 +37,7 @@ export default function WebhookConfigurationUI({
     options: {},
     headers: {},
     queryParams: {},
+    requestBody: "",
   })
 
   const [newHeaderKey, setNewHeaderKey] = useState("")
@@ -61,15 +62,16 @@ export default function WebhookConfigurationUI({
       console.log("🔧 Initializing webhook config from toolData:", { valueData, configData })
       
       newConfig = {
-        webhookUrl: valueData.webhookUrl || "",
-        httpMethod: valueData.httpMethod || "POST",
-        path: valueData.path || "",
+        webhookUrl: valueData.webhookUrl || configData.webhookUrl || "",
+        httpMethod: valueData.httpMethod || configData.httpMethod || "POST",
+        path: valueData.path || configData.path || "",
         authentication: configData.authentication || "none",
         selectedCredential: configData.selectedCredential || undefined,
         responseMode: configData.responseMode || "immediately",
         options: configData.options || {},
         headers: configData.headers || {},
         queryParams: configData.queryParams || {},
+        requestBody: configData.requestBody || "",
       }
       
       console.log("🔧 Extracted path from toolData:", valueData.path)
@@ -77,7 +79,7 @@ export default function WebhookConfigurationUI({
       // Default config for new webhooks
       newConfig = {
         webhookUrl: "",
-        httpMethod: "POST",
+        httpMethod: "GET",
         path: "",
         authentication: "none",
         selectedCredential: undefined,
@@ -85,6 +87,7 @@ export default function WebhookConfigurationUI({
         options: {},
         headers: {},
         queryParams: {},
+        requestBody: "",
       }
     }
 
@@ -104,18 +107,80 @@ export default function WebhookConfigurationUI({
 
   // Generate webhook URL based on the path
   const generateWebhookUrl = () => {
+    // If we have a saved webhookUrl and it's not empty, use it
+    if (config.webhookUrl && config.webhookUrl.trim()) {
+      return config.webhookUrl
+    }
+    
+    // Otherwise, generate based on path
     // In development, use the backend server URL (port 3000)
     // In production, use the same origin
     const isDevelopment = window.location.port === '5173'
     const baseUrl = isDevelopment ? 'http://localhost:3000' : window.location.origin
     const cleanPath = config.path?.startsWith('/') ? config.path : `/${config.path || ''}`
-    return `${baseUrl}/webhook${cleanPath}`
+    let url = `${baseUrl}/webhook${cleanPath}`
+    
+    // Add query parameters if they exist
+    const queryParams = config.queryParams || {}
+    const queryString = Object.entries(queryParams)
+      .filter(([key, value]) => key.trim() && value.trim())
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join('&')
+    
+    if (queryString) {
+      url += `?${queryString}`
+    }
+    
+    return url
+  }
+
+  const validateHeaders = () => {
+    const headers = config.headers || {}
+    const errors: string[] = []
+    
+    for (const [key, value] of Object.entries(headers)) {
+      if (!key.trim()) {
+        errors.push("Header name cannot be empty")
+      }
+      if (!value.trim()) {
+        errors.push(`Header "${key}" value cannot be empty`)
+      }
+      // Basic header name validation (no spaces, special chars)
+      if (!/^[a-zA-Z0-9-_]+$/.test(key.trim())) {
+        errors.push(`Header name "${key}" contains invalid characters. Use only letters, numbers, hyphens, and underscores.`)
+      }
+    }
+    
+    return errors
   }
 
   const handleSave = () => {
     if (!config.path?.trim()) {
       alert("Please enter a webhook path")
       return
+    }
+
+    // Validate headers
+    const headerErrors = validateHeaders()
+    if (headerErrors.length > 0) {
+      alert(`Header validation failed:\n${headerErrors.join('\n')}`)
+      return
+    }
+
+    // Validate request body for POST method
+    if (config.httpMethod === "POST" && !config.requestBody?.trim()) {
+      alert("Request body is mandatory for POST method webhooks")
+      return
+    }
+
+    // Validate JSON format for request body if provided
+    if (config.requestBody?.trim()) {
+      try {
+        JSON.parse(config.requestBody)
+      } catch (error) {
+        alert("Request body must be valid JSON format")
+        return
+      }
     }
 
     const webhookUrl = generateWebhookUrl()
@@ -152,9 +217,7 @@ export default function WebhookConfigurationUI({
 
   // Copy webhook URL to clipboard
   const copyWebhookUrl = async () => {
-    const isDevelopment = window.location.port === '5173'
-    const baseUrl = isDevelopment ? 'http://localhost:3000' : window.location.origin
-    const url = config.path ? generateWebhookUrl() : `${baseUrl}/webhook/your-path`
+    const url = generateWebhookUrl()
     try {
       await navigator.clipboard.writeText(url)
       setCopied(true)
@@ -271,7 +334,7 @@ export default function WebhookConfigurationUI({
               <div className="relative">
                 <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg pr-12">
                   <div className="text-xs text-gray-600 dark:text-gray-400 font-mono break-all leading-relaxed">
-                    {config.path ? generateWebhookUrl() : `${window.location.port === '5173' ? 'http://localhost:3000' : window.location.origin}/webhook/your-path`}
+                    {generateWebhookUrl()}
                   </div>
                 </div>
                 <button
@@ -381,6 +444,51 @@ export default function WebhookConfigurationUI({
               If you are sending back a response, add a "Content-Type" response header with the appropriate value to avoid unexpected behavior
             </div>
           </div>
+
+          {/* Request Body - Shows only for POST, PUT, PATCH methods */}
+          {(config.httpMethod === "POST" || config.httpMethod === "PUT" || config.httpMethod === "PATCH") && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700 dark:text-gray-300">
+                Request Body {config.httpMethod === "POST" && <span className="text-red-500">*</span>}
+              </label>
+              <div className="space-y-2">
+                <textarea
+                  value={config.requestBody || ""}
+                  onChange={(e) => setConfig(prev => ({ ...prev, requestBody: e.target.value }))}
+                  placeholder='{"key": "value", "message": "Hello World"}'
+                  rows={6}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono text-sm resize-vertical"
+                />
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  {config.httpMethod === "POST" 
+                    ? "JSON request body is mandatory for POST webhooks. External systems must send this exact JSON structure." 
+                    : "Optional JSON request body. Must be valid JSON format if provided."}
+                </div>
+                {config.requestBody && (() => {
+                  try {
+                    JSON.parse(config.requestBody)
+                    return (
+                      <div className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        Valid JSON format
+                      </div>
+                    )
+                  } catch (error) {
+                    return (
+                      <div className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        Invalid JSON format
+                      </div>
+                    )
+                  }
+                })()}
+              </div>
+            </div>
+          )}
 
           {/* Headers */}
           <div className="space-y-3">

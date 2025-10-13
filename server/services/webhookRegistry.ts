@@ -14,6 +14,7 @@ type WebhookConfig = {
   options?: Record<string, any>
   headers?: Record<string, string>
   queryParams?: Record<string, string>
+  requestBody?: string
 }
 
 // Webhook registration service (moved from webhook.ts to avoid circular imports)

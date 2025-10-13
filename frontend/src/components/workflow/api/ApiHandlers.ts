@@ -435,6 +435,7 @@ export const workflowToolsAPI = {
     headers?: Record<string, string>
     queryParams?: Record<string, string>
     options?: Record<string, any>
+    requestBody?: string
   }): Promise<any> {
     console.log("🔗 Starting webhook save process...")
     console.log("📋 Webhook config input:", webhookConfig)
@@ -496,6 +497,7 @@ export const workflowToolsAPI = {
         webhookUrl: webhookConfig.webhookUrl,
         path: webhookConfig.path,
         httpMethod: webhookConfig.httpMethod,
+        requestBody: webhookConfig.requestBody,
         title: `Webhook: ${webhookConfig.path}`,
         description: `${webhookConfig.httpMethod} ${webhookConfig.webhookUrl} • ${
           webhookConfig.authentication === 'none' ? 'No authentication' : 'Basic authentication'
@@ -508,6 +510,7 @@ export const workflowToolsAPI = {
         headers: webhookConfig.headers || {},
         queryParams: webhookConfig.queryParams || {},
         options: webhookConfig.options || {},
+        requestBody: webhookConfig.requestBody,
         credentials: credentialArray, // Array of credential objects with base64 auth
         selectedCredential: webhookConfig.selectedCredential
       }
@@ -563,6 +566,7 @@ export const workflowToolsAPI = {
       headers?: Record<string, string>
       queryParams?: Record<string, string>
       options?: Record<string, any>
+      requestBody?: string
     }
   ): Promise<any> {
     // Format credential data for backend storage
@@ -613,6 +617,7 @@ export const workflowToolsAPI = {
         webhookUrl: webhookConfig.webhookUrl,
         path: webhookConfig.path,
         httpMethod: webhookConfig.httpMethod,
+        requestBody: webhookConfig.requestBody,
         title: `Webhook: ${webhookConfig.path}`,
         description: `${webhookConfig.httpMethod} ${webhookConfig.webhookUrl} • ${
           webhookConfig.authentication === 'none' ? 'No authentication' : 'Basic authentication'
@@ -625,6 +630,7 @@ export const workflowToolsAPI = {
         headers: webhookConfig.headers || {},
         queryParams: webhookConfig.queryParams || {},
         options: webhookConfig.options || {},
+        requestBody: webhookConfig.requestBody,
         credentials: credentialArray, // Array of credential objects with base64 auth
         selectedCredential: webhookConfig.selectedCredential
       }
