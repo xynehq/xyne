@@ -311,6 +311,7 @@ export interface WebhookConfig {
   options?: Record<string, any>
   headers?: Record<string, string>
   queryParams?: Record<string, string>
+  requestBody?: string
 }
 
 export interface LegacyWorkflowTemplate {

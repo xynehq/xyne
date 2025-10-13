@@ -3631,6 +3631,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
             headers: webhookConfig.headers,
             queryParams: webhookConfig.queryParams,
             options: webhookConfig.options,
+            requestBody: webhookConfig.requestBody,
           })
 
           console.log("Webhook saved to backend:", savedWebhookData)

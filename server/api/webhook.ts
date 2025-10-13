@@ -31,6 +31,7 @@ const webhookConfigSchema = z.object({
   options: z.record(z.string(), z.any()).optional(),
   headers: z.record(z.string(), z.string()).optional(),
   queryParams: z.record(z.string(), z.string()).optional(),
+  requestBody: z.string().optional(),
 })
 
 // Load webhooks from database function
