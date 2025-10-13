@@ -116,7 +116,6 @@ class SlackContainerVespaClient {
       }
 
       const data = await response.json()
-      console.log(data)
       // Log the continuation token for recovery purposes
       if (data.continuation) {
         logger.info(`Received continuation token: ${data.continuation}`)
@@ -199,7 +198,6 @@ async function processSlackChannel(
   try {
     // Get permissions array from the document
     const permissions = doc.fields.permissions || []
-    console.log(permissions)
     if (!permissions.length) {
       logger.warn({ docId }, "Channel has no permissions, skipping")
       return { processed: false, reason: "no_permissions" }
@@ -235,7 +233,7 @@ async function processSlackChannel(
       "", // No start date - full ingestion
       "", // No end date - full ingestion
       selectedUser,
-      false
+      false,
     )
 
     logger.info(
@@ -329,7 +327,6 @@ export async function processSlackChannels(
           batchSize,
           continuation,
         )
-      console.log(documents)
       logger.info(`=== BATCH ${batchCounter} NEXT CONTINUATION TOKEN ===`)
       logger.info("Next continuation token:", nextContinuation || "NONE")
       logger.info("===============================================")
