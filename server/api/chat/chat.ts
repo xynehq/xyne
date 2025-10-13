@@ -1972,23 +1972,14 @@ async function* generateAnswerFromGivenContext(
         combinedSearchResponse.push(...results.root.children)
       }
     } else {
-      const collectionFileIds = fileIds.filter(
-        (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
-      )
-      const nonCollectionFileIds = fileIds.filter(
-        (fid) => !fid.startsWith("clf-") && !fid.startsWith("att_"),
-      )
-      if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
-        results = await searchVespaInFiles(
-          builtUserQuery,
-          email,
-          nonCollectionFileIds,
-          {
+      const collectionFileIds = fileIds.filter((fid) => fid.startsWith("clf-") || fid.startsWith("att_"))
+      const nonCollectionFileIds = fileIds.filter((fid) => !fid.startsWith("clf-") && !fid.startsWith("att"))
+      const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
+      if(nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+        results = await searchVespaInFiles(builtUserQuery, email, nonCollectionFileIds, {
             limit: fileIds?.length,
             alpha: userAlpha,
-            rankProfile: SearchModes.AttachmentRank,
-          },
-        )
+          })
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
@@ -1999,6 +1990,16 @@ async function* generateAnswerFromGivenContext(
           collectionFileIds,
           undefined,
         )
+        if (results.root.children) {
+          combinedSearchResponse.push(...results.root.children)
+        }
+      }
+      if(attachmentFileIds && attachmentFileIds.length > 0) {
+        results = await searchVespaInFiles(builtUserQuery, email, attachmentFileIds, {
+          limit: fileIds?.length,
+          alpha: userAlpha,
+          rankProfile: SearchModes.AttachmentRank,
+        })
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
@@ -4468,32 +4469,6 @@ export const MessageApi = async (c: Context) => {
             })
           }
 
-          let filteredMessages = messages
-            .slice(0, messages.length - 1)
-            .filter(
-              (msg) =>
-                !(msg.messageRole === MessageRole.Assistant && !msg.message),
-            )
-
-          // Check for follow-up context carry-forward
-          const lastIdx = filteredMessages.length - 1
-          const workingSet = collectFollowupContext(filteredMessages, lastIdx)
-
-          const hasCarriedContext =
-            workingSet.fileIds.length > 0 ||
-            workingSet.attachmentFileIds.length > 0
-          if (hasCarriedContext) {
-            fileIds = Array.from(new Set([...fileIds, ...workingSet.fileIds]))
-            imageAttachmentFileIds = Array.from(
-              new Set([
-                ...imageAttachmentFileIds,
-                ...workingSet.attachmentFileIds,
-              ]),
-            )
-            loggerWithChild({ email: email }).info(
-              `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
-            )
-          }
           if (
             (fileIds && fileIds?.length > 0) ||
             (imageAttachmentFileIds && imageAttachmentFileIds?.length > 0)
@@ -4755,9 +4730,16 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            filteredMessages = filteredMessages.filter(
-              (msg) => !msg?.errorMessage,
-            )
+            const filteredMessages = messages
+              .slice(0, messages.length - 1)
+              .filter(
+                (msg) => !msg?.errorMessage,
+              )
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              )
+
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
             )
@@ -5232,22 +5214,32 @@ export const MessageApi = async (c: Context) => {
                 // - Updated count/pagination info
                 // - All the smart follow-up logic from the LLM
 
-                // Only check for fileIds if we need file context
-                const lastUserMessage = messages[messages.length - 3] // Assistant is at -2, last user is at -3
-                const parsedMessage =
-                  selectMessageSchema.safeParse(lastUserMessage)
-
-                if (parsedMessage.error) {
-                  loggerWithChild({ email: email }).error(
-                    `Error while parsing last user message for file context check`,
+                const filteredMessages = messages
+                  .filter(
+                    (msg) => !msg?.errorMessage,
                   )
-                } else if (
-                  parsedMessage.success &&
-                  Array.isArray(parsedMessage.data.fileIds) &&
-                  parsedMessage.data.fileIds.length // If the message contains fileIds then the follow up is must for @file
-                ) {
+                  .filter(
+                    (msg) =>
+                      !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                  )
+  
+                // Check for follow-up context carry-forward
+                const workingSet = collectFollowupContext(filteredMessages);
+      
+                const hasCarriedContext =
+                  workingSet.fileIds.length > 0 ||
+                  workingSet.attachmentFileIds.length > 0;
+                if (hasCarriedContext) {
+                  fileIds = workingSet.fileIds;
+                  imageAttachmentFileIds = workingSet.attachmentFileIds;
                   loggerWithChild({ email: email }).info(
-                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify(parsedMessage.data.fileIds)}`,
+                    `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
+                  );
+                }
+
+                if (fileIds && fileIds.length > 0 || imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
+                  loggerWithChild({ email: email }).info(
+                    `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
                   )
                   iterator = UnderstandMessageAndAnswerForGivenContext(
                     email,
@@ -5255,11 +5247,11 @@ export const MessageApi = async (c: Context) => {
                     userMetadata,
                     message,
                     0.5,
-                    parsedMessage.data.fileIds as string[],
+                    fileIds as string[],
                     userRequestsReasoning,
                     understandSpan,
                     undefined,
-                    undefined,
+                    imageAttachmentFileIds as string[],
                     agentPromptValue,
                     undefined,
                     actualModelId || config.defaultBestModel,
