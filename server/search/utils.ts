@@ -20,6 +20,27 @@ import { sharedVespaService } from "./vespaService"
 
 const Logger = getLogger(Subsystem.Vespa).child({ module: "search-utils" })
 
+export function expandSheetIds(fileId: string): string[] {
+  // Check if the fileId matches the pattern docId_sheet_number
+  const sheetMatch = fileId.match(/^(.+)_sheet_(\d+)$/)
+
+  if (!sheetMatch) {
+    // Not a sheet ID, return as is
+    return [fileId]
+  }
+
+  const [, docId, sheetNumberStr] = sheetMatch
+  const sheetNumber = parseInt(sheetNumberStr, 10)
+  // Generate IDs from docId_sheet_0 to docId_sheet_number
+  const expandedIds: string[] = []
+  const upper = Number.isFinite(sheetNumber) ? sheetNumber : 1
+  for (let i = 0; i < upper; i++) {
+    expandedIds.push(`${docId}_sheet_${i}`)
+  }
+
+  return expandedIds
+}
+
 export function removePrefixesFromItemIds(itemIds: string[]): string[] {
   return itemIds.map((itemId) => {
     // Remove prefixes: clfd-, clf-, cl-
@@ -76,8 +97,8 @@ export async function extractDriveIds(
   email: string,
 ): Promise<string[]> {
   let driveItem: string[] = []
-  if ((options.selectedItem as any)[Apps.GoogleDrive]) {
-    driveItem = [...(options.selectedItem as any)[Apps.GoogleDrive]]
+  if (options.selectedItem && options.selectedItem[Apps.GoogleDrive]) {
+    driveItem = [...options.selectedItem[Apps.GoogleDrive]]
   }
   const driveIds = []
   while (driveItem.length) {

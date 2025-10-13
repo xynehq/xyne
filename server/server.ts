@@ -21,6 +21,7 @@ import {
   chatTitleSchema,
   GetDriveItem,
   GetDriveItemsByDocIds,
+  handleAttachmentDeleteSchema,
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
 import { HighlightApi, highlightSchema } from "@/api/highlight"
@@ -238,6 +239,7 @@ import {
   handleFileUpload,
   handleAttachmentServe,
   handleThumbnailServe,
+  handleAttachmentDeleteApi,
 } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import {
@@ -894,6 +896,7 @@ export const AppRoutes = app
   .post("/files/upload-attachment", handleAttachmentUpload)
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
+  .post("/files/delete", zValidator("json", handleAttachmentDeleteSchema), handleAttachmentDeleteApi)
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/generateTitle",

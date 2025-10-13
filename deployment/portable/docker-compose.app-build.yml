@@ -1,0 +1,73 @@
+services:
+  app-storage-init:
+    image: busybox
+    volumes:
+      - ${XYNE_DATA_DIR:-./data}/app-uploads:/app-uploads
+      - ${XYNE_DATA_DIR:-./data}/app-logs:/app-logs
+      - ${XYNE_DATA_DIR:-./data}/app-migrations:/app-migrations
+      - ${XYNE_DATA_DIR:-./data}/app-downloads:/app-downloads
+    command: |
+      sh -c '
+        mkdir -p /app-uploads /app-logs /app-migrations /app-downloads
+        chown -R 1000:1000 /app-uploads /app-logs /app-migrations /app-downloads
+        chmod 755 /app-uploads /app-logs /app-migrations /app-downloads
+      '
+    user: "0:0"
+    networks:
+      - xyne
+
+  app:
+    image: xynehq/xyne
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: xyne-app
+    user: "${DOCKER_UID}:${DOCKER_GID}"
+    # Ports removed - NGINX handles external access
+    # ports:
+    #   - "${PORT:-3000}:${PORT:-3000}"
+    #   - "3001:3001"
+    depends_on:
+      app-storage-init:
+        condition: service_completed_successfully
+      xyne-db:
+        condition: service_healthy
+      vespa:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_HOST=xyne-db
+      - VESPA_HOST=vespa
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecret}
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_CLIENT_URL=${LIVEKIT_CLIENT_URL:-http://livekit:7880}
+    volumes:
+      # Application data volumes
+      - ${XYNE_DATA_DIR:-./data}/app-uploads:/usr/src/app/server/storage
+      - ${XYNE_DATA_DIR:-./data}/app-logs:/usr/src/app/server/logs
+      - ${XYNE_DATA_DIR:-./data}/app-assets:/usr/src/app/server/dist/assets/videos
+      - ${XYNE_DATA_DIR:-./data}/app-migrations:/usr/src/app/server/migrations
+      - ${XYNE_DATA_DIR:-./data}/app-downloads:/usr/src/app/server/downloads
+    networks:
+      - xyne
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+networks:
+  xyne:
+    external: true
