@@ -142,6 +142,12 @@ export const useUploadProgress = create<UploadProgressStore>((set, get) => ({
     )
   },
 
+  removeProgress: (uploadId) => {
+    set((state) =>
+      state.currentUpload?.id === uploadId ? { currentUpload: null } : state
+    )
+  },
+
   getUploadProgress: (uploadId) => {
     const state = get()
     return state.currentUpload?.id === uploadId ? state.currentUpload : null
