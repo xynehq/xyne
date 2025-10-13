@@ -74,8 +74,8 @@ import {
   validateAndDeduplicateFiles,
   createImagePreview,
   cleanupPreviewUrls,
-  getFileType,
 } from "@/utils/fileUtils"
+import { getFileType } from "shared/fileUtils"
 import { authFetch } from "@/utils/authFetch"
 
 interface SelectedFile {
@@ -977,15 +977,37 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return ext || "file"
     }
 
-    const removeFile = useCallback((id: string) => {
+    const removeFile = useCallback(async (id: string) => {
+      const fileToRemove = selectedFiles.find((f) => f.id === id)
+      
+      // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
+      if (fileToRemove?.metadata?.fileId) {
+        try {
+          const response = await api.files.delete.$post({
+            json: {
+              attachment: fileToRemove.metadata
+            }
+          })
+          
+          if (!response.ok) {
+            const errorText = await response.text()
+            console.error(`Failed to delete attachment: ${errorText}`)
+            // Still remove from UI even if server deletion fails
+          }
+        } catch (error) {
+          console.error('Error deleting attachment:', error)
+          // Still remove from UI even if server deletion fails
+        }
+      }
+      
+      // Remove from UI
       setSelectedFiles((prev) => {
-        const fileToRemove = prev.find((f) => f.id === id)
         if (fileToRemove?.preview) {
           URL.revokeObjectURL(fileToRemove.preview)
         }
         return prev.filter((f) => f.id !== id)
       })
-    }, [])
+    }, [selectedFiles])
 
     const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
       fileInputRef,

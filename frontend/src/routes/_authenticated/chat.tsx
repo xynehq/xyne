@@ -753,6 +753,7 @@ export const ChatPage = ({
 
   const [streamingStarted, setStreamingStarted] = useState(false)
   const [lastUserMessageCount, setLastUserMessageCount] = useState(0)
+  const [initialBottomSpace, setInitialBottomSpace] = useState(0)
 
   // Detect when streaming starts for a new query and calculate exact space needed
   useEffect(() => {
@@ -784,13 +785,14 @@ export const ChatPage = ({
           spaceNeeded = Math.max(300, containerHeight * 0.65)
         } else if (containerHeight <= 900) {
           // Medium screens: good separation without excess
-          spaceNeeded = Math.max(400, containerHeight * 0.72)
+          spaceNeeded = Math.max(400, containerHeight * 0.78)
         } else {
           // Large screens: sufficient space but not excessive
           spaceNeeded = Math.max(800, Math.min(containerHeight * 1, 980))
         }
 
         setBottomSpace(spaceNeeded)
+        setInitialBottomSpace(spaceNeeded)
 
         // Position the latest user message at the top with precise scroll positioning
         setTimeout(() => {
@@ -828,6 +830,98 @@ export const ChatPage = ({
     messages,
     lastUserMessageCount,
   ])
+
+  // Shared function to adjust bottom space based on content height
+  // Calculates total height of last assistant message (including action buttons, sources, follow-ups)
+  // and adjusts the spacer to prevent unnecessary extra space
+  const adjustBottomSpaceForContent = useCallback(
+    (forceUpdate = false) => {
+      if (initialBottomSpace === 0) return
+
+      const container = messagesContainerRef.current
+      if (!container) return
+
+      const assistantMessageWrappers = container.querySelectorAll(
+        '[data-message-role="assistant"]',
+      )
+      if (assistantMessageWrappers.length === 0) return
+
+      const lastMessageWrapper = assistantMessageWrappers[
+        assistantMessageWrappers.length - 1
+      ] as HTMLElement
+      if (!lastMessageWrapper) return
+
+      const totalHeight = lastMessageWrapper.offsetHeight
+      const newBottomSpace = Math.max(50, initialBottomSpace - totalHeight)
+
+      // During streaming, only update if there's a significant change (>10px) to avoid jitter
+      // After streaming, always update to ensure accurate spacing
+      setBottomSpace((prevBottomSpace) => {
+        if (forceUpdate || Math.abs(prevBottomSpace - newBottomSpace) > 10) {
+          return newBottomSpace
+        }
+        return prevBottomSpace
+      })
+    },
+    [initialBottomSpace],
+  )
+
+  // Adjust bottom space during streaming as content grows
+  useEffect(() => {
+    if (!streamingStarted || (!isStreaming && !retryIsStreaming)) return
+    if (initialBottomSpace === 0) return
+
+    const observer = new ResizeObserver(() => adjustBottomSpaceForContent())
+    const interval = setInterval(() => adjustBottomSpaceForContent(), 100)
+
+    const container = messagesContainerRef.current
+    if (container) observer.observe(container)
+
+    return () => {
+      observer.disconnect()
+      clearInterval(interval)
+    }
+  }, [
+    streamingStarted,
+    isStreaming,
+    retryIsStreaming,
+    initialBottomSpace,
+    adjustBottomSpaceForContent,
+    partial,
+    currentResp,
+  ])
+
+  // Adjust bottom space after streaming ends for action buttons, sources, and follow-ups
+  useEffect(() => {
+    if (isStreaming || retryIsStreaming || initialBottomSpace === 0) return
+
+    const observer = new ResizeObserver(() => adjustBottomSpaceForContent(true))
+
+    const container = messagesContainerRef.current
+    if (container) observer.observe(container)
+
+    // Timed adjustments to catch elements as they appear:
+    // 50ms: action buttons, 200ms: sources, 400ms: follow-up loading, 600ms: safety check
+    const timeouts = [50, 200, 400, 600].map((delay) =>
+      setTimeout(() => adjustBottomSpaceForContent(true), delay),
+    )
+
+    return () => {
+      observer.disconnect()
+      timeouts.forEach(clearTimeout)
+    }
+  }, [
+    isStreaming,
+    retryIsStreaming,
+    initialBottomSpace,
+    messages,
+    adjustBottomSpaceForContent,
+  ])
+
+  // Callback for when follow-up questions finish generating
+  const handleFollowUpQuestionsLoaded = useCallback(() => {
+    setTimeout(() => adjustBottomSpaceForContent(true), 150)
+  }, [adjustBottomSpaceForContent])
 
   const handleSend = async (
     messageToSend: string,
@@ -1416,6 +1510,7 @@ export const ChatPage = ({
                 isAutoScrollingRef={isAutoScrollingRef}
                 partial={partial}
                 bottomSpace={bottomSpace}
+                onFollowUpQuestionsLoaded={handleFollowUpQuestionsLoaded}
               />
               {showRagTrace && chatId && selectedMessageId && (
                 <div className="fixed inset-0 z-50 bg-white dark:bg-[#1E1E1E] overflow-auto">
@@ -1893,6 +1988,7 @@ interface VirtualizedMessagesProps {
   isAutoScrollingRef: React.MutableRefObject<boolean>
   partial: string
   bottomSpace: number
+  onFollowUpQuestionsLoaded: () => void
 }
 
 const ESTIMATED_MESSAGE_HEIGHT = 200 // Increased estimate for better performance
@@ -1935,6 +2031,7 @@ const VirtualizedMessages = React.forwardRef<
       isAutoScrollingRef,
       partial,
       bottomSpace,
+      onFollowUpQuestionsLoaded,
     },
     ref,
   ) => {
@@ -2224,6 +2321,7 @@ const VirtualizedMessages = React.forwardRef<
                           chatBoxRef.current?.sendMessage(question)
                         }}
                         isStreaming={isStreaming || retryIsStreaming}
+                        onQuestionsLoaded={onFollowUpQuestionsLoaded}
                       />
                     )}
                   </Fragment>

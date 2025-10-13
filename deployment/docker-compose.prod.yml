@@ -87,18 +87,20 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
-      - VESPA_CONFIGSERVER_JVMARGS=-Xms2g -Xmx4g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
-      - VESPA_CONFIGPROXY_JVMARGS=-Xms1g -Xmx2g -XX:+UseG1GC
+      # Config server - reduced from 4g to free up memory for searchnode
+      - VESPA_CONFIGSERVER_JVMARGS=-Xms1g -Xmx2g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
+      - VESPA_CONFIGPROXY_JVMARGS=-Xms512m -Xmx1g -XX:+UseG1GC
 
+      # Main query container - reduced to free up memory for searchnode
+      - VESPA_CONTAINER_JVMARGS=-Xms4g -Xmx8g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash -XX:MaxGCPauseMillis=200
 
-      # Main query container
-      - VESPA_CONTAINER_JVMARGS=-Xms8g -Xmx12g -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
+      # Storage and search nodes - SIGNIFICANTLY INCREASED to handle 102GB dataset
+      # Content node handles document storage and metadata
+      - VESPA_CONTENT_JVMARGS=-Xms20g -Xmx40g -XX:+UseG1GC -XX:MaxGCPauseMillis=500 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
+      # Searchnode is the critical component - needs much more memory for embeddings and indexes
+      - VESPA_SEARCHNODE_JVMARGS=-Xms140g -Xmx140g -XX:+UseG1GC -XX:MaxGCPauseMillis=500 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/vespa/var/crash
 
-      # Storage and search nodes
-      - VESPA_CONTENT_JVMARGS=-Xms10g -Xmx14g -XX:+UseG1GC
-      - VESPA_SEARCHNODE_JVMARGS=-Xms4g -Xmx6g -XX:+UseG1GC
-
-      # Support components (right-sized)
+      # Support components (kept small)
       - VESPA_LOGSERVER_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
       - VESPA_LOGS_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
       - VESPA_CLUSTER_CONTROLLER_JVMARGS=-Xms128m -Xmx256m -XX:+UseG1GC
@@ -132,6 +134,29 @@ services:
     restart: unless-stopped
     networks:
       - xyne
+
+  nginx:
+    image: nginx:1.26-alpine
+    container_name: xyne-nginx
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "3443:3443"
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
+    environment:
+      - NGINX_DOMAIN=${NGINX_DOMAIN:-localhost}
+      - NGINX_PORT=${NGINX_PORT:-3000}
+      - APP_PORT=${APP_PORT:-3001}
+    networks:
+      - xyne
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      /bin/sh -c "
+      envsubst '$$NGINX_DOMAIN $$NGINX_PORT $$APP_PORT' < /etc/nginx/nginx.conf > /tmp/nginx.conf &&
+      nginx -g 'daemon off;' -c /tmp/nginx.conf
+      "
 
 networks:
   xyne:

@@ -85,7 +85,7 @@ import { extractDriveIds } from "@/search/utils"
 const { maxDefaultSummary, defaultFastModel } = config
 const Logger = getLogger(Subsystem.Chat)
 
-function formatSearchToolResponse(
+async function formatSearchToolResponse(
   searchResults: VespaSearchResponse | null,
   searchContext: {
     query?: string
@@ -96,7 +96,7 @@ function formatSearchToolResponse(
     limit?: number
     searchType?: string
   },
-): { result: string; contexts: MinimalAgentFragment[] } {
+): Promise<{ result: string; contexts: MinimalAgentFragment[] }> {
   const children = (searchResults?.root?.children || []).filter(
     (item): item is VespaSearchResults =>
       !!(item.fields && "sddocname" in item.fields),
@@ -109,15 +109,17 @@ function formatSearchToolResponse(
     }
   }
 
-  const fragments: MinimalAgentFragment[] = children.map((r) => {
-    const citation = searchToCitation(r)
-    return {
-      id: `${citation.docId}`,
-      content: answerContextMap(r, userMetadata, maxDefaultSummary),
-      source: citation,
-      confidence: r.relevance || 0.7,
-    }
-  })
+  const fragments: MinimalAgentFragment[] = await Promise.all(
+    children.map(async (r) => {
+      const citation = searchToCitation(r)
+      return {
+        id: `${citation.docId}`,
+        content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+        source: citation,
+        confidence: r.relevance || 0.7,
+      }
+    }),
+  )
 
   let summaryText = `Found ${fragments.length} ${searchContext.searchType || "result"}${fragments.length !== 1 ? "s" : ""}`
 
@@ -472,30 +474,32 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
     return { result: "No results found.", contexts: [] }
   }
 
-  const fragments: MinimalAgentFragment[] = children.map((r) => {
-    if (r.fields.sddocname === dataSourceFileSchema) {
-      const fields = r.fields as VespaDataSourceFile
+  const fragments: MinimalAgentFragment[] = await Promise.all(
+    children.map(async (r) => {
+      if (r.fields.sddocname === dataSourceFileSchema) {
+        const fields = r.fields as VespaDataSourceFile
+        return {
+          id: `${fields.docId}`,
+          content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+          source: {
+            docId: fields.docId,
+            title: fields.fileName || "Untitled",
+            url: `/dataSource/${(fields as VespaDataSourceFile).docId}`,
+            app: fields.app || Apps.DataSource,
+            entity: DataSourceEntity.DataSourceFile,
+          },
+          confidence: r.relevance || 0.7,
+        }
+      }
+      const citation = searchToCitation(r)
       return {
-        id: `${fields.docId}`,
-        content: answerContextMap(r, userMetadata, maxDefaultSummary),
-        source: {
-          docId: fields.docId,
-          title: fields.fileName || "Untitled",
-          url: `/dataSource/${(fields as VespaDataSourceFile).docId}`,
-          app: fields.app || Apps.DataSource,
-          entity: DataSourceEntity.DataSourceFile,
-        },
+        id: `${citation.docId}`,
+        content: await answerContextMap(r, userMetadata, maxDefaultSummary),
+        source: citation,
         confidence: r.relevance || 0.7,
       }
-    }
-    const citation = searchToCitation(r)
-    return {
-      id: `${citation.docId}`,
-      content: answerContextMap(r, userMetadata, maxDefaultSummary),
-      source: citation,
-      confidence: r.relevance || 0.7,
-    }
-  })
+    }),
+  )
 
   let summaryText = `Found ${fragments.length} results`
   if (query) summaryText += ` matching '${query}'`
@@ -770,22 +774,27 @@ export const getSlackMessagesFromUser: AgentTool = {
       )
 
       if (items.length > 0) {
-        const fragments: MinimalAgentFragment[] = items.map(
-          (item: VespaSearchResults): MinimalAgentFragment => {
-            const citation = searchToCitation(item)
-            Logger.debug({ item }, "Processing item in metadata_retrieval tool")
+        const fragments: MinimalAgentFragment[] = await Promise.all(
+          items.map(
+            async (item: VespaSearchResults): Promise<MinimalAgentFragment> => {
+              const citation = searchToCitation(item)
+              Logger.debug(
+                { item },
+                "Processing item in metadata_retrieval tool",
+              )
 
-            const content = item.fields
-              ? answerContextMap(item, userMetadata, maxDefaultSummary)
-              : `Context unavailable for ${citation.title || citation.docId}`
+              const content = item.fields
+                ? await answerContextMap(item, userMetadata, maxDefaultSummary)
+                : `Context unavailable for ${citation.title || citation.docId}`
 
-            return {
-              id: `${citation.docId}`,
-              content: content,
-              source: citation,
-              confidence: item.relevance || 0.7, // Use item.relevance if available
-            }
-          },
+              return {
+                id: `${citation.docId}`,
+                content: content,
+                source: citation,
+                confidence: item.relevance || 0.7, // Use item.relevance if available
+              }
+            },
+          ),
         )
 
         let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
@@ -1060,22 +1069,24 @@ export const getSlackRelatedMessages: AgentTool = {
       }
 
       // Process results into fragments
-      const fragments: MinimalAgentFragment[] = allItems.map(
-        (item: VespaSearchResults): MinimalAgentFragment => {
-          const citation = searchToCitation(item)
-          Logger.debug({ item }, "Processing Slack message item")
+      const fragments: MinimalAgentFragment[] = await Promise.all(
+        allItems.map(
+          async (item: VespaSearchResults): Promise<MinimalAgentFragment> => {
+            const citation = searchToCitation(item)
+            Logger.debug({ item }, "Processing Slack message item")
 
-          const content = item.fields
-            ? answerContextMap(item, userMetadata, maxDefaultSummary)
-            : `Content unavailable for ${citation.title || citation.docId}`
+            const content = item.fields
+              ? await answerContextMap(item, userMetadata, maxDefaultSummary)
+              : `Content unavailable for ${citation.title || citation.docId}`
 
-          return {
-            id: `${citation.docId}`,
-            content: content,
-            source: citation,
-            confidence: item.relevance || 0.7,
-          }
-        },
+            return {
+              id: `${citation.docId}`,
+              content: content,
+              source: citation,
+              confidence: item.relevance || 0.7,
+            }
+          },
+        ),
       )
 
       // Build response message
@@ -1401,22 +1412,24 @@ export const getSlackMessagesFromChannel: AgentTool = {
           contexts: [],
         }
       }
-      const fragments: MinimalAgentFragment[] = items.map(
-        (item: VespaSearchResults): MinimalAgentFragment => {
-          const citation = searchToCitation(item)
-          Logger.debug({ item }, "Processing item in metadata_retrieval tool")
+      const fragments: MinimalAgentFragment[] = await Promise.all(
+        items.map(
+          async (item: VespaSearchResults): Promise<MinimalAgentFragment> => {
+            const citation = searchToCitation(item)
+            Logger.debug({ item }, "Processing item in metadata_retrieval tool")
 
-          const content = item.fields
-            ? answerContextMap(item, userMetadata, maxDefaultSummary)
-            : `Context unavailable for ${citation.title || citation.docId}`
+            const content = item.fields
+              ? await answerContextMap(item, userMetadata, maxDefaultSummary)
+              : `Context unavailable for ${citation.title || citation.docId}`
 
-          return {
-            id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-            content: content,
-            source: citation,
-            confidence: item.relevance || 0.7, // Use item.relevance if available
-          }
-        },
+            return {
+              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              content: content,
+              source: citation,
+              confidence: item.relevance || 0.7, // Use item.relevance if available
+            }
+          },
+        ),
       )
 
       let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
@@ -1608,22 +1621,24 @@ export const getSlackMessagesFromTimeRange: AgentTool = {
           contexts: [],
         }
       }
-      const fragments: MinimalAgentFragment[] = items.map(
-        (item: VespaSearchResults): MinimalAgentFragment => {
-          const citation = searchToCitation(item)
-          Logger.debug({ item }, "Processing item in metadata_retrieval tool")
+      const fragments: MinimalAgentFragment[] = await Promise.all(
+        items.map(
+          async (item: VespaSearchResults): Promise<MinimalAgentFragment> => {
+            const citation = searchToCitation(item)
+            Logger.debug({ item }, "Processing item in metadata_retrieval tool")
 
-          const content = item.fields
-            ? answerContextMap(item, userMetadata, maxDefaultSummary)
-            : `Context unavailable for ${citation.title || citation.docId}`
+            const content = item.fields
+              ? await answerContextMap(item, userMetadata, maxDefaultSummary)
+              : `Context unavailable for ${citation.title || citation.docId}`
 
-          return {
-            id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-            content: content,
-            source: citation,
-            confidence: item.relevance || 0.7, // Use item.relevance if available
-          }
-        },
+            return {
+              id: `${citation.docId}-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              content: content,
+              source: citation,
+              confidence: item.relevance || 0.7, // Use item.relevance if available
+            }
+          },
+        ),
       )
 
       let responseText = `Found ${fragments.length} Slack message${fragments.length !== 1 ? "s" : ""}`
@@ -1837,7 +1852,7 @@ export const searchGmail: AgentTool = {
         )
       }
 
-      return formatSearchToolResponse(searchResults, {
+      return await formatSearchToolResponse(searchResults, {
         query: params.query,
         app: GoogleApps.Gmail,
         labels: params.labels,
@@ -1929,7 +1944,7 @@ export const searchDriveFiles: AgentTool = {
         docIds: driveSourceIds,
       })
 
-      return formatSearchToolResponse(searchResults, {
+      return await formatSearchToolResponse(searchResults, {
         query: params.query,
         app: GoogleApps.Drive,
         timeRange: timeRange,
@@ -2012,7 +2027,7 @@ export const searchCalendarEvents: AgentTool = {
         docIds: undefined,
       })
 
-      return formatSearchToolResponse(searchResults, {
+      return await formatSearchToolResponse(searchResults, {
         query: params.query,
         app: GoogleApps.Calendar,
         timeRange: timeRange,
@@ -2065,7 +2080,7 @@ export const searchGoogleContacts: AgentTool = {
         sortBy: "desc",
       })
 
-      return formatSearchToolResponse(searchResults, {
+      return await formatSearchToolResponse(searchResults, {
         query: params.query,
         app: GoogleApps.Contacts,
         offset: params.offset,

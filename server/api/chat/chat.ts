@@ -128,6 +128,8 @@ import {
   type VespaSearchResultsSchema,
   KnowledgeBaseEntity,
   KbItemsSchema,
+  AttachmentEntity,
+  fileSchema,
 } from "@xyne/vespa-ts/types"
 import { APIError } from "openai"
 import {
@@ -213,6 +215,8 @@ import { getDateForAI } from "@/utils/index"
 import type { User } from "@microsoft/microsoft-graph-types"
 import { getAuth, safeGet } from "../agent"
 import { getChunkCountPerDoc } from "./chunk-selection"
+import { handleAttachmentDelete } from "../files"
+import { expandSheetIds } from "@/search/utils"
 
 const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
@@ -485,7 +489,7 @@ const checkAndYieldCitations = async function* (
           const f = (item as any)?.fields
           if (
             f?.sddocname === dataSourceFileSchema ||
-            f?.entity === KnowledgeBaseEntity.Attachment
+            Object.values(AttachmentEntity).includes(f?.entity)
           ) {
             // Skip datasource and attachment files from citations
             continue
@@ -763,6 +767,7 @@ export const ChatDeleteApi = async (c: Context) => {
     email = sub || ""
     // @ts-ignore
     const { chatId } = c.req.valid("json")
+    const attachmentsToDelete: AttachmentMetadata[] = []
     await db.transaction(async (tx) => {
       // Get the chat's internal ID first
       const chat = await getChatByExternalIdWithAuth(tx, chatId, email)
@@ -770,106 +775,13 @@ export const ChatDeleteApi = async (c: Context) => {
         throw new HTTPException(404, { message: "Chat not found" })
       }
 
-      // Get all messages for the chat to find attachments
+      // Get all messages for the chat to delete attachments
       const messagesToDelete = await getChatMessagesWithAuth(tx, chatId, email)
-
-      // Collect all attachment file IDs that need to be deleted
-      const imageAttachmentFileIds: string[] = []
-      const nonImageAttachmentFileIds: string[] = []
 
       for (const message of messagesToDelete) {
         if (message.attachments && Array.isArray(message.attachments)) {
-          const attachments =
-            message.attachments as unknown as AttachmentMetadata[]
-          for (const attachment of attachments) {
-            if (attachment && typeof attachment === "object") {
-              if (attachment.fileId) {
-                // Check if this is an image attachment using both isImage field and fileType
-                const isImageAttachment =
-                  attachment.isImage ||
-                  (attachment.fileType && isImageFile(attachment.fileType))
-
-                if (isImageAttachment) {
-                  imageAttachmentFileIds.push(attachment.fileId)
-                } else {
-                  nonImageAttachmentFileIds.push(attachment.fileId)
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Delete image attachments and their thumbnails from disk
-      if (imageAttachmentFileIds.length > 0) {
-        loggerWithChild({ email: email }).info(
-          `Deleting ${imageAttachmentFileIds.length} image attachment files and their thumbnails for chat ${chatId}`,
-        )
-
-        for (const fileId of imageAttachmentFileIds) {
-          try {
-            // Validate fileId to prevent path traversal
-            if (
-              fileId.includes("..") ||
-              fileId.includes("/") ||
-              fileId.includes("\\")
-            ) {
-              loggerWithChild({ email: email }).error(
-                `Invalid fileId detected: ${fileId}. Skipping deletion for security.`,
-              )
-              continue
-            }
-            const imageBaseDir = path.resolve(
-              process.env.IMAGE_DIR || "downloads/xyne_images_db",
-            )
-
-            const imageDir = path.join(imageBaseDir, fileId)
-            try {
-              await fs.access(imageDir)
-              await fs.rm(imageDir, { recursive: true, force: true })
-              loggerWithChild({ email: email }).info(
-                `Deleted image attachment directory: ${imageDir}`,
-              )
-            } catch (attachmentError) {
-              loggerWithChild({ email: email }).warn(
-                `Image attachment file ${fileId} not found in either directory during chat deletion`,
-              )
-            }
-          } catch (error) {
-            loggerWithChild({ email: email }).error(
-              error,
-              `Failed to delete image attachment file ${fileId} during chat deletion: ${getErrorMessage(error)}`,
-            )
-          }
-        }
-      }
-
-      // Delete non-image attachments from Vespa kb_items schema
-      if (nonImageAttachmentFileIds.length > 0) {
-        loggerWithChild({ email: email }).info(
-          `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa kb_items schema for chat ${chatId}`,
-        )
-
-        for (const fileId of nonImageAttachmentFileIds) {
-          try {
-            // Delete from Vespa kb_items schema using the proper Vespa function
-            await DeleteDocument(fileId, KbItemsSchema)
-            loggerWithChild({ email: email }).info(
-              `Successfully deleted non-image attachment ${fileId} from Vespa kb_items schema`,
-            )
-          } catch (error) {
-            const errorMessage = getErrorMessage(error)
-            if (errorMessage.includes("404 Not Found")) {
-              loggerWithChild({ email: email }).warn(
-                `Non-image attachment ${fileId} not found in Vespa kb_items schema (may have been already deleted)`,
-              )
-            } else {
-              loggerWithChild({ email: email }).error(
-                error,
-                `Failed to delete non-image attachment ${fileId} from Vespa kb_items schema: ${errorMessage}`,
-              )
-            }
-          }
+          const attachments = message.attachments as AttachmentMetadata[]
+          attachmentsToDelete.push(...attachments)
         }
       }
 
@@ -882,6 +794,9 @@ export const ChatDeleteApi = async (c: Context) => {
       await deleteMessagesByChatId(tx, chatId)
       await deleteChatByExternalIdWithAuth(tx, chatId, email)
     })
+    if (attachmentsToDelete.length) {
+      await handleAttachmentDelete(attachmentsToDelete, email)
+    }
     return c.json({ success: true })
   } catch (error) {
     const errMsg = getErrorMessage(error)
@@ -1189,24 +1104,26 @@ export const replaceDocIdwithUserDocId = async (
   return userMap[email] ?? docId
 }
 
-export function buildContext(
+export async function buildContext(
   results: VespaSearchResult[],
   maxSummaryCount: number | undefined,
   userMetadata: UserMetadataType,
   startIndex: number = 0,
-): string {
-  return cleanContext(
-    results
-      ?.map(
-        (v, i) =>
-          `Index ${i + startIndex} \n ${answerContextMap(
-            v as VespaSearchResults,
-            userMetadata,
-            maxSummaryCount,
-          )}`,
-      )
-      ?.join("\n"),
+  builtUserQuery?: string,
+): Promise<string> {
+  const contextPromises = results?.map(
+    async (v, i) =>
+      `Index ${i + startIndex} \n ${await answerContextMap(
+        v as VespaSearchResults,
+        userMetadata,
+        maxSummaryCount,
+        undefined,
+        undefined,
+        builtUserQuery,
+      )}`,
   )
+  const contexts = await Promise.all(contextPromises || [])
+  return cleanContext(contexts.join("\n"))
 }
 
 async function* generateIterativeTimeFilterAndQueryRewrite(
@@ -1251,7 +1168,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     collectionFileIds?: string[]
   }> = []
   let channelIds: string[] = []
-  let selectedItem = {}
+  let selectedItem: Partial<Record<Apps, string[]>> = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -1358,7 +1275,9 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(
+              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
+            )
           }
         }
 
@@ -1563,10 +1482,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       )
       vespaSearchSpan?.end()
 
-      const initialContext = buildContext(
+      const initialContext = await buildContext(
         results?.root?.children,
         maxSummaryCount,
         userMetadata,
+        0,
+        message,
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -1695,10 +1616,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         )
         totalResultsSpan?.end()
         const contextSpan = querySpan?.startSpan("build_context")
-        const initialContext = buildContext(
+        const initialContext = await buildContext(
           totalResults,
           maxSummaryCount,
           userMetadata,
+          0,
+          message,
         )
 
         const { imageFileNames } = extractImageFileNames(
@@ -1887,11 +1810,12 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
     pageSearchSpan?.end()
     const startIndex = isReasoning ? previousResultsLength : 0
     const contextSpan = pageSpan?.startSpan("build_context")
-    const initialContext = buildContext(
+    const initialContext = await buildContext(
       results?.root?.children,
       maxSummaryCount,
       userMetadata,
       startIndex,
+      message,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -2062,6 +1986,7 @@ async function* generateAnswerFromGivenContext(
           {
             limit: fileIds?.length,
             alpha: userAlpha,
+            rankProfile: SearchModes.AttachmentRank,
           },
         )
         if (results.root.children) {
@@ -2195,12 +2120,13 @@ async function* generateAnswerFromGivenContext(
 
   const startIndex = isReasoning ? previousResultsLength : 0
   const contextPromises = combinedSearchResponse?.map(async (v, i) => {
-    let content = answerContextMap(
+    let content = await answerContextMap(
       v as VespaSearchResults,
       userMetadata,
       i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
       isMsgWithSources,
+      message,
     )
     if (
       v.fields &&
@@ -2468,7 +2394,7 @@ async function* generatePointQueryTimeExpansion(
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> = []
-  let selectedItem = {}
+  let selectedItem: Partial<Record<Apps, string[]>> = {}
   if (agentPrompt) {
     let agentPromptData: { appIntegrations?: string[] } = {}
     try {
@@ -2571,7 +2497,9 @@ async function* generatePointQueryTimeExpansion(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(
+              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
+            )
           }
         }
 
@@ -2841,11 +2769,12 @@ async function* generatePointQueryTimeExpansion(
     // Prepare context for LLM
     const contextSpan = iterationSpan?.startSpan("build_context")
     const startIndex = isReasoning ? previousResultsLength : 0
-    const initialContext = buildContext(
+    const initialContext = await buildContext(
       combinedResults?.root?.children,
       maxSummaryCount,
       userMetadata,
       startIndex,
+      message,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -2982,7 +2911,7 @@ async function* processResultsForMetadata(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
   )
-  const context = buildContext(items, chunksCount, userMetadata)
+  const context = await buildContext(items, chunksCount, userMetadata, 0, input)
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
@@ -3124,6 +3053,10 @@ async function* generateMetadataQueryAnswer(
                 if (!agentAppEnums.includes(Apps.Slack))
                   agentAppEnums.push(Apps.Slack)
                 break
+              case Apps.KnowledgeBase.toLowerCase():
+                if (!agentAppEnums.includes(Apps.KnowledgeBase))
+                  agentAppEnums.push(Apps.KnowledgeBase)
+                break
               default:
                 loggerWithChild({ email: email }).warn(
                   `Unknown integration type in agent prompt: ${integration}`,
@@ -3169,7 +3102,9 @@ async function* generateMetadataQueryAnswer(
             collectionFolderIds.push(itemId.replace(/^clfd[-_]/, ""))
           } else if (itemId.startsWith("clf-")) {
             // Collection file - remove clf- prefix
-            collectionFileIds.push(itemId.replace(/^clf[-_]/, ""))
+            collectionFileIds.push(
+              ...expandSheetIds(itemId.replace(/^clf[-_]/, "")),
+            )
           }
         }
 
@@ -3222,11 +3157,19 @@ async function* generateMetadataQueryAnswer(
   )
   let schema: VespaSchema[] | null = null
   if (!entities?.length && apps?.length) {
-    schema = apps.map((app) => appToSchemaMapper(app)).filter((s) => s !== null)
+    schema = [
+      ...new Set(
+        apps.map((app) => appToSchemaMapper(app)).filter((s) => s !== null),
+      ),
+    ]
   } else if (entities?.length) {
-    schema = entities
-      .map((entity) => entityToSchemaMapper(entity))
-      .filter((s) => s !== null)
+    schema = [
+      ...new Set(
+        entities
+          .map((entity) => entityToSchemaMapper(entity))
+          .filter((s) => s !== null),
+      ),
+    ]
   }
 
   let items: VespaSearchResult[] = []
@@ -3311,6 +3254,7 @@ async function* generateMetadataQueryAnswer(
             dataSourceIds: agentSpecificDataSourceIds,
             channelIds: channelIds,
             selectedItem: selectedItem,
+            collectionSelections: agentSpecificCollectionSelections,
           },
         )
       }
@@ -3339,7 +3283,10 @@ async function* generateMetadataQueryAnswer(
         ),
       )
 
-      pageSpan?.setAttribute("context", buildContext(items, 20, userMetadata))
+      pageSpan?.setAttribute(
+        "context",
+        await buildContext(items, 20, userMetadata, 0, input),
+      )
       if (!items.length) {
         loggerWithChild({ email: email }).info(
           `No documents found on iteration ${iteration}${
@@ -3447,15 +3394,19 @@ async function* generateMetadataQueryAnswer(
     items = []
     if (agentPrompt) {
       const agentApps = agentAppEnums.filter((a) => apps?.includes(a))
+      if (agentSpecificCollectionSelections.length) {
+        agentApps.push(Apps.KnowledgeBase)
+        schema.push(KbItemsSchema)
+      }
       if (agentApps.length) {
         loggerWithChild({ email: email }).info(
-          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Mail Participants: ${JSON.stringify(classification.filters.mailParticipants)}`,
+          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${agentApps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}`,
         )
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
           email,
           schema,
-          app: apps ?? null,
+          app: agentApps ?? null,
           entity: entities ?? null,
           timestampRange,
           limit: userSpecifiedCountLimit + (classification.filters.offset || 0),
@@ -3463,6 +3414,8 @@ async function* generateMetadataQueryAnswer(
           asc: sortDirection === "asc",
           mailParticipants: resolvedMailParticipants || {},
           channelIds,
+          selectedItem: selectedItem,
+          collectionSelections: agentSpecificCollectionSelections,
         })
         items = searchResults!.root.children || []
         loggerWithChild({ email: email }).info(
@@ -3483,7 +3436,9 @@ async function* generateMetadataQueryAnswer(
         limit: userSpecifiedCountLimit + (classification.filters.offset || 0),
         offset: classification.filters.offset || 0,
         asc: sortDirection === "asc",
-        mailParticipants: resolvedMailParticipants || {},
+        intent: resolvedMailParticipants || {},
+        collectionSelections: agentSpecificCollectionSelections,
+        selectedItem: selectedItem,
       }
 
       loggerWithChild({ email: email }).info(
@@ -3516,7 +3471,10 @@ async function* generateMetadataQueryAnswer(
       ),
     )
 
-    span?.setAttribute("context", buildContext(items, 20, userMetadata))
+    span?.setAttribute(
+      "context",
+      await buildContext(items, 20, userMetadata, 0, input),
+    )
     span?.end()
     loggerWithChild({ email: email }).info(
       `Retrieved Documents : ${QueryType.GetItems} - ${items.length}`,
@@ -3664,7 +3622,7 @@ async function* generateMetadataQueryAnswer(
       )
       iterationSpan?.setAttribute(
         `context`,
-        buildContext(items, 20, userMetadata),
+        await buildContext(items, 20, userMetadata, 0, input),
       )
       iterationSpan?.end()
 
@@ -4254,7 +4212,7 @@ export const MessageApi = async (c: Context) => {
       .map((m) => m.fileId)
     const nonImageAttachmentFileIds = attachmentMetadata
       .filter((m) => !m.isImage)
-      .map((m) => m.fileId)
+      .flatMap((m) => expandSheetIds(m.fileId))
 
     if (agentPromptValue) {
       const userAndWorkspaceCheck = await getUserAndWorkspaceByEmail(
@@ -4310,7 +4268,7 @@ export const MessageApi = async (c: Context) => {
       try {
         const resp = await getCollectionFilesVespaIds(JSON.parse(kbItems), db)
         fileIds = resp
-          .map((file) => file.vespaDocId || "")
+          .flatMap((file) => expandSheetIds(file.vespaDocId || ""))
           .filter((id) => id !== "")
       } catch {
         fileIds = []
