@@ -521,11 +521,14 @@ export async function insertChannelMessages(
           message.client_msg_id &&
           message.text != ""
 
+        const hasTextOrBlocks =
+          (message.text && message.text.trim().length > 0) ||
+          (Array.isArray(message.blocks) && message.blocks.length > 0)
         const isBotMessage =
           includeBotMessages &&
           message.type === "message" &&
           message.bot_id &&
-          message.text != ""
+          hasTextOrBlocks
 
         if (isRegularMessage || isBotMessage) {
           message.mentions = mentions
@@ -535,8 +538,11 @@ export async function insertChannelMessages(
           if (isBotMessage) {
             // For bot messages, generate custom ID: channelId_ts_botid
             const customBotId = `${channelId}_${message.ts}_${message.bot_id}`
-            // Temporarily set client_msg_id for bot messages
+            // Temporarily set identifiers for bot messages
             message.client_msg_id = message.client_msg_id || customBotId
+            // Ensure a userId-like value exists for downstream writes/attachments
+            message.user =
+              message.user || (message.bot_profile?.id as any) || message.bot_id
 
             // For bot messages, extract and combine all text from blocks
             const combinedBotText = extractBotMessageText(message)
@@ -645,11 +651,14 @@ export async function insertChannelMessages(
               reply.client_msg_id &&
               reply.text != ""
 
+            const hasTextOrBlocks =
+              (reply.text && reply.text.trim().length > 0) ||
+              (Array.isArray(reply.blocks) && reply.blocks.length > 0)
             const isBotReply =
               includeBotMessages &&
               reply.type === "message" &&
               reply.bot_id &&
-              reply.text != ""
+              hasTextOrBlocks
 
             if (isRegularReply || isBotReply) {
               const mentions = extractUserIdsFromBlocks(reply)
@@ -682,8 +691,10 @@ export async function insertChannelMessages(
               if (isBotReply) {
                 // For bot replies, generate custom ID: channelId_ts_botid
                 const customBotId = `${channelId}_${reply.ts}_${reply.bot_id}`
-                // Temporarily set client_msg_id for bot replies
                 reply.client_msg_id = reply.client_msg_id || customBotId
+                // Ensure a userId-like value exists for downstream writes/attachments
+                reply.user =
+                  reply.user || (reply.bot_profile?.id as any) || reply.bot_id
 
                 // For bot replies, extract and combine all text from blocks
                 const combinedBotText = extractBotMessageText(reply)
