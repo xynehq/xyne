@@ -449,25 +449,28 @@ function UsersListPage({
         Array.isArray(ingestedData.data)
       ) {
         setIngestedUsers(
-          ingestedData.data.map((user: any) => ({
-            ...user,
-            syncJobs: Object.fromEntries(
-              Object.entries(user.syncJobs || {}).map(([app, value]) => [
-                app,
-                value === null
-                  ? { lastSyncDate: null, createdAt: null }
-                  : typeof value === "object" && Object.keys(value).length > 0
-                    ? value // already in correct format
-                    : {
-                        lastSyncDate:
-                          typeof value === "string" || typeof value === "number"
-                            ? new Date(value)
-                            : null,
-                        createdAt: null,
-                      },
-              ]),
-            ),
-          })),
+          ingestedData.data
+            .filter((user: any) => user.email !== "") // Filter out users with empty email
+            .map((user: any) => ({
+              ...user,
+              syncJobs: Object.fromEntries(
+                Object.entries(user.syncJobs || {}).map(([app, value]) => [
+                  app,
+                  value === null
+                    ? { lastSyncDate: null, createdAt: null }
+                    : typeof value === "object" && Object.keys(value).length > 0
+                      ? value // already in correct format
+                      : {
+                          lastSyncDate:
+                            typeof value === "string" ||
+                            typeof value === "number"
+                              ? new Date(value)
+                              : null,
+                          createdAt: null,
+                        },
+                ]),
+              ),
+            })),
         )
         // console.log(ingestedUsers)
       } else {
