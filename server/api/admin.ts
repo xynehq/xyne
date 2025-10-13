@@ -1502,6 +1502,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
     channelsToIngest: string[]
     startDate: string
     endDate: string
+    includeBotMessage: boolean
   }
 
   try {
@@ -1512,6 +1513,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
       payload.startDate,
       payload.endDate,
       email,
+      payload.includeBotMessage,
     )
     return c.json({
       success: true,

@@ -177,6 +177,7 @@ type ManualIngestionFormData = {
   channelIds: string
   startDate: string
   endDate: string
+  includeBotMessage: boolean
 }
 
 interface SlackOAuthTabProps {
@@ -1127,7 +1128,7 @@ const ManualIngestionForm = ({
   // const startTimeRef = useRef<number | null>(null)
 
   const form = useForm<ManualIngestionFormData>({
-    defaultValues: { channelIds: "", startDate: "", endDate: "" },
+    defaultValues: { channelIds: "", startDate: "", endDate: "", includeBotMessage: false },
     onSubmit: async ({ value }) => {
       if (!connectorId) {
         toast({
@@ -1167,6 +1168,7 @@ const ManualIngestionForm = ({
                 channelsToIngest: channelIdsList,
                 startDate: value.startDate,
                 endDate: value.endDate,
+                includeBotMessage: value.includeBotMessage,
               },
             })
           : await api.slack.ingest_more_channel.$post({
@@ -1175,6 +1177,7 @@ const ManualIngestionForm = ({
                 channelsToIngest: channelIdsList,
                 startDate: value.startDate,
                 endDate: value.endDate,
+                includeBotMessage: value.includeBotMessage,
               },
             })
 
@@ -1254,6 +1257,27 @@ const ManualIngestionForm = ({
           />
         )}
       />
+
+      <div className="flex items-center space-x-2 mt-4">
+        <form.Field
+          name="includeBotMessage"
+          children={(field) => (
+            <input
+              type="checkbox"
+              id="includeBotMessage"
+              checked={field.state.value}
+              onChange={(e) => field.handleChange(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          )}
+        />
+        <Label
+          htmlFor="includeBotMessage"
+          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+        >
+          Include Bot Messages
+        </Label>
+      </div>
 
       <Button type="submit" disabled={isManualIngestionActive}>
         {isManualIngestionActive ? "Ingesting..." : "Ingest Channels"}
