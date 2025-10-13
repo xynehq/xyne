@@ -2254,6 +2254,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           .map((f) => f.preview)
           .filter(Boolean) as string[]
         cleanupPreviewUrls(previewUrls)
+        
+        // Abort any ongoing uploads
+        uploadControllers.current.forEach((controller) => {
+          controller.abort()
+        })
+        uploadControllers.current.clear()
       }
     }, [])
 
