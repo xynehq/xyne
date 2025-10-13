@@ -1208,16 +1208,16 @@ export const agentSearchQueryPrompt = (
         - "Documents from last month" → sortDirection: null (no clear direction specified)
         - "Find my budget documents" → sortDirection: null (no sorting direction implied)
 
-    6. Extract email addresses and main intent from the query:
+    6. Extract email addresses and main mailParticipants from the query:
       
-      **CRITICAL RULES for Email Intent Extraction:**
-        - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
-        - EXTRACT intent for queries with person names OR email addresses OR organization names:
+      **CRITICAL RULES for Email MailParticipants Extraction:**
+        - DO NOT extract mailParticipants for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
+        - EXTRACT mailParticipants for queries with person names OR email addresses OR organization names:
           - Person names: "emails from John", "messages from Sarah", "emails from prateek"
           - Email addresses: "emails from john@company.com", "messages from user@domain.com"
           - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
           - Specific subjects: "emails with subject 'meeting'"
-        - If the query is asking for ALL items without specific criteria, return empty intent object: {}
+        - If the query is asking for ALL items without specific criteria, return empty mailParticipants object: {}
         
         **Email Address, Name, and Organization Detection Rules:**
         - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
@@ -1243,8 +1243,8 @@ export const agentSearchQueryPrompt = (
         - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
         
         For other apps/entities:
-        - Currently no specific intent fields defined
-        - Return empty intent object: {}
+        - Currently no specific mailParticipants fields defined
+        - Return empty mailParticipants object: {}
 
       **FILTERQUERY EXTRACTION RULES:**
       
@@ -1418,7 +1418,7 @@ export const agentSearchQueryPrompt = (
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
-           "intent": {}
+           "mailParticipants": {}
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -1426,7 +1426,7 @@ export const agentSearchQueryPrompt = (
        - "temporalDirection" should be "next" if the query asks about upcoming calendar events/meetings, and "prev" if it refers to past calendar events/meetings. Use null for all non-calendar queries.
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
-       - "intent" is an object that contains specific intent fields based on the app/entity detected. 
+       - "mailParticipants" is an object that contains specific mailParticipants fields based on the app/entity detected. 
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
        - "apps" and "entities" should always be arrays when values are present. For single app/entity, use single-element arrays like ["Gmail"]. Set to null if no apps/entities are detected.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.

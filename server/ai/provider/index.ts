@@ -431,7 +431,6 @@ export const getAISDKProviderByModel = (modelId: Models): ProviderV2 => {
             : VertexProjectId && VertexRegion
               ? AIProviders.VertexAI
               : null
-  console.log("Provider type:", providerType, "for model:", modelId)
   switch (providerType) {
     case AIProviders.VertexAI: {
       if (!VertexProjectId || !VertexRegion) {

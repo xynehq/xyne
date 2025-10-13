@@ -207,10 +207,8 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
     } else {
       Logger.info("No selected items found ")
     }
-    console.log(agentPromptData, "Final parsed apps")
     Logger.debug({ agentPromptData }, "Parsed agent prompt data")
   } catch (error) {
-    console.log("Failed to parse agentPrompt JSON", { error, agentPrompt })
     Logger.warn("Failed to parse agentPrompt JSON", {
       error,
       agentPrompt,
@@ -1794,7 +1792,6 @@ export const searchGmail: AgentTool = {
     userCtx?: string,
     agentPrompt?: string,
   ) => {
-    console.log("Executing searchGmail tool with params:", params)
     const execSpan = span?.startSpan("execute_search_gmail_tool")
     try {
       const { agentAppEnums } = parseAgentAppIntegrations(agentPrompt)

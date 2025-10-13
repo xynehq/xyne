@@ -222,7 +222,7 @@ const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
 
 export async function resolveNamesToEmails(
-  intent: MailParticipant,
+  mailParticipants: MailParticipant,
   email: string,
   userCtx: string,
   userMetadata: UserMetadataType,
@@ -231,7 +231,7 @@ export async function resolveNamesToEmails(
   const resolveSpan = span?.startSpan("resolve_names_to_emails")
 
   try {
-    const extractedNames = extractNamesFromIntent(intent)
+    const extractedNames = extractNamesFromIntent(mailParticipants)
 
     const allNames = [
       ...(extractedNames.from || []),
@@ -244,7 +244,7 @@ export async function resolveNamesToEmails(
     if (allNames.length === 0) {
       resolveSpan?.setAttribute("no_names_found", true)
       resolveSpan?.end()
-      return intent
+      return mailParticipants
     }
 
     const isValidEmailAddress = (email: string): boolean => {
@@ -259,7 +259,7 @@ export async function resolveNamesToEmails(
       resolveSpan?.setAttribute("all_names_are_emails", true)
       resolveSpan?.setAttribute("skip_resolution", true)
       resolveSpan?.end()
-      return intent
+      return mailParticipants
     }
     resolveSpan?.setAttribute("names_to_resolve", JSON.stringify(allNames))
 
@@ -292,7 +292,7 @@ export async function resolveNamesToEmails(
       !searchResults.root.children ||
       searchResults.root.children.length === 0
     ) {
-      return intent
+      return mailParticipants
     }
 
     const searchContext = searchResults.root.children
@@ -326,7 +326,7 @@ export async function resolveNamesToEmails(
     return resolvedData
   } catch (error) {
     resolveSpan?.end()
-    return intent
+    return mailParticipants
   }
 }
 
@@ -3372,7 +3372,7 @@ async function* generateMetadataQueryAnswer(
         span,
       )
       loggerWithChild({ email: email }).info(
-        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedMailParticipants)}`,
+        `[${QueryType.SearchWithoutFilters}] Resolved mailParticipants: ${JSON.stringify(resolvedMailParticipants)}`,
       )
     }
 
@@ -3424,7 +3424,7 @@ async function* generateMetadataQueryAnswer(
       }
     } else {
       loggerWithChild({ email: email }).info(
-        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.mailParticipants)}`,
+        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}`,
       )
 
       const getItemsParams = {
@@ -3436,7 +3436,7 @@ async function* generateMetadataQueryAnswer(
         limit: userSpecifiedCountLimit + (classification.filters.offset || 0),
         offset: classification.filters.offset || 0,
         asc: sortDirection === "asc",
-        intent: resolvedMailParticipants || {},
+        mailParticipants: resolvedMailParticipants || {},
         collectionSelections: agentSpecificCollectionSelections,
         selectedItem: selectedItem,
       }
@@ -3545,7 +3545,7 @@ async function* generateMetadataQueryAnswer(
         span,
       )
       loggerWithChild({ email: email }).info(
-        `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedMailParticipants)}`,
+        `[SearchWithFilters] Resolved mailParticipants: ${JSON.stringify(resolvedMailParticipants)}`,
       )
     }
 
@@ -4903,7 +4903,7 @@ export const MessageApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
-              intent: {},
+              mailParticipants: {},
               offset: 0,
             }
             let parsed = {
@@ -4913,7 +4913,7 @@ export const MessageApi = async (c: Context) => {
               temporalDirection: null,
               filterQuery: "",
               type: "",
-              intent: {},
+              mailParticipants: {},
               filters: queryFilters,
             }
 
@@ -5173,7 +5173,7 @@ export const MessageApi = async (c: Context) => {
               entities,
               sortDirection,
               startTime,
-              intent,
+              mailParticipants,
               offset,
             } = parsed?.filters || {}
             classification = {
@@ -5189,7 +5189,7 @@ export const MessageApi = async (c: Context) => {
                 startTime,
                 count,
                 offset: offset || 0,
-                intent: intent || {},
+                mailParticipants: mailParticipants || {},
               },
             } as QueryRouterLLMResponse
 
@@ -6343,7 +6343,7 @@ export const MessageRetryApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
-              intent: {},
+              mailParticipants: {},
               offset: 0,
             }
             let parsed = {
@@ -6488,7 +6488,7 @@ export const MessageRetryApi = async (c: Context) => {
                   startTime,
                   count,
                   offset: parsed?.filters?.offset || 0,
-                  intent: parsed?.filters?.intent || {},
+                  mailParticipants: parsed?.filters?.mailParticipants || {},
                 },
               } as QueryRouterLLMResponse
 
