@@ -212,3 +212,24 @@ export async function validateVespaIdInAgentIntegrations(
     return false
   }
 }
+
+export function expandSheetIds(fileId: string): string[] {
+  // Check if the fileId matches the pattern docId_sheet_number
+  const sheetMatch = fileId.match(/^(.+)_sheet_(\d+)$/)
+
+  if (!sheetMatch) {
+    // Not a sheet ID, return as is
+    return [fileId]
+  }
+
+  const [, docId, sheetNumberStr] = sheetMatch
+  const sheetNumber = parseInt(sheetNumberStr, 10)
+  // Generate IDs from docId_sheet_0 to docId_sheet_number
+  const expandedIds: string[] = []
+  const upper = Number.isFinite(sheetNumber) ? sheetNumber : 1
+  for (let i = 0; i < upper; i++) {
+    expandedIds.push(`${docId}_sheet_${i}`)
+  }
+
+  return expandedIds
+}

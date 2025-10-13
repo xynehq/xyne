@@ -11,6 +11,7 @@ import { getUserByEmail } from "@/db/user"
 import { db } from "@/db/client"
 import {
   checkIfDataSourceFileExistsByNameAndId,
+  DeleteDocument,
   getDataSourceByNameAndCreator,
   insert,
 } from "../search/vespa"
@@ -21,9 +22,13 @@ import { isValidFile, isImageFile } from "shared/fileUtils"
 import { generateThumbnail, getThumbnailPath } from "@/utils/image"
 import type { AttachmentMetadata } from "@/shared/types"
 import { FileProcessorService } from "@/services/fileProcessor"
-import { Apps, KbItemsSchema, KnowledgeBaseEntity } from "@xyne/vespa-ts/types"
+import { Apps, KbItemsSchema, KnowledgeBaseEntity, fileSchema } from "@xyne/vespa-ts/types"
 import { getBaseMimeType } from "@/integrations/dataSource/config"
 import { isDataSourceError } from "@/integrations/dataSource/errors"
+import { getErrorMessage } from "@/utils"
+import { promises as fs } from "node:fs"
+import { expandSheetIds } from "@/search/utils"
+import { DeleteImages } from "@/api/dataSource"
 
 const { JwtPayloadKey } = config
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "newApps" })
@@ -359,6 +364,112 @@ export const handleAttachmentUpload = async (c: Context) => {
       "Error in attachment upload handler",
     )
     throw error
+  }
+}
+
+export const handleAttachmentDelete = async (attachments: AttachmentMetadata[], email: string) => {
+  const imageAttachmentFileIds: string[] = []
+  const nonImageAttachmentFileIds: string[] = []
+
+  for (const attachment of attachments) {
+    if (attachment && typeof attachment === "object") {
+      if (attachment.fileId) {
+        // Check if this is an image attachment using both isImage field and fileType
+        const isImageAttachment =
+          attachment.isImage ||
+          (attachment.fileType && isImageFile(attachment.fileType))
+
+        if (isImageAttachment) {
+          imageAttachmentFileIds.push(attachment.fileId)
+        } else {
+          nonImageAttachmentFileIds.push(attachment.fileId)
+        }
+      }
+    }
+  }
+
+  // Delete image attachments and their thumbnails from disk
+  if (imageAttachmentFileIds.length > 0) {
+    loggerWithChild({ email: email }).info(
+      `Deleting ${imageAttachmentFileIds.length} image attachment files and their thumbnails`,
+    )
+
+    for (const fileId of imageAttachmentFileIds) {
+      try {
+        // Validate fileId to prevent path traversal
+        if (
+          fileId.includes("..") ||
+          fileId.includes("/") ||
+          fileId.includes("\\")
+        ) {
+          loggerWithChild({ email: email }).error(
+            `Invalid fileId detected: ${fileId}. Skipping deletion for security.`,
+          )
+          continue
+        }
+        const imageBaseDir = path.resolve(
+          process.env.IMAGE_DIR || "downloads/xyne_images_db",
+        )
+
+        const imageDir = path.join(imageBaseDir, fileId)
+        try {
+          await fs.access(imageDir)
+          await fs.rm(imageDir, { recursive: true, force: true })
+          await DeleteDocument(fileId, fileSchema)
+
+          loggerWithChild({ email: email }).info(
+            `Deleted image attachment directory: ${imageDir}`,
+          )
+        } catch (attachmentError) {
+          loggerWithChild({ email: email }).warn(
+            `Image attachment file ${fileId} not found in either directory during deletion`,
+          )
+        }
+      } catch (error) {
+        loggerWithChild({ email: email }).error(
+          error,
+          `Failed to delete image attachment file ${fileId} during deletion: ${getErrorMessage(error)}`,
+        )
+      }
+    }
+  }
+
+  // Delete non-image attachments from Vespa
+  if (nonImageAttachmentFileIds.length > 0) {
+    loggerWithChild({ email: email }).info(
+      `Deleting ${nonImageAttachmentFileIds.length} non-image attachments from Vespa`,
+    )
+
+    for (const fileId of nonImageAttachmentFileIds) {
+      try {
+        const vespaIds = expandSheetIds(fileId)
+        for (const vespaId of vespaIds) {
+          // Delete from Vespa kb_items or file schema
+          if (vespaId.startsWith("att_")) {
+            await DeleteDocument(vespaId, KbItemsSchema)
+          } else {
+            await DeleteDocument(vespaId, fileSchema)
+          }
+          // Delete images from disk
+          await DeleteImages(vespaId)
+          loggerWithChild({ email: email }).info(
+            `Successfully deleted non-image attachment ${vespaId} from Vespa`,
+          )
+        }
+      } catch (error) {
+        const errorMessage = getErrorMessage(error)
+        if (errorMessage.includes("404 Not Found")) {
+          loggerWithChild({ email: email }).warn(
+            `Non-image attachment ${fileId} not found in Vespa (may have been already deleted)`,
+          )
+        } else {
+          loggerWithChild({ email: email }).error(
+            error,
+            `Failed to delete non-image attachment ${fileId} from Vespa: ${errorMessage}`,
+          )
+        }
+      }
+    }
   }
 }
 
