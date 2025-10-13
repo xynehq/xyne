@@ -398,6 +398,14 @@ export const handleAttachmentUpload = async (c: Context) => {
       message: `Stored ${attachmentMetadata.length} attachment(s) successfully.`,
     })
   } catch (error) {
+    // Handle AbortError gracefully for cancelled uploads
+    if (error instanceof Error && error.name === 'AbortError') {
+      loggerWithChild({ email }).info(
+        "Attachment upload was cancelled by client",
+      )
+      throw new HTTPException(499, { message: "Upload cancelled" })
+    }
+    
     loggerWithChild({ email }).error(
       error,
       "Error in attachment upload handler",
