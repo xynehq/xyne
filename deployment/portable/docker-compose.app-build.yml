@@ -23,9 +23,10 @@ services:
       dockerfile: Dockerfile
     container_name: xyne-app
     user: "${DOCKER_UID}:${DOCKER_GID}"
-    ports:
-      - "${PORT:-3000}:${PORT:-3000}"
-      - "3001:3001"
+    # Ports removed - NGINX handles external access
+    # ports:
+    #   - "${PORT:-3000}:${PORT:-3000}"
+    #   - "3001:3001"
     depends_on:
       app-storage-init:
         condition: service_completed_successfully
@@ -39,6 +40,10 @@ services:
       - NODE_ENV=production
       - DATABASE_HOST=xyne-db
       - VESPA_HOST=vespa
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecret}
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_CLIENT_URL=${LIVEKIT_CLIENT_URL:-http://livekit:7880}
     volumes:
       # Application data volumes
       - ${XYNE_DATA_DIR:-./data}/app-uploads:/usr/src/app/server/storage
