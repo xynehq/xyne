@@ -1,3 +1,10 @@
+## [3.13.8](https://github.com/xynehq/xyne/compare/v3.13.7...v3.13.8) (2025-10-13)
+
+
+### Bug Fixes
+
+* XYNE-153 added tootltip message when kb is created ([#1093](https://github.com/xynehq/xyne/issues/1093)) ([a4e928f](https://github.com/xynehq/xyne/commit/a4e928fa28abbb09f99ae13049271f1697001fa8))
+
 ## [3.13.7](https://github.com/xynehq/xyne/compare/v3.13.6...v3.13.7) (2025-10-13)
 
 
