@@ -45,6 +45,7 @@ interface UploadProgressStore {
   ) => void
   finishUpload: (uploadId: string) => void
   cancelUpload: (uploadId: string) => void
+  removeProgress: (uploadId: string) => void
   getUploadProgress: (uploadId: string) => UploadTask | null
 }
 
