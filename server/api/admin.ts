@@ -1449,7 +1449,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
 export const StartSlackIngestionApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   // @ts-ignore - Assuming payload is validated by zValidator
-  const payload = c.req.valid("json") as { connectorId: string }
+  const payload = c.req.valid("json") as { connectorId: number }
 
   try {
     const userRes = await getUserByEmail(db, sub)
@@ -1462,7 +1462,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
     }
     const [user] = userRes
 
-    const connector = await getConnector(db, parseInt(payload.connectorId))
+    const connector = await getConnector(db, payload.connectorId)
     if (!connector) {
       throw new HTTPException(404, { message: "Connector not found" })
     }
@@ -1554,7 +1554,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   // @ts-ignore
   const payload = c.req.valid("json") as {
-    connectorId: string
+    connectorId: number
     channelsToIngest: string[]
     startDate: string
     endDate: string
@@ -1563,7 +1563,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
   try {
     const email = sub
     const resp = await handleSlackChannelIngestion(
-      parseInt(payload.connectorId),
+      payload.connectorId,
       payload.channelsToIngest,
       payload.startDate,
       payload.endDate,
