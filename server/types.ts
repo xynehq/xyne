@@ -613,3 +613,28 @@ export type ChunkMetadata = {
   page_numbers: number[];
   block_labels: string[];
 };
+
+// DuckDB related types
+export interface DuckDBQuery {
+  sql: string
+  notes: string
+}
+
+export interface DuckDBResult {
+  user_question: string
+  resolved_metric?: string
+  sql: string
+  execution_meta: {
+    row_count: number
+    elapsed_ms: number
+    as_of: string
+  }
+  schema_fragment?: {
+    table: string
+    columns: Record<string, string>
+  }
+  assumptions: string[]
+  data: {
+    rows: unknown[][]
+  }
+}

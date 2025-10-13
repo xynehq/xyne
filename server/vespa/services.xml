@@ -29,6 +29,7 @@
             <document type="chat_container" mode="index" global="true" />
             <document type="chat_user" mode="index" global="true" />
             <document type="chat_team" mode="index" global="true" />
+             <document type="chat_attachment" mode="index" global="true" />
             <document type="datasource" mode="index" global="true" />
             <document type="datasource_file" mode="index" />
             <document type="kb_items" mode="index"/>

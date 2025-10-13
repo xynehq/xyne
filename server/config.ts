@@ -48,6 +48,7 @@ let VertexRegion = ""
 let VertexAIModel = ""
 let aiProviderBaseUrl = ""
 let isReasoning = false
+let sqlInferenceModel = ""
 
 // File processing worker configuration
 let fileProcessingWorkerThreads = parseInt(process.env.FILE_PROCESSING_WORKER_THREADS || "4", 10)
@@ -74,6 +75,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   AwsSecretKey = process.env["AWS_SECRET_KEY"]
   defaultFastModel = Models.Claude_3_5_Haiku
   defaultBestModel = Models.Claude_Sonnet_4
+  sqlInferenceModel = Models.Claude_Sonnet_4
 } else if (process.env["OPENAI_API_KEY"]) {
   if (process.env["BASE_URL"]) {
     if (!isURLValid(process.env["BASE_URL"])) {
@@ -136,6 +138,7 @@ if (process.env["AWS_ACCESS_KEY"] && process.env["AWS_SECRET_KEY"]) {
   defaultBestModel = process.env["VERTEX_BEST_MODEL"]
     ? (process.env["VERTEX_BEST_MODEL"] as Models)
     : Models.Vertex_Claude_Sonnet_4 // Default best model
+  sqlInferenceModel = Models.Vertex_Claude_Sonnet_4
 }
 let StartThinkingToken = "<think>"
 let EndThinkingToken = "</think>"
@@ -187,6 +190,7 @@ export default {
   GeminiAIModel,
   GeminiApiKey,
   VertexAIModel,
+  sqlInferenceModel,
   VertexProjectId,
   VertexRegion,
   aiProviderBaseUrl,

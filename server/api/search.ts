@@ -48,7 +48,7 @@ import {
   cleanContext,
   userContext,
 } from "@/ai/context"
-import { AnswerSSEvents, AuthType, ConnectorStatus } from "@/shared/types"
+import { AnswerSSEvents, attachmentMetadataSchema, AuthType, ConnectorStatus } from "@/shared/types"
 import { agentPromptPayloadSchema } from "@/shared/types"
 import { streamSSE } from "hono/streaming"
 import { getLogger, getLoggerWithChild } from "@/logger"
@@ -255,6 +255,10 @@ export const generatePromptSchema = z.object({
     ),
 })
 
+
+export const handleAttachmentDeleteSchema = z.object({
+  attachment: attachmentMetadataSchema,
+})
 
 export type GeneratePromptPayload = z.infer<typeof generatePromptSchema>
 

@@ -4,8 +4,8 @@ export default {
     "main",
     {
       name: "release-*",
-      prerelease: true
-    }
+      prerelease: true,
+    },
   ],
   plugins: [
     "@semantic-release/commit-analyzer", // decides bump (major/minor/patch)
@@ -13,7 +13,7 @@ export default {
     [
       "@semantic-release/changelog", // writes to CHANGELOG.md
       {
-        changelogFile: "../CHANGELOG.md",
+        changelogFile: "CHANGELOG.md",
       },
     ],
     [
@@ -25,8 +25,9 @@ export default {
     [
       "@semantic-release/git",
       {
-        assets: ["package.json", "../CHANGELOG.md"], // commit changelog + version
-        message: "chore(release): ${nextRelease.version} [skip ci]",
+        assets: ["package.json", "CHANGELOG.md"], // commit changelog + version
+        message:
+          "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
       },
     ],
   ],
