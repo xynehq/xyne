@@ -181,7 +181,6 @@ import {
   isValidApp,
   isValidEntity,
   collectFollowupContext,
-  transformMessagesWithErrorHandling,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -4731,7 +4730,15 @@ export const MessageApi = async (c: Context) => {
             streamSpan.end()
             rootSpan.end()
           } else {
-            const filteredMessages = transformMessagesWithErrorHandling(messages).slice(0, messages.length - 1)
+            const filteredMessages = messages
+              .slice(0, messages.length - 1)
+              .filter(
+                (msg) => !msg?.errorMessage,
+              )
+              .filter(
+                (msg) =>
+                  !(msg.messageRole === MessageRole.Assistant && !msg.message),
+              )
 
             loggerWithChild({ email: email }).info(
               "Checking if answer is in the conversation or a mandatory query rewrite is needed before RAG",
@@ -5207,7 +5214,14 @@ export const MessageApi = async (c: Context) => {
                 // - Updated count/pagination info
                 // - All the smart follow-up logic from the LLM
 
-                const filteredMessages = transformMessagesWithErrorHandling(messages)
+                const filteredMessages = messages
+                  .filter(
+                    (msg) => !msg?.errorMessage,
+                  )
+                  .filter(
+                    (msg) =>
+                      !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                  )
   
                 // Check for follow-up context carry-forward
                 const workingSet = collectFollowupContext(filteredMessages);

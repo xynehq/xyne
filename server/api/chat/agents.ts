@@ -114,7 +114,6 @@ import {
   mimeTypeMap,
   processMessage,
   searchToCitation,
-  transformMessagesWithErrorHandling,
 } from "./utils"
 import { textToCitationIndex, textToImageCitationIndex } from "./utils"
 import config from "@/config"
@@ -4349,7 +4348,14 @@ export const AgentMessageApi = async (c: Context) => {
                   // - Updated count/pagination info
                   // - All the smart follow-up logic from the LLM
 
-                  const filteredMessages = transformMessagesWithErrorHandling(messages)
+                  const filteredMessages = messages
+                    .filter(
+                      (msg) => !msg?.errorMessage,
+                    )
+                    .filter(
+                      (msg) =>
+                        !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                    )
   
                   // Check for follow-up context carry-forward
                   const workingSet = collectFollowupContext(filteredMessages);
