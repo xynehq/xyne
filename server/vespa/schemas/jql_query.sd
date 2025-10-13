@@ -1,0 +1,124 @@
+schema jql_query {
+  document jql_query {
+
+    # Primary Key
+    field id type string {
+      indexing: attribute | summary
+    }
+
+    field section type string {
+      indexing: attribute | summary
+    }
+
+    # Core Natural Language Query
+    field nlq type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    # The actual JQL
+    field jql type string {
+      indexing: attribute | summary
+    }
+
+    # Human description
+    field description type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+    
+    # Short summary (main for embeddings)
+    field query_summary type string {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    # Synonyms & Paraphrases
+    field synonyms type array<string> {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    field paraphrases type array<string> {
+      indexing: index | summary
+      index: enable-bm25
+    }
+
+    # Intents & Fields
+    field intents type array<string> {
+      indexing: attribute | summary
+    }
+
+    field jql_fields type array<string> {
+      indexing: attribute | summary
+    }
+
+    # Entities (as JSON string)
+    field entities type string {
+      indexing: attribute | summary
+    }
+
+    field entities_flat type array<string> {
+  indexing: index | summary
+  index: enable-bm25
+}
+
+    # Product tags (Core, Software, JSM)
+    field product type array<string> {
+      indexing: attribute | summary
+    }
+
+    # Why / Notes
+    field why type string {
+      indexing: index | summary
+    }
+
+    field notes type string {
+      indexing: index | summary
+    }
+  }
+
+  # Embedding from summary (outside document block)
+ field embedding type tensor<float>(v[384]) {
+    indexing: input query_summary | embed | attribute | index
+ }
+
+
+  # Rank profile for hybrid search
+  rank-profile hybrid inherits default {
+    inputs {
+      query(q) tensor<float>(v[384])
+    }
+    
+    function vector_score() {
+      expression: closeness(field, embedding)
+    }
+    
+    function text_score() {
+      expression: bm25(nlq) + bm25(description) + bm25(query_summary) + bm25(synonyms) + bm25(paraphrases)
+          }
+
+    
+    function hybrid_score() {
+      expression: query(textWeight) * text_score + query(vectorWeight) * vector_score
+      }
+first-phase {
+  expression: hybrid_score
+}
+  }
+
+  # Semantic-only profile
+  rank-profile semantic inherits default {
+    inputs {
+      query(q) tensor<float>(v[384])
+    }
+    
+    function vector_score() {
+      expression: closeness(field, embedding)
+    }
+    
+    first-phase {
+      expression: vector_score
+    }
+  }
+}

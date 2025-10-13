@@ -1,0 +1,2517 @@
+🎯 Final JQL Evaluation - Pure Automation
+Flow: Query → Vespa (15 chunks) → LLM → Evaluation LLM
+
+
+[1/100] "Which customer tickets breached the Time to resolution SLA this week?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which customer tickets breached the Time to resolution SLA this week?
+  🤖 Generated JQL: Based on the examples, I'll use pattern #6/12 which exactly matches the requested query:
+
+"Time to resolution" = breached() AND updated >= startOfWeek()
+
+This follows the examples exactly, using only demonstrated operators and functions, specifically matching example #6/12 which shows the precise pattern needed for this use case.
+  📊 Score: 9/10 (✅)
+
+[2/100] "Show incidents where Time to first response SLA was missed yesterday."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show incidents where Time to first response SLA was missed yesterday.
+  🤖 Generated JQL: Based on the examples and strict limitations, I'll adapt pattern #5 but modify it for yesterday:
+
+"Time to first response" = breached() AND updated >= -1d
+
+Note: This is the closest possible match using only patterns shown in the examples. I used the breached() function from examples #2,5,6 and adapted the date pattern. I couldn't use startOfDay() since it's not shown in the core patterns, so I used the relative date format -1d which appears in the examples.
+  📊 Score: 8/10 (✅)
+
+[3/100] "Find bugs reopened more than twice in the last month."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find bugs reopened more than twice in the last month.
+  🤖 Generated JQL: Based on the examples and strict limitations, I'll adapt pattern #12 and #10 to find bugs reopened more than twice in the last month:
+
+issuetype = Bug AND status CHANGED TO "Reopened" DURING (-30d, now()) AND reopenCount > 2
+
+Explanation of compliance:
+- Used "issuetype = Bug" from multiple examples
+- Used "status CHANGED TO Reopened" pattern from examples #1, #5, #10
+- Used "DURING (-30d, now())" time format from example #10
+- Used reopenCount comparison similar to example #12
+- All operators and fields are directly from examples
+- No unauthorized functions or patterns were introduced
+  📊 Score: 6/10 (❌)
+
+[4/100] "Show epics in the ALPHA project without any linked stories."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show epics in the ALPHA project without any linked stories.
+  🤖 Generated JQL: project = ALPHA AND issuetype = Epic AND issueFunction NOT IN hasSubtasks()
+
+I used these patterns from the examples:
+1. Example #13 shows the pattern for epics with no child stories: "issuetype = Epic AND issueFunction NOT IN hasSubtasks()"
+2. Example #11 shows how to specify a project: "project = ALPHA"
+3. Combined these with AND operator, which appears throughout the examples
+
+This query will find epics in the ALPHA project that have no linked stories, using only syntax patterns that appear in the provided examples.
+  📊 Score: 6/10 (❌)
+
+[5/100] "Which tasks were moved from Backlog to In Progress during this sprint?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which tasks were moved from Backlog to In Progress during this sprint?
+  🤖 Generated JQL: Based on the examples and strict limitations, I'll adapt pattern #1 and combine it with pattern #9's sprint context:
+
+status CHANGED FROM "Backlog" TO "In Progress" AND sprint IN openSprints()
+
+This query:
+- Uses the exact "status CHANGED FROM X TO Y" pattern from example #1
+- Uses "sprint IN openSprints()" from example #9
+- Only uses operators and functions shown in the examples
+- Combines existing patterns without introducing new syntax
+  📊 Score: 9/10 (✅)
+
+[6/100] "Find unresolved incidents created more than 90 days ago."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find unresolved incidents created more than 90 days ago.
+  🤖 Generated JQL: Based on the examples and strict limitations, here's the JQL query:
+
+issuetype = Incident AND created <= -90d AND resolution IS EMPTY
+
+This query combines patterns from examples #2 and #4, using:
+- The date comparison pattern from example #2 (using <= -Xd)
+- The resolution IS EMPTY pattern from example #2
+- The issuetype filter pattern from example #4
+- The AND operator shown in multiple examples
+  📊 Score: 10/10 (✅)
+
+[7/100] "Show tickets with SLA timers under 15 minutes remaining."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show tickets with SLA timers under 15 minutes remaining.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, I'll adapt pattern #8 since it's the closest match, adjusting only the time value:
+
+"Time to resolution" <= remaining(15m) AND resolution IS EMPTY
+
+This follows the exact pattern from example #8, only changing the time value from 30m to 15m, using only operators and syntax that appear in the examples.
+  📊 Score: 7/10 (❌)
+
+[8/100] "Which escalations tagged Sev1 are still unresolved and overdue?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which escalations tagged Sev1 are still unresolved and overdue?
+  🤖 Generated JQL: Based on the examples provided, I'll combine patterns from examples #5 (unresolved issues) and #15 (escalations), adapting them for Sev1 escalations that are overdue:
+
+labels IN (sev1) AND resolution IS EMPTY AND updated <= -24h
+
+Note: I used the -24h pattern from example #12 as the closest available pattern to indicate "overdue" since there's no direct "due date" field in the provided examples. I can only use patterns shown in the examples per the strict requirements.
+  📊 Score: 8/10 (✅)
+
+[9/100] "Find documentation issues awaiting review but with no assignee."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find documentation issues awaiting review but with no assignee.
+  🤖 Generated JQL: issuetype = Documentation AND status IN (Review, In Review) AND assignee IS EMPTY
+
+This query combines patterns from:
+- Example #4 for documentation tasks awaiting review: "issuetype = Documentation AND status IN (Review, In Review)"
+- Example #1's "IS EMPTY" pattern, applied to the assignee field instead of attachments
+  📊 Score: 9/10 (✅)
+
+[10/100] "Show all bugs filed by QA team this month with Critical priority."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show all bugs filed by QA team this month with Critical priority.
+  🤖 Generated JQL: issuetype = Bug AND assignee IN membersOf("qa") AND priority = Critical AND created >= startOfMonth() AND created <= endOfMonth()
+
+This query combines patterns from:
+- Example 11 for QA team filter: "assignee IN membersOf("qa")"
+- Example 1 for bug and priority filter: "issuetype = Bug AND priority = Critical"
+- Example 7 for this month timeframe pattern: using startOfMonth() and endOfMonth()
+  📊 Score: 7/10 (❌)
+
+[11/100] "Which issues are blocked by DELTA-10 but remain unresolved?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which issues are blocked by DELTA-10 but remain unresolved?
+  🤖 Generated JQL: issue IN linkedIssues(DELTA-10, "is blocked by") AND resolution IS EMPTY
+
+This combines two patterns from the examples:
+1. Pattern #12: "Issues blocked by DELTA-10" → issue IN linkedIssues(DELTA-10, "is blocked by")
+2. Pattern #1: "Show unresolved issues" → resolution IS EMPTY
+  📊 Score: 10/10 (✅)
+
+[12/100] "Find stories missing "Acceptance Criteria" in their description."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find stories missing "Acceptance Criteria" in their description.
+  🤖 Generated JQL: issuetype = Story AND description !~ "Acceptance Criteria"
+
+This query combines patterns from examples #3 and #6, using only operators and syntax that appear in the examples. It checks for:
+- Stories only (using issuetype = Story pattern)
+- Missing "Acceptance Criteria" in description (using !~ operator pattern)
+  📊 Score: 9/10 (✅)
+
+[13/100] "Show bugs reopened this quarter after being marked Done."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show bugs reopened this quarter after being marked Done.
+  🤖 Generated JQL: Based on the examples and strict limitations, here's the JQL query combining patterns from examples #7, #10, and #11:
+
+issuetype = Bug AND status CHANGED TO "Reopened" DURING (startOfQuarter(), now()) AND status CHANGED FROM "Done" TO "Reopened"
+
+This query:
+- Uses issuetype = Bug pattern from multiple examples
+- Uses status CHANGED TO "Reopened" pattern from example #7 and #11
+- Uses startOfQuarter() from example #10
+- Uses now() from multiple examples
+- Uses status CHANGED FROM pattern from example #15
+- Only uses operators and functions that appear in the examples
+  📊 Score: 8/10 (✅)
+
+[14/100] "Which high-priority tasks changed status from To Do to In Progress this week?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which high-priority tasks changed status from To Do to In Progress this week?
+  🤖 Generated JQL: priority = High AND status CHANGED FROM "To Do" TO "In Progress" DURING (startOfWeek(), now())
+
+This query combines patterns from:
+- Example #10's status change during week pattern: "CHANGED FROM X TO Y DURING (startOfWeek(), now())"
+- Example #2's priority check pattern: "priority = High"
+  📊 Score: 9/10 (✅)
+
+[15/100] "Find issues with more than 50 comments that are unresolved."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find issues with more than 50 comments that are unresolved.
+  🤖 Generated JQL: Based on the examples, I'll combine patterns from examples #4/8 (comment count) and the resolution pattern from #3:
+
+comment ~ "*" AND issueProperty[commentCount] > 50 AND resolution IS EMPTY
+
+This uses only operators and patterns shown in the examples, specifically:
+- Comment count pattern from examples #4/8
+- Resolution check from example #3
+- AND operator that appears in multiple examples
+  📊 Score: 4/10 (❌)
+
+[16/100] "Show backend bugs assigned to devs group updated in the last 5 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show backend bugs assigned to devs group updated in the last 5 days.
+  🤖 Generated JQL: Based on the examples, I'll adapt pattern #8 which matches closest to the request, adjusting only the time period from 3d to 5d:
+
+component = Backend AND issuetype = Bug AND assignee IN membersOf("devs") AND updated >= -5d
+
+This query uses only patterns, operators, and fields shown in the examples, specifically following the exact pattern from example #8 with just the time period modified.
+  📊 Score: 9/10 (✅)
+
+[17/100] "Which stories in the current sprint have no story points and no assignee?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which stories in the current sprint have no story points and no assignee?
+  🤖 Generated JQL: issuetype = Story AND sprint IN openSprints() AND "Story Points" IS EMPTY AND assignee IS EMPTY
+
+This query combines patterns from examples #14 (Stories in current sprint without story points) and #5 (unassigned condition) using only operators and fields shown in the examples.
+  📊 Score: 10/10 (✅)
+
+[18/100] "Show top 10 most recently created escalation tickets."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show top 10 most recently created escalation tickets.
+  🤖 Generated JQL: project = ALPHA AND priority = High ORDER BY created DESC
+
+Note: I used the closest available patterns from the examples since there's no direct "escalation" field shown. I used:
+- ORDER BY created DESC (from example #4) to show most recent first
+- Limited to High priority (adapted from example #1)
+- Used project = ALPHA pattern (from example #15)
+
+I couldn't add a specific limit of 10 since there's no LIMIT syntax in the provided examples. The query will show all escalation (high priority) tickets ordered by newest first.
+  📊 Score: 8/10 (✅)
+
+[19/100] "Find incidents reported by automation bots in the past 3 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find incidents reported by automation bots in the past 3 days.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Incident AND reporter IN (automation, buildbot) AND created >= -3d
+
+Explanation of pattern usage:
+- "reporter IN (automation, buildbot)" comes directly from example #1
+- "created >= -3d" follows the date pattern from example #3 (which uses "updated >= -3d")
+- Combined with AND operator as shown in multiple examples
+- Using only fields and operators that appear in the examples
+  📊 Score: 9/10 (✅)
+
+[20/100] "Which epics in project DELTA have open child stories?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which epics in project DELTA have open child stories?
+  🤖 Generated JQL: project = DELTA AND issuetype = Epic AND issueFunction IN epicsOf("statusCategory != Done")
+
+This query combines patterns from examples #7 (project and issuetype = Epic) and #9 (epics with non-done children) to find epics in project DELTA that have open child issues.
+  📊 Score: 8/10 (✅)
+
+[21/100] "Show bugs mentioning "timeout" resolved in the last 7 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show bugs mentioning "timeout" resolved in the last 7 days.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, here's the JQL query combining patterns from examples #2 (text search) and #7 (resolution date):
+
+issuetype = Bug AND text ~ "timeout" AND resolutiondate >= -7d
+
+This combines:
+- Bug filter pattern from example #2
+- Text search pattern from example #2
+- Resolution date timeframe pattern adapted from example #7
+  📊 Score: 9/10 (✅)
+
+[22/100] "Find tasks assigned to Designers group that are overdue."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find tasks assigned to Designers group that are overdue.
+  🤖 Generated JQL: Based on the examples, I'll combine patterns from example #4 (overdue tasks) and #5 (group assignment), using only shown operators and functions:
+
+assignee IN membersOf("designers") AND due < now() AND resolution IS EMPTY
+
+This query uses:
+- Group membership pattern from example #5: `assignee IN membersOf()`
+- Overdue condition from example #4: `due < now()`
+- Unresolved condition from example #4: `resolution IS EMPTY`
+  📊 Score: 9/10 (✅)
+
+[23/100] "Which issues transitioned from In Review back to In Progress?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which issues transitioned from In Review back to In Progress?
+  🤖 Generated JQL: Based on the examples, I'll adapt pattern #1 which shows status transitions:
+
+status CHANGED FROM "In Review" TO "In Progress" DURING (-1w, now())
+
+Note: I used the exact pattern from example #1, only changing the status values from "In Progress"/"Done" to "In Review"/"In Progress". I kept the same time window (-1w, now()) as it's a safe pattern shown in the example. I didn't introduce any new functions or operators not shown in the examples.
+  📊 Score: 9/10 (✅)
+
+[24/100] "Show requests from Beta Corp where SLA breached last week."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show requests from Beta Corp where SLA breached last week.
+  🤖 Generated JQL: Based on the examples and strict limitations, here's the closest matching JQL query using only patterns shown in the examples:
+
+organizations = "Beta Corp" AND "Time to resolution" = breached() AND updated >= startOfWeek()
+
+Note: I used:
+- Organization pattern from examples 4, 6, and 13
+- Breached SLA pattern from examples 4 and 5
+- Time frame pattern from example 10 (which matches "last week" requirement using startOfWeek)
+  📊 Score: 7/10 (✅)
+
+[25/100] "Find unresolved issues that already have a Fix Version set."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find unresolved issues that already have a Fix Version set.
+  🤖 Generated JQL: resolution IS EMPTY AND fixVersion IS NOT EMPTY
+
+This query combines two patterns from the examples:
+1. "resolution IS EMPTY" (from example #1 for unresolved issues)
+2. Inverted pattern of "fixVersion IS EMPTY" (from example #5) to find issues that have a Fix Version
+  📊 Score: 10/10 (✅)
+
+[26/100] "Which bugs contain "Exception" or "Error" in their description?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which bugs contain "Exception" or "Error" in their description?
+  🤖 Generated JQL: issuetype = Bug AND description ~ "Exception|Error"
+
+(I used patterns from examples #10 and #13, combining their approach for searching description text, and adapted the search terms using the OR operator pattern seen in example #14's "ERROR|WARN|FATAL" syntax)
+  📊 Score: 9/10 (✅)
+
+[27/100] "Show stories estimated above 13 story points created this month."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show stories estimated above 13 story points created this month.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Story AND "Story Points" >= 13 AND created >= startOfMonth()
+
+This combines patterns from:
+- Example #3 (Story Points >= 13)
+- Example #10 (created >= startOfMonth())
+- Example #1 (Story Points comparison syntax)
+
+I've only used operators and functions that appear explicitly in the examples, maintaining the exact syntax patterns shown.
+  📊 Score: 9/10 (✅)
+
+[28/100] "Which blockers have Critical priority or block unresolved issues?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which blockers have Critical priority or block unresolved issues?
+  🤖 Generated JQL: Based on the examples and following the strict limitations, I'll combine patterns from examples #1 (priority IN) and #12 (blockers pattern):
+
+priority = Critical OR issue IN linkedIssues("", "blocks") AND resolution IS EMPTY
+
+This query combines:
+- Priority Critical (from example #1)
+- Blocks relationship (from example #12)
+- Unresolved status check (from example #2)
+  📊 Score: 8/10 (✅)
+
+[29/100] "Find stale issues untouched for more than 60 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find stale issues untouched for more than 60 days.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, I'll adapt pattern #2 and #4 since they deal with stale/inactive issues:
+
+updated <= -60d AND resolution IS EMPTY
+
+This query:
+1. Uses only operators shown in examples (<= and AND)
+2. Uses only fields shown in examples (updated, resolution)
+3. Uses the date notation pattern shown (-Xd)
+4. Follows the pattern from example #4 for unresolved issues using "resolution IS EMPTY"
+5. Adapts the time period from -14d/-30d to -60d using the same syntax pattern
+  📊 Score: 9/10 (✅)
+
+[30/100] "Show the newest 25 bugs across all projects by creation date."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show the newest 25 bugs across all projects by creation date.
+  🤖 Generated JQL: Based on the examples, I'll adapt pattern #13 which is closest to the requirement, adjusting the limit to 25:
+
+issuetype = Bug ORDER BY created DESC LIMIT 25
+
+This follows the exact pattern from example #13 ("Top 100 newest bugs ordered by creation date") but changes the limit from 100 to 25. All operators and syntax used appear in the examples, and I've maintained strict adherence to the shown patterns.
+  📊 Score: 10/10 (✅)
+
+[31/100] "Which customer requests missed both response and resolution SLAs?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which customer requests missed both response and resolution SLAs?
+  🤖 Generated JQL: "Time to first response" = breached() AND "Time to resolution" = breached()
+
+This query combines two existing patterns from examples #1 and #5, using the exact same field names and breached() function that are shown in the examples. It joins them with AND to find requests that breached both SLAs.
+  📊 Score: 8/10 (✅)
+
+[32/100] "Find issues where assignee changed more than 3 times in one sprint."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find issues where assignee changed more than 3 times in one sprint.
+  🤖 Generated JQL: Based on the examples provided and strictly following the available patterns, I'll use the closest matching pattern from example #15 which shows tracking assignee changes:
+
+sprint IN openSprints() AND assignee CHANGED BY MORE THAN 3
+
+This query uses only operators and patterns shown in the examples. While it may not perfectly capture changes within a single sprint's timeframe (since the examples don't show a way to restrict the time window that precisely), it's the closest match using only the allowed patterns.
+
+Note: The query will find issues in current sprints where the assignee has changed more than 3 times. This is the best approximation possible given the strict limitation to use only patterns shown in the examples.
+  📊 Score: 6/10 (❌)
+
+[33/100] "Show subtasks without any parent linked."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show subtasks without any parent linked.
+  🤖 Generated JQL: Based on the examples and allowed patterns, here's the JQL query:
+
+issuetype IN subTaskIssueTypes() AND parent IS EMPTY
+
+This query:
+- Uses `issuetype IN subTaskIssueTypes()` from example #2
+- Uses `IS EMPTY` pattern seen in examples #1, #11, #12
+- Combines patterns using `AND` operator seen throughout examples
+- Only uses functions and operators that appear in the example set
+  📊 Score: 3/10 (❌)
+
+[34/100] "Find epics that only have Done child stories."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find epics that only have Done child stories.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, I'll adapt pattern #7 but invert it to find epics with only Done children:
+
+issuetype = Epic AND NOT issueFunction IN epicsOf("statusCategory != Done")
+
+This uses only patterns shown in the examples:
+1. "issuetype = Epic" from multiple examples
+2. The epicsOf() function from example #7
+3. The statusCategory field from examples #7 and #12
+4. The NOT operator from example #3
+
+This query finds epics that do NOT have any children that are NOT Done, which effectively means all their children are Done.
+  📊 Score: 9/10 (✅)
+
+[35/100] "Show issues linked to TASK-500 with "relates to" relation."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show issues linked to TASK-500 with "relates to" relation.
+  🤖 Generated JQL: issue IN linkedIssues(TASK-500, "relates to")
+
+(This pattern is directly adapted from example #9, which shows the exact syntax for finding issues with a specific link type to another issue)
+  📊 Score: 10/10 (✅)
+
+[36/100] "Find incidents tagged "customer-critical" linked to other tickets."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find incidents tagged "customer-critical" linked to other tickets.
+  🤖 Generated JQL: Based on the examples and strict limitations, here's the JQL query using only shown patterns:
+
+labels = "customer-critical" AND issue IN linkedIssues(key, "relates to")
+
+This combines two patterns from the examples:
+1. Label matching (from example #2, adapted to exact match)
+2. Linked issues check (from example #4)
+  📊 Score: 8/10 (✅)
+
+[37/100] "Show tasks with attachments but no comments."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show tasks with attachments but no comments.
+  🤖 Generated JQL: attachments IS NOT EMPTY AND comment IS EMPTY
+
+This query combines two patterns from the examples:
+1. "attachments IS NOT EMPTY" (from example #1)
+2. Inverted pattern of "comment IS NOT EMPTY" (from example #12)
+
+I only used operators and syntax that appear exactly in the example queries, following the strict limitations.
+  📊 Score: 10/10 (✅)
+
+[38/100] "Which bugs mention "production crash" in description?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which bugs mention "production crash" in description?
+  🤖 Generated JQL: issuetype = Bug AND description ~ "production crash"
+
+(I used the pattern from examples #9 and #11 which show how to search description field using the ~ operator with text patterns, combined with the basic bug filter pattern from example #1)
+  📊 Score: 9/10 (✅)
+
+[39/100] "Find tickets without attachments but with comments."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find tickets without attachments but with comments.
+  🤖 Generated JQL: attachments IS EMPTY AND comment IS NOT EMPTY
+
+This query combines two patterns directly from the examples:
+- Pattern for no attachments from example #10: "attachments IS EMPTY"
+- Pattern for having comments from example #14: "comment IS NOT EMPTY"
+Connected with AND operator which appears in multiple examples.
+  📊 Score: 10/10 (✅)
+
+[40/100] "Show issues where resolution was cleared in the last 14 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show issues where resolution was cleared in the last 14 days.
+  🤖 Generated JQL: Based on the examples, I'll adapt pattern #2 (resolution CHANGED) and combine it with the time period pattern from #13 (-30d):
+
+resolution CHANGED TO EMPTY DURING (-14d, now())
+
+This follows the exact syntax pattern from example #2 but changes the time period to match the 14-day requirement using the relative date format shown in example #13. I'm using "EMPTY" as the target state since we're looking for when resolution was cleared, and this term appears in example #5.
+  📊 Score: 9/10 (✅)
+
+[41/100] "Which tasks were reassigned from QA to Developers this month?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which tasks were reassigned from QA to Developers this month?
+  🤖 Generated JQL: Based on the examples and following the strict limitations, I'll adapt pattern #13 since it's the closest match, adjusting it to the current month:
+
+issuetype = Task AND assignee CHANGED FROM membersOf("qa") TO membersOf("devs") DURING (startOfMonth(), now())
+
+Note: I used:
+- The exact pattern from example #13, but modified for current month like in example #4
+- "qa" and "devs" group names as shown in examples #9 and #10
+- Time period syntax from example #4 (startOfMonth(), now())
+- Only operators and functions that appear in the examples
+  📊 Score: 9/10 (✅)
+
+[42/100] "Find epics that transitioned from Open to Closed last quarter."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find epics that transitioned from Open to Closed last quarter.
+  🤖 Generated JQL: Based on the examples and strict limitations, I'll adapt pattern #1 and combine it with epic type filtering:
+
+issuetype = Epic AND status CHANGED FROM "Open" TO "Closed" DURING (startOfQuarter(-1), startOfQuarter())
+
+This query:
+- Uses issuetype = Epic (pattern seen in examples #5, #6)
+- Uses status CHANGED FROM X TO Y pattern (from example #1)
+- Uses quarter timeframe with startOfQuarter() (seen in example #12)
+- Only uses operators and functions explicitly shown in examples
+  📊 Score: 9/10 (✅)
+
+[43/100] "Show incidents with watcher count above 50."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show incidents with watcher count above 50.
+  🤖 Generated JQL: Based on the examples, I'll use pattern #8 "Issues with more than 10 watchers" and adapt it:
+
+watchers > 50
+
+This directly matches the pattern from example #8, just changing the number from 10 to 50. I'm using only operators and fields that appear explicitly in the examples.
+  📊 Score: 10/10 (✅)
+
+[44/100] "Which bugs are most watched in the ALPHA project?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which bugs are most watched in the ALPHA project?
+  🤖 Generated JQL: project = ALPHA AND issuetype = Bug AND watchers > 0 ORDER BY watchers DESC
+
+Explanation (while staying within guardrails):
+- I adapted the pattern from example #14 which shows sorting by votes
+- I used the same project filter pattern from example #1
+- I used the same issuetype filter for bugs as shown in examples #3, #4, etc.
+- I replaced "votes" with "watchers" since they follow the same pattern
+- I used the ORDER BY syntax shown in examples #6, #10, and #14
+- All operators and fields used appear in the example set
+  📊 Score: 10/10 (✅)
+
+[45/100] "Find tickets with exactly one watcher."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find tickets with exactly one watcher.
+  🤖 Generated JQL: Based on the examples provided, I can use the `watchers` field with comparison operators. From example #10, I can see `watchers >= 5`, so I can adapt this pattern:
+
+watchers = 1
+
+This uses only operators and fields shown in the examples, specifically following the pattern from example #10 but modifying the operator and value to match the exact requirement.
+  📊 Score: 10/10 (✅)
+
+[46/100] "Show tasks overdue by more than 30 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show tasks overdue by more than 30 days.
+  🤖 Generated JQL: Based on the examples, I'll use pattern #10 and adapt it for 30 days:
+
+duedate < startOfDay(-30d) AND resolution IS EMPTY
+
+This follows the exact pattern from example #10, just changing the "5" to "30" days, and maintains all the required operators that are explicitly shown in the examples.
+
+Note: While example #15 shows a business days pattern with "now(-30bd)", I stuck with the simpler pattern from #10 since it more clearly matches the request for "30 days" without specifying business days.
+  📊 Score: 9/10 (✅)
+
+[47/100] "Find backlog items untouched for over 60 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find backlog items untouched for over 60 days.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, I'll adapt pattern #3 and #4 since they're closest to the requirement:
+
+updated <= -60d AND resolution IS EMPTY
+
+This query:
+- Uses the `updated` field and `<=` operator shown in examples #3 and #4
+- Uses the `-60d` relative date format, following the pattern of `-7d`, `-14d`, `-30d` from examples
+- Uses `resolution IS EMPTY` to find open items, as shown in example #4
+- Only uses operators and patterns that appear in the example queries
+  📊 Score: 9/10 (✅)
+
+[48/100] "Which incidents were created more than a year ago but still unresolved?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which incidents were created more than a year ago but still unresolved?
+  🤖 Generated JQL: created <= -365d AND resolution IS EMPTY
+
+Explanation of pattern usage:
+- Used the relative date pattern "-30d" from example #5, adapting it to "-365d" for one year
+- Used "resolution IS EMPTY" pattern from examples #2 and #5 to indicate unresolved
+- Combined patterns with AND operator as shown in multiple examples
+- Only used operators and patterns that appear in the example set
+  📊 Score: 9/10 (✅)
+
+[49/100] "Show tasks missing attachments and description."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show tasks missing attachments and description.
+  🤖 Generated JQL: Based on the examples provided, I'll combine patterns from examples #15 (attachments IS EMPTY) and #5 (text pattern) to create a query for tasks missing attachments and description:
+
+issuetype = Task AND attachments IS EMPTY AND text !~ "description"
+
+This query uses only patterns shown in the examples:
+- "issuetype = Task" (from multiple examples)
+- "attachments IS EMPTY" (from example #15)
+- "text !~" pattern (adapted from example #5)
+- "AND" operator (from multiple examples)
+  📊 Score: 6/10 (❌)
+
+[50/100] "Find issues where description contains "TBD.""
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find issues where description contains "TBD."
+  🤖 Generated JQL: description ~ "TBD"
+
+(I used the pattern from example #6 where description ~ "Exception" shows how to search for text within description, adapting it to search for "TBD" instead)
+  📊 Score: 9/10 (✅)
+
+[51/100] "Which stories mention "requires confirmation" in description?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which stories mention "requires confirmation" in description?
+  🤖 Generated JQL: issuetype = Story AND description ~ '"requires confirmation"'
+
+This combines patterns from:
+- Example #1 for issue type filtering (Story)
+- Example #2 for exact phrase matching in description using ~ and quotes
+  📊 Score: 9/10 (✅)
+
+[52/100] "Show bugs where latest comment mentions "blocked by vendor.""
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show bugs where latest comment mentions "blocked by vendor."
+  🤖 Generated JQL: issuetype = Bug AND comment ~ "blocked by vendor"
+
+Explanation:
+- Used "issuetype = Bug" pattern from examples #6, #7, #9
+- Used "comment ~ " pattern from examples #1, #5, #8, #15
+- Combined with AND operator as shown in multiple examples
+- Kept it simple since the examples don't show any special functions for "latest comment" specifically
+  📊 Score: 7/10 (✅)
+
+[53/100] "Find stories with acceptance criteria only in comments."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find stories with acceptance criteria only in comments.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Story AND description !~ "Acceptance Criteria" AND comment ~ "Acceptance Criteria"
+
+This query combines patterns from:
+- Example #3 (checking description content)
+- Example #2 (checking comment content)
+- Example #1 (story type filter)
+
+I avoided using any operators or functions not shown in the examples and strictly followed the existing patterns.
+  📊 Score: 8/10 (✅)
+
+[54/100] "Which tickets have comments from QA team members?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which tickets have comments from QA team members?
+  🤖 Generated JQL: comment ~ "*" AND comment WAS MADE BY membersOf("qa")
+
+Note: I used a combination of patterns from:
+- Example #2 and #8 for comment syntax
+- Example #14 for "WAS MADE BY" syntax
+- Example #4 for membersOf("qa") pattern to reference QA team members
+
+This query looks for issues that have any comments ("*") made by members of the QA group.
+  📊 Score: 4/10 (❌)
+
+[55/100] "Show issues where last comment was by automation bot."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show issues where last comment was by automation bot.
+  🤖 Generated JQL: Looking at the examples, I can see pattern #13 matches exactly what we need:
+
+comment WAS MADE BY "automation-bot" AFTER "-1d"
+
+This pattern from example #13 directly addresses finding issues where the last comment was by the automation bot. While it includes a time constraint of last day, it's the closest matching pattern available in the examples that ensures we follow the strict guardrails of only using demonstrated syntax.
+  📊 Score: 6/10 (❌)
+
+[56/100] "Find bugs with attachments greater than 5 files."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find bugs with attachments greater than 5 files.
+  🤖 Generated JQL: Looking at the examples, there isn't a direct way to count the number of attachments. The closest pattern we can use is checking for attachments existence using "attachments IS NOT EMPTY" from examples #1 and #10.
+
+Here's the closest possible query using only patterns from the examples:
+
+issuetype = Bug AND attachments IS NOT EMPTY
+
+Note: I cannot provide a query that counts exactly 5 attachments because none of the example patterns show how to count attachments. The closest available pattern only checks for existence of attachments.
+  📊 Score: 6/10 (❌)
+
+[57/100] "Which incidents were reopened after resolution?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which incidents were reopened after resolution?
+  🤖 Generated JQL: Based on the examples and following the strict limitations, here's the JQL query for incidents that were reopened after resolution:
+
+status CHANGED TO "Reopened" AND resolution IS NOT EMPTY
+
+This combines patterns from:
+- Example #2 for checking resolved issues (resolution IS NOT EMPTY)
+- Example #3/#10 for the reopened status pattern (status CHANGED TO "Reopened")
+
+I've kept it simple and used only operators and patterns that appear exactly in the examples. I didn't include any date ranges since the question didn't specify a time period, and I used only fields and operators shown in the example queries.
+  📊 Score: 9/10 (✅)
+
+[58/100] "Show tasks directly transitioned from To Do to Done."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show tasks directly transitioned from To Do to Done.
+  🤖 Generated JQL: Based on the examples, particularly #13 which shows a similar direct status transition pattern, I'll adapt it for tasks:
+
+status CHANGED FROM "To Do" TO "Done" AND issuetype = Task
+
+This query:
+1. Uses only operators and syntax shown in examples (#13)
+2. Adapts the status transition pattern from example #13
+3. Uses the issuetype filter pattern shown in multiple examples
+4. Maintains the exact field names and operators from the examples
+  📊 Score: 9/10 (✅)
+
+[59/100] "Find bugs escalated from Sev2 to Sev1 this month."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find bugs escalated from Sev2 to Sev1 this month.
+  🤖 Generated JQL: Based on the examples and strict limitations, here's the closest possible JQL query using only shown patterns:
+
+issuetype = Bug AND priority CHANGED FROM "Sev2" TO "Sev1" DURING (startOfMonth(), now())
+
+This pattern is adapted from example #15 which shows the CHANGED FROM/TO syntax, combined with the date range pattern from examples #2 and #9 that use startOfMonth().
+  📊 Score: 9/10 (✅)
+
+[60/100] "Show stories reassigned during this sprint."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show stories reassigned during this sprint.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Story AND sprint IN openSprints() AND assignee CHANGED DURING (sprint.startDate, now())
+
+This combines patterns from:
+- Example #3 for story type and current sprint check
+- Example #11 for the CHANGED operator pattern
+- Example #1 for the DURING syntax
+
+I avoided using any functions or operators not shown in the examples and stuck to the exact patterns demonstrated in the retrieved examples.
+  📊 Score: 9/10 (✅)
+
+[61/100] "Find issues where priority downgraded from Critical to Medium."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find issues where priority downgraded from Critical to Medium.
+  🤖 Generated JQL: Based on the examples, I'll use pattern #2 which shows how to check previous and current priority values:
+
+priority WAS Critical AND priority = Medium
+
+This directly follows the pattern from example #2 "priority WAS Medium AND priority = High", just changing the priority values to match the request.
+  📊 Score: 8/10 (✅)
+
+[62/100] "Which bugs were reassigned from automation bot to humans?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which bugs were reassigned from automation bot to humans?
+  🤖 Generated JQL: Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Bug AND assignee WAS "automation" AND assignee NOT IN ("automation", "buildbot")
+
+This adapts patterns from:
+- Example #1's assignee WAS pattern
+- Example #5's bot identification
+- Example #2's "but is not" pattern using NOT IN
+
+I avoided using any functions or operators not shown in the examples and stuck to the exact syntax patterns demonstrated in the retrieved examples.
+  📊 Score: 8/10 (✅)
+
+[63/100] "Show epics with child stories still in In Progress."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show epics with child stories still in In Progress.
+  🤖 Generated JQL: Based on the examples, I'll adapt pattern #6 which matches epics with children not done, and pattern #12 which shows the status category pattern:
+
+issuetype = Epic AND issueFunction IN epicsOf("status = 'In Progress'")
+
+This query:
+1. Uses "issuetype = Epic" from example #6
+2. Uses "issueFunction IN epicsOf()" pattern from example #6
+3. Uses status condition pattern similar to examples #6 and #12
+4. Only uses operators and functions shown in the examples
+  📊 Score: 8/10 (✅)
+
+[64/100] "Find linked issues of filter "Critical Incidents.""
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find linked issues of filter "Critical Incidents."
+  🤖 Generated JQL: Based on the examples, I'll use pattern #4 which exactly matches this need:
+
+issueFunction IN linkedIssuesOf("filter = 'Critical Incidents'")
+
+This follows the exact pattern from example #4, just replacing 'Critical Bugs' with 'Critical Incidents' as the filter name.
+  📊 Score: 9/10 (✅)
+
+[65/100] "Which subtasks belong to resolved stories?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which subtasks belong to resolved stories?
+  🤖 Generated JQL: Based on the examples, I'll combine the patterns for subtasks and resolved issues:
+
+issuetype IN subTaskIssueTypes() AND parent IN (issuetype = Story AND resolution IS NOT EMPTY)
+
+This query uses:
+- Subtask pattern from example #6
+- Resolution pattern from example #3
+- Story type pattern from example #2
+- Parent relationship pattern similar to example #8
+
+All operators and functions used appear in the example queries, following the strict guardrails.
+  📊 Score: 9/10 (✅)
+
+[66/100] "Show subtasks under BUG-123 that are unresolved."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show subtasks under BUG-123 that are unresolved.
+  🤖 Generated JQL: parent = BUG-123 AND issuetype IN subTaskIssueTypes() AND resolution IS EMPTY
+
+This combines patterns from:
+- Example #5 for subtask syntax (parent = X AND issuetype IN subTaskIssueTypes())
+- Example #1 for unresolved status (resolution IS EMPTY)
+  📊 Score: 10/10 (✅)
+
+[67/100] "Find stories under epic OMEGA-200 still open."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find stories under epic OMEGA-200 still open.
+  🤖 Generated JQL: issueFunction IN issuesInEpics("key = OMEGA-200") AND resolution IS EMPTY
+
+This query combines patterns from:
+- Example #12 (issuesInEpics pattern for epic key)
+- Example #4 (resolution IS EMPTY pattern for open issues)
+  📊 Score: 9/10 (✅)
+
+[68/100] "Which issues block release 5.0 but are unresolved?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which issues block release 5.0 but are unresolved?
+  🤖 Generated JQL: issue IN linkedIssues("5.0", "blocks") AND resolution IS EMPTY
+
+This query combines patterns from:
+- Example #6 (linkedIssues syntax for blocking relationships)
+- Example #5 (resolution IS EMPTY pattern for unresolved issues)
+- Example #8 (combining linkedIssues with resolution check)
+  📊 Score: 9/10 (✅)
+
+[69/100] "Show bugs linked to story ALPHA-321 via "is blocked by.""
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show bugs linked to story ALPHA-321 via "is blocked by."
+  🤖 Generated JQL: issuetype = Bug AND issue IN linkedIssues(ALPHA-321, "is blocked by")
+
+This combines patterns from:
+- Example #3 for the linkedIssues() with "is blocked by" syntax
+- Example #8 for the issuetype = Bug pattern
+  📊 Score: 10/10 (✅)
+
+[70/100] "Find tasks dependent on epic GAMMA-50."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find tasks dependent on epic GAMMA-50.
+  🤖 Generated JQL: Based on the examples, I'll adapt pattern #1 which shows how to find linked issues:
+
+issue IN linkedIssues(GAMMA-50)
+
+This is the closest match using only patterns shown in the examples. I'm using the linkedIssues() function which appears in example #1. I've kept it simple since the examples don't show any special functions for finding dependencies specifically, so we're using the basic linked issues pattern.
+
+Note: If you need to specifically filter for dependency relationships, we'd need examples showing that syntax. The current examples only show basic issue linking patterns.
+  📊 Score: 6/10 (❌)
+
+[71/100] "Show epics in OMEGA project with more than 10 stories."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show epics in OMEGA project with more than 10 stories.
+  🤖 Generated JQL: Based on the examples and following the strict limitations, I'll adapt pattern #15 since it's the closest match for counting linked issues, combined with pattern #6 for project specification:
+
+project = OMEGA AND issuetype = Epic AND linkedIssue.count > 10
+
+Note: This uses only patterns shown in the examples, specifically combining the project filter, issuetype filter, and linked issue count check, which are all demonstrated in examples #6 and #15.
+  📊 Score: 4/10 (❌)
+
+[72/100] "Find incidents tagged escalation with no attachments."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find incidents tagged escalation with no attachments.
+  🤖 Generated JQL: labels = escalation AND attachments IS EMPTY
+
+This query combines two patterns from the examples:
+1. Pattern for checking attachments from example #4: "attachments IS EMPTY"
+2. Adapts the label pattern from example #1, but checks for specific label instead of empty labels
+  📊 Score: 10/10 (✅)
+
+[73/100] "Which tasks have image attachments?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which tasks have image attachments?
+  🤖 Generated JQL: issuetype = Task AND attachments ~ "*.jpg OR *.png OR *.gif"
+
+I used pattern #12 as the base, but simplified it to just match tasks with image attachments without the date restriction since that wasn't specifically requested. The pattern matches tasks that have attachments with common image file extensions.
+  📊 Score: 7/10 (✅)
+
+[74/100] "Show incidents where SLA pause is active over 3 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show incidents where SLA pause is active over 3 days.
+  🤖 Generated JQL: Based on the examples, I'll use pattern #11 which exactly matches your requirement:
+
+issuetype = Incident AND "SLA Status" = Paused AND "SLA Pause Duration" > "3d"
+
+This follows the exact pattern from example #11 which specifically handles SLA pause duration for incidents. I've kept all fields, operators, and values exactly as shown in the example since it perfectly matches the requested functionality.
+  📊 Score: 8/10 (✅)
+
+[75/100] "Find issues with both attachments and comments missing."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find issues with both attachments and comments missing.
+  🤖 Generated JQL: attachments IS EMPTY AND comment IS EMPTY
+
+This query combines two patterns from the examples:
+- "attachments IS EMPTY" (from example #2)
+- The IS EMPTY operator pattern (seen in examples #2 and #5)
+- AND operator (seen throughout examples)
+
+I used only syntax and operators that appear explicitly in the example queries, following the strict limitations.
+  📊 Score: 10/10 (✅)
+
+[76/100] "Show tickets where description is empty."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show tickets where description is empty.
+  🤖 Generated JQL: description IS EMPTY
+
+Explanation: I used pattern #12 directly from the examples which shows exactly how to query for issues lacking description using "description IS EMPTY". This matches the requested functionality perfectly while staying within the strict limitations of only using patterns shown in the examples.
+  📊 Score: 10/10 (✅)
+
+[77/100] "Find documentation tickets with no summary."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find documentation tickets with no summary.
+  🤖 Generated JQL: issuetype = "Documentation" AND summary IS EMPTY
+
+This query follows the patterns from examples #6 and #7, using the IS EMPTY operator which is demonstrated multiple times in the examples. I adapted the field name to "summary" which appears in examples #1, #3, and #4.
+  📊 Score: 9/10 (✅)
+
+[78/100] "Which bugs lack reproduction steps in description?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which bugs lack reproduction steps in description?
+  🤖 Generated JQL: Based on the examples, I'll use patterns from examples #1, #10, and #14 to create a query for bugs lacking reproduction steps:
+
+issuetype = Bug AND description !~ "Steps to Reproduce" AND description !~ "repro"
+
+This combines:
+- Bug filter from example #1
+- Reproduction steps check from examples #10 and #14
+- Only uses operators and patterns shown in examples
+  📊 Score: 8/10 (✅)
+
+[79/100] "Show incidents where description starts with "Draft.""
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show incidents where description starts with "Draft."
+  🤖 Generated JQL: Looking at the examples, I can adapt pattern #7 which shows text matching using "~" operator:
+
+text ~ "Draft" AND description ~ "Draft"
+
+Note: Since the examples don't show an exact "starts with" operator, I used the closest available pattern from the examples which is the text search operator "~". This follows the guardrails by only using operators shown in the examples.
+  📊 Score: 4/10 (❌)
+
+[80/100] "Find stories created this sprint without Fix Version."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find stories created this sprint without Fix Version.
+  🤖 Generated JQL: issuetype = Story AND sprint IN openSprints() AND fixVersion IS EMPTY
+
+This query combines patterns from examples #2 (stories in current sprint) and uses the IS EMPTY pattern from examples #1 and #3, but applies it to fixVersion instead of sprint/resolution. All operators and syntax used appear in the example set.
+  📊 Score: 10/10 (✅)
+
+[81/100] "Show issues with SLA met but still open."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show issues with SLA met but still open.
+  🤖 Generated JQL: Based on the examples provided, here's the JQL query that matches the request using only shown patterns:
+
+"Time to resolution" = met() AND resolution IS EMPTY
+
+This combines patterns from:
+- Example #2 ("Time to resolution" = met())
+- Examples #6 and #9 (resolution IS EMPTY)
+  📊 Score: 8/10 (✅)
+
+[82/100] "Which requests were closed within SLA target?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which requests were closed within SLA target?
+  🤖 Generated JQL: Based on the examples, to find requests closed within SLA target, I'll use the "Time to resolution" = met() pattern from example #3:
+
+"Time to resolution" = met()
+
+This directly matches example #3 which shows the syntax for finding requests resolved within their target SLA timeframe. I've used only operators and functions that appear explicitly in the examples, following the strict pattern matching requirement.
+  📊 Score: 8/10 (✅)
+
+[83/100] "Show issues where SLA breach count > 2."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show issues where SLA breach count > 2.
+  🤖 Generated JQL: Based on the examples provided and strictly following the patterns shown, here's the JQL query:
+
+"SLA Breach Count" >= 2
+
+Note: I used the exact pattern from example #1 ("SLA Breach Count" >= 1), only modifying the number from 1 to 2 as requested. I maintained the exact field name format including quotes as shown in the example.
+  📊 Score: 8/10 (✅)
+
+[84/100] "Find tickets with SLA remaining less than 10 minutes."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find tickets with SLA remaining less than 10 minutes.
+  🤖 Generated JQL: Based on the examples, I'll use the pattern from example #9 but adjust the time to 10 minutes:
+
+"Time to resolution" <= remaining(10m) AND resolution IS EMPTY
+
+This follows the exact pattern shown in example #9, only changing the time value from 30m to 10m, and uses only operators and functions that appear in the examples.
+  📊 Score: 7/10 (❌)
+
+[85/100] "Which escalations are at risk of breaching SLA in 2 hours?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which escalations are at risk of breaching SLA in 2 hours?
+  🤖 Generated JQL: Based on the examples and following the strict limitations, here's the JQL query:
+
+labels = escalation AND "Time to resolution" <= remaining(2h) AND resolution IS EMPTY
+
+This query adapts pattern #14 directly, which matches the requirement perfectly as it already handles escalated tickets at risk of breaching SLA within 2 hours. The pattern includes:
+- Checking for escalation label
+- Using the remaining() function with 2h parameter
+- Ensuring tickets are still open (resolution IS EMPTY)
+  📊 Score: 8/10 (✅)
+
+[86/100] "Show high-priority requests still unresolved after SLA breach."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show high-priority requests still unresolved after SLA breach.
+  🤖 Generated JQL: priority IN (High, Critical) AND "Time to resolution" = breached() AND resolution IS EMPTY
+
+This query combines patterns from examples #3 (high-priority syntax), #9/#12 (resolution IS EMPTY for unresolved tickets), and the common breached() pattern seen in multiple examples. Every component is taken directly from the example patterns, ensuring compliance with the strict limitations.
+  📊 Score: 8/10 (✅)
+
+[87/100] "Find issues where SLA metrics show resolution met but response failed."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find issues where SLA metrics show resolution met but response failed.
+  🤖 Generated JQL: "Time to resolution" = met() AND "Time to first response" = breached()
+
+Note: This directly uses pattern #10 from the examples which exactly matches the requested functionality.
+  📊 Score: 8/10 (✅)
+
+[88/100] "Show requests through email channel breaching SLA."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show requests through email channel breaching SLA.
+  🤖 Generated JQL: "Request Channel Type" = email AND "Time to resolution" = breached()
+
+This query combines two patterns from the examples:
+1. From example #3: "Request Channel Type" = email
+2. From example #2/4/5: "Time to resolution" = breached()
+
+I've kept it strictly within the shown patterns and only used operators and fields that appear in the examples.
+  📊 Score: 9/10 (✅)
+
+[89/100] "Which issues are linked to multiple parent blockers?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which issues are linked to multiple parent blockers?
+  🤖 Generated JQL: Based on the examples and limitations, I'll adapt pattern #15 combined with #7 to find issues with multiple blockers:
+
+issueLinkType = "is blocked by" AND issue IN linkedIssues("", "is blocked by")
+
+Note: This is the closest approximation possible using only the patterns shown in the examples. It looks for issues that have "is blocked by" relationships. While not perfect, it's the best we can do with the limited functions available in the example set.
+
+The query uses only operators and functions that appear in the examples:
+- issueLinkType from example #6
+- "is blocked by" link type from examples #7, #11, #15
+- linkedIssues() function from examples #4, #5, #7, etc.
+  📊 Score: 6/10 (❌)
+
+[90/100] "Find bugs with comments added in last 24h."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find bugs with comments added in last 24h.
+  🤖 Generated JQL: issuetype = Bug AND comment ~ "*" AND updated >= -24h
+
+This query combines patterns from examples #4 and #9, using only operators and syntax shown in the examples:
+- `issuetype = Bug` (from #9)
+- `comment ~ "*"` (from #4 to indicate comments exist)
+- `updated >= -24h` (time format from #3)
+  📊 Score: 7/10 (❌)
+
+[91/100] "Show incidents with attachments uploaded this month."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show incidents with attachments uploaded this month.
+  🤖 Generated JQL: Based on the examples, I'll combine patterns from examples #10 (created this month) and #11 (attachments check):
+
+attachments IS NOT EMPTY AND created >= startOfMonth()
+
+Note: I used only operators and functions shown in the examples, specifically:
+- "attachments IS NOT EMPTY" from example #11
+- "created >= startOfMonth()" from example #10
+- Combined with "AND" which appears in multiple examples
+  📊 Score: 10/10 (✅)
+
+[92/100] "Which issues have watchers >= 10 but no comments?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which issues have watchers >= 10 but no comments?
+  🤖 Generated JQL: watchers >= 10 AND comment IS EMPTY
+
+Explanation of pattern sources:
+- "watchers >= 10" adapts from example #4 "watchers >= 5"
+- "comment IS EMPTY" mirrors the pattern from example #7 which shows "IS EMPTY" syntax
+- Combined with AND operator which appears in multiple examples
+  📊 Score: 10/10 (✅)
+
+[93/100] "Find tickets with at least one log.txt attachment."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find tickets with at least one log.txt attachment.
+  🤖 Generated JQL: attachments IS NOT EMPTY AND text ~ "log.txt"
+
+(I combined patterns from example #4 "attachments IS NOT EMPTY" and #3 "text ~ " to search for attachments containing "log.txt" in their name. This is the closest possible match using only the operators and patterns shown in the examples.)
+  📊 Score: 5/10 (❌)
+
+[94/100] "Show tasks with empty summary but active status."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show tasks with empty summary but active status.
+  🤖 Generated JQL: Based on the examples provided, I'll combine the patterns for empty fields and status checks:
+
+summary IS EMPTY AND statusCategory != Done
+
+This query:
+- Uses "IS EMPTY" pattern from example #4 (assignee IS EMPTY)
+- Uses status check pattern from example #3 (statusCategory != Done)
+- Only uses operators and syntax shown in the examples
+  📊 Score: 9/10 (✅)
+
+[95/100] "Find issues voted by current user."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find issues voted by current user.
+  🤖 Generated JQL: voter = currentUser()
+  📊 Score: 10/10 (✅)
+
+[96/100] "Which bugs have both watchers > 5 and comments > 10?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which bugs have both watchers > 5 and comments > 10?
+  🤖 Generated JQL: issuetype = Bug AND watchers > 5 AND comment ~ "*" AND issueProperty[commentCount] > 10
+
+This query combines patterns from:
+- Example 7 for watchers check (modified to > 5)
+- Example 6/9 for comment count check (modified to > 10)
+- Example 10 for bug type filter
+- Example 6/9 pattern for combining comment count with other conditions
+  📊 Score: 6/10 (❌)
+
+[97/100] "Show incidents updated in last 2 hours but still unresolved."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show incidents updated in last 2 hours but still unresolved.
+  🤖 Generated JQL: issuetype = Incident AND updated >= -2h AND resolution IS EMPTY
+
+This query combines patterns from examples #1 and #4, using:
+- "resolution IS EMPTY" for unresolved status (from examples #1, #4)
+- "updated >= -2h" for last 2 hours (adapting the time pattern from examples #1, #3, #7)
+- Simple AND conjunction (seen throughout examples)
+  📊 Score: 10/10 (✅)
+
+[98/100] "Find bugs created by QA lead in last sprint."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Find bugs created by QA lead in last sprint.
+  🤖 Generated JQL: Based on the examples and strict limitations, here's the JQL query combining patterns from examples #1, #2, and #8:
+
+issuetype = Bug AND assignee IN membersOf("qa") AND sprint IN closedSprints() AND created >= -30d
+
+Note: I used:
+- "issuetype = Bug" from multiple examples
+- "assignee IN membersOf()" pattern from example #8
+- "sprint IN closedSprints()" from example #2
+- "created >= -30d" time pattern from example #5
+
+I couldn't use more specific "last sprint" functionality since there's no exact pattern for it in the examples, so I used the closest available pattern of checking closed sprints with a recent time frame.
+  📊 Score: 6/10 (❌)
+
+[99/100] "Show tasks not in any sprint and untouched for 45 days."
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Show tasks not in any sprint and untouched for 45 days.
+  🤖 Generated JQL: Based on the examples and strict limitations, I'll combine patterns from examples #1 and #2, which are the closest matches for untouched issues and time-based conditions:
+
+sprint IS EMPTY AND updated <= -45d AND resolution IS EMPTY
+
+This query uses only patterns shown in the examples:
+- "sprint IS EMPTY" follows the "IS EMPTY" pattern from example #2
+- "updated <= -45d" follows the time pattern from examples #1 and #2
+- "resolution IS EMPTY" is taken directly from example #2
+- "AND" operator is used in multiple examples
+  📊 Score: 9/10 (✅)
+
+[100/100] "Which customer requests are overdue and blocked by Sev1 issues?"
+  🔍 Vespa returned 15 chunks
+  📝 YQL: select * from jql_query where
+    (
+      ({targetHits:15} userInput(@query))
+      or
+      ({targetHits:15} nearestNeighbor(embedding, q))
+    )
+  🎯 Raw query: Which customer requests are overdue and blocked by Sev1 issues?
+  🤖 Generated JQL: Based on the examples provided, I'll combine patterns from examples #3, #8, and #13 to create a query for overdue customer requests blocked by Sev1 issues:
+
+"Time to resolution" = breached() AND issue IN linkedIssues("", "is blocked by") AND labels IN (sev1)
+
+This query uses only patterns shown in the examples:
+- "Time to resolution" = breached() (from #13)
+- issue IN linkedIssues("", "is blocked by") (from #3 and #7)
+- labels IN (sev1) (from #8)
+  📊 Score: 7/10 (✅)
+
+✅ Pure Automation Complete!
+📊 Files saved:
+   - Detailed: /Users/mohd.shoaib/xyne/server/data/jql_evaluation_2025-09-21T14-57-12-404Z.json
+   - Simple mapping: /Users/mohd.shoaib/xyne/server/data/simple_jql_mapping_2025-09-21T14-57-12-404Z.json
+   - CSV: /Users/mohd.shoaib/xyne/server/data/jql_evaluation_2025-09-21T14-57-12-404Z.csv
+
+📈 Results:
+   - Queries: 100
+   - Successful: 100/100
+   - Avg Vespa chunks: 15.0
+   - Avg LLM score: 8.3/10
+
+📋 Query → JQL Results:
+   "Which customer tickets breached the Time to resolution SLA this week?"
+   → Based on the examples, I'll use pattern #6/12 which exactly matches the requested query:
+
+"Time to resolution" = breached() AND updated >= startOfWeek()
+
+This follows the examples exactly, using only demonstrated operators and functions, specifically matching example #6/12 which shows the precise pattern needed for this use case. (9/10)
+   "Show incidents where Time to first response SLA was missed yesterday."
+   → Based on the examples and strict limitations, I'll adapt pattern #5 but modify it for yesterday:
+
+"Time to first response" = breached() AND updated >= -1d
+
+Note: This is the closest possible match using only patterns shown in the examples. I used the breached() function from examples #2,5,6 and adapted the date pattern. I couldn't use startOfDay() since it's not shown in the core patterns, so I used the relative date format -1d which appears in the examples. (8/10)
+   "Find bugs reopened more than twice in the last month."
+   → Based on the examples and strict limitations, I'll adapt pattern #12 and #10 to find bugs reopened more than twice in the last month:
+
+issuetype = Bug AND status CHANGED TO "Reopened" DURING (-30d, now()) AND reopenCount > 2
+
+Explanation of compliance:
+- Used "issuetype = Bug" from multiple examples
+- Used "status CHANGED TO Reopened" pattern from examples #1, #5, #10
+- Used "DURING (-30d, now())" time format from example #10
+- Used reopenCount comparison similar to example #12
+- All operators and fields are directly from examples
+- No unauthorized functions or patterns were introduced (6/10)
+   "Show epics in the ALPHA project without any linked stories."
+   → project = ALPHA AND issuetype = Epic AND issueFunction NOT IN hasSubtasks()
+
+I used these patterns from the examples:
+1. Example #13 shows the pattern for epics with no child stories: "issuetype = Epic AND issueFunction NOT IN hasSubtasks()"
+2. Example #11 shows how to specify a project: "project = ALPHA"
+3. Combined these with AND operator, which appears throughout the examples
+
+This query will find epics in the ALPHA project that have no linked stories, using only syntax patterns that appear in the provided examples. (6/10)
+   "Which tasks were moved from Backlog to In Progress during this sprint?"
+   → Based on the examples and strict limitations, I'll adapt pattern #1 and combine it with pattern #9's sprint context:
+
+status CHANGED FROM "Backlog" TO "In Progress" AND sprint IN openSprints()
+
+This query:
+- Uses the exact "status CHANGED FROM X TO Y" pattern from example #1
+- Uses "sprint IN openSprints()" from example #9
+- Only uses operators and functions shown in the examples
+- Combines existing patterns without introducing new syntax (9/10)
+   "Find unresolved incidents created more than 90 days ago."
+   → Based on the examples and strict limitations, here's the JQL query:
+
+issuetype = Incident AND created <= -90d AND resolution IS EMPTY
+
+This query combines patterns from examples #2 and #4, using:
+- The date comparison pattern from example #2 (using <= -Xd)
+- The resolution IS EMPTY pattern from example #2
+- The issuetype filter pattern from example #4
+- The AND operator shown in multiple examples (10/10)
+   "Show tickets with SLA timers under 15 minutes remaining."
+   → Based on the examples and following the strict limitations, I'll adapt pattern #8 since it's the closest match, adjusting only the time value:
+
+"Time to resolution" <= remaining(15m) AND resolution IS EMPTY
+
+This follows the exact pattern from example #8, only changing the time value from 30m to 15m, using only operators and syntax that appear in the examples. (7/10)
+   "Which escalations tagged Sev1 are still unresolved and overdue?"
+   → Based on the examples provided, I'll combine patterns from examples #5 (unresolved issues) and #15 (escalations), adapting them for Sev1 escalations that are overdue:
+
+labels IN (sev1) AND resolution IS EMPTY AND updated <= -24h
+
+Note: I used the -24h pattern from example #12 as the closest available pattern to indicate "overdue" since there's no direct "due date" field in the provided examples. I can only use patterns shown in the examples per the strict requirements. (8/10)
+   "Find documentation issues awaiting review but with no assignee."
+   → issuetype = Documentation AND status IN (Review, In Review) AND assignee IS EMPTY
+
+This query combines patterns from:
+- Example #4 for documentation tasks awaiting review: "issuetype = Documentation AND status IN (Review, In Review)"
+- Example #1's "IS EMPTY" pattern, applied to the assignee field instead of attachments (9/10)
+   "Show all bugs filed by QA team this month with Critical priority."
+   → issuetype = Bug AND assignee IN membersOf("qa") AND priority = Critical AND created >= startOfMonth() AND created <= endOfMonth()
+
+This query combines patterns from:
+- Example 11 for QA team filter: "assignee IN membersOf("qa")"
+- Example 1 for bug and priority filter: "issuetype = Bug AND priority = Critical"
+- Example 7 for this month timeframe pattern: using startOfMonth() and endOfMonth() (7/10)
+   "Which issues are blocked by DELTA-10 but remain unresolved?"
+   → issue IN linkedIssues(DELTA-10, "is blocked by") AND resolution IS EMPTY
+
+This combines two patterns from the examples:
+1. Pattern #12: "Issues blocked by DELTA-10" → issue IN linkedIssues(DELTA-10, "is blocked by")
+2. Pattern #1: "Show unresolved issues" → resolution IS EMPTY (10/10)
+   "Find stories missing "Acceptance Criteria" in their description."
+   → issuetype = Story AND description !~ "Acceptance Criteria"
+
+This query combines patterns from examples #3 and #6, using only operators and syntax that appear in the examples. It checks for:
+- Stories only (using issuetype = Story pattern)
+- Missing "Acceptance Criteria" in description (using !~ operator pattern) (9/10)
+   "Show bugs reopened this quarter after being marked Done."
+   → Based on the examples and strict limitations, here's the JQL query combining patterns from examples #7, #10, and #11:
+
+issuetype = Bug AND status CHANGED TO "Reopened" DURING (startOfQuarter(), now()) AND status CHANGED FROM "Done" TO "Reopened"
+
+This query:
+- Uses issuetype = Bug pattern from multiple examples
+- Uses status CHANGED TO "Reopened" pattern from example #7 and #11
+- Uses startOfQuarter() from example #10
+- Uses now() from multiple examples
+- Uses status CHANGED FROM pattern from example #15
+- Only uses operators and functions that appear in the examples (8/10)
+   "Which high-priority tasks changed status from To Do to In Progress this week?"
+   → priority = High AND status CHANGED FROM "To Do" TO "In Progress" DURING (startOfWeek(), now())
+
+This query combines patterns from:
+- Example #10's status change during week pattern: "CHANGED FROM X TO Y DURING (startOfWeek(), now())"
+- Example #2's priority check pattern: "priority = High" (9/10)
+   "Find issues with more than 50 comments that are unresolved."
+   → Based on the examples, I'll combine patterns from examples #4/8 (comment count) and the resolution pattern from #3:
+
+comment ~ "*" AND issueProperty[commentCount] > 50 AND resolution IS EMPTY
+
+This uses only operators and patterns shown in the examples, specifically:
+- Comment count pattern from examples #4/8
+- Resolution check from example #3
+- AND operator that appears in multiple examples (4/10)
+   "Show backend bugs assigned to devs group updated in the last 5 days."
+   → Based on the examples, I'll adapt pattern #8 which matches closest to the request, adjusting only the time period from 3d to 5d:
+
+component = Backend AND issuetype = Bug AND assignee IN membersOf("devs") AND updated >= -5d
+
+This query uses only patterns, operators, and fields shown in the examples, specifically following the exact pattern from example #8 with just the time period modified. (9/10)
+   "Which stories in the current sprint have no story points and no assignee?"
+   → issuetype = Story AND sprint IN openSprints() AND "Story Points" IS EMPTY AND assignee IS EMPTY
+
+This query combines patterns from examples #14 (Stories in current sprint without story points) and #5 (unassigned condition) using only operators and fields shown in the examples. (10/10)
+   "Show top 10 most recently created escalation tickets."
+   → project = ALPHA AND priority = High ORDER BY created DESC
+
+Note: I used the closest available patterns from the examples since there's no direct "escalation" field shown. I used:
+- ORDER BY created DESC (from example #4) to show most recent first
+- Limited to High priority (adapted from example #1)
+- Used project = ALPHA pattern (from example #15)
+
+I couldn't add a specific limit of 10 since there's no LIMIT syntax in the provided examples. The query will show all escalation (high priority) tickets ordered by newest first. (8/10)
+   "Find incidents reported by automation bots in the past 3 days."
+   → Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Incident AND reporter IN (automation, buildbot) AND created >= -3d
+
+Explanation of pattern usage:
+- "reporter IN (automation, buildbot)" comes directly from example #1
+- "created >= -3d" follows the date pattern from example #3 (which uses "updated >= -3d")
+- Combined with AND operator as shown in multiple examples
+- Using only fields and operators that appear in the examples (9/10)
+   "Which epics in project DELTA have open child stories?"
+   → project = DELTA AND issuetype = Epic AND issueFunction IN epicsOf("statusCategory != Done")
+
+This query combines patterns from examples #7 (project and issuetype = Epic) and #9 (epics with non-done children) to find epics in project DELTA that have open child issues. (8/10)
+   "Show bugs mentioning "timeout" resolved in the last 7 days."
+   → Based on the examples and following the strict limitations, here's the JQL query combining patterns from examples #2 (text search) and #7 (resolution date):
+
+issuetype = Bug AND text ~ "timeout" AND resolutiondate >= -7d
+
+This combines:
+- Bug filter pattern from example #2
+- Text search pattern from example #2
+- Resolution date timeframe pattern adapted from example #7 (9/10)
+   "Find tasks assigned to Designers group that are overdue."
+   → Based on the examples, I'll combine patterns from example #4 (overdue tasks) and #5 (group assignment), using only shown operators and functions:
+
+assignee IN membersOf("designers") AND due < now() AND resolution IS EMPTY
+
+This query uses:
+- Group membership pattern from example #5: `assignee IN membersOf()`
+- Overdue condition from example #4: `due < now()`
+- Unresolved condition from example #4: `resolution IS EMPTY` (9/10)
+   "Which issues transitioned from In Review back to In Progress?"
+   → Based on the examples, I'll adapt pattern #1 which shows status transitions:
+
+status CHANGED FROM "In Review" TO "In Progress" DURING (-1w, now())
+
+Note: I used the exact pattern from example #1, only changing the status values from "In Progress"/"Done" to "In Review"/"In Progress". I kept the same time window (-1w, now()) as it's a safe pattern shown in the example. I didn't introduce any new functions or operators not shown in the examples. (9/10)
+   "Show requests from Beta Corp where SLA breached last week."
+   → Based on the examples and strict limitations, here's the closest matching JQL query using only patterns shown in the examples:
+
+organizations = "Beta Corp" AND "Time to resolution" = breached() AND updated >= startOfWeek()
+
+Note: I used:
+- Organization pattern from examples 4, 6, and 13
+- Breached SLA pattern from examples 4 and 5
+- Time frame pattern from example 10 (which matches "last week" requirement using startOfWeek) (7/10)
+   "Find unresolved issues that already have a Fix Version set."
+   → resolution IS EMPTY AND fixVersion IS NOT EMPTY
+
+This query combines two patterns from the examples:
+1. "resolution IS EMPTY" (from example #1 for unresolved issues)
+2. Inverted pattern of "fixVersion IS EMPTY" (from example #5) to find issues that have a Fix Version (10/10)
+   "Which bugs contain "Exception" or "Error" in their description?"
+   → issuetype = Bug AND description ~ "Exception|Error"
+
+(I used patterns from examples #10 and #13, combining their approach for searching description text, and adapted the search terms using the OR operator pattern seen in example #14's "ERROR|WARN|FATAL" syntax) (9/10)
+   "Show stories estimated above 13 story points created this month."
+   → Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Story AND "Story Points" >= 13 AND created >= startOfMonth()
+
+This combines patterns from:
+- Example #3 (Story Points >= 13)
+- Example #10 (created >= startOfMonth())
+- Example #1 (Story Points comparison syntax)
+
+I've only used operators and functions that appear explicitly in the examples, maintaining the exact syntax patterns shown. (9/10)
+   "Which blockers have Critical priority or block unresolved issues?"
+   → Based on the examples and following the strict limitations, I'll combine patterns from examples #1 (priority IN) and #12 (blockers pattern):
+
+priority = Critical OR issue IN linkedIssues("", "blocks") AND resolution IS EMPTY
+
+This query combines:
+- Priority Critical (from example #1)
+- Blocks relationship (from example #12)
+- Unresolved status check (from example #2) (8/10)
+   "Find stale issues untouched for more than 60 days."
+   → Based on the examples and following the strict limitations, I'll adapt pattern #2 and #4 since they deal with stale/inactive issues:
+
+updated <= -60d AND resolution IS EMPTY
+
+This query:
+1. Uses only operators shown in examples (<= and AND)
+2. Uses only fields shown in examples (updated, resolution)
+3. Uses the date notation pattern shown (-Xd)
+4. Follows the pattern from example #4 for unresolved issues using "resolution IS EMPTY"
+5. Adapts the time period from -14d/-30d to -60d using the same syntax pattern (9/10)
+   "Show the newest 25 bugs across all projects by creation date."
+   → Based on the examples, I'll adapt pattern #13 which is closest to the requirement, adjusting the limit to 25:
+
+issuetype = Bug ORDER BY created DESC LIMIT 25
+
+This follows the exact pattern from example #13 ("Top 100 newest bugs ordered by creation date") but changes the limit from 100 to 25. All operators and syntax used appear in the examples, and I've maintained strict adherence to the shown patterns. (10/10)
+   "Which customer requests missed both response and resolution SLAs?"
+   → "Time to first response" = breached() AND "Time to resolution" = breached()
+
+This query combines two existing patterns from examples #1 and #5, using the exact same field names and breached() function that are shown in the examples. It joins them with AND to find requests that breached both SLAs. (8/10)
+   "Find issues where assignee changed more than 3 times in one sprint."
+   → Based on the examples provided and strictly following the available patterns, I'll use the closest matching pattern from example #15 which shows tracking assignee changes:
+
+sprint IN openSprints() AND assignee CHANGED BY MORE THAN 3
+
+This query uses only operators and patterns shown in the examples. While it may not perfectly capture changes within a single sprint's timeframe (since the examples don't show a way to restrict the time window that precisely), it's the closest match using only the allowed patterns.
+
+Note: The query will find issues in current sprints where the assignee has changed more than 3 times. This is the best approximation possible given the strict limitation to use only patterns shown in the examples. (6/10)
+   "Show subtasks without any parent linked."
+   → Based on the examples and allowed patterns, here's the JQL query:
+
+issuetype IN subTaskIssueTypes() AND parent IS EMPTY
+
+This query:
+- Uses `issuetype IN subTaskIssueTypes()` from example #2
+- Uses `IS EMPTY` pattern seen in examples #1, #11, #12
+- Combines patterns using `AND` operator seen throughout examples
+- Only uses functions and operators that appear in the example set (3/10)
+   "Find epics that only have Done child stories."
+   → Based on the examples and following the strict limitations, I'll adapt pattern #7 but invert it to find epics with only Done children:
+
+issuetype = Epic AND NOT issueFunction IN epicsOf("statusCategory != Done")
+
+This uses only patterns shown in the examples:
+1. "issuetype = Epic" from multiple examples
+2. The epicsOf() function from example #7
+3. The statusCategory field from examples #7 and #12
+4. The NOT operator from example #3
+
+This query finds epics that do NOT have any children that are NOT Done, which effectively means all their children are Done. (9/10)
+   "Show issues linked to TASK-500 with "relates to" relation."
+   → issue IN linkedIssues(TASK-500, "relates to")
+
+(This pattern is directly adapted from example #9, which shows the exact syntax for finding issues with a specific link type to another issue) (10/10)
+   "Find incidents tagged "customer-critical" linked to other tickets."
+   → Based on the examples and strict limitations, here's the JQL query using only shown patterns:
+
+labels = "customer-critical" AND issue IN linkedIssues(key, "relates to")
+
+This combines two patterns from the examples:
+1. Label matching (from example #2, adapted to exact match)
+2. Linked issues check (from example #4) (8/10)
+   "Show tasks with attachments but no comments."
+   → attachments IS NOT EMPTY AND comment IS EMPTY
+
+This query combines two patterns from the examples:
+1. "attachments IS NOT EMPTY" (from example #1)
+2. Inverted pattern of "comment IS NOT EMPTY" (from example #12)
+
+I only used operators and syntax that appear exactly in the example queries, following the strict limitations. (10/10)
+   "Which bugs mention "production crash" in description?"
+   → issuetype = Bug AND description ~ "production crash"
+
+(I used the pattern from examples #9 and #11 which show how to search description field using the ~ operator with text patterns, combined with the basic bug filter pattern from example #1) (9/10)
+   "Find tickets without attachments but with comments."
+   → attachments IS EMPTY AND comment IS NOT EMPTY
+
+This query combines two patterns directly from the examples:
+- Pattern for no attachments from example #10: "attachments IS EMPTY"
+- Pattern for having comments from example #14: "comment IS NOT EMPTY"
+Connected with AND operator which appears in multiple examples. (10/10)
+   "Show issues where resolution was cleared in the last 14 days."
+   → Based on the examples, I'll adapt pattern #2 (resolution CHANGED) and combine it with the time period pattern from #13 (-30d):
+
+resolution CHANGED TO EMPTY DURING (-14d, now())
+
+This follows the exact syntax pattern from example #2 but changes the time period to match the 14-day requirement using the relative date format shown in example #13. I'm using "EMPTY" as the target state since we're looking for when resolution was cleared, and this term appears in example #5. (9/10)
+   "Which tasks were reassigned from QA to Developers this month?"
+   → Based on the examples and following the strict limitations, I'll adapt pattern #13 since it's the closest match, adjusting it to the current month:
+
+issuetype = Task AND assignee CHANGED FROM membersOf("qa") TO membersOf("devs") DURING (startOfMonth(), now())
+
+Note: I used:
+- The exact pattern from example #13, but modified for current month like in example #4
+- "qa" and "devs" group names as shown in examples #9 and #10
+- Time period syntax from example #4 (startOfMonth(), now())
+- Only operators and functions that appear in the examples (9/10)
+   "Find epics that transitioned from Open to Closed last quarter."
+   → Based on the examples and strict limitations, I'll adapt pattern #1 and combine it with epic type filtering:
+
+issuetype = Epic AND status CHANGED FROM "Open" TO "Closed" DURING (startOfQuarter(-1), startOfQuarter())
+
+This query:
+- Uses issuetype = Epic (pattern seen in examples #5, #6)
+- Uses status CHANGED FROM X TO Y pattern (from example #1)
+- Uses quarter timeframe with startOfQuarter() (seen in example #12)
+- Only uses operators and functions explicitly shown in examples (9/10)
+   "Show incidents with watcher count above 50."
+   → Based on the examples, I'll use pattern #8 "Issues with more than 10 watchers" and adapt it:
+
+watchers > 50
+
+This directly matches the pattern from example #8, just changing the number from 10 to 50. I'm using only operators and fields that appear explicitly in the examples. (10/10)
+   "Which bugs are most watched in the ALPHA project?"
+   → project = ALPHA AND issuetype = Bug AND watchers > 0 ORDER BY watchers DESC
+
+Explanation (while staying within guardrails):
+- I adapted the pattern from example #14 which shows sorting by votes
+- I used the same project filter pattern from example #1
+- I used the same issuetype filter for bugs as shown in examples #3, #4, etc.
+- I replaced "votes" with "watchers" since they follow the same pattern
+- I used the ORDER BY syntax shown in examples #6, #10, and #14
+- All operators and fields used appear in the example set (10/10)
+   "Find tickets with exactly one watcher."
+   → Based on the examples provided, I can use the `watchers` field with comparison operators. From example #10, I can see `watchers >= 5`, so I can adapt this pattern:
+
+watchers = 1
+
+This uses only operators and fields shown in the examples, specifically following the pattern from example #10 but modifying the operator and value to match the exact requirement. (10/10)
+   "Show tasks overdue by more than 30 days."
+   → Based on the examples, I'll use pattern #10 and adapt it for 30 days:
+
+duedate < startOfDay(-30d) AND resolution IS EMPTY
+
+This follows the exact pattern from example #10, just changing the "5" to "30" days, and maintains all the required operators that are explicitly shown in the examples.
+
+Note: While example #15 shows a business days pattern with "now(-30bd)", I stuck with the simpler pattern from #10 since it more clearly matches the request for "30 days" without specifying business days. (9/10)
+   "Find backlog items untouched for over 60 days."
+   → Based on the examples and following the strict limitations, I'll adapt pattern #3 and #4 since they're closest to the requirement:
+
+updated <= -60d AND resolution IS EMPTY
+
+This query:
+- Uses the `updated` field and `<=` operator shown in examples #3 and #4
+- Uses the `-60d` relative date format, following the pattern of `-7d`, `-14d`, `-30d` from examples
+- Uses `resolution IS EMPTY` to find open items, as shown in example #4
+- Only uses operators and patterns that appear in the example queries (9/10)
+   "Which incidents were created more than a year ago but still unresolved?"
+   → created <= -365d AND resolution IS EMPTY
+
+Explanation of pattern usage:
+- Used the relative date pattern "-30d" from example #5, adapting it to "-365d" for one year
+- Used "resolution IS EMPTY" pattern from examples #2 and #5 to indicate unresolved
+- Combined patterns with AND operator as shown in multiple examples
+- Only used operators and patterns that appear in the example set (9/10)
+   "Show tasks missing attachments and description."
+   → Based on the examples provided, I'll combine patterns from examples #15 (attachments IS EMPTY) and #5 (text pattern) to create a query for tasks missing attachments and description:
+
+issuetype = Task AND attachments IS EMPTY AND text !~ "description"
+
+This query uses only patterns shown in the examples:
+- "issuetype = Task" (from multiple examples)
+- "attachments IS EMPTY" (from example #15)
+- "text !~" pattern (adapted from example #5)
+- "AND" operator (from multiple examples) (6/10)
+   "Find issues where description contains "TBD.""
+   → description ~ "TBD"
+
+(I used the pattern from example #6 where description ~ "Exception" shows how to search for text within description, adapting it to search for "TBD" instead) (9/10)
+   "Which stories mention "requires confirmation" in description?"
+   → issuetype = Story AND description ~ '"requires confirmation"'
+
+This combines patterns from:
+- Example #1 for issue type filtering (Story)
+- Example #2 for exact phrase matching in description using ~ and quotes (9/10)
+   "Show bugs where latest comment mentions "blocked by vendor.""
+   → issuetype = Bug AND comment ~ "blocked by vendor"
+
+Explanation:
+- Used "issuetype = Bug" pattern from examples #6, #7, #9
+- Used "comment ~ " pattern from examples #1, #5, #8, #15
+- Combined with AND operator as shown in multiple examples
+- Kept it simple since the examples don't show any special functions for "latest comment" specifically (7/10)
+   "Find stories with acceptance criteria only in comments."
+   → Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Story AND description !~ "Acceptance Criteria" AND comment ~ "Acceptance Criteria"
+
+This query combines patterns from:
+- Example #3 (checking description content)
+- Example #2 (checking comment content)
+- Example #1 (story type filter)
+
+I avoided using any operators or functions not shown in the examples and strictly followed the existing patterns. (8/10)
+   "Which tickets have comments from QA team members?"
+   → comment ~ "*" AND comment WAS MADE BY membersOf("qa")
+
+Note: I used a combination of patterns from:
+- Example #2 and #8 for comment syntax
+- Example #14 for "WAS MADE BY" syntax
+- Example #4 for membersOf("qa") pattern to reference QA team members
+
+This query looks for issues that have any comments ("*") made by members of the QA group. (4/10)
+   "Show issues where last comment was by automation bot."
+   → Looking at the examples, I can see pattern #13 matches exactly what we need:
+
+comment WAS MADE BY "automation-bot" AFTER "-1d"
+
+This pattern from example #13 directly addresses finding issues where the last comment was by the automation bot. While it includes a time constraint of last day, it's the closest matching pattern available in the examples that ensures we follow the strict guardrails of only using demonstrated syntax. (6/10)
+   "Find bugs with attachments greater than 5 files."
+   → Looking at the examples, there isn't a direct way to count the number of attachments. The closest pattern we can use is checking for attachments existence using "attachments IS NOT EMPTY" from examples #1 and #10.
+
+Here's the closest possible query using only patterns from the examples:
+
+issuetype = Bug AND attachments IS NOT EMPTY
+
+Note: I cannot provide a query that counts exactly 5 attachments because none of the example patterns show how to count attachments. The closest available pattern only checks for existence of attachments. (6/10)
+   "Which incidents were reopened after resolution?"
+   → Based on the examples and following the strict limitations, here's the JQL query for incidents that were reopened after resolution:
+
+status CHANGED TO "Reopened" AND resolution IS NOT EMPTY
+
+This combines patterns from:
+- Example #2 for checking resolved issues (resolution IS NOT EMPTY)
+- Example #3/#10 for the reopened status pattern (status CHANGED TO "Reopened")
+
+I've kept it simple and used only operators and patterns that appear exactly in the examples. I didn't include any date ranges since the question didn't specify a time period, and I used only fields and operators shown in the example queries. (9/10)
+   "Show tasks directly transitioned from To Do to Done."
+   → Based on the examples, particularly #13 which shows a similar direct status transition pattern, I'll adapt it for tasks:
+
+status CHANGED FROM "To Do" TO "Done" AND issuetype = Task
+
+This query:
+1. Uses only operators and syntax shown in examples (#13)
+2. Adapts the status transition pattern from example #13
+3. Uses the issuetype filter pattern shown in multiple examples
+4. Maintains the exact field names and operators from the examples (9/10)
+   "Find bugs escalated from Sev2 to Sev1 this month."
+   → Based on the examples and strict limitations, here's the closest possible JQL query using only shown patterns:
+
+issuetype = Bug AND priority CHANGED FROM "Sev2" TO "Sev1" DURING (startOfMonth(), now())
+
+This pattern is adapted from example #15 which shows the CHANGED FROM/TO syntax, combined with the date range pattern from examples #2 and #9 that use startOfMonth(). (9/10)
+   "Show stories reassigned during this sprint."
+   → Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Story AND sprint IN openSprints() AND assignee CHANGED DURING (sprint.startDate, now())
+
+This combines patterns from:
+- Example #3 for story type and current sprint check
+- Example #11 for the CHANGED operator pattern
+- Example #1 for the DURING syntax
+
+I avoided using any functions or operators not shown in the examples and stuck to the exact patterns demonstrated in the retrieved examples. (9/10)
+   "Find issues where priority downgraded from Critical to Medium."
+   → Based on the examples, I'll use pattern #2 which shows how to check previous and current priority values:
+
+priority WAS Critical AND priority = Medium
+
+This directly follows the pattern from example #2 "priority WAS Medium AND priority = High", just changing the priority values to match the request. (8/10)
+   "Which bugs were reassigned from automation bot to humans?"
+   → Based on the examples and following the strict limitations, here's the JQL query:
+
+issuetype = Bug AND assignee WAS "automation" AND assignee NOT IN ("automation", "buildbot")
+
+This adapts patterns from:
+- Example #1's assignee WAS pattern
+- Example #5's bot identification
+- Example #2's "but is not" pattern using NOT IN
+
+I avoided using any functions or operators not shown in the examples and stuck to the exact syntax patterns demonstrated in the retrieved examples. (8/10)
+   "Show epics with child stories still in In Progress."
+   → Based on the examples, I'll adapt pattern #6 which matches epics with children not done, and pattern #12 which shows the status category pattern:
+
+issuetype = Epic AND issueFunction IN epicsOf("status = 'In Progress'")
+
+This query:
+1. Uses "issuetype = Epic" from example #6
+2. Uses "issueFunction IN epicsOf()" pattern from example #6
+3. Uses status condition pattern similar to examples #6 and #12
+4. Only uses operators and functions shown in the examples (8/10)
+   "Find linked issues of filter "Critical Incidents.""
+   → Based on the examples, I'll use pattern #4 which exactly matches this need:
+
+issueFunction IN linkedIssuesOf("filter = 'Critical Incidents'")
+
+This follows the exact pattern from example #4, just replacing 'Critical Bugs' with 'Critical Incidents' as the filter name. (9/10)
+   "Which subtasks belong to resolved stories?"
+   → Based on the examples, I'll combine the patterns for subtasks and resolved issues:
+
+issuetype IN subTaskIssueTypes() AND parent IN (issuetype = Story AND resolution IS NOT EMPTY)
+
+This query uses:
+- Subtask pattern from example #6
+- Resolution pattern from example #3
+- Story type pattern from example #2
+- Parent relationship pattern similar to example #8
+
+All operators and functions used appear in the example queries, following the strict guardrails. (9/10)
+   "Show subtasks under BUG-123 that are unresolved."
+   → parent = BUG-123 AND issuetype IN subTaskIssueTypes() AND resolution IS EMPTY
+
+This combines patterns from:
+- Example #5 for subtask syntax (parent = X AND issuetype IN subTaskIssueTypes())
+- Example #1 for unresolved status (resolution IS EMPTY) (10/10)
+   "Find stories under epic OMEGA-200 still open."
+   → issueFunction IN issuesInEpics("key = OMEGA-200") AND resolution IS EMPTY
+
+This query combines patterns from:
+- Example #12 (issuesInEpics pattern for epic key)
+- Example #4 (resolution IS EMPTY pattern for open issues) (9/10)
+   "Which issues block release 5.0 but are unresolved?"
+   → issue IN linkedIssues("5.0", "blocks") AND resolution IS EMPTY
+
+This query combines patterns from:
+- Example #6 (linkedIssues syntax for blocking relationships)
+- Example #5 (resolution IS EMPTY pattern for unresolved issues)
+- Example #8 (combining linkedIssues with resolution check) (9/10)
+   "Show bugs linked to story ALPHA-321 via "is blocked by.""
+   → issuetype = Bug AND issue IN linkedIssues(ALPHA-321, "is blocked by")
+
+This combines patterns from:
+- Example #3 for the linkedIssues() with "is blocked by" syntax
+- Example #8 for the issuetype = Bug pattern (10/10)
+   "Find tasks dependent on epic GAMMA-50."
+   → Based on the examples, I'll adapt pattern #1 which shows how to find linked issues:
+
+issue IN linkedIssues(GAMMA-50)
+
+This is the closest match using only patterns shown in the examples. I'm using the linkedIssues() function which appears in example #1. I've kept it simple since the examples don't show any special functions for finding dependencies specifically, so we're using the basic linked issues pattern.
+
+Note: If you need to specifically filter for dependency relationships, we'd need examples showing that syntax. The current examples only show basic issue linking patterns. (6/10)
+   "Show epics in OMEGA project with more than 10 stories."
+   → Based on the examples and following the strict limitations, I'll adapt pattern #15 since it's the closest match for counting linked issues, combined with pattern #6 for project specification:
+
+project = OMEGA AND issuetype = Epic AND linkedIssue.count > 10
+
+Note: This uses only patterns shown in the examples, specifically combining the project filter, issuetype filter, and linked issue count check, which are all demonstrated in examples #6 and #15. (4/10)
+   "Find incidents tagged escalation with no attachments."
+   → labels = escalation AND attachments IS EMPTY
+
+This query combines two patterns from the examples:
+1. Pattern for checking attachments from example #4: "attachments IS EMPTY"
+2. Adapts the label pattern from example #1, but checks for specific label instead of empty labels (10/10)
+   "Which tasks have image attachments?"
+   → issuetype = Task AND attachments ~ "*.jpg OR *.png OR *.gif"
+
+I used pattern #12 as the base, but simplified it to just match tasks with image attachments without the date restriction since that wasn't specifically requested. The pattern matches tasks that have attachments with common image file extensions. (7/10)
+   "Show incidents where SLA pause is active over 3 days."
+   → Based on the examples, I'll use pattern #11 which exactly matches your requirement:
+
+issuetype = Incident AND "SLA Status" = Paused AND "SLA Pause Duration" > "3d"
+
+This follows the exact pattern from example #11 which specifically handles SLA pause duration for incidents. I've kept all fields, operators, and values exactly as shown in the example since it perfectly matches the requested functionality. (8/10)
+   "Find issues with both attachments and comments missing."
+   → attachments IS EMPTY AND comment IS EMPTY
+
+This query combines two patterns from the examples:
+- "attachments IS EMPTY" (from example #2)
+- The IS EMPTY operator pattern (seen in examples #2 and #5)
+- AND operator (seen throughout examples)
+
+I used only syntax and operators that appear explicitly in the example queries, following the strict limitations. (10/10)
+   "Show tickets where description is empty."
+   → description IS EMPTY
+
+Explanation: I used pattern #12 directly from the examples which shows exactly how to query for issues lacking description using "description IS EMPTY". This matches the requested functionality perfectly while staying within the strict limitations of only using patterns shown in the examples. (10/10)
+   "Find documentation tickets with no summary."
+   → issuetype = "Documentation" AND summary IS EMPTY
+
+This query follows the patterns from examples #6 and #7, using the IS EMPTY operator which is demonstrated multiple times in the examples. I adapted the field name to "summary" which appears in examples #1, #3, and #4. (9/10)
+   "Which bugs lack reproduction steps in description?"
+   → Based on the examples, I'll use patterns from examples #1, #10, and #14 to create a query for bugs lacking reproduction steps:
+
+issuetype = Bug AND description !~ "Steps to Reproduce" AND description !~ "repro"
+
+This combines:
+- Bug filter from example #1
+- Reproduction steps check from examples #10 and #14
+- Only uses operators and patterns shown in examples (8/10)
+   "Show incidents where description starts with "Draft.""
+   → Looking at the examples, I can adapt pattern #7 which shows text matching using "~" operator:
+
+text ~ "Draft" AND description ~ "Draft"
+
+Note: Since the examples don't show an exact "starts with" operator, I used the closest available pattern from the examples which is the text search operator "~". This follows the guardrails by only using operators shown in the examples. (4/10)
+   "Find stories created this sprint without Fix Version."
+   → issuetype = Story AND sprint IN openSprints() AND fixVersion IS EMPTY
+
+This query combines patterns from examples #2 (stories in current sprint) and uses the IS EMPTY pattern from examples #1 and #3, but applies it to fixVersion instead of sprint/resolution. All operators and syntax used appear in the example set. (10/10)
+   "Show issues with SLA met but still open."
+   → Based on the examples provided, here's the JQL query that matches the request using only shown patterns:
+
+"Time to resolution" = met() AND resolution IS EMPTY
+
+This combines patterns from:
+- Example #2 ("Time to resolution" = met())
+- Examples #6 and #9 (resolution IS EMPTY) (8/10)
+   "Which requests were closed within SLA target?"
+   → Based on the examples, to find requests closed within SLA target, I'll use the "Time to resolution" = met() pattern from example #3:
+
+"Time to resolution" = met()
+
+This directly matches example #3 which shows the syntax for finding requests resolved within their target SLA timeframe. I've used only operators and functions that appear explicitly in the examples, following the strict pattern matching requirement. (8/10)
+   "Show issues where SLA breach count > 2."
+   → Based on the examples provided and strictly following the patterns shown, here's the JQL query:
+
+"SLA Breach Count" >= 2
+
+Note: I used the exact pattern from example #1 ("SLA Breach Count" >= 1), only modifying the number from 1 to 2 as requested. I maintained the exact field name format including quotes as shown in the example. (8/10)
+   "Find tickets with SLA remaining less than 10 minutes."
+   → Based on the examples, I'll use the pattern from example #9 but adjust the time to 10 minutes:
+
+"Time to resolution" <= remaining(10m) AND resolution IS EMPTY
+
+This follows the exact pattern shown in example #9, only changing the time value from 30m to 10m, and uses only operators and functions that appear in the examples. (7/10)
+   "Which escalations are at risk of breaching SLA in 2 hours?"
+   → Based on the examples and following the strict limitations, here's the JQL query:
+
+labels = escalation AND "Time to resolution" <= remaining(2h) AND resolution IS EMPTY
+
+This query adapts pattern #14 directly, which matches the requirement perfectly as it already handles escalated tickets at risk of breaching SLA within 2 hours. The pattern includes:
+- Checking for escalation label
+- Using the remaining() function with 2h parameter
+- Ensuring tickets are still open (resolution IS EMPTY) (8/10)
+   "Show high-priority requests still unresolved after SLA breach."
+   → priority IN (High, Critical) AND "Time to resolution" = breached() AND resolution IS EMPTY
+
+This query combines patterns from examples #3 (high-priority syntax), #9/#12 (resolution IS EMPTY for unresolved tickets), and the common breached() pattern seen in multiple examples. Every component is taken directly from the example patterns, ensuring compliance with the strict limitations. (8/10)
+   "Find issues where SLA metrics show resolution met but response failed."
+   → "Time to resolution" = met() AND "Time to first response" = breached()
+
+Note: This directly uses pattern #10 from the examples which exactly matches the requested functionality. (8/10)
+   "Show requests through email channel breaching SLA."
+   → "Request Channel Type" = email AND "Time to resolution" = breached()
+
+This query combines two patterns from the examples:
+1. From example #3: "Request Channel Type" = email
+2. From example #2/4/5: "Time to resolution" = breached()
+
+I've kept it strictly within the shown patterns and only used operators and fields that appear in the examples. (9/10)
+   "Which issues are linked to multiple parent blockers?"
+   → Based on the examples and limitations, I'll adapt pattern #15 combined with #7 to find issues with multiple blockers:
+
+issueLinkType = "is blocked by" AND issue IN linkedIssues("", "is blocked by")
+
+Note: This is the closest approximation possible using only the patterns shown in the examples. It looks for issues that have "is blocked by" relationships. While not perfect, it's the best we can do with the limited functions available in the example set.
+
+The query uses only operators and functions that appear in the examples:
+- issueLinkType from example #6
+- "is blocked by" link type from examples #7, #11, #15
+- linkedIssues() function from examples #4, #5, #7, etc. (6/10)
+   "Find bugs with comments added in last 24h."
+   → issuetype = Bug AND comment ~ "*" AND updated >= -24h
+
+This query combines patterns from examples #4 and #9, using only operators and syntax shown in the examples:
+- `issuetype = Bug` (from #9)
+- `comment ~ "*"` (from #4 to indicate comments exist)
+- `updated >= -24h` (time format from #3) (7/10)
+   "Show incidents with attachments uploaded this month."
+   → Based on the examples, I'll combine patterns from examples #10 (created this month) and #11 (attachments check):
+
+attachments IS NOT EMPTY AND created >= startOfMonth()
+
+Note: I used only operators and functions shown in the examples, specifically:
+- "attachments IS NOT EMPTY" from example #11
+- "created >= startOfMonth()" from example #10
+- Combined with "AND" which appears in multiple examples (10/10)
+   "Which issues have watchers >= 10 but no comments?"
+   → watchers >= 10 AND comment IS EMPTY
+
+Explanation of pattern sources:
+- "watchers >= 10" adapts from example #4 "watchers >= 5"
+- "comment IS EMPTY" mirrors the pattern from example #7 which shows "IS EMPTY" syntax
+- Combined with AND operator which appears in multiple examples (10/10)
+   "Find tickets with at least one log.txt attachment."
+   → attachments IS NOT EMPTY AND text ~ "log.txt"
+
+(I combined patterns from example #4 "attachments IS NOT EMPTY" and #3 "text ~ " to search for attachments containing "log.txt" in their name. This is the closest possible match using only the operators and patterns shown in the examples.) (5/10)
+   "Show tasks with empty summary but active status."
+   → Based on the examples provided, I'll combine the patterns for empty fields and status checks:
+
+summary IS EMPTY AND statusCategory != Done
+
+This query:
+- Uses "IS EMPTY" pattern from example #4 (assignee IS EMPTY)
+- Uses status check pattern from example #3 (statusCategory != Done)
+- Only uses operators and syntax shown in the examples (9/10)
+   "Find issues voted by current user."
+   → voter = currentUser() (10/10)
+   "Which bugs have both watchers > 5 and comments > 10?"
+   → issuetype = Bug AND watchers > 5 AND comment ~ "*" AND issueProperty[commentCount] > 10
+
+This query combines patterns from:
+- Example 7 for watchers check (modified to > 5)
+- Example 6/9 for comment count check (modified to > 10)
+- Example 10 for bug type filter
+- Example 6/9 pattern for combining comment count with other conditions (6/10)
+   "Show incidents updated in last 2 hours but still unresolved."
+   → issuetype = Incident AND updated >= -2h AND resolution IS EMPTY
+
+This query combines patterns from examples #1 and #4, using:
+- "resolution IS EMPTY" for unresolved status (from examples #1, #4)
+- "updated >= -2h" for last 2 hours (adapting the time pattern from examples #1, #3, #7)
+- Simple AND conjunction (seen throughout examples) (10/10)
+   "Find bugs created by QA lead in last sprint."
+   → Based on the examples and strict limitations, here's the JQL query combining patterns from examples #1, #2, and #8:
+
+issuetype = Bug AND assignee IN membersOf("qa") AND sprint IN closedSprints() AND created >= -30d
+
+Note: I used:
+- "issuetype = Bug" from multiple examples
+- "assignee IN membersOf()" pattern from example #8
+- "sprint IN closedSprints()" from example #2
+- "created >= -30d" time pattern from example #5
+
+I couldn't use more specific "last sprint" functionality since there's no exact pattern for it in the examples, so I used the closest available pattern of checking closed sprints with a recent time frame. (6/10)
+   "Show tasks not in any sprint and untouched for 45 days."
+   → Based on the examples and strict limitations, I'll combine patterns from examples #1 and #2, which are the closest matches for untouched issues and time-based conditions:
+
+sprint IS EMPTY AND updated <= -45d AND resolution IS EMPTY
+
+This query uses only patterns shown in the examples:
+- "sprint IS EMPTY" follows the "IS EMPTY" pattern from example #2
+- "updated <= -45d" follows the time pattern from examples #1 and #2
+- "resolution IS EMPTY" is taken directly from example #2
+- "AND" operator is used in multiple examples (9/10)
+   "Which customer requests are overdue and blocked by Sev1 issues?"
+   → Based on the examples provided, I'll combine patterns from examples #3, #8, and #13 to create a query for overdue customer requests blocked by Sev1 issues:
+
+"Time to resolution" = breached() AND issue IN linkedIssues("", "is blocked by") AND labels IN (sev1)
+
+This query uses only patterns shown in the examples:
+- "Time to resolution" = breached() (from #13)
+- issue IN linkedIssues("", "is blocked by") (from #3 and #7)
+- labels IN (sev1) (from #8) (7/10)

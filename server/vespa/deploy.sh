@@ -29,7 +29,18 @@ else
     exit 1
 fi
 
-bun run replaceDIMS.ts "$DIMS"
+# Set default VESPA_HOST if not provided
+if [ -z "$VESPA_HOST" ]; then
+    VESPA_HOST="localhost"
+    echo "VESPA_HOST not set, using default: $VESPA_HOST"
+fi
+
+# Check if bun is available, otherwise use node
+if command -v bun >/dev/null 2>&1; then
+    bun run replaceDIMS.ts "$DIMS"
+else
+    node replaceDIMS.ts "$DIMS"
+fi
 
 # File paths
 TOKENIZER_FILE="models/tokenizer.json"
@@ -53,8 +64,13 @@ fi
 
 
 echo "Deploying vespa..."
-vespa deploy --wait 960 --target http://${VESPA_HOST}:19071
+vespa deploy --wait 960 --target http://${VESPA_HOST}:19772
 echo "Restarting vespa...."
 docker restart vespa
 # vespa destroy
-vespa status --wait 75 --target http://${VESPA_HOST}:19071
+vespa status --wait 75 --target http://${VESPA_HOST}:19772
+
+
+#for deleting 
+## Bash(curl -X DELETE "http://localhost:8080/document/v1/my_content/jql_query/docid?c
+   ##   luster=my_content&selection=true")

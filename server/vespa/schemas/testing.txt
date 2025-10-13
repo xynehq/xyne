@@ -1,0 +1,364 @@
+
+# -------------------------
+# Identifiers
+# -------------------------
+
+field ticketId type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field ticketNumber type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field threadId type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field contactId type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field accountId type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field departmentId type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field assigneeId type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+# New: Assigned team (only one team can own a ticket)
+field assignedTeamId type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+# New: Teams mentioned in comments (multiple possible)
+field mentionedTeamIds type array<string> {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+# ---- Core Content ----
+
+field subject type string {
+  indexing: summary | index
+  index: enable-bm25
+}
+
+field description type string {
+  indexing: summary | index
+  index: enable-bm25
+}
+
+field threads_text type array<string> {
+  indexing: index | summary
+  index { enable-bm25 }
+}
+
+field comments_text type array<string> {
+  indexing: index | summary
+  index { enable-bm25 }
+}
+
+# -----metadata---------------
+
+field status type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field priority type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field category type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field subCategory type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field language type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field channel type string {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field createdTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field modifiedTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field closedTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field dueDate type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field isSpam type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field isEscalated type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+
+# -------------------------
+# People Block
+# -------------------------
+
+# Customer who raised the ticket (human-readable)
+field customerEmail type string {
+  indexing: attribute | summary | index
+  attribute: fast-search
+  index: enable-bm25
+}
+
+# Conversation participants from threads
+field from type array<string> {
+  indexing: attribute | summary | index
+  attribute: fast-search
+  index: enable-bm25
+}
+
+field to type array<string> {
+  indexing: attribute | summary | index
+  attribute: fast-search
+  index: enable-bm25
+}
+
+field cc type array<string> {
+  indexing: attribute | summary | index
+  attribute: fast-search
+  index: enable-bm25
+}
+
+field bcc type array<string> {
+  indexing: attribute | summary | index
+  attribute: fast-search
+  index: enable-bm25
+}
+
+# Agents or customers who commented on the ticket
+field commenters type array<string> {
+  indexing: attribute | summary | index
+  attribute: fast-search
+  index: enable-bm25
+}
+
+# Mentions inside comments (e.g. @user, @team)
+field mentions type array<string> {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+# -------------------------
+# Flags Block
+# -------------------------
+
+field isSpam type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field isTrashed type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field isArchived type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field isEscalated type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field isDeleted type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field isOverDue type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field isResponseOverdue type bool {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+# -------------------------
+# Time Fields Block
+# -------------------------
+
+field createdTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field modifiedTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field closedTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field dueDate type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field onholdTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field customerResponseTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field firstResponseTime type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+field responseDueDate type long {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+
+# -------------------------
+# Tags Block
+# -------------------------
+
+field tags type array<string> {
+  indexing: attribute | summary | index
+  attribute: fast-search
+  index: enable-bm25
+}
+
+field tagCount type int {
+  indexing: attribute | summary
+  attribute: fast-search
+}
+
+# -------------------------
+# Embeddings Block
+# -------------------------
+
+# 1. Subject Embedding
+# Short title embedding (semantic search on ticket subject)
+field subject_embedding type tensor<bfloat16>(v[384]) {
+  indexing: input subject | embed | attribute | index
+  attribute {
+    distance-metric: angular
+  }
+}
+
+# 2. Description Embedding
+# Customer's main issue description
+field description_embedding type tensor<bfloat16>(v[384]) {
+  indexing: input description | embed | attribute | index
+  attribute {
+    distance-metric: angular
+  }
+}
+
+# 3. Thread Embeddings
+# Array of embeddings, one per thread (customer-agent conversation)
+field thread_embeddings type tensor<bfloat16>(p{}, v[384]) {
+  indexing: input threads_text | embed | attribute | index
+  attribute {
+    distance-metric: angular
+  }
+  attribute: paged
+}
+
+# 4. Comment Embeddings
+# Internal agent comments (can store one merged embedding per ticket or per-comment array)
+field comment_embeddings type tensor<bfloat16>(p{}, v[384]) {
+  indexing: input comments_text | embed | attribute | index
+  attribute {
+    distance-metric: angular
+  }
+  attribute: paged
+}
+
+# -------------------------
+# Fuzzy Search Block
+# -------------------------
+
+field subject_fuzzy type string {
+  indexing: input subject | index
+  index { enable-bm25 }
+  match { gram gram-size: 3 }
+}
+
+field description_fuzzy type string {
+  indexing: input description | index
+  index { enable-bm25 }
+  match { gram gram-size: 3 }
+}
+
+# -------------------------
+# Fieldsets
+# -------------------------
+
+
+
+fieldset default {
+  fields: subject, description, threads_text, attachmentFilenames
+}
+
+fieldset autocomplete {
+  fields: subject, tags, customerEmail
+}
+
+fieldset people_search {
+  fields: from, to, cc, commenters, mentions
+}
+
+fieldset fuzzy_search {
+  fields: subject_fuzzy, description_fuzzy
+}

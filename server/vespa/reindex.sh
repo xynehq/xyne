@@ -24,7 +24,7 @@ vespa activate
 
 speed=8
 response=$(curl -s -X POST \
-"http://localhost:19071/application/v2/tenant/default/application/default/environment/default/region/default/instance/default/reindex?clusterId=my_content&documentType=$documentTypes&indexedOnly=true&speed=$speed")
+"http://localhost:19771/application/v2/tenant/default/application/default/environment/default/region/default/instance/default/reindex?clusterId=my_content&documentType=$documentTypes&indexedOnly=true&speed=$speed")
 
 if echo "$response" | grep -q '"error-code"'; then
   error_message=$(echo "$response")
@@ -41,7 +41,7 @@ vespa activate
 
 IFS=',' read -ra docTypes <<< "$documentTypes"
 while true; do
-    STATUS=$(curl -s "http://localhost:19071/application/v2/tenant/default/application/default/environment/default/region/default/instance/default/reindexing")
+    STATUS=$(curl -s "http://localhost:19771/application/v2/tenant/default/application/default/environment/default/region/default/instance/default/reindexing")
     all_successful=true
     any_error=false
     

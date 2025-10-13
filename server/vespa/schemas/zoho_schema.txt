@@ -1,0 +1,87 @@
+I am going to give you the list of 50 queries that the team using zoho desk will ask the xyne, i will also give you the schema that i have prepared for the vespa,
+Your job is to categorize the queries into which i can solve with this schema or with an updated schema, vs which needs olap or hybrid, 
+
+General Ticket Analysis
+What are the most common topics raised in the tickets over the last 12 months?
+Can you summarize the top pain points faced by merchants using Juspay Credit?
+How has the nature of queries changed over time, monthly or quarterly trends?
+Are there any recurring keywords or phrases in integration-related tickets?
+What percentage of tickets relate to technical issues versus business queries?
+
+
+
+
+Integration-Related Prompts
+Which APIs or SDKs are mentioned most frequently in integration-related tickets?
+What are the most common errors reported during Juspay Credit integration?
+Are merchants facing more issues during sandbox testing or production deployments?
+How long do integration-related tickets typically remain open before resolution?
+Can you identify tickets that indicate confusion around API documentation?
+
+
+Analytics & Reporting
+What analytics-related questions are most frequently raised by lenders?
+Are there repeated requests for custom reports or dashboards in the ticket history?
+Which merchants requested access to borrower behavior analytics?
+What common metrics do users want tracked that are not available in the current dashboard?
+Are there any patterns in queries related to data export or download failures?
+
+
+Design & UI/UX Feedback
+What UI/UX complaints xor suggestions have been logged about the Juspay Credit dashboard?
+Are there requests from merchants for white-labeling or branding options?
+How often do tickets mention confusion due to form or button placements?
+Have any tickets highlighted issues with responsiveness across devices?
+What are the most commonly requested UI features?
+
+Workflow & Operational Queries
+What parts of the credit approval flow generate the most queries?
+Are there repeated tickets indicating confusion about borrower onboarding steps?
+What issues do lenders face during the repayment lifecycle management?
+How many tickets relate to delayed disbursement or reconciliation problems?
+Which stages in the loan journey prompt the highest number of support requests?
+
+Security & Compliance
+Are there tickets expressing concerns about data security or access control?
+How often are merchants asking about KYCintegration options?
+What legal or compliance queries have been raised by lenders?
+Which specific regulations (e.g., RBI guidelines) are most mentioned in queries?
+Are merchants requesting audit logs or activity histories?
+
+Feature Requests & Enhancements
+What new features are most frequently requested by merchants?
+Are there repeated requests for multi-lender support in the tickets?
+Have merchants requested the ability to customize credit eligibility criteria?
+How often do users ask for notifications or alert-based features?
+What percentage of feature request tickets resulted in actual product changes?
+
+Support Quality & Resolution
+What is the average response time and resolution time for different ticket categories?
+Which ticket topics take the longest to resolve, and why?
+Are there complaints about inadequate or unhelpful responses from support agents?
+Can you identify tickets that were escalated multiple times?
+How many merchants have raised repeat tickets on the same issue?
+
+Sentiment & Language Analysis
+What is the overall sentiment trend of support tickets over the last year?
+Are there clusters of negative sentiment around a particular feature or event?
+Can you identify tickets where the merchant expresses urgency or frustration?
+How does the tone of tickets differ between small merchants and enterprise lenders?
+Which terms are commonly used in appreciative or positive feedback?
+
+
+Deep-Dive & Advanced Prompts
+Can you identify any tickets that hint at potential churn risk due to unresolved issues?
+What are the top 5 hidden or less obvious but recurring issues across tickets?
+Are there tickets that reveal unmet needs not currently addressed by Juspay Credit?
+Can we group tickets by merchant type or industry to identify domain-specific needs?
+Based on historical data, what proactive measures could reduce ticket volume by 30%?
+
+
+
+
+
+
+
+
+
