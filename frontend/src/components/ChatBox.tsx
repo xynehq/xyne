@@ -889,7 +889,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             })
             return null
           } finally {
-            setUploadingFilesCount((prev) => prev - 1)
+            setUploadingFilesCount((prev) => Math.max(prev - 1, 0))
           }
         })
 
@@ -1001,6 +1001,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       }
       
       // Remove from UI
+      if(fileToRemove){
+       setUploadingFilesCount((prev) => Math.max(prev - (fileToRemove?.uploading ? 1 : 0), 0))
+      }
       setSelectedFiles((prev) => {
         if (fileToRemove?.preview) {
           URL.revokeObjectURL(fileToRemove.preview)
@@ -2256,7 +2259,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         handleSendMessage,
       ],
     )
-
+  
     return (
       <div className="relative flex flex-col w-full max-w-3xl pb-5">
         {persistedAgentId && displayAgentName && (
@@ -2862,7 +2865,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         <button
                           onClick={() => removeFile(selectedFile.id)}
                           className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
-                          disabled={selectedFile.uploading}
+                          // disabled={selectedFile.uploading}
                         >
                           <X size={10} />
                         </button>
@@ -2918,7 +2921,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           <button
                             onClick={() => removeFile(selectedFile.id)}
                             className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                            disabled={selectedFile.uploading}
+                            // disabled={selectedFile.uploading}
                           >
                             <X size={12} />
                           </button>
