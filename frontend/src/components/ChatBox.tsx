@@ -86,6 +86,7 @@ interface SelectedFile {
   uploadError?: string
   preview?: string // URL for image preview
   fileType?: FileType
+  uploadAborted?: boolean
 }
 
 export const getFileIcon = (fileType: FileType | string | undefined) => {
@@ -417,6 +418,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const scrollPositionRef = useRef<number>(0)
     const navigate = useNavigate()
     const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const uploadControllers = useRef<Map<string, AbortController>>(new Map())
 
     const [showReferenceBox, setShowReferenceBox] = useState(false)
     const [searchMode, setSearchMode] = useState<"citations" | "global">(
@@ -836,12 +838,16 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         setSelectedFiles((prev) =>
           prev.map((f) =>
             files.some((file) => file.id === f.id)
-              ? { ...f, uploading: true, uploadError: undefined }
+              ? { ...f, uploading: true, uploadError: undefined, uploadAborted: false }
               : f,
           ),
         )
 
         const uploadPromises = files.map(async (selectedFile) => {
+          // Create AbortController for this file
+          const abortController = new AbortController()
+          uploadControllers.current.set(selectedFile.id, abortController)
+
           try {
             const formData = new FormData()
             formData.append("attachment", selectedFile.file)
@@ -850,6 +856,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               {
                 method: "POST",
                 body: formData,
+                signal: abortController.signal,
               },
             )
 
@@ -874,6 +881,19 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               throw new Error("No document ID returned from upload")
             }
           } catch (error) {
+            // Check if the error is an AbortError
+            if (error instanceof Error && error.name === 'AbortError') {
+              // Handle aborted upload - don't show error toast
+              setSelectedFiles((prev) =>
+                prev.map((f) =>
+                  f.id === selectedFile.id
+                    ? { ...f, uploading: false, uploadAborted: true }
+                    : f,
+                ),
+              )
+              return null
+            }
+            
             const errorMessage =
               error instanceof Error ? error.message : "Upload failed"
             setSelectedFiles((prev) =>
@@ -889,6 +909,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             })
             return null
           } finally {
+            // Clean up the controller
+            uploadControllers.current.delete(selectedFile.id)
             setUploadingFilesCount((prev) => prev - 1)
           }
         })
@@ -979,6 +1001,25 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     const removeFile = useCallback(async (id: string) => {
       const fileToRemove = selectedFiles.find((f) => f.id === id)
+      
+      // If the file is currently uploading, abort the upload
+      if (fileToRemove?.uploading) {
+        const controller = uploadControllers.current.get(id)
+        if (controller) {
+          controller.abort()
+          uploadControllers.current.delete(id)
+        }
+        
+        // Remove from UI immediately for aborted uploads
+        setSelectedFiles((prev) => {
+          if (fileToRemove?.preview) {
+            URL.revokeObjectURL(fileToRemove.preview)
+          }
+          return prev.filter((f) => f.id !== id)
+        })
+        setUploadingFilesCount((prev) => Math.max(0, prev - 1))
+        return
+      }
       
       // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
       if (fileToRemove?.metadata?.fileId) {
