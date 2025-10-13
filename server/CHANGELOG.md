@@ -1,3 +1,10 @@
+## [3.13.7](https://github.com/xynehq/xyne/compare/v3.13.6...v3.13.7) (2025-10-13)
+
+
+### Bug Fixes
+
+* **getItems:** Fix agent getItems queries ([#1090](https://github.com/xynehq/xyne/issues/1090)) ([762258c](https://github.com/xynehq/xyne/commit/762258cadecb9d67efccc2ca97a53dae79ce731c))
+
 ## [3.13.6](https://github.com/xynehq/xyne/compare/v3.13.5...v3.13.6) (2025-10-10)
 
 
