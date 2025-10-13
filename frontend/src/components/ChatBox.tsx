@@ -2908,8 +2908,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         </div>
                         <button
                           onClick={() => removeFile(selectedFile.id)}
-                          className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
-                          disabled={selectedFile.uploading}
+                          className={`absolute top-1 right-1 rounded-full p-1 transition-opacity ${
+                            selectedFile.uploading 
+                              ? "bg-red-500 bg-opacity-80 text-white hover:bg-opacity-100" 
+                              : "bg-black bg-opacity-60 text-white hover:bg-opacity-80"
+                          }`}
+                          title={selectedFile.uploading ? "Cancel upload" : "Remove file"}
                         >
                           <X size={10} />
                         </button>
@@ -2964,8 +2968,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           )}
                           <button
                             onClick={() => removeFile(selectedFile.id)}
-                            className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                            disabled={selectedFile.uploading}
+                            className={`transition-colors p-1 ${
+                              selectedFile.uploading 
+                                ? "text-red-500 hover:text-red-600" 
+                                : "text-gray-400 hover:text-red-500"
+                            }`}
+                            title={selectedFile.uploading ? "Cancel upload" : "Remove file"}
                           >
                             <X size={12} />
                           </button>
