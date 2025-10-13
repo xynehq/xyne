@@ -2986,7 +2986,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               {uploadingFilesCount > 0 && (
                 <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                   <Loader2 size={12} className="animate-spin" />
-                  Uploading files...
+                  Uploading files... (click X to cancel)
                 </div>
               )}
               {selectedFiles.length >= MAX_ATTACHMENTS && (
