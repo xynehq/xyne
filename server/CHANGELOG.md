@@ -1,3 +1,10 @@
+# [3.14.0](https://github.com/xynehq/xyne/compare/v3.13.8...v3.14.0) (2025-10-13)
+
+
+### Features
+
+* **slackBotMessageIngestion:** Added option to include bot message ([#1097](https://github.com/xynehq/xyne/issues/1097)) ([a2e4746](https://github.com/xynehq/xyne/commit/a2e474643692729993163367a4a26ea2aba45a3e))
+
 ## [3.13.8](https://github.com/xynehq/xyne/compare/v3.13.7...v3.13.8) (2025-10-13)
 
 
