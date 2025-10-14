@@ -778,6 +778,7 @@ export interface ModelConfiguration {
 }
 export const getDocumentSchema = z.object({
   docId: z.string().min(1),
+  sheetIndex: z.number().min(0).optional(),
   schema: z.string().min(1),
 })
 

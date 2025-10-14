@@ -230,7 +230,7 @@ export function useScopedFind(
   }, [containerRef]);
 
   const highlightText = useCallback(
-    async (text: string, chunkIndex: number): Promise<boolean> => {
+    async (text: string, chunkIndex: number, pageIndex?: number): Promise<boolean> => {
       if (debug) {
         console.log('highlightText called with:', text);
       }
@@ -251,13 +251,23 @@ export function useScopedFind(
       setIsLoading(true);
       
       try {
-        // For PDFs, ensure all pages are rendered before extracting text
-        if (documentOperationsRef?.current?.renderAllPagesForHighlighting) {
+        // For PDFs, ensure the page is rendered before extracting text
+        if (documentOperationsRef?.current?.goToPage) {
           if (debug) {
-            console.log('PDF detected, rendering all pages for highlighting...');
+            console.log('PDF or Spreadsheet detected', pageIndex);
           }
-          await documentOperationsRef.current.renderAllPagesForHighlighting();
-        }
+          if(pageIndex !== undefined) {
+            if (debug) {
+              console.log('Going to page or subsheet:', pageIndex);
+            }
+            await documentOperationsRef.current.goToPage(pageIndex);
+          } else {
+            if (debug) {
+              console.log('No page or subsheet index provided, skipping highlight');
+            }
+            return false;
+          }
+        } 
 
         const containerText = extractContainerText(root);
         
