@@ -51,10 +51,7 @@ const baseSearchSchema = z.object({
     .pipe(z.number())
     .optional(),
   app: z.nativeEnum(Apps).optional(),
-  entity: z.union([
-    z.string().min(1),          
-    z.array(z.string().min(1)),  
-  ]).optional(),
+  entity: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
   lastUpdated: z.string().default("anytime"),
   isQueryTyped: z.preprocess((val) => val === "true", z.boolean()).optional(),
   debug: z
@@ -338,7 +335,6 @@ export enum SyncCron {
   FullSync = "FullSync",
 }
 
-
 // history id was getting removed if we just use union
 // and do parse of selectSyncJobSchema
 
@@ -610,10 +606,10 @@ export type UserMetadataType = z.infer<typeof UserMetadata>
 
 // ChunkMetadata type for OCR and file processing
 export type ChunkMetadata = {
-  chunk_index: number;
-  page_numbers: number[];
-  block_labels: string[];
-};
+  chunk_index: number
+  page_numbers: number[]
+  block_labels: string[]
+}
 
 // DuckDB related types
 export interface DuckDBQuery {
@@ -639,3 +635,49 @@ export interface DuckDBResult {
     rows: unknown[][]
   }
 }
+
+export const fileUploadSchema = z.object({
+  file: z.any(),
+  datasourceName: z.string().min(1, "Datasource name is required"),
+  flag: z.enum(["creation", "addition"], {
+    message: "Flag must be either 'creation' or 'addition'",
+  }),
+  batchIndex: z.string().optional(),
+  totalBatches: z.string().optional(),
+})
+
+export type FileUpload = z.infer<typeof fileUploadSchema>
+
+export const attachmentUploadSchema = z.object({
+  attachment: z.any(),
+})
+
+export type AttachmentUpload = z.infer<typeof attachmentUploadSchema>
+
+export const fileServeParamsSchema = z.object({
+  fileId: z.string().min(1, "File ID is required"),
+})
+
+export type FileServeParams = z.infer<typeof fileServeParamsSchema>
+
+// User info schemas
+export const getUserWorkspaceInfoQuerySchema = z.object({
+  timeZone: z.string().optional(),
+})
+
+export type GetUserWorkspaceInfoQuery = z.infer<
+  typeof getUserWorkspaceInfoQuerySchema
+>
+
+// Note: GetUserApiKeys doesn't need a schema as it doesn't accept any parameters
+
+export const deleteUserApiKeyParamsSchema = z.object({
+  keyId: z
+    .string()
+    .regex(/^\d+$/, "Key ID must be a valid number")
+    .transform(Number),
+})
+
+export type DeleteUserApiKeyParams = z.infer<
+  typeof deleteUserApiKeyParamsSchema
+>

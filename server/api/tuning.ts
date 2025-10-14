@@ -203,6 +203,16 @@ export const evaluateSchema = z.object({
   // Add other controllable parameters here in the future
 })
 
+// Zod schema for delete dataset endpoint
+export const deleteDatasetParamsSchema = z.object({
+  filename: z.string().min(1),
+})
+
+// Zod schema for tuning WebSocket route
+export const tuningWsParamsSchema = z.object({
+  jobId: z.string().min(1),
+})
+
 // --- Helper Functions Adapted from Script ---
 
 // Fetch random document from Vespa (adapted for API context)

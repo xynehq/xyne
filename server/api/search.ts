@@ -224,10 +224,13 @@ export const messageSchema = z.object({
       if (!val) return false
       return val.toLowerCase() === "true"
     }),
-  isFollowUp: z.string().optional().transform((val) => {
-    if (!val) return false
-    return val.toLowerCase() === "true"
-  }),
+  isFollowUp: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return false
+      return val.toLowerCase() === "true"
+    }),
 })
 
 export type MessageReqType = z.infer<typeof messageSchema>
@@ -255,6 +258,13 @@ export const generatePromptSchema = z.object({
     ),
 })
 
+export const getDriveItemSchema = z.object({
+  parentId: z.string().optional(),
+})
+
+export const getDriveItemsByDocIdsSchema = z.object({
+  docIds: z.array(z.string()).min(1, "At least one docId is required"),
+})
 
 export const handleAttachmentDeleteSchema = z.object({
   attachment: attachmentMetadataSchema,
@@ -306,7 +316,7 @@ export const SearchApi = async (c: Context) => {
     debug,
     agentId,
     // @ts-ignore
-  } = c.req.valid("query")  
+  } = c.req.valid("query")
   let groupCount: any = {}
   let results: VespaSearchResponse = {} as VespaSearchResponse
   const timestampRange = getTimestamp(lastUpdated)
