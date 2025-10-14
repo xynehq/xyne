@@ -534,9 +534,7 @@ async function* createStreamingWithDBSave(
 }
 
 
-export const executeAgentForWorkflowWithRag = async (
-  params: ExecuteAgentParams
-): Promise<ExecuteAgentWithRagResponse> => {
+export const executeAgentForWorkflowWithRag = async (params: ExecuteAgentParams): Promise<ExecuteAgentWithRagResponse> => {
   try {
     Logger.info(`[agentCore] Starting execution for agent ${params.agentId}`)
 
@@ -562,7 +560,7 @@ export const executeAgentForWorkflowWithRag = async (
 
     const agent = await getAgentByExternalIdWithPermissionCheck(
       db,
-      params.agentId,
+      validatedParams.agentId,
       workspace.id,
       user.id,
     )
@@ -620,7 +618,7 @@ export const executeAgentForWorkflowWithRag = async (
     Logger.info(`[agentCore]    - Total unique files: ${uniqueFileIds.length}`)
 
     // Determine if we should use RAG
-    const shouldUseRAG = agent.isRagOn && uniqueFileIds.length > 0
+    const shouldUseRAG = agent.isRagOn && uniqueFileIds.length > 0 // RAG enabled and files available
 
 
     // ============================================

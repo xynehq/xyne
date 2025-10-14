@@ -390,7 +390,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
             message: `Root step input validation failed: ${validationResult.errors.join(", ")}`,
           })
         }
-        
+
       } else {
         // JSON validation (no files)
         const validationResult = validateFormData(
@@ -529,7 +529,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                       if (key === JwtPayloadKey) {
                         return {
                           sub: user.email,
-                          workspaceId: workspaceExternalId 
+                          workspaceId: workspaceExternalId
                         }
                       }
                       return undefined
@@ -545,7 +545,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
 
                   if (attachmentResult && typeof attachmentResult === 'object' && 'attachments' in attachmentResult) {
-                    const attachments : AttachmentMetadata[] = attachmentResult.attachments
+                    const attachments: AttachmentMetadata[] = attachmentResult.attachments
                     if (Array.isArray(attachments) && attachments.length > 0) {
                       const attachmentId = attachments[0].fileId
                       finalProcessedData = {
@@ -729,7 +729,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
         eq(workflowTool.userId, user.id),
       ))
 
-    
+
 
     // Create workflow execution
     const [execution] = await db
@@ -1826,7 +1826,7 @@ const getExecutionContext = async (executionId: string): Promise<{
     }
 
     // Check if execution context was stored in metadata
-  
+
     const context = execution.metadata as any
     if (context.executionContext) {
       return context.executionContext
@@ -1864,7 +1864,7 @@ const executeWorkflowTool = async (
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
-        
+
         const contentType = emailConfig.content_type || "html"
         const [execution] = await db
           .select()
@@ -1913,7 +1913,7 @@ const executeWorkflowTool = async (
     <div class="content">
         <div class="header">
             <h2>🤖 Results of Workflow: ${workflowName} </h2>
-            <p>Generated on: ${new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"})}</p>
+            <p>Generated on: ${new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })}</p>
         </div>
         <div class="body-content">
             ${emailBody.replace(/\n/g, "<br>")}
@@ -2082,86 +2082,44 @@ const executeWorkflowTool = async (
               userQuery = prompt
             }
           }
-          const isExistingAgent = aiConfig.isExistingAgent 
+          const isExistingAgent = aiConfig.isExistingAgent
           Logger.info(`Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`)
 
 
-          if (isExistingAgent) {
-            // ===== Path 1: Existing Direct Agent with Full Features =====
-            // Use executeAgentForWorkflowWithRag for RAG, KB, and integrations
-            Logger.info(`[workflow] Using full-featured agent execution for existing agent: ${agentId}`)
 
-            const fullResult = await executeAgentForWorkflowWithRag({
-              agentId,
-              userQuery,
-              userEmail,
-              workspaceId,
-              isStreamable: false,
-              temperature,
-              attachmentFileIds: imageAttachmentIds,
-              nonImageAttachmentFileIds: documentAttachmentIds,
-            })
+          Logger.info(`[workflow] Using full-featured agent execution for existing agent: ${agentId}`)
 
-            if (!fullResult.success) {
-              return {
-                status: "error",
-                result: {
-                  error: "Agent execution failed",
-                  details: fullResult.error,
-                }
-              }
-            }
+          const fullResult = await executeAgentForWorkflowWithRag({
+            agentId,
+            userQuery,
+            userEmail,
+            workspaceId,
+            isStreamable: false,
+            temperature,
+            attachmentFileIds: imageAttachmentIds,
+            nonImageAttachmentFileIds: documentAttachmentIds,
+          })
 
-
+          if (!fullResult.success) {
             return {
-              status: "success",
+              status: "error",
               result: {
-                aiOutput: fullResult.response,
-                agentName: aiConfig.agentName || "Unknown Agent",
-                model: aiConfig.modelId || "gpt-4o",
-                inputType: aiConfig.inputType || "text",
-                processedAt: new Date().toISOString(),
-                chatId: null
+                error: "Agent execution failed",
+                details: fullResult.error,
               }
             }
           }
-          else {
-            const result: ExecuteAgentResponse = await ExecuteAgentForWorkflow({
-              agentId,
-              userQuery,
-              workspaceId,
-              userEmail,
-              isStreamable: false,
-              temperature,
-              attachmentFileIds: imageAttachmentIds,
-              nonImageAttachmentFileIds: documentAttachmentIds,
-            })
 
-            if (!result.success) {
-              return {
-                status: "error",
-                result: {
-                  error: "Agent execution failed",
-                  details: result.error,
-                }
-              }
-            }
 
-            // Extract response from agent result
-            const agentResponse = result.type === 'streaming'
-              ? "Streaming response completed"
-              : result.response.text
-
-            return {
-              status: "success",
-              result: {
-                aiOutput: agentResponse,
-                agentName: result.agentName,
-                model: result.modelId,
-                chatId: result.chatId,
-                inputType: aiConfig.inputType || "text",
-                processedAt: new Date().toISOString(),
-              }
+          return {
+            status: "success",
+            result: {
+              aiOutput: fullResult.response,
+              agentName: aiConfig.agentName || "Unknown Agent",
+              model: aiConfig.modelId || "gpt-4o",
+              inputType: aiConfig.inputType || "text",
+              processedAt: new Date().toISOString(),
+              chatId: null
             }
           }
         } catch (error) {
@@ -2175,7 +2133,6 @@ const executeWorkflowTool = async (
             }
           }
         }
-
 
       default:
         return {
@@ -2265,7 +2222,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       db,
       c.get(JwtPayloadKey)
     )
-    
+
 
     let jwtPayload
     try {
@@ -2289,7 +2246,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     const userId = user.id
 
     const requestData = await c.req.json()
-   
+
     // Create the main workflow template
     const [template] = await db
       .insert(workflowTemplate)
@@ -2391,8 +2348,8 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
             Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
 
-          // Create the agent using createAgentForWorkflow
-          const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, user.workspaceId)
+            // Create the agent using createAgentForWorkflow
+            const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, user.workspaceId)
 
             Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
 
@@ -3398,7 +3355,7 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
   try {
     const { MODEL_CONFIGURATIONS } = await import("@/ai/modelConfig")
     const { AIProviders } = await import("@/ai/types")
-    
+
     // Get all VertexAI model enum values (includes both Claude and Gemini models)
     const vertexAIModelEnums = Object.entries(MODEL_CONFIGURATIONS)
       .filter(([_, config]) => config.provider === AIProviders.VertexAI)
