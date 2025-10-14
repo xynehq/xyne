@@ -1,3 +1,10 @@
+## [3.14.1](https://github.com/xynehq/xyne/compare/v3.14.0...v3.14.1) (2025-10-14)
+
+
+### Bug Fixes
+
+* **XYNE-176:** fixed ingested users view broken ([#1095](https://github.com/xynehq/xyne/issues/1095)) ([3f492f9](https://github.com/xynehq/xyne/commit/3f492f9f30bc9ad48ae375acbb4a7d1276b38c4e))
+
 # [3.14.0](https://github.com/xynehq/xyne/compare/v3.13.8...v3.14.0) (2025-10-13)
 
 
