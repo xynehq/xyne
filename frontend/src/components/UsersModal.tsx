@@ -149,10 +149,10 @@ export default function UsersModal({ onClose }: UsersModalProps) {
         const data = await response.json()
 
         // Generate caller link (only the caller gets their token directly)
-        const callerLink = `${window.location.origin}/call?room=${data.roomName}&token=${data.callerToken}&type=${callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
+        const callerLink = `${window.location.origin}/call?callId=${data.callId}&token=${data.callerToken}&type=${callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
 
         // Generate shareable link without token (target user will get token via WebSocket)
-        const shareableLink = `${window.location.origin}/call?room=${data.roomName}&type=${callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
+        const shareableLink = `${window.location.origin}/call?callId=${data.callId}&type=${callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
 
         // Show simple notification status
         const notificationStatus = data.notificationSent

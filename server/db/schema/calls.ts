@@ -15,7 +15,6 @@ import { users } from "./users"
 export const calls = pgTable("calls", {
   id: serial("id").notNull().primaryKey(),
   externalId: text("external_id").unique().notNull(),
-  roomName: text("room_name").unique().notNull(),
   createdByUserId: integer("created_by_user_id")
     .notNull()
     .references(() => users.id),

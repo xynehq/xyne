@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react"
 export interface CallNotification {
   type: "incoming_call" | "call_accepted" | "call_rejected" | "call_ended"
   callId: string
-  roomName: string
   caller: {
     id: string
     name: string
@@ -516,7 +515,7 @@ export function useCallNotifications() {
     setIncomingCall(null)
 
     // Open call in a new window with the LiveKit server URL
-    const callUrl = `/call?token=${notification.targetToken}&room=${notification.roomName}&type=${notification.callType}&serverUrl=${encodeURIComponent(notification.livekitUrl)}`
+    const callUrl = `/call?token=${notification.targetToken}&callId=${notification.callId}&type=${notification.callType}&serverUrl=${encodeURIComponent(notification.livekitUrl)}`
     const callWindow = window.open(
       callUrl,
       "call-window-receiver",

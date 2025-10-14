@@ -9,7 +9,7 @@ import { callNotificationService } from "@/services/callNotifications"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { calls } from "@/db/schema/calls"
-import { eq, desc, and, isNull } from "drizzle-orm"
+import { eq, desc, and, isNull, or, sql } from "drizzle-orm"
 import { randomUUID } from "node:crypto"
 
 const { JwtPayloadKey } = config
@@ -41,27 +41,28 @@ export const initiateCallSchema = z.object({
 })
 
 export const joinCallSchema = z.object({
-  roomName: z.string().min(1, "Room name is required"),
+  callId: z.string().min(1, "Call ID is required"),
 })
 
 export const endCallSchema = z.object({
-  roomName: z.string().min(1, "Room name is required"),
+  callId: z.string().min(1, "Call ID is required"),
 })
 
 export const leaveCallSchema = z.object({
-  roomName: z.string().min(1, "Room name is required"),
+  callId: z.string().min(1, "Call ID is required"),
 })
 
 export const inviteToCallSchema = z.object({
-  roomName: z.string().min(1, "Room name is required"),
+  callId: z.string().min(1, "Call ID is required"),
   targetUserId: z.string().min(1, "Target user ID is required"),
   callType: z.enum(["video", "audio"]).default("video"),
 })
 
 // Generate LiveKit access token
+// Note: LiveKit still uses the 'room' property, but we pass callId (externalId) as the room name
 const generateAccessToken = async (
   userIdentity: string,
-  roomName: string,
+  callId: string,
   userName?: string,
 ): Promise<string> => {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
@@ -72,7 +73,7 @@ const generateAccessToken = async (
 
   at.addGrant({
     roomJoin: true,
-    room: roomName,
+    room: callId, // LiveKit room name is the callId (externalId)
     canPublish: true,
     canSubscribe: true,
     canPublishData: true,
@@ -119,15 +120,14 @@ export const InitiateCallApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Target user not found" })
     }
 
-    // Generate unique room name
-    const roomName = `call_${caller.externalId}_${targetUser.externalId}_${Date.now()}`
+    // Generate unique call ID (this will also be the LiveKit room name)
     const callExternalId = randomUUID()
     // Store shareable link with call type (no token - tokens are generated per user when they join)
-    const roomLink = `${LIVEKIT_CLIENT_URL || "http://localhost:5173"}/call?room=${roomName}&type=${validatedData.callType}`
+    const roomLink = `${LIVEKIT_CLIENT_URL || "http://localhost:5173"}/call?callId=${callExternalId}&type=${validatedData.callType}`
 
-    // Create room in LiveKit
+    // Create room in LiveKit using externalId as room name
     await roomService.createRoom({
-      name: roomName,
+      name: callExternalId,
       maxParticipants: 30, // Allow more participants for group calls
       emptyTimeout: 300, // Room closes after 5 minutes if empty
     })
@@ -136,7 +136,6 @@ export const InitiateCallApi = async (c: Context) => {
     // Note: Don't add caller to participants yet - they need to actually join first
     await db.insert(calls).values({
       externalId: callExternalId,
-      roomName,
       createdByUserId: caller.id,
       roomLink,
       callType: validatedData.callType,
@@ -147,20 +146,19 @@ export const InitiateCallApi = async (c: Context) => {
     // Generate access tokens for both users
     const callerToken = await generateAccessToken(
       caller.externalId,
-      roomName,
+      callExternalId,
       caller.name,
     )
     const targetToken = await generateAccessToken(
       targetUser.externalId,
-      roomName,
+      callExternalId,
       targetUser.name,
     )
 
     // Send real-time notification to target user
     const callNotification = {
       type: "incoming_call" as const,
-      callId: roomName,
-      roomName,
+      callId: callExternalId,
       caller: {
         id: caller.externalId,
         name: caller.name,
@@ -188,7 +186,7 @@ export const InitiateCallApi = async (c: Context) => {
 
     return c.json({
       success: true,
-      roomName,
+      callId: callExternalId,
       callerToken,
       callType: validatedData.callType,
       livekitUrl: LIVEKIT_CLIENT_URL,
@@ -220,10 +218,10 @@ export const JoinCallApi = async (c: Context) => {
   try {
     const { sub: userEmail } = c.get(JwtPayloadKey)
     const requestBody = await c.req.json()
-    const { roomName } = requestBody
+    const { callId } = requestBody
 
     // Validate input
-    const validatedData = joinCallSchema.parse({ roomName })
+    const validatedData = joinCallSchema.parse({ callId })
 
     // Get user info
     const users = await getUserByEmail(db, userEmail)
@@ -232,42 +230,35 @@ export const JoinCallApi = async (c: Context) => {
     }
     const user = users[0]
 
-    // Check if room exists
-    const rooms = await roomService.listRooms([validatedData.roomName])
+    // Check if room exists in LiveKit (room name is the callId/externalId)
+    const rooms = await roomService.listRooms([validatedData.callId])
     if (!rooms || rooms.length === 0) {
       throw new HTTPException(404, { message: "Call room not found" })
     }
 
-    // Update call record - add user to participants if not already there
-    const callRecord = await db
-      .select()
-      .from(calls)
-      .where(eq(calls.roomName, validatedData.roomName))
-      .limit(1)
+    // Atomically append participant if not already present
+    // This prevents race conditions when multiple users join simultaneously
+    await db.execute(sql`
+      UPDATE ${calls}
+      SET participants = CASE
+        WHEN NOT (participants @> jsonb_build_array(${user.externalId}::text))
+          THEN participants || jsonb_build_array(${user.externalId}::text)
+        ELSE participants
+      END
+      WHERE external_id = ${validatedData.callId}
+    `)
 
-    if (callRecord.length > 0) {
-      const currentParticipants = callRecord[0].participants || []
-      if (!currentParticipants.includes(user.externalId)) {
-        await db
-          .update(calls)
-          .set({
-            participants: [...currentParticipants, user.externalId],
-          })
-          .where(eq(calls.roomName, validatedData.roomName))
-      }
-    }
-
-    // Generate access token
+    // Generate access token (room name in LiveKit is the callId)
     const token = await generateAccessToken(
       user.externalId,
-      validatedData.roomName,
+      validatedData.callId,
       user.name,
     )
 
     return c.json({
       success: true,
       token,
-      roomName: validatedData.roomName,
+      callId: validatedData.callId,
       livekitUrl: LIVEKIT_CLIENT_URL,
       user: {
         id: user.externalId,
@@ -290,7 +281,7 @@ export const InviteToCallApi = async (c: Context) => {
   try {
     const { workspaceId, sub: inviterEmail } = c.get(JwtPayloadKey)
     const requestBody = await c.req.json()
-    const { roomName, targetUserId, callType } = requestBody
+    const { callId, targetUserId, callType } = requestBody
 
     if (!workspaceId) {
       throw new HTTPException(400, { message: "Workspace ID is required" })
@@ -298,7 +289,7 @@ export const InviteToCallApi = async (c: Context) => {
 
     // Validate input
     const validatedData = inviteToCallSchema.parse({
-      roomName,
+      callId,
       targetUserId,
       callType,
     })
@@ -327,9 +318,9 @@ export const InviteToCallApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Target user not found" })
     }
 
-    // Check if room exists
+    // Check if room exists in LiveKit (room name is the callId)
     try {
-      const room = await roomService.listRooms([validatedData.roomName])
+      const room = await roomService.listRooms([validatedData.callId])
       if (!room || room.length === 0) {
         throw new HTTPException(404, { message: "Call room not found" })
       }
@@ -337,37 +328,29 @@ export const InviteToCallApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Call room not found" })
     }
 
-    // Update call record - add user to invitedUsers if not already there
-    const callRecord = await db
-      .select()
-      .from(calls)
-      .where(eq(calls.roomName, validatedData.roomName))
-      .limit(1)
+    // Atomically append invited user if not already present
+    // This prevents race conditions when multiple invites are sent simultaneously
+    await db.execute(sql`
+      UPDATE ${calls}
+      SET invited_users = CASE
+        WHEN NOT (invited_users @> jsonb_build_array(${targetUser.externalId}::text))
+          THEN invited_users || jsonb_build_array(${targetUser.externalId}::text)
+        ELSE invited_users
+      END
+      WHERE external_id = ${validatedData.callId}
+    `)
 
-    if (callRecord.length > 0) {
-      const currentInvitedUsers = callRecord[0].invitedUsers || []
-      if (!currentInvitedUsers.includes(targetUser.externalId)) {
-        await db
-          .update(calls)
-          .set({
-            invitedUsers: [...currentInvitedUsers, targetUser.externalId],
-          })
-          .where(eq(calls.roomName, validatedData.roomName))
-      }
-    }
-
-    // Generate access token for the invited user
+    // Generate access token for the invited user (room name in LiveKit is the callId)
     const targetToken = await generateAccessToken(
       targetUser.externalId,
-      validatedData.roomName,
+      validatedData.callId,
       targetUser.name,
     )
 
     // Send real-time notification to target user
     const callNotification = {
       type: "incoming_call" as const,
-      callId: validatedData.roomName,
-      roomName: validatedData.roomName,
+      callId: validatedData.callId,
       caller: {
         id: inviter.externalId,
         name: inviter.name,
@@ -391,13 +374,13 @@ export const InviteToCallApi = async (c: Context) => {
       callNotificationService.sendCallInvitation(callNotification)
 
     Logger.info(
-      `User ${inviter.name} invited ${targetUser.name} to call ${validatedData.roomName}`,
+      `User ${inviter.name} invited ${targetUser.name} to call ${validatedData.callId}`,
     )
     Logger.info(`Real-time notification sent: ${notificationSent}`)
 
     return c.json({
       success: true,
-      roomName: validatedData.roomName,
+      callId: validatedData.callId,
       callType: validatedData.callType,
       notificationSent,
       inviter: {
@@ -427,10 +410,10 @@ export const EndCallApi = async (c: Context) => {
   try {
     const { sub: userEmail } = c.get(JwtPayloadKey)
     const requestBody = await c.req.json()
-    const { roomName } = requestBody
+    const { callId } = requestBody
 
     // Validate input
-    const validatedData = endCallSchema.parse({ roomName })
+    const validatedData = endCallSchema.parse({ callId })
 
     // Get user info
     const users = await getUserByEmail(db, userEmail)
@@ -444,10 +427,10 @@ export const EndCallApi = async (c: Context) => {
       .set({
         endedAt: new Date(),
       })
-      .where(eq(calls.roomName, validatedData.roomName))
+      .where(eq(calls.externalId, validatedData.callId))
 
-    // Delete the room
-    await roomService.deleteRoom(validatedData.roomName)
+    // Delete the room from LiveKit (room name is the callId)
+    await roomService.deleteRoom(validatedData.callId)
 
     return c.json({
       success: true,
@@ -467,10 +450,10 @@ export const LeaveCallApi = async (c: Context) => {
   try {
     const { sub: userEmail } = c.get(JwtPayloadKey)
     const requestBody = await c.req.json()
-    const { roomName } = requestBody
+    const { callId } = requestBody
 
     // Validate input
-    const validatedData = leaveCallSchema.parse({ roomName })
+    const validatedData = leaveCallSchema.parse({ callId })
 
     // Get user info
     const users = await getUserByEmail(db, userEmail)
@@ -480,28 +463,28 @@ export const LeaveCallApi = async (c: Context) => {
     const user = users[0]
 
     Logger.info(
-      `User ${user.email} (${user.externalId}) leaving call ${validatedData.roomName}`,
+      `User ${user.email} (${user.externalId}) leaving call ${validatedData.callId}`,
     )
 
-    // Check if room still exists
+    // Check if room still exists in LiveKit (room name is the callId)
     let roomExists = true
     let participantCount = 0
     try {
-      const rooms = await roomService.listRooms([validatedData.roomName])
+      const rooms = await roomService.listRooms([validatedData.callId])
       if (rooms && rooms.length > 0) {
         participantCount = rooms[0].numParticipants
       } else {
         roomExists = false
       }
     } catch (error) {
-      Logger.warn(`Room ${validatedData.roomName} not found in LiveKit`)
+      Logger.warn(`Room ${validatedData.callId} not found in LiveKit`)
       roomExists = false
     }
 
     // If room doesn't exist or has no participants, mark call as ended
     if (!roomExists || participantCount === 0) {
       Logger.info(
-        `Room ${validatedData.roomName} is empty or doesn't exist. Marking call as ended.`,
+        `Room ${validatedData.callId} is empty or doesn't exist. Marking call as ended.`,
       )
 
       // Update call record - set endedAt timestamp only if not already set
@@ -512,7 +495,7 @@ export const LeaveCallApi = async (c: Context) => {
         })
         .where(
           and(
-            eq(calls.roomName, validatedData.roomName),
+            eq(calls.externalId, validatedData.callId),
             isNull(calls.endedAt),
           ),
         )
@@ -557,7 +540,7 @@ export const GetActiveCallsApi = async (c: Context) => {
     return c.json({
       success: true,
       activeCalls: userRooms.map((room) => ({
-        roomName: room.name,
+        callId: room.name, // LiveKit room.name is our callId (externalId)
         participants: room.numParticipants,
         createdAt: room.creationTime,
       })),
@@ -577,6 +560,11 @@ export const GetCallHistoryApi = async (c: Context) => {
       throw new HTTPException(400, { message: "Workspace ID is required" })
     }
 
+    // Get query parameters for filtering
+    const callType = c.req.query("callType") // 'video', 'audio', 'missed', or undefined
+    const timeFilter = c.req.query("timeFilter") // 'today', 'week', 'month', or undefined
+    const searchQuery = c.req.query("search") // search string or undefined
+
     // Get user info
     const users = await getUserByEmail(db, userEmail)
     if (!users || users.length === 0) {
@@ -584,32 +572,86 @@ export const GetCallHistoryApi = async (c: Context) => {
     }
     const user = users[0]
 
+    // Build filter conditions
+    const conditions = [
+      isNull(calls.deletedAt),
+      or(
+        eq(calls.createdByUserId, user.id),
+        sql`${calls.participants} @> ${JSON.stringify([user.externalId])}::jsonb`,
+        sql`${calls.invitedUsers} @> ${JSON.stringify([user.externalId])}::jsonb`,
+      ),
+    ]
+
+    // Filter by call type
+    if (callType === "video" || callType === "audio") {
+      conditions.push(eq(calls.callType, callType))
+    } else if (callType === "missed") {
+      // Missed calls: user was invited but didn't participate
+      conditions.push(
+        sql`${calls.invitedUsers} @> ${JSON.stringify([user.externalId])}::jsonb`,
+      )
+      conditions.push(
+        sql`NOT (${calls.participants} @> ${JSON.stringify([user.externalId])}::jsonb)`,
+      )
+    }
+
+    // Filter by time
+    if (timeFilter) {
+      const now = new Date()
+      let startDate: Date
+
+      if (timeFilter === "today") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      } else if (timeFilter === "week") {
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      } else if (timeFilter === "month") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+      } else {
+        startDate = new Date(0) // Beginning of time if invalid
+      }
+
+      conditions.push(sql`${calls.startedAt} >= ${startDate.toISOString()}`)
+    }
+
     // Get all calls where user is creator, participant, or invited
-    // Note: We need to get all calls and filter in-memory because we need to check JSON arrays
-    const allCalls = await db
+    // Use PostgreSQL JSONB operators to filter at the database level for better performance
+    const callHistory = await db
       .select()
       .from(calls)
-      .where(isNull(calls.deletedAt))
+      .where(and(...conditions))
       .orderBy(desc(calls.startedAt))
-
-    // Filter calls where user participated (as creator, participant, or invited)
-    const callHistory = allCalls.filter((call) => {
-      const isCreator = call.createdByUserId === user.id
-      const isParticipant = call.participants.includes(user.externalId)
-      const wasInvited = call.invitedUsers.includes(user.externalId)
-      return isCreator || isParticipant || wasInvited
-    })
 
     // Get workspace users to enrich the response with user details
     const workspaceUsers = await getUsersByWorkspace(db, workspaceId)
     const userMap = new Map(workspaceUsers.map((u) => [u.externalId, u]))
+    // Create additional map for O(1) lookup by user ID
+    const userIdMap = new Map(workspaceUsers.map((u) => [u.id, u]))
+
+    // Filter by search query (on enriched data)
+    let filteredCalls = callHistory
+    if (searchQuery && searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      filteredCalls = callHistory.filter((call) => {
+        const creator = userIdMap.get(call.createdByUserId)
+        const creatorMatch = creator?.name.toLowerCase().includes(query)
+
+        const participantMatch = call.participants.some((pId) => {
+          const participant = userMap.get(pId)
+          return participant?.name.toLowerCase().includes(query)
+        })
+
+        const invitedMatch = call.invitedUsers.some((iId) => {
+          const invited = userMap.get(iId)
+          return invited?.name.toLowerCase().includes(query)
+        })
+
+        return creatorMatch || participantMatch || invitedMatch
+      })
+    }
 
     // Enrich call history with user details
-    const enrichedHistory = callHistory.map((call) => {
-      const creator = userMap.get(
-        workspaceUsers.find((u) => u.id === call.createdByUserId)?.externalId ||
-          "",
-      )
+    const enrichedHistory = filteredCalls.map((call) => {
+      const creator = userIdMap.get(call.createdByUserId)
 
       const participantDetails = call.participants
         .map((pId) => {
@@ -641,7 +683,7 @@ export const GetCallHistoryApi = async (c: Context) => {
 
       return {
         id: call.externalId,
-        roomName: call.roomName,
+        callId: call.externalId,
         roomLink: call.roomLink,
         callType: call.callType,
         startedAt: call.startedAt,
@@ -692,15 +734,15 @@ export const cleanupOrphanedCalls = async () => {
 
     Logger.info(`Checking ${activeCalls.length} active calls for cleanup`)
 
-    // Check each call in LiveKit
+    // Check each call in LiveKit (room name is the externalId)
     for (const call of activeCalls) {
       try {
-        const rooms = await roomService.listRooms([call.roomName])
+        const rooms = await roomService.listRooms([call.externalId])
 
         // If room doesn't exist or has no participants, mark as ended
         if (!rooms || rooms.length === 0 || rooms[0].numParticipants === 0) {
           Logger.info(
-            `Marking orphaned call ${call.roomName} as ended (room not found or empty)`,
+            `Marking orphaned call ${call.externalId} as ended (room not found or empty)`,
           )
 
           await db
@@ -712,7 +754,7 @@ export const cleanupOrphanedCalls = async () => {
         }
       } catch (error) {
         Logger.warn(
-          `Error checking room ${call.roomName} during cleanup: ${error}`,
+          `Error checking room ${call.externalId} during cleanup: ${error}`,
         )
         // If we can't find the room, assume it's ended
         await db

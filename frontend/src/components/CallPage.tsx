@@ -20,9 +20,9 @@ import { api } from "@/api"
 import { useToast } from "@/hooks/use-toast"
 
 export default function CallPage() {
-  // Get parameters from URL
+  // Get parameters from URL (support both 'room' and 'callId' for backwards compatibility)
   const urlParams = new URLSearchParams(window.location.search)
-  const room = urlParams.get("room") || ""
+  const callId = urlParams.get("callId") || ""
   const token = urlParams.get("token") || ""
   const callType = urlParams.get("type") || "video"
   const LiveKitServerUrl = urlParams.get("serverUrl")
@@ -38,24 +38,24 @@ export default function CallPage() {
   const { toast } = useToast()
 
   // Generate the shareable call link (without token for security)
-  const shareableCallLink = `${window.location.origin}/call?room=${room}&type=${callType}`
+  const shareableCallLink = `${window.location.origin}/call?callId=${callId}&type=${callType}`
 
   // If no token provided, try to join the call
   useEffect(() => {
-    if (room && !token && !isJoining && !joinError) {
+    if (callId && !token && !isJoining && !joinError) {
       joinCall()
     }
-  }, [room, token, isJoining, joinError])
+  }, [callId, token, isJoining, joinError])
 
   const joinCall = async () => {
-    if (!room) return
+    if (!callId) return
 
     setIsJoining(true)
     setJoinError(null)
 
     try {
       const response = await api.calls.join.$post({
-        json: { roomName: room },
+        json: { callId },
       })
 
       if (response.ok) {
@@ -99,7 +99,7 @@ export default function CallPage() {
       try {
         await navigator.share({
           title: `Join ${callType} call`,
-          text: `Join our ${callType} call: ${room}`,
+          text: `Join our ${callType} call`,
           url: shareableCallLink,
         })
       } catch (error) {
@@ -115,10 +115,10 @@ export default function CallPage() {
 
   const handleDisconnect = () => {
     // Notify backend that user is leaving the call (fire-and-forget, don't wait)
-    if (room) {
+    if (callId) {
       api.calls.leave
         .$post({
-          json: { roomName: room },
+          json: { callId },
         })
         .catch((error: unknown) => {
           console.error("Error notifying server of disconnect:", error)
@@ -133,13 +133,13 @@ export default function CallPage() {
 
   // Track when user actually connects to the room (for participants tracking)
   const handleConnected = async () => {
-    if (!room) return
+    if (!callId) return
 
     try {
       // If user had a token (caller), we need to register them as a participant
       if (token && !isJoining) {
         await api.calls.join.$post({
-          json: { roomName: room },
+          json: { callId },
         })
       }
     } catch (error) {
@@ -166,7 +166,7 @@ export default function CallPage() {
   }
 
   // Show error if join failed or missing required params
-  if (!room || (!actualToken && joinError)) {
+  if (!callId || (!actualToken && joinError)) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
         <div className="text-center">
@@ -269,7 +269,7 @@ export default function CallPage() {
       <InviteUsersModal
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
-        roomName={room}
+        callId={callId}
         callType={callType as "video" | "audio"}
       />
 

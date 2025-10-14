@@ -19,7 +19,7 @@ interface User {
 
 interface CallRecord {
   id: string
-  roomName: string
+  callId: string
   roomLink: string
   callType: string
   startedAt: string
@@ -43,10 +43,29 @@ export default function CallHistory() {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null)
   const [isParticipantsModalOpen, setIsParticipantsModalOpen] = useState(false)
 
+  // Initial load
   useEffect(() => {
-    fetchCurrentUser()
-    fetchCallHistory()
+    const loadData = async () => {
+      await fetchCurrentUser()
+      fetchCallHistory()
+    }
+    loadData()
   }, [])
+
+  // Refetch when filters change (debounce search query)
+  useEffect(() => {
+    if (!currentUserId) return
+
+    // Debounce search query to avoid too many API calls
+    const timeoutId = setTimeout(
+      () => {
+        fetchCallHistory()
+      },
+      searchQuery ? 300 : 0,
+    ) // 300ms delay for search, instant for other filters
+
+    return () => clearTimeout(timeoutId)
+  }, [filterType, timeFilter, searchQuery])
 
   const fetchCurrentUser = async () => {
     try {
@@ -63,7 +82,25 @@ export default function CallHistory() {
   const fetchCallHistory = async () => {
     setLoading(true)
     try {
-      const response = await api.calls.history.$get()
+      // Build query parameters
+      const params: Record<string, string> = {}
+
+      if (filterType !== "all") {
+        params.callType = filterType
+      }
+
+      if (timeFilter !== "all") {
+        params.timeFilter = timeFilter
+      }
+
+      if (searchQuery.trim()) {
+        params.search = searchQuery.trim()
+      }
+
+      const response = await api.calls.history.$get({
+        query: params,
+      })
+
       if (response.ok) {
         const data = await response.json()
         setCalls(data.calls || [])
@@ -98,14 +135,14 @@ export default function CallHistory() {
   const handleJoinCall = async (call: CallRecord) => {
     try {
       const response = await api.calls.join.$post({
-        json: { roomName: call.roomName },
+        json: { callId: call.callId },
       })
 
       if (response.ok) {
         const data = await response.json()
 
         // Construct the call URL with token
-        const callUrl = `${window.location.origin}/call?room=${call.roomName}&token=${data.token}&type=${call.callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
+        const callUrl = `${window.location.origin}/call?callId=${call.callId}&token=${data.token}&type=${call.callType}&serverUrl=${encodeURIComponent(data.livekitUrl)}`
 
         // Open the call in a new window
         const callWindow = window.open(
@@ -144,54 +181,6 @@ export default function CallHistory() {
     }
   }
 
-  const filterCalls = (calls: CallRecord[]) => {
-    let filtered = calls
-
-    // Filter by call type or missed calls
-    if (filterType === "video" || filterType === "audio") {
-      filtered = filtered.filter((call) => call.callType === filterType)
-    } else if (filterType === "missed") {
-      // Show only calls where the CURRENT USER was invited but didn't join
-      filtered = filtered.filter((call) => didCurrentUserMissCall(call))
-    }
-
-    // Filter by time
-    const now = new Date()
-    if (timeFilter === "today") {
-      const todayStart = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-      )
-      filtered = filtered.filter(
-        (call) => new Date(call.startedAt) >= todayStart,
-      )
-    } else if (timeFilter === "week") {
-      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      filtered = filtered.filter(
-        (call) => new Date(call.startedAt) >= weekStart,
-      )
-    } else if (timeFilter === "month") {
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      filtered = filtered.filter(
-        (call) => new Date(call.startedAt) >= monthStart,
-      )
-    }
-
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(
-        (call) =>
-          call.createdBy?.name.toLowerCase().includes(query) ||
-          call.participants.some((p) => p.name.toLowerCase().includes(query)) ||
-          call.invitedUsers.some((u) => u.name.toLowerCase().includes(query)),
-      )
-    }
-
-    return filtered
-  }
-
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—"
     const mins = Math.floor(seconds / 60)
@@ -219,8 +208,6 @@ export default function CallHistory() {
       })
     }
   }
-
-  const filteredCalls = filterCalls(calls)
 
   return (
     <div className="flex-1 bg-white dark:bg-[#1E1E1E] flex flex-col h-full">
@@ -294,7 +281,7 @@ export default function CallHistory() {
           <div className="flex items-center justify-center h-full">
             <div className="text-sm text-gray-500">Loading call history...</div>
           </div>
-        ) : filteredCalls.length === 0 ? (
+        ) : calls.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full px-6 text-center">
             <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
               <Phone size={32} className="text-gray-400 dark:text-gray-500" />
@@ -312,7 +299,7 @@ export default function CallHistory() {
           </div>
         ) : (
           <div className="divide-y divide-gray-100 dark:divide-gray-800">
-            {filteredCalls.map((call) => {
+            {calls.map((call) => {
               const isMissed = didCurrentUserMissCall(call)
               const primaryUser = call.createdBy || call.participants[0]
               const allUsers =
@@ -450,7 +437,11 @@ export default function CallHistory() {
             </DialogTitle>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               {selectedCall &&
-                `You huddled here with ${selectedCall.createdBy?.name || "Unknown"} for ${formatDuration(selectedCall.duration || 0)}`}
+                `You huddled here with ${selectedCall.createdBy?.name || "Unknown"} for ${
+                  selectedCall.endedAt
+                    ? formatDuration(selectedCall.duration)
+                    : "Active"
+                }`}
             </p>
           </DialogHeader>
 
