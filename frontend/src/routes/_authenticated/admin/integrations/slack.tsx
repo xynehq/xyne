@@ -177,6 +177,7 @@ type ManualIngestionFormData = {
   channelIds: string
   startDate: string
   endDate: string
+  includeBotMessage: boolean
 }
 
 interface SlackOAuthTabProps {
@@ -696,17 +697,33 @@ const SlackOAuthTab = ({
                 </div>
               )}
             </div>
+          ) : oauthIntegrationStatus === OAuthIntegrationStatus.OAuthReadyForIngestion ? (
+            // If OAuth completed and ready for ingestion, show the Start Ingestion button
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                OAuth authentication completed. Ready to start data ingestion.
+              </p>
+              <Button
+                onClick={handleRegularIngestion}
+                disabled={isRegularIngestionActive}
+                className="w-full"
+              >
+                {isRegularIngestionActive ? "Starting..." : "Start Ingestion"}
+              </Button>
+            </div>
           ) : oauthIntegrationStatus ===
-              OAuthIntegrationStatus.OAuthConnected ||
-            oauthIntegrationStatus ===
-              OAuthIntegrationStatus.OAuthConnecting ? (
-            // If connected or connecting, show the Start Ingestion button
+              OAuthIntegrationStatus.OAuthConnected ? (
+            // If connected, show the Start Ingestion button
             <Button
               onClick={handleRegularIngestion}
               disabled={isRegularIngestionActive}
             >
               {isRegularIngestionActive ? "Ingesting..." : "Start Ingestion"}
             </Button>
+          ) : oauthIntegrationStatus ===
+              OAuthIntegrationStatus.OAuthConnecting ? (
+            // If connecting, show connecting status (same as Google)
+            "Connecting"
           ) : null}
         </CardContent>
       </Card>
@@ -775,6 +792,8 @@ export const Slack = ({
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnecting)
       } else if (connector?.status === ConnectorStatus.Connected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthConnected)
+      } else if (connector?.status === ConnectorStatus.Authenticated) {
+        setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuthReadyForIngestion)
       } else if (connector?.status === ConnectorStatus.NotConnected) {
         setOAuthIntegrationStatus(OAuthIntegrationStatus.OAuth)
       } else if (connector?.status === ConnectorStatus.Paused) {
@@ -1005,7 +1024,9 @@ export const Slack = ({
                 {oauthIntegrationStatus ===
                   OAuthIntegrationStatus.OAuthConnecting ||
                 oauthIntegrationStatus ===
-                  OAuthIntegrationStatus.OAuthConnected ? (
+                  OAuthIntegrationStatus.OAuthConnected ||
+                oauthIntegrationStatus ===
+                  OAuthIntegrationStatus.OAuthReadyForIngestion ? (
                   <ManualIngestionForm
                     connectorId={slackConnector?.cId}
                     isManualIngestionActive={isManualIngestionActive}
@@ -1127,7 +1148,7 @@ const ManualIngestionForm = ({
   // const startTimeRef = useRef<number | null>(null)
 
   const form = useForm<ManualIngestionFormData>({
-    defaultValues: { channelIds: "", startDate: "", endDate: "" },
+    defaultValues: { channelIds: "", startDate: "", endDate: "", includeBotMessage: false },
     onSubmit: async ({ value }) => {
       if (!connectorId) {
         toast({
@@ -1167,6 +1188,7 @@ const ManualIngestionForm = ({
                 channelsToIngest: channelIdsList,
                 startDate: value.startDate,
                 endDate: value.endDate,
+                includeBotMessage: value.includeBotMessage,
               },
             })
           : await api.slack.ingest_more_channel.$post({
@@ -1175,6 +1197,7 @@ const ManualIngestionForm = ({
                 channelsToIngest: channelIdsList,
                 startDate: value.startDate,
                 endDate: value.endDate,
+                includeBotMessage: value.includeBotMessage,
               },
             })
 
@@ -1254,6 +1277,27 @@ const ManualIngestionForm = ({
           />
         )}
       />
+
+      <div className="flex items-center space-x-2 mt-4">
+        <form.Field
+          name="includeBotMessage"
+          children={(field) => (
+            <input
+              type="checkbox"
+              id="includeBotMessage"
+              checked={field.state.value}
+              onChange={(e) => field.handleChange(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          )}
+        />
+        <Label
+          htmlFor="includeBotMessage"
+          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+        >
+          Include Bot Messages
+        </Label>
+      </div>
 
       <Button type="submit" disabled={isManualIngestionActive}>
         {isManualIngestionActive ? "Ingesting..." : "Ingest Channels"}

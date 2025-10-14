@@ -9,6 +9,7 @@ import {
 export interface Citation {
   url: string
   title: string
+  docId: string
   itemId?: string
   clId?: string
   chunkIndex?: number

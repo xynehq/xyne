@@ -51,7 +51,7 @@ interface DocumentChatProps {
   documentName: string
   initialChatId?: string | null
   onChatCreated?: (chatId: string) => void
-  onChunkIndexChange?: (chunkIndex: number | null, documentId: string) => void
+  onChunkIndexChange?: (chunkIndex: number | null, itemId: string, docId: string) => void
   uploadStatus?: UploadStatus
 }
 
@@ -798,7 +798,7 @@ export const DocumentChat: React.FC<DocumentChatProps> = ({
   }
 
   const handleCitationClick = (citation: Citation, chunkIndex?: number) => {
-    onChunkIndexChange?.(chunkIndex ?? null, citation.itemId ?? documentId)
+    onChunkIndexChange?.(chunkIndex ?? null, citation.itemId ?? documentId, citation.docId)
   }
 
   // Populate feedbackMap from loaded messages

@@ -342,6 +342,100 @@ export function formatSlackSpecialMentions(
 
   return formattedText
 }
+
+/**
+ * Processes user mentions in bot messages, replacing <@userId> with appropriate names
+ * Similar to formatSlackSpecialMentions but handles user mentions specifically
+ */
+export async function processBotMessageMentions(
+  text: string | undefined,
+  client: WebClient,
+  memberMap: Map<string, User>,
+): Promise<string> {
+  if (!text) return ""
+
+  let processedText = text
+  const mentionRegex = /<@([A-Z0-9]+)>/g
+
+  // Find all user mentions
+  const mentions = text.match(mentionRegex)
+  if (!mentions) return processedText
+
+  for (const mention of mentions) {
+    const userId = mention.slice(2, -1) // Remove <@ and >
+
+    // Check if user is already in memberMap
+    let user = memberMap.get(userId)
+
+    // If not in map, fetch user info
+    if (!user) {
+      try {
+        const userResponse = await client.users.info({ user: userId })
+        if (userResponse.ok && userResponse.user) {
+          user = userResponse.user as User
+          memberMap.set(userId, user)
+        }
+      } catch (error) {
+        // If fetching fails, continue with original mention
+        continue
+      }
+    }
+
+    if (user) {
+      let replacementName: string
+
+      // Check if this is a bot user
+      if (user.is_bot) {
+        // For bots, use the bot's name or real_name
+        replacementName =
+          user.profile?.real_name ||
+          user.real_name ||
+          user.name ||
+          "Unknown Bot"
+      } else {
+        // For regular users, use display_name or name
+        replacementName =
+          user.profile?.display_name || user.name || "Unknown User"
+      }
+
+      // Replace the mention with @username format
+      processedText = processedText.replace(mention, `@${replacementName}`)
+    }
+  }
+
+  return processedText
+}
+
+/**
+ * Extracts and combines all text content from bot message blocks
+ */
+export function extractBotMessageText(message: SlackMessage): string {
+  let combinedText = ""
+
+  // Add the main text field if it exists
+  if (message.text) {
+    combinedText += message.text + "\n"
+  }
+
+  // Extract text from blocks
+  if (message.blocks) {
+    for (const block of message.blocks) {
+      if (block.type === "section" && block.text?.text) {
+        combinedText += block.text.text + "\n"
+      }
+
+      if (block.type === "section" && block.fields) {
+        for (const field of block.fields) {
+          if (field.text) {
+            combinedText += field.text + "\n"
+          }
+        }
+      }
+    }
+  }
+
+  return combinedText.trim()
+}
 /**
  * Fetches all messages from a channel.
  * For each message that is a thread parent, it also fetches the thread replies.
@@ -357,6 +451,7 @@ export async function insertChannelMessages(
   channelMap: Map<string, string>,
   startDate: string,
   endDate: string,
+  includeBotMessages: boolean = false,
 ): Promise<void> {
   let cursor: string | undefined = undefined
 
@@ -414,37 +509,95 @@ export async function insertChannelMessages(
         text = formatSlackSpecialMentions(text, channelMap, channelId)
         message.text = text
         // Add the top-level message
-        if (
+        // Check if message should be processed based on includeBotMessages flag
+        const isRegularMessage =
           message.type === "message" &&
           !message.subtype &&
           message.user &&
           message.client_msg_id &&
           message.text != ""
-          // memberMap[message.user]
-        ) {
-          // a deleted user's message could be there
-          if (!memberMap.get(message.user)) {
-            memberMap.set(
-              message.user,
-              (
-                await client.users.info({
-                  user: message.user,
-                })
-              ).user!,
-            )
-          }
+
+        const hasTextOrBlocks =
+          (message.text && message.text.trim().length > 0) ||
+          (Array.isArray(message.blocks) && message.blocks.length > 0)
+        const isBotMessage =
+          includeBotMessages &&
+          message.type === "message" &&
+          message.bot_id &&
+          hasTextOrBlocks
+
+        if (isRegularMessage || isBotMessage) {
           message.mentions = mentions
           message.team = await getTeam(client, message)
 
-          // case to avoid bot messages
-          await insertChatMessage(
-            client,
-            message,
-            channelId,
-            memberMap.get(message.user!)?.profile?.display_name!,
-            memberMap.get(message.user!)?.name!,
-            memberMap.get(message.user!)?.profile?.image_192!,
-          )
+          // Handle both regular user messages and bot messages
+          if (isBotMessage) {
+            // For bot messages, generate custom ID: channelId_ts_botid
+            const customBotId = `${channelId}_${message.ts}_${message.bot_id}`
+            // Temporarily set identifiers for bot messages
+            message.client_msg_id = message.client_msg_id || customBotId
+            // Ensure a userId-like value exists for downstream writes/attachments
+            message.user =
+              message.user || (message.bot_profile?.id as any) || message.bot_id
+
+            // For bot messages, extract and combine all text from blocks
+            const combinedBotText = extractBotMessageText(message)
+
+            // Process user mentions in the combined bot text
+            const processedBotText = await processBotMessageMentions(
+              combinedBotText,
+              client,
+              memberMap,
+            )
+
+            // Apply special mentions formatting
+            const finalBotText = formatSlackSpecialMentions(
+              processedBotText,
+              channelMap,
+              channelId,
+            )
+
+            message.text = finalBotText
+            // For bot messages, use bot profile information
+            const botName = message.bot_profile?.name || "Unknown Bot"
+            const botUsername =
+              message.bot_profile?.name || message.bot_id || "bot"
+            const botImage =
+              message.bot_profile?.icons?.image_72 ||
+              message.bot_profile?.icons?.image_48 ||
+              message.bot_profile?.icons?.image_36 ||
+              ""
+
+            await insertChatMessage(
+              client,
+              message,
+              channelId,
+              botName,
+              botUsername,
+              botImage,
+            )
+          } else {
+            // For regular user messages, handle user info
+            if (message.user && !memberMap.get(message.user)) {
+              memberMap.set(
+                message.user,
+                (
+                  await client.users.info({
+                    user: message.user,
+                  })
+                ).user!,
+              )
+            }
+
+            await insertChatMessage(
+              client,
+              message,
+              channelId,
+              memberMap.get(message.user!)?.profile?.display_name!,
+              memberMap.get(message.user!)?.name!,
+              memberMap.get(message.user!)?.profile?.image_192!,
+            )
+          }
           try {
             insertChatMessagesCount.inc({
               conversation_id: channelId,
@@ -486,14 +639,24 @@ export async function insertChannelMessages(
           const replies: (SlackMessage & { mentions?: string[] })[] =
             threadMessages.filter((msg) => msg.ts !== message.ts)
           for (const reply of replies) {
-            if (
+            // Check if reply should be processed based on includeBotMessages flag
+            const isRegularReply =
               reply.type === "message" &&
               !reply.subtype &&
               reply.user &&
               reply.client_msg_id &&
               reply.text != ""
-              // memberMap[reply.user]
-            ) {
+
+            const hasTextOrBlocks =
+              (reply.text && reply.text.trim().length > 0) ||
+              (Array.isArray(reply.blocks) && reply.blocks.length > 0)
+            const isBotReply =
+              includeBotMessages &&
+              reply.type === "message" &&
+              reply.bot_id &&
+              hasTextOrBlocks
+
+            if (isRegularReply || isBotReply) {
               const mentions = extractUserIdsFromBlocks(reply)
               let text = reply.text
               if (mentions.length) {
@@ -515,29 +678,78 @@ export async function insertChannelMessages(
                 }
               }
               text = formatSlackSpecialMentions(text, channelMap, channelId)
-              if (!memberMap.get(reply.user)) {
-                memberMap.set(
-                  reply.user,
-                  (
-                    await client.users.info({
-                      user: reply.user,
-                    })
-                  ).user!,
-                )
-              }
+
               reply.mentions = mentions
               reply.text = text
-
               reply.team = await getTeam(client, reply)
 
-              await insertChatMessage(
-                client,
-                reply,
-                channelId,
-                memberMap.get(reply.user!)?.profile?.display_name!,
-                memberMap.get(reply.user!)?.name!,
-                memberMap.get(reply.user!)?.profile?.image_192!,
-              )
+              // Handle both regular user replies and bot replies
+              if (isBotReply) {
+                // For bot replies, generate custom ID: channelId_ts_botid
+                const customBotId = `${channelId}_${reply.ts}_${reply.bot_id}`
+                reply.client_msg_id = reply.client_msg_id || customBotId
+                // Ensure a userId-like value exists for downstream writes/attachments
+                reply.user =
+                  reply.user || (reply.bot_profile?.id as any) || reply.bot_id
+
+                // For bot replies, extract and combine all text from blocks
+                const combinedBotText = extractBotMessageText(reply)
+
+                // Process user mentions in the combined bot text
+                const processedBotText = await processBotMessageMentions(
+                  combinedBotText,
+                  client,
+                  memberMap,
+                )
+
+                // Apply special mentions formatting
+                const finalBotText = formatSlackSpecialMentions(
+                  processedBotText,
+                  channelMap,
+                  channelId,
+                )
+
+                reply.text = finalBotText
+                // For bot replies, use bot profile information
+                const botName = reply.bot_profile?.name || "Unknown Bot"
+                const botUsername =
+                  reply.bot_profile?.name || reply.bot_id || "bot"
+                const botImage =
+                  reply.bot_profile?.icons?.image_72 ||
+                  reply.bot_profile?.icons?.image_48 ||
+                  reply.bot_profile?.icons?.image_36 ||
+                  ""
+
+                await insertChatMessage(
+                  client,
+                  reply,
+                  channelId,
+                  botName,
+                  botUsername,
+                  botImage,
+                )
+              } else {
+                // For regular user replies, handle user info
+                if (reply.user && !memberMap.get(reply.user)) {
+                  memberMap.set(
+                    reply.user,
+                    (
+                      await client.users.info({
+                        user: reply.user,
+                      })
+                    ).user!,
+                  )
+                }
+
+                await insertChatMessage(
+                  client,
+                  reply,
+                  channelId,
+                  memberMap.get(reply.user!)?.profile?.display_name!,
+                  memberMap.get(reply.user!)?.name!,
+                  memberMap.get(reply.user!)?.profile?.image_192!,
+                )
+              }
               try {
                 insertChatMessagesCount.inc({
                   conversation_id: channelId,
@@ -913,6 +1125,7 @@ export const handleSlackChannelIngestion = async (
   startDate: string,
   endDate: string,
   email: string,
+  includeBotMessages: boolean = false,
 ) => {
   try {
     const abortController = new AbortController()
@@ -947,7 +1160,6 @@ export const handleSlackChannelIngestion = async (
       const channelId = channelsToIngest[channel] // Get the channel ID string using the index from the for...in loop
       try {
         const response = await client.conversations.info({ channel: channelId })
-        console.log(response.channel)
         if (response.ok && response.channel) {
           conversations.push(response.channel as Channel)
         } else {
@@ -1104,6 +1316,7 @@ export const handleSlackChannelIngestion = async (
           channelMap,
           startDate,
           endDate,
+          includeBotMessages,
         )
         channelMessageInsertionDuration()
         insertChannelMessagesCount.inc({

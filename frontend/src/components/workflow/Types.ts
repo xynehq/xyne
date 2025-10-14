@@ -227,9 +227,12 @@ export type ChangeStepStatusResponse = {
 export interface WorkflowTemplate {
   id: string
   name: string
+  userId: number
+  workspaceId: number
   description: string
   version: string
   status: string
+  isPublic?: boolean
   config: {
     ai_model?: string
     max_file_size?: string
@@ -238,7 +241,6 @@ export interface WorkflowTemplate {
     allowed_file_types?: string[]
     supports_file_upload?: boolean
   }
-  createdBy: string
   rootWorkflowStepTemplateId: string
   createdAt: string
   updatedAt: string
@@ -268,7 +270,6 @@ export interface WorkflowTemplate {
         [key: string]: any
       }
       config: any
-      createdBy: string
       createdAt: string
       updatedAt: string
     }
@@ -313,7 +314,6 @@ export interface LegacyWorkflowTemplate {
   }
   createdAt?: string
   updatedAt?: string
-  createdBy?: string | null
   serviceConfigId?: string
   rootWorkflowStepTemplateId?: string | null
   steps: Step[]

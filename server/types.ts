@@ -555,9 +555,13 @@ export const ingestMoreChannelSchema = z.object({
   channelsToIngest: z.array(z.string()),
   startDate: z.string(),
   endDate: z.string(),
+  includeBotMessage: z.boolean().optional().default(false),
 })
 export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
+})
+export const startGoogleIngestionSchema = z.object({
+  connectorId: z.string(),
 })
 
 export type EntityType =

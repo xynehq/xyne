@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm"
+import { eq, desc, and, or } from "drizzle-orm"
 import type { TxnOrClient } from "@/types"
 import {
   workflowTemplate,
@@ -21,10 +21,12 @@ export const createWorkflowTemplate = async (
   trx: TxnOrClient,
   data: {
     name: string
+    userId: number
+    workspaceId: number
+    isPublic?: boolean
     description?: string
     version?: string
     config?: any
-    createdBy?: string
     rootWorkflowStepTemplateId?: string
   },
 ): Promise<SelectWorkflowTemplate> => {
@@ -32,10 +34,12 @@ export const createWorkflowTemplate = async (
     .insert(workflowTemplate)
     .values({
       name: data.name,
+      userId: data.userId,
+      workspaceId: data.workspaceId,
+      isPublic: data.isPublic,
       description: data.description,
       version: data.version || "1.0.0",
       config: data.config || {},
-      createdBy: data.createdBy,
       rootWorkflowStepTemplateId: data.rootWorkflowStepTemplateId,
     })
     .returning()
@@ -43,25 +47,43 @@ export const createWorkflowTemplate = async (
   return selectWorkflowTemplateSchema.parse(template)
 }
 
-export const getWorkflowTemplateById = async (
+export const getWorkflowTemplateByIdWithPublicCheck = async (
   trx: TxnOrClient,
   id: string,
+  workspaceId: number,
+  userId: number
 ): Promise<SelectWorkflowTemplate | null> => {
   const [template] = await trx
     .select()
     .from(workflowTemplate)
-    .where(eq(workflowTemplate.id, id))
+    .where(and(
+      eq(workflowTemplate.id, id),
+      eq(workflowTemplate.workspaceId, workspaceId),
+      or(
+        eq(workflowTemplate.isPublic, true),
+        eq(workflowTemplate.userId, userId),
+      )
+    ))
     .limit(1)
 
   return template ? selectWorkflowTemplateSchema.parse(template) : null
 }
 
-export const getAllWorkflowTemplates = async (
+export const getAccessibleWorkflowTemplates = async (
   trx: TxnOrClient,
+  workspaceId: number,
+  userId: number,
 ): Promise<SelectWorkflowTemplate[]> => {
   const templates = await trx
     .select()
     .from(workflowTemplate)
+    .where(and(
+      eq(workflowTemplate.workspaceId, workspaceId),
+      or(
+        eq(workflowTemplate.isPublic, true),
+        eq(workflowTemplate.userId, userId),
+      )
+    ))
     .orderBy(desc(workflowTemplate.createdAt))
 
   return templates as SelectWorkflowTemplate[]
@@ -137,9 +159,10 @@ export const createWorkflowExecution = async (
   trx: TxnOrClient,
   data: {
     workflowTemplateId: string
+    workspaceId: number
+    userId: number
     name: string
     description?: string
-    createdBy?: string
     metadata?: any
   },
 ): Promise<SelectWorkflowExecution> => {
@@ -147,9 +170,10 @@ export const createWorkflowExecution = async (
     .insert(workflowExecution)
     .values({
       workflowTemplateId: data.workflowTemplateId,
+      userId: data.userId,
+      workspaceId: data.workspaceId,
       name: data.name,
       description: data.description,
-      createdBy: data.createdBy,
       metadata: data.metadata || {},
     })
     .returning()
@@ -160,11 +184,17 @@ export const createWorkflowExecution = async (
 export const getWorkflowExecutionById = async (
   trx: TxnOrClient,
   id: string,
+  workspaceId: number,
+  userId: number,
 ): Promise<SelectWorkflowExecution | null> => {
   const [execution] = await trx
     .select()
     .from(workflowExecution)
-    .where(eq(workflowExecution.id, id))
+    .where(and(
+      eq(workflowExecution.workspaceId, workspaceId),
+      eq(workflowExecution.userId, userId),
+      eq(workflowExecution.id, id),
+    ))
     .limit(1)
 
   return execution ? (execution as SelectWorkflowExecution) : null
@@ -172,10 +202,16 @@ export const getWorkflowExecutionById = async (
 
 export const getAllWorkflowExecutions = async (
   trx: TxnOrClient,
+  workspaceId: number,
+  userId: number,
 ): Promise<SelectWorkflowExecution[]> => {
   const executions = await trx
     .select()
     .from(workflowExecution)
+    .where(and(
+      eq(workflowExecution.workspaceId, workspaceId),
+      eq(workflowExecution.userId, userId),
+    ))
     .orderBy(desc(workflowExecution.createdAt))
 
   return executions as SelectWorkflowExecution[]

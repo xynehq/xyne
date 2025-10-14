@@ -57,9 +57,10 @@ import {
   getBaseMimeType,
 } from "@/integrations/dataSource/config"
 import { getAuth, safeGet } from "./agent"
-import { ApiKeyScopes, UploadStatus } from "@/shared/types"
+import { ApiKeyScopes, FileType, UploadStatus } from "@/shared/types"
 import { expandSheetIds } from "@/search/utils"
 import { checkFileSize } from "@/integrations/dataSource"
+import { getFileType } from "@/shared/fileUtils"
 
 const EXTENSION_MIME_MAP: Record<string, string> = {
   ".pdf": "application/pdf",
@@ -185,7 +186,7 @@ const fileOperationParamsSchema = z.object({
 
 const chunkContentParamsSchema = z.object({
   cId: z.string().min(1),
-  itemId: z.string().min(1),
+  docId: z.string().min(1),
 })
 
 const listCollectionsQuerySchema = z.object({
@@ -1837,23 +1838,10 @@ export const GetFilePreviewApi = async (c: Context) => {
 export const GetChunkContentApi = async (c: Context) => {
   const { sub: userEmail } = c.get(JwtPayloadKey)
   const chunkIndex = parseInt(c.req.param("cId"))
-  const itemId = c.req.param("itemId")
+  const docId = c.req.param("docId")
 
   try {
-    const collectionFile = await getCollectionFileByItemId(db, itemId)
-    if (!collectionFile) {
-      throw new HTTPException(404, { message: "File data not found" })
-    }
-
-    const vespaIds = await getCollectionFilesVespaIds([itemId], db)
-    if (vespaIds.length === 0) {
-      throw new HTTPException(404, { message: "Vespa document ID not found" })
-    }
-    if (!vespaIds[0].vespaDocId) {
-      throw new HTTPException(404, { message: "Vespa document ID is null" })
-    }
-
-    const resp = await GetDocument(KbItemsSchema, vespaIds[0].vespaDocId)
+    const resp = await GetDocument(KbItemsSchema, docId)
 
     if (!resp || !resp.fields) {
       throw new HTTPException(404, {
@@ -1895,12 +1883,31 @@ export const GetChunkContentApi = async (c: Context) => {
 
     // Get the chunk content from Vespa response
     const chunkContent = resp.fields.chunks[index]
+    let pageIndex: number | undefined
+
+    const isSheetFile = getFileType({ type: resp.fields.mimeType || "", name: resp.fields.fileName || "" }) === FileType.SPREADSHEET
+    if (isSheetFile) {
+      const sheetIndexMatch = docId.match(/_sheet_(\d+)$/)
+      if (sheetIndexMatch) {
+        pageIndex = parseInt(sheetIndexMatch[1], 10)
+      } else {
+        pageIndex = 0
+      }
+    } else {
+      const pageNums = resp.fields.chunks_map?.[index]?.page_numbers
+      pageIndex =
+        Array.isArray(pageNums) && typeof pageNums[0] === "number"
+          ? pageNums[0]
+          : 0
+    }
+    
     if (!chunkContent) {
       throw new HTTPException(404, { message: "Chunk content not found" })
     }
 
     return c.json({
       chunkContent: chunkContent,
+      pageIndex: pageIndex,
     })
   } catch (error) {
     if (error instanceof HTTPException) throw error
