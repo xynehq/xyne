@@ -31,10 +31,10 @@ export function expandSheetIds(fileId: string): string[] {
 
   const [, docId, sheetNumberStr] = sheetMatch
   const sheetNumber = parseInt(sheetNumberStr, 10)
-  // Generate IDs from docId_sheet_0 to docId_sheet_number
+  // Generate IDs from docId_sheet_1 to docId_sheet_number (1-based indexing)
   const expandedIds: string[] = []
   const upper = Number.isFinite(sheetNumber) ? sheetNumber : 1
-  for (let i = 0; i < upper; i++) {
+  for (let i = 1; i <= upper; i++) {
     expandedIds.push(`${docId}_sheet_${i}`)
   }
 
@@ -232,25 +232,4 @@ export async function validateVespaIdInAgentIntegrations(
     Logger.error("Error during BFS validation:", error)
     return false
   }
-}
-
-export function expandSheetIds(fileId: string): string[] {
-  // Check if the fileId matches the pattern docId_sheet_number
-  const sheetMatch = fileId.match(/^(.+)_sheet_(\d+)$/)
-
-  if (!sheetMatch) {
-    // Not a sheet ID, return as is
-    return [fileId]
-  }
-
-  const [, docId, sheetNumberStr] = sheetMatch
-  const sheetNumber = parseInt(sheetNumberStr, 10)
-  // Generate IDs from docId_sheet_0 to docId_sheet_number
-  const expandedIds: string[] = []
-  const upper = Number.isFinite(sheetNumber) ? sheetNumber : 1
-  for (let i = 0; i < upper; i++) {
-    expandedIds.push(`${docId}_sheet_${i}`)
-  }
-
-  return expandedIds
 }
