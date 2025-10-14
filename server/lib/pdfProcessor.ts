@@ -130,6 +130,56 @@ export class PdfProcessor {
     }
   }
 
+  /**
+   * Helper method to process PDF with Gemini and transform the result
+   */
+  private static async processWithGemini(
+    buffer: Buffer,
+    vespaDocId: string,
+  ): Promise<ProcessingResult> {
+    const geminiResult = await extractTextAndImagesWithChunksFromPDFviaGemini(
+      buffer,
+      vespaDocId,
+    )
+    return this.finalizeProcessingResult(
+      {
+        chunks: geminiResult.text_chunks,
+        chunks_pos: geminiResult.text_chunk_pos,
+        image_chunks: geminiResult.image_chunks,
+        image_chunks_pos: geminiResult.image_chunk_pos,
+      },
+      PDF_PROCESSING_METHOD.GEMINI,
+    )
+  }
+
+  /**
+   * Helper method to process PDF with PDF.js and transform the result
+   */
+  private static async processWithPdfJs(
+    buffer: Buffer,
+    vespaDocId: string,
+    extractImages: boolean = false,
+    describeImages: boolean = false,
+  ): Promise<ProcessingResult> {
+    // Convert Buffer to Uint8Array for PDF.js compatibility
+    const uint8Buffer = new Uint8Array(buffer)
+    const pdfJsResult = await extractTextAndImagesWithChunksFromPDF(
+      uint8Buffer,
+      vespaDocId,
+      extractImages,
+      describeImages,
+    )
+    return this.finalizeProcessingResult(
+      {
+        chunks: pdfJsResult.text_chunks,
+        chunks_pos: pdfJsResult.text_chunk_pos,
+        image_chunks: pdfJsResult.image_chunks,
+        image_chunks_pos: pdfJsResult.image_chunk_pos,
+      },
+      PDF_PROCESSING_METHOD.PDFJS,
+    )
+  }
+
    /**
    * Processes a PDF using the fallback logic:
    * 1. Try OCR first
@@ -171,21 +221,9 @@ export class PdfProcessor {
     if (shouldTryGemini) {
       try {
         Logger.info(`Attempting Gemini processing for ${fileName} (${pageCount} pages)`)
-        const geminiResult =
-          await extractTextAndImagesWithChunksFromPDFviaGemini(
-            buffer,
-            vespaDocId,
-          )
+        const result = await this.processWithGemini(buffer, vespaDocId)
         Logger.info(`Gemini processing successful for ${fileName}`)
-        return this.finalizeProcessingResult(
-          {
-            chunks: geminiResult.text_chunks,
-            chunks_pos: geminiResult.text_chunk_pos,
-            image_chunks: geminiResult.image_chunks,
-            image_chunks_pos: geminiResult.image_chunk_pos,
-          },
-          PDF_PROCESSING_METHOD.GEMINI,
-        )
+        return result
       } catch (error) {
         Logger.warn(
           error,
@@ -206,24 +244,14 @@ export class PdfProcessor {
     // Step 3: Final fallback to PDF.js
     try {
       Logger.info(`Attempting PDF.js processing for ${fileName}`)
-      // Convert Buffer to Uint8Array for PDF.js compatibility
-      const uint8Buffer = new Uint8Array(buffer)
-      const pdfJsResult = await extractTextAndImagesWithChunksFromPDF(
-        uint8Buffer,
+      const result = await this.processWithPdfJs(
+        buffer,
         vespaDocId,
         extractImages,
         describeImages,
       )
       Logger.info(`PDF.js processing successful for ${fileName}`)
-      return this.finalizeProcessingResult(
-        {
-          chunks: pdfJsResult.text_chunks,
-          chunks_pos: pdfJsResult.text_chunk_pos,
-          image_chunks: pdfJsResult.image_chunks,
-          image_chunks_pos: pdfJsResult.image_chunk_pos,
-        },
-        PDF_PROCESSING_METHOD.PDFJS,
-      )
+      return result
     } catch (error) {
       Logger.error(
         error,
@@ -231,68 +259,6 @@ export class PdfProcessor {
       )
       throw error
     }
-  }
-
-  /**
-   * Process PDF using only OCR method
-   */
-  static async processWithOCR(
-    buffer: Buffer,
-    fileName: string,
-    vespaDocId: string,
-  ): Promise<ProcessingResult> {
-    const ocrResult = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
-    return this.finalizeProcessingResult(ocrResult, PDF_PROCESSING_METHOD.OCR)
-  }
-
-  /**
-   * Process PDF using only Gemini method
-   */
-  static async processWithGemini(
-    buffer: Buffer,
-    vespaDocId: string,
-  ): Promise<ProcessingResult> {
-    const geminiResult = await extractTextAndImagesWithChunksFromPDFviaGemini(
-      buffer,
-      vespaDocId,
-    )
-    return this.finalizeProcessingResult(
-      {
-        chunks: geminiResult.text_chunks,
-        chunks_pos: geminiResult.text_chunk_pos,
-        image_chunks: geminiResult.image_chunks,
-        image_chunks_pos: geminiResult.image_chunk_pos,
-      },
-      PDF_PROCESSING_METHOD.GEMINI,
-    )
-  }
-
-  /**
-   * Process PDF using only PDF.js method
-   */
-  static async processWithPdfJs(
-    buffer: Buffer,
-    vespaDocId: string,
-    extractImages: boolean = false,
-    describeImages: boolean = false,
-  ): Promise<ProcessingResult> {
-    // Convert Buffer to Uint8Array for PDF.js compatibility
-    const uint8Buffer = new Uint8Array(buffer)
-    const pdfJsResult = await extractTextAndImagesWithChunksFromPDF(
-      uint8Buffer,
-      vespaDocId,
-      extractImages,
-      describeImages,
-    )
-    return this.finalizeProcessingResult(
-      {
-        chunks: pdfJsResult.text_chunks,
-        chunks_pos: pdfJsResult.text_chunk_pos,
-        image_chunks: pdfJsResult.image_chunks,
-        image_chunks_pos: pdfJsResult.image_chunk_pos,
-      },
-      PDF_PROCESSING_METHOD.PDFJS,
-    )
   }
 
   /**
