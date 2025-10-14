@@ -48,10 +48,10 @@ export class PdfProcessor {
     // The chunk_index in metadata represents the global index across all chunks,
     // not the position in this specific array
     if (Array.isArray(metadata) && metadata.length === totalCount) {
-      return metadata.map((entry) => ({
+      return metadata.map((entry, index) => ({
         chunk_index: typeof entry?.chunk_index === "number" && entry.chunk_index >= 0
           ? entry.chunk_index
-          : 0,
+          : index,
         page_numbers: Array.isArray(entry?.page_numbers)
           ? entry.page_numbers
           : [],
@@ -130,7 +130,7 @@ export class PdfProcessor {
     }
   }
 
-  /**
+   /**
    * Processes a PDF using the fallback logic:
    * 1. Try OCR first
    * 2. If OCR fails and PDF < 40 pages, try Gemini
@@ -139,8 +139,8 @@ export class PdfProcessor {
    * @param buffer - PDF file buffer
    * @param fileName - Name of the PDF file
    * @param vespaDocId - Vespa document ID
-   * @param extractImages - Whether to extract images
-   * @param describeImages - Whether to describe images
+   * @param extractImages - Whether to extract images (only applies to the PDF.js fallback).
+   * @param describeImages - Whether to describe images (only applies to the PDF.js fallback).
    * @returns PDF processing result with method used
    */
   static async processWithFallback(

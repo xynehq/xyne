@@ -257,7 +257,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         metadata: JSON.stringify({
           originalFileName: file.originalName || file.fileName,
           uploadedBy: file.uploadedByEmail || "system",
-          chunksCount: processingResult.chunks.length,
+          chunksCount: processingResult.chunks.length + processingResult.image_chunks.length,
           imageChunksCount: processingResult.image_chunks.length,
           processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
           ...(processingResult.processingMethod && { pdfProcessingMethod: processingResult.processingMethod }),
