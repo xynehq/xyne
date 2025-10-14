@@ -551,7 +551,7 @@ function UsersListPage({
       const searchLower = searchTerm.toLowerCase()
       return (
         user.name?.toLowerCase().includes(searchLower) ||
-        user.email?.toLowerCase().includes(searchLower)
+        user.email.toLowerCase().includes(searchLower)
       )
     })
 
