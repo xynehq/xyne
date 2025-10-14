@@ -135,8 +135,7 @@
             {mode === "preview" && (
               <Button
                 onClick={handleSave}
-                className="w-full bg-gray-900 hover:bg-gray-800 
-  text-white rounded-full"
+                className="w-full bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-full"
               >
                 Save to Workflow
               </Button>

@@ -848,8 +848,9 @@ function AgentComponent() {
     fetchInitialAgentForChat()
   }, [agentId, toast])
 
-  let cancelledEditAgentEvent = false
+
   useEffect(() => {
+    let cancelledEditAgentEvent = false
     const loadAgentForEdit = async () => {
        cancelledEditAgentEvent = false 
       if (agentId && mode === 'edit') {
