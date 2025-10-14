@@ -1361,11 +1361,11 @@ export const searchQueryPrompt = (
         - For Google Workspace queries (contacts), always set "temporalDirection" to null
         - Only set "temporalDirection" to "next" or "prev" when the query is specifically about calendar events/meetings
 
-    11. **INTENT EXTRACTION (for specific app/entity queries):**
-        - Extract intent fields ONLY when the user specifies SPECIFIC CRITERIA in their query
-        - ONLY extract intent when there are EXPLICIT FILTERING CRITERIA mentioned
+    11. **MailParticipants EXTRACTION (for specific app/entity queries):**
+        - Extract mailParticipants fields ONLY when the user specifies SPECIFIC CRITERIA in their query
+        - ONLY extract mailParticipants when there are EXPLICIT FILTERING CRITERIA mentioned
         
-        **Intent field mapping by app/entity:**
+        **mailParticipants field mapping by app/entity:**
         
         For ${Apps.Gmail} with ${MailEntity.Email}:
         - **Email Address Extraction**: ONLY extract when specific EMAIL ADDRESSES are mentioned:
@@ -1376,14 +1376,14 @@ export const searchQueryPrompt = (
         - **Subject/Title Extraction**: ONLY extract when specific subject/topic keywords are mentioned:
           - "subject"/"title"/"about" queries with specific content (e.g., "emails about 'meeting notes'", "subject contains 'project update'") → extract the specific keywords to "subject" array
         
-          **CRITICAL RULES for Intent Extraction:**
-        - DO NOT extract intent for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
-        - EXTRACT intent for queries with person names OR email addresses OR organization names:
+          **CRITICAL RULES for mailParticipants Extraction:**
+        - DO NOT extract mailParticipants for queries like: "give me all emails", "show me emails", "list my emails", "get emails"
+        - EXTRACT mailParticipants for queries with person names OR email addresses OR organization names:
           - Person names: "emails from John", "messages from Sarah", "emails from prateek"
           - Email addresses: "emails from john@company.com", "messages from user@domain.com"
           - Organization names: "emails from OpenAI", "messages from Linear", "emails from Google"
           - Specific subjects: "emails with subject 'meeting'"
-        - If the query is asking for ALL items without specific criteria, return empty intent object: {}
+        - If the query is asking for ALL items without specific criteria, return empty mailParticipants object: {}
         
         **Email Address, Name, and Organization Detection Rules:**
         - DETECT and EXTRACT ALL valid email patterns, person names, AND organization names:
@@ -1409,8 +1409,8 @@ export const searchQueryPrompt = (
         - Extract ALL email addresses, person names, AND organization names - the system will resolve names to emails later while preserving existing email addresses
         
         For other apps/entities:
-        - Currently no specific intent fields defined
-        - Return empty intent object: {}
+        - Currently no specific mailParticipants fields defined
+        - Return empty mailParticipants object: {}
 
 
     12. Output JSON in the following structure:
@@ -1429,7 +1429,7 @@ export const searchQueryPrompt = (
            "startTime": "<start time in ${config.llmTimeFormat}, if applicable, or null>",
            "endTime": "<end time in ${config.llmTimeFormat}, if applicable, or null>",
            "sortDirection": "<'asc' | 'desc' | null>",
-           "intent": {}
+           "mailParticipants": {}
          }
        }
        - "answer" should only contain a conversational response if it's a greeting, conversational statement, or basic calculation. Otherwise, "answer" must be null.
@@ -1438,7 +1438,7 @@ export const searchQueryPrompt = (
        - "filterQuery" contains the main search keywords extracted from the user's query. Set to null if no specific content keywords remain after filtering.
        - "type" and "filters" are used for routing and fetching data.
        - "sortDirection" can be "asc", "desc", or null. Use null when no clear sorting direction is specified or implied in the query.
-       - "intent" is an object that contains specific intent fields based on the app/entity detected. 
+       - "mailParticipants" is an object that contains specific mailParticipants fields based on the app/entity detected. 
        - "apps" and "entities" should always be arrays when values are present. For single app/entity, use single-element arrays like ["Gmail"]. Set to null if no apps/entities are detected.
        - If the query references an entity whose data is not available, set all filter fields (app, entity, count, startTime, endTime) to null.
        - ONLY GIVE THE JSON OUTPUT, DO NOT EXPLAIN OR DISCUSS THE JSON STRUCTURE. MAKE SURE TO GIVE ALL THE FIELDS.
@@ -2434,4 +2434,3 @@ Without these connections, I can only provide general assistance and cannot acce
 
 Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`
-

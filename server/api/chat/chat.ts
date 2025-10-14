@@ -18,7 +18,7 @@ import {
   QueryType,
   type ChainBreakClassifications,
   type ConverseResponse,
-  type Intent,
+  type MailParticipant,
   type QueryRouterLLMResponse,
   type QueryRouterResponse,
   type TemporalClassifier,
@@ -222,7 +222,7 @@ const METADATA_NO_DOCUMENTS_FOUND = "METADATA_NO_DOCUMENTS_FOUND_INTERNAL"
 const METADATA_FALLBACK_TO_RAG = "METADATA_FALLBACK_TO_RAG_INTERNAL"
 
 export async function resolveNamesToEmails(
-  intent: Intent,
+  mailParticipants: MailParticipant,
   email: string,
   userCtx: string,
   userMetadata: UserMetadataType,
@@ -231,20 +231,19 @@ export async function resolveNamesToEmails(
   const resolveSpan = span?.startSpan("resolve_names_to_emails")
 
   try {
-    const extractedNames = extractNamesFromIntent(intent)
+    const extractedNames = extractNamesFromIntent(mailParticipants)
 
     const allNames = [
       ...(extractedNames.from || []),
       ...(extractedNames.to || []),
       ...(extractedNames.cc || []),
       ...(extractedNames.bcc || []),
-      ...(extractedNames.subject || []),
     ]
 
     if (allNames.length === 0) {
       resolveSpan?.setAttribute("no_names_found", true)
       resolveSpan?.end()
-      return intent
+      return mailParticipants
     }
 
     const isValidEmailAddress = (email: string): boolean => {
@@ -259,7 +258,7 @@ export async function resolveNamesToEmails(
       resolveSpan?.setAttribute("all_names_are_emails", true)
       resolveSpan?.setAttribute("skip_resolution", true)
       resolveSpan?.end()
-      return intent
+      return mailParticipants
     }
     resolveSpan?.setAttribute("names_to_resolve", JSON.stringify(allNames))
 
@@ -292,7 +291,7 @@ export async function resolveNamesToEmails(
       !searchResults.root.children ||
       searchResults.root.children.length === 0
     ) {
-      return intent
+      return mailParticipants
     }
 
     const searchContext = searchResults.root.children
@@ -312,7 +311,7 @@ export async function resolveNamesToEmails(
       })
       .join("\n")
 
-    let resolvedData: Intent = {}
+    let resolvedData: MailParticipant = {}
     const resolutionResult = await extractEmailsFromContext(
       extractedNames,
       userCtx,
@@ -326,7 +325,7 @@ export async function resolveNamesToEmails(
     return resolvedData
   } catch (error) {
     resolveSpan?.end()
-    return intent
+    return mailParticipants
   }
 }
 
@@ -1967,14 +1966,23 @@ async function* generateAnswerFromGivenContext(
         combinedSearchResponse.push(...results.root.children)
       }
     } else {
-      const collectionFileIds = fileIds.filter((fid) => fid.startsWith("clf-") || fid.startsWith("att_"))
-      const nonCollectionFileIds = fileIds.filter((fid) => !fid.startsWith("clf-") && !fid.startsWith("att"))
+      const collectionFileIds = fileIds.filter(
+        (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
+      )
+      const nonCollectionFileIds = fileIds.filter(
+        (fid) => !fid.startsWith("clf-") && !fid.startsWith("att"),
+      )
       const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
-      if(nonCollectionFileIds && nonCollectionFileIds.length > 0) {
-        results = await searchVespaInFiles(builtUserQuery, email, nonCollectionFileIds, {
+      if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+        results = await searchVespaInFiles(
+          builtUserQuery,
+          email,
+          nonCollectionFileIds,
+          {
             limit: fileIds?.length,
             alpha: userAlpha,
-          })
+          },
+        )
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
@@ -1989,12 +1997,17 @@ async function* generateAnswerFromGivenContext(
           combinedSearchResponse.push(...results.root.children)
         }
       }
-      if(attachmentFileIds && attachmentFileIds.length > 0) {
-        results = await searchVespaInFiles(builtUserQuery, email, attachmentFileIds, {
-          limit: fileIds?.length,
-          alpha: userAlpha,
-          rankProfile: SearchModes.AttachmentRank,
-        })
+      if (attachmentFileIds && attachmentFileIds.length > 0) {
+        results = await searchVespaInFiles(
+          builtUserQuery,
+          email,
+          attachmentFileIds,
+          {
+            limit: fileIds?.length,
+            alpha: userAlpha,
+            rankProfile: SearchModes.AttachmentRank,
+          },
+        )
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
@@ -2967,8 +2980,14 @@ async function* generateMetadataQueryAnswer(
     imageCitation?: ImageCitation
   }
 > {
-  const { apps, entities, startTime, endTime, sortDirection, intent } =
-    classification.filters
+  const {
+    apps,
+    entities,
+    startTime,
+    endTime,
+    sortDirection,
+    mailParticipants,
+  } = classification.filters
   const count = classification.filters.count
   const direction = classification.direction as string
   const isGenericItemFetch = classification.type === QueryType.GetItems
@@ -3167,24 +3186,24 @@ async function* generateMetadataQueryAnswer(
     classification.filterQuery &&
     classification.filters?.sortDirection === "desc"
   ) {
-    let resolvedIntent = intent || {}
+    let resolvedMailParticipants = mailParticipants || {}
     if (
-      intent &&
-      Object.keys(intent).length > 0 &&
+      mailParticipants &&
+      Object.keys(mailParticipants).length > 0 &&
       apps?.includes(Apps.Gmail)
     ) {
       loggerWithChild({ email: email }).info(
-        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+        `[${QueryType.SearchWithoutFilters}] Detected names in mailParticipants, resolving to emails: ${JSON.stringify(mailParticipants)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(
-        intent,
+      resolvedMailParticipants = await resolveNamesToEmails(
+        mailParticipants,
         email,
         userCtx,
         userMetadata,
         span,
       )
       loggerWithChild({ email: email }).info(
-        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+        `[${QueryType.SearchWithoutFilters}] Resolved mailParticipants: ${JSON.stringify(resolvedMailParticipants)}`,
       )
     }
     span?.setAttribute(
@@ -3202,7 +3221,7 @@ async function* generateMetadataQueryAnswer(
       rankProfile: SearchModes.GlobalSorted,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
-      intent: resolvedIntent,
+      mailParticipants: resolvedMailParticipants,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -3342,24 +3361,24 @@ async function* generateMetadataQueryAnswer(
       `Search Type : ${QueryType.GetItems}`,
     )
 
-    let resolvedIntent = intent || {}
+    let resolvedMailParticipants = mailParticipants || {}
     if (
-      intent &&
-      Object.keys(intent).length > 0 &&
+      mailParticipants &&
+      Object.keys(mailParticipants).length > 0 &&
       apps?.includes(Apps.Gmail)
     ) {
       loggerWithChild({ email: email }).info(
-        `[${QueryType.SearchWithoutFilters}] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+        `[${QueryType.SearchWithoutFilters}] Detected names in mailParticipants, resolving to emails: ${JSON.stringify(mailParticipants)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(
-        intent,
+      resolvedMailParticipants = await resolveNamesToEmails(
+        mailParticipants,
         email,
         userCtx,
         userMetadata,
         span,
       )
       loggerWithChild({ email: email }).info(
-        `[${QueryType.SearchWithoutFilters}] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+        `[${QueryType.SearchWithoutFilters}] Resolved mailParticipants: ${JSON.stringify(resolvedMailParticipants)}`,
       )
     }
 
@@ -3387,7 +3406,7 @@ async function* generateMetadataQueryAnswer(
       }
       if (agentApps.length) {
         loggerWithChild({ email: email }).info(
-          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${agentApps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
+          `[GetItems] Calling getItems with agent prompt - Schema: ${schema}, App: ${agentApps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}`,
         )
         const channelIds = getChannelIdsFromAgentPrompt(agentPrompt)
         searchResults = await getItems({
@@ -3399,7 +3418,7 @@ async function* generateMetadataQueryAnswer(
           limit: userSpecifiedCountLimit + (classification.filters.offset || 0),
           offset: classification.filters.offset || 0,
           asc: sortDirection === "asc",
-          intent: resolvedIntent || {},
+          mailParticipants: resolvedMailParticipants || {},
           channelIds,
           selectedItem: selectedItem,
           collectionSelections: agentSpecificCollectionSelections,
@@ -3411,7 +3430,7 @@ async function* generateMetadataQueryAnswer(
       }
     } else {
       loggerWithChild({ email: email }).info(
-        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, Intent: ${JSON.stringify(classification.filters.intent)}`,
+        `[GetItems] Calling getItems - Schema: ${schema}, App: ${apps?.map((a) => a).join(", ")}, Entity: ${entities?.map((e) => e).join(", ")}, mailParticipants: ${JSON.stringify(classification.filters.mailParticipants)}`,
       )
 
       const getItemsParams = {
@@ -3423,7 +3442,7 @@ async function* generateMetadataQueryAnswer(
         limit: userSpecifiedCountLimit + (classification.filters.offset || 0),
         offset: classification.filters.offset || 0,
         asc: sortDirection === "asc",
-        intent: resolvedIntent || {},
+        mailParticipants: resolvedMailParticipants || {},
         collectionSelections: agentSpecificCollectionSelections,
         selectedItem: selectedItem,
       }
@@ -3515,24 +3534,24 @@ async function* generateMetadataQueryAnswer(
         ? SearchModes.GlobalSorted
         : SearchModes.NativeRank
 
-    let resolvedIntent = {} as Intent
+    let resolvedMailParticipants = {} as MailParticipant
     if (
-      intent &&
-      Object.keys(intent).length > 0 &&
+      mailParticipants &&
+      Object.keys(mailParticipants).length > 0 &&
       apps?.includes(Apps.Gmail)
     ) {
       loggerWithChild({ email: email }).info(
-        `[SearchWithFilters] Detected names in intent, resolving to emails: ${JSON.stringify(intent)}`,
+        `[SearchWithFilters] Detected names in mailParticipants, resolving to emails: ${JSON.stringify(mailParticipants)}`,
       )
-      resolvedIntent = await resolveNamesToEmails(
-        intent,
+      resolvedMailParticipants = await resolveNamesToEmails(
+        mailParticipants,
         email,
         userCtx,
         userMetadata,
         span,
       )
       loggerWithChild({ email: email }).info(
-        `[SearchWithFilters] Resolved intent: ${JSON.stringify(resolvedIntent)}`,
+        `[SearchWithFilters] Resolved mailParticipants: ${JSON.stringify(resolvedMailParticipants)}`,
       )
     }
 
@@ -3542,7 +3561,7 @@ async function* generateMetadataQueryAnswer(
       rankProfile,
       timestampRange:
         timestampRange.to || timestampRange.from ? timestampRange : null,
-      intent: resolvedIntent,
+      mailParticipants: resolvedMailParticipants,
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -4724,9 +4743,7 @@ export const MessageApi = async (c: Context) => {
           } else {
             const filteredMessages = messages
               .slice(0, messages.length - 1)
-              .filter(
-                (msg) => !msg?.errorMessage,
-              )
+              .filter((msg) => !msg?.errorMessage)
               .filter(
                 (msg) =>
                   !(msg.messageRole === MessageRole.Assistant && !msg.message),
@@ -4871,7 +4888,7 @@ export const MessageApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
-              intent: {},
+              mailParticipants: {},
               offset: 0,
             }
             let parsed = {
@@ -4881,7 +4898,7 @@ export const MessageApi = async (c: Context) => {
               temporalDirection: null,
               filterQuery: "",
               type: "",
-              intent: {},
+              mailParticipants: {},
               filters: queryFilters,
             }
 
@@ -5141,7 +5158,7 @@ export const MessageApi = async (c: Context) => {
               entities,
               sortDirection,
               startTime,
-              intent,
+              mailParticipants,
               offset,
             } = parsed?.filters || {}
             classification = {
@@ -5157,7 +5174,7 @@ export const MessageApi = async (c: Context) => {
                 startTime,
                 count,
                 offset: offset || 0,
-                intent: intent || {},
+                mailParticipants: mailParticipants || {},
               },
             } as QueryRouterLLMResponse
 
@@ -5207,29 +5224,33 @@ export const MessageApi = async (c: Context) => {
                 // - All the smart follow-up logic from the LLM
 
                 const filteredMessages = messages
-                  .filter(
-                    (msg) => !msg?.errorMessage,
-                  )
+                  .filter((msg) => !msg?.errorMessage)
                   .filter(
                     (msg) =>
-                      !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                      !(
+                        msg.messageRole === MessageRole.Assistant &&
+                        !msg.message
+                      ),
                   )
-  
+
                 // Check for follow-up context carry-forward
-                const workingSet = collectFollowupContext(filteredMessages);
-      
+                const workingSet = collectFollowupContext(filteredMessages)
+
                 const hasCarriedContext =
                   workingSet.fileIds.length > 0 ||
-                  workingSet.attachmentFileIds.length > 0;
+                  workingSet.attachmentFileIds.length > 0
                 if (hasCarriedContext) {
-                  fileIds = workingSet.fileIds;
-                  imageAttachmentFileIds = workingSet.attachmentFileIds;
+                  fileIds = workingSet.fileIds
+                  imageAttachmentFileIds = workingSet.attachmentFileIds
                   loggerWithChild({ email: email }).info(
                     `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
-                  );
+                  )
                 }
 
-                if (fileIds && fileIds.length > 0 || imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
+                if (
+                  (fileIds && fileIds.length > 0) ||
+                  (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
+                ) {
                   loggerWithChild({ email: email }).info(
                     `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
                   )
@@ -6321,7 +6342,7 @@ export const MessageRetryApi = async (c: Context) => {
               endTime: "",
               count: 0,
               sortDirection: "",
-              intent: {},
+              mailParticipants: {},
               offset: 0,
             }
             let parsed = {
@@ -6466,7 +6487,7 @@ export const MessageRetryApi = async (c: Context) => {
                   startTime,
                   count,
                   offset: parsed?.filters?.offset || 0,
-                  intent: parsed?.filters?.intent || {},
+                  mailParticipants: parsed?.filters?.mailParticipants || {},
                 },
               } as QueryRouterLLMResponse
 
@@ -7259,7 +7280,10 @@ export const GenerateChatTitleApi = async (c: Context) => {
 
     const currentChat = await getChatMessagesWithAuth(db, chatId, email)
     let assistantResponse = ""
-    if (currentChat[1].messageRole === "assistant" && currentChat[1].message) {
+    if (
+      currentChat[1]?.messageRole === "assistant" &&
+      currentChat[1]?.message
+    ) {
       assistantResponse = currentChat[1].message
     }
 

@@ -110,7 +110,10 @@ import {
   ConnectorNotCreated,
   NoUserFound,
 } from "@/errors"
-import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
+import {
+  handleGoogleOAuthIngestion,
+  handleGoogleServiceAccountIngestion,
+} from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
 import { ServiceAccountIngestMoreUsers } from "@/integrations/google"
 import { handleSlackChannelIngestion } from "@/integrations/slack/channelIngest"
@@ -137,6 +140,7 @@ import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
 import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
 import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
+import { replaceSheetIndex } from "@/search/utils"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -1446,7 +1450,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
 export const StartSlackIngestionApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   // @ts-ignore - Assuming payload is validated by zValidator
-  const payload = c.req.valid("json") as { connectorId: string }
+  const payload = c.req.valid("json") as { connectorId: number }
 
   try {
     const userRes = await getUserByEmail(db, sub)
@@ -1459,7 +1463,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
     }
     const [user] = userRes
 
-    const connector = await getConnector(db, parseInt(payload.connectorId))
+    const connector = await getConnector(db, payload.connectorId)
     if (!connector) {
       throw new HTTPException(404, { message: "Connector not found" })
     }
@@ -1494,11 +1498,64 @@ export const StartSlackIngestionApi = async (c: Context) => {
   }
 }
 
+export const StartGoogleIngestionApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  // @ts-ignore - Assuming payload is validated by zValidator
+  const payload = c.req.valid("json") as { connectorId: string }
+  try {
+    const userRes = await getUserByEmail(db, sub)
+    if (!userRes || !userRes.length) {
+      loggerWithChild({ email: sub }).error(
+        { sub },
+        "No user found for sub in StartGoogleIngestionApi",
+      )
+      throw new NoUserFound({})
+    }
+    const [user] = userRes
+
+    const connector = await getConnectorByExternalId(
+      db,
+      payload.connectorId,
+      user.id,
+    )
+    if (!connector) {
+      throw new HTTPException(404, { message: "Connector not found" })
+    }
+
+    // Call the main Google ingestion function
+    handleGoogleOAuthIngestion({
+      connectorId: connector.id,
+      app: connector.app as Apps,
+      externalId: connector.externalId,
+      authType: connector.authType as AuthType,
+      email: sub,
+    }).catch((error) => {
+      loggerWithChild({ email: sub }).error(
+        error,
+        `Background Google ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+      )
+    })
+
+    return c.json({
+      success: true,
+      message: "Regular Google ingestion started.",
+    })
+  } catch (error: any) {
+    loggerWithChild({ email: sub }).error(
+      error,
+      `Error starting regular Google ingestion: ${getErrorMessage(error)}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: `Failed to start regular Google ingestion: ${getErrorMessage(error)}`,
+    })
+  }
+}
 export const IngestMoreChannelApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   // @ts-ignore
   const payload = c.req.valid("json") as {
-    connectorId: string
+    connectorId: number
     channelsToIngest: string[]
     startDate: string
     endDate: string
@@ -1508,7 +1565,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
   try {
     const email = sub
     const resp = await handleSlackChannelIngestion(
-      parseInt(payload.connectorId),
+      payload.connectorId,
       payload.channelsToIngest,
       payload.startDate,
       payload.endDate,
@@ -2106,7 +2163,7 @@ export const GetKbVespaContent = async (c: Context) => {
 
     const rawData = await c.req.json()
     const validatedData = getDocumentSchema.parse(rawData)
-    const { docId, schema: rawSchema } = validatedData
+    const { docId, sheetIndex, schema: rawSchema } = validatedData
     const validSchemas = [KbItemsSchema]
     if (!validSchemas.includes(rawSchema)) {
       throw new HTTPException(400, {
@@ -2119,12 +2176,20 @@ export const GetKbVespaContent = async (c: Context) => {
         message: `Document with id ${docId} not found in the system.`,
       })
     }
+
+    const rawVespaDocId = collectionFile[0].vespaDocId
+    if (!rawVespaDocId) {
+      throw new HTTPException(500, {
+        message: "Document Vespa ID is missing in the system.",
+      })
+    }
+    const vespaDocId = replaceSheetIndex(rawVespaDocId, sheetIndex ?? 0)
     // console.log("Fetched Vespa Doc ID:", vespaDocId)
     const schema = rawSchema as VespaSchema
 
     const documentData = await GetDocument(
       schema,
-      collectionFile[0].vespaDocId!,
+      vespaDocId,
     )
 
     if (!documentData || !("fields" in documentData) || !documentData.fields) {

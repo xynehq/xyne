@@ -585,9 +585,10 @@ export const AnswerApi = async (c: Context) => {
     costArr.push(cost)
   }
   const initialContext = cleanContext(
-    results.root.children
-      .map((v) => answerContextMap(v as VespaSearchResults, userMetadata))
-      .join("\n"),
+    (await Promise.all(
+      results.root.children
+        .map(async (v) => await answerContextMap(v as VespaSearchResults, userMetadata))
+    )).join("\n"),
   )
 
   const tokenLimit = maxTokenBeforeMetadataCleanup
@@ -664,10 +665,11 @@ export const AnswerApi = async (c: Context) => {
   }
 
   const finalContext = cleanContext(
-    results.root.children
-      .filter((v, i) => output?.contextualChunks.includes(i))
-      .map((v) => answerContextMap(v as VespaSearchResults, userMetadata))
-      .join("\n"),
+    (await Promise.all(
+      results.root.children
+        .filter((v, i) => output?.contextualChunks.includes(i))
+        .map(async (v) => await answerContextMap(v as VespaSearchResults, userMetadata))
+    )).join("\n"),
   )
 
   return streamSSE(c, async (stream) => {

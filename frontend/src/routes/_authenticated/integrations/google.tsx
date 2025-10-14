@@ -81,7 +81,9 @@ const UserLayout = ({ user, workspace, agentWhiteList }: AdminPageProps) => {
   useEffect(() => {
     let socket: WebSocket | null = null
     if (!isPending && data && data.length > 0) {
-      const oauthConnector = data.find((c) => c.authType === AuthType.OAuth)
+      const oauthConnector = data.find(
+        (c) => c.app === Apps.GoogleDrive && c.authType === AuthType.OAuth,
+      )
       if (oauthConnector) {
         socket = wsClient.ws.$ws({
           query: { id: oauthConnector.id },

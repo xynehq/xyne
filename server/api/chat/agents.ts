@@ -392,7 +392,11 @@ const checkAndYieldCitationsForAgent = async function* (
           }
 
           // we dont want citations for attachments in the chat
-          if (Object.values(AttachmentEntity).includes(item.source.entity as AttachmentEntity)) {
+          if (
+            Object.values(AttachmentEntity).includes(
+              item.source.entity as AttachmentEntity,
+            )
+          ) {
             continue
           }
 
@@ -1622,21 +1626,42 @@ export const MessageWithToolsApi = async (c: Context) => {
               gatheredFragments = await Promise.all(
                 results.root.children.map(
                   async (child: VespaSearchResult, idx) =>
-                    await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message),
-                )
+                    await vespaResultToMinimalAgentFragment(
+                      child,
+                      idx,
+                      userMetadata,
+                      message,
+                    ),
+                ),
               )
               if (chatContexts.length > 0) {
                 gatheredFragments.push(
-                  ...(await Promise.all(chatContexts.map(async (child, idx) =>
-                    await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message),
-                  ))),
+                  ...(await Promise.all(
+                    chatContexts.map(
+                      async (child, idx) =>
+                        await vespaResultToMinimalAgentFragment(
+                          child,
+                          idx,
+                          userMetadata,
+                          message,
+                        ),
+                    ),
+                  )),
                 )
               }
               if (threadContexts.length > 0) {
                 gatheredFragments.push(
-                  ...(await Promise.all(threadContexts.map(async (child, idx) =>
-                    await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message),
-                  ))),
+                  ...(await Promise.all(
+                    threadContexts.map(
+                      async (child, idx) =>
+                        await vespaResultToMinimalAgentFragment(
+                          child,
+                          idx,
+                          userMetadata,
+                          message,
+                        ),
+                    ),
+                  )),
                 )
               }
               const parseSynthesisOutput = await performSynthesis(
@@ -2909,9 +2934,17 @@ export const AgentMessageApiRagOff = async (c: Context) => {
             chunksSpan.end()
             if (allChunks?.root?.children) {
               const startIndex = 0
-              fragments = await Promise.all(allChunks.root.children.map(async (child, idx) =>
-                await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message)
-              ))
+              fragments = await Promise.all(
+                allChunks.root.children.map(
+                  async (child, idx) =>
+                    await vespaResultToMinimalAgentFragment(
+                      child,
+                      idx,
+                      userMetadata,
+                      message,
+                    ),
+                ),
+              )
               context = answerContextMapFromFragments(
                 fragments,
                 maxDefaultSummary,
@@ -3179,9 +3212,17 @@ export const AgentMessageApiRagOff = async (c: Context) => {
         if (docIds.length > 0) {
           const allChunks = await GetDocumentsByDocIds(docIds, chunksSpan)
           if (allChunks?.root?.children) {
-            fragments = await Promise.all(allChunks.root.children.map(async (child, idx) =>
-              await vespaResultToMinimalAgentFragment(child, idx, userMetadata, message),
-            ))
+            fragments = await Promise.all(
+              allChunks.root.children.map(
+                async (child, idx) =>
+                  await vespaResultToMinimalAgentFragment(
+                    child,
+                    idx,
+                    userMetadata,
+                    message,
+                  ),
+              ),
+            )
             context = answerContextMapFromFragments(
               fragments,
               maxDefaultSummary,
@@ -4132,7 +4173,7 @@ export const AgentMessageApi = async (c: Context) => {
                 endTime: "",
                 count: 0,
                 sortDirection: "",
-                intent: {},
+                mailParticipants: {},
                 offset: 0,
               }
               let parsed = {
@@ -4142,7 +4183,7 @@ export const AgentMessageApi = async (c: Context) => {
                 temporalDirection: null,
                 filter_query: "",
                 type: "",
-                intent: {},
+                mailParticipants: {},
                 filters: queryFilters,
               }
 
@@ -4291,19 +4332,18 @@ export const AgentMessageApi = async (c: Context) => {
                 parsed.queryRewrite,
               )
               conversationSpan.end()
-              let classification: TemporalClassifier & QueryRouterResponse =
-                  {
-                    direction: parsed.temporalDirection,
-                    type: parsed.type as QueryType,
-                    filterQuery: parsed.filter_query,
-                    isFollowUp: parsed.isFollowUp,
-                    filters: {
-                      ...(parsed?.filters ?? {}),
-                      apps: parsed.filters?.apps || [],
-                      entities: parsed.filters?.entities as any,
-                      intent: parsed.intent || {},
-                    },
-                  }
+              let classification: TemporalClassifier & QueryRouterResponse = {
+                direction: parsed.temporalDirection,
+                type: parsed.type as QueryType,
+                filterQuery: parsed.filter_query,
+                isFollowUp: parsed.isFollowUp,
+                filters: {
+                  ...(parsed?.filters ?? {}),
+                  apps: parsed.filters?.apps || [],
+                  entities: parsed.filters?.entities as any,
+                  mailParticipants: parsed.mailParticipants || {},
+                },
+              }
 
               if (parsed.answer === null || parsed.answer === "") {
                 const ragSpan = streamSpan.startSpan("rag_processing")
@@ -4319,17 +4359,29 @@ export const AgentMessageApi = async (c: Context) => {
                     "There was no need for a query rewrite and there was no answer in the conversation, applying RAG",
                   )
                 }
+                const classification: TemporalClassifier & QueryRouterResponse =
+                  {
+                    direction: parsed.temporalDirection,
+                    type: parsed.type as QueryType,
+                    filterQuery: parsed.filter_query,
+                    filters: {
+                      ...(parsed?.filters ?? {}),
+                      apps: parsed.filters?.apps || [],
+                      entities: parsed.filters?.entities as any,
+                      mailParticipants: parsed.mailParticipants || {},
+                    },
+                  }
 
                 loggerWithChild({ email: email }).info(
                   `Classifying the query as:, ${JSON.stringify(classification)}`,
                 )
-  
+
                 ragSpan.setAttribute(
                   "isFollowUp",
                   classification.isFollowUp ?? false,
                 )
                 const understandSpan = ragSpan.startSpan("understand_message")
-  
+
                 let iterator:
                   | AsyncIterableIterator<
                       ConverseResponse & {
@@ -4338,7 +4390,7 @@ export const AgentMessageApi = async (c: Context) => {
                       }
                     >
                   | undefined = undefined
-  
+
                 if (messages.length < 2) {
                   classification.isFollowUp = false // First message or not enough history to be a follow-up
                 } else if (classification.isFollowUp) {
@@ -4349,29 +4401,34 @@ export const AgentMessageApi = async (c: Context) => {
                   // - All the smart follow-up logic from the LLM
 
                   const filteredMessages = messages
-                    .filter(
-                      (msg) => !msg?.errorMessage,
-                    )
+                    .filter((msg) => !msg?.errorMessage)
                     .filter(
                       (msg) =>
-                        !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                        !(
+                          msg.messageRole === MessageRole.Assistant &&
+                          !msg.message
+                        ),
                     )
-  
+
                   // Check for follow-up context carry-forward
-                  const workingSet = collectFollowupContext(filteredMessages);
-        
+                  const workingSet = collectFollowupContext(filteredMessages)
+
                   const hasCarriedContext =
                     workingSet.fileIds.length > 0 ||
-                    workingSet.attachmentFileIds.length > 0;
+                    workingSet.attachmentFileIds.length > 0
                   if (hasCarriedContext) {
-                    fileIds = workingSet.fileIds;
-                    imageAttachmentFileIds = workingSet.attachmentFileIds;
+                    fileIds = workingSet.fileIds
+                    imageAttachmentFileIds = workingSet.attachmentFileIds
                     loggerWithChild({ email: email }).info(
                       `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
-                    );
+                    )
                   }
-  
-                  if (fileIds && fileIds.length > 0 || imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
+
+                  if (
+                    (fileIds && fileIds.length > 0) ||
+                    (imageAttachmentFileIds &&
+                      imageAttachmentFileIds.length > 0)
+                  ) {
                     loggerWithChild({ email: email }).info(
                       `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
                     )
@@ -4400,8 +4457,8 @@ export const AgentMessageApi = async (c: Context) => {
                 }
 
                 // If no iterator was set above (non-file-context scenario), use the regular flow with the new classification
-                if(!iterator) {
-                    iterator = UnderstandMessageAndAnswer(
+                if (!iterator) {
+                  iterator = UnderstandMessageAndAnswer(
                     email,
                     ctx,
                     userMetadata,

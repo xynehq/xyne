@@ -1,3 +1,59 @@
+## [3.16.2](https://github.com/xynehq/xyne/compare/v3.16.1...v3.16.2) (2025-10-14)
+
+
+### Bug Fixes
+
+* XYNE-89 removed file Upload ui from connectors ([#1104](https://github.com/xynehq/xyne/issues/1104)) ([2952e3c](https://github.com/xynehq/xyne/commit/2952e3c726aeaf8eeb35fc30958086002a3eaf4f))
+
+## [3.16.1](https://github.com/xynehq/xyne/compare/v3.16.0...v3.16.1) (2025-10-14)
+
+
+### Bug Fixes
+
+* **driveItem-select:** fixed googleDriveFolder navigation ([#1059](https://github.com/xynehq/xyne/issues/1059)) ([3d5185a](https://github.com/xynehq/xyne/commit/3d5185a91b2ab93b4b8ef866772e347bfe5943a3))
+
+# [3.16.0](https://github.com/xynehq/xyne/compare/v3.15.0...v3.16.0) (2025-10-14)
+
+
+### Features
+
+* migrate ingestion APIs to sync-server ([#1014](https://github.com/xynehq/xyne/issues/1014)) ([f97ae06](https://github.com/xynehq/xyne/commit/f97ae0660ea14b33d25a7efcb7343a03b3e71e19))
+
+# [3.15.0](https://github.com/xynehq/xyne/compare/v3.14.4...v3.15.0) (2025-10-14)
+
+
+### Features
+
+* XYN-100 adding falback for pdf based changes and storing in db ([#1099](https://github.com/xynehq/xyne/issues/1099)) ([61b5168](https://github.com/xynehq/xyne/commit/61b516824c0b80a081fa7655d242ea451abe6f77))
+
+## [3.14.4](https://github.com/xynehq/xyne/compare/v3.14.3...v3.14.4) (2025-10-14)
+
+
+### Bug Fixes
+
+* **memory:** raise RAM and heap limits for Vespa services ([#1102](https://github.com/xynehq/xyne/issues/1102)) ([d7286f7](https://github.com/xynehq/xyne/commit/d7286f75789ca71527460695c184f01a33546f56))
+
+## [3.14.3](https://github.com/xynehq/xyne/compare/v3.14.2...v3.14.3) (2025-10-14)
+
+
+### Bug Fixes
+
+* XYNE-191 fixed raw view and highlight for sheets ([f9e934a](https://github.com/xynehq/xyne/commit/f9e934a62ae42b8af43fee96555e9d33a9c80b74))
+
+## [3.14.2](https://github.com/xynehq/xyne/compare/v3.14.1...v3.14.2) (2025-10-14)
+
+
+### Bug Fixes
+
+* **tools:** Revamp agentic tools ([#1067](https://github.com/xynehq/xyne/issues/1067)) ([3ac0b9e](https://github.com/xynehq/xyne/commit/3ac0b9e688b48a2934465d7b79ce677299bc53d9))
+
+## [3.14.1](https://github.com/xynehq/xyne/compare/v3.14.0...v3.14.1) (2025-10-14)
+
+
+### Bug Fixes
+
+* **XYNE-176:** fixed ingested users view broken ([#1095](https://github.com/xynehq/xyne/issues/1095)) ([3f492f9](https://github.com/xynehq/xyne/commit/3f492f9f30bc9ad48ae375acbb4a7d1276b38c4e))
+
 # [3.14.0](https://github.com/xynehq/xyne/compare/v3.13.8...v3.14.0) (2025-10-13)
 
 

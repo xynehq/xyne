@@ -110,7 +110,6 @@ interface FetchedDataSource {
   entity: string
 }
 
-
 const CustomBadge: React.FC<CustomBadgeProps> = ({ text, onRemove, icon }) => {
   return (
     <div className="flex items-center justify-center bg-slate-100 dark:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium pl-2 pr-1 py-1 rounded-md border border-slate-200 dark:border-slate-500">
@@ -210,7 +209,9 @@ export interface CollectionItem {
   name?: string
 }
 // Icon components
-export const FileIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+export const FileIcon: React.FC<{ className?: string }> = ({
+  className = "mr-2 text-blue-600",
+}) => (
   <svg
     width="16"
     height="16"
@@ -227,7 +228,9 @@ export const FileIcon: React.FC<{ className?: string }> = ({ className = "mr-2 t
   </svg>
 )
 
-export const FolderIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+export const FolderIcon: React.FC<{ className?: string }> = ({
+  className = "mr-2 text-blue-600",
+}) => (
   <svg
     width="16"
     height="16"
@@ -243,7 +246,9 @@ export const FolderIcon: React.FC<{ className?: string }> = ({ className = "mr-2
   </svg>
 )
 
-export const CollectionIcon: React.FC<{ className?: string }> = ({ className = "mr-2 text-blue-600" }) => (
+export const CollectionIcon: React.FC<{ className?: string }> = ({
+  className = "mr-2 text-blue-600",
+}) => (
   <svg
     width="16"
     height="16"
@@ -329,7 +334,6 @@ function isItemSelectedWithInheritance(
 
   return false
 }
-
 
 function AgentComponent() {
   const { agentId, mode } = Route.useSearch()
@@ -439,7 +443,6 @@ function AgentComponent() {
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
 
-
         setCurrentItems(items)
       }
     } catch (error) {
@@ -469,7 +472,6 @@ function AgentComponent() {
         const data = await response.json()
         // Extract the actual items from the Vespa response structure
         const items = data?.root?.children || []
-
 
         setCurrentItems(items)
       }
@@ -2123,9 +2125,7 @@ function AgentComponent() {
     }
 
     // Handle Google Drive items
-    if (
-      selectedIntegrations["googledrive"]
-    ) {
+    if (selectedIntegrations["googledrive"]) {
       if (selectedItemsInGoogleDrive.size === 0) {
         const googleDriveIntegration = allAvailableIntegrations.find(
           (int) => int.id === "googledrive",
@@ -2136,10 +2136,7 @@ function AgentComponent() {
             type: "integration",
           })
         }
-      }
-      else {
-
-
+      } else {
         // If specific Google Drive items are selected, show individual file/folder pills
         for (const itemId of selectedItemsInGoogleDrive) {
           const item = selectedItemDetailsInGoogleDrive[itemId]
@@ -2730,57 +2727,6 @@ function AgentComponent() {
     if (!container || userHasScrolled) return
     container.scrollTop = container.scrollHeight
   }, [messages, currentResp?.resp])
-
-  // Helper function for Google Drive item selection
-  function handleGoogleDriveItemSelection(
-    itemId: string,
-    itemDetail: any,
-    selectedItemsInGoogleDrive: Set<string>,
-    setSelectedItemsInGoogleDrive: React.Dispatch<
-      React.SetStateAction<Set<string>>
-    >,
-    setSelectedItemDetailsInGoogleDrive: React.Dispatch<
-      React.SetStateAction<Record<string, any>>
-    >,
-    setSelectedIntegrations: React.Dispatch<
-      React.SetStateAction<Record<string, boolean>>
-    >,
-  ) {
-    const isCurrentlySelected = selectedItemsInGoogleDrive.has(itemId)
-
-    setSelectedItemsInGoogleDrive((prev) => {
-      const newSet = new Set(prev)
-      if (isCurrentlySelected) {
-        newSet.delete(itemId)
-      } else {
-        newSet.add(itemId)
-      }
-      return newSet
-    })
-
-    setSelectedItemDetailsInGoogleDrive((prev) => {
-      const newState = { ...prev }
-      if (isCurrentlySelected) {
-        delete newState[itemId]
-      } else {
-        newState[itemId] = itemDetail
-      }
-      return newState
-    })
-
-    setSelectedIntegrations((prev) => {
-      const newSelectedSet = new Set(selectedItemsInGoogleDrive)
-      if (isCurrentlySelected) {
-        newSelectedSet.delete(itemId)
-      } else {
-        newSelectedSet.add(itemId)
-      }
-      return {
-        ...prev,
-        googledrive: newSelectedSet.size > 0,
-      }
-    })
-  }
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-white dark:bg-[#1E1E1E]">
@@ -3429,7 +3375,6 @@ function AgentComponent() {
                                                     const items =
                                                       data?.root?.children || []
 
-
                                                     setCurrentItems(items)
                                                     setIsLoadingItems(false)
                                                   })
@@ -3635,95 +3580,91 @@ function AgentComponent() {
                                     !integration.id.startsWith("cl_"),
                                 )
 
-                              return (
-                                <>
-                                  {collections.length > 0 && (
-                                    <DropdownMenuItem
-                                      onSelect={(e) => {
-                                        e.preventDefault()
-                                        setNavigationPath([
-                                          {
-                                            id: "cl-root",
-                                            name: "Collections",
-                                            type: "cl-root",
-                                          },
-                                        ])
-                                        setDropdownSearchQuery("")
-                                      }}
-                                      className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                    >
-                                      <div className="flex items-center">
-                                        <div className="w-4 h-4 mr-3">  </div>
-                                        <span className="mr-2 flex items-center">
-                                          <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
-                                        </span>
-                                        <span className="text-gray-700 dark:text-gray-200">
-                                          Collections
-                                        </span>
-                                      </div>
-                                      <ChevronRight className="h-4 w-4 text-gray-400" />
-                                    </DropdownMenuItem>
-                                  )}
-
-                                  {otherIntegrations.map((integration) => {
-                                    const isGoogleDrive =
-                                      integration.app === Apps.GoogleDrive &&
-                                      integration.entity === "file"
-                                    const showChevron = isGoogleDrive
-
-
-                                    return (
+                                return (
+                                  <>
+                                    {collections.length > 0 && (
                                       <DropdownMenuItem
-                                        key={integration.id}
                                         onSelect={(e) => {
-
                                           e.preventDefault()
-                                          toggleIntegrationSelection(
-                                            integration.id,
-                                          )
+                                          setNavigationPath([
+                                            {
+                                              id: "cl-root",
+                                              name: "Collections",
+                                              type: "cl-root",
+                                            },
+                                          ])
+                                          setDropdownSearchQuery("")
                                         }}
                                         className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
                                       >
                                         <div className="flex items-center">
-                                          <input
-                                            type="checkbox"
-                                            checked={
-                                              selectedIntegrations[
-                                              integration.id
-                                              ] || false
-                                            }
-                                            onChange={() => { }}
-                                            className="w-4 h-4 mr-3"
-                                          />
+                                          <div className="w-4 h-4 mr-3"> </div>
                                           <span className="mr-2 flex items-center">
-                                            {integration.icon}
+                                            <BookOpen className="w-4 h-4 mr-2 text-blue-600" />
                                           </span>
                                           <span className="text-gray-700 dark:text-gray-200">
-                                            {integration.name}
+                                            Collections
                                           </span>
                                         </div>
-                                        {showChevron && (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              e.preventDefault()
-                                              navigateToGoogleDrive()
-                                            }}
-                                            className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                                          >
-                                            <ChevronRight className="h-4 w-4 text-gray-400" />
-                                          </Button>
-                                        )}
+                                        <ChevronRight className="h-4 w-4 text-gray-400" />
                                       </DropdownMenuItem>
-                                    )
-                                  })}
+                                    )}
 
+                                    {otherIntegrations.map((integration) => {
+                                      const isGoogleDrive =
+                                        integration.app === Apps.GoogleDrive &&
+                                        integration.entity === "file"
+                                      const showChevron = isGoogleDrive
 
-                                </>
-                              )
-                            })()
+                                      return (
+                                        <DropdownMenuItem
+                                          key={integration.id}
+                                          onSelect={(e) => {
+                                            e.preventDefault()
+                                            toggleIntegrationSelection(
+                                              integration.id,
+                                            )
+                                          }}
+                                          className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                        >
+                                          <div className="flex items-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={
+                                                selectedIntegrations[
+                                                  integration.id
+                                                ] || false
+                                              }
+                                              onChange={() => {}}
+                                              className="w-4 h-4 mr-3"
+                                            />
+                                            <span className="mr-2 flex items-center">
+                                              {integration.icon}
+                                            </span>
+                                            <span className="text-gray-700 dark:text-gray-200">
+                                              {integration.name}
+                                            </span>
+                                          </div>
+                                          {showChevron && (
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                e.preventDefault()
+                                                navigateToGoogleDrive()
+                                              }}
+                                              className="p-0 h-auto w-auto hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                                            >
+                                              <ChevronRight className="h-4 w-4 text-gray-400" />
+                                            </Button>
+                                          )}
+                                        </DropdownMenuItem>
+                                      )
+                                    })}
+                                  </>
+                                )
+                              })()
                             : // Unified Collections section - handles both CL listing and file/folder navigation
                             (() => {
                               // const knowledgeBases = allAvailableIntegrations.filter(integration =>
@@ -3785,127 +3726,77 @@ function AgentComponent() {
                                       </div>
                                     )}
 
-                                  {/* Content area - unified global search */}
-                                  {(() => {
-                                    // If there's a search query, always show global search results
-                                    if (dropdownSearchQuery.trim()) {
-                                      return (
-                                        <div className="max-h-60 overflow-y-auto">
-                                          {isSearching ? (
-                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
-                                              Searching...
-                                            </div>
-                                          ) : searchResults.length > 0 ? (
-                                            searchResults.map(
-                                              (result: any) => {
-                                                // Check if we're in Google Drive context for proper handling
-                                                const isInGoogleDriveContext =
-                                                  navigationPath.some(
-                                                    (item) =>
-                                                      item.type ===
-                                                      "drive-root" ||
-                                                      item.type ===
-                                                      "drive-folder",
-                                                  )
+                                    {/* Content area - unified global search */}
+                                    {(() => {
+                                      // If there's a search query, always show global search results
+                                      if (dropdownSearchQuery.trim()) {
+                                        const isInGoogleDriveContext =
+                                          navigationPath.some(
+                                            (item) =>
+                                              item.type === "drive-root" ||
+                                              item.type === "drive-folder",
+                                          )
+                                        return (
+                                          <div className="max-h-60 overflow-y-auto">
+                                            {isSearching ? (
+                                              <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                                Searching...
+                                              </div>
+                                            ) : searchResults.length > 0 ? (
+                                              isInGoogleDriveContext ? (
+                                                <GoogleDriveNavigation
+                                                  navigationPath={
+                                                    navigationPath
+                                                  }
+                                                  setNavigationPath={
+                                                    setNavigationPath
+                                                  }
+                                                  currentItems={currentItems}
+                                                  setCurrentItems={
+                                                    setCurrentItems
+                                                  }
+                                                  isLoadingItems={
+                                                    isLoadingItems
+                                                  }
+                                                  setIsLoadingItems={
+                                                    setIsLoadingItems
+                                                  }
+                                                  dropdownSearchQuery={
+                                                    dropdownSearchQuery
+                                                  }
+                                                  setDropdownSearchQuery={
+                                                    setDropdownSearchQuery
+                                                  }
+                                                  searchResults={searchResults}
+                                                  isSearching={isSearching}
+                                                  selectedItemsInGoogleDrive={
+                                                    selectedItemsInGoogleDrive
+                                                  }
+                                                  setSelectedItemsInGoogleDrive={
+                                                    setSelectedItemsInGoogleDrive
+                                                  }
+                                                  selectedItemDetailsInGoogleDrive={
+                                                    selectedItemDetailsInGoogleDrive
+                                                  }
+                                                  setSelectedItemDetailsInGoogleDrive={
+                                                    setSelectedItemDetailsInGoogleDrive
+                                                  }
+                                                  selectedIntegrations={
+                                                    selectedIntegrations
+                                                  }
+                                                  setSelectedIntegrations={
+                                                    setSelectedIntegrations
+                                                  }
+                                                />
+                                              ) : (
+                                                searchResults.map(
+                                                  (result: any) => {
+                                                    // Check if we're in Google Drive context for proper handling
 
-                                                if (isInGoogleDriveContext) {
-                                                  // Handle Google Drive search results
-                                                  const itemId = result.docId
-                                                  const itemEntity =
-                                                    result.entity
-                                                  const itemTitle =
-                                                    result.title ||
-                                                    result.name ||
-                                                    "Untitled"
-                                                  const isFolder =
-                                                    itemEntity ===
-                                                    DriveEntity.Folder
-
-                                                  const handleFolderNavigation =
-                                                    () => {
-                                                      if (
-                                                        isFolder &&
-                                                        result.fields?.docId
-                                                      ) {
-                                                        // Clear search query and results when navigating
-                                                        setDropdownSearchQuery(
-                                                          "",
-                                                        )
-                                                        setSearchResults([])
-                                                        navigateToDriveFolder(
-                                                          result.fields.docId,
-                                                          itemTitle,
-                                                        )
-                                                      }
-                                                    }
-
-                                                  return (
-                                                    <div
-                                                      key={itemId}
-                                                      className="flex items-center px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
-                                                    >
-                                                      <input
-                                                        type="checkbox"
-                                                        checked={selectedItemsInGoogleDrive.has(
-                                                          itemId,
-                                                        )}
-                                                        onChange={(e) => {
-                                                          e.stopPropagation()
-                                                          // Use helper function
-                                                          handleGoogleDriveItemSelection(
-                                                            itemId,
-                                                            // Normalize the data structure for search results
-                                                            {
-                                                              ...result,
-                                                              fields: {
-                                                                docId:
-                                                                  result.docId ||
-                                                                  itemId,
-                                                                title:
-                                                                  result.title ||
-                                                                  result.name ||
-                                                                  itemTitle,
-                                                                name:
-                                                                  result.name ||
-                                                                  result.title ||
-                                                                  itemTitle,
-                                                                entity:
-                                                                  result.entity ||
-                                                                  itemEntity,
-                                                              },
-                                                            },
-                                                            selectedItemsInGoogleDrive,
-                                                            setSelectedItemsInGoogleDrive,
-                                                            setSelectedItemDetailsInGoogleDrive,
-                                                            setSelectedIntegrations,
-                                                          )
-                                                        }}
-                                                        className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                                      />
-                                                      {getDriveEntityIcon(
-                                                        itemEntity,
-                                                      )}
-                                                      <span
-                                                        className={`text-gray-700 dark:text-gray-200 truncate flex-1 ${isFolder ? "cursor-pointer hover:text-blue-600 dark:hover:text-blue-400" : ""}`}
-                                                        onClick={
-                                                          handleFolderNavigation
-                                                        }
-                                                      >
-                                                        {itemTitle}
-                                                      </span>
-                                                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                                                        {isFolder
-                                                          ? "folder"
-                                                          : itemEntity ||
-                                                          "file"}
-                                                      </span>
-                                                    </div>
-                                                  )
-                                                } else {
-                                                  // Handle regular search results (knowledge-base, etc.)
-                                                  // Check if the item is directly selected vs inherited from parent
-                                                  const isDirectlySelected =
-                                                    result.type ===
+                                                    // Handle regular search results (knowledge-base, etc.)
+                                                    // Check if the item is directly selected vs inherited from parent
+                                                    const isDirectlySelected =
+                                                      result.type ===
                                                       "collection"
                                                       ? selectedIntegrations[
                                                       `cl_${result.id}`
@@ -4039,73 +3930,73 @@ function AgentComponent() {
                                                       setSearchResults([])
                                                     }
 
-                                                  return (
-                                                    <div
-                                                      key={result.id}
-                                                      onClick={
-                                                        isInherited
-                                                          ? undefined
-                                                          : handleResultSelect
-                                                      }
-                                                      className={`flex items-center px-4 py-2 text-sm ${isInherited ? "cursor-default opacity-75" : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"}`}
-                                                    >
-                                                      <input
-                                                        type="checkbox"
-                                                        checked={
-                                                          isSelected || false
+                                                    return (
+                                                      <div
+                                                        key={result.id}
+                                                        onClick={
+                                                          isInherited
+                                                            ? undefined
+                                                            : handleResultSelect
                                                         }
-                                                        disabled={isInherited}
-                                                        onChange={() => { }}
-                                                        className={`w-4 h-4 mr-3 ${isInherited ? "opacity-60" : ""}`}
-                                                      />
-                                                      <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center">
-                                                          <span className="text-gray-700 dark:text-gray-200 truncate">
-                                                            {result.name}
-                                                          </span>
-                                                          <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
-                                                            {result.type}
-                                                          </span>
-                                                          {isInherited && (
-                                                            <span className="text-xs text-blue-600 dark:text-blue-400 ml-2 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded">
-                                                              Selected
+                                                        className={`flex items-center px-4 py-2 text-sm ${isInherited ? "cursor-default opacity-75" : "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"}`}
+                                                      >
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={
+                                                            isSelected || false
+                                                          }
+                                                          disabled={isInherited}
+                                                          onChange={() => {}}
+                                                          className={`w-4 h-4 mr-3 ${isInherited ? "opacity-60" : ""}`}
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                          <div className="flex items-center">
+                                                            <span className="text-gray-700 dark:text-gray-200 truncate">
+                                                              {result.name}
                                                             </span>
-                                                          )}
-                                                        </div>
-                                                        {result.collectionName &&
-                                                          result.type !==
-                                                          "collection" && (
+                                                            <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+                                                              {result.type}
+                                                            </span>
+                                                            {isInherited && (
+                                                              <span className="text-xs text-blue-600 dark:text-blue-400 ml-2 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded">
+                                                                Selected
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                          {result.collectionName &&
+                                                            result.type !==
+                                                              "collection" && (
+                                                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                                                                in{" "}
+                                                                {
+                                                                  result.collectionName
+                                                                }
+                                                                {result.path &&
+                                                                  ` / ${result.path}`}
+                                                              </div>
+                                                            )}
+                                                          {result.description && (
                                                             <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-                                                              in{" "}
                                                               {
-                                                                result.collectionName
+                                                                result.description
                                                               }
-                                                              {result.path &&
-                                                                ` / ${result.path}`}
                                                             </div>
                                                           )}
-                                                        {result.description && (
-                                                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-                                                            {
-                                                              result.description
-                                                            }
-                                                          </div>
-                                                        )}
+                                                        </div>
                                                       </div>
-                                                    </div>
-                                                  )
-                                                }
-                                              },
-                                            )
-                                          ) : (
-                                            <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
-                                              No results found for "
-                                              {dropdownSearchQuery}"
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    }
+                                                    )
+                                                  },
+                                                )
+                                              )
+                                            ) : (
+                                              <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
+                                                No results found for "
+                                                {dropdownSearchQuery}"
+                                              </div>
+                                            )}
+                                          </div>
+                                        )
+                                      }
 
                                     // If no search query, show navigation-based content
                                     if (navigationPath.length === 0) {
@@ -4225,39 +4116,52 @@ function AgentComponent() {
                                             "",
                                           )
 
-                                          return (
-                                            <DropdownMenuItem
-                                              key={integration.id}
-                                              onSelect={(e) => {
-                                                e.preventDefault()
-                                                // Don't navigate when clicking the checkbox area
-                                              }}
-                                              className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
-                                            >
-                                              <div className="flex items-center flex-1">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={
-                                                    !!selectedIntegrations[
-                                                    integration.id
-                                                    ]
-                                                  }
-                                                  onChange={(e) => {
-                                                    e.stopPropagation()
-                                                    toggleIntegrationSelection(
-                                                      integration.id,
-                                                    )
-                                                  }}
-                                                  className="w-4 h-4 mr-3"
-                                                  onClick={(e) =>
-                                                    e.stopPropagation()
-                                                  }
-                                                />
-                                                <span className="mr-2 flex items-center">
-                                                  {integration.icon}
-                                                </span>
-                                                <span
-                                                  className="text-gray-700 dark:text-gray-200 cursor-pointer"
+                                            return (
+                                              <DropdownMenuItem
+                                                key={integration.id}
+                                                onSelect={(e) => {
+                                                  e.preventDefault()
+                                                  // Don't navigate when clicking the checkbox area
+                                                }}
+                                                className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                                              >
+                                                <div className="flex items-center flex-1">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={
+                                                      !!selectedIntegrations[
+                                                        integration.id
+                                                      ]
+                                                    }
+                                                    onChange={(e) => {
+                                                      e.stopPropagation()
+                                                      toggleIntegrationSelection(
+                                                        integration.id,
+                                                      )
+                                                    }}
+                                                    className="w-4 h-4 mr-3"
+                                                    onClick={(e) =>
+                                                      e.stopPropagation()
+                                                    }
+                                                  />
+                                                  <span className="mr-2 flex items-center">
+                                                    {integration.icon}
+                                                  </span>
+                                                  <span
+                                                    className="text-gray-700 dark:text-gray-200 cursor-pointer"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      navigateToCl(
+                                                        clId,
+                                                        integration.name,
+                                                      )
+                                                    }}
+                                                  >
+                                                    {integration.name}
+                                                  </span>
+                                                </div>
+                                                <ChevronRight
+                                                  className="h-4 w-4 text-gray-400 cursor-pointer"
                                                   onClick={(e) => {
                                                     e.stopPropagation()
                                                     navigateToCl(
@@ -4265,120 +4169,109 @@ function AgentComponent() {
                                                       integration.name,
                                                     )
                                                   }}
-                                                >
-                                                  {integration.name}
-                                                </span>
-                                              </div>
-                                              <ChevronRight
-                                                className="h-4 w-4 text-gray-400 cursor-pointer"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  navigateToCl(
-                                                    clId,
-                                                    integration.name,
-                                                  )
-                                                }}
-                                              />
-                                            </DropdownMenuItem>
-                                          )
-                                        },
-                                      )
-                                    } else if (
-                                      navigationPath.some(
-                                        (item) =>
-                                          item.type === "drive-root" ||
-                                          item.type === "drive-folder",
-                                      )
-                                    ) {
-                                      // Show Google Drive contents (files/folders)
-                                      return (
-                                        <GoogleDriveNavigation
-                                          navigationPath={navigationPath}
-                                          setNavigationPath={
-                                            setNavigationPath
-                                          }
-                                          currentItems={currentItems}
-                                          setCurrentItems={setCurrentItems}
-                                          isLoadingItems={isLoadingItems}
-                                          setIsLoadingItems={
-                                            setIsLoadingItems
-                                          }
-                                          dropdownSearchQuery={
-                                            dropdownSearchQuery
-                                          }
-                                          setDropdownSearchQuery={
-                                            setDropdownSearchQuery
-                                          }
-                                          searchResults={searchResults}
-                                          isSearching={isSearching}
-                                          selectedItemsInGoogleDrive={
-                                            selectedItemsInGoogleDrive
-                                          }
-                                          setSelectedItemsInGoogleDrive={
-                                            setSelectedItemsInGoogleDrive
-                                          }
-                                          selectedItemDetailsInGoogleDrive={
-                                            selectedItemDetailsInGoogleDrive
-                                          }
-                                          setSelectedItemDetailsInGoogleDrive={
-                                            setSelectedItemDetailsInGoogleDrive
-                                          }
-                                          setSelectedIntegrations={
-                                            setSelectedIntegrations
-                                          }
-                                          selectedIntegrations={selectedIntegrations}
-                                        />
-                                      )
-                                    } else {
-                                      // Show Collection contents (files/folders)
-                                      return (
-                                        <CollectionNavigation
-                                          navigationPath={navigationPath}
-                                          setNavigationPath={
-                                            setNavigationPath
-                                          }
-                                          currentItems={currentItems}
-                                          setCurrentItems={setCurrentItems}
-                                          isLoadingItems={isLoadingItems}
-                                          setIsLoadingItems={
-                                            setIsLoadingItems
-                                          }
-                                          dropdownSearchQuery={
-                                            dropdownSearchQuery
-                                          }
-                                          setDropdownSearchQuery={
-                                            setDropdownSearchQuery
-                                          }
-                                          searchResults={searchResults}
-                                          isSearching={isSearching}
-                                          selectedIntegrations={
-                                            selectedIntegrations
-                                          }
-                                          setSelectedIntegrations={
-                                            setSelectedIntegrations
-                                          }
-                                          selectedItemsInCollection={
-                                            selectedItemsInCollection
-                                          }
-                                          setSelectedItemsInCollection={
-                                            setSelectedItemsInCollection
-                                          }
-                                          selectedItemDetailsInCollection={
-                                            selectedItemDetailsInCollection
-                                          }
-                                          setSelectedItemDetailsInCollection={
-                                            setSelectedItemDetailsInCollection
-                                          }
-                                          allAvailableIntegrations={
-                                            allAvailableIntegrations
-                                          }
-                                          toggleIntegrationSelection={
-                                            toggleIntegrationSelection
-                                          }
-                                          navigateToCl={navigateToCl}
-                                        />
-                                      )
-                                    }
+                                                />
+                                              </DropdownMenuItem>
+                                            )
+                                          },
+                                        )
+                                      } else if (
+                                        navigationPath.some(
+                                          (item) =>
+                                            item.type === "drive-root" ||
+                                            item.type === "drive-folder",
+                                        )
+                                      ) {
+                                        // Show Google Drive contents (files/folders)
+                                        return (
+                                          <GoogleDriveNavigation
+                                            navigationPath={navigationPath}
+                                            setNavigationPath={
+                                              setNavigationPath
+                                            }
+                                            currentItems={currentItems}
+                                            setCurrentItems={setCurrentItems}
+                                            isLoadingItems={isLoadingItems}
+                                            setIsLoadingItems={
+                                              setIsLoadingItems
+                                            }
+                                            dropdownSearchQuery={
+                                              dropdownSearchQuery
+                                            }
+                                            setDropdownSearchQuery={
+                                              setDropdownSearchQuery
+                                            }
+                                            searchResults={searchResults}
+                                            isSearching={isSearching}
+                                            selectedItemsInGoogleDrive={
+                                              selectedItemsInGoogleDrive
+                                            }
+                                            setSelectedItemsInGoogleDrive={
+                                              setSelectedItemsInGoogleDrive
+                                            }
+                                            selectedItemDetailsInGoogleDrive={
+                                              selectedItemDetailsInGoogleDrive
+                                            }
+                                            setSelectedItemDetailsInGoogleDrive={
+                                              setSelectedItemDetailsInGoogleDrive
+                                            }
+                                            setSelectedIntegrations={
+                                              setSelectedIntegrations
+                                            }
+                                            selectedIntegrations={
+                                              selectedIntegrations
+                                            }
+                                          />
+                                        )
+                                      } else {
+                                        // Show Collection contents (files/folders)
+                                        return (
+                                          <CollectionNavigation
+                                            navigationPath={navigationPath}
+                                            setNavigationPath={
+                                              setNavigationPath
+                                            }
+                                            currentItems={currentItems}
+                                            setCurrentItems={setCurrentItems}
+                                            isLoadingItems={isLoadingItems}
+                                            setIsLoadingItems={
+                                              setIsLoadingItems
+                                            }
+                                            dropdownSearchQuery={
+                                              dropdownSearchQuery
+                                            }
+                                            setDropdownSearchQuery={
+                                              setDropdownSearchQuery
+                                            }
+                                            searchResults={searchResults}
+                                            isSearching={isSearching}
+                                            selectedIntegrations={
+                                              selectedIntegrations
+                                            }
+                                            setSelectedIntegrations={
+                                              setSelectedIntegrations
+                                            }
+                                            selectedItemsInCollection={
+                                              selectedItemsInCollection
+                                            }
+                                            setSelectedItemsInCollection={
+                                              setSelectedItemsInCollection
+                                            }
+                                            selectedItemDetailsInCollection={
+                                              selectedItemDetailsInCollection
+                                            }
+                                            setSelectedItemDetailsInCollection={
+                                              setSelectedItemDetailsInCollection
+                                            }
+                                            allAvailableIntegrations={
+                                              allAvailableIntegrations
+                                            }
+                                            toggleIntegrationSelection={
+                                              toggleIntegrationSelection
+                                            }
+                                            navigateToCl={navigateToCl}
+                                          />
+                                        )
+                                      }
 
                                     return null
                                   })()}

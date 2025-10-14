@@ -41,6 +41,19 @@ export function expandSheetIds(fileId: string): string[] {
   return expandedIds
 }
 
+export function replaceSheetIndex(vespaDocId: string, newSheetIndex: number): string {
+  // Check if the vespaDocId matches the pattern docId_sheet_number
+  const sheetMatch = vespaDocId.match(/^(.+)_sheet_(\d+)$/)
+  
+  if (!sheetMatch) {
+    // Not a sheet ID, return as is
+    return vespaDocId
+  }
+  
+  const [, docId] = sheetMatch
+  return `${docId}_sheet_${newSheetIndex}`
+}
+
 export function removePrefixesFromItemIds(itemIds: string[]): string[] {
   return itemIds.map((itemId) => {
     // Remove prefixes: clfd-, clf-, cl-
