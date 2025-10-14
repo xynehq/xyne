@@ -1,3 +1,10 @@
+## [3.14.4](https://github.com/xynehq/xyne/compare/v3.14.3...v3.14.4) (2025-10-14)
+
+
+### Bug Fixes
+
+* **memory:** raise RAM and heap limits for Vespa services ([#1102](https://github.com/xynehq/xyne/issues/1102)) ([d7286f7](https://github.com/xynehq/xyne/commit/d7286f75789ca71527460695c184f01a33546f56))
+
 ## [3.14.3](https://github.com/xynehq/xyne/compare/v3.14.2...v3.14.3) (2025-10-14)
 
 
