@@ -5,20 +5,20 @@ export interface DocumentOperations {
   highlightText?: (text: string, chunkIndex: number, pageIndex?: number) => Promise<boolean>
   clearHighlights?: () => void
   scrollToMatch?: (index: number) => boolean
-  goToPage?: (pageIndex?: number) => Promise<void>
+  goToPage?: (pageIndex: number) => Promise<void>
 }
 
 // Create the context
 const DocumentOperationsContext = createContext<{
   documentOperationsRef: React.RefObject<DocumentOperations>
-  setGoToPage: (fn: (() => Promise<void>) | null) => void
+  setGoToPage: (fn: ((pageIndex: number) => Promise<void>) | null) => void
 } | null>(null)
 
 // Provider component
 export const DocumentOperationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const documentOperationsRef = useRef<DocumentOperations>({} as DocumentOperations)
 
-  const setGoToPageFn = React.useCallback((fn: (() => Promise<void>) | null) => {
+  const setGoToPageFn = React.useCallback((fn: ((pageIndex: number) => Promise<void>) | null) => {
     if (documentOperationsRef.current) {
       documentOperationsRef.current.goToPage = fn || undefined
     }
@@ -68,7 +68,7 @@ export const withDocumentOperations = <P extends object>(
         }
         return false
       },
-      goToPage: async (pageIndex?: number) => {
+      goToPage: async (pageIndex: number) => {
         if (documentOperationsRef.current?.goToPage) {
           await documentOperationsRef.current.goToPage(pageIndex)
         }

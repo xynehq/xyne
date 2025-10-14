@@ -58,7 +58,9 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOp
     if (documentOperationsRef?.current) {
       documentOperationsRef.current.goToPage = async (sheetIndex?: number) => {
         if (sheetIndex !== undefined) {
-          setActiveSheet(sheetIndex)
+          if (sheetIndex >= 0 && sheetIndex < sheets.length) {
+            setActiveSheet(sheetIndex)
+          }
         }
       }
     }

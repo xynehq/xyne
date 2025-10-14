@@ -1407,9 +1407,10 @@ function KnowledgeManagementContent() {
   // Reset chat state when document changes
   useEffect(() => {
     if (selectedDocument && selectedDocument.file.id) {
+      setCurrentSheetIndex(0)
       loadChatForDocument(selectedDocument.file.id)
     }
-  }, [selectedDocument?.file.id, loadChatForDocument])
+  }, [selectedDocument?.file.id, loadChatForDocument, setCurrentSheetIndex])
 
   const handleBackToCollections = () => {
     setSelectedDocument(null)

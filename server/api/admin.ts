@@ -2121,7 +2121,13 @@ export const GetKbVespaContent = async (c: Context) => {
       })
     }
 
-    const vespaDocId = replaceSheetIndex(collectionFile[0].vespaDocId!, sheetIndex ?? 0)
+    const rawVespaDocId = collectionFile[0].vespaDocId
+    if (!rawVespaDocId) {
+      throw new HTTPException(500, {
+        message: "Document Vespa ID is missing in the system.",
+      })
+    }
+    const vespaDocId = replaceSheetIndex(rawVespaDocId, sheetIndex ?? 0)
     // console.log("Fetched Vespa Doc ID:", vespaDocId)
     const schema = rawSchema as VespaSchema
 
