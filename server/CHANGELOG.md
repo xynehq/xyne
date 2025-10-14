@@ -1,3 +1,10 @@
+# [3.16.0](https://github.com/xynehq/xyne/compare/v3.15.0...v3.16.0) (2025-10-14)
+
+
+### Features
+
+* migrate ingestion APIs to sync-server ([#1014](https://github.com/xynehq/xyne/issues/1014)) ([f97ae06](https://github.com/xynehq/xyne/commit/f97ae0660ea14b33d25a7efcb7343a03b3e71e19))
+
 # [3.15.0](https://github.com/xynehq/xyne/compare/v3.14.4...v3.15.0) (2025-10-14)
 
 
