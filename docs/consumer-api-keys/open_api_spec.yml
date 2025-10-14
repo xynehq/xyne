@@ -506,7 +506,7 @@ components:
         details:
           type: object
           additionalProperties: true
-      additionalProperties: true    
+      additionalProperties: true
 
     OkResponse:
       type: object
@@ -594,7 +594,7 @@ components:
           minLength: 1
         isPublic:
           type: boolean
-        additionalProperties: true
+      additionalProperties: true
     
     Agent:
       type: object
@@ -616,7 +616,7 @@ components:
         createdAt:
           type: string
           format: date-time
-        additionalProperties: true  
+      additionalProperties: true
 
     AgentChatMessage:
       type: object
@@ -649,7 +649,7 @@ components:
 
     AgentChatResponse:
       type: object
-      description:
+      description: |-
         Response from agent chat. Can be streaming (SSE) or non-streaming JSON.
         For streaming: Server-Sent Events with events like 'response-update', 'citations-update', 'end', 'error'
         For non-streaming: Complete JSON response with chat data
@@ -763,7 +763,7 @@ components:
         createdAt:
           type: string
           format: date-time
-        additionalProperties: true
+      additionalProperties: true
 
     SearchResults:
       type: object
@@ -794,8 +794,7 @@ components:
                 type: string
                 description: Parent collection name (folders/files only)
               parentId:
-                type: string
-                nullable: true
+                type: ["string", "null"]
                 description: Parent folder ID (folders/files only)
               path:
                 type: string
@@ -873,8 +872,7 @@ components:
                 type: string
                 description: Original name of the file (if renamed)
               parentId:
-                type: string
-                nullable: true
+                type: ["string", "null"]
                 description: ID of the parent folder
               message:
                 type: string
