@@ -472,7 +472,6 @@ function UsersListPage({
               ),
             })),
         )
-        // console.log(ingestedUsers)
       } else {
         setIngestedUsers([])
       }
@@ -1553,7 +1552,7 @@ function UsersListPage({
                     <div>
                       <div className="font-medium text-gray-900 dark:text-gray-100">
                         {userToConfirmRoleChange?.user?.name ||
-                          userToConfirmRoleChange?.user?.email}
+                          userToConfirmRoleChange?.user.email}
                       </div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">
                         {userToConfirmRoleChange?.user?.email}
