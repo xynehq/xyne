@@ -31,10 +31,10 @@ export function expandSheetIds(fileId: string): string[] {
 
   const [, docId, sheetNumberStr] = sheetMatch
   const sheetNumber = parseInt(sheetNumberStr, 10)
-  // Generate IDs from docId_sheet_1 to docId_sheet_number (1-based indexing)
+  // Generate IDs from docId_sheet_0 to docId_sheet_number
   const expandedIds: string[] = []
   const upper = Number.isFinite(sheetNumber) ? sheetNumber : 1
-  for (let i = 1; i <= upper; i++) {
+  for (let i = 0; i < upper; i++) {
     expandedIds.push(`${docId}_sheet_${i}`)
   }
 

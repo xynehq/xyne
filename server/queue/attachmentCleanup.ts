@@ -1,11 +1,14 @@
 import { db } from "@/db/client"
-import { chats, messages } from "@/db/schema"
-import { lt, eq, and, isNull } from "drizzle-orm"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { attachmentMetadataSchema } from "@/shared/types"
 import { handleAttachmentDelete } from "@/api/files"
 import { z } from "zod"
+import { getInactiveChats } from "@/db/chat"
+import {
+  getMessagesWithAttachmentsByChatId,
+  updateMessageAttachmentsAndSources,
+} from "@/db/message"
 
 const Logger = getLogger(Subsystem.Queue).child({
   module: "attachment-cleanup",
@@ -46,22 +49,12 @@ export const handleAttachmentCleanup = async () => {
 
     while (hasMoreChats) {
       // Fetch batch of inactive chats
-      const inactiveChats = await db
-        .select({
-          id: chats.id,
-          externalId: chats.externalId,
-          email: chats.email,
-          updatedAt: chats.updatedAt,
-        })
-        .from(chats)
-        .where(
-          and(
-            lt(chats.updatedAt, fifteenDaysAgo),
-            isNull(chats.deletedAt), // Only consider non-deleted chats
-          ),
-        )
-        .limit(CHAT_BATCH_SIZE)
-        .offset(chatOffset)
+      const inactiveChats = await getInactiveChats(
+        db,
+        fifteenDaysAgo,
+        CHAT_BATCH_SIZE,
+        chatOffset,
+      )
 
       if (inactiveChats.length === 0) {
         hasMoreChats = false
@@ -83,23 +76,12 @@ export const handleAttachmentCleanup = async () => {
         let hasMoreMessages = true
 
         while (hasMoreMessages) {
-          const chatMessages = await db
-            .select({
-              id: messages.id,
-              externalId: messages.externalId,
-              attachments: messages.attachments,
-              sources: messages.sources,
-              email: messages.email,
-            })
-            .from(messages)
-            .where(
-              and(
-                eq(messages.chatExternalId, chat.externalId),
-                isNull(messages.deletedAt),
-              ),
-            )
-            .limit(MESSAGE_BATCH_SIZE)
-            .offset(messageOffset)
+          const chatMessages = await getMessagesWithAttachmentsByChatId(
+            db,
+            chat.externalId,
+            MESSAGE_BATCH_SIZE,
+            messageOffset,
+          )
 
           if (chatMessages.length === 0) {
             hasMoreMessages = false
@@ -167,19 +149,12 @@ export const handleAttachmentCleanup = async () => {
                 })
 
                 // Clear attachment metadata and update sources in Postgres
-                await trx
-                  .update(messages)
-                  .set({
-                    attachments: [],
-                    sources: updatedSources,
-                    updatedAt: new Date(),
-                  })
-                  .where(
-                    and(
-                      eq(messages.externalId, message.externalId),
-                      eq(messages.email, message.email),
-                    ),
-                  )
+                await updateMessageAttachmentsAndSources(
+                  trx,
+                  message.externalId,
+                  message.email,
+                  updatedSources,
+                )
 
                 Logger.debug(
                   `Cleared attachment metadata and removed ${fileIdsToRemove.size} fileIds from sources for message ${message.externalId}`,
