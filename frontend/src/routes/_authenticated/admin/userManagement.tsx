@@ -1141,7 +1141,7 @@ function UsersListPage({
                                       />
                                       <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">
                                         {user.name?.[0]?.toUpperCase() ||
-                                          user.email?.[0]?.toUpperCase()}
+                                          user.email[0].toUpperCase()}
                                       </AvatarFallback>
                                     </Avatar>
                                     <div className="min-w-0 flex-1">
@@ -1398,7 +1398,7 @@ function UsersListPage({
                                 <div className="flex items-center space-x-3">
                                   <Avatar className="h-10 w-10">
                                     <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium">
-                                      {user?.email?.[0]?.toUpperCase()}
+                                      {user?.email[0]?.toUpperCase()}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div className="min-w-0 flex-1">
@@ -1546,7 +1546,7 @@ function UsersListPage({
                       />
                       <AvatarFallback className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
                         {userToConfirmRoleChange.user.name?.[0]?.toUpperCase() ||
-                          userToConfirmRoleChange.user.email?.[0]?.toUpperCase()}
+                          userToConfirmRoleChange.user.email[0].toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div>
@@ -1555,7 +1555,7 @@ function UsersListPage({
                           userToConfirmRoleChange?.user.email}
                       </div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {userToConfirmRoleChange?.user?.email}
+                        {userToConfirmRoleChange?.user.email}
                       </div>
                     </div>
                   </div>
@@ -1641,15 +1641,15 @@ function UsersListPage({
                       />
                       <AvatarFallback className="text-lg bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">
                         {selectedUser.name?.[0]?.toUpperCase() ||
-                          selectedUser.email?.[0]?.toUpperCase()}
+                          selectedUser.email[0].toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                        {selectedUser?.name || selectedUser?.email}
+                        {selectedUser?.name || selectedUser.email}
                       </h3>
                       <p className="text-gray-500 dark:text-gray-400">
-                        {selectedUser?.email}
+                        {selectedUser.email}
                       </p>
                       <Badge
                         variant={getRoleBadgeVariant(selectedUser?.role)}
