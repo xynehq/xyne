@@ -260,6 +260,7 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
           chunksCount: processingResult.chunks.length,
           imageChunksCount: processingResult.image_chunks.length,
           processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
+          ...(processingResult.processingMethod && { pdfProcessingMethod: processingResult.processingMethod }),
           lastModified: Date.now(),
           ...(('sheetName' in processingResult) && {
             sheetName: (processingResult as SheetProcessingResult).sheetName,
@@ -275,52 +276,22 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         updatedAt: Date.now(),
         clFd: file.parentId,
       }
-    const vespaDoc = {
-      docId: file.vespaDocId,
-      clId: file.collectionId,
-      itemId: file.id,
-      fileName: vespaFileName,
-      app: Apps.KnowledgeBase as const,
-      entity: KnowledgeBaseEntity.File,
-      description: "",
-      storagePath: file.storagePath,
-      chunks: processingResult.chunks,
-      chunks_pos: processingResult.chunks_pos,
-      image_chunks: processingResult.image_chunks,
-      image_chunks_pos: processingResult.image_chunks_pos,
-      chunks_map: processingResult.chunks_map,
-      image_chunks_map: processingResult.image_chunks_map,
-      metadata: JSON.stringify({
-        originalFileName: file.originalName || file.fileName,
-        uploadedBy: file.uploadedByEmail || "system",
-        chunksCount: processingResult.chunks.length,
-        imageChunksCount: processingResult.image_chunks.length,
-        processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
-        pdfProcessingMethod: processingResult.processingMethod,
-        lastModified: Date.now(),
-      }),
-      createdBy: file.uploadedByEmail || "system",
-      duration: 0,
-      mimeType: getBaseMimeType(file.mimeType || "text/plain"),
-      fileSize: file.fileSize || 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      clFd: file.parentId,
+
+      // Insert into Vespa
+      await insert(vespaDoc, KbItemsSchema)
+
+      totalChunksCount += processingResult.chunks.length + processingResult.image_chunks.length
     }
 
-    // Insert into Vespa
-    await insert(vespaDoc, KbItemsSchema)
-
     // Update status to completed with processing method metadata
-    const chunksCount =
-      processingResult.chunks.length + processingResult.image_chunks.length
+    const chunksCount = totalChunksCount
     
-    // Prepare metadata for database record
+    // Prepare metadata for database record - use last processing result for method info
+    const lastResult = processingResults[processingResults.length - 1]
     const dbMetadata = {
       chunksCount,
-      imageChunksCount: processingResult.image_chunks.length,
-      ...(processingResult.processingMethod && { pdfProcessingMethod: processingResult.processingMethod }),
-      lastModified: Date.now(),
+      imageChunksCount: processingResults.reduce((sum, r) => sum + r.image_chunks.length, 0),
+      ...(lastResult.processingMethod && { pdfProcessingMethod: lastResult.processingMethod }),
     }
 
     await db

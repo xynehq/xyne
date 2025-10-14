@@ -69,13 +69,15 @@ export class FileProcessorService {
       if (baseMimeType === "application/pdf") {
         // Use the modular PDF processor with fallback logic
         // It returns a complete result, no need to finalize again
-        return await PdfProcessor.processWithFallback(
+        const pdfResult = await PdfProcessor.processWithFallback(
           buffer,
           fileName,
           vespaDocId,
           extractImages,
           describeImages,
         )
+        // Wrap in array to match return type
+        return [pdfResult]
       } else if (isDocxFile(baseMimeType)) {
         // Process DOCX
         const result = await extractTextAndImagesWithChunksFromDocx(
@@ -198,13 +200,14 @@ export class FileProcessorService {
       block_labels: ["image"], // Default block label
     }));
 
-    return {
+    // Wrap in array to match return type
+    return [{
       chunks,
       chunks_pos,
       image_chunks,
       image_chunks_pos,
       chunks_map: [],
       image_chunks_map: [],
-    }
+    }]
   }
 }
