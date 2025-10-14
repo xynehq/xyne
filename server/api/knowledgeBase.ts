@@ -1805,18 +1805,22 @@ export const GetChunkContentApi = async (c: Context) => {
 
     // Get the chunk content from Vespa response
     const chunkContent = resp.fields.chunks[index]
-    let pageIndex: number
-    
+    let pageIndex: number | undefined
+
     const isSheetFile = getFileType({ type: resp.fields.mimeType || "", name: resp.fields.fileName || "" }) === FileType.SPREADSHEET
     if (isSheetFile) {
-      const sheetIndexMatch = docId.match(/_(\d+)$/)
+      const sheetIndexMatch = docId.match(/_sheet_(\d+)$/)
       if (sheetIndexMatch) {
         pageIndex = parseInt(sheetIndexMatch[1], 10)
       } else {
         pageIndex = 0
       }
     } else {
-      pageIndex = resp.fields.chunks_map[index].page_numbers[0]
+      const pageNums = resp.fields.chunks_map?.[index]?.page_numbers
+      pageIndex =
+        Array.isArray(pageNums) && typeof pageNums[0] === "number"
+          ? pageNums[0]
+          : 0
     }
     
     if (!chunkContent) {

@@ -71,7 +71,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOp
         documentOperationsRef.current.goToPage = undefined
       }
     }
-  }, [documentOperationsRef, setActiveSheet])
+  }, [documentOperationsRef, setActiveSheet, sheets])
 
   // Notify parent component when sheet changes
   useEffect(() => {
