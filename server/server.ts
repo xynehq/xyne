@@ -1544,8 +1544,6 @@ app.get(
     redirect_uri: redirectURI,
   }),
   async (c: Context) => {
-    const token = c.get("token")
-    const grantedScopes = c.get("granted-scopes")
     const user = c.get("user-google")
 
     const email = user?.email
@@ -1861,6 +1859,11 @@ const metricServer = Bun.serve({
 })
 
 Logger.info(`listening on port: ${config.port}`)
+Logger.info(`metrics server started on port: ${config.metricsPort}`)
+
+// Keep references to servers for potential future use
+void server
+void metricServer
 
 const errorEvents: string[] = [
   `uncaughtException`,
