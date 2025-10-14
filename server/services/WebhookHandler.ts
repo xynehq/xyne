@@ -15,12 +15,14 @@ import { Subsystem } from "@/types"
 const Logger = getLogger(Subsystem.WorkflowApi)
 
 // Dynamic webhook registry - loads from database
-const webhookRegistry = new Map<string, {
+interface WebhookRegistryEntry {
   workflowTemplateId: string
   toolId: string
-  config: any
-  value: any
-}>()
+  config: Record<string, unknown>
+  value: Record<string, unknown>
+}
+
+const webhookRegistry = new Map<string, WebhookRegistryEntry>()
 
 export class WebhookHandler {
   private static instance: WebhookHandler
@@ -50,13 +52,19 @@ export class WebhookHandler {
       
       for (const tool of webhookTools) {
         try {
-          const config = tool.config as any
-          const value = tool.value as any
+          const config = tool.config as Record<string, unknown>
+          const value = tool.value as Record<string, unknown>
           
           // Get path from either config or value
           const webhookPath = config?.path || value?.path
           
-          if (webhookPath) {
+          if (webhookPath && typeof webhookPath === 'string') {
+            // Validate webhook path format
+            if (!this.isValidWebhookPath(webhookPath)) {
+              Logger.warn(`Invalid webhook path format: ${webhookPath}`)
+              continue
+            }
+            
             const cleanPath = webhookPath.startsWith('/') ? webhookPath : `/${webhookPath}`
             
             webhookRegistry.set(cleanPath, {
@@ -82,9 +90,16 @@ export class WebhookHandler {
   // Execute workflow from webhook trigger
   async executeWorkflowFromWebhook(
     templateId: string,
-    webhookData: any,
-    webhookConfig: any
+    webhookData: Record<string, unknown>,
+    webhookConfig: Record<string, unknown>
   ): Promise<string> {
+    // Validate required parameters
+    if (!templateId || typeof templateId !== 'string') {
+      throw new Error('Invalid templateId provided')
+    }
+    if (!webhookData || typeof webhookData !== 'object') {
+      throw new Error('Invalid webhookData provided')
+    }
     try {
       Logger.info(`🚀 Starting workflow execution for template: ${templateId}`)
       
@@ -164,7 +179,7 @@ export class WebhookHandler {
   async startWorkflowExecution(
     executionId: string,
     rootStepId: string,
-    webhookData: any
+    webhookData: Record<string, unknown>
   ) {
     try {
       Logger.info(`🔄 Starting async execution for: ${executionId}`)
@@ -173,7 +188,7 @@ export class WebhookHandler {
       const tools = await db.select().from(workflowTool)
       
       // Execute the workflow chain starting from root step
-      const executionResults = await this.executeWorkflowChain(
+      await this.executeWorkflowChain(
         executionId,
         rootStepId,
         tools,
@@ -207,11 +222,11 @@ export class WebhookHandler {
 
   // Import the execution chain function from workflow API (simplified version for webhooks)
   async executeWorkflowChain(
-    executionId: string,
+    _executionId: string,
     currentStepId: string,
-    tools: any[],
-    previousResults: any,
-  ): Promise<any> {
+    _tools: Record<string, unknown>[],
+    previousResults: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     try {
       Logger.info(`🔗 Executing workflow chain step: ${currentStepId}`)
       
@@ -285,6 +300,18 @@ export class WebhookHandler {
   async handleWebhookRequest(c: Context): Promise<Response> {
     const path = c.req.path.replace("/webhook", "")
     
+    // Sanitize and validate webhook path
+    if (!path || path.length === 0) {
+      Logger.warn('Empty webhook path provided')
+      return c.json({ error: 'Invalid webhook path' }, 400)
+    }
+    
+    // Prevent path traversal attacks
+    if (path.includes('..') || path.includes('//')) {
+      Logger.warn(`Potential path traversal attempt detected: ${path}`)
+      return c.json({ error: 'Invalid webhook path format' }, 400)
+    }
+    
     // Get webhook from registry
     const webhook = webhookRegistry.get(path)
     
@@ -317,9 +344,18 @@ export class WebhookHandler {
     // Validate request body for POST method
     if (expectedMethod === 'POST') {
       const expectedRequestBody = webhook.config?.requestBody || webhook.value?.requestBody
-      if (expectedRequestBody) {
+      if (expectedRequestBody && typeof expectedRequestBody === 'string') {
         try {
+          // Safely parse JSON with additional validation
           const expectedBodyObj = JSON.parse(expectedRequestBody)
+          
+          // Ensure the parsed result is an object
+          if (!expectedBodyObj || typeof expectedBodyObj !== 'object') {
+            Logger.warn(`Invalid JSON structure in configured request body for webhook ${path}`)
+            return c.json({ 
+              error: "Configured request body must be a valid JSON object" 
+            }, 500)
+          }
           
           // Try to parse the incoming request body
           let incomingBody = null
@@ -369,8 +405,15 @@ export class WebhookHandler {
           
         } catch (jsonError) {
           Logger.error(`Invalid JSON in configured request body for webhook ${path}: ${jsonError}`)
-          // Continue processing - this is a configuration error, not a request error
+          return c.json({ 
+            error: "Invalid JSON configuration in webhook request body template" 
+          }, 500)
         }
+      } else if (expectedRequestBody && typeof expectedRequestBody !== 'string') {
+        Logger.warn(`Invalid request body type for webhook ${path}: expected string, got ${typeof expectedRequestBody}`)
+        return c.json({ 
+          error: "Invalid webhook configuration" 
+        }, 500)
       } else {
         Logger.warn(`POST webhook ${path} missing required request body configuration`)
         return c.json({ 
@@ -408,11 +451,19 @@ export class WebhookHandler {
       Logger.info(`✅ Header validation passed for webhook ${path}`)
     }
     
-    // Extract request data
+    // Extract request data with size limits
     let body = null
     try {
       if (c.req.method !== 'GET') {
         const contentType = c.req.header('Content-Type') || ''
+        const contentLength = c.req.header('Content-Length')
+        
+        // Check content length limits (10MB max)
+        if (contentLength && parseInt(contentLength) > 10 * 1024 * 1024) {
+          Logger.warn(`Request body too large for webhook ${path}: ${contentLength} bytes`)
+          return c.json({ error: 'Request body too large' }, 413)
+        }
+        
         if (contentType.includes('application/json')) {
           body = await c.req.json()
         } else if (contentType.includes('application/x-www-form-urlencoded')) {
@@ -423,6 +474,7 @@ export class WebhookHandler {
       }
     } catch (e) {
       Logger.warn(`Failed to parse request body for ${path}: ${e}`)
+      return c.json({ error: 'Invalid request body format' }, 400)
     }
     
     const requestData = {
@@ -455,7 +507,10 @@ export class WebhookHandler {
       return c.json({
         success: false,
         message: "Webhook received but workflow execution failed",
-        error: executionError instanceof Error ? executionError.message : String(executionError),
+        // Don't expose internal error details in production
+        error: process.env.NODE_ENV === 'development' 
+          ? (executionError instanceof Error ? executionError.message : String(executionError))
+          : 'Internal server error',
         timestamp: new Date().toISOString()
       }, 500)
     }
@@ -476,7 +531,11 @@ export class WebhookHandler {
   }
 
   // Webhook authentication validation with stored credentials
-  async validateWebhookAuth(c: Context, webhook: any): Promise<boolean> {
+  async validateWebhookAuth(c: Context, webhook: WebhookRegistryEntry): Promise<boolean> {
+    if (!webhook || !webhook.config) {
+      Logger.warn('Invalid webhook configuration for authentication')
+      return false
+    }
     const authType = webhook.config?.authentication || 'none'
     const authHeader = c.req.header('Authorization')
     
@@ -491,23 +550,26 @@ export class WebhookHandler {
         const providedCredentials = authHeader.replace('Basic ', '')
         
         // Find the selected credential from credentials array
-        const basicCredentials = webhook.config?.credentials || []
-        const basicSelectedCredential = basicCredentials.find((cred: any) => cred.isSelected === true)
+        const basicCredentials = Array.isArray(webhook.config?.credentials) ? webhook.config.credentials : []
+        const basicSelectedCredential = basicCredentials.find((cred: unknown) => 
+          typeof cred === 'object' && cred !== null && 
+          'isSelected' in cred && (cred as Record<string, unknown>).isSelected === true
+        ) as Record<string, unknown> | undefined
         
         if (!basicSelectedCredential) {
           Logger.warn('No selected credential found in webhook configuration')
           return false
         }
         
-        const storedCredentials = basicSelectedCredential.basic_auth
+        const storedCredentials = basicSelectedCredential.basic_auth as string
         
-        if (!storedCredentials) {
+        if (!storedCredentials || typeof storedCredentials !== 'string') {
           Logger.warn('No basic_auth value found in selected credential')
           return false
         }
         
-        // Compare provided credentials with stored base64 encoded hash
-        if (providedCredentials === storedCredentials) {
+        // Use constant-time comparison to prevent timing attacks
+        if (this.constantTimeEquals(providedCredentials, storedCredentials)) {
           Logger.info('Basic authentication successful')
           return true
         } else {
@@ -525,23 +587,26 @@ export class WebhookHandler {
         const providedToken = authHeader.replace('Bearer ', '')
         
         // Find the selected credential from credentials array
-        const bearerCredentials = webhook.config?.credentials || []
-        const bearerSelectedCredential = bearerCredentials.find((cred: any) => cred.isSelected === true)
+        const bearerCredentials = Array.isArray(webhook.config?.credentials) ? webhook.config.credentials : []
+        const bearerSelectedCredential = bearerCredentials.find((cred: unknown) => 
+          typeof cred === 'object' && cred !== null && 
+          'isSelected' in cred && (cred as Record<string, unknown>).isSelected === true
+        ) as Record<string, unknown> | undefined
         
         if (!bearerSelectedCredential) {
           Logger.warn('No selected credential found in webhook configuration')
           return false
         }
         
-        const storedToken = bearerSelectedCredential.bearer_token
+        const storedToken = bearerSelectedCredential.bearer_token as string
         
-        if (!storedToken) {
+        if (!storedToken || typeof storedToken !== 'string') {
           Logger.warn('No bearer_token value found in selected credential')
           return false
         }
         
-        // Compare provided token with stored token
-        if (providedToken === storedToken) {
+        // Use constant-time comparison to prevent timing attacks
+        if (this.constantTimeEquals(providedToken, storedToken)) {
           Logger.info('Bearer authentication successful')
           return true
         } else {
@@ -557,23 +622,26 @@ export class WebhookHandler {
         }
         
         // Find the selected credential from credentials array
-        const apiKeyCredentials = webhook.config?.credentials || []
-        const apiKeySelectedCredential = apiKeyCredentials.find((cred: any) => cred.isSelected === true)
+        const apiKeyCredentials = Array.isArray(webhook.config?.credentials) ? webhook.config.credentials : []
+        const apiKeySelectedCredential = apiKeyCredentials.find((cred: unknown) => 
+          typeof cred === 'object' && cred !== null && 
+          'isSelected' in cred && (cred as Record<string, unknown>).isSelected === true
+        ) as Record<string, unknown> | undefined
         
         if (!apiKeySelectedCredential) {
           Logger.warn('No selected credential found in webhook configuration')
           return false
         }
         
-        const storedApiKey = apiKeySelectedCredential.api_key
+        const storedApiKey = apiKeySelectedCredential.api_key as string
         
-        if (!storedApiKey) {
+        if (!storedApiKey || typeof storedApiKey !== 'string') {
           Logger.warn('No api_key value found in selected credential')
           return false
         }
         
-        // Compare provided API key with stored key
-        if (apiKey === storedApiKey) {
+        // Use constant-time comparison to prevent timing attacks
+        if (this.constantTimeEquals(apiKey, storedApiKey)) {
           Logger.info('API key authentication successful')
           return true
         } else {
@@ -584,6 +652,43 @@ export class WebhookHandler {
       default:
         return true
     }
+  }
+
+  // Validate webhook path format
+  private isValidWebhookPath(path: string): boolean {
+    // Check for valid characters (alphanumeric, dash, underscore, slash)
+    const validPathRegex = /^[a-zA-Z0-9\-_\/]+$/
+    
+    // Must not be empty and should match valid characters
+    if (!path || !validPathRegex.test(path)) {
+      return false
+    }
+    
+    // Prevent path traversal
+    if (path.includes('..') || path.includes('//')) {
+      return false
+    }
+    
+    // Must not exceed reasonable length (100 chars)
+    if (path.length > 100) {
+      return false
+    }
+    
+    return true
+  }
+
+  // Constant-time string comparison to prevent timing attacks
+  private constantTimeEquals(a: string, b: string): boolean {
+    if (a.length !== b.length) {
+      return false
+    }
+    
+    let result = 0
+    for (let i = 0; i < a.length; i++) {
+      result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+    }
+    
+    return result === 0
   }
 
   // API endpoint to reload webhooks
