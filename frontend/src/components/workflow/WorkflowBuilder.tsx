@@ -3001,6 +3001,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           }
 
           // Create edge connecting source to new node
+          //todo: need to define proper type for edge here instead of 'any'
+          // maybe we can import type from @xyflow/react
           const newEdge = {
             id: `${selectedNodeForNext}-${newNodeId}`,
             source: selectedNodeForNext,
