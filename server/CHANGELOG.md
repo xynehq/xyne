@@ -1,3 +1,10 @@
+## [3.14.3](https://github.com/xynehq/xyne/compare/v3.14.2...v3.14.3) (2025-10-14)
+
+
+### Bug Fixes
+
+* XYNE-191 fixed raw view and highlight for sheets ([f9e934a](https://github.com/xynehq/xyne/commit/f9e934a62ae42b8af43fee96555e9d33a9c80b74))
+
 ## [3.14.2](https://github.com/xynehq/xyne/compare/v3.14.1...v3.14.2) (2025-10-14)
 
 
