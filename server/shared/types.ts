@@ -138,10 +138,12 @@ export enum ConnectorStatus {
   Connected = "connected",
   // Pending = 'pending',
   Connecting = "connecting",
+
   Paused = "paused",
   Failed = "failed",
   // for oauth we will default to this
   NotConnected = "not-connected",
+  Authenticated = "authenticated",
 }
 
 export enum SyncJobStatus {
