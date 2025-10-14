@@ -238,7 +238,6 @@ export async function resolveNamesToEmails(
       ...(extractedNames.to || []),
       ...(extractedNames.cc || []),
       ...(extractedNames.bcc || []),
-      ...(extractedNames.subject || []),
     ]
 
     if (allNames.length === 0) {
@@ -1972,14 +1971,23 @@ async function* generateAnswerFromGivenContext(
         combinedSearchResponse.push(...results.root.children)
       }
     } else {
-      const collectionFileIds = fileIds.filter((fid) => fid.startsWith("clf-") || fid.startsWith("att_"))
-      const nonCollectionFileIds = fileIds.filter((fid) => !fid.startsWith("clf-") && !fid.startsWith("att"))
+      const collectionFileIds = fileIds.filter(
+        (fid) => fid.startsWith("clf-") || fid.startsWith("att_"),
+      )
+      const nonCollectionFileIds = fileIds.filter(
+        (fid) => !fid.startsWith("clf-") && !fid.startsWith("att"),
+      )
       const attachmentFileIds = fileIds.filter((fid) => fid.startsWith("attf_"))
-      if(nonCollectionFileIds && nonCollectionFileIds.length > 0) {
-        results = await searchVespaInFiles(builtUserQuery, email, nonCollectionFileIds, {
+      if (nonCollectionFileIds && nonCollectionFileIds.length > 0) {
+        results = await searchVespaInFiles(
+          builtUserQuery,
+          email,
+          nonCollectionFileIds,
+          {
             limit: fileIds?.length,
             alpha: userAlpha,
-          })
+          },
+        )
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
@@ -1994,12 +2002,17 @@ async function* generateAnswerFromGivenContext(
           combinedSearchResponse.push(...results.root.children)
         }
       }
-      if(attachmentFileIds && attachmentFileIds.length > 0) {
-        results = await searchVespaInFiles(builtUserQuery, email, attachmentFileIds, {
-          limit: fileIds?.length,
-          alpha: userAlpha,
-          rankProfile: SearchModes.AttachmentRank,
-        })
+      if (attachmentFileIds && attachmentFileIds.length > 0) {
+        results = await searchVespaInFiles(
+          builtUserQuery,
+          email,
+          attachmentFileIds,
+          {
+            limit: fileIds?.length,
+            alpha: userAlpha,
+            rankProfile: SearchModes.AttachmentRank,
+          },
+        )
         if (results.root.children) {
           combinedSearchResponse.push(...results.root.children)
         }
@@ -4738,9 +4751,7 @@ export const MessageApi = async (c: Context) => {
           } else {
             const filteredMessages = messages
               .slice(0, messages.length - 1)
-              .filter(
-                (msg) => !msg?.errorMessage,
-              )
+              .filter((msg) => !msg?.errorMessage)
               .filter(
                 (msg) =>
                   !(msg.messageRole === MessageRole.Assistant && !msg.message),
@@ -5221,29 +5232,33 @@ export const MessageApi = async (c: Context) => {
                 // - All the smart follow-up logic from the LLM
 
                 const filteredMessages = messages
-                  .filter(
-                    (msg) => !msg?.errorMessage,
-                  )
+                  .filter((msg) => !msg?.errorMessage)
                   .filter(
                     (msg) =>
-                      !(msg.messageRole === MessageRole.Assistant && !msg.message),
+                      !(
+                        msg.messageRole === MessageRole.Assistant &&
+                        !msg.message
+                      ),
                   )
-  
+
                 // Check for follow-up context carry-forward
-                const workingSet = collectFollowupContext(filteredMessages);
-      
+                const workingSet = collectFollowupContext(filteredMessages)
+
                 const hasCarriedContext =
                   workingSet.fileIds.length > 0 ||
-                  workingSet.attachmentFileIds.length > 0;
+                  workingSet.attachmentFileIds.length > 0
                 if (hasCarriedContext) {
-                  fileIds = workingSet.fileIds;
-                  imageAttachmentFileIds = workingSet.attachmentFileIds;
+                  fileIds = workingSet.fileIds
+                  imageAttachmentFileIds = workingSet.attachmentFileIds
                   loggerWithChild({ email: email }).info(
                     `Carried forward context from follow-up: ${JSON.stringify(workingSet)}`,
-                  );
+                  )
                 }
 
-                if (fileIds && fileIds.length > 0 || imageAttachmentFileIds && imageAttachmentFileIds.length > 0) {
+                if (
+                  (fileIds && fileIds.length > 0) ||
+                  (imageAttachmentFileIds && imageAttachmentFileIds.length > 0)
+                ) {
                   loggerWithChild({ email: email }).info(
                     `Follow-up query with file context detected. Using file-based context with NEW classification: ${JSON.stringify(classification)}, FileIds: ${JSON.stringify([fileIds, imageAttachmentFileIds])}`,
                   )
