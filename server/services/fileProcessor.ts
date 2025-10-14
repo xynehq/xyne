@@ -171,7 +171,6 @@ export class FileProcessorService {
             chunks_pos = chunks.map((_, idx) => idx)
           }
         } catch {
-          // If text extraction fails, create a basic chunk with file info
           chunks = [
             `File: ${fileName}, Type: ${baseMimeType}, Size: ${buffer.length} bytes`,
           ]
@@ -179,25 +178,23 @@ export class FileProcessorService {
         }
       }
     } catch (error) {
-      // Log the processing failure with error details and context
       Logger.error(error, `File processing failed for ${fileName} (${baseMimeType}, ${buffer.length} bytes)`)
       
       // Re-throw the error to ensure proper error handling upstream
-      // This allows callers to handle failures appropriately (retries, status updates, etc.)
       throw new Error(`Failed to process file "${fileName}": ${getErrorMessage(error)}`)
     }
 
     // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
     const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
       chunk_index: index,
-      page_numbers: [], // Default to page -1 for non-PDF files
-      block_labels: ["text"], // Default block label
+      page_numbers: [], 
+      block_labels: ["text"], 
     }));
 
     const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
-      chunk_index: index, // Local indexing for image chunks array
-      page_numbers: [], // Default to page -1 for non-PDF files
-      block_labels: ["image"], // Default block label
+      chunk_index: index, 
+      page_numbers: [], 
+      block_labels: ["image"], 
     }));
 
     // Wrap in array to match return type
