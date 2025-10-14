@@ -114,9 +114,38 @@ export default function CallPage() {
   }
 
   const handleDisconnect = () => {
+    // Notify backend that user is leaving the call (fire-and-forget, don't wait)
+    if (room) {
+      api.calls.leave
+        .$post({
+          json: { roomName: room },
+        })
+        .catch((error: unknown) => {
+          console.error("Error notifying server of disconnect:", error)
+          // Don't block the disconnect flow - background cleanup will handle it
+        })
+    }
+
     setIsCallEnded(true)
     // Close the call window
     window.close()
+  }
+
+  // Track when user actually connects to the room (for participants tracking)
+  const handleConnected = async () => {
+    if (!room) return
+
+    try {
+      // If user had a token (caller), we need to register them as a participant
+      if (token && !isJoining) {
+        await api.calls.join.$post({
+          json: { roomName: room },
+        })
+      }
+    } catch (error) {
+      console.error("Error registering participant:", error)
+      // Don't show error to user - this is background tracking
+    }
   }
 
   // Show loading state while joining
@@ -192,6 +221,7 @@ export default function CallPage() {
             // Use the default LiveKit styles
             data-lk-theme="default"
             style={{ height: "100%", overflow: "hidden" }}
+            onConnected={handleConnected}
             onDisconnected={handleDisconnect}
           >
             {/* LiveKit provides a complete VideoConference component */}
