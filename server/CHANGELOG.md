@@ -1,3 +1,10 @@
+# [3.15.0](https://github.com/xynehq/xyne/compare/v3.14.4...v3.15.0) (2025-10-14)
+
+
+### Features
+
+* XYN-100 adding falback for pdf based changes and storing in db ([#1099](https://github.com/xynehq/xyne/issues/1099)) ([61b5168](https://github.com/xynehq/xyne/commit/61b516824c0b80a081fa7655d242ea451abe6f77))
+
 ## [3.14.4](https://github.com/xynehq/xyne/compare/v3.14.3...v3.14.4) (2025-10-14)
 
 
