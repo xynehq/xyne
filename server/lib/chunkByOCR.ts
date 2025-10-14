@@ -795,11 +795,14 @@ export async function chunkByOCR(
 
       chunkContent = trimChunkToByteLimit(chunkContent, chunkSizeLimit)
 
+      const pageNumbersArray = Array.from(currentPageNumbers).sort((a, b) => a - b)
+      const blockLabelsArray = Array.from(new Set(currentBlockLabels))
+
       chunks.push(chunkContent)
       chunks_map.push({
         chunk_index: globalSeq.value,
-        page_numbers: Array.from(currentPageNumbers).sort((a, b) => a - b),
-        block_labels: Array.from(new Set(currentBlockLabels)),
+        page_numbers: pageNumbersArray,
+        block_labels: blockLabelsArray,
       })
 
       globalSeq.value += 1
@@ -820,7 +823,6 @@ export async function chunkByOCR(
 
   for (const pageNumber of pageKeys) {
     const blocks = ocrResponse[String(pageNumber)] ?? []
-    currentPageNumbers.add(pageNumber)
 
     for (const block of blocks) {
       if (block.block_label === "image") {
@@ -900,6 +902,7 @@ export async function chunkByOCR(
         globalSeq.value += 1
 
         currentTextBuffer += `${currentTextBuffer ? " " : ""}[IMG#${block.image_index}]`
+        currentPageNumbers.add(pageNumber)
       } else {
         const normalizedText = normalizeBlockContent(block)
         if (!normalizedText) {
@@ -912,18 +915,19 @@ export async function chunkByOCR(
           getByteLength(normalizedText)
 
         if (projectedSize > chunkSizeLimit) {
-          addChunk(true) // Preserve page numbers when chunking mid-page
+          addChunk(false) // Don't preserve page numbers - start fresh
         }
 
         currentTextBuffer += (currentTextBuffer ? " " : "") + normalizedText
         currentBlockLabels.push(block.block_label)
+        currentPageNumbers.add(pageNumber)
       }
     }
   }
 
   if (currentTextBuffer.trim()) {
     Logger.debug("Adding final text chunk")
-    addChunk(false) // Clear page numbers for final chunk
+    addChunk(false) // Don't preserve page numbers for final chunk
   }
 
   const chunks_pos = chunks_map.map((metadata) => metadata.chunk_index)

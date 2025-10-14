@@ -1,11 +1,14 @@
 import { getErrorMessage } from "@/utils"
 import { chunkDocument } from "@/chunks"
-// import { extractTextAndImagesWithChunksFromPDF } from "@/pdf
-
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
-import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
 import { type ChunkMetadata } from "@/types"
+import { 
+  PdfProcessor, 
+  type PdfProcessingMethod,
+  type ProcessingResultDraft 
+} from "@/lib/pdfProcessor"
+import { chunkSheetWithHeaders } from "@/sheetChunk"
 import * as XLSX from "xlsx"
 import {
   getBaseMimeType,
@@ -20,6 +23,13 @@ const Logger = getLogger(Subsystem.Ingest).child({
   module: "fileProcessor",
 })
 
+export { 
+  type PdfProcessingMethod, 
+  type ProcessingResultDraft 
+} from "@/lib/pdfProcessor"
+
+
+
 export interface ProcessingResult {
   chunks: string[]
   chunks_pos: number[]
@@ -27,10 +37,19 @@ export interface ProcessingResult {
   image_chunks_pos: number[]
   chunks_map: ChunkMetadata[]
   image_chunks_map: ChunkMetadata[]
+  processingMethod?: PdfProcessingMethod
 }
 
-export class FileProcessorService {
+export interface SheetProcessingResult extends ProcessingResult {
+  sheetName: string
+  sheetIndex: number
+  totalSheets: number
+  docId: string
+}
 
+type ProcessingResultArray = (ProcessingResult | SheetProcessingResult)[]
+
+export class FileProcessorService {
   static async processFile(
     buffer: Buffer,
     mimeType: string,
@@ -48,12 +67,17 @@ export class FileProcessorService {
 
     try {
       if (baseMimeType === "application/pdf") {
-        // Redirect PDF processing to OCR
-        const result = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
-
-        
-
-        return result
+        // Use the modular PDF processor with fallback logic
+        // It returns a complete result, no need to finalize again
+        const pdfResult = await PdfProcessor.processWithFallback(
+          buffer,
+          fileName,
+          vespaDocId,
+          extractImages,
+          describeImages,
+        )
+        // Wrap in array to match return type
+        return [pdfResult]
       } else if (isDocxFile(baseMimeType)) {
         // Process DOCX
         const result = await extractTextAndImagesWithChunksFromDocx(
@@ -136,7 +160,6 @@ export class FileProcessorService {
             chunks_pos = chunks.map((_, idx) => idx)
           }
         } catch {
-          // If text extraction fails, create a basic chunk with file info
           chunks = [
             `File: ${fileName}, Type: ${baseMimeType}, Size: ${buffer.length} bytes`,
           ]
@@ -144,34 +167,33 @@ export class FileProcessorService {
         }
       }
     } catch (error) {
-      // Log the processing failure with error details and context
       Logger.error(error, `File processing failed for ${fileName} (${baseMimeType}, ${buffer.length} bytes)`)
       
       // Re-throw the error to ensure proper error handling upstream
-      // This allows callers to handle failures appropriately (retries, status updates, etc.)
       throw new Error(`Failed to process file "${fileName}": ${getErrorMessage(error)}`)
     }
 
     // For non-PDF files, create empty chunks_map and image_chunks_map for backward compatibility
     const chunks_map: ChunkMetadata[] = chunks.map((_, index) => ({
       chunk_index: index,
-      page_numbers: [-1], // Default to page -1 for non-PDF files
-      block_labels: ["text"], // Default block label
+      page_numbers: [], 
+      block_labels: ["text"], 
     }));
 
     const image_chunks_map: ChunkMetadata[] = image_chunks.map((_, index) => ({
-      chunk_index: index, // Local indexing for image chunks array
-      page_numbers: [-1], // Default to page -1 for non-PDF files
-      block_labels: ["image"], // Default block label
+      chunk_index: index, 
+      page_numbers: [], 
+      block_labels: ["image"], 
     }));
 
-    return {
+    // Wrap in array to match return type
+    return [{
       chunks,
       chunks_pos,
       image_chunks,
       image_chunks_pos,
-      chunks_map,
-      image_chunks_map,
-    }
+      chunks_map: chunks_map,
+      image_chunks_map: image_chunks_map,
+    }]
   }
 }
