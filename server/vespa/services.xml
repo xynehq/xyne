@@ -1,4 +1,10 @@
 <services version="1.0">
+    <admin version="2.0">
+        <adminserver hostalias="node1" />
+        <configservers>
+            <configserver hostalias="node1" />
+        </configservers>
+    </admin>
     <container id="my_container" version="1.0">
         <!-- https://docs.vespa.ai/en/onnx.html#using-optimum-to-export-models-to-onnx-format -->
         <component id="hf-embedder" type="hugging-face-embedder">
@@ -17,7 +23,7 @@
                 </resource-limits>
             </proton>
         </engine>
-        <redundancy reply-after="1">1</redundancy>
+        <redundancy reply-after="1">2</redundancy>
         <documents>
             <document type="file" mode="index" />
             <document type="user" mode="index" />
@@ -36,6 +42,7 @@
         </documents>
         <nodes>
             <node distribution-key="0" hostalias="node1" />
+            <node distribution-key="1" hostalias="node2" />
         </nodes>
     </content>
 </services>

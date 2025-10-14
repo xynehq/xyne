@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<hosts>
+    <!-- Primary node - current Vespa instance -->
+    <host name="localhost">
+        <alias>node1</alias>
+    </host>
+    
+    <!-- Secondary node - vespa-testing container -->
+    <host name="localhost:8181">
+        <alias>node2</alias>
+    </host>
+</hosts>
