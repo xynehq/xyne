@@ -1652,10 +1652,10 @@ function UsersListPage({
                         {selectedUser.email}
                       </p>
                       <Badge
-                        variant={getRoleBadgeVariant(selectedUser?.role)}
+                        variant={getRoleBadgeVariant(selectedUser.role)}
                         className="mt-1"
                       >
-                        {selectedUser?.role}
+                        {selectedUser.role}
                       </Badge>
                     </div>
                   </div>
