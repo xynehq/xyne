@@ -160,7 +160,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
         error: `Agent ${agentId} has no model configured`
       }
     }
-    const actualModel = agent.model === "Auto" ? defaultBestModel :agent.model as Models
+    const actualModel = agent.model === "Auto" ? defaultBestModel : agent.model as Models
 
 
     Logger.info(`Found agent: ${agent.name} with model: ${agent.model}`)
@@ -258,7 +258,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     Logger.info("Generating chat title...")
 
     const titleResp = await generateTitleUsingQuery(userQuery, {
-      modelId: actualModel  ,
+      modelId: actualModel,
       stream: false,
     })
     const title = titleResp.title
@@ -267,7 +267,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
     Logger.info("🔧 Building model parameters...")
 
     const modelParams = {
-      modelId:actualModel,
+      modelId: actualModel,
       stream: isStreamable,
       json: false,
       reasoning: false,
@@ -289,7 +289,7 @@ export const ExecuteAgentForWorkflow = async (params: ExecuteAgentParams): Promi
       hasMaxTokens: ${max_new_tokens !== undefined},
     }`)
 
-    Logger.info("💬 Constructing LLM messages...")  
+    Logger.info("💬 Constructing LLM messages...")
 
     // UPDATE MESSAGE CONSTRUCTION TO INCLUDE CONTEXT:
     const userContent = contextualContent
@@ -535,322 +535,322 @@ async function* createStreamingWithDBSave(
 
 
 export const executeAgentForWorkflowWithRag = async (
-    params: ExecuteAgentParams
+  params: ExecuteAgentParams
 ): Promise<ExecuteAgentWithRagResponse> => {
-    try {
-        Logger.info(`[agentCore] Starting execution for agent ${params.agentId}`)
+  try {
+    Logger.info(`[agentCore] Starting execution for agent ${params.agentId}`)
 
-         // Validate with Zod schema
-          const validatedParams = executeAgentSchema.parse(params)
+    // Validate with Zod schema
+    const validatedParams = executeAgentSchema.parse(params)
 
-        // Initialize tracer for performance monitoring
-        const tracer = getTracer("agentCore")
-        const executeAgentSpan = tracer.startSpan('executeAgentCore')
+    // Initialize tracer for performance monitoring
+    const tracer = getTracer("agentCore")
+    const executeAgentSpan = tracer.startSpan('executeAgentCore')
 
-        // ============================================
-        // STEP 1: Load User, Workspace, and Agent
-        // ============================================
+    // ============================================
+    // STEP 1: Load User, Workspace, and Agent
+    // ============================================
 
-        const userAndWorkspace = await getUserAndWorkspaceByEmail(
-            db,
-            params.workspaceId,
-            params.userEmail,
-        )
-        const { user, workspace } = userAndWorkspace
+    const userAndWorkspace = await getUserAndWorkspaceByEmail(
+      db,
+      params.workspaceId,
+      params.userEmail,
+    )
+    const { user, workspace } = userAndWorkspace
 
-        Logger.info(`[agentCore] Resolved user ID: ${user.id}, workspace ID: ${workspace.id}`)
+    Logger.info(`[agentCore] Resolved user ID: ${user.id}, workspace ID: ${workspace.id}`)
 
-        const agent = await getAgentByExternalIdWithPermissionCheck(
-            db,
-            params.agentId,
-            workspace.id,
-            user.id,
-        )
-        //here add attachements id's in app_integrations : google_drive : [...attachmentFileIds]
+    const agent = await getAgentByExternalIdWithPermissionCheck(
+      db,
+      params.agentId,
+      workspace.id,
+      user.id,
+    )
+    //here add attachements id's in app_integrations : google_drive : [...attachmentFileIds]
 
-        if (!agent) {
-            Logger.error(`[agentCore] Agent ${params.agentId} not found or permission denied`)
-            return {
-                success: false,
-                error: `Access denied: You don't have permission to use agent ${params.agentId}`,
-            }
-        }
-
-        Logger.info(`[agentCore] Loaded agent: ${agent.name}`)
-        Logger.info(`[agentCore] Agent features: RAG=${agent.isRagOn}, Integrations=${agent.appIntegrations?.length || 0}`)
-
-        // ============================================
-        const userTimezone = user?.timeZone || "Asia/Kolkata"
-        const dateForAI = getDateForAI({ userTimeZone: userTimezone })
-        const userMetadata: UserMetadataType = { userTimezone, dateForAI }
-
-        Logger.info(`[agentCore] User timezone: ${userTimezone}, Date for AI: ${dateForAI}`)
-
-        let contextualContent = ""
-      
-
-        // Extract KB from BOTH sources:
-        const agentKBDocs = agent.docIds || []
-        const directDocIds = agentKBDocs.map((doc) =>
-            typeof doc === 'string' ? doc : doc.docId
-        )
-
-        // Extract KB from app_integrations
-        let kbIntegrationDocIds: string[] = []
-        if (agent.appIntegrations && typeof agent.appIntegrations === 'object') {
-            const integrations = agent.appIntegrations as Record<string, any>
-            if (integrations.knowledge_base && integrations.knowledge_base.itemIds) {
-                kbIntegrationDocIds = integrations.knowledge_base.itemIds
-            }
-        }
-
-        // Combine ALL sources
-        const agentKBDocIds = [...directDocIds, ...kbIntegrationDocIds]
-
-        // Merge with user attachments
-        const uniqueFileIds = Array.from(new Set([
-            ...agentKBDocIds,
-        ]))
-
-
-
-        Logger.info(`[agentCore] 📊 Combined file sources:`)
-
-        Logger.info(`[agentCore]    - Agent KB docs: ${agentKBDocs.length}`)
-        Logger.info(`[agentCore]    - Total unique files: ${uniqueFileIds.length}`)
-
-        // Determine if we should use RAG
-        const shouldUseRAG = agent.isRagOn && uniqueFileIds.length > 0
-
-
-        // ============================================
-        // TODO: Step 4 - Perform RAG search or direct LLM call
-        // ===========================================
-
-
-
-        let finalAnswer = ""
-        let citations: Citation[] = []
-        let imageCitations: ImageCitation[] = []
-        let thinking = ""
-        let totalCost = 0
-        let totalTokens = 0
-
-
-
-        if (shouldUseRAG) {
-            // ===== Path 1: RAG Pipeline =====
-            // Why? Agent has RAG enabled and files available
-            // We search the documents and use context to answer
-
-            Logger.info(`[agentCore] 🔍 Starting RAG pipeline...`)
-
-            const ragSpan = executeAgentSpan?.startSpan("rag_processing")
-            const understandSpan = ragSpan?.startSpan("understand_message")
-
-            // Call RAG function (async generator that yields chunks)
-
-            const classification = await classifyUserQuery(
-                params.userQuery,
-                params.userEmail,
-                userMetadata,
-                agent.model === "Auto" ? undefined : agent.model,
-            )
-                  Logger.info(`[agentCore] 📊 Classification result: ${JSON.stringify(classification)}`)
-
-
-                  // this UnderstandMessageAndAnswerForGivenContext is only for the attachment files and do Rag on them not consider the app_integrations
-
-            // const iterator = UnderstandMessageAndAnswerForGivenContext(
-            //     params.userEmail,                     // email
-            //     params.userQuery,                     // userCtx (context from user)
-            //     userMetadata,                         // timezone, date
-            //     params.userQuery,                     // message (the question)
-            //     0.5,                                  // alpha (search confidence threshold)
-            //     uniqueFileIds,                        // fileIds (documents to search)
-            //     false,                                // userRequestsReasoning
-            //     understandSpan,                       // tracing span
-            //     [],                                   // threadIds (empty for workflows)
-            //     imageAttachmentFileIds,               // image attachments
-            //     agent.prompt || undefined,   // agent's system prompt
-            //     true,                                 // isMsgWithSources
-            //     agent.model === "Auto" ? undefined : agent.model,             // model ID
-            //     undefined,                            // isValidPath
-            //     [],                                   // folderIds
-            // )
-
-            // STEP 2: Call UnderstandMessageAndAnswer
-            // Why? This function properly extracts KB from app_integrations
-            // It internally calls generateIterativeTimeFilterAndQueryRewrite which parses the agent JSON
-            const iterator = UnderstandMessageAndAnswer(
-                params.userEmail,           // email
-                params.userEmail,           // userCtx (user context - can be same as email for workflows)
-                userMetadata,               // timezone, date
-                params.userQuery,           // message (the question)
-                classification,             // QueryRouterLLMResponse from classifyUserQuery
-                [],                         // messages (empty array for workflows - no conversation history)
-                0.5,                        // alpha (search confidence threshold)
-                false,                      // userRequestsReasoning
-                understandSpan,             // tracing span
-                JSON.stringify(agent),      // agentPrompt - CRITICAL: Must be stringified full agent with app_integrations!
-                agent.model === "Auto" ? undefined : agent.model,  // modelId
-                undefined,                  // pathExtractedInfo (not needed for workflows)
-            )
-
-
-            // Iterate through response chunks
-            // Why? The function streams chunks (text, citations, costs)
-            for await (const chunk of iterator) {
-                if (chunk.text) {
-                    // Regular answer text
-                    if (!chunk.reasoning) {
-                        finalAnswer += chunk.text
-                    } else {
-                        // Thinking/reasoning text (if enabled)
-                        thinking += chunk.text
-                    }
-                }
-
-                if (chunk.citation) {
-                    // Document citation
-                    citations.push(chunk.citation.item)
-                }
-
-                if (chunk.imageCitation) {
-                    // Image citation
-                    imageCitations.push(chunk.imageCitation)
-                }
-
-                if (chunk.cost) {
-                    // API cost
-                    totalCost += chunk.cost
-                }
-
-                if (chunk.metadata?.usage) {
-                    // Token usage
-                    totalTokens += chunk.metadata.usage.inputTokens + chunk.metadata.usage.outputTokens
-                }
-            }
-
-            understandSpan?.end()
-            ragSpan?.end()
-
-            Logger.info(`[agentCore] ✅ RAG pipeline completed`)
-            Logger.info(`[agentCore] 📊 Answer length: ${finalAnswer.length} characters`)
-            Logger.info(`[agentCore] 📚 Citations: ${citations.length}`)
-            Logger.info(`[agentCore] 💰 Cost: $${totalCost.toFixed(6)}`)
-
-        } else {
-            // ===== Path 2: Direct LLM Call =====
-            // Why? RAG is disabled or no files available
-            // We just call the LLM with the agent's prompt
-
-            Logger.info(`[agentCore] 🤖 Starting direct LLM call (no RAG)...`)
-
-            const llmSpan = executeAgentSpan?.startSpan("direct_llm_call")
-
-       
-
-            const result = await ExecuteAgentForWorkflow({
-                agentId: params.agentId,
-                userQuery: params.userQuery,
-                userEmail: params.userEmail,
-                workspaceId: params.workspaceId,
-                isStreamable: false,
-                attachmentFileIds: params.attachmentFileIds || [],
-                nonImageAttachmentFileIds: params.nonImageAttachmentFileIds || [],
-                temperature: params.temperature,
-
-            })
-
-            Logger.info(`[agentCore] Direct LLM call result: ${JSON.stringify(result).substring(0, 700)}...`)
-            Logger.info(`[agentCore] ✅ Direct LLM call completed`)
-            Logger.info(`[agentCore] 📊 Answer length: ${finalAnswer.length} characters`)
-            Logger.info(`[agentCore] 💰 Cost: $${totalCost.toFixed(6)}`)
-        }
-
-        executeAgentSpan?.end()
-
-        // Return final response
-        return {
-            success: true,
-            response: finalAnswer,
-            citations: citations.length > 0 ? citations : undefined,
-            imageCitations: imageCitations.length > 0 ? imageCitations : undefined,
-            thinking: thinking || undefined,
-            cost: totalCost > 0 ? totalCost.toFixed(6) : undefined,
-            tokensUsed: totalTokens,
-            chatId: null,      // No chat for workflows
-            messageId: null,   // No message for workflows
-        }
-
-
-
-
-    } catch (error) {
-        Logger.error(error, "[agentCore] Agent execution failed")
-        return {
-            success: false,
-            error: getErrorMessage(error)
-        }
+    if (!agent) {
+      Logger.error(`[agentCore] Agent ${params.agentId} not found or permission denied`)
+      return {
+        success: false,
+        error: `Access denied: You don't have permission to use agent ${params.agentId}`,
+      }
     }
+
+    Logger.info(`[agentCore] Loaded agent: ${agent.name}`)
+    Logger.info(`[agentCore] Agent features: RAG=${agent.isRagOn}, Integrations=${agent.appIntegrations?.length || 0}`)
+
+    // ============================================
+    const userTimezone = user?.timeZone || "Asia/Kolkata"
+    const dateForAI = getDateForAI({ userTimeZone: userTimezone })
+    const userMetadata: UserMetadataType = { userTimezone, dateForAI }
+
+    Logger.info(`[agentCore] User timezone: ${userTimezone}, Date for AI: ${dateForAI}`)
+
+    let contextualContent = ""
+
+
+    // Extract KB from BOTH sources:
+    const agentKBDocs = agent.docIds || []
+    const directDocIds = agentKBDocs.map((doc) =>
+      typeof doc === 'string' ? doc : doc.docId
+    )
+
+    // Extract KB from app_integrations
+    let kbIntegrationDocIds: string[] = []
+    if (agent.appIntegrations && typeof agent.appIntegrations === 'object') {
+      const integrations = agent.appIntegrations as Record<string, any>
+      if (integrations.knowledge_base && integrations.knowledge_base.itemIds) {
+        kbIntegrationDocIds = integrations.knowledge_base.itemIds
+      }
+    }
+
+    // Combine ALL sources
+    const agentKBDocIds = [...directDocIds, ...kbIntegrationDocIds]
+
+    // Merge with user attachments
+    const uniqueFileIds = Array.from(new Set([
+      ...agentKBDocIds,
+    ]))
+
+
+
+    Logger.info(`[agentCore] 📊 Combined file sources:`)
+
+    Logger.info(`[agentCore]    - Agent KB docs: ${agentKBDocs.length}`)
+    Logger.info(`[agentCore]    - Total unique files: ${uniqueFileIds.length}`)
+
+    // Determine if we should use RAG
+    const shouldUseRAG = agent.isRagOn && uniqueFileIds.length > 0
+
+
+    // ============================================
+    // TODO: Step 4 - Perform RAG search or direct LLM call
+    // ===========================================
+
+
+
+    let finalAnswer = ""
+    let citations: Citation[] = []
+    let imageCitations: ImageCitation[] = []
+    let thinking = ""
+    let totalCost = 0
+    let totalTokens = 0
+
+
+
+    if (shouldUseRAG) {
+      // ===== Path 1: RAG Pipeline =====
+      // Why? Agent has RAG enabled and files available
+      // We search the documents and use context to answer
+
+      Logger.info(`[agentCore] 🔍 Starting RAG pipeline...`)
+
+      const ragSpan = executeAgentSpan?.startSpan("rag_processing")
+      const understandSpan = ragSpan?.startSpan("understand_message")
+
+      // Call RAG function (async generator that yields chunks)
+
+      const classification = await classifyUserQuery(
+        params.userQuery,
+        params.userEmail,
+        userMetadata,
+        agent.model === "Auto" ? undefined : agent.model,
+      )
+      Logger.info(`[agentCore] 📊 Classification result: ${JSON.stringify(classification)}`)
+
+
+      // this UnderstandMessageAndAnswerForGivenContext is only for the attachment files and do Rag on them not consider the app_integrations
+
+      // const iterator = UnderstandMessageAndAnswerForGivenContext(
+      //     params.userEmail,                     // email
+      //     params.userQuery,                     // userCtx (context from user)
+      //     userMetadata,                         // timezone, date
+      //     params.userQuery,                     // message (the question)
+      //     0.5,                                  // alpha (search confidence threshold)
+      //     uniqueFileIds,                        // fileIds (documents to search)
+      //     false,                                // userRequestsReasoning
+      //     understandSpan,                       // tracing span
+      //     [],                                   // threadIds (empty for workflows)
+      //     imageAttachmentFileIds,               // image attachments
+      //     agent.prompt || undefined,   // agent's system prompt
+      //     true,                                 // isMsgWithSources
+      //     agent.model === "Auto" ? undefined : agent.model,             // model ID
+      //     undefined,                            // isValidPath
+      //     [],                                   // folderIds
+      // )
+
+      // STEP 2: Call UnderstandMessageAndAnswer
+      // Why? This function properly extracts KB from app_integrations
+      // It internally calls generateIterativeTimeFilterAndQueryRewrite which parses the agent JSON
+      const iterator = UnderstandMessageAndAnswer(
+        params.userEmail,           // email
+        params.userEmail,           // userCtx (user context - can be same as email for workflows)
+        userMetadata,               // timezone, date
+        params.userQuery,           // message (the question)
+        classification,             // QueryRouterLLMResponse from classifyUserQuery
+        [],                         // messages (empty array for workflows - no conversation history)
+        0.5,                        // alpha (search confidence threshold)
+        false,                      // userRequestsReasoning
+        understandSpan,             // tracing span
+        JSON.stringify(agent),      // agentPrompt - CRITICAL: Must be stringified full agent with app_integrations!
+        agent.model === "Auto" ? undefined : agent.model,  // modelId
+        undefined,                  // pathExtractedInfo (not needed for workflows)
+      )
+
+
+      // Iterate through response chunks
+      // Why? The function streams chunks (text, citations, costs)
+      for await (const chunk of iterator) {
+        if (chunk.text) {
+          // Regular answer text
+          if (!chunk.reasoning) {
+            finalAnswer += chunk.text
+          } else {
+            // Thinking/reasoning text (if enabled)
+            thinking += chunk.text
+          }
+        }
+
+        if (chunk.citation) {
+          // Document citation
+          citations.push(chunk.citation.item)
+        }
+
+        if (chunk.imageCitation) {
+          // Image citation
+          imageCitations.push(chunk.imageCitation)
+        }
+
+        if (chunk.cost) {
+          // API cost
+          totalCost += chunk.cost
+        }
+
+        if (chunk.metadata?.usage) {
+          // Token usage
+          totalTokens += chunk.metadata.usage.inputTokens + chunk.metadata.usage.outputTokens
+        }
+      }
+
+      understandSpan?.end()
+      ragSpan?.end()
+
+      Logger.info(`[agentCore] ✅ RAG pipeline completed`)
+      Logger.info(`[agentCore] 📊 Answer length: ${finalAnswer.length} characters`)
+      Logger.info(`[agentCore] 📚 Citations: ${citations.length}`)
+      Logger.info(`[agentCore] 💰 Cost: $${totalCost.toFixed(6)}`)
+
+    } else {
+      // ===== Path 2: Direct LLM Call =====
+      // Why? RAG is disabled or no files available
+      // We just call the LLM with the agent's prompt
+
+      Logger.info(`[agentCore] 🤖 Starting direct LLM call (no RAG)...`)
+
+      const llmSpan = executeAgentSpan?.startSpan("direct_llm_call")
+
+
+
+      const result = await ExecuteAgentForWorkflow({
+        agentId: params.agentId,
+        userQuery: params.userQuery,
+        userEmail: params.userEmail,
+        workspaceId: params.workspaceId,
+        isStreamable: false,
+        attachmentFileIds: params.attachmentFileIds || [],
+        nonImageAttachmentFileIds: params.nonImageAttachmentFileIds || [],
+        temperature: params.temperature,
+
+      })
+
+      Logger.info(`[agentCore] Direct LLM call result: ${JSON.stringify(result).substring(0, 700)}...`)
+      Logger.info(`[agentCore] ✅ Direct LLM call completed`)
+      Logger.info(`[agentCore] 📊 Answer length: ${finalAnswer.length} characters`)
+      Logger.info(`[agentCore] 💰 Cost: $${totalCost.toFixed(6)}`)
+    }
+
+    executeAgentSpan?.end()
+
+    // Return final response
+    return {
+      success: true,
+      response: finalAnswer,
+      citations: citations.length > 0 ? citations : undefined,
+      imageCitations: imageCitations.length > 0 ? imageCitations : undefined,
+      thinking: thinking || undefined,
+      cost: totalCost > 0 ? totalCost.toFixed(6) : undefined,
+      tokensUsed: totalTokens,
+      chatId: null,      // No chat for workflows
+      messageId: null,   // No message for workflows
+    }
+
+
+
+
+  } catch (error) {
+    Logger.error(error, "[agentCore] Agent execution failed")
+    return {
+      success: false,
+      error: getErrorMessage(error)
+    }
+  }
 }
 
 
 
-  /**
-   * Classify user query to determine RAG routing strategy
-   */
-  async function classifyUserQuery(
-      userQuery: string,
-      userEmail: string,
-      userMetadata: UserMetadataType,
-      modelId?: string,
-  ): Promise<QueryRouterLLMResponse> {
-      Logger.info(`[agentCore] 🔍 Classifying user query...`)
+/**
+ * Classify user query to determine RAG routing strategy
+ */
+async function classifyUserQuery(
+  userQuery: string,
+  userEmail: string,
+  userMetadata: UserMetadataType,
+  modelId?: string,
+): Promise<QueryRouterLLMResponse> {
+  Logger.info(`[agentCore] 🔍 Classifying user query...`)
 
-      const classificationIterator = generateSearchQueryOrAnswerFromConversation(
-          userQuery,
-          userEmail,
-          userMetadata,
-          {
-              modelId: (modelId as Models) || defaultBestModel,
-              stream: true,
-              json: true,
-          },
-      )
+  const classificationIterator = generateSearchQueryOrAnswerFromConversation(
+    userQuery,
+    userEmail,
+    userMetadata,
+    {
+      modelId: (modelId as Models) || defaultBestModel,
+      stream: true,
+      json: true,
+    },
+  )
 
-      let classificationText = ""
-      for await (const chunk of classificationIterator) {
-          if (chunk.text) {
-              classificationText += chunk.text
-          }
-      }
-
-      const classification = jsonParseLLMOutput(classificationText)
-
-      const result: QueryRouterLLMResponse = {
-          type: classification.type || "SearchWithoutFilters",
-          direction: classification.direction || null,
-          filterQuery: classification.filter_query || null,
-          filters: {
-              apps: classification.apps || null,
-              entities: classification.entities || null,      
-              startTime: classification.start_time || null,  
-              endTime: classification.end_time || null,      
-              sortDirection: classification.sort_direction || null,  
-              count: classification.count || 5,              
-              offset: classification.offset || 0,             
-              intent: classification.intent || undefined,     
-          },
-      }
-
-      Logger.info(`[agentCore] ✅ Query classified as: ${result.type}`)
-      return result
+  let classificationText = ""
+  for await (const chunk of classificationIterator) {
+    if (chunk.text) {
+      classificationText += chunk.text
+    }
   }
 
+  const classification = jsonParseLLMOutput(classificationText)
 
-  //this function will be used to be called by workflow feature
+  const result: QueryRouterLLMResponse = {
+    type: classification.type || "SearchWithoutFilters",
+    direction: classification.direction || null,
+    filterQuery: classification.filter_query || null,
+    filters: {
+      apps: classification.apps || null,
+      entities: classification.entities || null,
+      startTime: classification.start_time || null,
+      endTime: classification.end_time || null,
+      sortDirection: classification.sort_direction || null,
+      count: classification.count || 5,
+      offset: classification.offset || 0,
+       ...(classification.intent ? { intent: classification.intent } : {}),
+    },
+  }
+
+  Logger.info(`[agentCore] ✅ Query classified as: ${result.type}`)
+  return result
+}
+
+
+//this function will be used to be called by workflow feature
 export const createAgentForWorkflow = async (
   agentData: CreateAgentPayload,
   userId: number,
