@@ -5,13 +5,7 @@ import { X, Search, Bot } from "lucide-react"
 import { SelectPublicAgent } from "shared/types"
 
 const Logger = console
-interface Agent {
-  externalId: string
-  name: string
-  description?: string
-  model?: string
-  creation_source?: string
-}
+
 
 interface AgentsSidebarProps {
   isVisible: boolean
