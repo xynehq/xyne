@@ -86,6 +86,18 @@ export const insertAgentSchema = createInsertSchema(agents, {
           // New AppSelectionMap format
           itemIds: z.array(z.string()),
           selectedAll: z.boolean(),
+          // Gmail specific filters
+          from: z.array(z.string()).optional(),
+          to: z.array(z.string()).optional(),
+          cc: z.array(z.string()).optional(),
+          bcc: z.array(z.string()).optional(),
+          // Slack specific filters
+          senderId: z.array(z.string()).optional(),
+          // Common time range filter (Unix timestamps)
+          timeRange: z.object({
+            startDate: z.number(),
+            endDate: z.number(),
+          }).optional(),
         }),
       ),
     ])
@@ -111,6 +123,18 @@ export const selectAgentSchema = createSelectSchema(agents, {
           // New AppSelectionMap format
           itemIds: z.array(z.string()),
           selectedAll: z.boolean(),
+          // Gmail specific filters
+          from: z.array(z.string()).optional(),
+          to: z.array(z.string()).optional(),
+          cc: z.array(z.string()).optional(),
+          bcc: z.array(z.string()).optional(),
+          // Slack specific filters
+          senderId: z.array(z.string()).optional(),
+          // Common time range filter (Unix timestamps)
+          timeRange: z.object({
+            startDate: z.number(),
+            endDate: z.number(),
+          }).optional(),
         }),
       ),
     ])

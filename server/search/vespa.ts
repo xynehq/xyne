@@ -109,6 +109,7 @@ export const searchVespaAgent = async (
       ...options,
       driveIds,
       processedCollectionSelections,
+      appFilters: options.appFilters, // Explicitly pass appFilters
       recencyDecayRate:
         options.recencyDecayRate || config.defaultRecencyDecayRate,
     },

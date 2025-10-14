@@ -79,6 +79,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
   agentSpecificCollectionFolderIds: string[]
   agentSpecificCollectionFileIds: string[]
   selectedItems: {}
+  appFilters: any
 } {
   Logger.debug({ agentPrompt }, "Parsing agent prompt for app integrations")
   let agentAppEnums: Apps[] = []
@@ -87,6 +88,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
   let agentSpecificCollectionFolderIds: string[] = []
   let agentSpecificCollectionFileIds: string[] = []
   let selectedItem = {}
+  let appFilters: any = {}
 
   if (!agentPrompt) {
     return {
@@ -96,16 +98,17 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       agentSpecificCollectionFolderIds,
       agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
+      appFilters,
     }
   }
-  
+
   let agentPromptData: { appIntegrations?: string[] } = {}
 
   try {
     agentPromptData = JSON.parse(agentPrompt)
-    let selectedItem:any= {}
+    let selectedItem: any = {}
     if (isAppSelectionMap(agentPromptData.appIntegrations)) {
-      const { selectedApps, selectedItems } = parseAppSelections(
+      const { selectedApps, selectedItems, appFilters } = parseAppSelections(
         agentPromptData.appIntegrations,
       )
       // agentAppEnums = selectedApps.filter(isValidApp);
@@ -145,6 +148,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       agentSpecificCollectionFolderIds,
       agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
+      appFilters,
     }
   }
 
@@ -165,6 +169,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
       agentSpecificCollectionFolderIds,
       agentSpecificCollectionFileIds,
       selectedItems: selectedItem,
+      appFilters,
     }
   }
 
@@ -231,6 +236,7 @@ export function parseAgentAppIntegrations(agentPrompt?: string): {
     agentSpecificCollectionFolderIds,
     agentSpecificCollectionFileIds,
     selectedItems: selectedItem,
+    appFilters,
   }
 }
 
@@ -257,6 +263,7 @@ interface UnifiedSearchOptions {
   collectionIds?: string[]
   collectionFolderIds?: string[]
   collectionFileIds?: string[]
+  appFilters?: any
 }
 
 const userMetadata: UserMetadataType = {userTimezone: "Asia/Kolkata", dateForAI: getDateForAI({userTimeZone: "Asia/Kolkata"})}
@@ -375,6 +382,7 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
                 ]
               : undefined,
           selectedItem: selectedItems,
+          appFilters: options.appFilters,
         },
       )
     } else {
@@ -415,7 +423,6 @@ async function executeVespaSearch(options: UnifiedSearchOptions): Promise<{
       offset,
       asc: orderDirection === "asc",
       excludedIds,
-      intent: options.intent || null,
     })
   } else {
     const errorMsg = "No query or schema provided for search."
@@ -526,6 +533,7 @@ export const searchTool: AgentTool = {
         agentSpecificCollectionFolderIds,
         agentSpecificCollectionFileIds,
         selectedItems,
+        appFilters,
       } = parseAgentAppIntegrations(agentPrompt)
       const channelIds = agentPrompt
         ? await getChannelIdsFromAgentPrompt(agentPrompt)
@@ -750,6 +758,7 @@ export const metadataRetrievalTool: AgentTool = {
         agentSpecificCollectionFolderIds,
         agentSpecificCollectionFileIds,
         selectedItems,
+        appFilters,
       } = parseAgentAppIntegrations(agentPrompt)
 
       let resolvedIntent = params.intent || {}
