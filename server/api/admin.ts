@@ -137,6 +137,7 @@ import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
 import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
 import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
+import { replaceSheetIndex } from "@/search/utils"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -2106,7 +2107,7 @@ export const GetKbVespaContent = async (c: Context) => {
 
     const rawData = await c.req.json()
     const validatedData = getDocumentSchema.parse(rawData)
-    const { docId, schema: rawSchema } = validatedData
+    const { docId, sheetIndex, schema: rawSchema } = validatedData
     const validSchemas = [KbItemsSchema]
     if (!validSchemas.includes(rawSchema)) {
       throw new HTTPException(400, {
@@ -2119,12 +2120,14 @@ export const GetKbVespaContent = async (c: Context) => {
         message: `Document with id ${docId} not found in the system.`,
       })
     }
+
+    const vespaDocId = replaceSheetIndex(collectionFile[0].vespaDocId!, sheetIndex ?? 0)
     // console.log("Fetched Vespa Doc ID:", vespaDocId)
     const schema = rawSchema as VespaSchema
 
     const documentData = await GetDocument(
       schema,
-      collectionFile[0].vespaDocId!,
+      vespaDocId,
     )
 
     if (!documentData || !("fields" in documentData) || !documentData.fields) {

@@ -1,3 +1,4 @@
+import { DocumentOperations } from "@/contexts/DocumentOperationsContext";
 import React, { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 
@@ -5,9 +6,11 @@ interface ExcelViewerProps {
   source: File;
   className?: string;
   style?: React.CSSProperties;
+  documentOperationsRef?: React.RefObject<DocumentOperations>;
+  onSheetChange?: (sheetIndex: number) => void;
 }
 
-const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className }) => {
+const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className, documentOperationsRef, onSheetChange }) => {
   const [sheets, setSheets] = useState<{ name: string; data: any[][] }[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
 
@@ -49,6 +52,31 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ source, className }) => {
 
     reader.readAsArrayBuffer(source);
   }, [source]);
+
+  // Register the goToPage function with the DocumentOperations ref
+  useEffect(() => {
+    if (documentOperationsRef?.current) {
+      documentOperationsRef.current.goToPage = async (sheetIndex?: number) => {
+        if (sheetIndex !== undefined) {
+          setActiveSheet(sheetIndex)
+        }
+      }
+    }
+    
+    // Cleanup function to remove the goToPage function when component unmounts
+    return () => {
+      if (documentOperationsRef?.current) {
+        documentOperationsRef.current.goToPage = undefined
+      }
+    }
+  }, [documentOperationsRef, setActiveSheet])
+
+  // Notify parent component when sheet changes
+  useEffect(() => {
+    if (onSheetChange) {
+      onSheetChange(activeSheet)
+    }
+  }, [activeSheet, onSheetChange])
 
   if (sheets.length === 0) {
     return <div className="p-4">Loading Excel file...</div>;

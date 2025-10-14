@@ -91,6 +91,7 @@ const DocumentViewerContainer = memo(
   ({
     selectedDocument,
     loadingDocument,
+    setCurrentSheetIndex,
   }: {
     selectedDocument: {
       file: FileNode
@@ -98,6 +99,7 @@ const DocumentViewerContainer = memo(
       content?: Blob
     }
     loadingDocument: boolean
+    setCurrentSheetIndex: (index: number) => void
   }) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const { documentOperationsRef } = useDocumentOperations()
@@ -164,6 +166,8 @@ const DocumentViewerContainer = memo(
               }
               className="h-full"
               style={{ height: "100%", overflow: "auto" }}
+              documentOperationsRef={documentOperationsRef}
+              onSheetChange={setCurrentSheetIndex}
             />
           </div>
         )
@@ -257,7 +261,7 @@ const DocumentViewerContainer = memo(
     // Expose the highlight functions via the document operations ref
     useEffect(() => {
       if (documentOperationsRef?.current) {
-        documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number) => {
+        documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number, pageIndex?: number) => {
           if (!containerRef.current) {
             const container = document.querySelector(
               '[data-container-ref="true"]',
@@ -270,7 +274,7 @@ const DocumentViewerContainer = memo(
           }
 
           try {
-            const success = await highlightText(text, chunkIndex)
+            const success = await highlightText(text, chunkIndex, pageIndex)
             return success
           } catch (error) {
             console.error("Error calling highlightText:", error)
@@ -344,6 +348,7 @@ function KnowledgeManagementContent() {
   const { user, agentWhiteList } = matches[matches.length - 1].context
   const { toast } = useToast()
   const { documentOperationsRef } = useDocumentOperations()
+  const [currentSheetIndex, setCurrentSheetIndex] = useState<number>(0)
   const [showNewCollection, setShowNewCollection] = useState(false)
   const [collectionName, setCollectionName] = useState("")
   const [collections, setCollections] = useState<Collection[]>([])
@@ -1417,6 +1422,7 @@ function KnowledgeManagementContent() {
   const handleChunkIndexChange = async (
     newChunkIndex: number | null,
     documentId: string,
+    docId: string,
   ) => {
     if (!documentId) {
       console.error("handleChunkIndexChange called without documentId")
@@ -1426,9 +1432,9 @@ function KnowledgeManagementContent() {
     if (newChunkIndex !== null && selectedDocument?.file.id === documentId) {
       try {
         const chunkContentResponse = await api.chunk[":cId"].files[
-          ":itemId"
+          ":docId"
         ].content.$get({
-          param: { cId: newChunkIndex.toString(), itemId: documentId },
+          param: { cId: newChunkIndex.toString(), docId: docId },
         })
 
         if (!chunkContentResponse.ok) {
@@ -1459,7 +1465,8 @@ function KnowledgeManagementContent() {
             try {
               await documentOperationsRef.current.highlightText(
                 chunkContent.chunkContent,
-                newChunkIndex
+                newChunkIndex,
+                chunkContent.pageIndex,
               )
             } catch (error) {
               console.error(
@@ -1558,6 +1565,7 @@ function KnowledgeManagementContent() {
                   <DocumentViewerContainer
                     selectedDocument={selectedDocument}
                     loadingDocument={loadingDocument}
+                    setCurrentSheetIndex={setCurrentSheetIndex}
                   />
                 </div>
               </div>
@@ -2292,6 +2300,7 @@ function KnowledgeManagementContent() {
         documentName={selectedDocument?.file.name || null}
         isOpen={isVespaModalOpen}
         onClose={() => setIsVespaModalOpen(false)}
+        currentSheetIndex={currentSheetIndex}
       />
     </div>
   )

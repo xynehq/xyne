@@ -1142,7 +1142,7 @@ export const AppRoutes = app
   .get("/cl/:clId/files/:itemId/preview", GetFilePreviewApi)
   .get("/cl/:clId/files/:itemId/content", GetFileContentApi)
   .get("/cl/:clId/files/:itemId/download", DownloadFileApi)
-  .get("/chunk/:cId/files/:itemId/content", GetChunkContentApi)
+  .get("/chunk/:cId/files/:docId/content", GetChunkContentApi)
   .post("/highlight", zValidator("json", highlightSchema), HighlightApi)
 
   .post(

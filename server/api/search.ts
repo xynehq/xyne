@@ -586,7 +586,7 @@ export const AnswerApi = async (c: Context) => {
   }
   const initialContext = cleanContext(
     results.root.children
-      .map((v) => answerContextMap(v as VespaSearchResults, userMetadata))
+      .map(async (v) => await answerContextMap(v as VespaSearchResults, userMetadata))
       .join("\n"),
   )
 
@@ -666,7 +666,7 @@ export const AnswerApi = async (c: Context) => {
   const finalContext = cleanContext(
     results.root.children
       .filter((v, i) => output?.contextualChunks.includes(i))
-      .map((v) => answerContextMap(v as VespaSearchResults, userMetadata))
+      .map(async (v) => await answerContextMap(v as VespaSearchResults, userMetadata))
       .join("\n"),
   )
 
