@@ -6,18 +6,49 @@
             <tokenizer-model path="models/tokenizer.json" />
             <onnx-gpu-device>0</onnx-gpu-device> <!-- Specifies to use GPU device 0 for ONNX runtime -->
         </component>
+
+        <!-- Container-level threadpool configuration - reduce to lower CPU load -->
+        <config name="container.handler.threadpool">
+            <maxthreads>64</maxthreads>
+        </config>
+
         <search />
         <document-api />
     </container>
+
     <content id="my_content" version="1.0">
         <engine>
             <proton>
                 <resource-limits>
                     <disk>0.90</disk>
+                    <memory>0.85</memory>
                 </resource-limits>
+                <!-- Tuning to REDUCE CPU load -->
+                <tuning>
+                    <searchnode>
+                        <requestthreads>
+                            <search>32</search>  <!-- Reduced from 64 to lower CPU contention -->
+                            <persearch>1</persearch>  <!-- Keep at 1 -->
+                            <summary>8</summary>  <!-- Reduced from 16 to lower CPU contention -->
+                        </requestthreads>
+                        <flushstrategy>
+                            <native>
+                                <total>
+                                    <maxmemorygain>8589934592</maxmemorygain> <!-- 8GB -->
+                                    <diskbloatfactor>0.2</diskbloatfactor>
+                                </total>
+                            </native>
+                        </flushstrategy>
+                        <resizing>
+                            <initialdocumentcount>1000000</initialdocumentcount>
+                        </resizing>
+                    </searchnode>
+                </tuning>
             </proton>
         </engine>
+
         <redundancy reply-after="1">1</redundancy>
+
         <documents>
             <document type="file" mode="index" />
             <document type="user" mode="index" />
@@ -29,11 +60,12 @@
             <document type="chat_container" mode="index" global="true" />
             <document type="chat_user" mode="index" global="true" />
             <document type="chat_team" mode="index" global="true" />
-             <document type="chat_attachment" mode="index" global="true" />
+            <document type="chat_attachment" mode="index" global="true" />
             <document type="datasource" mode="index" global="true" />
             <document type="datasource_file" mode="index" />
             <document type="kb_items" mode="index"/>
         </documents>
+
         <nodes>
             <node distribution-key="0" hostalias="node1" />
         </nodes>
