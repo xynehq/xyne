@@ -1,0 +1,916 @@
+openapi: "3.1.0"
+info:
+  title: Xyne Consumer APIs
+  description: |-
+    OpenAPI 3.1 specification for consumer-facing endpoints.
+    All endpoints are served under the `/api/consumer` base path and require an API key.
+  version: "1.0.0"
+jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema"
+servers:
+  - url: /api/consumer
+security:
+  - ApiKeyAuth: []
+tags:
+  - name: Agents
+    description: Create, update, chat with, and delete agents
+  - name: Chat
+    description: Chat operations and history
+  - name: Collections
+    description: Knowledge Base (KB) collections and items
+
+paths:
+  /agent/create:
+    post:
+      tags: [Agents]
+      summary: Create Agent
+      operationId: createAgent
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        description: Payload to create a new agent
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgent"
+      responses:
+        "201":
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFoundUserOrWorkspace"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /agent/chat:
+    post:
+      tags: [Chat, Agents]
+      summary: Send a chat message to an agent
+      operationId: agentChat
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        description: Chat message payload
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentChatMessage"
+      responses:
+        "200":
+          description: Streaming or aggregated assistant response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentChatResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFoundUserOrWorkspace"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /agent/chat/stop:
+    post:
+      tags: [Chat, Agents]
+      summary: Stop a streaming chat
+      operationId: stopChat
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        description: Stop a streaming chat session
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatStop"
+      responses:
+        "200":
+          description: Streaming stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFoundUserOrWorkspace"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /agent/{agentExternalId}:
+    put:
+      tags: [Agents]
+      summary: Update Agent
+      operationId: updateAgent
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: agentExternalId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        description: Fields to update on the agent
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgent"
+      responses:
+        "200":
+          description: Agent updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      tags: [Agents]
+      summary: Delete Agent
+      operationId: deleteAgent
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: agentExternalId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /chat/history:
+    get:
+      tags: [Chat]
+      summary: List chat history
+      operationId: listChatHistory
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "0"
+          description: Zero-based page index (as string)
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Chat history page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatHistoryPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /cl:
+    post:
+      tags: [Collections]
+      summary: Create collection (KB)
+      operationId: createCollection
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        description: Collection to create
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCollection"
+      responses:
+        "201":
+          description: Collection created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Collection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFoundUserOrWorkspace"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    get:
+      tags: [Collections]
+      summary: List all collections
+      operationId: listCollections
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: ownOnly
+          in: query
+          required: false
+          schema:
+            type: string
+          description: If present, filter to collections owned by the caller (string flag)
+        - name: includeItems
+          in: query
+          required: false
+          schema:
+            type: string
+          description: If present, include items in response (string flag)
+      responses:
+        "200":
+          description: Collections list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collections:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Collection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /cl/search:
+    get:
+      tags: [Collections]
+      summary: Search knowledge base
+      operationId: searchKnowledgeBase
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [collection, folder, file, all]
+            default: all
+        - name: collectionId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResults"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /cl/{clId}:
+    delete:
+      tags: [Collections]
+      summary: Delete collection (KB)
+      operationId: deleteCollection
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: clId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Collection deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /cl/{clId}/items/upload:
+    post:
+      tags: [Collections]
+      summary: Upload files to collection
+      operationId: uploadCollectionItems
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: clId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        description: Multipart form to upload one or more files
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadFilesForm"
+      responses:
+        "202":
+          description: Files accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /cl/{clId}/items/{itemId}:
+    delete:
+      tags: [Collections]
+      summary: Delete item in collection
+      operationId: deleteCollectionItem
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: clId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Item deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenScope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Unauthorized (missing or invalid API key)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ForbiddenScope:
+      description: API key authenticated but missing required scope
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            missing_scope:
+              value:
+                message: "API key does not have scope to create agents"
+    NotFoundUserOrWorkspace:
+      description: User or workspace not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            not_found:
+              value:
+                message: "User or workspace not found"
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            generic:
+              value:
+                message: "Could not create agent"
+                detail: "…(internal error message)…"        
+
+  schemas:
+    # ===== Shared =====
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      additionalProperties: true    
+
+    OkResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [Ok]
+
+    # ===== Agents =====
+    CreateAgent:
+      type: object
+      required: [name, model]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        prompt:
+          type: string
+        model:
+          type: string
+          minLength: 1
+        isPublic:
+          type: boolean
+          default: false
+        appIntegrations:
+          description: Legacy array of IDs or AppSelectionMap
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: object
+              additionalProperties:
+                type: object
+                properties:
+                  itemIds:
+                    type: array
+                    items:
+                      type: string
+                  selectedAll:
+                    type: boolean
+              description: AppSelectionMap keyed by app name
+          default: []
+        allowWebSearch:
+          type: boolean
+          default: false
+        isRagOn:
+          type: boolean
+          default: true
+        uploadedFileNames:
+          type: array
+          items:
+            type: string
+          default: []
+        userEmails:
+          type: array
+          items:
+            type: string
+            format: email
+          default: []
+        docIds:
+          description: Data source identifiers (structure depends on fetchedDataSourceSchema)
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: object
+                additionalProperties: true
+          default: []
+
+    UpdateAgent:
+      type: object
+      description: All fields optional for update - partial of CreateAgent
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        prompt:
+          type: string
+        model:
+          type: string
+          minLength: 1
+        isPublic:
+          type: boolean
+        additionalProperties: true
+    
+    Agent:
+      type: object
+      properties:
+        externalId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        model:
+          type: string
+        isPublic:
+          type: boolean
+        allowWebSearch:
+          type: boolean
+        isRagOn:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        additionalProperties: true  
+
+    AgentChatMessage:
+      type: object
+      description: |-
+        Payload to send a chat message to an agent
+      required: [message, modelId, agentId]
+      properties:
+        message:
+          type: string
+          description: The chat message content
+        chatId:
+          type: string
+          description: Existing chat thread identifier (optional)
+        path:
+          type: string
+          description: File path (optional)
+        modelId:
+          type: string
+          minLength: 1
+          description: Model identifier to use for the chat
+        isReasoningEnabled:
+          type: string
+          description: Whether reasoning is enabled (string boolean)
+        agentId:
+          type: string
+          description: Agent identifier
+        streamOff:
+          type: string
+          description: Whether to disable streaming (string boolean)
+
+    AgentChatResponse:
+      type: object
+      description:
+        Response from agent chat. Can be streaming (SSE) or non-streaming JSON.
+        For streaming: Server-Sent Events with events like 'response-update', 'citations-update', 'end', 'error'
+        For non-streaming: Complete JSON response with chat data
+      properties:
+        chatId:
+          type: string
+          description: Chat session identifier
+        messageId:
+          type: string
+          description: Generated message identifier
+        answer:
+          type: string
+          description: Complete response text (non-streaming only)
+        thinking:
+          type: string
+          description: Reasoning/thinking process (if available)
+        citations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: Source citations for the response
+        imageCitations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: Image citations if any
+      additionalProperties: true
+
+    ChatStop:
+      type: object
+      required: [chatId]
+      properties:
+        chatId:
+          type: string
+          minLength: 1
+
+    ChatHistoryPage:
+      type: array 
+      description: |-
+        List of chat objects returned directly as an array, not wrapped in a page object.
+        Based on getPublicChats DB function which returns SelectPublicChat[]
+      items:
+        type: object
+        properties:
+          externalId:
+            type: string
+            description: Chat external identifier
+          title:
+            type: string
+            description: Chat title
+          email:
+            type: string
+            description: User email
+          workspaceId:
+            type: integer
+            description: Workspace ID
+          agentId:
+            type: string
+            description: Agent external ID (if applicable)
+          isBookmarked:
+            type: boolean
+            description: Whether chat is bookmarked
+          createdAt:
+            type: string
+            format: date-time
+            description: Chat creation timestamp
+          updatedAt:
+            type: string
+            format: date-time
+            description: Last update timestamp
+          chatType:
+            type: string
+            enum: [default, kb_chat]
+            description: Type of chat
+        additionalProperties: true
+
+    # ===== Collections (KB) =====
+    CreateCollection:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        isPrivate:
+          type: boolean
+          default: true
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Collection:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        isPrivate:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        additionalProperties: true
+
+    SearchResults:
+      type: object
+      properties:
+        results:
+          type: array
+          description: Array of search results (collections, folders, files)
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                description: Unique identifier
+              name:
+                type: string
+                description: Name of the item
+              type:
+                type: string
+                enum: [collection, folder, file]
+                description: Type of the search result
+              description:
+                type: string
+                description: Description (collections only)
+              collectionId:
+                type: string
+                description: Parent collection ID (folders/files only)
+              collectionName:
+                type: string
+                description: Parent collection name (folders/files only)
+              parentId:
+                type: string
+                nullable: true
+                description: Parent folder ID (folders/files only)
+              path:
+                type: string
+                description: Full path (folders/files only)
+              mimeType:
+                type: string
+                description: MIME type (files only)
+              fileSize:
+                type: integer
+                description: File size in bytes (files only)
+              totalItems:
+                type: integer
+                description: Total items count (collections only)
+              totalFileCount:
+                type: integer
+                description: Total file count (folders only)
+              createdAt:
+                type: string
+                format: date-time
+                description: Creation timestamp
+              updatedAt:
+                type: string
+                format: date-time
+                description: Last update timestamp
+              isPrivate:
+                type: boolean
+                description: Privacy setting (collections only)
+              metadata:
+                type: object
+                additionalProperties: true
+                description: Additional metadata
+            required: [id, name, type, createdAt, updatedAt]
+            additionalProperties: true
+        total:
+          type: integer
+          description: Total number of results found
+        hasMore:
+          type: boolean
+          description: Whether there are more results available
+
+    UploadFilesForm:
+      type: object
+      properties:
+        parentId:
+          type: string
+        duplicateStrategy:
+          type: string
+          enum: [SKIP, RENAME, OVERWRITE]
+        sessionId:
+          type: string
+        files:
+          type: array
+          description: One or more files
+          items:
+            type: string
+            format: binary
+      required: [files]
+
+    UploadAccepted:
+      type: object
+      properties:
+        results:
+          type: array
+          description: Detailed results for each uploaded file
+          items:
+            type: object
+            properties:
+              success:
+                type: boolean
+                description: Whether the file was successfully uploaded
+              fileName:
+                type: string
+                description: Final name of the uploaded file
+              originalFileName:
+                type: string
+                description: Original name of the file (if renamed)
+              parentId:
+                type: string
+                nullable: true
+                description: ID of the parent folder
+              message:
+                type: string
+                description: Status message for the upload
+              itemId:
+                type: string
+                description: ID of the created item (if successful)
+              duplicateId:
+                type: string
+                description: ID of existing duplicate file (if applicable)
+              isIdentical:
+                type: boolean
+                description: Whether the file is identical to existing file
+              wasRenamed:
+                type: boolean
+                description: Whether the file was renamed to avoid conflicts
+              uploadStatus:
+                type: string
+                description: Processing status of the upload
+            additionalProperties: true
+        summary:
+          type: object
+          description: Summary of upload results
+          properties:
+            total:
+              type: integer
+              description: Total number of files processed
+            successful:
+              type: integer
+              description: Number of successfully uploaded files
+            skipped:
+              type: integer
+              description: Number of files skipped
+            failed:
+              type: integer
+              description: Number of files that failed to upload
+            renamed:
+              type: integer
+              description: Number of files that were renamed
