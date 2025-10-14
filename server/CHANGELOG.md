@@ -1,3 +1,10 @@
+## [3.14.2](https://github.com/xynehq/xyne/compare/v3.14.1...v3.14.2) (2025-10-14)
+
+
+### Bug Fixes
+
+* **tools:** Revamp agentic tools ([#1067](https://github.com/xynehq/xyne/issues/1067)) ([3ac0b9e](https://github.com/xynehq/xyne/commit/3ac0b9e688b48a2934465d7b79ce677299bc53d9))
+
 ## [3.14.1](https://github.com/xynehq/xyne/compare/v3.14.0...v3.14.1) (2025-10-14)
 
 
