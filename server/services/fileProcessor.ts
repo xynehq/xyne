@@ -1,11 +1,13 @@
 import { getErrorMessage } from "@/utils"
 import { chunkDocument } from "@/chunks"
-// import { extractTextAndImagesWithChunksFromPDF } from "@/pdf
-
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
-import { chunkByOCRFromBuffer } from "@/lib/chunkByOCR"
 import { type ChunkMetadata } from "@/types"
+import { 
+  PdfProcessor, 
+  type PdfProcessingMethod,
+  type ProcessingResultDraft 
+} from "@/lib/pdfProcessor"
 import { chunkSheetWithHeaders } from "@/sheetChunk"
 import * as XLSX from "xlsx"
 import {
@@ -21,6 +23,13 @@ const Logger = getLogger(Subsystem.Ingest).child({
   module: "fileProcessor",
 })
 
+export { 
+  type PdfProcessingMethod, 
+  type ProcessingResultDraft 
+} from "@/lib/pdfProcessor"
+
+
+
 export interface ProcessingResult {
   chunks: string[]
   chunks_pos: number[]
@@ -28,6 +37,7 @@ export interface ProcessingResult {
   image_chunks_pos: number[]
   chunks_map: ChunkMetadata[]
   image_chunks_map: ChunkMetadata[]
+  processingMethod?: PdfProcessingMethod
 }
 
 export interface SheetProcessingResult extends ProcessingResult {
@@ -40,7 +50,6 @@ export interface SheetProcessingResult extends ProcessingResult {
 type ProcessingResultArray = (ProcessingResult | SheetProcessingResult)[]
 
 export class FileProcessorService {
-
   static async processFile(
     buffer: Buffer,
     mimeType: string,
@@ -58,9 +67,15 @@ export class FileProcessorService {
 
     try {
       if (baseMimeType === "application/pdf") {
-        // Redirect PDF processing to OCR
-        const result = await chunkByOCRFromBuffer(buffer, fileName, vespaDocId)
-        return [result]
+        // Use the modular PDF processor with fallback logic
+        // It returns a complete result, no need to finalize again
+        return await PdfProcessor.processWithFallback(
+          buffer,
+          fileName,
+          vespaDocId,
+          extractImages,
+          describeImages,
+        )
       } else if (isDocxFile(baseMimeType)) {
         // Process DOCX
         const result = await extractTextAndImagesWithChunksFromDocx(
@@ -183,13 +198,13 @@ export class FileProcessorService {
       block_labels: ["image"], // Default block label
     }));
 
-    return [{
+    return {
       chunks,
       chunks_pos,
       image_chunks,
       image_chunks_pos,
-      chunks_map,
-      image_chunks_map,
-    }]
+      chunks_map: [],
+      image_chunks_map: [],
+    }
   }
 }
