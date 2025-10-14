@@ -1,3 +1,59 @@
+# [3.14.0](https://github.com/xynehq/xyne/compare/v3.13.8...v3.14.0) (2025-10-13)
+
+
+### Features
+
+* **slackBotMessageIngestion:** Added option to include bot message ([#1097](https://github.com/xynehq/xyne/issues/1097)) ([a2e4746](https://github.com/xynehq/xyne/commit/a2e474643692729993163367a4a26ea2aba45a3e))
+
+## [3.13.8](https://github.com/xynehq/xyne/compare/v3.13.7...v3.13.8) (2025-10-13)
+
+
+### Bug Fixes
+
+* XYNE-153 added tootltip message when kb is created ([#1093](https://github.com/xynehq/xyne/issues/1093)) ([a4e928f](https://github.com/xynehq/xyne/commit/a4e928fa28abbb09f99ae13049271f1697001fa8))
+
+## [3.13.7](https://github.com/xynehq/xyne/compare/v3.13.6...v3.13.7) (2025-10-13)
+
+
+### Bug Fixes
+
+* **getItems:** Fix agent getItems queries ([#1090](https://github.com/xynehq/xyne/issues/1090)) ([762258c](https://github.com/xynehq/xyne/commit/762258cadecb9d67efccc2ca97a53dae79ce731c))
+
+## [3.13.6](https://github.com/xynehq/xyne/compare/v3.13.5...v3.13.6) (2025-10-10)
+
+
+### Bug Fixes
+
+* **calling-feature:** enabling calling button ([#1091](https://github.com/xynehq/xyne/issues/1091)) ([6514fbd](https://github.com/xynehq/xyne/commit/6514fbde9142a1fde880ce035d01a00a8db1ccd0))
+
+## [3.13.5](https://github.com/xynehq/xyne/compare/v3.13.4...v3.13.5) (2025-10-10)
+
+
+### Bug Fixes
+
+* **docker-compose:** expose NGINX on host port 3000 instead of 80 ([#1089](https://github.com/xynehq/xyne/issues/1089)) ([08655d4](https://github.com/xynehq/xyne/commit/08655d48008c74ba32689827ec98c7523110e8b2))
+
+## [3.13.4](https://github.com/xynehq/xyne/compare/v3.13.3...v3.13.4) (2025-10-10)
+
+
+### Bug Fixes
+
+* XYN-175 chatpage space buffer reducer for sources/followps divs ([#1087](https://github.com/xynehq/xyne/issues/1087)) ([6ed3d75](https://github.com/xynehq/xyne/commit/6ed3d750455ac20d40943690d0eb5425e7d2665e))
+
+## [3.13.3](https://github.com/xynehq/xyne/compare/v3.13.2...v3.13.3) (2025-10-10)
+
+
+### Bug Fixes
+
+* **ngnix:** ngnix config for calling ([#1054](https://github.com/xynehq/xyne/issues/1054)) ([ade323e](https://github.com/xynehq/xyne/commit/ade323e3835f76c046e42d6d0b75b2698e437924))
+
+## [3.13.2](https://github.com/xynehq/xyne/compare/v3.13.1...v3.13.2) (2025-10-10)
+
+
+### Bug Fixes
+
+* **memory:** rebalance JVM heap sizes across Vespa production containers ([#1085](https://github.com/xynehq/xyne/issues/1085)) ([85b493d](https://github.com/xynehq/xyne/commit/85b493d79cbdac0f100f2ad2915eaa52ae124f70))
+
 ## [3.13.1](https://github.com/xynehq/xyne/compare/v3.13.0...v3.13.1) (2025-10-10)
 
 

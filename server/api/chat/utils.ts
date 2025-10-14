@@ -54,6 +54,7 @@ import { getLoggerWithChild, getLogger } from "@/logger"
 import type { Span } from "@/tracer"
 import { Subsystem } from "@/types"
 import type { SelectMessage } from "@/db/schema"
+import { MessageRole } from "@/types"
 const { maxValidLinks } = config
 import fs from "fs"
 import path from "path"
@@ -69,44 +70,48 @@ import { get } from "http"
 
 // Follow-up context types and utilities
 export type WorkingSet = {
-  fileIds: string[];
-  attachmentFileIds: string[]; // images etc.
-  carriedFromMessageIds: string[];
-};
+  fileIds: string[]
+  attachmentFileIds: string[] // images etc.
+  carriedFromMessageIds: string[]
+}
 
-const MAX_FILES = 12;
+const MAX_FILES = 12
 
 export function collectFollowupContext(
   messages: SelectMessage[],
-  startIdx: number,
   maxHops = 12
 ): WorkingSet {
+  const startIdx = messages.length - 1;
   const ws: WorkingSet = {
     fileIds: [],
     attachmentFileIds: [],
     carriedFromMessageIds: [],
-  };
+  }
 
-  const seen = new Set<string>();
-  let hops = 0;
+  const seen = new Set<string>()
+  let hops = 0
+
+  // Extract chain breaks to understand conversation boundaries
+  const chainBreaks = extractChainBreakClassifications(messages);
+  const chainBreakIndices = new Set(chainBreaks.map(cb => cb.messageIndex));
 
   for (let i = startIdx; i >= 0 && hops < maxHops; i--, hops++) {
-    const m = messages[i];
+    const m = messages[i]
 
     // 1) attachments the user explicitly added
     if (Array.isArray(m.attachments)) {
       for (const a of m.attachments as AttachmentMetadata[]) {
         if (a.isImage && a.fileId && !seen.has(`img:${a.fileId}`)) {
-          ws.attachmentFileIds.push(a.fileId);
-          ws.carriedFromMessageIds.push(m.externalId);
-          seen.add(`img:${a.fileId}`);
-          continue; // images are separate from fileIds
+          ws.attachmentFileIds.push(a.fileId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`img:${a.fileId}`)
+          continue // images are separate from fileIds
         }
         if (a.fileId && !seen.has(`f:${a.fileId}`)) {
-          ws.fileIds.push(a.fileId);
-          ws.carriedFromMessageIds.push(m.externalId);
-          seen.add(`f:${a.fileId}`);
-          if (ws.fileIds.length >= MAX_FILES) break;
+          ws.fileIds.push(a.fileId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`f:${a.fileId}`)
+          if (ws.fileIds.length >= MAX_FILES) break
         }
       }
     }
@@ -115,32 +120,35 @@ export function collectFollowupContext(
     if (Array.isArray(m.fileIds) && m.fileIds.length > 0) {
       for (const fileId of m.fileIds) {
         if (!seen.has(`f:${fileId}`)) {
-          ws.fileIds.push(fileId);
+          ws.fileIds.push(fileId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`f:${fileId}`)
+          if (ws.fileIds.length >= MAX_FILES) break
+        }
+      }
+    }
+
+    // 3) sourceIds from assistant messages
+    if (Array.isArray(m.sources) && m.sources.length > 0 && ws.fileIds.length < MAX_FILES) {
+      for (const source of m.sources) {
+        if (!seen.has(`f:${source.docId}`)) {
+          ws.fileIds.push(source.docId);
           ws.carriedFromMessageIds.push(m.externalId);
-          seen.add(`f:${fileId}`);
+          seen.add(`f:${source.docId}`);
           if (ws.fileIds.length >= MAX_FILES) break;
         }
       }
     }
 
-    // Use existing chain break classification system to detect boundaries
-    if (m.messageRole === "user" && m.queryRouterClassification) {
-      try {
-        const classification = typeof m.queryRouterClassification === "string" 
-          ? JSON.parse(m.queryRouterClassification) 
-          : m.queryRouterClassification;
-        if (classification.isFollowUp === false) break;
-      } catch (error) {
-        // If we can't parse classification, continue processing
-      }
-    }
+    // Stop if we hit a chain break (previous conversation topic)
+    if (chainBreakIndices.has(i)) break
   }
 
   // De-dupe & trim
-  ws.fileIds = Array.from(new Set(ws.fileIds)).slice(0, MAX_FILES);
-  ws.attachmentFileIds = Array.from(new Set(ws.attachmentFileIds));
+  ws.fileIds = Array.from(new Set(ws.fileIds)).slice(0, MAX_FILES)
+  ws.attachmentFileIds = Array.from(new Set(ws.attachmentFileIds))
 
-  return ws;
+  return ws
 }
 
 function slackTs(ts: string | number) {
@@ -179,12 +187,12 @@ export interface AppSelectionMap {
 
 export interface ParsedResult {
   selectedApps: Apps[]
-  selectedItems: { [app: string]: string[] }
+  selectedItems: Partial<Record<Apps, string[]>>
 }
 
 export function parseAppSelections(input: AppSelectionMap): ParsedResult {
   const selectedApps: Apps[] = []
-  const selectedItems: { [app: string]: string[] } = {}
+  let selectedItems: Record<Apps, string[]> = {} as Record<Apps, string[]>
 
   for (let [appName, selection] of Object.entries(input)) {
     let app: Apps
