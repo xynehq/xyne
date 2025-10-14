@@ -162,7 +162,7 @@ import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
 import { TemplateSelectionModal } from "./TemplateSelectionModal"
 import Snackbar from "../ui/Snackbar"
 import ConfirmationPopup from "../ui/ConfirmationPopup"
-import { Agent } from "http"
+import { SelectPublicAgent } from "@/server/shared/types"
 
 // Custom Node Component
 const StepNode: React.FC<NodeProps> = ({
@@ -1239,8 +1239,8 @@ const Header = ({
             onClick={() => onSaveChanges(false)}
             disabled={isSaveDisabled}
             className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${isSaveDisabled
-                ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
-                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
+              ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+              : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
               }`}
           >
             Save as Private
@@ -1249,8 +1249,8 @@ const Header = ({
             onClick={() => onSaveChanges(true)}
             disabled={isSaveDisabled}
             className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${isSaveDisabled
-                ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
-                : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
+              ? "bg-gray-900 dark:bg-gray-700 text-white opacity-50 cursor-not-allowed"
+              : "bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white opacity-100"
               }`}
           >
             Save as Public
@@ -1866,6 +1866,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   )
   const [showExistingAgentConfigUI, setShowExistingAgentConfigUI] = useState(false)
   const [selectedExistingAgentNodeId, setSelectedExistingAgentNodeId] = useState<string | null>(null)
+  const [selectedAgentForPreview, setSelectedAgentForPreview] = useState<SelectPublicAgent | null>(null)
+  const [existingAgentConfigMode, setExistingAgentConfigMode] = useState<"preview" | "view">("view")
   const [zoomLevel, setZoomLevel] = useState(100)
   const [showToolsSidebar, setShowToolsSidebar] = useState(false)
   const [selectedNodeTools] = useState<Tool[] | null>(
@@ -1993,14 +1995,23 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   }, [fitView])
 
   // helper function to handle agents selection from sidebar   
-  const handleOnAgentSelect = useCallback((agent: any) => {
-    // Create new agent workflow step using EXISTING agent
+  const handleOnAgentSelect = useCallback((agent: SelectPublicAgent) => {
+    setSelectedAgentForPreview(agent)
+    setExistingAgentConfigMode("preview")
+    setShowExistingAgentConfigUI(true)
+
+    // Close the agents sidebar
+    setShowAgentsSidebar(false)
+  }, [])
+
+
+  const handleSaveExistingAgentToCanvas = useCallback((agent: SelectPublicAgent) => {
     if (selectedNodeForNext) {
       const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
       if (sourceNode) {
         const newNodeId = `agent-${nodeCounter}`
 
-        // ✅ Use isExistingAgent pattern for referencing existing agents
+
         const agentTool = {
           id: `tool-${newNodeId}`,
           type: "ai_agent",
@@ -2027,7 +2038,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           }
         }
 
-        // Create new node for the selected agent
         const newNode = {
           id: newNodeId,
           type: "stepNode",
@@ -2054,7 +2064,6 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           selected: true,
         }
 
-        // Create edge from source node to new agent node
         const newEdge = {
           id: `${selectedNodeForNext}-${newNodeId}`,
           source: selectedNodeForNext,
@@ -2094,19 +2103,19 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                 : { ...node, selected: false },
           ),
         )
+        
+        // Close the preview sidebar
+        setShowExistingAgentConfigUI(false)
+        setSelectedAgentForPreview(null)
+        setSelectedNodeForNext(null)
 
-        // Auto-fit workflow
+        // Smart fit
         setTimeout(() => {
           smartFitWorkflow()
         }, 50)
       }
     }
-
-    // Cleanup
-    setShowAgentsSidebar(false)
-    setSelectedNodeForNext(null)
   }, [selectedNodeForNext, nodes, nodeCounter, setNodes, setEdges, setNodeCounter, smartFitWorkflow])
-
 
   // Watch for nodes changes and smart fit the entire workflow
   const previousRealNodeCount = useRef(0)
@@ -2404,11 +2413,11 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           const isExistingAgent = tools?.[0]?.config?.isExistingAgent
 
           if (isExistingAgent) {
-            // Existing agent → open ExistingAgentConfigUI
+            // ✅ Open in "view" mode (no Save button)
             setSelectedExistingAgentNodeId(node.id)
+            setExistingAgentConfigMode("view")  // ✅ Set mode
             setShowExistingAgentConfigUI(true)
           } else {
-            // Workflow agent → open AIAgentConfigUI
             setSelectedAgentNodeId(node.id)
             setShowAIAgentConfigUI(true)
           }
@@ -3792,14 +3801,18 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && (
           <ExistingAgentConfigUI
             isVisible={showExistingAgentConfigUI}
+            mode={existingAgentConfigMode}
             onClose={() => {
               setShowExistingAgentConfigUI(false)
               setSelectedExistingAgentNodeId(null)
+              setSelectedAgentForPreview(null)  
               setNodes((prevNodes) =>
                 prevNodes.map(node => ({ ...node, selected: false }))
               )
               setSelectedNodes([])
             }}
+            agentData={selectedAgentForPreview || undefined}  
+            onSave={handleSaveExistingAgentToCanvas} 
             toolData={
               selectedExistingAgentNodeId
                 ? (() => {
@@ -3807,7 +3820,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                     selectedExistingAgentNodeId)
                   const tools = node?.data?.tools as Tool[] | undefined
                   return tools && tools.length > 0 ? tools[0] as
-                    AgentTool : undefined  
+                    AgentTool : undefined
                 })()
                 : undefined
             }
