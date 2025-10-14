@@ -1,3 +1,10 @@
+## [3.16.1](https://github.com/xynehq/xyne/compare/v3.16.0...v3.16.1) (2025-10-14)
+
+
+### Bug Fixes
+
+* **driveItem-select:** fixed googleDriveFolder navigation ([#1059](https://github.com/xynehq/xyne/issues/1059)) ([3d5185a](https://github.com/xynehq/xyne/commit/3d5185a91b2ab93b4b8ef866772e347bfe5943a3))
+
 # [3.16.0](https://github.com/xynehq/xyne/compare/v3.15.0...v3.16.0) (2025-10-14)
 
 
