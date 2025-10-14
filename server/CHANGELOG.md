@@ -1,3 +1,10 @@
+## [3.16.2](https://github.com/xynehq/xyne/compare/v3.16.1...v3.16.2) (2025-10-14)
+
+
+### Bug Fixes
+
+* XYNE-89 removed file Upload ui from connectors ([#1104](https://github.com/xynehq/xyne/issues/1104)) ([2952e3c](https://github.com/xynehq/xyne/commit/2952e3c726aeaf8eeb35fc30958086002a3eaf4f))
+
 ## [3.16.1](https://github.com/xynehq/xyne/compare/v3.16.0...v3.16.1) (2025-10-14)
 
 
