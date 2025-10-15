@@ -285,3 +285,57 @@ export async function getMessageFeedbackStats({
     feedbackMessages: processedFeedbackMessages,
   }
 }
+
+export const getMessagesWithAttachmentsByChatId = async (
+  trx: TxnOrClient,
+  chatExternalId: string,
+  limit: number,
+  offset: number,
+): Promise<Array<{
+  id: number
+  externalId: string
+  attachments: unknown
+  sources: unknown
+  email: string
+}>> => {
+  const chatMessages = await trx
+    .select({
+      id: messages.id,
+      externalId: messages.externalId,
+      attachments: messages.attachments,
+      sources: messages.sources,
+      email: messages.email,
+    })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.chatExternalId, chatExternalId),
+        isNull(messages.deletedAt),
+      ),
+    )
+    .orderBy(asc(messages.createdAt), asc(messages.id))
+    .limit(limit)
+    .offset(offset)
+  return chatMessages
+}
+
+export const updateMessageAttachmentsAndSources = async (
+  trx: TxnOrClient,
+  messageExternalId: string,
+  email: string,
+  updatedSources: unknown[],
+): Promise<void> => {
+  await trx
+    .update(messages)
+    .set({
+      attachments: [],
+      sources: updatedSources,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(messages.externalId, messageExternalId),
+        eq(messages.email, email),
+      ),
+    )
+}
