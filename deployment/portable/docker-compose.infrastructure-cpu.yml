@@ -49,6 +49,7 @@ services:
     environment:
       - POSTGRES_USER=xyne
       - POSTGRES_PASSWORD=xyne
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana
 
   vespa:
     image: vespaengine/vespa:latest
