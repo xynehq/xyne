@@ -229,6 +229,60 @@ export function useScopedFind(
     setIndex(0);
   }, [containerRef]);
 
+  // Wait for text layer to be fully rendered and positioned
+  const waitForTextLayerReady = useCallback(async (container: HTMLElement, timeoutMs = 5000): Promise<string> => {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      let lastTextLength = 0;
+      let text = '';
+      let stableCount = 0;
+      const requiredStableChecks = 3;
+      
+      const checkTextLayer = () => {
+        const currentTime = Date.now();
+        if (currentTime - startTime > timeoutMs) {
+          if (debug) {
+            console.log('Text layer wait timeout reached');
+          }
+          resolve(text);
+          return;
+        }
+        
+        // Extract current text length
+        text = extractContainerText(container);
+        const currentTextLength = text.length;
+        
+        if (debug && currentTextLength !== lastTextLength) {
+          console.log(`Text layer length changed: ${lastTextLength} -> ${currentTextLength}`);
+        }
+        
+        // Check if text length has stabilized
+        if (currentTextLength === lastTextLength && currentTextLength > 0) {
+          stableCount++;
+          if (stableCount >= requiredStableChecks) {
+            if (debug) {
+              console.log(`Text layer stabilized at length ${currentTextLength}`);
+            }
+            resolve(text);
+            return;
+          }
+        } else {
+          stableCount = 0;
+        }
+        
+        lastTextLength = currentTextLength;
+        
+        // Use requestAnimationFrame for the next check to ensure DOM updates are processed
+        requestAnimationFrame(() => {
+          setTimeout(checkTextLayer, 50); // Check every 50ms
+        });
+      };
+      
+      // Start checking after one animation frame
+      requestAnimationFrame(checkTextLayer);
+    });
+  }, [extractContainerText, debug]);
+
   const highlightText = useCallback(
     async (text: string, chunkIndex: number, pageIndex?: number): Promise<boolean> => {
       if (debug) {
@@ -251,6 +305,7 @@ export function useScopedFind(
       setIsLoading(true);
       
       try {
+        let containerText = '';
         // For PDFs, ensure the page is rendered before extracting text
         if (documentOperationsRef?.current?.goToPage) {
           if (debug) {
@@ -261,17 +316,24 @@ export function useScopedFind(
               console.log('Going to page or subsheet:', pageIndex);
             }
             await documentOperationsRef.current.goToPage(pageIndex);
-            // Wait for rendering to complete
-            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Wait for text layer to be fully rendered and positioned
+            if (debug) {
+              console.log('Waiting for text layer to be ready...');
+            }
+            containerText = await waitForTextLayerReady(root);
+            if (debug) {
+              console.log('Text layer ready, proceeding with highlighting');
+            }
           } else {
             if (debug) {
               console.log('No page or subsheet index provided, skipping highlight');
             }
             return false;
           }
-        } 
-
-        const containerText = extractContainerText(root);
+        } else {
+          containerText = extractContainerText(root);
+        }
         
         if (debug) {
           console.log('Container text extracted, length:', containerText.length);
