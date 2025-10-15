@@ -187,7 +187,9 @@ export function InviteUsersModal({
                       ) : (
                         user.name
                           .split(" ")
-                          .map((n) => n[0])
+                          .filter((n) => n.length > 0)
+                          .map((n) => n[0]?.toUpperCase() || "")
+                          .slice(0, 2)
                           .join("")
                       )}
                     </div>

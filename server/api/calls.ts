@@ -41,19 +41,19 @@ export const initiateCallSchema = z.object({
 })
 
 export const joinCallSchema = z.object({
-  callId: z.string().min(1, "Call ID is required"),
+  callId: z.string().uuid("Invalid call ID format"),
 })
 
 export const endCallSchema = z.object({
-  callId: z.string().min(1, "Call ID is required"),
+  callId: z.string().uuid("Invalid call ID format"),
 })
 
 export const leaveCallSchema = z.object({
-  callId: z.string().min(1, "Call ID is required"),
+  callId: z.string().uuid("Invalid call ID format"),
 })
 
 export const inviteToCallSchema = z.object({
-  callId: z.string().min(1, "Call ID is required"),
+  callId: z.string().uuid("Invalid call ID format"),
   targetUserId: z.string().min(1, "Target user ID is required"),
   callType: z.enum(["video", "audio"]).default("video"),
 })
@@ -328,6 +328,25 @@ export const InviteToCallApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Call room not found" })
     }
 
+    // Authorization: only creator or participant can invite
+    const rows = await db
+      .select()
+      .from(calls)
+      .where(eq(calls.externalId, validatedData.callId))
+      .limit(1)
+    if (rows.length === 0)
+      throw new HTTPException(404, { message: "Call not found" })
+    const rec = rows[0]
+    const isCreator = rec.createdByUserId === inviter.id
+    const isParticipant =
+      Array.isArray(rec.participants) &&
+      rec.participants.includes(inviter.externalId)
+    if (!isCreator && !isParticipant) {
+      throw new HTTPException(403, {
+        message: "Not authorized to invite to this call",
+      })
+    }
+
     // Atomically append invited user if not already present
     // This prevents race conditions when multiple invites are sent simultaneously
     await db.execute(sql`
@@ -420,6 +439,26 @@ export const EndCallApi = async (c: Context) => {
     if (!users || users.length === 0) {
       throw new HTTPException(404, { message: "User not found" })
     }
+    const user = users[0]
+
+    // Authorization: only creator or participant can end
+    const rows = await db
+      .select()
+      .from(calls)
+      .where(eq(calls.externalId, validatedData.callId))
+      .limit(1)
+    if (rows.length === 0)
+      throw new HTTPException(404, { message: "Call not found" })
+    const rec = rows[0]
+    const isCreator = rec.createdByUserId === user.id
+    const isParticipant =
+      Array.isArray(rec.participants) &&
+      rec.participants.includes(user.externalId)
+    if (!isCreator && !isParticipant) {
+      throw new HTTPException(403, {
+        message: "Not authorized to end this call",
+      })
+    }
 
     // Update call record - set endedAt timestamp
     await db
@@ -465,6 +504,26 @@ export const LeaveCallApi = async (c: Context) => {
     Logger.info(
       `User ${user.email} (${user.externalId}) leaving call ${validatedData.callId}`,
     )
+
+    // Verify user belongs to this call
+    const rows = await db
+      .select()
+      .from(calls)
+      .where(eq(calls.externalId, validatedData.callId))
+      .limit(1)
+    if (rows.length === 0)
+      throw new HTTPException(404, { message: "Call not found" })
+    const rec = rows[0]
+    const belongs =
+      rec.createdByUserId === user.id ||
+      (Array.isArray(rec.participants) &&
+        rec.participants.includes(user.externalId)) ||
+      (Array.isArray(rec.invitedUsers) &&
+        rec.invitedUsers.includes(user.externalId))
+    if (!belongs)
+      throw new HTTPException(403, {
+        message: "Not authorized to leave this call",
+      })
 
     // Check if room still exists in LiveKit (room name is the callId)
     let roomExists = true
@@ -633,16 +692,19 @@ export const GetCallHistoryApi = async (c: Context) => {
       const query = searchQuery.toLowerCase().trim()
       filteredCalls = callHistory.filter((call) => {
         const creator = userIdMap.get(call.createdByUserId)
-        const creatorMatch = creator?.name.toLowerCase().includes(query)
+        const creatorName = (creator?.name ?? "").toLowerCase()
+        const creatorMatch = creatorName.includes(query)
 
         const participantMatch = call.participants.some((pId) => {
           const participant = userMap.get(pId)
-          return participant?.name.toLowerCase().includes(query)
+          const name = (participant?.name ?? "").toLowerCase()
+          return name.includes(query)
         })
 
         const invitedMatch = call.invitedUsers.some((iId) => {
           const invited = userMap.get(iId)
-          return invited?.name.toLowerCase().includes(query)
+          const name = (invited?.name ?? "").toLowerCase()
+          return name.includes(query)
         })
 
         return creatorMatch || participantMatch || invitedMatch

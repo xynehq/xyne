@@ -6,10 +6,23 @@ import {
   integer,
   timestamp,
   jsonb,
+  pgEnum,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
 import { users } from "./users"
+
+// Call type enum
+export enum CallType {
+  Video = "video",
+  Audio = "audio",
+}
+
+// PostgreSQL enum for call types
+export const callTypeEnum = pgEnum(
+  "call_type",
+  Object.values(CallType) as [string, ...string[]],
+)
 
 // Calls Table
 export const calls = pgTable("calls", {
@@ -28,7 +41,7 @@ export const calls = pgTable("calls", {
   // Store invited user external IDs as JSON array
   invitedUsers: jsonb("invited_users").$type<string[]>().notNull().default([]),
   roomLink: text("room_link").notNull(),
-  callType: text("call_type").notNull().default("video"), // 'video' or 'audio'
+  callType: callTypeEnum("call_type").notNull().default(CallType.Video),
 })
 
 export const insertCallSchema = createInsertSchema(calls).omit({

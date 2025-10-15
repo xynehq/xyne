@@ -113,22 +113,27 @@ export default function CallPage() {
     }
   }
 
-  const handleDisconnect = () => {
-    // Notify backend that user is leaving the call (fire-and-forget, don't wait)
+  const handleDisconnect = async () => {
+    // Mark as ended first to prevent duplicate calls
+    setIsCallEnded(true)
+
+    // Notify backend that user is leaving the call
     if (callId) {
-      api.calls.leave
-        .$post({
+      try {
+        await api.calls.leave.$post({
           json: { callId },
         })
-        .catch((error: unknown) => {
-          console.error("Error notifying server of disconnect:", error)
-          // Don't block the disconnect flow - background cleanup will handle it
-        })
+        console.log("Successfully notified server of disconnect")
+      } catch (error: unknown) {
+        console.error("Error notifying server of disconnect:", error)
+        // Continue with disconnect even if API call fails
+      }
     }
 
-    setIsCallEnded(true)
-    // Close the call window
-    window.close()
+    // Close the call window after a short delay to ensure API call completes
+    setTimeout(() => {
+      window.close()
+    }, 100)
   }
 
   // Track when user actually connects to the room (for participants tracking)
@@ -147,6 +152,36 @@ export default function CallPage() {
       // Don't show error to user - this is background tracking
     }
   }
+
+  // Ensure leave API is called when user closes window/tab or navigates away
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (callId && !isCallEnded) {
+        // Use synchronous fetch with keepalive for reliable delivery during page unload
+        // keepalive ensures the request completes even after the page unloads
+        fetch("/api/v1/calls/leave", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({ callId }),
+          keepalive: true, // Critical: keeps request alive after page unload
+        }).catch((error) => {
+          console.error("Error in beforeunload leave call:", error)
+        })
+      }
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    // Also listen to pagehide for better mobile support
+    window.addEventListener("pagehide", handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      window.removeEventListener("pagehide", handleBeforeUnload)
+    }
+  }, [callId, isCallEnded])
 
   // Show loading state while joining
   if (isJoining) {
