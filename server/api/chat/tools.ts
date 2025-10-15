@@ -63,6 +63,8 @@ import {
   googleTools,
   convertToAgentToolParameters,
   searchGlobalTool,
+  slackTools,
+  SlackTools,
 } from "@/api/chat/mapper"
 import type {
   AgentTool,
@@ -848,57 +850,21 @@ export const getSlackMessagesFromUser: AgentTool = {
 }
 
 export const getSlackRelatedMessages: AgentTool = {
-  name: "get_slack_related_messages",
-  description:
-    "Unified tool to retrieve Slack messages with flexible filtering options. Can search by channel, user, time range, thread, or any combination. Automatically includes thread messages when found. Use this single tool for all Slack message retrieval needs.",
-  parameters: {
-    filter_query: {
-      type: "string",
-      description: "Keywords to search within messages",
-      required: false,
-    },
-    channel_name: {
-      type: "string",
-      description: "Name of specific channel to search within",
-      required: false,
-    },
-    user_email: {
-      type: "string",
-      description: "Email of specific user whose messages to retrieve",
-      required: false,
-    },
-    date_from: {
-      type: "string",
-      description:
-        "Start date for message search (ISO 8601 format: YYYY-MM-DD)",
-      required: false,
-    },
-    date_to: {
-      type: "string",
-      description: "End date for message search (ISO 8601 format: YYYY-MM-DD)",
-      required: false,
-    },
-    limit: {
-      type: "number",
-      description:
-        "Maximum number of messages to retrieve (default: 20, max: 100)",
-      required: false,
-    },
-    offset: {
-      type: "number",
-      description: "Number of messages to skip for pagination (default: 0)",
-      required: false,
-    },
-    order_direction: {
-      type: '"asc" | "desc"',
-      description:
-        "Sort direction - 'asc' (oldest first) or 'desc' (newest first, default)",
-      required: false,
-    },
-  },
-
+  name: "searchSlackMessages",
+  description: slackTools[SlackTools.GetSlackMessages].description,
+  parameters: convertToAgentToolParameters(
+    slackTools[SlackTools.GetSlackMessages],
+  ),
   execute: async (
-    params: any,
+    params: {
+      query: string
+      user?: string
+      channelName?: string
+      limit?: number
+      offset?: number
+      sortBy?: "asc" | "desc"
+      timeRange?: { startTime: string; endTime: string }
+    },
     span?: Span,
     email?: string,
     ctx?: string,
@@ -934,14 +900,9 @@ export const getSlackRelatedMessages: AgentTool = {
 
     try {
       // Validate that at least one scope parameter is provided
-      const hasScope =
-        params.channel_name ||
-        params.user_email ||
-        params.thread_id || // Assuming thread_id might be a parameter for this unified tool
-        params.from ||
-        params.to
+      const hasScope = params.channelName || params.user || params.timeRange
 
-      if (!hasScope && !params.filter_query) {
+      if (!hasScope && !params.query) {
         return {
           result:
             "Please provide at least one filter (e.g., channel_name, user_email, date range, or filter_query) to scope the Slack message search.",
@@ -953,10 +914,8 @@ export const getSlackRelatedMessages: AgentTool = {
       const searchOptions = {
         limit: Math.min(params.limit || 20, 100), // Cap at 100 for performance
         offset: Math.max(params.offset || 0, 0),
-        filterQuery: params.filter_query,
-        orderDirection: (params.order_direction || "desc") as "asc" | "desc",
-        dateFrom: params.from || null,
-        dateTo: params.to || null,
+        filterQuery: params.query,
+        orderDirection: (params.sortBy || "desc") as "asc" | "desc",
         span: execSpan,
       }
 
@@ -966,30 +925,32 @@ export const getSlackRelatedMessages: AgentTool = {
         orderDirection: string
       } = {
         email: email,
-        userEmail: params.user_email || undefined,
-        channelName: params.channel_name || undefined,
+        userEmail: params.user || undefined,
+        channelName: params.channelName || undefined,
         filterQuery: searchOptions.filterQuery || "",
         asc: searchOptions.orderDirection === "asc",
         limit: searchOptions.limit,
         offset: searchOptions.offset,
         orderDirection: searchOptions.orderDirection,
-        timestampRange: {
-          from: searchOptions.dateFrom,
-          to: searchOptions.dateTo,
-        },
+        timestampRange: params.timeRange
+          ? {
+              from: params.timeRange.startTime,
+              to: params.timeRange.endTime,
+            }
+          : undefined,
       }
 
       // Log search strategy for debugging
       const searchStrategy = []
-      if (params.channel_name)
-        searchStrategy.push(`channel: ${params.channel_name}`)
-      if (params.user_email) searchStrategy.push(`user: ${params.user_email}`)
-      if (params.thread_id) searchStrategy.push(`thread: ${params.thread_id}`)
-      if (params.date_from || params.date_to) {
-        searchStrategy.push(`dates: ${params.from} to ${params.to}`)
+      if (params.channelName)
+        searchStrategy.push(`channel: ${params.channelName}`)
+      if (params.user) searchStrategy.push(`user: ${params.user}`)
+      if (params.timeRange) {
+        searchStrategy.push(
+          `dates: ${params.timeRange.startTime} to ${params.timeRange.endTime}`,
+        )
       }
-      if (params.filter_query)
-        searchStrategy.push(`query: "${params.filter_query}"`)
+      if (params.query) searchStrategy.push(`query: "${params.query}"`)
 
       Logger.debug(
         `[get_slack_messages] Search strategy: ${searchStrategy.join(", ")}`,
@@ -1142,24 +1103,20 @@ export const getSlackRelatedMessages: AgentTool = {
 }
 
 export const getUserSlackProfile: AgentTool = {
-  name: "get_user_slack_profile",
-  description: "Get a user's Slack profile details by their email address.",
-  parameters: {
-    user_email: {
-      type: "string",
-      description: "Email address of the user whose Slack profile to retrieve.",
-      required: true,
-    },
-  },
+  name: "GetSlackUserProfile",
+  description: slackTools[SlackTools.GetSlackUserInfo].description,
+  parameters: convertToAgentToolParameters(
+    slackTools[SlackTools.GetSlackUserInfo],
+  ),
   execute: async (
-    params: { user_email: string },
+    params: { user: string },
     span?: Span,
     invokingUserEmail?: string,
     ctx?: string,
     agentPrompt?: string,
   ) => {
     const execSpan = span?.startSpan("get_user_slack_profile_tool")
-    execSpan?.setAttribute("target_user_email", params.user_email)
+    execSpan?.setAttribute("target_user", params.user)
 
     if (agentPrompt) {
       const { agentAppEnums, selectedItems } =
@@ -1180,21 +1137,21 @@ export const getUserSlackProfile: AgentTool = {
       }
     }
 
-    if (!params.user_email) {
+    if (!params.user) {
       const errorMsg =
         "Target user_email parameter is required to retrieve the Slack profile."
       execSpan?.setAttribute("error", errorMsg)
-      return { result: errorMsg, error: "Missing target_user_email parameter" }
+      return { result: errorMsg, error: "Missing target_user parameter" }
     }
 
     try {
-      const searchResponse = await getSlackUserDetails(params.user_email)
+      const searchResponse = await getSlackUserDetails(params.user)
       const children = searchResponse?.root?.children || []
       execSpan?.setAttribute("retrieved_profiles_count", children.length)
 
       if (children.length === 0) {
         return {
-          result: `No Slack profile found for email: ${params.user_email}`,
+          result: `No Slack profile found for email: ${params.user}`,
           contexts: [],
         }
       }
@@ -1206,14 +1163,14 @@ export const getUserSlackProfile: AgentTool = {
           fields: userProfileDoc.fields,
         })
         return {
-          result: `Found a document for ${params.user_email}, but it's not a valid Slack user profile. Expected sddocname 'chat_user'.`,
+          result: `Found a document for ${params.user}, but it's not a valid Slack user profile. Expected sddocname 'chat_user'.`,
           contexts: [],
         }
       }
 
       const profileData = userProfileDoc.fields as VespaChatUser
 
-      let profileSummary = `Slack Profile for ${profileData.name || params.user_email}:\n`
+      let profileSummary = `Slack Profile for ${profileData.name || params.user}:\n`
       if (profileData.email) profileSummary += `- Email: ${profileData.email}\n`
       // Use docId for User ID as it's the Slack User ID from chat_user schema
       if (profileData.docId)
@@ -1234,13 +1191,11 @@ export const getUserSlackProfile: AgentTool = {
       const profileUrl = `https://app.slack.com/client/${profileData.teamId}/${profileData.docId}`
 
       const userFragment: MinimalAgentFragment = {
-        id:
-          userProfileDoc.id ||
-          `slack-profile-${params.user_email}-${Date.now()}`,
+        id: userProfileDoc.id || `slack-profile-${params.user}-${Date.now()}`,
         content: profileSummary,
         source: {
           docId: profileData.docId,
-          title: `Slack Profile: ${profileData.name || params.user_email}`,
+          title: `Slack Profile: ${profileData.name || params.user}`,
           app: Apps.Slack,
           entity: SlackEntity.User,
           url: profileUrl,
@@ -1249,7 +1204,7 @@ export const getUserSlackProfile: AgentTool = {
       }
 
       return {
-        result: `Successfully retrieved Slack profile for ${params.user_email}.`,
+        result: `Successfully retrieved Slack profile for ${params.user}.`,
         contexts: [userFragment],
       }
     } catch (error) {
@@ -1257,7 +1212,7 @@ export const getUserSlackProfile: AgentTool = {
       execSpan?.setAttribute("error", errMsg)
       Logger.error(error, `Error in get_my_slack_profile tool: ${errMsg}`)
       return {
-        result: `Error retrieving Slack profile for ${params.user_email}: ${errMsg}`,
+        result: `Error retrieving Slack profile for ${params.user}: ${errMsg}`,
         error: errMsg,
       }
     } finally {

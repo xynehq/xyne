@@ -632,119 +632,6 @@ export const internalTools: Record<string, ToolDefinition> = {
   },
 }
 
-export const slackTools: Record<string, ToolDefinition> = {
-  [XyneTools.getSlackThreads]: {
-    name: XyneTools.getSlackThreads,
-    description:
-      "Advanced Slack thread conversation retrieval tool designed to search and extract threaded message discussions with full conversational context. This tool specializes in finding and assembling complete conversation threads, including parent messages, replies, reactions, and thread metadata. Perfect for understanding discussion context, tracking decision-making processes, analyzing conversation flows, and gathering comprehensive team communication history. Ideal for queries like 'show me the discussion about the project launch' or 'find threads where technical decisions were made'.",
-    params: [
-      {
-        name: "filter_query",
-        type: "string",
-        required: false,
-        description:
-          "Semantic search keywords to identify relevant thread conversations. Use natural language terms, project names, technical concepts, or discussion topics to find threads containing specific subjects. The system performs intelligent matching across thread content, participant names, and message context to locate the most relevant threaded discussions.",
-      },
-      {
-        name: "limit",
-        type: "number",
-        required: false,
-        description:
-          "Maximum number of thread conversations to retrieve in a single response. Controls the breadth of results returned. Recommended values: 10-25 for focused thread analysis, 50+ for comprehensive conversation discovery. Each result represents a complete thread with all its constituent messages.",
-      },
-      {
-        name: "offset",
-        type: "number",
-        required: false,
-        description:
-          "Pagination parameter to skip a specified number of thread results from the beginning. Essential for browsing through extensive thread collections systematically. Use in combination with 'limit' to navigate large conversation datasets efficiently.",
-      },
-      {
-        name: "order_direction",
-        type: "string",
-        required: false,
-        description:
-          "Chronological ordering of thread results based on thread initiation time. 'desc' (default) shows newest threads first, ideal for recent conversation analysis. 'asc' shows oldest threads first, useful for historical discussion review and project timeline analysis.",
-      },
-    ],
-  },
-  [XyneTools.getSlackRelatedMessages]: {
-    name: XyneTools.getSlackRelatedMessages,
-    description:
-      "Comprehensive Slack message search and retrieval system with advanced filtering capabilities for targeted channel-based communication analysis. This tool provides granular control over message discovery within specific channels, supporting complex queries involving user-specific messages, time-bounded searches, content filtering, and contextual message retrieval. Essential for channel-focused investigations, user activity analysis, project communication tracking, and temporal message exploration within defined Slack workspaces.",
-    params: [
-      {
-        name: "channel_name",
-        type: "string",
-        required: true,
-        description:
-          "Exact name or identifier of the target Slack channel for message retrieval. Accepts channel names (without # prefix), channel IDs, or channel display names. This parameter defines the scope boundary for all message searches. Examples: 'general', 'project-alpha', 'engineering-team'.",
-      },
-      {
-        name: "filter_query",
-        type: "string",
-        required: false,
-        description:
-          "Content-based search filter using natural language keywords, phrases, or semantic concepts. The system performs intelligent text matching across message content, file names, link descriptions, and embedded content. Supports complex queries like technical terms, project names, or contextual discussions.",
-      },
-      {
-        name: "user_email",
-        type: "string",
-        required: false,
-        description:
-          "Email address of a specific Slack user to filter messages by authorship. When specified, only messages sent by this user within the target channel will be returned. Useful for tracking individual contributions, finding specific user's communications, or analyzing participation patterns.",
-      },
-      {
-        name: "limit",
-        type: "number",
-        required: false,
-        description:
-          "Maximum number of individual messages to retrieve from the specified channel. Controls result volume and response processing time. Recommended values: 25-100 for focused message analysis, 200+ for comprehensive channel history review.",
-      },
-      {
-        name: "offset",
-        type: "number",
-        required: false,
-        description:
-          "Number of messages to skip from the beginning of the result set, enabling systematic pagination through large message collections. Critical for exploring extensive channel histories without overwhelming single responses.",
-      },
-      {
-        name: "order_direction",
-        type: "string",
-        required: false,
-        description:
-          "Temporal ordering preference for message results. 'desc' (default) returns newest messages first, optimal for recent activity review. 'asc' returns oldest messages first, ideal for chronological analysis, project timelines, and historical communication patterns.",
-      },
-      {
-        name: "from",
-        type: "string",
-        required: false,
-        description: `Temporal start boundary for message search in UTC format (${config.llmTimeFormat}). Establishes the earliest timestamp for returned messages. Essential for time-scoped analysis like 'messages from last sprint', 'communications since project start', or 'activity after the announcement'. Works with intelligent relative time parsing.`,
-      },
-      {
-        name: "to",
-        type: "string",
-        required: false,
-        description: `Temporal end boundary for message search in UTC format (${config.llmTimeFormat}). Defines the latest timestamp for returned messages. Critical for bounded time analysis like 'messages until the deadline', 'communications before the meeting', or 'activity during the project phase'. Combines with 'from' parameter for precise time window definition.`,
-      },
-    ],
-  },
-  [XyneTools.getUserSlackProfile]: {
-    name: XyneTools.getUserSlackProfile,
-    description:
-      "Comprehensive Slack user profile information retrieval tool that fetches detailed user account data, workspace membership details, and professional information from Slack directories. This tool provides essential user context including display names, roles, team affiliations, status information, contact details, and workspace-specific metadata. Invaluable for user identification, team member discovery, contact information lookup, and understanding organizational structure within Slack workspaces. Perfect for queries involving user verification, team composition analysis, and contact management.",
-    params: [
-      {
-        name: "user_email",
-        type: "string",
-        required: true,
-        description:
-          "Primary email address associated with the target user's Slack account. This serves as the unique identifier for user profile lookup across workspace directories. Must be the exact email address used for Slack account registration. The system will retrieve comprehensive profile information including display name, real name, title, department, phone numbers, and workspace-specific settings associated with this email address.",
-      },
-    ],
-  },
-}
-
 export function formatToolDescription(tool: ToolDefinition): string {
   let description = `${tool.name}: ${tool.description}`
 
@@ -884,7 +771,7 @@ export function createAgentToolFromDefinition(
 export function getToolDefinition(
   toolName: string,
 ): ToolDefinition | undefined {
-  return internalTools[toolName] || slackTools[toolName]
+  return internalTools[toolName]
 }
 
 // Helper to create parameters object for a specific tool
@@ -1210,6 +1097,80 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         type: "number",
         required: false,
         description: "Number of results to skip, for pagination.",
+      },
+    ],
+  },
+}
+
+export enum SlackTools {
+  GetSlackMessages = "GetSlackMessages",
+  GetSlackUserInfo = "GetSlackUserInfo",
+}
+export const slackTools: Record<SlackTools, ToolDefinition> = {
+  [SlackTools.GetSlackMessages]: {
+    name: "SearchSlackMessages",
+    description:
+      "Unified tool to retrieve Slack messages with flexible filtering options. Can search by channel, user, time rang, or any combination. Automatically includes thread messages when found. Use this single tool for all Slack message retrieval needs.",
+    params: [
+      {
+        name: "query",
+        description: `The search query string that specifies what messages you want to fid.
+         - query should be keywords focus to retireve the most relevant messages from corpus.`,
+        type: "string",
+        required: false,
+      },
+      {
+        name: "channelName",
+        description: "Name of specific channel to search within",
+        type: "string",
+        required: false,
+      },
+      {
+        name: "user",
+        description:
+          "Name or Email of specific user whose messages to retrieve",
+        type: "string",
+        required: false,
+      },
+      {
+        name: "limit",
+        type: "number",
+        required: false,
+        description:
+          "Maximum number of results to return. Default behavior is to return 10 results.",
+      },
+      {
+        name: "sortBy",
+        type: "asc | desc",
+        required: false,
+        description:
+          "Sort order of the results. Accepts 'asc' for ascending or 'desc' for descending order.",
+      },
+      {
+        name: "offset",
+        type: "number",
+        required: false,
+        description:
+          "Number of results to skip from the beginning, useful for pagination.",
+      },
+      {
+        name: "timeRange",
+        type: "object",
+        required: false,
+        description: `Filter results based on a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
+      },
+    ],
+  },
+  [SlackTools.GetSlackUserInfo]: {
+    name: "GetSlackUserProfile",
+    description: "Get a user's Slack profile details by their name or email",
+    params: [
+      {
+        name: "user",
+        description:
+          "email or name of the user whose Slack profile to retrieve.",
+        type: "string",
+        required: true,
       },
     ],
   },
