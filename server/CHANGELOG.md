@@ -1,3 +1,10 @@
+# [3.17.0](https://github.com/xynehq/xyne/compare/v3.16.3...v3.17.0) (2025-10-15)
+
+
+### Features
+
+* **cleanup-job-for-attachments:** initial commit ([#1066](https://github.com/xynehq/xyne/issues/1066)) ([ccc414e](https://github.com/xynehq/xyne/commit/ccc414ecff7a898b507bc7f53659bb59fe0ab195))
+
 ## [3.16.3](https://github.com/xynehq/xyne/compare/v3.16.2...v3.16.3) (2025-10-14)
 
 
