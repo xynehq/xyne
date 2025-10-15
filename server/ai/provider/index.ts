@@ -86,6 +86,7 @@ import {
   deepResearchPrompt,
   webSearchSystemPrompt,
   agentWithNoIntegrationsSystemPrompt,
+  extractBestDocumentsPrompt,
 } from "@/ai/prompts"
 
 import { BedrockProvider } from "@/ai/provider/bedrock"
@@ -2127,6 +2128,61 @@ export const agentWithNoIntegrationsQuestion = (
     return getProviderByModel(params.modelId).converseStream(messages, params)
   } catch (error) {
     Logger.error(error, "Error in agentWithNoIntegrationsQuestion")
+    throw error
+  }
+}
+
+export const extractBestDocumentIndexes = async (
+  query: string,
+  retrievedContext: string[],
+  params: ModelParams,
+): Promise<number[]> => {
+  try {
+    if (!params.modelId) {
+      params.modelId = defaultBestModel
+    }
+
+    params.systemPrompt = extractBestDocumentsPrompt(query, retrievedContext)
+
+    const { text, cost } = await getProviderByModel(params.modelId).converse(
+      [
+        {
+          role: "user",
+          content: [
+            {
+              text: query,
+            },
+          ],
+        },
+      ],
+      params,
+    )
+
+    if (!text) {
+      Logger.warn("No text returned from model")
+      return []
+    }
+
+    // Extract indexes block between <indexes> ... <indexes>
+    const match = text.match(/<indexes>([\s\S]*?)<\/indexes>/i)
+    const extracted = match ? match[1].trim() : text.trim()
+
+    let indexes: number[] = []
+    try {
+      const parsed = JSON.parse(extracted)
+      if (Array.isArray(parsed)) {
+        indexes = parsed.filter((n) => typeof n === "number")
+      }
+    } catch {
+      Logger.info("Failed to extract document indexes")
+    }
+
+    Logger.info(
+      `"Extracted best document indexes" : indexes: ${indexes}, cost: ${cost}`,
+    )
+    return indexes
+  } catch (error) {
+    Logger.error(error, "Error in extractBestDocumentIndexes")
     throw error
   }
 }

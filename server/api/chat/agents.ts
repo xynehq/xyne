@@ -15,6 +15,7 @@ import {
   generateSynthesisBasedOnToolOutput,
   baselineRAGOffJsonStream,
   agentWithNoIntegrationsQuestion,
+  extractBestDocumentIndexes,
 } from "@/ai/provider"
 import { getConnectorById } from "@/db/connector"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -1530,6 +1531,7 @@ export const MessageWithToolsApi = async (c: Context) => {
         const citationMap: Record<number, number> = {}
         const citationValues: Record<number, Citation> = {}
         let gatheredFragments: MinimalAgentFragment[] = []
+        const gatheredFragmentskeys = new Set<string>() // to track uniqueness
         let planningContext = ""
         let parseSynthesisResult = null
 
@@ -1743,8 +1745,12 @@ export const MessageWithToolsApi = async (c: Context) => {
             ? `\n\nAgent Constraints:\n${agentPromptForLLM}`
             : ""
           const synthesisSection = parseSynthesisResult
+          const dateForAI = getDateForAI({ userTimeZone: userTimezone })
           return (
-            `You are Xyne, an enterprise search assistant.\n` +
+            `
+            The current date is: ${dateForAI} \n\n
+
+            You are Xyne, an enterprise search assistant.\n` +
             `- Your first action must be to call an appropriate tool to gather authoritative context before answering.\n` +
             `- Do NOT answer from general knowledge. Always retrieve context via tools first.\n` +
             `- Always cite sources inline using bracketed indices [n] that refer to the Context Fragments list below.\n` +
@@ -1926,7 +1932,45 @@ export const MessageWithToolsApi = async (c: Context) => {
                 : 0
 
               if (Array.isArray(contexts) && contexts.length) {
-                gatheredFragments.push(...(contexts as MinimalAgentFragment[]))
+                const contextStrings = contexts.map(
+                  (v: MinimalAgentFragment) => `
+                    title: ${v.source.title}
+                    content: ${v.content}
+                    `,
+                )
+
+                try {
+                  const bestDocIndexes = await extractBestDocumentIndexes(
+                    message,
+                    contextStrings,
+                    {
+                      modelId: config.defaultFastModel,
+                      json: false,
+                      stream: false,
+                    },
+                  )
+
+                  console.log(bestDocIndexes, "best doc indexes extracted")
+                  if (bestDocIndexes.length) {
+                    bestDocIndexes.forEach((idx) => {
+                      const doc: MinimalAgentFragment = contexts[idx]
+                      if (doc) {
+                        const key = doc.id
+                        if (!gatheredFragmentskeys.has(key)) {
+                          gatheredFragments.push(doc)
+                          gatheredFragmentskeys.add(key)
+                        }
+                      }
+                    })
+                  } else {
+                    Logger.info(
+                      "Couldn't retrieve good documents for user's query",
+                    )
+                  }
+                } catch (error) {
+                  // adding all context if extracting best document fails
+                  gatheredFragments.push(...contexts)
+                }
               }
 
               toolEndSpan.setAttribute("tool_name", evt.data.toolName)
