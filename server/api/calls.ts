@@ -8,7 +8,7 @@ import { getUserByEmail, getUsersByWorkspace } from "@/db/user"
 import { callNotificationService } from "@/services/callNotifications"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { calls, callParticipants, callInvitedUsers } from "@/db/schema/calls"
+import { calls, callParticipants, callInvitedUsers, CallType } from "@/db/schema/calls"
 import { eq, desc, and, isNull, or, sql, inArray } from "drizzle-orm"
 import { randomUUID } from "node:crypto"
 
@@ -37,7 +37,7 @@ const roomService = new RoomServiceClient(
 // Schemas
 export const initiateCallSchema = z.object({
   targetUserId: z.string().min(1, "Target user ID is required"),
-  callType: z.enum(["video", "audio"]).default("video"),
+  callType: z.nativeEnum(CallType).default(CallType.Audio),
 })
 
 export const joinCallSchema = z.object({
@@ -55,7 +55,7 @@ export const leaveCallSchema = z.object({
 export const inviteToCallSchema = z.object({
   callId: z.string().uuid("Invalid call ID format"),
   targetUserId: z.string().min(1, "Target user ID is required"),
-  callType: z.enum(["video", "audio"]).default("video"),
+  callType: z.nativeEnum(CallType).default(CallType.Audio),
 })
 
 // Generate LiveKit access token
@@ -784,7 +784,7 @@ export const GetCallHistoryApi = async (c: Context) => {
         })
       }
       conditions.push(inArray(calls.id, missedIds))
-    } else if (callType === "video" || callType === "audio") {
+    } else if (callType === CallType.Video || callType === CallType.Audio) {
       // Filter by call type
       conditions.push(eq(calls.callType, callType))
     }
