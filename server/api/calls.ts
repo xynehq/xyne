@@ -8,7 +8,12 @@ import { getUserByEmail, getUsersByWorkspace } from "@/db/user"
 import { callNotificationService } from "@/services/callNotifications"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { calls, callParticipants, callInvitedUsers, CallType } from "@/db/schema/calls"
+import {
+  calls,
+  callParticipants,
+  callInvitedUsers,
+  CallType,
+} from "@/db/schema/calls"
 import { eq, desc, and, isNull, or, sql, inArray } from "drizzle-orm"
 import { randomUUID } from "node:crypto"
 
@@ -257,14 +262,17 @@ export const JoinCallApi = async (c: Context) => {
     const callRecord = callRecords[0]
 
     // Add user to participants junction table if not already present
-    // Use onConflictDoNothing to prevent duplicate entries
+    // Reset leftAt to NULL on rejoin (handles case where user leaves and rejoins)
     await db
       .insert(callParticipants)
       .values({
         callId: callRecord.id,
         userId: user.id,
       })
-      .onConflictDoNothing()
+      .onConflictDoUpdate({
+        target: [callParticipants.callId, callParticipants.userId],
+        set: { leftAt: null },
+      })
 
     // Generate access token (room name in LiveKit is the callId)
     const token = await generateAccessToken(
