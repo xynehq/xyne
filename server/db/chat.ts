@@ -251,7 +251,7 @@ export const getInactiveChats = async (
         isNull(chats.deletedAt),
       ),
     )
-    .orderBy(asc(chats.createdAt), asc(chats.id))
+    .orderBy(asc(chats.updatedAt), asc(chats.id))
     .limit(limit)
     .offset(offset)
   return inactiveChats
