@@ -261,6 +261,8 @@ export function useScopedFind(
               console.log('Going to page or subsheet:', pageIndex);
             }
             await documentOperationsRef.current.goToPage(pageIndex);
+            // Wait for rendering to complete
+            await new Promise(resolve => setTimeout(resolve, 300));
           } else {
             if (debug) {
               console.log('No page or subsheet index provided, skipping highlight');
