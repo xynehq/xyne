@@ -25,6 +25,11 @@ import {
 } from "@/api/search"
 import { callNotificationService } from "@/services/callNotifications"
 import { HighlightApi, highlightSchema } from "@/api/highlight"
+import {
+  SlackEntitiesApi,
+  slackListSchema,
+  slackSearchSchema,
+} from "@/api/slack"
 import { zValidator } from "@hono/zod-validator"
 import {
   addApiKeyConnectorSchema,
@@ -896,7 +901,11 @@ export const AppRoutes = app
   .post("/files/upload-attachment", handleAttachmentUpload)
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
-  .post("/files/delete", zValidator("json", handleAttachmentDeleteSchema), handleAttachmentDeleteApi)
+  .post(
+    "/files/delete",
+    zValidator("json", handleAttachmentDeleteSchema),
+    handleAttachmentDeleteApi,
+  )
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/generateTitle",
@@ -983,6 +992,8 @@ export const AppRoutes = app
     zValidator("query", searchSchema),
     SearchSlackChannels,
   )
+  // Slack Entity API routes
+  .get("/slack/entities", SlackEntitiesApi)
   .get("/me", GetUserWorkspaceInfo)
   .get("/users/api-keys", GetUserApiKeys)
   .post(
@@ -1653,7 +1664,7 @@ app.get("/*", AuthRedirect, serveStatic({ path: "./dist/index.html" }))
 export const init = async () => {
   // Initialize API server queue (only FileProcessingQueue, no workers)
   await initApiServerQueue()
-  
+
   if (isSlackEnabled()) {
     Logger.info("Slack Web API client initialized and ready.")
     try {
