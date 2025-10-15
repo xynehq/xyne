@@ -299,6 +299,7 @@ import {
   ServiceName,
   type HealthStatusResponse,
 } from "@/health/type"
+import { FetchAllVespaDocs, DeleteVespaDoc } from "./api/verifyVespaDocs"
 
 // Define Zod schema for delete datasource file query parameters
 const deleteDataSourceFileQuerySchema = z.object({
@@ -881,12 +882,15 @@ const getNewAccessRefreshToken = async (c: Context) => {
 }
 
 export const AppRoutes = app
+  
   .basePath("/api/v1")
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
+  .get("/all-docs",FetchAllVespaDocs)
+  .post("/delete-doc", DeleteVespaDoc)
   .post(
     "/autocomplete",
     zValidator("json", autocompleteSchema),
