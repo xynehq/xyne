@@ -219,6 +219,8 @@ const appendReasoningData = (streamState: StreamState, data: string) => {
 export async function createAuthEventSource(url: string): Promise<EventSource> {
   return new Promise((resolve, reject) => {
     let triedRefresh = false
+    let retryCount = 0
+    const maxRetries = 3
     let isResolved = false
     let currentEventSource: EventSource | null = null
 
@@ -234,7 +236,16 @@ export async function createAuthEventSource(url: string): Promise<EventSource> {
 
     const tryRefreshAndRetry = async () => {
       if (triedRefresh) {
-        reject(new Error("Connection failed after token refresh attempt"))
+        // After refresh, try up to 3 more times before giving up
+        if (retryCount >= maxRetries) {
+          reject(new Error(`Connection failed after token refresh and ${maxRetries} retry attempts`))
+          return
+        }
+        
+        retryCount++
+        // Exponential backoff: 100ms, 200ms, 400ms
+        const delay = 100 * Math.pow(2, retryCount - 1)
+        setTimeout(() => make(), delay)
         return
       }
       
