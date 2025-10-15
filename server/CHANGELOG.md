@@ -1,3 +1,10 @@
+## [3.17.1](https://github.com/xynehq/xyne/compare/v3.17.0...v3.17.1) (2025-10-15)
+
+
+### Bug Fixes
+
+* **wsConnection:** resolve WebSocket connectivity with exponential backoff ([#1110](https://github.com/xynehq/xyne/issues/1110)) ([802c353](https://github.com/xynehq/xyne/commit/802c353d0d47baab690202a82b3af6c6e0ddb600))
+
 # [3.17.0](https://github.com/xynehq/xyne/compare/v3.16.3...v3.17.0) (2025-10-15)
 
 
