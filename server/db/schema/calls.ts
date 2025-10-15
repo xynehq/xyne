@@ -37,9 +37,9 @@ export const calls = pgTable("calls", {
   endedAt: timestamp("ended_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   // Store participant external IDs as JSON array
-  participants: jsonb("participants").$type<string[]>().notNull().default([]),
+  participants: jsonb("participants").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   // Store invited user external IDs as JSON array
-  invitedUsers: jsonb("invited_users").$type<string[]>().notNull().default([]),
+  invitedUsers: jsonb("invited_users").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   roomLink: text("room_link").notNull(),
   callType: callTypeEnum("call_type").notNull().default(CallType.Video),
 })
