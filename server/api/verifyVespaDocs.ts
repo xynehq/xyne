@@ -1,8 +1,11 @@
+import config from "@/config";
 import { DeleteDocument, getItems } from "@/search/vespa";
-import { chatAttachmentSchema, chatContainerSchema, chatMessageSchema, chatTeamSchema, chatUserSchema, dataSourceFileSchema, datasourceSchema, eventSchema, fileSchema, KbItemsSchema, mailAttachmentSchema, mailSchema, userQuerySchema, userSchema, type GetItemsParams } from "@xyne/vespa-ts";
+import { eventSchema, fileSchema, mailAttachmentSchema, mailSchema, userSchema, type GetItemsParams } from "@xyne/vespa-ts";
 
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+const { JwtPayloadKey } = config
+
 
 
 
@@ -10,6 +13,7 @@ export const FetchAllVespaDocs = async (c:Context) => {
     const page = parseInt(c.req.query("page") || "1")
     const limit = parseInt(c.req.query("limit") || "50")
     const offset = (page - 1) * limit
+    const { sub } = c.get(JwtPayloadKey)
 
     const allSchemasParams: GetItemsParams = {
         schema: [
@@ -17,22 +21,13 @@ export const FetchAllVespaDocs = async (c:Context) => {
             userSchema,
             mailSchema,
             eventSchema,
-            userQuerySchema,
             mailAttachmentSchema,
-            chatContainerSchema,
-            chatTeamSchema,
-            chatMessageSchema,
-            chatUserSchema,
-            chatAttachmentSchema,
-            datasourceSchema,
-            dataSourceFileSchema,
-            KbItemsSchema
-        ],
+                ],
         asc: false,
         offset: offset,
         limit: limit,
         timestampRange: null,
-        email: "",
+        email: sub,
         }
     try {
         const docs = await getItems(allSchemasParams);
