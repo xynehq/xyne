@@ -17,21 +17,11 @@ const listWorkflowExecutionsQuerySchema = z.object({
 import { ExecuteAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { db } from "@/db/client"
 import {
-  workflowTemplate,
   workflowStepTemplate,
   workflowExecution,
   workflowStepExecution,
   workflowTool,
   toolExecution,
-  createWorkflowTemplateSchema,
-  createComplexWorkflowTemplateSchema,
-  createWorkflowToolSchema,
-  executeWorkflowSchema,
-  updateWorkflowTemplateSchema,
-  createWorkflowExecutionSchema,
-  updateWorkflowExecutionSchema,
-  updateWorkflowStepExecutionSchema,
-  formSubmissionSchema,
 } from "@/db/schema/workflows"
 import { getUserByEmail, getUserFromJWT } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
@@ -84,6 +74,27 @@ import { getActualNameFromEnum } from "@/ai/modelConfig"
 import { getProviderByModel } from "@/ai/provider"
 import { Models } from "@/ai/types"
 import type { Message } from "@aws-sdk/client-bedrock-runtime"
+import { 
+  createWorkflowTemplate, 
+  getAccessibleWorkflowTemplates, 
+  getWorkflowExecutionById, 
+  getWorkflowExecutionByIdWithChecks, 
+  getWorkflowStepTemplateById, 
+  getWorkflowStepTemplatesByTemplateId, 
+  getWorkflowTemplateById, 
+  getWorkflowTemplateByIdWithPublicCheck, 
+  updateWorkflowTemplate,
+  createWorkflowExecution,
+  createWorkflowStepExecution,
+} from "@/db/workflow"
+import {
+  getAccessibleWorkflowTools,
+  getWorkflowToolById,
+  getWorkflowToolByIdWithChecks,
+  getWorkflowToolsByIds,
+  createWorkflowTool,
+  createToolExecution,
+} from "@/db/workflowTool"
 
 const loggerWithChild = getLoggerWithChild(Subsystem.WorkflowApi)
 const { JwtPayloadKey } = config
@@ -139,24 +150,19 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
       db,
       c.get(JwtPayloadKey)
     )
-    const templates = await db
-      .select()
-      .from(workflowTemplate)
-      .where(and(
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        or(
-          eq(workflowTemplate.isPublic, true),
-          eq(workflowTemplate.userId, user.id),
-        )
-      ))
+    const templates = await getAccessibleWorkflowTemplates(
+      db,
+      user.workspaceId,
+      user.id,
+    )
 
     // Get step templates and root step details for each workflow
     const templatesWithSteps = await Promise.all(
       templates.map(async (template) => {
-        const steps = await db
-          .select()
-          .from(workflowStepTemplate)
-          .where(eq(workflowStepTemplate.workflowTemplateId, template.id))
+        const steps = await getWorkflowStepTemplatesByTemplateId(
+          db,
+          template.id
+        )
 
         // Get root step details with single tool (not array)
         let rootStep = null
@@ -165,14 +171,14 @@ export const ListWorkflowTemplatesApi = async (c: Context) => {
             (s) => s.id === template.rootWorkflowStepTemplateId,
           )
           if (rootStepResult) {
-            const rootStepToolIds = rootStepResult.toolIds || []
+            const rootStepToolIds = rootStepResult.toolIds as string[] || [] 
             let rootStepTool = null
 
             if (rootStepToolIds.length > 0) {
-              const rootStepTools = await db
-                .select()
-                .from(workflowTool)
-                .where(inArray(workflowTool.id, rootStepToolIds))
+              const rootStepTools = await getWorkflowToolsByIds(
+                db,
+                rootStepToolIds
+              )
               rootStepTool = rootStepTools.length > 0 ? rootStepTools[0] : null
             }
 
@@ -217,40 +223,33 @@ export const GetWorkflowTemplateApi = async (c: Context) => {
     )
     const templateId = c.req.param("templateId")
 
-    const template = await db
-      .select()
-      .from(workflowTemplate)
-      .where(and(
-        eq(workflowTemplate.id, templateId),
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        or(
-          eq(workflowTemplate.isPublic, true),
-          eq(workflowTemplate.userId, user.id),
-        )
-      ))
+    const template = await getWorkflowTemplateByIdWithPublicCheck(
+      db,
+      templateId,
+      user.workspaceId,
+      user.id
+    )
 
-    if (!template || template.length === 0) {
+    if (!template) {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
 
-    const steps = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const steps = await getWorkflowStepTemplatesByTemplateId(
+      db,
+      templateId
+    )
 
-    const toolIds = steps.flatMap((s) => s.toolIds || [])
-    const tools =
-      toolIds.length > 0
-        ? await db
-          .select()
-          .from(workflowTool)
-          .where(inArray(workflowTool.id, toolIds))
-        : []
+
+    const toolIds = steps.flatMap((s) => s.toolIds as string[] || [])
+    const tools = await getWorkflowToolsByIds(
+      db,
+      toolIds
+    )
 
     return c.json({
       success: true,
       data: {
-        ...template[0],
+        ...template,
         steps,
         workflow_tools: tools,
       },
@@ -312,51 +311,45 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
     }
 
     // Get template and validate (allow access to user's own or public templates)
-    const template = await db
-      .select()
-      .from(workflowTemplate)
-      .where(and(
-        eq(workflowTemplate.id, templateId),
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        or(
-          eq(workflowTemplate.isPublic, true),
-          eq(workflowTemplate.userId, user.id),
-        )
-      ))
-    if (!template || template.length === 0) {
+    const template = await getWorkflowTemplateByIdWithPublicCheck(
+      db,
+      templateId,
+      user.workspaceId,
+      user.id
+    )
+    if (!template) {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
 
-    if (!template[0].rootWorkflowStepTemplateId) {
+    if (!template.rootWorkflowStepTemplateId) {
       throw new HTTPException(400, {
         message: "Template has no root step configured",
       })
     }
 
     // Get root step template
-    const rootStepTemplate = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(
-        eq(workflowStepTemplate.id, template[0].rootWorkflowStepTemplateId),
-      )
+    const rootStepTemplate = await getWorkflowStepTemplateById(
+      db,
+      template.rootWorkflowStepTemplateId
+    )
 
-    if (!rootStepTemplate || rootStepTemplate.length === 0) {
+
+    if (!rootStepTemplate) {
       throw new HTTPException(404, { message: "Root step template not found" })
     }
 
-    const rootStep = rootStepTemplate[0]
+    const rootStep = rootStepTemplate
 
     // Get root step tool for validation
     let rootStepTool = null
     if (rootStep.toolIds && rootStep.toolIds.length > 0) {
-      const toolResult = await db
-        .select()
-        .from(workflowTool)
-        .where(eq(workflowTool.id, rootStep.toolIds[0]))
+      const toolResult = await getWorkflowToolById(
+        db,
+        rootStep.toolIds[0]
+      )
 
-      if (toolResult && toolResult.length > 0) {
-        rootStepTool = toolResult[0]
+      if (toolResult) {
+        rootStepTool = toolResult
       }
     }
 
@@ -415,17 +408,17 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
     // Create workflow execution
     //Workflow TODO : currently in metadata we are passing userEmail, workspaceId, userId, workspaceInternalId, but after db changes we can directly fetch userId and workspaceId from workflowExecution tablexw
-    const [execution] = await db
-      .insert(workflowExecution)
-      .values({
-        workflowTemplateId: template[0].id,
-        userId: userId,
+    const execution = await createWorkflowExecution(
+      db,
+      {
+        workflowTemplateId: template.id,
         workspaceId: user.workspaceId,
+        userId: userId,
         name:
           requestData.name ||
-          `${template[0].name} - ${new Date().toLocaleDateString()}`,
+          `${template.name} - ${new Date().toLocaleDateString()}`,
         description:
-          requestData.description || `Execution of ${template[0].name}`,
+          requestData.description || `Execution of ${template.name}`,
         metadata: {
           ...requestData.metadata,
           executionContext: {
@@ -434,40 +427,37 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
           }
         },
         status: WorkflowStatus.ACTIVE,
-        rootWorkflowStepExeId: null,
-      })
-      .returning()
+      }
+    )
 
     // Get all step templates
-    const steps = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const steps = await getWorkflowStepTemplatesByTemplateId(
+      db,
+      templateId
+    )
 
     // Create step executions for all template steps
-    const stepExecutionsData = steps.map((step) => ({
-      workflowExecutionId: execution.id,
-      workflowStepTemplateId: step.id,
-      name: step.name,
-      type: step.type,
-      status: WorkflowStatus.DRAFT as const,
-      parentStepId: step.parentStepId,
-      prevStepIds: step.prevStepIds || [],
-      nextStepIds: step.nextStepIds || [],
-      toolExecIds: [],
-      timeEstimate: step.timeEstimate,
-      metadata: step.metadata,
-    }))
-
-    const stepExecutions = await db
-      .insert(workflowStepExecution)
-      .values(stepExecutionsData)
-      .returning()
+    const stepExecutions = await Promise.all(
+      steps.map((step) => 
+        createWorkflowStepExecution(db, {
+          workflowExecutionId: execution.id,
+          workflowStepTemplateId: step.id,
+          name: step.name,
+          type: step.type as StepType,
+          parentStepId: step.parentStepId || undefined,
+          prevStepIds: step.prevStepIds as string[] || [],
+          nextStepIds: step.nextStepIds as string [] || [],
+          toolExecIds: [],
+          timeEstimate: step.timeEstimate || undefined,
+          metadata: step.metadata,
+        })
+      )
+    )
 
     // Find root step execution
     const rootStepExecution = stepExecutions.find(
       (se) =>
-        se.workflowStepTemplateId === template[0].rootWorkflowStepTemplateId,
+        se.workflowStepTemplateId === template.rootWorkflowStepTemplateId,
     )
 
     if (!rootStepExecution) {
@@ -581,9 +571,9 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         }
       }
 
-      ;[toolExecutionRecord] = await db
-        .insert(toolExecution)
-        .values({
+      toolExecutionRecord = await createToolExecution(
+        db,
+        {
           workflowToolId: rootStepTool.id,
           workflowExecutionId: execution.id,
           status: ToolExecutionStatus.COMPLETED,
@@ -593,10 +583,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
             submittedBy: "api",
             autoCompleted: true,
           },
-          startedAt: new Date(),
-          completedAt: new Date(),
-        })
-        .returning()
+        }
+      )
     }
 
     // Mark root step as completed
@@ -608,7 +596,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
         completedAt: new Date(),
         toolExecIds: toolExecutionRecord ? [toolExecutionRecord.id] : [],
         metadata: {
-          ...(rootStepExecution.metadata || {}),
+          ...(rootStepExecution.metadata as Object || {}),
           formSubmission: {
             formData: processedFormData,
             submittedAt: new Date().toISOString(),
@@ -620,15 +608,11 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       .where(eq(workflowStepExecution.id, rootStepExecution.id))
 
     // Auto-execute next automated steps
-    const allTools = await db
-      .select()
-      .from(workflowTool)
-      .where(
-        and(
-          eq(workflowTool.workspaceId, user.workspaceId),
-          eq(workflowTool.userId, user.id),
-        ),
-      )
+    const allTools = await getAccessibleWorkflowTools(
+      db,
+      user.workspaceId,
+      user.id
+    )
     const rootStepName = rootStepExecution.name || "Root Step"
     const currentResults: Record<string, any> = {}
 
@@ -698,77 +682,66 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
-    // Get template
-    const template = await db
-      .select()
-      .from(workflowTemplate)
-      .where(and(
-        eq(workflowTemplate.id, templateId),
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        or(
-          eq(workflowTemplate.isPublic, true),
-          eq(workflowTemplate.userId, user.id),
-        )
-      ))
+    const template = await getWorkflowTemplateByIdWithPublicCheck(
+      db,
+      templateId,
+      user.workspaceId,
+      user.id
+    )
 
-    if (!template || template.length === 0) {
+    if (!template) {
       throw new HTTPException(404, { message: "Workflow template not found" })
     }
 
     // Get step templates
-    const steps = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const steps = await getWorkflowStepTemplatesByTemplateId(
+      db,
+      templateId
+    )
 
     // Get tools
-    const tools = await db
-      .select()
-      .from(workflowTool)
-      .where(and(
-        eq(workflowTool.workspaceId, user.workspaceId),
-        eq(workflowTool.userId, user.id),
-      ))
+    const tools = await getAccessibleWorkflowTools(
+      db,
+      user.workspaceId,
+      user.id
+    )
 
     
 
     // Create workflow execution
-    const [execution] = await db
-      .insert(workflowExecution)
-      .values({
-        workflowTemplateId: template[0].id,
-        userId: user.id,
+    const execution = await createWorkflowExecution(
+      db,
+      {
+        workflowTemplateId: template.id,
         workspaceId: user.workspaceId,
+        userId: user.id,
         name:
           requestData.name ||
-          `${template[0].name} - ${new Date().toLocaleDateString()}`,
+          `${template.name} - ${new Date().toLocaleDateString()}`,
         description:
-          requestData.description || `Execution of ${template[0].name}`,
+          requestData.description || `Execution of ${template.name}`,
         metadata: requestData.metadata || {},
         status: WorkflowStatus.ACTIVE,
-        rootWorkflowStepExeId: null,
-      })
-      .returning()
+      }
+    )
 
     // Create step executions for all template steps
-    const stepExecutionsData = steps.map((step) => ({
-      workflowExecutionId: execution.id,
-      workflowStepTemplateId: step.id,
-      name: step.name,
-      type: step.type,
-      status: WorkflowStatus.DRAFT as const,
-      parentStepId: step.parentStepId,
-      prevStepIds: step.prevStepIds || [],
-      nextStepIds: step.nextStepIds || [],
-      toolExecIds: [], // Will be populated when tools are executed
-      timeEstimate: step.timeEstimate,
-      metadata: step.metadata,
-    }))
-
-    const stepExecutions = await db
-      .insert(workflowStepExecution)
-      .values(stepExecutionsData)
-      .returning()
+    const stepExecutions = await Promise.all(
+      steps.map((step) => 
+        createWorkflowStepExecution(db, {
+          workflowExecutionId: execution.id,
+          workflowStepTemplateId: step.id,
+          name: step.name,
+          type: step.type as StepType,
+          parentStepId: step.parentStepId || undefined,
+          prevStepIds: step.prevStepIds as string[] || [],
+          nextStepIds: step.nextStepIds as string[] || [],
+          toolExecIds: [], // Will be populated when tools are executed
+          timeEstimate: step.timeEstimate || undefined,
+          metadata: step.metadata,
+        })
+      )
+    )
 
     // Find root step (no parent)
     const rootStepExecution = stepExecutions.find((se) => {
@@ -819,10 +792,10 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
 const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
   try {
     // Get current workflow execution
-    const [currentExecution] = await db
-      .select()
-      .from(workflowExecution)
-      .where(eq(workflowExecution.id, executionId))
+    const currentExecution = await getWorkflowExecutionById(
+      db,
+      executionId
+    )
 
     if (!currentExecution || currentExecution.status === WorkflowStatus.COMPLETED || currentExecution.status === WorkflowStatus.FAILED) {
       return false // Already completed or failed, no update needed
@@ -865,7 +838,7 @@ const checkAndUpdateWorkflowCompletion = async (executionId: string) => {
 
     // Update workflow metadata with execution progress
     const progressMetadata = {
-      ...(currentExecution.metadata || {}),
+      ...(currentExecution.metadata as Object || {}),
       executionProgress: {
         totalSteps: allStepExecutions.length,
         executedSteps: executedSteps.length,
@@ -1024,10 +997,10 @@ const executeAutomatedWorkflowSteps = async (
 
     // Check if workflow is already marked as failed before updating
     try {
-      const [currentExecution] = await db
-        .select()
-        .from(workflowExecution)
-        .where(eq(workflowExecution.id, executionId))
+      const currentExecution = await getWorkflowExecutionById(
+        db,
+        executionId
+      )
 
       if (currentExecution && currentExecution.status !== WorkflowStatus.FAILED) {
         // Only mark as failed if not already failed (to avoid overriding specific failure info)
@@ -1076,15 +1049,15 @@ const executeWorkflowChain = async (
     }
 
     // Get the tool for this step from the step template (not execution)
-    const stepTemplate = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.id, step.workflowStepTemplateId))
-    if (!stepTemplate || stepTemplate.length === 0) {
+    const stepTemplate = await getWorkflowStepTemplateById(
+      db,
+      step.workflowStepTemplateId
+    )
+    if (!stepTemplate) {
       return previousResults
     }
 
-    const toolIds = stepTemplate[0].toolIds || []
+    const toolIds = stepTemplate.toolIds || []
     const toolId = toolIds.length > 0 ? toolIds[0] : null
     if (!toolId) {
       return previousResults
@@ -1289,10 +1262,10 @@ const executeWorkflowChain = async (
 
     if (allStepsCompleted) {
       // Check if workflow execution is not already completed
-      const [currentExecution] = await db
-        .select()
-        .from(workflowExecution)
-        .where(eq(workflowExecution.id, executionId))
+      const currentExecution = await getWorkflowExecutionById(
+        db,
+        executionId
+      )
 
       if (currentExecution && currentExecution.status !== WorkflowStatus.COMPLETED) {
         Logger.info(
@@ -1323,24 +1296,20 @@ export const GetWorkflowExecutionStatusApi = async (c: Context) => {
     const executionId = c.req.param("executionId")
 
     // Get only the status field for maximum performance
-    const execution = await db
-      .select({
-        status: workflowExecution.status,
-      })
-      .from(workflowExecution)
-      .where(and(
-        eq(workflowExecution.workspaceId, user.workspaceId),
-        eq(workflowExecution.userId, user.id),
-        eq(workflowExecution.id, executionId),
-      ))
+    const execution = await getWorkflowExecutionByIdWithChecks(
+      db,
+      executionId,
+      user.workspaceId,
+      user.id
+    )
 
-    if (!execution || execution.length === 0) {
+    if (!execution) {
       throw new HTTPException(404, { message: "Workflow execution not found" })
     }
 
     return c.json({
       success: true,
-      status: execution[0].status,
+      status: execution.status,
     })
   } catch (error) {
     Logger.error(error, "Failed to get workflow execution status")
@@ -1357,16 +1326,14 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
     const executionId = c.req.param("executionId")
 
     // Get execution directly by ID
-    const execution = await db
-      .select()
-      .from(workflowExecution)
-      .where(and(
-        eq(workflowExecution.userId, user.id),
-        eq(workflowExecution.workspaceId, user.workspaceId),
-        eq(workflowExecution.id, executionId),
-      ))
+    const execution = await getWorkflowExecutionByIdWithChecks(
+      db,
+      executionId,
+      user.workspaceId,
+      user.id
+    )
 
-    if (!execution || execution.length === 0) {
+    if (!execution) {
       throw new HTTPException(404, { message: "Workflow execution not found" })
     }
 
@@ -1397,7 +1364,7 @@ export const GetWorkflowExecutionApi = async (c: Context) => {
     return c.json({
       success: true,
       data: {
-        ...execution[0],
+        ...execution,
         stepExecutions: stepExecutions,
         toolExecutions: toolExecutions,
       },
@@ -1455,37 +1422,32 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       currentStepExecution = stepExecution[0]
 
       // Get step template to access form definition for validation
-      const stepTemplate = await db
-        .select()
-        .from(workflowStepTemplate)
-        .where(
-          eq(
-            workflowStepTemplate.id,
-            currentStepExecution.workflowStepTemplateId,
-          ),
+      const stepTemplate = await getWorkflowStepTemplateById(
+          db,
+          currentStepExecution.workflowStepTemplateId
         )
 
-      if (!stepTemplate || stepTemplate.length === 0) {
+      if (!stepTemplate) {
         throw new HTTPException(404, { message: "Step template not found" })
       }
 
-      const toolIds = stepTemplate[0].toolIds || []
+      const toolIds = stepTemplate.toolIds || []
       if (toolIds.length === 0) {
         throw new HTTPException(400, {
           message: "No tools configured for this step",
         })
       }
 
-      const formTool = await db
-        .select()
-        .from(workflowTool)
-        .where(eq(workflowTool.id, toolIds[0]))
+      const formTool = await getWorkflowToolById(
+        db,
+        toolIds[0]
+      )
 
-      if (!formTool || formTool.length === 0) {
+      if (!formTool) {
         throw new HTTPException(404, { message: "Form tool not found" })
       }
 
-      const formDefinition = formTool[0].value as any
+      const formDefinition = formTool.value as any
       const formFields = formDefinition?.fields || []
 
       // Build validation schema from form definition
@@ -1581,53 +1543,48 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       stepExecution = stepExecutions[0]
 
       // Get the form tool for JSON case
-      const stepTemplate = await db
-        .select()
-        .from(workflowStepTemplate)
-        .where(
-          eq(workflowStepTemplate.id, stepExecution.workflowStepTemplateId),
+      const stepTemplate = await getWorkflowStepTemplateById(
+          db,
+          stepExecution.workflowStepTemplateId
         )
-
-      if (!stepTemplate || stepTemplate.length === 0) {
+      if (!stepTemplate) {
         throw new HTTPException(404, { message: "Step template not found" })
       }
 
-      const toolIds = stepTemplate[0].toolIds || []
+      const toolIds = stepTemplate.toolIds || []
       if (toolIds.length === 0) {
         throw new HTTPException(400, {
           message: "No tools configured for this step",
         })
       }
 
-      const formToolResult = await db
-        .select()
-        .from(workflowTool)
-        .where(eq(workflowTool.id, toolIds[0]))
+      const formToolResult = await getWorkflowToolById(
+        db,
+        toolIds[0]
+      )
 
-      if (!formToolResult || formToolResult.length === 0) {
+      if (!formToolResult) {
         throw new HTTPException(404, { message: "Form tool not found" })
       }
 
-      formTool = formToolResult[0]
+      formTool = formToolResult
     } else {
       // For multipart case, we already have the form tool fetched
-      const stepTemplateForMultipart = await db
-        .select()
-        .from(workflowStepTemplate)
-        .where(
-          eq(workflowStepTemplate.id, stepExecution.workflowStepTemplateId),
-        )
+      const stepTemplateForMultipart = await getWorkflowStepTemplateById(
+        db,
+        stepExecution.workflowStepTemplateId
+      )
 
-      if (stepTemplateForMultipart && stepTemplateForMultipart.length > 0) {
-        const toolIds = stepTemplateForMultipart[0].toolIds || []
+      if (stepTemplateForMultipart) {
+        const toolIds = stepTemplateForMultipart.toolIds || []
         if (toolIds.length > 0) {
-          const formToolResult = await db
-            .select()
-            .from(workflowTool)
-            .where(eq(workflowTool.id, toolIds[0]))
+          const formToolResult = await getWorkflowToolById(
+            db,
+            toolIds[0]
+          )
 
-          if (formToolResult && formToolResult.length > 0) {
-            formTool = formToolResult[0]
+          if (formToolResult) {
+            formTool = formToolResult
           }
         }
       }
@@ -1642,21 +1599,19 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
       })
     }
 
-    const [toolExecutionRecord] = await db
-      .insert(toolExecution)
-      .values({
+    const toolExecutionRecord = await createToolExecution(
+      db,
+      {
         workflowToolId: formTool.id,
         workflowExecutionId: stepExecution.workflowExecutionId,
-        status: WorkflowStatus.COMPLETED,
+        status: ToolExecutionStatus.COMPLETED,
         result: {
           formData: formData,
           submittedAt: new Date().toISOString(),
           submittedBy: "demo",
-        },
-        startedAt: new Date(),
-        completedAt: new Date(),
-      })
-      .returning()
+        }
+      }
+    )
 
     console.log("Tool execution created successfully")
 
@@ -1683,15 +1638,11 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
     console.log("Step execution updated successfully")
 
     // Continue workflow execution - execute next automated steps
-    const tools = await db
-      .select()
-      .from(workflowTool)
-      .where(
-        and(
-          eq(workflowTool.workspaceId, user.workspaceId),
-          eq(workflowTool.userId, user.id),
-        ),
-      )
+    const tools = await getAccessibleWorkflowTools(
+      db,
+      user.workspaceId,
+      user.id
+    )
     const stepName = stepExecution.name || "unknown_step"
     const currentResults: Record<string, any> = {}
     currentResults[stepName] = {
@@ -1817,10 +1768,10 @@ const getExecutionContext = async (executionId: string): Promise<{
 } | null> => {
   try {
     // Get workflow execution to access metadata
-    const [execution] = await db
-      .select()
-      .from(workflowExecution)
-      .where(eq(workflowExecution.id, executionId))
+    const execution = await getWorkflowExecutionById(
+      db,
+      executionId
+    )
 
     if (!execution || !execution.metadata) {
       Logger.warn(`No execution context found for execution ${executionId}`)
@@ -1868,10 +1819,10 @@ const executeWorkflowTool = async (
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
         
         const contentType = emailConfig.content_type || "html"
-        const [execution] = await db
-          .select()
-          .from(workflowExecution)
-          .where(eq(workflowExecution.id, executionId))
+        const execution = await getWorkflowExecutionById(
+          db,
+          executionId
+        )
 
         const workflowName = execution?.name || "Unknown Workflow"
         const subject = emailConfig.subject || `Results of Workflow: ${workflowName}`
@@ -2157,15 +2108,11 @@ const executeWorkflowTool = async (
 export const ListWorkflowToolsApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const tools = await db
-      .select()
-      .from(workflowTool)
-      .where(
-        and(
-          eq(workflowTool.workspaceId, user.workspaceId),
-          eq(workflowTool.userId, user.id),
-        ),
-      )
+    const tools = await await getAccessibleWorkflowTools(
+      db,
+      user.workspaceId,
+      user.id
+    )
     return c.json({
       success: true,
       data: tools,
@@ -2189,19 +2136,18 @@ export const CreateWorkflowTemplateApi = async (c: Context) => {
     )
     const requestData = await c.req.json()
 
-    const [template] = await db
-      .insert(workflowTemplate)
-      .values({
+    const template = await createWorkflowTemplate(
+      db,
+      {
         name: requestData.name,
         userId: user.id,
         workspaceId: user.workspaceId,
         isPublic: requestData.isPublic,
         description: requestData.description,
-        version: requestData.version || "1.0.0",
-        status: "draft",
-        config: requestData.config || {},
-      })
-      .returning()
+        version: requestData.version,
+        config: requestData.config,
+      }
+    )
 
     return c.json({
       success: true,
@@ -2248,19 +2194,18 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     const requestData = await c.req.json()
    
     // Create the main workflow template
-    const [template] = await db
-      .insert(workflowTemplate)
-      .values({
+    const template = await createWorkflowTemplate(
+      db,
+      {
         name: requestData.name,
         userId: user.id,
         workspaceId: user.workspaceId,
-        description: requestData.description,
         isPublic: requestData.isPublic,
-        version: requestData.version || "1.0.0",
-        status: "draft",
-        config: requestData.config || {},
-      })
-      .returning()
+        description: requestData.description,
+        version: requestData.version,
+        config: requestData.config,
+      }
+    )
 
     const templateId = template.id
 
@@ -2483,12 +2428,14 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       rootStepId = rootStep?.id || createdSteps[0].id
 
       // Update template with root step ID
-      await db
-        .update(workflowTemplate)
-        .set({
+      await updateWorkflowTemplate(
+        db,
+        templateId,
+        {
           rootWorkflowStepTemplateId: rootStepId,
-        })
-        .where(eq(workflowTemplate.id, templateId))
+          updatedAt: new Date()
+        }
+      )
     }
 
     // Return the complete workflow template with steps and tools
@@ -2521,17 +2468,18 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
-    const [template] = await db
-      .update(workflowTemplate)
-      .set({
+    const template = await updateWorkflowTemplate(
+      db,
+      templateId,
+      {
         name: requestData.name,
         description: requestData.description,
         version: requestData.version,
         status: requestData.status,
         config: requestData.config,
-      })
-      .where(eq(workflowTemplate.id, templateId))
-      .returning()
+        updatedAt: new Date()
+      }
+    )
 
     return c.json({
       success: true,
@@ -2554,18 +2502,17 @@ export const CreateWorkflowExecutionApi = async (c: Context) => {
     )
     const requestData = await c.req.json()
 
-    const [execution] = await db
-      .insert(workflowExecution)
-      .values({
+    const execution = await createWorkflowExecution(
+      db,
+      {
         workflowTemplateId: requestData.workflowTemplateId,
-        userId: user.id,
         workspaceId: user.workspaceId,
+        userId: user.id,
         name: requestData.name,
         description: requestData.description,
         metadata: requestData.metadata || {},
-        status: "draft",
-      })
-      .returning()
+      }
+    )
 
     return c.json({
       success: true,
@@ -2692,16 +2639,16 @@ export const CreateWorkflowToolApi = async (c: Context) => {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const requestData = await c.req.json()
 
-    const [tool] = await db
-      .insert(workflowTool)
-      .values({
+    const tool = await createWorkflowTool(
+      db,
+      {
         type: requestData.type,
         workspaceId: user.workspaceId,
         userId: user.id,
         value: requestData.value,
         config: requestData.config || {},
-      })
-      .returning()
+      }
+    )
 
     return c.json({
       success: true,
@@ -2723,16 +2670,14 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
     const requestData = await c.req.json()
 
     // Check if tool exists first
-    const existingTool = await db
-      .select()
-      .from(workflowTool)
-      .where(and(
-        eq(workflowTool.workspaceId, user.workspaceId),
-        eq(workflowTool.userId, user.id),
-        eq(workflowTool.id, toolId),
-      ))
+    const existingTool = await getWorkflowToolByIdWithChecks(
+      db,
+      toolId,
+      user.workspaceId,
+      user.id
+    )
 
-    if (existingTool.length === 0) {
+    if (!existingTool) {
       throw new HTTPException(404, {
         message: "Workflow tool not found",
       })
@@ -2812,14 +2757,12 @@ export const GetWorkflowToolApi = async (c: Context) => {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
     const toolId = c.req.param("toolId")
 
-    const [tool] = await db
-      .select()
-      .from(workflowTool)
-      .where(and(
-        eq(workflowTool.workspaceId, user.workspaceId),
-        eq(workflowTool.userId, user.id),
-        eq(workflowTool.id, toolId),
-      ))
+    const tool = await getWorkflowToolByIdWithChecks(
+      db,
+      toolId,
+      user.workspaceId,
+      user.id
+    )
 
     if (!tool) {
       throw new HTTPException(404, {
@@ -2846,16 +2789,14 @@ export const DeleteWorkflowToolApi = async (c: Context) => {
     const toolId = c.req.param("toolId")
 
     // Check if tool exists first
-    const existingTool = await db
-      .select()
-      .from(workflowTool)
-      .where(and(
-        eq(workflowTool.workspaceId, user.workspaceId),
-        eq(workflowTool.userId, user.id),
-        eq(workflowTool.id, toolId),
-      ))
+    const existingTool = await getWorkflowToolByIdWithChecks(
+      db,
+      toolId,
+      user.workspaceId,
+      user.id
+    )
 
-    if (existingTool.length === 0) {
+    if (!existingTool) {
       throw new HTTPException(404, {
         message: "Workflow tool not found",
       })
@@ -2882,18 +2823,12 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     const templateId = c.req.param("templateId")
     const requestData = await c.req.json()
 
-    // Validate template exists
-    const [template] = await db
-      .select()
-      .from(workflowTemplate)
-      .where(and(
-        eq(workflowTemplate.id, templateId),
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        or(
-          eq(workflowTemplate.isPublic, true),
-          eq(workflowTemplate.userId, user.id),
-        )
-      ))
+    const template = await getWorkflowTemplateByIdWithPublicCheck(
+      db,
+      templateId,
+      user.workspaceId,
+      user.id
+    )
 
     if (!template) {
       throw new HTTPException(404, {
@@ -2916,11 +2851,10 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     Logger.info(`Created new tool: ${newTool.id}`)
 
     // 2. Get all existing steps for this template
-    const existingSteps = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
-
+    const existingSteps = await getWorkflowStepTemplatesByTemplateId(
+      db,
+      templateId
+    )
     const isFirstStep =
       existingSteps.length === 0 || !template.rootWorkflowStepTemplateId
 
@@ -2951,13 +2885,14 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     // 4. Handle step connections
     if (isFirstStep) {
       // This is the first/root step
-      await db
-        .update(workflowTemplate)
-        .set({
+      await updateWorkflowTemplate(
+        db,
+        templateId,
+        {
           rootWorkflowStepTemplateId: newStep.id,
           updatedAt: new Date(),
-        })
-        .where(eq(workflowTemplate.id, templateId))
+        }
+      )
 
       Logger.info(`Set step ${newStep.id} as root step`)
     } else {
@@ -2990,20 +2925,20 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     }
 
     // 5. Return the complete updated template with new step
-    const updatedTemplate = await db
-      .select()
-      .from(workflowTemplate)
-      .where(eq(workflowTemplate.id, templateId))
+    const updatedTemplate = await getWorkflowTemplateById(
+      db,
+      templateId
+    )
 
-    const allSteps = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const allSteps = await getWorkflowStepTemplatesByTemplateId(
+      db,
+      template.id
+    )
 
     return c.json({
       success: true,
       data: {
-        template: updatedTemplate[0],
+        template: updatedTemplate,
         newStep: newStep,
         newTool: newTool,
         totalSteps: allSteps.length,
@@ -3040,10 +2975,10 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     const stepId = c.req.param("stepId")
 
     // 1. Check if step exists and get its details
-    const [stepToDelete] = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.id, stepId))
+    const stepToDelete = await getWorkflowStepTemplateById(
+      db,
+      stepId
+    ) 
 
     if (!stepToDelete) {
       throw new HTTPException(404, {
@@ -3054,17 +2989,12 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     const templateId = stepToDelete.workflowTemplateId
 
     // 2. Get the workflow template
-    const [template] = await db
-      .select()
-      .from(workflowTemplate)
-      .where(and(
-        eq(workflowTemplate.id, templateId),
-        eq(workflowTemplate.workspaceId, user.workspaceId),
-        or(
-          eq(workflowTemplate.isPublic, true),
-          eq(workflowTemplate.userId, user.id),
-        )
-      ))
+    const template = await getWorkflowTemplateByIdWithPublicCheck(
+      db,
+      templateId,
+      user.workspaceId,
+      user.id
+    )
 
     if (!template) {
       throw new HTTPException(404, {
@@ -3073,8 +3003,8 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     }
 
     // 3. Handle step chain reconnection
-    const prevStepIds = stepToDelete.prevStepIds || []
-    const nextStepIds = stepToDelete.nextStepIds || []
+    const prevStepIds = stepToDelete.prevStepIds as string[] || []
+    const nextStepIds = stepToDelete.nextStepIds as string[] || []
 
     // Update previous steps to point to next steps
     for (const prevStepId of prevStepIds) {
@@ -3107,19 +3037,20 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       // If no next steps, set to null
       newRootStepId = nextStepIds.length > 0 ? nextStepIds[0] : null
 
-      await db
-        .update(workflowTemplate)
-        .set({
+      await updateWorkflowTemplate(
+        db,
+        templateId,
+        {
           rootWorkflowStepTemplateId: newRootStepId,
           updatedAt: new Date(),
-        })
-        .where(eq(workflowTemplate.id, templateId))
+        }
+      )
 
       Logger.info(`Updated root step from ${stepId} to ${newRootStepId}`)
     }
 
     // 6. Delete associated tools if they are only used by this step
-    const toolIdsToCheck = stepToDelete.toolIds || []
+    const toolIdsToCheck = stepToDelete.toolIds as string[] || []
 
     for (const toolId of toolIdsToCheck) {
       // Check if any other steps use this tool
@@ -3150,10 +3081,10 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
       .where(eq(workflowStepTemplate.id, stepId))
 
     // 8. Update step orders for remaining steps
-    const remainingSteps = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const remainingSteps = await getWorkflowStepTemplatesByTemplateId(
+      db,
+      templateId
+    )
 
     // Reorder remaining steps
     const sortedSteps = remainingSteps.sort((a, b) => {
@@ -3171,7 +3102,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
           .update(workflowStepTemplate)
           .set({
             metadata: {
-              ...(step.metadata || {}),
+              ...(step.metadata as Object || {}),
               step_order: newOrder,
             },
             updatedAt: new Date(),
@@ -3181,15 +3112,15 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     }
 
     // 9. Get updated workflow data
-    const updatedTemplate = await db
-      .select()
-      .from(workflowTemplate)
-      .where(eq(workflowTemplate.id, templateId))
+    const updatedTemplate = await getWorkflowTemplateById(
+      db,
+      templateId
+    )
 
-    const updatedSteps = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+    const updatedSteps = await getWorkflowStepTemplatesByTemplateId(
+      db,
+      template.id
+    )
 
     Logger.info(
       `Successfully deleted step ${stepId} and reconnected workflow chain`,
@@ -3202,7 +3133,7 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
         wasRootStep: isRootStep,
         newRootStepId: newRootStepId,
         remainingSteps: updatedSteps.length,
-        template: updatedTemplate[0],
+        template: updatedTemplate,
         message: `Step "${stepToDelete.name}" deleted successfully`,
       },
     })
@@ -3288,28 +3219,28 @@ export const GetFormDefinitionApi = async (c: Context) => {
     }
 
     const stepExecution = stepExecutions[0]
-    const stepTemplate = await db
-      .select()
-      .from(workflowStepTemplate)
-      .where(eq(workflowStepTemplate.id, stepExecution.workflowStepTemplateId))
+    const stepTemplate = await getWorkflowStepTemplateById(
+      db,
+      stepExecution.workflowStepTemplateId
+    )
 
-    if (!stepTemplate || stepTemplate.length === 0) {
+    if (!stepTemplate) {
       throw new HTTPException(404, { message: "Step template not found" })
     }
 
-    const toolIds = stepTemplate[0].toolIds || []
+    const toolIds = stepTemplate.toolIds || []
     if (toolIds.length === 0) {
       throw new HTTPException(400, {
         message: "No tools configured for this step",
       })
     }
 
-    const formTool = await db
-      .select()
-      .from(workflowTool)
-      .where(eq(workflowTool.id, toolIds[0]))
+    const formTool = await getWorkflowToolById(
+      db,
+      toolIds[0]
+    )
 
-    if (!formTool || formTool.length === 0) {
+    if (!formTool) {
       throw new HTTPException(404, { message: "Form tool not found" })
     }
 
@@ -3317,7 +3248,7 @@ export const GetFormDefinitionApi = async (c: Context) => {
       success: true,
       data: {
         stepId: stepId,
-        formDefinition: formTool[0].value,
+        formDefinition: formTool.value,
         stepName: stepExecution.name,
         stepDescription: stepExecution.name, // Use name as description since description doesn't exist
       },

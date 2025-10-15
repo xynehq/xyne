@@ -9,6 +9,7 @@ import {
   type InsertToolExecution,
 } from "@/db/schema"
 import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
+import { useIdentityPlugin } from "@azure/identity"
 
 // Tool Operations
 export const createWorkflowTool = async (
@@ -47,6 +48,43 @@ export const getWorkflowToolById = async (
 
   return tool ? ({ ...tool, value: tool.value as any, config: tool.config as any }) : null
 }
+
+export const getWorkflowToolByIdWithChecks = async (
+  trx: TxnOrClient,
+  id: string,
+  workspaceId: number,
+  userId: number,
+): Promise<SelectWorkflowTool | null> => {
+  const [tool] = await trx
+    .select()
+    .from(workflowTool)
+    .where(and(
+      eq(workflowTool.id, id),
+      eq(workflowTool.workspaceId, workspaceId),
+      eq(workflowTool.userId, userId),
+    ))
+    .limit(1)
+
+  return tool ? ({ ...tool, value: tool.value as any, config: tool.config as any }) : null
+}
+
+export const getAccessibleWorkflowTools = async (
+  trx: TxnOrClient,
+  workspaceId: number,
+  userId: number,
+): Promise<SelectWorkflowTool[]> => {
+  const results = await trx
+    .select()
+    .from(workflowTool)
+    .where(and(
+      eq(workflowTool.workspaceId, workspaceId),
+      eq(workflowTool.userId, userId),
+    ))
+    .orderBy(desc(workflowTool.createdAt))
+  
+  return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+}
+
 
 export const getAllWorkflowTools = async (
   trx: TxnOrClient,
