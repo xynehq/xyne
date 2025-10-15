@@ -5,23 +5,16 @@ import {
   workflowStepTemplate,
   workflowExecution,
   workflowStepExecution,
-  workflowTool,
-  toolExecution,
   selectWorkflowTemplateSchema,
   type SelectWorkflowTemplate,
   type SelectWorkflowStepTemplate,
   type SelectWorkflowExecution,
   type SelectWorkflowStepExecution,
-  type SelectWorkflowTool,
-  type SelectToolExecution,
   type InsertWorkflowTemplate,
   type InsertWorkflowExecution,
   type InsertWorkflowStepExecution,
-  type InsertWorkflowTool,
-  type InsertToolExecution,
 } from "@/db/schema"
-import { StepType, ToolType, ToolExecutionStatus, WorkflowStatus } from "@/types/workflowTypes"
-import { stat } from "fs/promises"
+import { StepType, WorkflowStatus } from "@/types/workflowTypes"
 
 // Workflow Template Operations
 export const createWorkflowTemplate = async (
@@ -319,6 +312,44 @@ export const createWorkflowStepExecution = async (
     .returning()
 
   return stepExecution as SelectWorkflowStepExecution
+}
+
+export const createWorkflowStepExecutions = async (
+  trx: TxnOrClient,
+  stepExecutionsData: Array<{
+    workflowExecutionId: string
+    workflowStepTemplateId: string
+    name: string
+    type: StepType
+    parentStepId?: string
+    prevStepIds?: string[]
+    nextStepIds?: string[]
+    toolExecIds?: string[]
+    timeEstimate?: number
+    metadata?: any
+  }>,
+): Promise<SelectWorkflowStepExecution[]> => {
+  if (stepExecutionsData.length === 0) return []
+
+  const insertValues = stepExecutionsData.map((data) => ({
+    workflowExecutionId: data.workflowExecutionId,
+    workflowStepTemplateId: data.workflowStepTemplateId,
+    name: data.name,
+    type: data.type,
+    parentStepId: data.parentStepId,
+    prevStepIds: data.prevStepIds || [],
+    nextStepIds: data.nextStepIds || [],
+    toolExecIds: data.toolExecIds || [],
+    timeEstimate: data.timeEstimate || 0,
+    metadata: data.metadata || {},
+  }))
+
+  const stepExecutions = await trx
+    .insert(workflowStepExecution)
+    .values(insertValues)
+    .returning()
+
+  return stepExecutions as SelectWorkflowStepExecution[]
 }
 
 export const getWorkflowStepExecutionsByExecution = async (

@@ -23,7 +23,7 @@ import {
   workflowTool,
   toolExecution,
 } from "@/db/schema/workflows"
-import { getUserByEmail, getUserFromJWT } from "@/db/user"
+import { getUserFromJWT } from "@/db/user"
 import { createAgentForWorkflow } from "./agent/workflowAgentUtils"
 import { type CreateAgentPayload } from "./agent"
 import {
@@ -85,7 +85,7 @@ import {
   getWorkflowTemplateByIdWithPublicCheck, 
   updateWorkflowTemplate,
   createWorkflowExecution,
-  createWorkflowStepExecution,
+  createWorkflowStepExecutions,
 } from "@/db/workflow"
 import {
   getAccessibleWorkflowTools,
@@ -436,23 +436,21 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       templateId
     )
 
-    // Create step executions for all template steps
-    const stepExecutions = await Promise.all(
-      steps.map((step) => 
-        createWorkflowStepExecution(db, {
-          workflowExecutionId: execution.id,
-          workflowStepTemplateId: step.id,
-          name: step.name,
-          type: step.type as StepType,
-          parentStepId: step.parentStepId || undefined,
-          prevStepIds: step.prevStepIds as string[] || [],
-          nextStepIds: step.nextStepIds as string [] || [],
-          toolExecIds: [],
-          timeEstimate: step.timeEstimate || undefined,
-          metadata: step.metadata,
-        })
-      )
-    )
+    // Create step executions for all template steps using bulk insert
+    const stepExecutionsData = steps.map((step) => ({
+      workflowExecutionId: execution.id,
+      workflowStepTemplateId: step.id,
+      name: step.name,
+      type: step.type as StepType,
+      parentStepId: step.parentStepId || undefined,
+      prevStepIds: step.prevStepIds as string[] || [],
+      nextStepIds: step.nextStepIds as string [] || [],
+      toolExecIds: [],
+      timeEstimate: step.timeEstimate || undefined,
+      metadata: step.metadata,
+    }))
+
+    const stepExecutions = await createWorkflowStepExecutions(db, stepExecutionsData)
 
     // Find root step execution
     const rootStepExecution = stepExecutions.find(
@@ -725,23 +723,21 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       }
     )
 
-    // Create step executions for all template steps
-    const stepExecutions = await Promise.all(
-      steps.map((step) => 
-        createWorkflowStepExecution(db, {
-          workflowExecutionId: execution.id,
-          workflowStepTemplateId: step.id,
-          name: step.name,
-          type: step.type as StepType,
-          parentStepId: step.parentStepId || undefined,
-          prevStepIds: step.prevStepIds as string[] || [],
-          nextStepIds: step.nextStepIds as string[] || [],
-          toolExecIds: [], // Will be populated when tools are executed
-          timeEstimate: step.timeEstimate || undefined,
-          metadata: step.metadata,
-        })
-      )
-    )
+    // Create step executions for all template steps using bulk insert
+    const stepExecutionsData = steps.map((step) => ({
+      workflowExecutionId: execution.id,
+      workflowStepTemplateId: step.id,
+      name: step.name,
+      type: step.type as StepType,
+      parentStepId: step.parentStepId || undefined,
+      prevStepIds: step.prevStepIds as string[] || [],
+      nextStepIds: step.nextStepIds as string[] || [],
+      toolExecIds: [], // Will be populated when tools are executed
+      timeEstimate: step.timeEstimate || undefined,
+      metadata: step.metadata,
+    }))
+
+    const stepExecutions = await createWorkflowStepExecutions(db, stepExecutionsData)
 
     // Find root step (no parent)
     const rootStepExecution = stepExecutions.find((se) => {
@@ -2108,7 +2104,7 @@ const executeWorkflowTool = async (
 export const ListWorkflowToolsApi = async (c: Context) => {
   try {
     const user = await getUserFromJWT(db, c.get(JwtPayloadKey))
-    const tools = await await getAccessibleWorkflowTools(
+    const tools = await getAccessibleWorkflowTools(
       db,
       user.workspaceId,
       user.id
@@ -2433,7 +2429,6 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
         templateId,
         {
           rootWorkflowStepTemplateId: rootStepId,
-          updatedAt: new Date()
         }
       )
     }
@@ -2477,7 +2472,6 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
         version: requestData.version,
         status: requestData.status,
         config: requestData.config,
-        updatedAt: new Date()
       }
     )
 
@@ -2890,7 +2884,6 @@ export const AddStepToWorkflowApi = async (c: Context) => {
         templateId,
         {
           rootWorkflowStepTemplateId: newStep.id,
-          updatedAt: new Date(),
         }
       )
 
@@ -3042,7 +3035,6 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
         templateId,
         {
           rootWorkflowStepTemplateId: newRootStepId,
-          updatedAt: new Date(),
         }
       )
 
