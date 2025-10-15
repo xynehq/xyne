@@ -1,3 +1,10 @@
+## [3.17.2](https://github.com/xynehq/xyne/compare/v3.17.1...v3.17.2) (2025-10-15)
+
+
+### Bug Fixes
+
+* XYNE-90 enabled chunk highlight for pdfs ([#1109](https://github.com/xynehq/xyne/issues/1109)) ([593e1fe](https://github.com/xynehq/xyne/commit/593e1fee8eb453389c87765db8d9a202bbfaad47))
+
 ## [3.17.1](https://github.com/xynehq/xyne/compare/v3.17.0...v3.17.1) (2025-10-15)
 
 
