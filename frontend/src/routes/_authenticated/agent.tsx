@@ -1028,8 +1028,8 @@ function AgentComponent() {
       } catch (err) {
         console.error("Failed to create EventSource:", err)
         toast({
-          title: "Failed to create EventSource",
-          description: "Failed to create EventSource",
+          title: "Error",
+          description: "Something went wrong. Please try again.",
           variant: "destructive",
         })
         return
@@ -2396,8 +2396,8 @@ function AgentComponent() {
     } catch (err) {
       console.error("Failed to create EventSource:", err)
       toast({
-        title: "Failed to create EventSource",
-        description: "Failed to create EventSource",
+        title: "Error",
+        description: "Something went wrong. Please try again.",
         variant: "destructive",
       })
       return
