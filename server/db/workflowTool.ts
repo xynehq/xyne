@@ -9,7 +9,6 @@ import {
   type InsertToolExecution,
 } from "@/db/schema"
 import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
-import { useIdentityPlugin } from "@azure/identity"
 
 // Tool Operations
 export const createWorkflowTool = async (

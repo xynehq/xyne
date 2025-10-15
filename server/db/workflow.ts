@@ -159,12 +159,12 @@ export const createWorkflowStepTemplate = async (
 export const getWorkflowStepTemplateById = async(
   trx: TxnOrClient,
   id: string,
-): Promise<SelectWorkflowStepTemplate> => {
+): Promise<SelectWorkflowStepTemplate | null> => {
   const [step] = await trx
     .select()
     .from(workflowStepTemplate)
     .where(eq(workflowStepTemplate.id, id))
-    .orderBy(workflowStepTemplate.createdAt)
+    .limit(1)
 
   return step as SelectWorkflowStepTemplate
 }
