@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from "react"
-import { Bot, Mail, FileText } from "lucide-react"
+import { Bot, Mail, FileText, Globe } from "lucide-react"
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -159,6 +159,7 @@ import {
 import WhatHappensNextUI from "./WhatHappensNextUI"
 import AIAgentConfigUI, { AIAgentConfig } from "./AIAgentConfigUI"
 import EmailConfigUI, { EmailConfig } from "./EmailConfigUI"
+import HttpRequestConfigUI, { HttpRequestConfig } from "./HttpRequestConfigUI"
 import OnFormSubmissionUI, { FormConfig } from "./OnFormSubmissionUI"
 import WebhookConfigurationUI, { WebhookConfig } from "./WebhookConfigurationUI"
 import { WorkflowExecutionModal } from "./WorkflowExecutionModal"
@@ -687,6 +688,274 @@ const StepNode: React.FC<NodeProps> = ({
                   : "Send automated email notifications to specified recipients.")
               })()}
             </p>
+          </div>
+
+          {/* ReactFlow Handles - invisible but functional */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="bottom"
+            isConnectable={isConnectable}
+            className="opacity-0"
+          />
+
+          {/* Bottom center connection point - visual only */}
+          <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+            <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+          </div>
+
+          {/* Add Next Step Button */}
+          {hasNext && (
+            <div
+              className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+              style={{ top: "calc(100% + 8px)" }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                const event = new CustomEvent("openWhatHappensNext", {
+                  detail: { nodeId: id },
+                })
+                window.dispatchEvent(event)
+              }}
+            >
+              <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+              <div
+                className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                style={{
+                  width: "28px",
+                  height: "28px",
+                }}
+              >
+                <svg
+                  className="w-4 h-4 text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // Special rendering for HTTP Request nodes and steps with http_request tools
+  const hasHttpRequestTool = tools && tools.length > 0 && tools[0].type === "http_request"
+  if (step.type === "http_request" || hasHttpRequestTool) {
+    // Get config from step or tool
+    const httpConfig =
+      (step as any).config || 
+      (hasHttpRequestTool && tools?.[0]?.val) || 
+      {}
+    const isConfigured = 
+      httpConfig?.url || 
+      step.name || 
+      step.description ||
+      (hasHttpRequestTool && tools?.[0])
+
+    if (!isConfigured) {
+      // Show only icon when not configured
+      return (
+        <>
+          <div
+            className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+              selected 
+                ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+                : "border-gray-300 dark:border-gray-600"
+            }`}
+            style={{
+              width: "80px",
+              height: "80px",
+              borderRadius: "12px",
+              boxShadow: "0 0 0 2px #E2E2E2",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {/* Green HTTP icon with background */}
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
+              style={{
+                display: "flex",
+                width: "32px",
+                height: "32px",
+                padding: "6px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "6px",
+              }}
+            >
+              <Globe width={20} height={20} color="#16A34A" />
+            </div>
+
+            {/* ReactFlow Handles - invisible but functional */}
+            <Handle
+              type="target"
+              position={Position.Top}
+              id="top"
+              isConnectable={isConnectable}
+              className="opacity-0"
+            />
+
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id="bottom"
+              isConnectable={isConnectable}
+              className="opacity-0"
+            />
+
+            {/* Bottom center connection point - visual only */}
+            <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2">
+              <div className="w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full border-2 border-white dark:border-gray-900 shadow-sm"></div>
+            </div>
+
+            {/* Add Next Step Button for unconfigured HTTP Request */}
+            {hasNext && (
+              <div
+                className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center cursor-pointer z-50 pointer-events-auto"
+                style={{ top: "calc(100% + 8px)" }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  const event = new CustomEvent("openWhatHappensNext", {
+                    detail: { nodeId: id },
+                  })
+                  window.dispatchEvent(event)
+                }}
+              >
+                <div className="w-0.5 h-6 bg-gray-300 dark:bg-gray-600 mb-2"></div>
+                <div
+                  className="bg-black hover:bg-gray-800 rounded-full flex items-center justify-center transition-colors shadow-lg"
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                  }}
+                >
+                  <svg
+                    className="w-4 h-4 text-white"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )
+    }
+
+    // Show full content when configured
+    return (
+      <>
+        <div
+          className={`relative cursor-pointer hover:shadow-lg transition-all bg-white dark:bg-gray-800 border-2 ${
+            selected 
+              ? "border-gray-800 dark:border-gray-300 shadow-lg" 
+              : "border-gray-300 dark:border-gray-600"
+          }`}
+          style={{
+            width: "320px",
+            minHeight: "122px",
+            borderRadius: "12px",
+            boxShadow: "0 0 0 2px #E2E2E2",
+          }}
+        >
+          {/* Header with icon and title */}
+          <div className="flex items-center gap-3 text-left w-full px-4 pt-4 mb-3">
+            {/* Green HTTP icon with background */}
+            <div
+              className="flex justify-center items-center flex-shrink-0 bg-green-50 dark:bg-green-900/50"
+              style={{
+                display: "flex",
+                width: "24px",
+                height: "24px",
+                padding: "4px",
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: "4.8px",
+              }}
+            >
+              <Globe width={16} height={16} color="#16A34A" />
+            </div>
+            <h3
+              className="text-gray-800 dark:text-gray-200 truncate flex-1"
+              style={{
+                fontFamily: "Inter",
+                fontSize: "14px",
+                fontStyle: "normal",
+                fontWeight: "600",
+                lineHeight: "normal",
+                letterSpacing: "-0.14px",
+              }}
+            >
+              {(() => {
+                // First try to get title from workflow_tools[index]
+                const toolData = hasHttpRequestTool && tools?.[0] ? tools[0].val : null
+                if (toolData && typeof toolData === 'object' && (toolData as any)?.title) {
+                  return (toolData as any).title
+                }
+                
+                // Then try step name
+                if (step.name && step.name.trim() !== "") {
+                  return step.name
+                }
+                
+                // Then try step description
+                if (step.description && step.description.trim() !== "") {
+                  return step.description
+                }
+                
+                // Default fallback with method and URL
+                const method = httpConfig?.method || 'GET'
+                const url = httpConfig?.url
+                
+                if (url && url.trim() !== '') {
+                  const displayUrl = url.length > 25 ? `${url.substring(0, 25)}...` : url
+                  return `${method} ${displayUrl}`
+                } else {
+                  return 'HTTP Request'
+                }
+              })()}
+            </h3>
+          </div>
+
+          {/* Body content */}
+          <div className="px-4 pb-4">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {(() => {
+                const method = httpConfig?.method || 'GET'
+                const url = httpConfig?.url
+                
+                if (url && url.trim() !== '') {
+                  // Show method and URL if configured
+                  const displayUrl = url.length > 30 ? `${url.substring(0, 30)}...` : url
+                  return `${method} • ${displayUrl}`
+                } else {
+                  // Show placeholder text for unconfigured node
+                  return 'Click to configure HTTP request'
+                }
+              })()}
+            </div>
           </div>
 
           {/* ReactFlow Handles - invisible but functional */}
@@ -2023,6 +2292,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
   const [showAIAgentConfigUI, setShowAIAgentConfigUI] = useState(false)
   const [showEmailConfigUI, setShowEmailConfigUI] = useState(false)
   const [showOnFormSubmissionUI, setShowOnFormSubmissionUI] = useState(false)
+  const [showHttpRequestConfigUI, setShowHttpRequestConfigUI] = useState(false)
   const [showAgentsSidebar, setShowAgentsSidebar] = useState(false)
   const [selectedNodeForNext, setSelectedNodeForNext] = useState<string | null>(
     null,
@@ -2034,6 +2304,9 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
     null,
   )
   const [selectedFormNodeId, setSelectedFormNodeId] = useState<string | null>(
+    null,
+  )
+  const [selectedHttpRequestNodeId, setSelectedHttpRequestNodeId] = useState<string | null>(
     null,
   )
   const [showExistingAgentConfigUI, setShowExistingAgentConfigUI] = useState(false)
@@ -2563,12 +2836,14 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowEmailConfigUI(false)
       setShowOnFormSubmissionUI(false)
       setShowWebhookConfigUI(false)
+      setShowHttpRequestConfigUI(false)
       setSelectedNodeForNext(null)
       setSelectedAgentNodeId(null)
       setSelectedEmailNodeId(null)
       setSelectedFormNodeId(null)
       setShowExistingAgentConfigUI(false)
       setSelectedExistingAgentNodeId(null)
+      setSelectedHttpRequestNodeId(null)
       setSelectedWebhookNodeId(null)
 
       // Handle different tool types
@@ -2584,6 +2859,12 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           // Open Email config sidebar
           setSelectedEmailNodeId(node.id)
           setShowEmailConfigUI(true)
+          break
+
+        case "http_request":
+          // Open HTTP Request config sidebar
+          setSelectedHttpRequestNodeId(node.id)
+          setShowHttpRequestConfigUI(true)
           break
 
         case "webhook":
@@ -2810,6 +3091,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowAgentsSidebar(false)              // ✅ ADD THIS
       setShowExistingAgentConfigUI(false)
       setShowWebhookConfigUI(false)
+      setShowHttpRequestConfigUI(false)
       // Open What Happens Next sidebar
       setSelectedNodeForNext(nodeId)
       setShowWhatHappensNextUI(true)
@@ -2825,6 +3107,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setShowOnFormSubmissionUI(false)
 
       setShowWebhookConfigUI(false)
+      setShowHttpRequestConfigUI(false)
       
       // Open Triggers sidebar
       setShowTriggersSidebar(true)
@@ -3109,6 +3392,15 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         // Keep selectedNodeForNext for later node creation on save
         setSelectedEmailNodeId("pending") // Temporary ID to indicate we're in creation mode
         setShowEmailConfigUI(true)
+        // Note: Keep WhatHappensNextUI visible in background (z-40)
+        // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
+      }
+    } else if (actionId === "http_request") {
+      // When HTTP Request is selected from WhatHappensNextUI, keep it visible in background
+      if (selectedNodeForNext) {
+        // Keep selectedNodeForNext for later node creation on save
+        setSelectedHttpRequestNodeId("pending") // Temporary ID to indicate we're in creation mode
+        setShowHttpRequestConfigUI(true)
         // Note: Keep WhatHappensNextUI visible in background (z-40)
         // Don't close WhatHappensNextUI - let it stay visible behind the node sidebar
       }
@@ -3474,6 +3766,161 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
       setSelectedNodeForNext(null)
     },
     [selectedEmailNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow],
+  )
+
+  const handleHttpRequestConfigBack = useCallback(() => {
+    setShowHttpRequestConfigUI(false)
+    
+    // If we're in creation mode (pending), go back to the "What Happens Next" menu
+    if (selectedHttpRequestNodeId === "pending" && selectedNodeForNext) {
+      // Ensure WhatHappensNextUI is visible when we go back
+      setShowWhatHappensNextUI(true)
+      setSelectedHttpRequestNodeId(null)
+    } else {
+      // If we're editing an existing node, just close the sidebar
+      setSelectedHttpRequestNodeId(null)
+      setSelectedNodeForNext(null)
+      // Clear all node selections when sidebar closes
+      setNodes((prevNodes) => 
+        prevNodes.map(node => ({ ...node, selected: false }))
+      )
+      setSelectedNodes([])
+    }
+  }, [selectedHttpRequestNodeId, selectedNodeForNext, setNodes])
+
+  const handleHttpRequestConfigSave = useCallback(
+    (httpConfig: HttpRequestConfig) => {
+      if (selectedHttpRequestNodeId === "pending" && selectedNodeForNext) {
+        // Create new HTTP Request node when saving configuration
+        const sourceNode = nodes.find((n) => n.id === selectedNodeForNext)
+        if (sourceNode) {
+          const newNodeId = `http-request-${nodeCounter}`
+          
+          // Create the tool object for HTTP Request
+          const httpTool = {
+            id: `tool-${newNodeId}`,
+            type: "http_request",
+            val: httpConfig, // Use 'val' to match template structure
+            value: httpConfig, // Also include 'value' for compatibility
+            config: httpConfig,
+          }
+
+          // Create new node positioned below the source node
+          const newNode = {
+            id: newNodeId,
+            type: "stepNode",
+            position: {
+              x: 400, // Consistent X position for perfect straight line alignment
+              y: sourceNode.position.y + 250, // Increased consistent vertical spacing for straight lines
+            },
+            data: {
+              step: {
+                id: newNodeId,
+                name: httpConfig.title || `${httpConfig.method} ${httpConfig.url}`,
+                type: "http_request",
+                status: "pending",
+                contents: [],
+                config: httpConfig,
+              },
+              tools: [httpTool],
+              isActive: false,
+              isCompleted: false,
+              hasNext: true, // Show + button on new step
+            },
+            draggable: true,
+            selected: true, // Select the newly created node
+          }
+
+          // Create edge connecting source to new node
+          const newEdge = {
+            id: `${selectedNodeForNext}-${newNodeId}`,
+            source: selectedNodeForNext,
+            target: newNodeId,
+            type: "smoothstep",
+            animated: false,
+            style: {
+              stroke: "#D1D5DB",
+              strokeWidth: 2,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            },
+            pathOptions: {
+              borderRadius: 20,
+              offset: 20,
+            },
+            markerEnd: {
+              type: "arrowclosed" as const,
+              color: "#D1D5DB",
+            },
+            sourceHandle: "bottom",
+            targetHandle: "top",
+          } as any
+
+          // Update nodes and edges
+          setNodes((prevNodes) => [...prevNodes, newNode])
+          setEdges((prevEdges) => [...prevEdges, newEdge])
+          setNodeCounter((prev) => prev + 1)
+
+          // Remove hasNext from source node since it now has a next step
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === selectedNodeForNext
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      hasNext: false,
+                    },
+                    selected: false, // Deselect source node
+                  }
+                : node.id === newNodeId
+                  ? node // Keep new node selected
+                  : { ...node, selected: false }, // Deselect all other nodes
+            ),
+          )
+        }
+      } else if (selectedHttpRequestNodeId && selectedHttpRequestNodeId !== "pending") {
+        // Update existing HTTP Request node with the configuration
+        const httpTool = {
+          id: getToolIdFromStepId(selectedHttpRequestNodeId),
+          type: "http_request",
+          val: httpConfig,
+          value: httpConfig,
+          config: httpConfig,
+        }
+
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === selectedHttpRequestNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    step: {
+                      ...(node.data.step || {}),
+                      name: httpConfig.title || `${httpConfig.method} ${httpConfig.url}`,
+                      config: httpConfig,
+                    },
+                    tools: [httpTool],
+                    hasNext: !edges.some(edge => edge.source === selectedHttpRequestNodeId),
+                  },
+                }
+              : node,
+          ),
+        )
+      }
+
+      // Reset zoom and auto-fit workflow after saving configuration
+      setZoomLevel(100)
+      setTimeout(() => {
+        smartFitWorkflow()
+      }, 50)
+
+      setShowHttpRequestConfigUI(false)
+      setSelectedHttpRequestNodeId(null)
+      setSelectedNodeForNext(null)
+    },
+    [selectedHttpRequestNodeId, selectedNodeForNext, edges, nodes, setNodes, setEdges, nodeCounter, setNodeCounter, smartFitWorkflow, getToolIdFromStepId],
   )
 
   const handleOnFormSubmissionBack = useCallback(() => {
@@ -4075,7 +4522,8 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           !showAIAgentConfigUI &&
           !showEmailConfigUI &&
           !showOnFormSubmissionUI &&
-          !showWebhookConfigUI && (
+          !showWebhookConfigUI &&
+          !showHttpRequestConfigUI && (
             <TriggersSidebar
               isVisible={showTriggersSidebar}
               onTriggerClick={handleTriggerClick}
@@ -4117,7 +4565,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
         />
 
         {/* AI Agent Config Sidebar */}
-        {!showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && (
+        {!showEmailConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showHttpRequestConfigUI && (
           <AIAgentConfigUI
             isVisible={showAIAgentConfigUI}
             onBack={handleAIAgentConfigBack}
@@ -4200,7 +4648,7 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
           )}
 
         {/* Email Config Sidebar */}
-        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && (
+        {!showAIAgentConfigUI && !showOnFormSubmissionUI && !showAgentsSidebar && !showHttpRequestConfigUI && (
           <EmailConfigUI
             isVisible={showEmailConfigUI}
             onBack={handleEmailConfigBack}
@@ -4232,6 +4680,44 @@ const WorkflowBuilderInternal: React.FC<WorkflowBuilderProps> = ({
                   const node = nodes.find((n) => n.id === selectedEmailNodeId)
                   return node?.data?.step
                 })()
+                : undefined
+            }
+          />
+        )}
+
+        {/* HTTP Request Config Sidebar */}
+        {!showAIAgentConfigUI && !showEmailConfigUI && !showOnFormSubmissionUI && !showWebhookConfigUI && (
+          <HttpRequestConfigUI
+            isVisible={showHttpRequestConfigUI}
+            onBack={handleHttpRequestConfigBack}
+            onClose={() => {
+              setShowHttpRequestConfigUI(false)
+              setSelectedHttpRequestNodeId(null)
+              setSelectedNodeForNext(null)
+              setNodes((prevNodes) => 
+                prevNodes.map(node => ({ ...node, selected: false }))
+              )
+              setSelectedNodes([])
+            }}
+            onSave={handleHttpRequestConfigSave}
+            showBackButton={selectedHttpRequestNodeId === "pending"}
+            builder={builder}
+            toolData={
+              selectedHttpRequestNodeId
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedHttpRequestNodeId)
+                    const tools = node?.data?.tools as Tool[] | undefined
+                    return tools && tools.length > 0 ? tools[0] : undefined
+                  })()
+                : undefined
+            }
+            toolId={selectedHttpRequestNodeId ? getToolIdFromStepId(selectedHttpRequestNodeId) : undefined}
+            stepData={
+              selectedHttpRequestNodeId
+                ? (() => {
+                    const node = nodes.find((n) => n.id === selectedHttpRequestNodeId)
+                    return node?.data?.step
+                  })()
                 : undefined
             }
           />
