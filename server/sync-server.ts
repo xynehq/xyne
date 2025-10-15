@@ -37,30 +37,69 @@ const honoMiddlewareLogger = LogMiddleware(Subsystem.SyncServer)
 
 // WebSocket connection to main server for forwarding stats
 let mainServerWebSocket: WebSocket | null = null
+let reconnectAttempts = 0
+let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 
 const connectToMainServer = () => {
-  const mainServerUrl = `ws://localhost:${config.port}/internal/sync-websocket`
+  // Use the main app container name in Docker Compose environment, fallback to localhost for dev
+  const mainServerHost = process.env.MAIN_SERVER_HOST || "localhost"
+  const mainServerUrl = `ws://${mainServerHost}:${config.port}/internal/sync-websocket`
   const authSecret = process.env.METRICS_SECRET
+
+  Logger.info(
+    `Attempting to connect to main server WebSocket: ${mainServerUrl} (attempt ${reconnectAttempts + 1})`,
+  )
+
   mainServerWebSocket = new WebSocket(mainServerUrl, {
     headers: {
       Authorization: `Bearer ${authSecret}`,
     },
   })
 
-  mainServerWebSocket.on("open", () => {})
+  mainServerWebSocket.on("open", () => {
+    Logger.info("WebSocket connection to main server established successfully")
+    reconnectAttempts = 0 // Reset attempts on successful connection
+  })
 
   mainServerWebSocket.on("error", (error) => {
-    Logger.error(error, "WebSocket connection to main server failed")
+    Logger.error(
+      error,
+      `WebSocket connection to main server failed (attempt ${reconnectAttempts + 1})`,
+    )
     mainServerWebSocket = null
-    // Retry connection after 5 seconds
-    setTimeout(connectToMainServer, 5000)
+    scheduleReconnect()
   })
 
-  mainServerWebSocket.on("close", () => {
+  mainServerWebSocket.on("close", (code, reason) => {
+    Logger.warn(
+      `WebSocket connection to main server closed (code: ${code}, reason: ${reason || "unknown"})`,
+    )
     mainServerWebSocket = null
-    // Retry connection after 5 seconds
-    setTimeout(connectToMainServer, 5000)
+    scheduleReconnect()
   })
+}
+
+const scheduleReconnect = () => {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout)
+  }
+
+  reconnectAttempts++
+  // Exponential backoff: start at 2 seconds, max at 60 seconds
+  const baseDelay = 2000
+  const maxDelay = 60000
+  const delay = Math.min(
+    baseDelay * Math.pow(2, Math.min(reconnectAttempts - 1, 5)),
+    maxDelay,
+  )
+
+  Logger.info(
+    `Scheduling WebSocket reconnection in ${delay}ms (attempt ${reconnectAttempts})`,
+  )
+
+  reconnectTimeout = setTimeout(() => {
+    connectToMainServer()
+  }, delay)
 }
 
 // Function to send WebSocket message to main server
