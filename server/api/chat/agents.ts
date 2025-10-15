@@ -1950,7 +1950,6 @@ export const MessageWithToolsApi = async (c: Context) => {
                     },
                   )
 
-                  console.log(bestDocIndexes, "best doc indexes extracted")
                   if (bestDocIndexes.length) {
                     bestDocIndexes.forEach((idx) => {
                       const doc: MinimalAgentFragment = contexts[idx]
