@@ -169,7 +169,7 @@ const initWorkers = async () => {
           sync_job_name: SyncToolsQueue,
           sync_job_auth_type: "sync_tool",
         },
-        (endTime - startTime) / 1000,
+        endTime - startTime,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -206,7 +206,7 @@ const initWorkers = async () => {
           sync_job_name: SyncOAuthSaaSQueue,
           sync_job_auth_type: AuthType.OAuth,
         },
-        (endTime - startTime) / 1000,
+        endTime - startTime,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -245,7 +245,7 @@ const initWorkers = async () => {
           sync_job_name: SyncServiceAccountSaaSQueue,
           sync_job_auth_type: AuthType.ServiceAccount,
         },
-        (endTime - startTime) / 1000,
+        endTime - startTime,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -281,7 +281,7 @@ const initWorkers = async () => {
           sync_job_name: SyncGoogleWorkspace,
           sync_job_auth_type: AuthType.ServiceAccount,
         },
-        (endTime - startTime) / 1000,
+        endTime - startTime,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -320,7 +320,7 @@ const initWorkers = async () => {
           sync_job_name: SyncSlackQueue,
           sync_job_auth_type: SlackEntity.User,
         },
-        (endTime - startTime) / 1000,
+        endTime - startTime,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
@@ -360,7 +360,7 @@ const initWorkers = async () => {
           sync_job_name: CleanupAttachmentsQueue,
           sync_job_auth_type: SYNC_JOB_AUTH_TYPE_CLEANUP,
         },
-        (endTime - startTime) / 1000,
+        endTime - startTime,
       )
     } catch (error) {
       const errorMessage = getErrorMessage(error)
