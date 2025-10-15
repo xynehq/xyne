@@ -1998,7 +1998,6 @@ const executeWorkflowTool = async (
 
       case "ai_agent":
         const aiConfig = tool.config || {}
-        Logger.info(`AI Agent tool execution with config: ${JSON.stringify(aiConfig, null, 2)}`)
         const aiValue = tool.value || {}
         const agentId = aiConfig.agentId
 
@@ -2084,10 +2083,6 @@ const executeWorkflowTool = async (
           }
           const isExistingAgent = aiConfig.isExistingAgent
           Logger.info(`Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`)
-
-
-
-          Logger.info(`[workflow] Using full-featured agent execution for existing agent: ${agentId}`)
 
           const fullResult = await executeAgentForWorkflowWithRag({
             agentId,
