@@ -30,16 +30,20 @@ export const calls = pgTable("calls", {
   externalId: text("external_id").unique().notNull(),
   createdByUserId: integer("created_by_user_id")
     .notNull()
-    .references(() => users.id),
+    .references(() => users.id, { onDelete: "cascade" }),
   startedAt: timestamp("started_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
   endedAt: timestamp("ended_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  // Store participant external IDs as JSON array
-  participants: jsonb("participants").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-  // Store invited user external IDs as JSON array
-  invitedUsers: jsonb("invited_users").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  participants: jsonb("participants")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  invitedUsers: jsonb("invited_users")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
   roomLink: text("room_link").notNull(),
   callType: callTypeEnum("call_type").notNull().default(CallType.Video),
 })
