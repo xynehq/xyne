@@ -1054,7 +1054,7 @@ const executeAutomatedWorkflowSteps = async (
 }
 
 // Execute workflow chain - automatically execute steps in sequence
-const executeWorkflowChain = async (
+export const executeWorkflowChain = async (
   executionId: string,
   currentStepId: string,
   tools: any[],
@@ -2128,6 +2128,211 @@ const executeWorkflowTool = async (
               error: "Agent execution failed",
               message: error instanceof Error ? error.message : String(error),
               inputType: aiConfig.inputType,
+            }
+          }
+        }
+
+      case "http_request":
+        try {
+          const httpConfig = tool.config || {}
+          const httpValue = tool.value || {}
+          
+          // Extract configuration from both config and value objects
+          const url = httpValue.url || httpConfig.url
+          const method = (httpValue.method || httpConfig.method || "GET").toUpperCase()
+          const headers = { ...httpConfig.headers, ...httpValue.headers }
+          const queryParams = { ...httpConfig.queryParams, ...httpValue.queryParams }
+          const body = httpValue.body || httpConfig.body
+          const bodyType = httpValue.bodyType || httpConfig.bodyType || "json"
+          const authentication = httpConfig.authentication || httpValue.authentication || "none"
+          const authConfig = httpConfig.authConfig || httpValue.authConfig || {}
+          const timeout = httpConfig.timeout || httpValue.timeout || 30000
+          const followRedirects = httpConfig.followRedirects !== false
+
+          // Validate required fields
+          if (!url) {
+            return {
+              status: "error",
+              result: {
+                error: "URL is required for HTTP request",
+                config: { httpConfig, httpValue }
+              }
+            }
+          }
+
+          // Validate URL format
+          try {
+            new URL(url)
+          } catch (urlError) {
+            return {
+              status: "error",
+              result: {
+                error: "Invalid URL format",
+                url: url,
+                details: urlError instanceof Error ? urlError.message : String(urlError)
+              }
+            }
+          }
+
+          Logger.info(`Executing HTTP ${method} request to ${url}`)
+
+          // Prepare URL with query parameters
+          const urlObj = new URL(url)
+          Object.entries(queryParams).forEach(([key, value]) => {
+            if (value) {
+              urlObj.searchParams.append(key, String(value))
+            }
+          })
+
+          // Prepare headers
+          const requestHeaders: Record<string, string> = {
+            'User-Agent': 'Xyne-Workflow/1.0',
+            ...headers
+          }
+
+          // Handle authentication
+          if (authentication === "basic" && authConfig.username && authConfig.password) {
+            const credentials = btoa(`${authConfig.username}:${authConfig.password}`)
+            requestHeaders['Authorization'] = `Basic ${credentials}`
+          } else if (authentication === "bearer" && authConfig.token) {
+            requestHeaders['Authorization'] = `Bearer ${authConfig.token}`
+          } else if (authentication === "api_key" && authConfig.apiKey && authConfig.apiKeyHeader) {
+            requestHeaders[authConfig.apiKeyHeader] = authConfig.apiKey
+          }
+
+          // Prepare request body
+          let requestBody: string | undefined
+          if (body && ["POST", "PUT", "PATCH"].includes(method)) {
+            if (bodyType === "json") {
+              requestHeaders['Content-Type'] = 'application/json'
+              try {
+                // Validate JSON if it's supposed to be JSON
+                JSON.parse(body)
+                requestBody = body
+              } catch (jsonError) {
+                return {
+                  status: "error",
+                  result: {
+                    error: "Invalid JSON in request body",
+                    body: body,
+                    details: jsonError instanceof Error ? jsonError.message : String(jsonError)
+                  }
+                }
+              }
+            } else if (bodyType === "form") {
+              requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded'
+              requestBody = body
+            } else {
+              // Raw body type
+              requestBody = body
+            }
+          }
+
+          // Create AbortController for timeout
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+          try {
+            const startTime = Date.now()
+            
+            const response = await fetch(urlObj.toString(), {
+              method,
+              headers: requestHeaders,
+              body: requestBody,
+              signal: controller.signal,
+              redirect: followRedirects ? 'follow' : 'manual'
+            })
+
+            clearTimeout(timeoutId)
+            const endTime = Date.now()
+            const duration = endTime - startTime
+
+            // Get response headers
+            const responseHeaders: Record<string, string> = {}
+            response.headers.forEach((value, key) => {
+              responseHeaders[key] = value
+            })
+
+            // Get response body
+            let responseData: any
+            let responseText = ""
+            
+            try {
+              responseText = await response.text()
+              
+              // Try to parse as JSON if content-type suggests it
+              const contentType = response.headers.get('content-type') || ''
+              if (contentType.includes('application/json') || contentType.includes('text/json')) {
+                try {
+                  responseData = JSON.parse(responseText)
+                } catch {
+                  // If JSON parsing fails, keep as text
+                  responseData = responseText
+                }
+              } else {
+                responseData = responseText
+              }
+            } catch (bodyError) {
+              responseData = `Error reading response body: ${bodyError instanceof Error ? bodyError.message : String(bodyError)}`
+            }
+
+            const isSuccess = response.status >= 200 && response.status < 300
+
+            Logger.info(`HTTP ${method} request to ${url} completed with status ${response.status} in ${duration}ms`)
+
+            return {
+              status: isSuccess ? "success" : "error",
+              result: {
+                statusCode: response.status,
+                statusText: response.statusText,
+                headers: responseHeaders,
+                data: responseData,
+                url: urlObj.toString(),
+                method: method,
+                duration: duration,
+                success: isSuccess,
+                timestamp: new Date().toISOString(),
+                ...(responseText && { rawResponse: responseText.substring(0, 1000) }) // Truncate for logging
+              }
+            }
+
+          } catch (fetchError) {
+            clearTimeout(timeoutId)
+            
+            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+              Logger.error(`HTTP ${method} request to ${url} timed out after ${timeout}ms`)
+              return {
+                status: "error",
+                result: {
+                  error: "Request timeout",
+                  timeout: timeout,
+                  url: url,
+                  method: method
+                }
+              }
+            }
+
+            Logger.error(fetchError, `HTTP ${method} request to ${url} failed`)
+            return {
+              status: "error",
+              result: {
+                error: "HTTP request failed",
+                message: fetchError instanceof Error ? fetchError.message : String(fetchError),
+                url: url,
+                method: method
+              }
+            }
+          }
+
+        } catch (error) {
+          Logger.error(error, "HTTP request tool execution failed")
+          return {
+            status: "error",
+            result: {
+              error: "HTTP request tool execution failed",
+              message: error instanceof Error ? error.message : String(error),
+              config: tool.config,
+              value: tool.value
             }
           }
         }

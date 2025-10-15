@@ -7,7 +7,7 @@ import {
   toolExecution,
   workflowTool
 } from "@/db/schema/workflows"
-import { eq, and } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import { WorkflowStatus, ToolExecutionStatus, StepType } from "@/types/workflowTypes"
@@ -174,13 +174,104 @@ export class WebhookExecutionService {
         })
         .where(eq(workflowExecution.id, executionId))
 
-      // TODO: Trigger actual workflow processing
-      // This would typically integrate with your workflow engine
-      Logger.info(`Workflow execution ${executionId} started and ready for processing`)
+      // Get execution details to start the workflow chain
+      const [execution] = await db
+        .select()
+        .from(workflowExecution)
+        .where(eq(workflowExecution.id, executionId))
+        .limit(1)
+
+      if (!execution) {
+        throw new Error(`Execution ${executionId} not found`)
+      }
+
+      // Get template to find root step
+      const [template] = await db
+        .select()
+        .from(workflowTemplate)
+        .where(eq(workflowTemplate.id, execution.workflowTemplateId))
+        .limit(1)
+
+      if (!template || !template.rootWorkflowStepTemplateId) {
+        throw new Error(`Template not found or no root step configured`)
+      }
+
+      // Get step executions to find the root execution
+      const stepExecutions = await db
+        .select()
+        .from(workflowStepExecution)
+        .where(eq(workflowStepExecution.workflowExecutionId, executionId))
+
+      const rootStepExecution = stepExecutions.find(
+        (se) => se.workflowStepTemplateId === template.rootWorkflowStepTemplateId
+      )
+
+      if (!rootStepExecution) {
+        throw new Error(`Root step execution not found`)
+      }
+
+      // Get tools for the workflow
+      const tools = await this.getWorkflowTools(execution.workflowTemplateId)
+
+      // Start workflow execution chain if root step is automated
+      if (rootStepExecution.type === StepType.AUTOMATED) {
+        Logger.info(`Starting automated workflow chain for execution ${executionId}`)
+        
+        // Import executeWorkflowChain dynamically to avoid circular imports
+        const { executeWorkflowChain } = await import("../api/workflow")
+        
+        const executionResults = await executeWorkflowChain(
+          executionId,
+          rootStepExecution.id,
+          tools,
+          {}
+        )
+
+        Logger.info(`Workflow chain completed for execution ${executionId}`, { results: executionResults })
+      } else {
+        Logger.info(`Workflow execution ${executionId} started, waiting for manual input`)
+      }
 
     } catch (error) {
       Logger.error(`Failed to start workflow execution ${executionId}: ${error}`)
       throw error
+    }
+  }
+
+  private async getWorkflowTools(templateId: string) {
+    try {
+      // Get all steps for the template
+      const steps = await db
+        .select()
+        .from(workflowStepTemplate)
+        .where(eq(workflowStepTemplate.workflowTemplateId, templateId))
+
+      // Get all tool IDs from steps
+      const allToolIds: string[] = []
+      steps.forEach(step => {
+        if (step.toolIds && Array.isArray(step.toolIds)) {
+          allToolIds.push(...step.toolIds)
+        }
+      })
+
+      // Get all tools referenced by steps
+      if (allToolIds.length === 0) {
+        return []
+      }
+
+      const tools = await db
+        .select()
+        .from(workflowTool)
+        .where(
+          // Use IN clause for multiple tool IDs
+          sql`${workflowTool.id} = ANY(${allToolIds})`
+        )
+
+      return tools
+
+    } catch (error) {
+      Logger.error(`Failed to get workflow tools for template ${templateId}: ${error}`)
+      return []
     }
   }
 
