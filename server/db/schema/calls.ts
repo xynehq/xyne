@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm"
+import { sql, relations } from "drizzle-orm"
 import {
   serial,
   pgTable,
@@ -113,3 +113,41 @@ export const selectCallInvitedUserSchema = createSelectSchema(callInvitedUsers)
 
 export type InsertCallInvitedUser = z.infer<typeof insertCallInvitedUserSchema>
 export type SelectCallInvitedUser = z.infer<typeof selectCallInvitedUserSchema>
+
+// Relations
+export const callsRelations = relations(calls, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [calls.createdByUserId],
+    references: [users.id],
+  }),
+  participants: many(callParticipants),
+  invitedUsers: many(callInvitedUsers),
+}))
+
+export const callParticipantsRelations = relations(
+  callParticipants,
+  ({ one }) => ({
+    call: one(calls, {
+      fields: [callParticipants.callId],
+      references: [calls.id],
+    }),
+    user: one(users, {
+      fields: [callParticipants.userId],
+      references: [users.id],
+    }),
+  }),
+)
+
+export const callInvitedUsersRelations = relations(
+  callInvitedUsers,
+  ({ one }) => ({
+    call: one(calls, {
+      fields: [callInvitedUsers.callId],
+      references: [calls.id],
+    }),
+    user: one(users, {
+      fields: [callInvitedUsers.userId],
+      references: [users.id],
+    }),
+  }),
+)

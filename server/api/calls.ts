@@ -713,25 +713,7 @@ export const GetCallHistoryApi = async (c: Context) => {
     }
     const user = users[0]
 
-    // Get all calls where user is creator
-    const createdCalls = db
-      .select({ callId: calls.id })
-      .from(calls)
-      .where(eq(calls.createdByUserId, user.id))
-
-    // Get all calls where user is a participant
-    const participatedCalls = db
-      .select({ callId: callParticipants.callId })
-      .from(callParticipants)
-      .where(eq(callParticipants.userId, user.id))
-
-    // Get all calls where user was invited
-    const invitedCalls = db
-      .select({ callId: callInvitedUsers.callId })
-      .from(callInvitedUsers)
-      .where(eq(callInvitedUsers.userId, user.id))
-
-    // Combine all call IDs using UNION
+    // Get all call IDs where user is involved (creator, participant, or invited)
     const userCallIds = await db
       .select({ callId: calls.id })
       .from(calls)
@@ -815,134 +797,98 @@ export const GetCallHistoryApi = async (c: Context) => {
       conditions.push(sql`${calls.startedAt} >= ${startDate.toISOString()}`)
     }
 
-    // Get all calls with the applied filters
-    const callHistory = await db
-      .select()
-      .from(calls)
-      .where(and(...conditions))
-      .orderBy(desc(calls.startedAt))
-
-    // Get workspace users to enrich the response with user details
-    const workspaceUsers = await getUsersByWorkspace(db, workspaceId)
-    const userIdMap = new Map(workspaceUsers.map((u) => [u.id, u]))
-
-    // Get all participants and invited users for these calls
-    const callIdsFromHistory = callHistory.map((call) => call.id)
-
-    const participantsData = await db
-      .select()
-      .from(callParticipants)
-      .where(inArray(callParticipants.callId, callIdsFromHistory))
-
-    const invitedUsersData = await db
-      .select()
-      .from(callInvitedUsers)
-      .where(inArray(callInvitedUsers.callId, callIdsFromHistory))
-
-    // Create maps for efficient lookup
-    const participantsByCall = new Map<number, number[]>()
-    participantsData.forEach((p) => {
-      if (!participantsByCall.has(p.callId)) {
-        participantsByCall.set(p.callId, [])
-      }
-      participantsByCall.get(p.callId)!.push(p.userId)
+    // Get all calls with relations using Drizzle's relational queries
+    const callHistory = await db.query.calls.findMany({
+      where: and(...conditions),
+      with: {
+        createdBy: true,
+        participants: {
+          with: {
+            user: true,
+          },
+        },
+        invitedUsers: {
+          with: {
+            user: true,
+          },
+        },
+      },
+      orderBy: desc(calls.startedAt),
     })
 
-    const invitedUsersByCall = new Map<number, number[]>()
-    invitedUsersData.forEach((i) => {
-      if (!invitedUsersByCall.has(i.callId)) {
-        invitedUsersByCall.set(i.callId, [])
-      }
-      invitedUsersByCall.get(i.callId)!.push(i.userId)
-    })
-
-    // Filter by search query (on enriched data)
+    // Filter by search query if provided
     let filteredCalls = callHistory
     if (searchQuery && searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim()
       filteredCalls = callHistory.filter((call) => {
-        const creator = userIdMap.get(call.createdByUserId)
-        const creatorName = (creator?.name ?? "").toLowerCase()
-        const creatorMatch = creatorName.includes(query)
+        // Search in creator name
+        const creatorMatch = call.createdBy?.name?.toLowerCase().includes(query)
 
-        const participantIds = participantsByCall.get(call.id) || []
-        const participantMatch = participantIds.some((userId) => {
-          const participant = userIdMap.get(userId)
-          const name = (participant?.name ?? "").toLowerCase()
-          return name.includes(query)
-        })
+        // Search in participant names
+        const participantMatch = call.participants.some((p) =>
+          p.user?.name?.toLowerCase().includes(query),
+        )
 
-        const invitedIds = invitedUsersByCall.get(call.id) || []
-        const invitedMatch = invitedIds.some((userId) => {
-          const invited = userIdMap.get(userId)
-          const name = (invited?.name ?? "").toLowerCase()
-          return name.includes(query)
-        })
+        // Search in invited user names
+        const invitedMatch = call.invitedUsers.some((i) =>
+          i.user?.name?.toLowerCase().includes(query),
+        )
 
         return creatorMatch || participantMatch || invitedMatch
       })
     }
 
-    // Enrich call history with user details
-    const enrichedHistory = filteredCalls.map((call) => {
-      const creator = userIdMap.get(call.createdByUserId)
-
-      const participantIds = participantsByCall.get(call.id) || []
-      const participantDetails = participantIds
-        .map((userId) => {
-          const participant = userIdMap.get(userId)
-          return participant
+    // Format the response with enriched user details
+    const enrichedHistory = filteredCalls.map((call) => ({
+      id: call.externalId,
+      callId: call.externalId,
+      roomLink: call.roomLink,
+      callType: call.callType,
+      startedAt: call.startedAt,
+      endedAt: call.endedAt,
+      duration: call.endedAt
+        ? Math.floor(
+            (new Date(call.endedAt).getTime() -
+              new Date(call.startedAt).getTime()) /
+              1000,
+          )
+        : null,
+      createdBy: call.createdBy
+        ? {
+            id: call.createdBy.externalId,
+            name: call.createdBy.name,
+            email: call.createdBy.email,
+            photoLink: call.createdBy.photoLink,
+          }
+        : null,
+      participants: call.participants
+        .map((p) =>
+          p.user
             ? {
-                id: participant.externalId,
-                name: participant.name,
-                email: participant.email,
-                photoLink: participant.photoLink,
+                id: p.user.externalId,
+                name: p.user.name,
+                email: p.user.email,
+                photoLink: p.user.photoLink,
+                joinedAt: p.joinedAt,
+                leftAt: p.leftAt,
               }
-            : null
-        })
-        .filter(Boolean)
-
-      const invitedIds = invitedUsersByCall.get(call.id) || []
-      const invitedDetails = invitedIds
-        .map((userId) => {
-          const invited = userIdMap.get(userId)
-          return invited
+            : null,
+        )
+        .filter(Boolean),
+      invitedUsers: call.invitedUsers
+        .map((i) =>
+          i.user
             ? {
-                id: invited.externalId,
-                name: invited.name,
-                email: invited.email,
-                photoLink: invited.photoLink,
+                id: i.user.externalId,
+                name: i.user.name,
+                email: i.user.email,
+                photoLink: i.user.photoLink,
+                invitedAt: i.invitedAt,
               }
-            : null
-        })
-        .filter(Boolean)
-
-      return {
-        id: call.externalId,
-        callId: call.externalId,
-        roomLink: call.roomLink,
-        callType: call.callType,
-        startedAt: call.startedAt,
-        endedAt: call.endedAt,
-        duration: call.endedAt
-          ? Math.floor(
-              (new Date(call.endedAt).getTime() -
-                new Date(call.startedAt).getTime()) /
-                1000,
-            )
-          : null,
-        createdBy: creator
-          ? {
-              id: creator.externalId,
-              name: creator.name,
-              email: creator.email,
-              photoLink: creator.photoLink,
-            }
-          : null,
-        participants: participantDetails,
-        invitedUsers: invitedDetails,
-      }
-    })
+            : null,
+        )
+        .filter(Boolean),
+    }))
 
     return c.json({
       success: true,
