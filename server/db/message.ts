@@ -313,6 +313,7 @@ export const getMessagesWithAttachmentsByChatId = async (
         isNull(messages.deletedAt),
       ),
     )
+    .orderBy(asc(messages.createdAt), asc(messages.id))
     .limit(limit)
     .offset(offset)
   return chatMessages
