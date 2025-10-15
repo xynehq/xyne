@@ -1,3 +1,10 @@
+## [3.17.3](https://github.com/xynehq/xyne/compare/v3.17.2...v3.17.3) (2025-10-15)
+
+
+### Bug Fixes
+
+* **vespa-config:** increased heap size for vespa ([#1112](https://github.com/xynehq/xyne/issues/1112)) ([863f0b6](https://github.com/xynehq/xyne/commit/863f0b6f798b12cbd296fb86bdd0e24cdff7f62b))
+
 ## [3.17.2](https://github.com/xynehq/xyne/compare/v3.17.1...v3.17.2) (2025-10-15)
 
 
