@@ -5,8 +5,8 @@ import {
   text,
   integer,
   timestamp,
-  jsonb,
   pgEnum,
+  primaryKey,
 } from "drizzle-orm/pg-core"
 import { createInsertSchema, createSelectSchema } from "drizzle-zod"
 import { z } from "zod"
@@ -36,18 +36,50 @@ export const calls = pgTable("calls", {
     .default(sql`NOW()`),
   endedAt: timestamp("ended_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  participants: jsonb("participants")
-    .$type<string[]>()
-    .notNull()
-    .default(sql`'[]'::jsonb`),
-  invitedUsers: jsonb("invited_users")
-    .$type<string[]>()
-    .notNull()
-    .default(sql`'[]'::jsonb`),
   roomLink: text("room_link").notNull(),
-  callType: callTypeEnum("call_type").notNull().default(CallType.Video),
+  callType: callTypeEnum("call_type").notNull().default(CallType.Audio),
 })
 
+// Junction table for call participants
+export const callParticipants = pgTable(
+  "call_participants",
+  {
+    callId: integer("call_id")
+      .notNull()
+      .references(() => calls.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    joinedAt: timestamp("joined_at", { withTimezone: true })
+      .notNull()
+      .default(sql`NOW()`),
+    leftAt: timestamp("left_at", { withTimezone: true }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.callId, table.userId] }),
+  }),
+)
+
+// Junction table for invited users
+export const callInvitedUsers = pgTable(
+  "call_invited_users",
+  {
+    callId: integer("call_id")
+      .notNull()
+      .references(() => calls.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    invitedAt: timestamp("invited_at", { withTimezone: true })
+      .notNull()
+      .default(sql`NOW()`),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.callId, table.userId] }),
+  }),
+)
+
+// Zod schemas for calls
 export const insertCallSchema = createInsertSchema(calls).omit({
   id: true,
   startedAt: true,
@@ -57,3 +89,27 @@ export const selectCallSchema = createSelectSchema(calls)
 
 export type InsertCall = z.infer<typeof insertCallSchema>
 export type SelectCall = z.infer<typeof selectCallSchema>
+
+// Zod schemas for call participants
+export const insertCallParticipantSchema = createInsertSchema(
+  callParticipants,
+).omit({
+  joinedAt: true,
+})
+
+export const selectCallParticipantSchema = createSelectSchema(callParticipants)
+
+export type InsertCallParticipant = z.infer<typeof insertCallParticipantSchema>
+export type SelectCallParticipant = z.infer<typeof selectCallParticipantSchema>
+
+// Zod schemas for invited users
+export const insertCallInvitedUserSchema = createInsertSchema(
+  callInvitedUsers,
+).omit({
+  invitedAt: true,
+})
+
+export const selectCallInvitedUserSchema = createSelectSchema(callInvitedUsers)
+
+export type InsertCallInvitedUser = z.infer<typeof insertCallInvitedUserSchema>
+export type SelectCallInvitedUser = z.infer<typeof selectCallInvitedUserSchema>

@@ -8,8 +8,8 @@ import { getUserByEmail, getUsersByWorkspace } from "@/db/user"
 import { callNotificationService } from "@/services/callNotifications"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
-import { calls } from "@/db/schema/calls"
-import { eq, desc, and, isNull, or, sql } from "drizzle-orm"
+import { calls, callParticipants, callInvitedUsers } from "@/db/schema/calls"
+import { eq, desc, and, isNull, or, sql, inArray } from "drizzle-orm"
 import { randomUUID } from "node:crypto"
 
 const { JwtPayloadKey } = config
@@ -134,13 +134,20 @@ export const InitiateCallApi = async (c: Context) => {
 
     // Save call record to database
     // Note: Don't add caller to participants yet - they need to actually join first
-    await db.insert(calls).values({
-      externalId: callExternalId,
-      createdByUserId: caller.id,
-      roomLink,
-      callType: validatedData.callType,
-      participants: [], // Empty initially - users added when they actually join
-      invitedUsers: [targetUser.externalId], // Target user is invited
+    const [newCall] = await db
+      .insert(calls)
+      .values({
+        externalId: callExternalId,
+        createdByUserId: caller.id,
+        roomLink,
+        callType: validatedData.callType,
+      })
+      .returning()
+
+    // Add target user to invited users junction table
+    await db.insert(callInvitedUsers).values({
+      callId: newCall.id,
+      userId: targetUser.id,
     })
 
     // Generate access tokens for both users
@@ -236,17 +243,28 @@ export const JoinCallApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Call room not found" })
     }
 
-    // Atomically append participant if not already present
-    // This prevents race conditions when multiple users join simultaneously
-    await db.execute(sql`
-      UPDATE ${calls}
-      SET participants = CASE
-        WHEN NOT (participants @> jsonb_build_array(${user.externalId}::text))
-          THEN participants || jsonb_build_array(${user.externalId}::text)
-        ELSE participants
-      END
-      WHERE external_id = ${validatedData.callId}
-    `)
+    // Get the call record to get the call ID
+    const callRecords = await db
+      .select()
+      .from(calls)
+      .where(eq(calls.externalId, validatedData.callId))
+      .limit(1)
+
+    if (callRecords.length === 0) {
+      throw new HTTPException(404, { message: "Call not found" })
+    }
+
+    const callRecord = callRecords[0]
+
+    // Add user to participants junction table if not already present
+    // Use onConflictDoNothing to prevent duplicate entries
+    await db
+      .insert(callParticipants)
+      .values({
+        callId: callRecord.id,
+        userId: user.id,
+      })
+      .onConflictDoNothing()
 
     // Generate access token (room name in LiveKit is the callId)
     const token = await generateAccessToken(
@@ -338,26 +356,35 @@ export const InviteToCallApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Call not found" })
     const rec = rows[0]
     const isCreator = rec.createdByUserId === inviter.id
-    const isParticipant =
-      Array.isArray(rec.participants) &&
-      rec.participants.includes(inviter.externalId)
+
+    // Check if inviter is a participant
+    const participantCheck = await db
+      .select()
+      .from(callParticipants)
+      .where(
+        and(
+          eq(callParticipants.callId, rec.id),
+          eq(callParticipants.userId, inviter.id),
+        ),
+      )
+      .limit(1)
+    const isParticipant = participantCheck.length > 0
+
     if (!isCreator && !isParticipant) {
       throw new HTTPException(403, {
         message: "Not authorized to invite to this call",
       })
     }
 
-    // Atomically append invited user if not already present
-    // This prevents race conditions when multiple invites are sent simultaneously
-    await db.execute(sql`
-      UPDATE ${calls}
-      SET invited_users = CASE
-        WHEN NOT (invited_users @> jsonb_build_array(${targetUser.externalId}::text))
-          THEN invited_users || jsonb_build_array(${targetUser.externalId}::text)
-        ELSE invited_users
-      END
-      WHERE external_id = ${validatedData.callId}
-    `)
+    // Add invited user to junction table if not already present
+    // Use onConflictDoNothing to prevent duplicate entries
+    await db
+      .insert(callInvitedUsers)
+      .values({
+        callId: rec.id,
+        userId: targetUser.id,
+      })
+      .onConflictDoNothing()
 
     // Generate access token for the invited user (room name in LiveKit is the callId)
     const targetToken = await generateAccessToken(
@@ -451,9 +478,20 @@ export const EndCallApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Call not found" })
     const rec = rows[0]
     const isCreator = rec.createdByUserId === user.id
-    const isParticipant =
-      Array.isArray(rec.participants) &&
-      rec.participants.includes(user.externalId)
+
+    // Check if user is a participant
+    const participantCheck = await db
+      .select()
+      .from(callParticipants)
+      .where(
+        and(
+          eq(callParticipants.callId, rec.id),
+          eq(callParticipants.userId, user.id),
+        ),
+      )
+      .limit(1)
+    const isParticipant = participantCheck.length > 0
+
     if (!isCreator && !isParticipant) {
       throw new HTTPException(403, {
         message: "Not authorized to end this call",
@@ -514,16 +552,52 @@ export const LeaveCallApi = async (c: Context) => {
     if (rows.length === 0)
       throw new HTTPException(404, { message: "Call not found" })
     const rec = rows[0]
-    const belongs =
-      rec.createdByUserId === user.id ||
-      (Array.isArray(rec.participants) &&
-        rec.participants.includes(user.externalId)) ||
-      (Array.isArray(rec.invitedUsers) &&
-        rec.invitedUsers.includes(user.externalId))
+
+    // Check if user is creator, participant, or invited
+    const isCreator = rec.createdByUserId === user.id
+
+    const participantCheck = await db
+      .select()
+      .from(callParticipants)
+      .where(
+        and(
+          eq(callParticipants.callId, rec.id),
+          eq(callParticipants.userId, user.id),
+        ),
+      )
+      .limit(1)
+    const isParticipant = participantCheck.length > 0
+
+    const invitedCheck = await db
+      .select()
+      .from(callInvitedUsers)
+      .where(
+        and(
+          eq(callInvitedUsers.callId, rec.id),
+          eq(callInvitedUsers.userId, user.id),
+        ),
+      )
+      .limit(1)
+    const isInvited = invitedCheck.length > 0
+
+    const belongs = isCreator || isParticipant || isInvited
     if (!belongs)
       throw new HTTPException(403, {
         message: "Not authorized to leave this call",
       })
+
+    // Update the participant record with leftAt timestamp if they are a participant
+    if (isParticipant) {
+      await db
+        .update(callParticipants)
+        .set({ leftAt: new Date() })
+        .where(
+          and(
+            eq(callParticipants.callId, rec.id),
+            eq(callParticipants.userId, user.id),
+          ),
+        )
+    }
 
     // Check if room still exists in LiveKit (room name is the callId)
     let roomExists = true
@@ -631,27 +705,88 @@ export const GetCallHistoryApi = async (c: Context) => {
     }
     const user = users[0]
 
-    // Build filter conditions
-    const conditions = [
-      isNull(calls.deletedAt),
-      or(
-        eq(calls.createdByUserId, user.id),
-        sql`${calls.participants} @> ${JSON.stringify([user.externalId])}::jsonb`,
-        sql`${calls.invitedUsers} @> ${JSON.stringify([user.externalId])}::jsonb`,
-      ),
-    ]
+    // Get all calls where user is creator
+    const createdCalls = db
+      .select({ callId: calls.id })
+      .from(calls)
+      .where(eq(calls.createdByUserId, user.id))
 
-    // Filter by call type
-    if (callType === "video" || callType === "audio") {
-      conditions.push(eq(calls.callType, callType))
-    } else if (callType === "missed") {
+    // Get all calls where user is a participant
+    const participatedCalls = db
+      .select({ callId: callParticipants.callId })
+      .from(callParticipants)
+      .where(eq(callParticipants.userId, user.id))
+
+    // Get all calls where user was invited
+    const invitedCalls = db
+      .select({ callId: callInvitedUsers.callId })
+      .from(callInvitedUsers)
+      .where(eq(callInvitedUsers.userId, user.id))
+
+    // Combine all call IDs using UNION
+    const userCallIds = await db
+      .select({ callId: calls.id })
+      .from(calls)
+      .where(
+        or(
+          eq(calls.createdByUserId, user.id),
+          inArray(
+            calls.id,
+            db
+              .select({ callId: callParticipants.callId })
+              .from(callParticipants)
+              .where(eq(callParticipants.userId, user.id)),
+          ),
+          inArray(
+            calls.id,
+            db
+              .select({ callId: callInvitedUsers.callId })
+              .from(callInvitedUsers)
+              .where(eq(callInvitedUsers.userId, user.id)),
+          ),
+        ),
+      )
+
+    const callIds = userCallIds.map((row) => row.callId)
+
+    if (callIds.length === 0) {
+      return c.json({
+        success: true,
+        calls: [],
+      })
+    }
+
+    // Build filter conditions for the main query
+    const conditions = [isNull(calls.deletedAt), inArray(calls.id, callIds)]
+
+    // Handle missed calls filter
+    if (callType === "missed") {
       // Missed calls: user was invited but didn't participate
-      conditions.push(
-        sql`${calls.invitedUsers} @> ${JSON.stringify([user.externalId])}::jsonb`,
-      )
-      conditions.push(
-        sql`NOT (${calls.participants} @> ${JSON.stringify([user.externalId])}::jsonb)`,
-      )
+      const missedCallIds = await db
+        .select({ callId: callInvitedUsers.callId })
+        .from(callInvitedUsers)
+        .where(
+          and(
+            eq(callInvitedUsers.userId, user.id),
+            sql`NOT EXISTS (
+              SELECT 1 FROM ${callParticipants} 
+              WHERE ${callParticipants.callId} = ${callInvitedUsers.callId} 
+              AND ${callParticipants.userId} = ${user.id}
+            )`,
+          ),
+        )
+
+      const missedIds = missedCallIds.map((row) => row.callId)
+      if (missedIds.length === 0) {
+        return c.json({
+          success: true,
+          calls: [],
+        })
+      }
+      conditions.push(inArray(calls.id, missedIds))
+    } else if (callType === "video" || callType === "audio") {
+      // Filter by call type
+      conditions.push(eq(calls.callType, callType))
     }
 
     // Filter by time
@@ -672,8 +807,7 @@ export const GetCallHistoryApi = async (c: Context) => {
       conditions.push(sql`${calls.startedAt} >= ${startDate.toISOString()}`)
     }
 
-    // Get all calls where user is creator, participant, or invited
-    // Use PostgreSQL JSONB operators to filter at the database level for better performance
+    // Get all calls with the applied filters
     const callHistory = await db
       .select()
       .from(calls)
@@ -682,9 +816,37 @@ export const GetCallHistoryApi = async (c: Context) => {
 
     // Get workspace users to enrich the response with user details
     const workspaceUsers = await getUsersByWorkspace(db, workspaceId)
-    const userMap = new Map(workspaceUsers.map((u) => [u.externalId, u]))
-    // Create additional map for O(1) lookup by user ID
     const userIdMap = new Map(workspaceUsers.map((u) => [u.id, u]))
+
+    // Get all participants and invited users for these calls
+    const callIdsFromHistory = callHistory.map((call) => call.id)
+
+    const participantsData = await db
+      .select()
+      .from(callParticipants)
+      .where(inArray(callParticipants.callId, callIdsFromHistory))
+
+    const invitedUsersData = await db
+      .select()
+      .from(callInvitedUsers)
+      .where(inArray(callInvitedUsers.callId, callIdsFromHistory))
+
+    // Create maps for efficient lookup
+    const participantsByCall = new Map<number, number[]>()
+    participantsData.forEach((p) => {
+      if (!participantsByCall.has(p.callId)) {
+        participantsByCall.set(p.callId, [])
+      }
+      participantsByCall.get(p.callId)!.push(p.userId)
+    })
+
+    const invitedUsersByCall = new Map<number, number[]>()
+    invitedUsersData.forEach((i) => {
+      if (!invitedUsersByCall.has(i.callId)) {
+        invitedUsersByCall.set(i.callId, [])
+      }
+      invitedUsersByCall.get(i.callId)!.push(i.userId)
+    })
 
     // Filter by search query (on enriched data)
     let filteredCalls = callHistory
@@ -695,14 +857,16 @@ export const GetCallHistoryApi = async (c: Context) => {
         const creatorName = (creator?.name ?? "").toLowerCase()
         const creatorMatch = creatorName.includes(query)
 
-        const participantMatch = call.participants.some((pId) => {
-          const participant = userMap.get(pId)
+        const participantIds = participantsByCall.get(call.id) || []
+        const participantMatch = participantIds.some((userId) => {
+          const participant = userIdMap.get(userId)
           const name = (participant?.name ?? "").toLowerCase()
           return name.includes(query)
         })
 
-        const invitedMatch = call.invitedUsers.some((iId) => {
-          const invited = userMap.get(iId)
+        const invitedIds = invitedUsersByCall.get(call.id) || []
+        const invitedMatch = invitedIds.some((userId) => {
+          const invited = userIdMap.get(userId)
           const name = (invited?.name ?? "").toLowerCase()
           return name.includes(query)
         })
@@ -715,9 +879,10 @@ export const GetCallHistoryApi = async (c: Context) => {
     const enrichedHistory = filteredCalls.map((call) => {
       const creator = userIdMap.get(call.createdByUserId)
 
-      const participantDetails = call.participants
-        .map((pId) => {
-          const participant = userMap.get(pId)
+      const participantIds = participantsByCall.get(call.id) || []
+      const participantDetails = participantIds
+        .map((userId) => {
+          const participant = userIdMap.get(userId)
           return participant
             ? {
                 id: participant.externalId,
@@ -729,9 +894,10 @@ export const GetCallHistoryApi = async (c: Context) => {
         })
         .filter(Boolean)
 
-      const invitedDetails = call.invitedUsers
-        .map((iId) => {
-          const invited = userMap.get(iId)
+      const invitedIds = invitedUsersByCall.get(call.id) || []
+      const invitedDetails = invitedIds
+        .map((userId) => {
+          const invited = userIdMap.get(userId)
           return invited
             ? {
                 id: invited.externalId,
