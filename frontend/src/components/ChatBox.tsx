@@ -147,6 +147,7 @@ export const getFileIcon = (fileType: FileType | string | undefined) => {
 const MAX_ATTACHMENTS = 5
 import { HighlightedTextForAtMention } from "./Highlight"
 
+
 interface SourceItem {
   id: string
   name: string
@@ -907,7 +908,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             })
             return null
           } finally {
-            setUploadingFilesCount((prev) => prev - 1)
+            const isAbortError= abortController?.signal.aborted || false
+            if (!isAbortError) {
+            setUploadingFilesCount((prev) => Math.max(prev - 1, 0))
+            }
           }
         })
 
@@ -2284,7 +2288,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         handleSendMessage,
       ],
     )
-
+    
     return (
       <div className="relative flex flex-col w-full max-w-3xl pb-5">
         {persistedAgentId && displayAgentName && (
