@@ -255,8 +255,7 @@ const ApiKeyComponent = ({ user, agentWhiteList }: ApiKeyProps) => {
     } catch (error) {
       toast({
         title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to create API key",
+        description: "Failed to create API key",
         variant: "destructive",
       })
     } finally {
@@ -294,8 +293,7 @@ const ApiKeyComponent = ({ user, agentWhiteList }: ApiKeyProps) => {
     } catch (error) {
       toast({
         title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to revoke API key",
+        description: "Failed to revoke API key",
         variant: "destructive",
       })
     }
