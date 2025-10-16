@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { api } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Trash2, Loader2, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Trash2, Loader2, ChevronDown, ChevronRight, ChevronLeft, Search } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import ReactJsonView from 'react-json-view'
 import { useTheme } from '@/components/ThemeContext'
@@ -17,6 +17,8 @@ export const AllDocsPage: React.FC = () => {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set())
   const [currentPage, setCurrentPage] = useState(1)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const itemsPerPage = 50
   const { toast } = useToast()
   const { theme } = useTheme()
@@ -24,20 +26,22 @@ export const AllDocsPage: React.FC = () => {
   // Pagination calculations
   const totalPages = Math.ceil(totalDocuments / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = Math.min(startIndex + itemsPerPage, totalDocuments)
 
-  const fetchDocuments = async (page: number = currentPage) => {
+  const fetchDocuments = async (page: number = currentPage, search: string = searchTerm) => {
     try {
       setLoading(true)
       setError(null)
       
-      const queryParams = new URLSearchParams({
+      const queryObject = {
         page: page.toString(),
-        limit: itemsPerPage.toString()
-      })
+        limit: itemsPerPage.toString(),
+        search: search
+      }
+      
+      console.log('Frontend sending query params:', queryObject)
       
       const response = await api['all-docs'].$get({
-        query: queryParams
+        query: queryObject
       })
       
       if (!response.ok) {
@@ -188,10 +192,31 @@ export const AllDocsPage: React.FC = () => {
     return pages
   }
 
+  const handleSearch = async () => {
+    setSearchTerm(searchInput)
+    setCurrentPage(1)
+    setExpandedDocs(new Set()) // Collapse all when searching
+    await fetchDocuments(1, searchInput)
+  }
+
+  const handleClearSearch = async () => {
+    setSearchInput('')
+    setSearchTerm('')
+    setCurrentPage(1)
+    setExpandedDocs(new Set())
+    await fetchDocuments(1, '')
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch()
+    }
+  }
+
   const goToPage = async (page: number) => {
     setCurrentPage(page)
     setExpandedDocs(new Set()) // Collapse all when changing pages
-    await fetchDocuments(page)
+    await fetchDocuments(page, searchTerm)
   }
 
   useEffect(() => {
@@ -230,6 +255,26 @@ export const AllDocsPage: React.FC = () => {
     <Card className="max-w-6xl mx-auto mt-8">
       <CardHeader>
         <CardTitle>All Documents ({totalDocuments})</CardTitle>
+        <div className="flex gap-2 mt-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="Search documents..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="pl-10"
+            />
+          </div>
+          <Button onClick={handleSearch} disabled={loading}>
+            Search
+          </Button>
+          {searchTerm && (
+            <Button variant="outline" onClick={handleClearSearch} disabled={loading}>
+              Clear
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {documents.length === 0 ? (

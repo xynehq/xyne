@@ -250,6 +250,25 @@ import {
   enhancedMessageFeedbackSchema,
 } from "@/api/chat/types"
 
+// Schema for all-docs query parameters
+const allDocsQuerySchema = z.object({
+  page: z
+    .string()
+    .default("1")
+    .transform((value) => parseInt(value, 10))
+    .refine((value) => !isNaN(value) && value > 0, {
+      message: "Page must be a valid positive number",
+    }),
+  limit: z
+    .string()
+    .default("50")
+    .transform((value) => parseInt(value, 10))
+    .refine((value) => !isNaN(value) && value > 0 && value <= 100, {
+      message: "Limit must be a valid number between 1 and 100",
+    }),
+  search: z.string().default(""),
+})
+
 import {
   CreateCollectionApi,
   ListCollectionsApi,
@@ -892,7 +911,7 @@ export const AppRoutes = app
   .post("/refresh-token", getNewAccessRefreshToken)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
-  .get("/all-docs",FetchAllVespaDocs)
+  .get("/all-docs", zValidator("query", allDocsQuerySchema), FetchAllVespaDocs)
   .post("/delete-doc", DeleteVespaDoc)
   .post(
     "/autocomplete",
