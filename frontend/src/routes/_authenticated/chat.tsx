@@ -1227,6 +1227,8 @@ export const ChatPage = ({
   
             if (documentOperationsRef?.current?.highlightText) {
               try {
+                // Add a small delay to ensure clearHighlights has completed
+                await new Promise(resolve => setTimeout(resolve, 50))
                 await documentOperationsRef.current.highlightText(
                   chunkContent.chunkContent,
                   newChunkIndex,
@@ -1282,7 +1284,10 @@ export const ChatPage = ({
         setCurrentMessageId(null)
       }
       // Handle chunk index change if provided
-      setSelectedChunkIndex(chunkIndex ?? null)
+      setSelectedChunkIndex(null)
+      setTimeout(() => {
+        setSelectedChunkIndex(chunkIndex ?? null)
+      }, 0)
     },
     [],
   )

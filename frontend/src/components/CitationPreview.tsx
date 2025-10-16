@@ -100,13 +100,13 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   // Expose the highlight functions via the document operations ref
   useEffect(() => {
     if (documentOperationsRef?.current) {
-      documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number, pageIndex?: number) => {
+      documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number, pageIndex?: number, waitForTextLayer: boolean = false) => {
         if (!containerRef.current) {
           return false
         }
 
         try {
-          const success = await highlightText(text, chunkIndex, pageIndex)
+          const success = await highlightText(text, chunkIndex, pageIndex, waitForTextLayer)
           return success
         } catch (error) {
           console.error("Error calling highlightText:", error)
