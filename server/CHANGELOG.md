@@ -1,3 +1,24 @@
+# [3.18.0](https://github.com/xynehq/xyne/compare/v3.17.3...v3.18.0) (2025-10-16)
+
+
+### Features
+
+* XYN-193 Calling history page ([#1103](https://github.com/xynehq/xyne/issues/1103)) ([79c6d3a](https://github.com/xynehq/xyne/commit/79c6d3a5f4d59beb335376396116606badbb1ba4))
+
+## [3.17.3](https://github.com/xynehq/xyne/compare/v3.17.2...v3.17.3) (2025-10-15)
+
+
+### Bug Fixes
+
+* **vespa-config:** increased heap size for vespa ([#1112](https://github.com/xynehq/xyne/issues/1112)) ([863f0b6](https://github.com/xynehq/xyne/commit/863f0b6f798b12cbd296fb86bdd0e24cdff7f62b))
+
+## [3.17.2](https://github.com/xynehq/xyne/compare/v3.17.1...v3.17.2) (2025-10-15)
+
+
+### Bug Fixes
+
+* XYNE-90 enabled chunk highlight for pdfs ([#1109](https://github.com/xynehq/xyne/issues/1109)) ([593e1fe](https://github.com/xynehq/xyne/commit/593e1fee8eb453389c87765db8d9a202bbfaad47))
+
 ## [3.17.1](https://github.com/xynehq/xyne/compare/v3.17.0...v3.17.1) (2025-10-15)
 
 
