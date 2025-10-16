@@ -42,7 +42,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ${XYNE_DATA_DIR:-./data}/grafana-storage:/var/lib/grafana 
     ports:
-      - "3002:3000"
+      - "3000"
     restart: always
     networks:
       - xyne
