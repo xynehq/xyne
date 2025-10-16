@@ -14,16 +14,16 @@ const DEFAULT_IMAGE_DIR = "downloads/xyne_images_db"
 const DEFAULT_LAYOUT_PARSING_BASE_URL = "http://localhost:8000"
 const DEFAULT_LAYOUT_PARSING_FILE_TYPE = 0
 const DEFAULT_LAYOUT_PARSING_VISUALIZE = false
+const DEFAULT_LAYOUT_PARSING_TIMEOUT_MS = 300000
 const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
 const DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST = 100
 const TEXT_CHUNK_OVERLAP_CHARS = 32
 
 // Configuration constants
 const LAYOUT_PARSING_BASE_URL = process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL
-const LAYOUT_PARSING_TIMEOUT_MS = Number.parseInt(process.env.LAYOUT_PARSING_TIMEOUT_MS ?? "300000", 10)
-const OCR_MAX_CHUNK_BYTES = Number.parseInt(process.env.OCR_MAX_CHUNK_BYTES ?? "", 10)
-const IMAGE_DIR = process.env.IMAGE_DIR || DEFAULT_IMAGE_DIR
-const LAYOUT_PARSING_MAX_PAGES_PER_REQUEST = Number.parseInt(process.env.LAYOUT_PARSING_MAX_PAGES_PER_REQUEST ?? "", 10)
+const LAYOUT_PARSING_TIMEOUT_MS = process.env.LAYOUT_PARSING_TIMEOUT_MS 
+  ? Number.parseInt(process.env.LAYOUT_PARSING_TIMEOUT_MS, 10) 
+  : DEFAULT_LAYOUT_PARSING_TIMEOUT_MS
 
 const DEFAULT_STATUS_ENDPOINT = "http://localhost:8081/instance_status"
 const DEFAULT_POLL_INTERVAL_MS = 300
@@ -1444,10 +1444,7 @@ export async function chunkByOCRFromBuffer(
   fileName: string,
   docId: string,
 ): Promise<ProcessingResult> {
-  const maxPagesPerRequest =
-    Number.isFinite(LAYOUT_PARSING_MAX_PAGES_PER_REQUEST) && LAYOUT_PARSING_MAX_PAGES_PER_REQUEST > 0
-      ? LAYOUT_PARSING_MAX_PAGES_PER_REQUEST
-      : DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST
+  const maxPagesPerRequest = DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST
 
   let finalApiResult: LayoutParsingApiPayload
 
@@ -1532,17 +1529,14 @@ export async function chunkByOCR(
   const image_chunks_map: ChunkMetadata[] = []
 
   const globalSeq: GlobalSeq = { value: 0 }
-  const chunkSizeLimit =
-    Number.isFinite(OCR_MAX_CHUNK_BYTES) && OCR_MAX_CHUNK_BYTES > 0
-      ? OCR_MAX_CHUNK_BYTES
-      : DEFAULT_MAX_CHUNK_BYTES
+  const chunkSizeLimit = DEFAULT_MAX_CHUNK_BYTES
 
   let currentTextBuffer = ""
   let currentBlockLabels: string[] = []
   let currentPageNumbers: Set<number> = new Set()
   let lastTextChunk: string | null = null
 
-  const imageBaseDir = path.resolve(IMAGE_DIR)
+  const imageBaseDir = path.resolve(DEFAULT_IMAGE_DIR)
   const docImageDir = path.join(imageBaseDir, docId)
   await fsPromises.mkdir(docImageDir, { recursive: true })
   const savedImages = new Set<number>()
