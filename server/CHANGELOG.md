@@ -1,3 +1,10 @@
+## [3.18.2](https://github.com/xynehq/xyne/compare/v3.18.1...v3.18.2) (2025-10-16)
+
+
+### Bug Fixes
+
+* **pathSupport:** fix the permission check for path support of agent api ([#1120](https://github.com/xynehq/xyne/issues/1120)) ([cac541a](https://github.com/xynehq/xyne/commit/cac541af929f8f81f86fe7fa39aa69fa567f8cca))
+
 ## [3.18.1](https://github.com/xynehq/xyne/compare/v3.18.0...v3.18.1) (2025-10-16)
 
 
