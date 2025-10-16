@@ -81,7 +81,6 @@ import {
   getWorkflowExecutionByIdWithChecks, 
   getWorkflowStepTemplateById, 
   getWorkflowStepTemplatesByTemplateId, 
-  getWorkflowTemplateById, 
   getWorkflowTemplateByIdWithPublicCheck, 
   updateWorkflowTemplate,
   createWorkflowExecution,
@@ -2918,9 +2917,11 @@ export const AddStepToWorkflowApi = async (c: Context) => {
     }
 
     // 5. Return the complete updated template with new step
-    const updatedTemplate = await getWorkflowTemplateById(
+    const updatedTemplate = await getWorkflowTemplateByIdWithPublicCheck(
       db,
-      templateId
+      templateId,
+      user.workspaceId,
+      user.id
     )
 
     const allSteps = await getWorkflowStepTemplatesByTemplateId(
@@ -3104,9 +3105,11 @@ export const DeleteWorkflowStepTemplateApi = async (c: Context) => {
     }
 
     // 9. Get updated workflow data
-    const updatedTemplate = await getWorkflowTemplateById(
+    const updatedTemplate = await getWorkflowTemplateByIdWithPublicCheck(
       db,
-      templateId
+      templateId,
+      user.workspaceId,
+      user.id
     )
 
     const updatedSteps = await getWorkflowStepTemplatesByTemplateId(

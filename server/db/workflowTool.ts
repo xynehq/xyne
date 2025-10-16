@@ -7,8 +7,12 @@ import {
   type SelectToolExecution,
   type InsertWorkflowTool,
   type InsertToolExecution,
+  type SelectWorkflowExecution,
+  selectWorkflowToolSchema,
+  selectToolExecutionSchema,
 } from "@/db/schema"
 import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
+import z from "zod"
 
 // Tool Operations
 export const createWorkflowTool = async (
@@ -45,7 +49,7 @@ export const getWorkflowToolById = async (
     .where(eq(workflowTool.id, id))
     .limit(1)
 
-  return tool ? ({ ...tool, value: tool.value as any, config: tool.config as any }) : null
+  return selectWorkflowToolSchema.parse(tool)
 }
 
 export const getWorkflowToolByIdWithChecks = async (
@@ -64,7 +68,7 @@ export const getWorkflowToolByIdWithChecks = async (
     ))
     .limit(1)
 
-  return tool ? ({ ...tool, value: tool.value as any, config: tool.config as any }) : null
+  return selectWorkflowToolSchema.parse(tool)
 }
 
 export const getAccessibleWorkflowTools = async (
@@ -81,7 +85,7 @@ export const getAccessibleWorkflowTools = async (
     ))
     .orderBy(desc(workflowTool.createdAt))
   
-  return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+  return z.array(selectWorkflowToolSchema).parse(results)
 }
 
 
@@ -93,7 +97,7 @@ export const getAllWorkflowTools = async (
     .from(workflowTool)
     .orderBy(desc(workflowTool.createdAt))
   
-  return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+  return z.array(selectWorkflowToolSchema).parse(results)
 }
 
 export const getWorkflowToolsByIds = async (
@@ -108,7 +112,7 @@ export const getWorkflowToolsByIds = async (
     .where(inArray(workflowTool.id, toolIds))
     .orderBy(desc(workflowTool.createdAt))
   
-  return results.map(result => ({ ...result, value: result.value as any, config: result.config as any }))
+  return z.array(selectWorkflowToolSchema).parse(results)
 }
 
 export const updateWorkflowTool = async (
@@ -125,7 +129,7 @@ export const updateWorkflowTool = async (
     .where(eq(workflowTool.id, id))
     .returning()
 
-  return updated ? ({ ...updated, value: updated.value as any, config: updated.config as any }) : null
+  return selectWorkflowToolSchema.parse(updated)
 }
 
 // Note: The new schema doesn't have soft deletes (deletedAt field)
@@ -162,7 +166,7 @@ export const createToolExecution = async (
     })
     .returning()
 
-  return execution as SelectToolExecution
+  return selectToolExecutionSchema.parse(execution)
 }
 
 export const getToolExecutionById = async (
@@ -175,7 +179,7 @@ export const getToolExecutionById = async (
     .where(eq(toolExecution.id, id))
     .limit(1)
 
-  return execution ? ({ ...execution, result: execution.result as any }) : null
+  return selectToolExecutionSchema.parse(execution)
 }
 
 export const getToolExecutionsByWorkflowExecution = async (
@@ -188,7 +192,7 @@ export const getToolExecutionsByWorkflowExecution = async (
     .where(eq(toolExecution.workflowExecutionId, workflowExecutionId))
     .orderBy(desc(toolExecution.createdAt))
   
-  return results.map(result => ({ ...result, result: result.result as any }))
+  return z.array(selectToolExecutionSchema).parse(results)
 }
 
 export const getToolExecutionsByTool = async (
@@ -201,7 +205,7 @@ export const getToolExecutionsByTool = async (
     .where(eq(toolExecution.workflowToolId, workflowToolId))
     .orderBy(desc(toolExecution.createdAt))
   
-  return results.map(result => ({ ...result, result: result.result as any }))
+  return z.array(selectToolExecutionSchema).parse(results)
 }
 
 export const updateToolExecution = async (
@@ -218,7 +222,7 @@ export const updateToolExecution = async (
     .where(eq(toolExecution.id, id))
     .returning()
 
-  return updated ? ({ ...updated, result: updated.result as any }) : null
+  return selectToolExecutionSchema.parse(updated)
 }
 
 export const markToolExecutionStarted = async (
