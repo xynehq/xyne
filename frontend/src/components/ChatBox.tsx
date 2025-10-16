@@ -1007,6 +1007,22 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             ),
           )
           
+          // Call cleanup endpoint to remove any partial uploads
+          try {
+            await authFetch("/api/v1/files/upload-attachment/cleanup", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                fileId: id,
+              }),
+            })
+          } catch (cleanupError) {
+            console.warn("Failed to cleanup aborted upload:", cleanupError)
+            // Don't show error to user since the main goal is to cancel the upload
+          }
+          
           toast({
             title: "Upload cancelled",
             description: `Upload for ${fileToRemove.file.name} was cancelled`,
