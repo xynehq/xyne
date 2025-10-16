@@ -127,6 +127,15 @@ import {
   leaveCallSchema,
   inviteToCallSchema,
 } from "@/api/calls"
+import {
+  SendMessageApi,
+  GetConversationApi,
+  MarkMessagesAsReadApi,
+  GetUnreadCountsApi,
+  sendMessageSchema,
+  getConversationSchema,
+  markAsReadSchema,
+} from "@/api/directMessages"
 import { AuthRedirectError, InitialisationError } from "@/errors"
 import {
   ListDataSourcesApi,
@@ -517,7 +526,7 @@ export const CallNotificationWs = app.get(
           const message = JSON.parse(event.data.toString())
           Logger.info(`Call notification message from user ${userId}:`, message)
 
-          // Handle different message types (accept call, reject call, etc.)
+          // Handle different message types (accept call, reject call, typing indicator, etc.)
           switch (message.type) {
             case "call_response":
               // Handle call acceptance/rejection
@@ -526,6 +535,19 @@ export const CallNotificationWs = app.get(
                   message.callerId,
                   message.response,
                   { callId: message.callId, targetUserId: userId },
+                )
+              }
+              break
+            case "typing_indicator":
+              // Handle typing indicator
+              if (
+                message.targetUserId &&
+                typeof message.isTyping === "boolean"
+              ) {
+                callNotificationService.sendTypingIndicator(
+                  message.targetUserId,
+                  message.isTyping,
+                  userId!,
                 )
               }
               break
@@ -1117,6 +1139,15 @@ export const AppRoutes = app
   .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
   .get("/calls/history", GetCallHistoryApi)
+  // Direct message routes
+  .post("/messages/send", zValidator("json", sendMessageSchema), SendMessageApi)
+  .get("/messages/conversation", GetConversationApi)
+  .post(
+    "/messages/mark-read",
+    zValidator("json", markAsReadSchema),
+    MarkMessagesAsReadApi,
+  )
+  .get("/messages/unread-counts", GetUnreadCountsApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
