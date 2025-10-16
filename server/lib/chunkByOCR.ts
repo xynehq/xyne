@@ -225,7 +225,7 @@ async function sendPdfOcrBatch(
   }
 }
 
-function coerceStatusNumber(raw: unknown): boolean {
+function isValidStatusNumber(raw: unknown): boolean {
   if (typeof raw === "number") {
     return Number.isFinite(raw)
   }
@@ -242,33 +242,26 @@ function coerceStatusNumber(raw: unknown): boolean {
   return false
 }
 
-function extractStatusNumber(raw: unknown): number | undefined {
-  if (typeof raw === "number") {
-    if (Number.isFinite(raw)) {
-      return raw
-    }
-    return undefined
+function extractNumber(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw
   }
 
   if (typeof raw === "string") {
     const trimmed = raw.trim()
-    if (trimmed.length === 0) {
-      return undefined
-    }
-    const parsed = Number(trimmed)
-    if (Number.isFinite(parsed)) {
-      return parsed
+    if (trimmed.length > 0) {
+      const parsed = Number(trimmed)
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
     }
   }
 
-  return undefined
+  return 0
 }
 
 function sanitizeIdleValue(raw: unknown): number {
-  const numericValue = extractStatusNumber(raw)
-  if (numericValue === undefined) {
-    return 0
-  }
+  const numericValue = extractNumber(raw)
   if (numericValue <= 0) {
     return 0
   }
@@ -360,9 +353,15 @@ async function fetchIdleInstances(
 
       const payload = (await response.json()) as InstanceStatusPayload
       const idle = sanitizeIdleValue(payload.idle_instances)
-      const active = extractStatusNumber(payload.active_instances)
-      const configured = extractStatusNumber(payload.configured_instances)
-      const lastUpdated = extractStatusNumber(payload.last_updated)
+      const active = isValidStatusNumber(payload.active_instances) 
+        ? extractNumber(payload.active_instances) 
+        : undefined
+      const configured = isValidStatusNumber(payload.configured_instances)
+        ? extractNumber(payload.configured_instances)
+        : undefined
+      const lastUpdated = isValidStatusNumber(payload.last_updated)
+        ? extractNumber(payload.last_updated)
+        : undefined
 
       metrics?.observe("ocr_dispatch.instances.idle", idle)
       if (active !== undefined) {
