@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { X, UserPlus, Search, Phone, Video } from 'lucide-react'
-import { api } from '@/api'
-import { useToast } from '@/hooks/use-toast'
+import { useState, useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { X, UserPlus, Search, Phone, Video } from "lucide-react"
+import { api } from "@/api"
+import { useToast } from "@/hooks/use-toast"
 
 interface User {
   id: string
@@ -16,13 +16,18 @@ interface User {
 interface InviteUsersModalProps {
   isOpen: boolean
   onClose: () => void
-  roomName: string
-  callType: 'video' | 'audio'
+  callId: string
+  callType: "video" | "audio"
 }
 
-export function InviteUsersModal({ isOpen, onClose, roomName, callType }: InviteUsersModalProps) {
+export function InviteUsersModal({
+  isOpen,
+  onClose,
+  callId,
+  callType,
+}: InviteUsersModalProps) {
   const [users, setUsers] = useState<User[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery] = useState("")
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(false)
   const [invitingUsers, setInvitingUsers] = useState<Set<string>>(new Set())
@@ -38,9 +43,10 @@ export function InviteUsersModal({ isOpen, onClose, roomName, callType }: Invite
   // Filter users based on search query
   useEffect(() => {
     if (searchQuery.trim()) {
-      const filtered = users.filter(user =>
-        user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchQuery.toLowerCase())
+      const filtered = users.filter(
+        (user) =>
+          user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          user.email.toLowerCase().includes(searchQuery.toLowerCase()),
       )
       setFilteredUsers(filtered)
     } else {
@@ -52,13 +58,13 @@ export function InviteUsersModal({ isOpen, onClose, roomName, callType }: Invite
     try {
       setLoading(true)
       const response = await api.workspace.users.$get()
-      
+
       if (response.ok) {
         const data = await response.json()
         setUsers(data || [])
       }
     } catch (error) {
-      console.error('Error fetching users:', error)
+      console.error("Error fetching users:", error)
       toast({
         title: "Error",
         description: "Failed to load users",
@@ -71,19 +77,19 @@ export function InviteUsersModal({ isOpen, onClose, roomName, callType }: Invite
 
   const inviteUser = async (user: User) => {
     try {
-      setInvitingUsers(prev => new Set(prev.add(user.id)))
-      
+      setInvitingUsers((prev) => new Set(prev.add(user.id)))
+
       const response = await api.calls.invite.$post({
         json: {
-          roomName,
+          callId,
           targetUserId: user.id,
-          callType
-        }
+          callType,
+        },
       })
 
       if (response.ok) {
         const data = await response.json()
-        const notificationStatus = data.notificationSent 
+        const notificationStatus = data.notificationSent
           ? `✅ Invitation sent to ${user.name}!`
           : `⚠️ ${user.name} is offline - they won't receive the real-time notification`
 
@@ -92,17 +98,17 @@ export function InviteUsersModal({ isOpen, onClose, roomName, callType }: Invite
           description: notificationStatus,
         })
       } else {
-        throw new Error('Failed to invite user')
+        throw new Error("Failed to invite user")
       }
     } catch (error) {
-      console.error('Error inviting user:', error)
+      console.error("Error inviting user:", error)
       toast({
         title: "Error",
         description: `Failed to invite ${user.name}`,
         variant: "destructive",
       })
     } finally {
-      setInvitingUsers(prev => {
+      setInvitingUsers((prev) => {
         const newSet = new Set(prev)
         newSet.delete(user.id)
         return newSet
@@ -129,11 +135,11 @@ export function InviteUsersModal({ isOpen, onClose, roomName, callType }: Invite
             <X className="h-4 w-4" />
           </Button>
         </CardHeader>
-        
+
         <CardContent className="space-y-4">
           {/* Call Type Indicator */}
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-            {callType === 'video' ? (
+            {callType === "video" ? (
               <Video className="h-4 w-4" />
             ) : (
               <Phone className="h-4 w-4" />
@@ -156,10 +162,12 @@ export function InviteUsersModal({ isOpen, onClose, roomName, callType }: Invite
           {/* Users List */}
           <div className="max-h-64 overflow-y-auto space-y-2">
             {loading ? (
-              <div className="text-center py-4 text-gray-500">Loading users...</div>
+              <div className="text-center py-4 text-gray-500">
+                Loading users...
+              </div>
             ) : filteredUsers.length === 0 ? (
               <div className="text-center py-4 text-gray-500">
-                {searchQuery ? 'No users found' : 'No users available'}
+                {searchQuery ? "No users found" : "No users available"}
               </div>
             ) : (
               filteredUsers.map((user) => (
@@ -171,16 +179,21 @@ export function InviteUsersModal({ isOpen, onClose, roomName, callType }: Invite
                     {/* User Avatar */}
                     <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
                       {user.photoLink ? (
-                        <img 
-                          src={user.photoLink} 
+                        <img
+                          src={user.photoLink}
                           alt={user.name}
                           className="h-10 w-10 rounded-full object-cover"
                         />
                       ) : (
-                        user.name.split(' ').map(n => n[0]).join('')
+                        user.name
+                          .split(" ")
+                          .filter((n) => n.length > 0)
+                          .map((n) => n[0]?.toUpperCase() || "")
+                          .slice(0, 2)
+                          .join("")
                       )}
                     </div>
-                    
+
                     {/* User Info */}
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
@@ -218,7 +231,8 @@ export function InviteUsersModal({ isOpen, onClose, roomName, callType }: Invite
 
           {/* Instructions */}
           <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-            💡 Invited users will receive a real-time notification if they're online, or they can join using the call link.
+            💡 Invited users will receive a real-time notification if they're
+            online, or they can join using the call link.
           </div>
         </CardContent>
       </Card>

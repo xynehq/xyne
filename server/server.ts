@@ -117,11 +117,14 @@ import {
   InitiateCallApi,
   JoinCallApi,
   EndCallApi,
+  LeaveCallApi,
   GetActiveCallsApi,
+  GetCallHistoryApi,
   InviteToCallApi,
   initiateCallSchema,
   joinCallSchema,
   endCallSchema,
+  leaveCallSchema,
   inviteToCallSchema,
 } from "@/api/calls"
 import { AuthRedirectError, InitialisationError } from "@/errors"
@@ -896,7 +899,11 @@ export const AppRoutes = app
   .post("/files/upload-attachment", handleAttachmentUpload)
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
-  .post("/files/delete", zValidator("json", handleAttachmentDeleteSchema), handleAttachmentDeleteApi)
+  .post(
+    "/files/delete",
+    zValidator("json", handleAttachmentDeleteSchema),
+    handleAttachmentDeleteApi,
+  )
   .post("/chat", zValidator("json", chatSchema), GetChatApi)
   .post(
     "/chat/generateTitle",
@@ -1107,7 +1114,9 @@ export const AppRoutes = app
   )
   .post("/calls/join", zValidator("json", joinCallSchema), JoinCallApi)
   .post("/calls/end", zValidator("json", endCallSchema), EndCallApi)
+  .post("/calls/leave", zValidator("json", leaveCallSchema), LeaveCallApi)
   .get("/calls/active", GetActiveCallsApi)
+  .get("/calls/history", GetCallHistoryApi)
   .get("/agent/:agentExternalId/permissions", GetAgentPermissionsApi)
   .get("/agent/:agentExternalId/integration-items", GetAgentIntegrationItemsApi)
   .put(
