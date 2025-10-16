@@ -86,6 +86,7 @@ interface SelectedFile {
   uploadError?: string
   preview?: string // URL for image preview
   fileType?: FileType
+  abortController?: AbortController 
 }
 
 export const getFileIcon = (fileType: FileType | string | undefined) => {
@@ -831,18 +832,24 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
         setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
+       const fileAbortControllers = new Map(files.map(file => [file.id, new AbortController()]))
+
 
         // Set all files to uploading state
         setSelectedFiles((prev) =>
-          prev.map((f) =>
-            files.some((file) => file.id === f.id)
-              ? { ...f, uploading: true, uploadError: undefined }
-              : f,
-          ),
+              prev.map((f) => {
+            const abortController = fileAbortControllers.get(f.id)
+            if (abortController) {
+              return { ...f, uploading: true, uploadError: undefined, abortController }
+            }
+            return f
+          }),
         )
 
         const uploadPromises = files.map(async (selectedFile) => {
+           const abortController = fileAbortControllers.get(selectedFile.id)
           try {
+            
             const formData = new FormData()
             formData.append("attachment", selectedFile.file)
             const response = await authFetch(
@@ -850,6 +857,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               {
                 method: "POST",
                 body: formData,
+                signal: abortController?.signal,
               },
             )
 
@@ -865,7 +873,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               setSelectedFiles((prev) =>
                 prev.map((f) =>
                   f.id === selectedFile.id
-                    ? { ...f, uploading: false, metadata }
+                    ? { ...f, uploading: false, metadata , abortController: undefined }
                     : f,
                 ),
               )
@@ -874,12 +882,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               throw new Error("No document ID returned from upload")
             }
           } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+              return null
+            }
             const errorMessage =
               error instanceof Error ? error.message : "Upload failed"
             setSelectedFiles((prev) =>
               prev.map((f) =>
                 f.id === selectedFile.id
-                  ? { ...f, uploading: false, uploadError: errorMessage }
+                  ? { ...f, uploading: false, uploadError: errorMessage, abortController: undefined }
                   : f,
               ),
             )
@@ -889,7 +900,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             })
             return null
           } finally {
-            setUploadingFilesCount((prev) => prev - 1)
+            setUploadingFilesCount(prev => Math.max(prev - 1, 0));
+
           }
         })
 
@@ -979,6 +991,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
     const removeFile = useCallback(async (id: string) => {
       const fileToRemove = selectedFiles.find((f) => f.id === id)
+      if(fileToRemove?.uploading && fileToRemove.abortController) {
+        fileToRemove.abortController.abort()
+      }
       
       // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
       if (fileToRemove?.metadata?.fileId) {
@@ -2862,7 +2877,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         <button
                           onClick={() => removeFile(selectedFile.id)}
                           className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
-                          disabled={selectedFile.uploading}
+                        
                         >
                           <X size={10} />
                         </button>
@@ -2918,7 +2933,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           <button
                             onClick={() => removeFile(selectedFile.id)}
                             className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                            disabled={selectedFile.uploading}
+                           
                           >
                             <X size={12} />
                           </button>
