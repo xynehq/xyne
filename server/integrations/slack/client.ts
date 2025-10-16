@@ -69,9 +69,9 @@ const handleError = async (
   error: any,
   context: {
     client: WebClient
+    threadTs: string
     channel?: string
     user?: string
-    threadTs?: string
     action?: string
     payload?: any
   },
@@ -101,8 +101,7 @@ const handleError = async (
         thread_ts: threadTs,
         text: "An unexpected error occurred.",
         blocks: createErrorBlocks(
-          error.message ||
-            "An internal error occurred. Please try again later.",
+          "An internal error occurred. Please try again later.",
           errorId,
           `Error during: ${action}`,
         ),
@@ -408,6 +407,7 @@ const handleAgentsCommand = async (
   channel: string,
   user: string,
   dbUser: DbUser,
+  threadTs: string,
 ) => {
   Logger.info(`Listing agents for user ${dbUser.email}`)
 
@@ -421,6 +421,7 @@ const handleAgentsCommand = async (
         channel,
         user,
         text: "There's an issue with your workspace configuration. Please contact your administrator.",
+        thread_ts: threadTs
       })
       return
     }
@@ -438,6 +439,7 @@ const handleAgentsCommand = async (
         channel,
         user,
         text: "You don't have access to any agents yet. Please contact your administrator.",
+        thread_ts: threadTs
       })
       return
     }
@@ -485,10 +487,12 @@ const handleAgentsCommand = async (
       user,
       text: `Available agents (${agents.length})`,
       blocks: agentBlocks,
+      thread_ts: threadTs
     })
   } catch (error: any) {
     await handleError(error, {
       client,
+      threadTs,
       channel,
       user,
       action: "handleAgentsCommand",
@@ -503,8 +507,7 @@ const handleAgentSearchCommand = async (
   user: string,
   agentCommand: string,
   dbUser: DbUser,
-  messageTs: string,
-  threadTs: string | undefined,
+  threadTs: string,
 ) => {
   // Add debug logging to see what we're processing
   Logger.info(
@@ -526,6 +529,7 @@ const handleAgentSearchCommand = async (
       channel,
       user,
       text: "Invalid format. Use: `/<agent_name> your query here`\nExample: `/public-test-agent how to reset password`",
+      thread_ts: threadTs,
     })
     return
   }
@@ -547,6 +551,7 @@ const handleAgentSearchCommand = async (
         channel,
         user,
         text: "There's an issue with your workspace configuration. Please contact your administrator.",
+        thread_ts: threadTs
       })
       return
     }
@@ -588,6 +593,7 @@ const handleAgentSearchCommand = async (
           channel,
           user,
           text: `Multiple agents match "/${agentName}". Please be more specific. Did you mean one of these?\n\n• ${matchingAgentNames}`,
+          thread_ts: threadTs
         })
         return
       }
@@ -601,6 +607,7 @@ const handleAgentSearchCommand = async (
         channel,
         user,
         text: `Agent "/${agentName}" not found or not accessible to you.\n\nAvailable agents: ${availableAgents}\n\nUse \`/agents\` to see the full list with descriptions.`,
+        thread_ts: threadTs
       })
       return
     }
@@ -612,11 +619,10 @@ const handleAgentSearchCommand = async (
         channel,
         user,
         text: `Please provide a query for the agent "/${agentDisplayName}".\n\nExample: \`/${agentDisplayName} your query here\``,
+        thread_ts: threadTs
       })
       return
     }
-
-    const isThreadMessage = !!threadTs
 
     Logger.info(
       `Starting agent chat with ${selectedAgent.name} for query: "${query}"`,
@@ -626,7 +632,7 @@ const handleAgentSearchCommand = async (
       channel,
       user,
       text: `Querying the agent "/${agentDisplayName}"...`,
-      ...(isThreadMessage && { thread_ts: threadTs }),
+      thread_ts: threadTs
     })
 
     try {
@@ -636,7 +642,7 @@ const handleAgentSearchCommand = async (
           channel,
           user,
           text: "Your workspace ID is not configured correctly. Please contact your administrator.",
-          ...(isThreadMessage && { thread_ts: threadTs }),
+          thread_ts: threadTs
         })
         return
       }
@@ -673,7 +679,7 @@ const handleAgentSearchCommand = async (
           channel,
           user,
           text: errorMessage,
-          ...(isThreadMessage && { thread_ts: threadTs }),
+          thread_ts: threadTs
         })
         return
       }
@@ -841,7 +847,7 @@ const handleAgentSearchCommand = async (
           channel,
           user,
           text: `Agent "/${agentDisplayName}" couldn't generate a response for "${query}". Try rephrasing your question.`,
-          ...(isThreadMessage && { thread_ts: threadTs }),
+          thread_ts: threadTs
         })
         return
       }
@@ -879,6 +885,7 @@ const handleAgentSearchCommand = async (
         channel,
         user,
         text: `Agent "/${agentDisplayName}" response is ready.`,
+        thread_ts: threadTs,
         blocks: [
           {
             type: "section",
@@ -908,7 +915,6 @@ const handleAgentSearchCommand = async (
             ],
           },
         ],
-        ...(isThreadMessage && { thread_ts: threadTs }),
       })
     } catch (agentError: any) {
       Logger.error(agentError, "Error in direct agent processing")
@@ -1056,11 +1062,9 @@ const handleSearchQuery = async (
   user: string,
   query: string,
   dbUser: DbUser,
-  messageTs: string,
-  threadTs: string | undefined,
+  threadTs: string,
 ) => {
   Logger.info(`Executing search for query: "${query}" by user ${dbUser.email}`)
-  const isThreadMessage = !!threadTs
 
   let results: any[] = []
   try {
@@ -1071,6 +1075,7 @@ const handleSearchQuery = async (
         channel,
         user,
         text: "Your workspace ID is not configured correctly. Please contact your administrator.",
+        thread_ts: threadTs,
       })
       return
     }
@@ -1107,6 +1112,7 @@ const handleSearchQuery = async (
       channel,
       user,
       text: `I couldn't find any results for "${query}". Try different keywords.`,
+      thread_ts: threadTs
     })
     return
   }
@@ -1142,6 +1148,7 @@ const handleSearchQuery = async (
     channel,
     user,
     text: `Search results for "${query}" are ready.`,
+    thread_ts: threadTs,
     blocks: [
       {
         type: "section",
@@ -1163,7 +1170,6 @@ const handleSearchQuery = async (
         ],
       },
     ],
-    ...(isThreadMessage && { thread_ts: threadTs }),
   })
 }
 
@@ -1171,6 +1177,7 @@ const handleHelpCommand = async (
   client: WebClient,
   channel: string,
   user: string,
+  threadTs: string,
 ) => {
   const botUserId = (await client.auth.test()).user_id
 
@@ -1187,6 +1194,7 @@ const handleHelpCommand = async (
   const messageOptions: any = {
     channel,
     text: "Help - Available Commands",
+    thread_ts: threadTs,
     blocks: [
       {
         type: "section",
@@ -1275,11 +1283,10 @@ const handleSlackCommand = async (
   user: string,
   processedText: string,
   dbUser: DbUser,
-  ts: string,
-  thread_ts: string = "",
+  thread_ts: string,
 ): Promise<void> => {
   if (processedText.toLowerCase().startsWith("/agents")) {
-    await handleAgentsCommand(client, channel, user, dbUser)
+    await handleAgentsCommand(client, channel, user, dbUser, thread_ts)
   } else if (processedText.toLowerCase().startsWith("/search ")) {
     const query = processedText.substring(8).trim()
     await handleSearchQuery(
@@ -1288,8 +1295,7 @@ const handleSlackCommand = async (
       user,
       query,
       dbUser,
-      ts,
-      thread_ts ?? "",
+      thread_ts,
     )
   } else if (processedText.startsWith("/")) {
     await handleAgentSearchCommand(
@@ -1298,14 +1304,23 @@ const handleSlackCommand = async (
       user,
       processedText,
       dbUser,
-      ts,
-      thread_ts ?? "",
+      thread_ts,
     )
   } else if (processedText.toLowerCase() === "help") {
-    await handleHelpCommand(client, channel, user)
+    await handleHelpCommand(
+      client,
+      channel,
+      user,
+      thread_ts,
+    )
   } else {
     // Default behavior - show help
-    await handleHelpCommand(client, channel, user)
+    await handleHelpCommand(
+      client,
+      channel,
+      user,
+      thread_ts,
+    )
   }
 }
 
@@ -1317,6 +1332,7 @@ const validateSlackUser = async (
   client: WebClient,
   user: string,
   channel: string,
+  threadTs: string,
   isDM: boolean = false,
 ): Promise<{ userEmail: string; dbUser: DbUser[] } | null> => {
   if (!user) {
@@ -1332,12 +1348,14 @@ const validateSlackUser = async (
       await client.chat.postMessage({
         channel,
         text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
+        thread_ts: threadTs
       })
     } else {
       await client.chat.postEphemeral({
         channel,
         user,
         text: "I couldn't retrieve your email from Slack. Please ensure your profile email is visible.",
+        thread_ts: threadTs
       })
     }
 
@@ -1354,12 +1372,14 @@ const validateSlackUser = async (
       await client.chat.postMessage({
         channel,
         text: "It seems you're not registered in our system. Please contact support.",
+        thread_ts: threadTs
       })
     } else {
       await client.chat.postEphemeral({
         channel,
         user,
         text: "It seems you're not registered in our system. Please contact support.",
+        thread_ts: threadTs
       })
     }
 
@@ -1399,7 +1419,7 @@ export const processSlackEvent = async (event: any) => {
       }
 
       // Validate the user and get their DB record
-      const validatedUser = await validateSlackUser(webClient, user, channel)
+      const validatedUser = await validateSlackUser(webClient, user, channel, thread_ts)
       if (!validatedUser) {
         Logger.warn(`User validation failed for user ${user}`)
         return
@@ -1417,8 +1437,7 @@ export const processSlackEvent = async (event: any) => {
         user,
         processedText,
         dbUser[0],
-        ts,
-        thread_ts ?? "",
+        thread_ts ?? ts,
       )
     } catch (error: any) {
       Logger.error(error, "Error processing app_mention event")
@@ -1763,6 +1782,7 @@ const handleSourcePagination = async (action: any, view: any) => {
   }
 }
 
+//Sends message in channel instead of thread
 const handleShareFromModal = async (
   action: any,
   view: any,
@@ -1843,6 +1863,7 @@ const handleShareFromModal = async (
   }
 }
 
+//Sends message in channel instead of thread
 const handleShareAgentFromModal = async (
   action: any,
   view: any,
@@ -1939,6 +1960,7 @@ const handleShareAgentFromModal = async (
 }
 
 // Process direct messages to the bot
+// Cannot process direct messages between users
 const processSlackDM = async (event: any) => {
   if (!webClient) {
     Logger.warn("Slack client not initialized, ignoring DM event")
@@ -1955,6 +1977,7 @@ const processSlackDM = async (event: any) => {
       webClient,
       user,
       channel,
+      thread_ts ?? ts,
       true,
     )
     if (!validatedUser) {
@@ -1974,8 +1997,7 @@ const processSlackDM = async (event: any) => {
       user,
       processedText,
       dbUser[0],
-      ts,
-      thread_ts ?? "",
+      thread_ts ?? ts,
     )
   } catch (error: any) {
     Logger.error(error, "Error processing DM event")
@@ -1984,6 +2006,7 @@ const processSlackDM = async (event: any) => {
         await webClient.chat.postMessage({
           channel,
           text: `An error occurred: ${error.message}`,
+          thread_ts: thread_ts ?? ts,
         })
       } catch (e) {
         Logger.error(e, "Failed to post error message to DM")
