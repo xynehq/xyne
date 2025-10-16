@@ -74,6 +74,11 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
     description: "Allows creating new agents",
   },
   {
+    id: ApiKeyScopes.READ_AGENT,
+    name: "Read Agent",
+    description: "Allows reading agent details (read-only access)",
+  },
+  {
     id: ApiKeyScopes.AGENT_CHAT,
     name: "Agent Chat",
     description: "Allows chatting with agents",

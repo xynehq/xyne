@@ -221,6 +221,7 @@ export const attachmentFileTypeMap: Record<string, AttachmentEntity> = {
 
 export enum ApiKeyScopes {
   CREATE_AGENT = "CREATE_AGENT",
+  READ_AGENT = "READ_AGENT",
   AGENT_CHAT = "AGENT_CHAT",
   AGENT_CHAT_STOP = "AGENT_CHAT_STOP",
   UPDATE_AGENT = "UPDATE_AGENT",

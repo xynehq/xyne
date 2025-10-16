@@ -78,9 +78,9 @@ export const GetAgentApi = async (c: Context) => {
   if (via_apiKey) {
     const apiKeyScopes =
       safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
-    if (!apiKeyScopes.includes(ApiKeyScopes.UPDATE_AGENT)) {
+    if (!apiKeyScopes.includes(ApiKeyScopes.READ_AGENT)) {
       return c.json(
-        { message: "API key does not have scope to get agent details" },
+        { message: "API key does not have scope to read agent details" },
         403,
       )
     }
