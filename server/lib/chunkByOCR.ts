@@ -586,7 +586,7 @@ function createInFlightState(
   return state
 }
 
-async function waitForAll(
+async function waitForAtLeastOne(
   inFlight: InFlightState[],
 ): Promise<InFlightState[]> {
   if (inFlight.length === 0) {
@@ -759,7 +759,7 @@ async function runConcurrentDispatch(
         break
       }
 
-      const completedStates = await waitForAll(inFlight)
+      const completedStates = await waitForAtLeastOne(inFlight)
       if (completedStates.length > 0) {
         for (const state of completedStates) {
           if (state.result) {
@@ -1074,6 +1074,37 @@ function normalizeBlockContent(block: OcrBlock): string {
   }
 
   return content.replace(/\s+/g, " ").trim()
+}
+
+function deriveImageFileName(
+  preferredName: string | undefined,
+  bboxKey: string | null | undefined,
+  buffer: Buffer,
+  imageIndex: number,
+  pageIndex: number,
+): string {
+  const ext = detectImageExtension(buffer)
+
+  if (preferredName) {
+    const sanitized = sanitizeFileName(preferredName)
+    const parsed = path.parse(sanitized)
+
+    if (parsed.ext) {
+      const normalizedExt = parsed.ext.replace(/\./, "")
+      if (normalizedExt.toLowerCase() !== ext) {
+        return `${parsed.name || `image_${imageIndex}`}.${ext}`
+      }
+      return sanitized
+    }
+
+    return `${parsed.name || `image_${imageIndex}`}.${ext}`
+  }
+
+  if (bboxKey) {
+    return `img_in_image_box_${bboxKey}.${ext}`
+  }
+
+  return `page_${pageIndex + 1}_image_${imageIndex}.${ext}`
 }
 
 async function callLayoutParsingApi(
@@ -1503,6 +1534,127 @@ export async function chunkByOCRFromBuffer(
   })
 
   return chunkByOCR(docId, ocrResponse, images, imageMetadata)
+}
+
+export async function demoPdfOcrDispatcher(): Promise<void> {
+  const samplePdfPath =
+    "/Users/aayush.shah/Downloads/Tolkien-J.-The-lord-of-the-rings-HarperCollins-ebooks-2010.pdf"
+
+  const pdfBuffer = await fsPromises.readFile(samplePdfPath)
+  const pdfDocument = await PDFDocument.load(pdfBuffer)
+  const pdfFileName = path.basename(samplePdfPath)
+
+  const pageBatches = await splitPdfIntoBatches(pdfBuffer, 25, pdfDocument)
+  if (pageBatches.length === 0) {
+    console.warn("[demoPdfOcrDispatcher] No batches generated from sample PDF")
+    return
+  }
+
+  const dispatchBatches: PdfOcrBatch[] = pageBatches.map((batch, index) => ({
+    id: `demo-batch-${index + 1}`,
+    fileName: pdfFileName,
+    startPage: batch.startPage,
+    endPage: batch.endPage,
+    pdfBuffer: batch.buffer,
+  }))
+
+  const sampleBatches = dispatchBatches.slice(0, Math.min(dispatchBatches.length, 6))
+
+  const scenarios: Array<{ label: string; idleSequence: number[] }> = [
+    { label: "idle=5", idleSequence: Array(8).fill(5) },
+    { label: "idle=8", idleSequence: Array(8).fill(8) },
+    { label: "idle=1", idleSequence: Array(8).fill(1) },
+    { label: "idle=0", idleSequence: Array(8).fill(0) },
+    { label: "idle sequence 5→8→1→0", idleSequence: [5, 8, 1, 0] },
+  ]
+
+  for (const scenario of scenarios) {
+    console.log(`\n[demoPdfOcrDispatcher] Scenario: ${scenario.label}`)
+    await runScenario(sampleBatches, scenario.idleSequence, scenario.label)
+  }
+}
+
+async function runScenario(
+  batches: PdfOcrBatch[],
+  idleSequence: number[],
+  label: string,
+): Promise<void> {
+  let statusCallCount = 0
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = async (input, init) => {
+    if (typeof input === "string" && input.includes("/instance_status")) {
+      const idle =
+        idleSequence[
+          statusCallCount < idleSequence.length
+            ? statusCallCount
+            : idleSequence.length - 1
+        ] ?? 0
+      statusCallCount += 1
+
+      return new Response(
+        JSON.stringify({
+          active_instances: Math.max(0, idle),
+          idle_instances: idle,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
+    }
+
+    throw new Error(
+      `[demoPdfOcrDispatcher] Unexpected fetch target: ${String(input)}`,
+    )
+  }
+
+  const logger: Pick<Console, "info" | "warn" | "error"> = {
+    info(message?: unknown, meta?: unknown) {
+      console.log(
+        `[${label}] INFO ${String(message)}${
+          meta ? ` ${JSON.stringify(meta)}` : ""
+        }`,
+      )
+    },
+    warn(message?: unknown, meta?: unknown) {
+      console.warn(
+        `[${label}] WARN ${String(message)}${
+          meta ? ` ${JSON.stringify(meta)}` : ""
+        }`,
+      )
+    },
+    error(message?: unknown, meta?: unknown) {
+      console.error(
+        `[${label}] ERROR ${String(message)}${
+          meta ? ` ${JSON.stringify(meta)}` : ""
+        }`,
+      )
+    },
+  }
+
+  try {
+    const report = await dispatchOCRBatches(batches, {
+      logger,
+      thresholdForConcurrency: 1,
+      pollIntervalMs: 50,
+      sendBatch: async (batch, { timeoutMs }) => {
+        console.log(
+          `[${label}] Dispatching ${batch.id} pages ${batch.startPage}-${batch.endPage} (timeout ${timeoutMs}ms)`,
+        )
+        await sleep(40)
+        console.log(
+          `[${label}] Completed ${batch.id} pages ${batch.startPage}-${batch.endPage}`,
+        )
+      },
+    })
+
+    console.log(
+      `[${label}] Report total=${report.total} succeeded=${report.succeeded} failed=${report.failed}`,
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 }
 
 export async function chunkByOCR(
