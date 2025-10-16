@@ -716,7 +716,7 @@ const constructCollectionFileContext = (
   relevance: number,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
 ): string => {
  
   if (!maxSummaryChunks && !isSelectedFiles) {
@@ -745,8 +745,7 @@ const constructCollectionFileContext = (
   }
 
   let content = ""
-  if (isMsgWithSources && fields.chunks_pos_summary) {
-    // When user has selected one file to chat with, use original chunk positions
+  if (isMsgWithKbItems && fields.chunks_pos_summary) {
     content = chunks
       .map((v) => {
         const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
@@ -889,7 +888,7 @@ export const answerContextMap = async (
   userMetadata: UserMetadataType,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
   query?: string,
 ): Promise<AiContext> => {
   if(searchResult.fields.sddocname === fileSchema || searchResult.fields.sddocname === dataSourceFileSchema || searchResult.fields.sddocname === KbItemsSchema || searchResult.fields.sddocname === mailAttachmentSchema) {
@@ -975,7 +974,7 @@ export const answerContextMap = async (
       searchResult.relevance,
       maxSummaryChunks,
       isSelectedFiles,
-      isMsgWithSources,
+      isMsgWithKbItems,
     )
   } else {
     throw new Error(

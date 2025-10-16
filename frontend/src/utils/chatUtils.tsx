@@ -4,7 +4,8 @@ import { splitGroupedCitationsWithSpaces } from "@/lib/utils"
 export const generateUUID = () => crypto.randomUUID()
 
 export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
+export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
+export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
 
 // Function to clean citation numbers from response text
 export const cleanCitationsFromResponse = (text: string): string => {
@@ -12,6 +13,7 @@ export const cleanCitationsFromResponse = (text: string): string => {
   return text
     .replace(textToCitationIndex, "")
     .replace(textToImageCitationIndex, "")
+    .replace(textToKbItemCitationIndex, "")
     .replace(/[ \t]+/g, " ")
     .trim()
 }
@@ -23,18 +25,6 @@ export const processMessage = (
 ) => {
   text = splitGroupedCitationsWithSpaces(text)
   text = text.replace(
-    /(\[\d+_\d+\])/g,
-    (fullMatch, capturedCitation, offset, string) => {
-      // Check if this image citation appears earlier in the string
-      const firstIndex = string.indexOf(fullMatch)
-      if (firstIndex < offset) {
-        // remove duplicate image citations
-        return ""
-      }
-      return capturedCitation
-    },
-  )
-  text = text.replace(
     textToImageCitationIndex,
     (match, citationKey, offset, string) => {
       // Check if this image citation appears earlier in the string
@@ -44,6 +34,15 @@ export const processMessage = (
         return ""
       }
       return `![image-citation:${citationKey}](image-citation:${citationKey})`
+    },
+  )
+  text = text.replace(
+    textToKbItemCitationIndex,
+    (_, citationKey) => {
+      const index = citationMap ? citationMap[parseInt(citationKey.split("_")[0], 10)] : parseInt(citationKey.split("_")[0], 10)
+      const chunkIndex = parseInt(citationKey.split("_")[1], 10)
+      const url = citationUrls[index]
+      return typeof index === "number" && typeof chunkIndex === "number" && url ? `[${index + 1}_${chunkIndex}](${url})` : ""
     },
   )
 

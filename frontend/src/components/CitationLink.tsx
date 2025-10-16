@@ -5,6 +5,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { FileType } from "shared/types"
+import { getFileType } from "shared/fileUtils"
 
 export interface Citation {
   url: string
@@ -12,7 +14,6 @@ export interface Citation {
   docId: string
   itemId?: string
   clId?: string
-  chunkIndex?: number
 }
 
 export const createCitationLink =
@@ -34,8 +35,10 @@ export const createCitationLink =
 
     // Extract citation index from children (which should be the citation number like "1", "2", etc.)
     const citationIndex =
-      typeof children === "string" ? parseInt(children) - 1 : -1
-
+      typeof children === "string" ? parseInt(children.split("_")[0]) - 1 : -1
+    let chunkIndex =
+      typeof children === "string" ? parseInt(children.split("_")[1]) : undefined
+    
     // Get citation by index if valid, otherwise fall back to URL matching
     const citation =
       citationIndex >= 0 && citationIndex < citations.length
@@ -43,6 +46,11 @@ export const createCitationLink =
         : href
           ? citations.find((c) => c.url === href)
           : undefined
+    
+    if(chunkIndex !== undefined) {
+      children = (citationIndex + 1).toString()
+      if(getFileType({type: "", name: citation?.title ?? ""}) === FileType.SPREADSHEET) chunkIndex = Math.max(chunkIndex - 1, 0)
+    }
 
     if (citation && citation.clId && citation.itemId) {
       return (
@@ -56,11 +64,7 @@ export const createCitationLink =
                   e.preventDefault()
                   e.stopPropagation()
                   if (onCitationClick) {
-                    if (citation.chunkIndex !== undefined) {
-                      onCitationClick(citation, citation.chunkIndex)
-                    } else {
-                      onCitationClick(citation)
-                    }
+                    onCitationClick(citation, chunkIndex)
                   }
                   setIsTooltipOpen(false)
                 }}
@@ -139,7 +143,7 @@ export const createCitationLink =
     const isNumericChild =
       typeof children === "string" &&
       !isNaN(parseInt(children)) &&
-      parseInt(children).toString() === children.trim()
+      parseInt(children).toString() === children.split("_")[0].trim()
 
     return (
       <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">

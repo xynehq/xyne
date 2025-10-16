@@ -2,7 +2,7 @@ import React, { createContext, useContext, useRef, useImperativeHandle, forwardR
 
 // Define the interface for document operations
 export interface DocumentOperations {
-  highlightText?: (text: string, chunkIndex: number, pageIndex?: number) => Promise<boolean>
+  highlightText?: (text: string, chunkIndex: number, pageIndex?: number, waitForTextLayer?:boolean) => Promise<boolean>
   clearHighlights?: () => void
   scrollToMatch?: (index: number) => boolean
   goToPage?: (pageIndex: number) => Promise<void>
@@ -51,9 +51,9 @@ export const withDocumentOperations = <P extends object>(
     const { documentOperationsRef } = useDocumentOperations()
     
     useImperativeHandle(ref, () => ({
-      highlightText: async (text: string, chunkIndex: number, pageIndex?: number) => {
+      highlightText: async (text: string, chunkIndex: number, pageIndex?: number, waitForTextLayer:boolean = false) => {
         if (documentOperationsRef.current?.highlightText) {
-          return await documentOperationsRef.current.highlightText(text, chunkIndex, pageIndex)
+          return await documentOperationsRef.current.highlightText(text, chunkIndex, pageIndex, waitForTextLayer)
         }
         return false
       },

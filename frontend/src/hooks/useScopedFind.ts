@@ -284,7 +284,7 @@ export function useScopedFind(
   }, [extractContainerText, debug]);
 
   const highlightText = useCallback(
-    async (text: string, chunkIndex: number, pageIndex?: number): Promise<boolean> => {
+    async (text: string, chunkIndex: number, pageIndex?: number, waitForTextLayer:boolean = false): Promise<boolean> => {
       if (debug) {
         console.log('highlightText called with:', text);
       }
@@ -332,7 +332,11 @@ export function useScopedFind(
             return false;
           }
         } else {
-          containerText = extractContainerText(root);
+          if (waitForTextLayer) {
+            containerText = await waitForTextLayerReady(root);
+          } else {
+            containerText = extractContainerText(root);
+          }
         }
         
         if (debug) {
