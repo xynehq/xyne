@@ -34,10 +34,9 @@ export const createCitationLink =
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
 
     // Extract citation index from children (which should be the citation number like "1", "2", etc.)
-    const citationIndex =
-      typeof children === "string" ? parseInt(children.split("_")[0]) - 1 : -1
-    let chunkIndex =
-      typeof children === "string" ? parseInt(children.split("_")[1]) : undefined
+    const parts = typeof children === "string" ? children.split("_") : []
+    const citationIndex = parts.length > 0 ? parseInt(parts[0]) - 1 : -1
+    let chunkIndex = parts.length > 1 ? parseInt(parts[1]) : undefined
     
     // Get citation by index if valid, otherwise fall back to URL matching
     const citation =
@@ -46,8 +45,8 @@ export const createCitationLink =
         : href
           ? citations.find((c) => c.url === href)
           : undefined
-    
-    if(chunkIndex !== undefined) {
+
+    if(chunkIndex !== undefined && citation) {
       children = (citationIndex + 1).toString()
       if(getFileType({type: "", name: citation?.title ?? ""}) === FileType.SPREADSHEET) chunkIndex = Math.max(chunkIndex - 1, 0)
     }

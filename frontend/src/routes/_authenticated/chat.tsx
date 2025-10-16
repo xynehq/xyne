@@ -1187,7 +1187,6 @@ export const ChatPage = ({
       documentId: string,
       docId: string,
     ) => {
-      console.log(newChunkIndex, documentId, docId)
       if (!documentId) {
         console.error("handleChunkIndexChange called without documentId")
         return
@@ -1215,8 +1214,6 @@ export const ChatPage = ({
           }
 
           const chunkContent = await chunkContentResponse.json()
-
-          console.log("chunkContent", chunkContent)
 
           // Ensure we are still on the same document before mutating UI
           if (selectedCitation?.itemId !== documentId) {
@@ -1247,21 +1244,22 @@ export const ChatPage = ({
           }
         } catch (error) {
           console.error("Error in handleChunkIndexChange:", error)
-          toast.error({
+          toast({
             title: "Error",
             description: "Failed to process chunk navigation",
+            variant: "destructive",
           })
         }
       }
     },
-    [selectedCitation, toast],
+    [selectedCitation, toast, documentOperationsRef],
   )
 
   useEffect(() => {
     if (selectedChunkIndex !== null && selectedCitation) {
       handleChunkIndexChange(selectedChunkIndex, selectedCitation?.itemId ?? "", selectedCitation?.docId ?? "")
     }
-  }, [selectedChunkIndex, selectedCitation])
+  }, [selectedChunkIndex, selectedCitation, handleChunkIndexChange])
 
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
@@ -1284,7 +1282,7 @@ export const ChatPage = ({
         setCurrentMessageId(null)
       }
       // Handle chunk index change if provided
-      if (chunkIndex !== undefined && selectedChunkIndex !== chunkIndex) {
+      if (chunkIndex !== undefined) {
         setSelectedChunkIndex(chunkIndex)
       }
     },

@@ -102,14 +102,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     if (documentOperationsRef?.current) {
       documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number, pageIndex?: number) => {
         if (!containerRef.current) {
-          const container = document.querySelector(
-            '[data-container-ref="true"]',
-          )
-          if (container) {
-            ;(containerRef as any).current = container
-          } else {
-            return false
-          }
+          return false
         }
 
         try {
