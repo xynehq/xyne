@@ -1,3 +1,10 @@
+## [3.18.3](https://github.com/xynehq/xyne/compare/v3.18.2...v3.18.3) (2025-10-16)
+
+
+### Bug Fixes
+
+* **api-key-upload:** upload zip via curl ([#1121](https://github.com/xynehq/xyne/issues/1121)) ([1ff145c](https://github.com/xynehq/xyne/commit/1ff145c7dd6c18c6d922f990465c476819d2bcf1))
+
 ## [3.18.2](https://github.com/xynehq/xyne/compare/v3.18.1...v3.18.2) (2025-10-16)
 
 
