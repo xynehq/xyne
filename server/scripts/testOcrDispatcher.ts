@@ -6,8 +6,7 @@
  * It mocks the instance status endpoint and PDF processing to demonstrate
  * how batches are processed under various scenarios.
  * 
- * Usage: bun run server/scripts/testOcrDispatcher.ts <path-to-pdf>
- * Example: bun run server/scripts/testOcrDispatcher.ts ./sample.pdf
+ * Run with: bun run server/scripts/testOcrDispatcher.ts
  */
 
 import { promises as fsPromises } from "fs"
@@ -22,6 +21,7 @@ import { dispatchOCRBatches } from "../lib/chunkByOCR"
 // MOCK CONFIGURATION
 // ============================================================================
 
+const MOCK_PDF_PATH = "/Users/aayush.shah/Downloads/Tolkien-J.-The-lord-of-the-rings-HarperCollins-ebooks-2010.pdf"
 const PAGES_PER_BATCH = 100
 const MAX_BATCHES_TO_TEST = 100
 
@@ -433,33 +433,10 @@ async function main() {
 ╚════════════════════════════════════════════════════════════════════════════╝
 `)
 
-  // Parse command-line arguments
-  const args = process.argv.slice(2)
-  
-  if (args.length === 0) {
-    console.error(`
-❌ Error: PDF file path is required
-
-Usage: bun run server/scripts/testOcrDispatcher.ts <path-to-pdf>
-Example: bun run server/scripts/testOcrDispatcher.ts ./sample.pdf
-`)
-    process.exit(1)
-  }
-
-  const pdfPath = args[0]
-
-  // Validate that the file exists
-  try {
-    await fsPromises.access(pdfPath)
-  } catch (error) {
-    console.error(`\n❌ Error: PDF file not found at path: ${pdfPath}\n`)
-    process.exit(1)
-  }
-
   try {
     // Create mock batches from the PDF
     const batches = await createMockBatches(
-      pdfPath,
+      MOCK_PDF_PATH,
       PAGES_PER_BATCH,
       MAX_BATCHES_TO_TEST,
     )
