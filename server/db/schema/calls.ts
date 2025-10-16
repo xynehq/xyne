@@ -38,6 +38,7 @@ export const calls = pgTable("calls", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   roomLink: text("room_link").notNull(),
   callType: callTypeEnum("call_type").notNull().default(CallType.Audio),
+  transcriptVespaDocId: text("transcript_vespa_doc_id"), // Reference to Vespa document containing transcript
 })
 
 // Junction table for call participants

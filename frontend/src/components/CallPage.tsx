@@ -1,9 +1,5 @@
 import { useState, useEffect } from "react"
-import {
-  LiveKitRoom,
-  VideoConference,
-  formatChatMessageLinks,
-} from "@livekit/components-react"
+import { LiveKitRoom } from "@livekit/components-react"
 import "@livekit/components-styles/index.css"
 import { InviteUsersModal } from "./InviteUsersModal"
 import { Button } from "@/components/ui/button"
@@ -18,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { UserPlus, Share2, Copy } from "lucide-react"
 import { api } from "@/api"
 import { useToast } from "@/hooks/use-toast"
+import { CallRoomContent } from "@/components/CallRoomContent"
 
 export default function CallPage() {
   // Get parameters from URL (support both 'room' and 'callId' for backwards compatibility)
@@ -259,8 +256,8 @@ export default function CallPage() {
             onConnected={handleConnected}
             onDisconnected={handleDisconnect}
           >
-            {/* LiveKit provides a complete VideoConference component */}
-            <VideoConference chatMessageFormatter={formatChatMessageLinks} />
+            {/* CallRoomContent includes VideoConference + Transcription */}
+            <CallRoomContent callId={callId} />
           </LiveKitRoom>
         ) : (
           <div className="flex items-center justify-center h-full">

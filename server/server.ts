@@ -544,6 +544,51 @@ export const CallNotificationWs = app.get(
   }),
 )
 
+// WebSocket endpoint for call transcription audio streaming
+// Note: We handle auth manually to support token in query param (for dev mode cross-origin)
+export const TranscriptionWs = app.get(
+  "/ws/transcription",
+  async (c, next) => {
+    Logger.info("🔍 [WS] Transcription WebSocket upgrade attempt")
+
+    // Try token from query parameter first (for dev mode)
+    const token = c.req.query("token")
+    Logger.info(`🔍 [WS] Token in query: ${token ? "YES" : "NO"}`)
+
+    if (token) {
+      try {
+        const decoded = await verify(token, accessTokenSecret)
+        c.set("jwtPayload", decoded)
+        Logger.info(
+          `✅ [WS] Token authentication successful for user: ${decoded.userId}`,
+        )
+        await next()
+        return
+      } catch (tokenError) {
+        Logger.error(
+          "❌ [WS] WebSocket token authentication failed:",
+          tokenError,
+        )
+        throw new HTTPException(401, { message: "Invalid token" })
+      }
+    }
+
+    // Fallback to cookie auth (for production)
+    Logger.info("🔍 [WS] Trying cookie authentication...")
+    try {
+      await AuthMiddleware(c, next)
+      Logger.info("✅ [WS] Cookie authentication successful")
+    } catch (cookieError) {
+      Logger.error("❌ [WS] Cookie authentication failed:", cookieError)
+      throw cookieError
+    }
+  },
+  upgradeWebSocket((c) => {
+    const { createTranscriptionWebSocket } = require("@/api/transcription")
+    return createTranscriptionWebSocket(c)
+  }),
+)
+
 const clearCookies = (c: Context) => {
   const opts = {
     secure: true,
@@ -888,6 +933,17 @@ export const AppRoutes = app
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
+  .get("/auth/ws-token", async (c) => {
+    // This endpoint returns the access token for WebSocket authentication
+    // It requires authentication via cookie (which works in the context that makes this call)
+    const token = getCookie(c, AccessTokenCookieName)
+    if (!token) {
+      Logger.warn("No access token cookie found for ws-token endpoint")
+      throw new HTTPException(401, { message: "Not authenticated" })
+    }
+    Logger.info("Returning access token for WebSocket authentication")
+    return c.json({ token })
+  })
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(

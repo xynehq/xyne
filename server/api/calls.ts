@@ -6,6 +6,11 @@ import { AccessToken, RoomServiceClient } from "livekit-server-sdk"
 import { db } from "@/db/client"
 import { getUserByEmail, getUsersByWorkspace } from "@/db/user"
 import { callNotificationService } from "@/services/callNotifications"
+import { transcriptionService } from "@/services/transcription"
+import {
+  saveTranscriptToKnowledgeBase,
+  updateCallWithTranscript,
+} from "@/services/transcriptStorage"
 import { getLogger } from "@/logger"
 import { Subsystem } from "@/types"
 import {
@@ -14,6 +19,8 @@ import {
   callInvitedUsers,
   CallType,
 } from "@/db/schema/calls"
+import { users as usersTable } from "@/db/schema/users"
+import { workspaces } from "@/db/schema/workspaces"
 import { eq, desc, and, isNull, or, sql, inArray } from "drizzle-orm"
 import { randomUUID } from "node:crypto"
 
@@ -274,6 +281,18 @@ export const JoinCallApi = async (c: Context) => {
         set: { leftAt: null },
       })
 
+    // Start transcription when first participant joins
+    if (!transcriptionService.isTranscribing(validatedData.callId)) {
+      transcriptionService
+        .startTranscription(validatedData.callId)
+        .catch((error) => {
+          Logger.error(
+            error,
+            `Failed to start transcription for call ${validatedData.callId}`,
+          )
+        })
+    }
+
     // Generate access token (room name in LiveKit is the callId)
     const token = await generateAccessToken(
       user.externalId,
@@ -506,6 +525,91 @@ export const EndCallApi = async (c: Context) => {
       })
     }
 
+    // Stop transcription and save transcript
+    if (transcriptionService.isTranscribing(validatedData.callId)) {
+      // Stop transcription asynchronously
+      transcriptionService
+        .stopTranscription(validatedData.callId)
+        .then(async (segments) => {
+          if (segments.length > 0) {
+            try {
+              // Get all participants for this call
+              const participants = await db
+                .select({
+                  userId: callParticipants.userId,
+                  user: {
+                    id: usersTable.id,
+                    externalId: usersTable.externalId,
+                    name: usersTable.name,
+                    email: usersTable.email,
+                  },
+                })
+                .from(callParticipants)
+                .innerJoin(
+                  usersTable,
+                  eq(callParticipants.userId, usersTable.id),
+                )
+                .where(eq(callParticipants.callId, rec.id))
+
+              // Get creator user to find workspace
+              const creator = await db
+                .select()
+                .from(usersTable)
+                .where(eq(usersTable.id, rec.createdByUserId))
+                .limit(1)
+
+              if (!creator || creator.length === 0) {
+                throw new Error("Call creator not found")
+              }
+
+              // Get workspace info
+              const workspaceRows = await db
+                .select()
+                .from(workspaces)
+                .where(eq(workspaces.id, creator[0].workspaceId))
+                .limit(1)
+
+              if (!workspaceRows || workspaceRows.length === 0) {
+                throw new Error("Workspace not found")
+              }
+
+              const workspace = workspaceRows[0]
+              const participantNames = participants.map((p) => p.user.name)
+              const participantIds = participants.map((p) => p.user.externalId)
+
+              // Save transcript to Knowledge Base
+              const vespaDocId = await saveTranscriptToKnowledgeBase({
+                callId: rec.id,
+                callExternalId: rec.externalId,
+                workspaceId: workspace.id,
+                workspaceExternalId: workspace.externalId,
+                userEmail: user.email,
+                segments,
+                callType: rec.callType,
+                startedAt: rec.startedAt,
+                endedAt: new Date(),
+                participantNames,
+                participantIds,
+              })
+
+              // Update call record with transcript reference
+              await updateCallWithTranscript(rec.id, vespaDocId)
+            } catch (error) {
+              Logger.error(
+                error,
+                `Failed to save transcript for call ${validatedData.callId}`,
+              )
+            }
+          }
+        })
+        .catch((error) => {
+          Logger.error(
+            error,
+            `Error processing transcript for call ${validatedData.callId}`,
+          )
+        })
+    }
+
     // Update call record - set endedAt timestamp
     await db
       .update(calls)
@@ -607,7 +711,7 @@ export const LeaveCallApi = async (c: Context) => {
         )
     }
 
-    // Check if room still exists in LiveKit (room name is the callId)
+    // Check if room still exists in LiveKit
     let roomExists = true
     let participantCount = 0
     try {
@@ -618,15 +722,117 @@ export const LeaveCallApi = async (c: Context) => {
         roomExists = false
       }
     } catch (error) {
-      Logger.warn(`Room ${validatedData.callId} not found in LiveKit`)
       roomExists = false
     }
 
-    // If room doesn't exist or has no participants, mark call as ended
-    if (!roomExists || participantCount === 0) {
-      Logger.info(
-        `Room ${validatedData.callId} is empty or doesn't exist. Marking call as ended.`,
+    // Check remaining participants in database
+    const remainingParticipants = await db
+      .select()
+      .from(callParticipants)
+      .where(
+        and(
+          eq(callParticipants.callId, rec.id),
+          isNull(callParticipants.leftAt),
+        ),
       )
+
+    const dbParticipantCount = remainingParticipants.length
+
+    // If room doesn't exist or has no participants, mark call as ended
+    const shouldEndCall =
+      !roomExists || participantCount === 0 || dbParticipantCount === 0
+
+    if (shouldEndCall) {
+      // Stop transcription and save transcript
+      if (transcriptionService.isTranscribing(validatedData.callId)) {
+        // Stop transcription asynchronously
+        transcriptionService
+          .stopTranscription(validatedData.callId)
+          .then(async (segments) => {
+            if (segments.length > 0) {
+              try {
+                // Get all participants for this call
+                const participants = await db
+                  .select({
+                    userId: callParticipants.userId,
+                    user: {
+                      id: usersTable.id,
+                      externalId: usersTable.externalId,
+                      name: usersTable.name,
+                      email: usersTable.email,
+                    },
+                  })
+                  .from(callParticipants)
+                  .innerJoin(
+                    usersTable,
+                    eq(callParticipants.userId, usersTable.id),
+                  )
+                  .where(eq(callParticipants.callId, rec.id))
+
+                // Get creator user to find workspace
+                const creator = await db
+                  .select()
+                  .from(usersTable)
+                  .where(eq(usersTable.id, rec.createdByUserId))
+                  .limit(1)
+
+                if (!creator || creator.length === 0) {
+                  throw new Error("Call creator not found")
+                }
+
+                // Get workspace info
+                const workspaceRows = await db
+                  .select()
+                  .from(workspaces)
+                  .where(eq(workspaces.id, creator[0].workspaceId))
+                  .limit(1)
+
+                if (!workspaceRows || workspaceRows.length === 0) {
+                  throw new Error("Workspace not found")
+                }
+
+                const workspace = workspaceRows[0]
+                const participantNames = participants.map((p) => p.user.name)
+                const participantIds = participants.map(
+                  (p) => p.user.externalId,
+                )
+
+                // Save transcript to Knowledge Base
+                const vespaDocId = await saveTranscriptToKnowledgeBase({
+                  callId: rec.id,
+                  callExternalId: rec.externalId,
+                  workspaceId: workspace.id,
+                  workspaceExternalId: workspace.externalId,
+                  userEmail: user.email,
+                  segments,
+                  callType: rec.callType,
+                  startedAt: rec.startedAt,
+                  endedAt: new Date(),
+                  participantNames,
+                  participantIds,
+                })
+
+                // Update call record with transcript reference
+                await updateCallWithTranscript(rec.id, vespaDocId)
+
+                Logger.info(
+                  `Successfully saved transcript for call ${validatedData.callId}`,
+                )
+              } catch (err) {
+                Logger.error(
+                  err,
+                  `Failed to save transcript for call ${validatedData.callId}`,
+                )
+              }
+            }
+          })
+          .catch((err) => {
+            Logger.error(
+              err,
+              `Error stopping transcription for call ${validatedData.callId}`,
+            )
+          })
+      }
 
       // Update call record - set endedAt timestamp only if not already set
       await db
