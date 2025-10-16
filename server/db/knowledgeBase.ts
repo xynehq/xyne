@@ -619,8 +619,11 @@ export const getAllCollectionAndFolderItems = async (
         )
       roots.forEach((r) => queue.push({ itemId: r.id }))
       roots.forEach((r) => {
-        if (r.type == "folder") folderIds.push(r.id)
-        else if (r.type == "file") fileIds.push(r.id)
+        if (r.type == "folder") {
+          folderIds.push(r.id)
+        } else if (r.type == "file") {
+          fileIds.push(r.id)
+        }
       })
     } else if (input.startsWith("clfd-")) {
       // Folder vespa docId -> resolve to item id
