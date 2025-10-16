@@ -100,7 +100,7 @@ function getLanguageConfig(language: ScriptLanguage): LanguageConfig {
           "itertools", "functools", "operator", "string", "uuid",
           "hashlib", "base64", "urllib.parse", "statistics", "requests",
           "urllib", "http", "urllib.request", "urllib.error", "http.client",
-          "csv", "io", "pathlib","pandas","requests"
+          "csv","pandas","requests","time"
         ],
         restrictedKeywords: [
            "import os","from os", "import sys", "import subprocess", "import socket",
@@ -139,7 +139,7 @@ config = json.loads(configRaw)
         allowedImports: [
           "Math", "Date", "JSON", "Array", "Object", "String",
           "Number", "Boolean", "RegExp", "Set", "Map", "Promise",
-          "fetch", "axios", "https", "http", "fs"
+          "fetch", "axios", "https", "http"
         ],
         restrictedKeywords: [
           "import(", "eval(", "Function(", "process.",
@@ -348,6 +348,22 @@ async function generateScript(script: string, language: ScriptLanguage, input: R
   const path = require('path')
   const { randomUUID } = require('crypto')
   
+  const MAX_SCRIPT_SIZE = 100000
+  const MAX_INPUT_SIZE = 1000000
+
+  if (script.length > MAX_SCRIPT_SIZE) {
+    return { success: false, error: `Script size exceeds maximum of ${MAX_SCRIPT_SIZE} bytes` }
+  }
+  const inputJson = JSON.stringify(input)
+  const configJson = JSON.stringify(config || {})
+  
+  if (inputJson.length > MAX_INPUT_SIZE) {
+    return { success: false, error: `Input data size exceeds maximum of ${MAX_INPUT_SIZE} bytes` }
+  }
+  
+  if (configJson.length > MAX_INPUT_SIZE) {
+    return { success: false, error: `Config data size exceeds maximum of ${MAX_INPUT_SIZE} bytes` }
+  }
   // Use empty objects as defaults and validate if input is provided
   const validatedInput = validateJson(input)
   const inputData = validatedInput || {}
@@ -574,7 +590,7 @@ function formatROutput(rawOutput: string): Record<string, any> | false {
   }
 }
 
-function createBubblewrapArgs(scriptPath: string, exportDir?: string,importDir?:string): string[] {
+function createBubblewrapArgs(scriptPath: string, sandboxScriptPath: string, exportDir?: string, importDir?: string): string[] {
   const path = require('path')
   const fs = require('fs')
 
@@ -634,11 +650,33 @@ function createBubblewrapArgs(scriptPath: string, exportDir?: string,importDir?:
     )
   }
 
+  if (scriptPath) {
+    baseArgs.push('--ro-bind', scriptPath, sandboxScriptPath)
+  }
+
   
 
   return baseArgs
 }
 
+function cleanTempFiles(scriptPath: string, exportDir?: string) {
+  try {
+    const fs = require('fs').promises
+    const fsSync = require('fs')
+    if (exportDir && fsSync.existsSync(exportDir)) {
+      fs.rm(exportDir, { recursive: true, force: true }).catch((err: any) => {
+        Logger.info(`Failed to delete export directory: ${exportDir}, error: ${err}`)
+      })
+    }
+    if (scriptPath && fsSync.existsSync(scriptPath)) {
+      fs.unlink(scriptPath).catch((err: any) => {
+        Logger.info(`Failed to delete script file: ${scriptPath}, error: ${err}`)
+      })
+    }
+  } catch (err) {
+    Logger.info(`Error during cleanup: ${err}`)
+  }
+}
 export async function executeScript(
   executionInput: ScriptExecutionInput,
   workflowId?: string
@@ -670,12 +708,10 @@ export async function executeScript(
     }
     
     scriptPath = scriptGenResult.filePath!
-    Logger.info(`current working directory: ${process.cwd()}`)
     // Create export directory for file outputs if workflowId is provided
     if (workflowId && USE_BUBBLEWRAP) {
       // Create temporary export directory for this execution
       const { randomUUID } = require('crypto')
-      Logger.info(`current working directory inside if: ${process.cwd()}`)
       exportDir = path.join(process.cwd(), "script_executor_utils", `temp_export_${randomUUID()}`)
 
       importDir = path.join(process.cwd(), "script_executor_utils", "workflow_files", workflowId)
@@ -687,6 +723,7 @@ export async function executeScript(
     const runCommand = `${langConfig.runCommand} ${scriptPath}`.trim()
 
     if (!runCommand) {
+      cleanTempFiles(scriptPath, exportDir)
       return {
         success: false,
         output: {},
@@ -704,11 +741,9 @@ export async function executeScript(
       const scriptBaseName = path.basename(scriptPath)
       const sandboxScriptPath = `/tmp/${scriptBaseName}`
 
-      const bubblewrapArgs = createBubblewrapArgs(scriptPath, exportDir || undefined, (fsSync.existsSync(importDir) ? importDir : undefined))
+      const bubblewrapArgs = createBubblewrapArgs(scriptPath,sandboxScriptPath, exportDir || undefined, (fsSync.existsSync(importDir) ? importDir : undefined))
 
       // Add script file binding (read-only)
-      bubblewrapArgs.push('--ro-bind', scriptPath, sandboxScriptPath)
-
       const originalCommand = command
       const originalArgs = args
 
@@ -725,7 +760,7 @@ export async function executeScript(
 
     return new Promise((resolve) => {
       const child = spawn(command, args, {
-        timeout: timeout_value * 60 * 1000, // 1 minute timeout
+        timeout: timeout_value * 60 * 1000,
         killSignal: 'SIGKILL'
       })
       
@@ -761,20 +796,12 @@ export async function executeScript(
               }
             }
 
-            // Clean up temporary export directory
-            await fs.rm(exportDir, { recursive: true, force: true })
           } catch (extractError) {
             Logger.warn(`Failed to extract files from export directory: ${extractError}`)
           }
         }
 
-        // Delete the script file after execution
-        try {
-          await fs.unlink(scriptPath)
-        } catch (deleteError) {
-          console.warn(`Failed to delete script file: ${scriptPath}`)
-        }
-        
+        cleanTempFiles(scriptPath, exportDir)
         if (signal === 'SIGKILL') {
           resolve({
             success: false,
@@ -824,12 +851,7 @@ export async function executeScript(
       })
       
       child.on('error', async (error: any) => {
-        // Delete the script file on error
-        try {
-          await fs.unlink(scriptPath)
-        } catch (deleteError) {
-          console.warn(`Failed to delete script file: ${scriptPath}`)
-        }
+        cleanTempFiles(scriptPath, exportDir)
         
         resolve({
           success: false,
@@ -843,15 +865,7 @@ export async function executeScript(
       
     })
   } catch (error) {
-    // Delete the script file if it was created but execution failed
-    if (scriptPath) {
-      try {
-        await fs.unlink(scriptPath)
-      } catch (deleteError) {
-        Logger.warn(`Failed to delete script file: ${scriptPath}`)
-      }
-    }
-    
+    cleanTempFiles(scriptPath, exportDir)
     return {
       success: false,
       output: {},

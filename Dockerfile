@@ -63,12 +63,12 @@ RUN apt-get update && apt-get install -y \
 
 # Copy and install language requirements
 COPY requirements.txt /usr/src/app/
-COPY global-packages.json /usr/src/app/
+COPY js-requirements.json /usr/src/app/
 COPY requirements.R /usr/src/app/
 
 # Install language packages
 RUN python3 -m pip install --break-system-packages -r /usr/src/app/requirements.txt
-RUN npm install -g $(cat /usr/src/app/global-packages.json | jq -r '.dependencies | keys[]')
+RUN npm install -g $(cat /usr/src/app/js-requirements.json | jq -r '.dependencies | keys[]')
 RUN Rscript /usr/src/app/requirements.R
 
 
