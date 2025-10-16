@@ -17,7 +17,7 @@ import {
 import * as XLSX from "xlsx"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
-import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
+import { PdfProcessor } from "@/lib/pdfProcessor"
 import { makeGraphApiCall, type MicrosoftGraphClient } from "./client"
 
 const Logger = getLogger(Subsystem.Integrations).child({
@@ -48,11 +48,14 @@ const processPdfFile = async (
   attachmentId: string,
 ): Promise<string[]> => {
   try {
-    const pdfResult = await extractTextAndImagesWithChunksFromPDFviaGemini(
-      pdfBuffer,
+    const result = await PdfProcessor.processWithFallback(
+      Buffer.from(pdfBuffer),
+      `attachment-${attachmentId}`,
       attachmentId,
+      false,
+      false,
     )
-    return pdfResult.text_chunks.filter((v) => v.trim())
+    return result.chunks.filter((v) => v.trim())
   } catch (error) {
     Logger.error(error, `Error processing PDF buffer`)
     return []
