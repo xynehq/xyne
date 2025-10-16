@@ -524,7 +524,7 @@ describe("OCR Dispatcher", () => {
       
       for (const item of report.perItem) {
         expect(item.id).toBeDefined()
-        expect(item.status).toMatch(/ok|error/)
+        expect(item.status).toMatch(/ok|failed/)
         expect(item.attempts).toBeGreaterThan(0)
         expect(item.latencyMs).toBeGreaterThanOrEqual(0)
       }
