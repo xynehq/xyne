@@ -1,3 +1,31 @@
+## [3.18.3](https://github.com/xynehq/xyne/compare/v3.18.2...v3.18.3) (2025-10-16)
+
+
+### Bug Fixes
+
+* **api-key-upload:** upload zip via curl ([#1121](https://github.com/xynehq/xyne/issues/1121)) ([1ff145c](https://github.com/xynehq/xyne/commit/1ff145c7dd6c18c6d922f990465c476819d2bcf1))
+
+## [3.18.2](https://github.com/xynehq/xyne/compare/v3.18.1...v3.18.2) (2025-10-16)
+
+
+### Bug Fixes
+
+* **pathSupport:** fix the permission check for path support of agent api ([#1120](https://github.com/xynehq/xyne/issues/1120)) ([cac541a](https://github.com/xynehq/xyne/commit/cac541af929f8f81f86fe7fa39aa69fa567f8cca))
+
+## [3.18.1](https://github.com/xynehq/xyne/compare/v3.18.0...v3.18.1) (2025-10-16)
+
+
+### Bug Fixes
+
+* **eventsource:** Make EventSource creation in frontend more robust with retry mechanism ([#1113](https://github.com/xynehq/xyne/issues/1113)) ([9d1711c](https://github.com/xynehq/xyne/commit/9d1711c7cd2bd16cecf76cc36069aad5322f540d))
+
+# [3.18.0](https://github.com/xynehq/xyne/compare/v3.17.3...v3.18.0) (2025-10-16)
+
+
+### Features
+
+* XYN-193 Calling history page ([#1103](https://github.com/xynehq/xyne/issues/1103)) ([79c6d3a](https://github.com/xynehq/xyne/commit/79c6d3a5f4d59beb335376396116606badbb1ba4))
+
 ## [3.17.3](https://github.com/xynehq/xyne/compare/v3.17.2...v3.17.3) (2025-10-15)
 
 

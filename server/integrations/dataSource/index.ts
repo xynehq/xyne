@@ -32,7 +32,7 @@ import {
 } from "./errors"
 import { describeImageWithllm } from "@/lib/describeImageWithllm"
 import { promises as fsPromises } from "fs"
-import { extractTextAndImagesWithChunksFromPDFviaGemini } from "@/lib/chunkPdfWithGemini"
+import { PdfProcessor } from "@/lib/pdfProcessor"
 import { extractTextAndImagesWithChunksFromDocx } from "@/docxChunks"
 import { extractTextAndImagesWithChunksFromPptx } from "@/pptChunks"
 import imageType from "image-type"
@@ -208,9 +208,15 @@ const processPdfContent = async (
 ): Promise<VespaDataSourceFile> => {
   try {
     const docId = `dsf-${createId()}`
-    const { text_chunks, image_chunks, text_chunk_pos, image_chunk_pos } =
-      await extractTextAndImagesWithChunksFromPDFviaGemini(pdfBuffer, docId)
-    if (text_chunks.length === 0 && image_chunks.length === 0) {
+    const result = await PdfProcessor.processWithFallback(
+      Buffer.from(pdfBuffer),
+      options.fileName,
+      docId,
+      true,
+      true,
+    )
+    
+    if (result.chunks.length === 0 && result.image_chunks.length === 0) {
       throw new ContentExtractionError(
         "No chunks generated from PDF content",
         "PDF",
@@ -218,12 +224,12 @@ const processPdfContent = async (
     }
 
     return createVespaDataSourceFile(
-      text_chunks,
+      result.chunks,
       options,
-      "pdf_processing",
-      image_chunks,
-      text_chunk_pos,
-      image_chunk_pos,
+      result.processingMethod || "pdf_processing",
+      result.image_chunks,
+      result.chunks_pos,
+      result.image_chunks_pos,
       docId,
     )
   } catch (error) {
