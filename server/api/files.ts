@@ -548,6 +548,93 @@ export const handleAttachmentDeleteApi = async (c: Context) => {
   }
 }
 
+export const handleAttachmentUploadCleanup = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  const email = sub
+
+  try {
+    const { fileId } = await c.req.json()
+    if (!fileId) {
+      throw new HTTPException(400, { message: "File ID is required for cleanup" })
+    }
+
+    loggerWithChild({ email }).info(
+      `Cleaning up aborted upload for file ID: ${fileId}`
+    )
+
+    // Validate fileId to prevent path traversal
+    if (
+      fileId.includes("..") ||
+      fileId.includes("/") ||
+      fileId.includes("\\")
+    ) {
+      throw new HTTPException(400, { message: "Invalid file ID" })
+    }
+
+    // Check if this is an image attachment that might have been partially written to disk
+    const imageBaseDir = path.resolve(
+      process.env.IMAGE_DIR || "downloads/xyne_images_db",
+    )
+    const imageDir = path.join(imageBaseDir, fileId)
+
+    try {
+      // Try to remove the directory if it exists (for image uploads)
+      await fs.access(imageDir)
+      await fs.rm(imageDir, { recursive: true, force: true })
+      loggerWithChild({ email }).info(
+        `Cleaned up image directory for aborted upload: ${imageDir}`
+      )
+    } catch (error) {
+      // Directory might not exist, which is fine for aborted uploads
+      loggerWithChild({ email }).debug(
+        `No image directory to cleanup for file ID: ${fileId}`
+      )
+    }
+
+    // Try to delete from Vespa if the document was partially created
+    try {
+      const vespaIds = expandSheetIds(fileId)
+      for (const vespaId of vespaIds) {
+        // Check if document exists before trying to delete
+        const doc = await GetDocument(fileSchema, vespaId)
+        if (doc && doc.fields) {
+          const fields = doc.fields as any
+          const permissions = Array.isArray(fields.permissions) ? fields.permissions as string[] : []
+          
+          // Only delete if user has permissions
+          if (permissions.includes(email)) {
+            await DeleteDocument(vespaId, fileSchema)
+            // Also try to delete any associated images
+            await DeleteImages(vespaId)
+            loggerWithChild({ email }).info(
+              `Cleaned up Vespa document for aborted upload: ${vespaId}`
+            )
+          }
+        }
+      }
+    } catch (error) {
+      // Document might not exist in Vespa, which is fine for aborted uploads
+      loggerWithChild({ email }).debug(
+        `No Vespa document to cleanup for file ID: ${fileId}`
+      )
+    }
+
+    return c.json({ 
+      success: true, 
+      message: "Cleanup completed for aborted upload" 
+    })
+  } catch (error) {
+    if (error instanceof HTTPException) {
+      throw error
+    }
+    loggerWithChild({ email }).error(
+      error,
+      "Error during attachment upload cleanup"
+    )
+    throw new HTTPException(500, { message: "Internal server error during cleanup" })
+  }
+}
+
 /**
  * Serve attachment file by fileId
  */
