@@ -1,3 +1,10 @@
+# [3.18.0](https://github.com/xynehq/xyne/compare/v3.17.3...v3.18.0) (2025-10-16)
+
+
+### Features
+
+* XYN-193 Calling history page ([#1103](https://github.com/xynehq/xyne/issues/1103)) ([79c6d3a](https://github.com/xynehq/xyne/commit/79c6d3a5f4d59beb335376396116606badbb1ba4))
+
 ## [3.17.3](https://github.com/xynehq/xyne/compare/v3.17.2...v3.17.3) (2025-10-15)
 
 
