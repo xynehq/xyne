@@ -1284,7 +1284,8 @@ export const handleSlackChannelIngestion = async (
           existingChannelsToIngest = state.channelsToIngest || channelsToIngest
           existingStartDate = state.startDate || startDate
           existingEndDate = state.endDate || endDate
-          existingIncludeBotMessages = state.includeBotMessage ?? includeBotMessages
+          existingIncludeBotMessages =
+            state.includeBotMessage ?? includeBotMessages
 
           loggerWithChild({ email }).info(
             `Resuming Slack channel ingestion from channel index ${resumeFromChannelIndex} of ${existingChannelsToIngest.length}`,
@@ -1485,9 +1486,13 @@ export const handleSlackChannelIngestion = async (
 
     // Fix: Build conversationsToProcess from original ordering to prevent skipping channels
     // resumeFromChannelIndex refers to position in existingChannelsToIngest, not conversationsToInsert
-    const channelsToResume = existingChannelsToIngest.slice(resumeFromChannelIndex)
+    const channelsToResume = existingChannelsToIngest.slice(
+      resumeFromChannelIndex,
+    )
     const conversationsToProcess = channelsToResume
-      .map(channelId => conversationsToInsert.find(conv => conv.id === channelId))
+      .map((channelId) =>
+        conversationsToInsert.find((conv) => conv.id === channelId),
+      )
       .filter(Boolean) as typeof conversationsToInsert
 
     loggerWithChild({ email }).info(
@@ -1502,7 +1507,9 @@ export const handleSlackChannelIngestion = async (
     // resumeFromChannelIndex = channels processed in previous runs
     totalConversationsSkipped.inc(
       { team_id: team.id ?? team.name ?? "", email: email },
-      conversations.length - conversationsToInsert.length + resumeFromChannelIndex,
+      conversations.length -
+        conversationsToInsert.length +
+        resumeFromChannelIndex,
     )
     const user = await getAuthenticatedUserId(client)
     const teamMap = new Map<string, Team>()
@@ -1563,7 +1570,7 @@ export const handleSlackChannelIngestion = async (
             loggerWithChild({ email }).info(
               `Aborting member fetch due to cancellation`,
             )
-            throw new Error("Aborted due to cancellation")
+            return null // Return null to signal abort without error
           }
           return client.users.info({ user: memberId })
         }),
@@ -1589,10 +1596,12 @@ export const handleSlackChannelIngestion = async (
             result.status === "fulfilled",
         )
         .map((result) => {
-          if (result.value?.user) {
+          // Handle null values from aborted calls
+          if (result.value?.user && result.value) {
             memberMap.set(result.value.user.id!, result.value.user)
             return result.value.user as User
           }
+          return undefined
         })
         .filter((user) => !!user)
 
