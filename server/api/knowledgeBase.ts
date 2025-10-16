@@ -170,6 +170,37 @@ function getStoragePath(
   )
 }
 
+/**
+ * Checks if a file path or filename is a system file that should be skipped
+ * @param pathOrName - Full path or just filename to check
+ * @returns true if the file is a system file and should be skipped
+ */
+function isSystemFile(pathOrName: string): boolean {
+  // Check for macOS system directories and files
+  if (
+    pathOrName.includes("__MACOSX/") ||
+    pathOrName.includes("/._") ||
+    pathOrName.endsWith(".DS_Store")
+  ) {
+    return true
+  }
+
+  // Extract filename from path
+  const fileName = pathOrName.split("/").pop() || ""
+
+  // Check for common system files
+  if (
+    fileName === ".DS_Store" ||
+    fileName.startsWith("._") ||
+    fileName === "Thumbs.db" ||
+    fileName === "desktop.ini"
+  ) {
+    return true
+  }
+
+  return false
+}
+
 // Enhanced MIME type detection with extension normalization and magic byte analysis
 async function detectMimeType(
   fileName: string,
@@ -1207,12 +1238,8 @@ export const UploadFilesApi = async (c: Context) => {
             // Skip directories
             if (zipEntry.dir) continue
 
-            // Skip __MACOSX and other system files
-            if (
-              relativePath.includes("__MACOSX/") ||
-              relativePath.endsWith(".DS_Store") ||
-              relativePath.includes("/._")
-            ) {
+            // Skip system files using helper function
+            if (isSystemFile(relativePath)) {
               continue
             }
 
@@ -1220,20 +1247,15 @@ export const UploadFilesApi = async (c: Context) => {
             const pathParts = relativePath.split("/")
             const entryFileName = pathParts[pathParts.length - 1]
 
-            // Skip if filename is a system file
-            if (
-              entryFileName === ".DS_Store" ||
-              entryFileName.startsWith("._") ||
-              entryFileName === "Thumbs.db" ||
-              entryFileName === "desktop.ini"
-            ) {
-              continue
-            }
-
             // Extract the file content
             const content = await zipEntry.async("blob")
+
+            // Detect proper MIME type for the extracted file
+            const arrayBuffer = await content.arrayBuffer()
+            const mimeType = await detectMimeType(entryFileName, arrayBuffer)
+
             const extractedFile = new File([content], entryFileName, {
-              type: "application/octet-stream",
+              type: mimeType,
             })
 
             extractedFiles.push(extractedFile)
@@ -1295,12 +1317,7 @@ export const UploadFilesApi = async (c: Context) => {
       let targetParentId = parentId // Declare here so it's accessible in catch block
 
       // Skip system files
-      if (
-        file.name === ".DS_Store" ||
-        file.name.startsWith("._") ||
-        file.name === "Thumbs.db" ||
-        file.name === "desktop.ini"
-      ) {
+      if (isSystemFile(file.name)) {
         uploadResults.push({
           success: false,
           fileName: file.name,
@@ -1335,12 +1352,7 @@ export const UploadFilesApi = async (c: Context) => {
         const originalFileName = pathParts.pop() || file.name // Get the actual filename
 
         // Skip if the filename is a system file (in case it comes from path)
-        if (
-          originalFileName === ".DS_Store" ||
-          originalFileName.startsWith("._") ||
-          originalFileName === "Thumbs.db" ||
-          originalFileName === "desktop.ini"
-        ) {
+        if (isSystemFile(originalFileName)) {
           uploadResults.push({
             success: false,
             fileName: originalFileName,
