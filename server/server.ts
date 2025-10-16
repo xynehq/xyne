@@ -1400,6 +1400,7 @@ app
     UpdateAgentApi,
   )
   .delete("/agent/:agentExternalId", DeleteAgentApi) // Delete Agent
+  .get("/agent/:agentExternalId", GetAgentApi) // Get Agent details
   .get("/chat/history", zValidator("query", chatHistorySchema), ChatHistory) // List chat history
   .post("/cl", CreateCollectionApi) // Create collection (KB)
   .get("/cl", ListCollectionsApi) // List all collections
@@ -1408,9 +1409,12 @@ app
     zValidator("query", searchKnowledgeBaseSchema), // Search over KB
     SearchKnowledgeBaseApi,
   )
+  .get("/cl/:clId", GetCollectionApi) // Get collection by ID
+  .put("/cl/:clId", UpdateCollectionApi) // Update collection (rename, etc.)
   .delete("/cl/:clId", DeleteCollectionApi) // Delete collection (KB)
-  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB
-  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB
+  .post("/cl/:clId/items/upload", UploadFilesApi) // Upload files to KB (supports zip files)
+  .delete("/cl/:clId/items/:itemId", DeleteItemApi) // Delete Item in KB by ID
+  .post("/cl/poll-status", PollCollectionsStatusApi) // Poll collection items status
 
 // Proxy function to forward ingestion API calls to sync server
 const proxyToSyncServer = async (c: Context, endpoint: string) => {
