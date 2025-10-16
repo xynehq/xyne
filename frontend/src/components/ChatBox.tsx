@@ -882,7 +882,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         ...f,
                         uploading: false,
                         metadata,
-                        
                       }
                     : f,
                 ),
@@ -894,17 +893,16 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           } catch (error) {
             if (error instanceof Error && error.name === "AbortError") {
               setSelectedFiles((prev) =>
-              prev.map((f) =>
-                f.id === selectedFile.id
-                  ? {
-                      ...f,
-                      uploading: false,
-                      uploadError: errorMessage,
-                      
-                    }
-                  : f,
-              ),
-            )
+                prev.map((f) =>
+                  f.id === selectedFile.id
+                    ? {
+                        ...f,
+                        uploading: false,
+                        uploadError: errorMessage,
+                      }
+                    : f,
+                ),
+              )
               return null
             }
             const errorMessage =
@@ -916,7 +914,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       ...f,
                       uploading: false,
                       uploadError: errorMessage,
-                      
                     }
                   : f,
               ),
@@ -1021,6 +1018,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         const abortController = fileAbortControllers.current.get(id)
         if (fileToRemove?.uploading && abortController) {
           abortController.abort()
+          fileAbortControllers.current.delete(id)
         }
 
         // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
