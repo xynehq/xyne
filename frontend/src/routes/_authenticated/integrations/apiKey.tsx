@@ -104,6 +104,11 @@ const AVAILABLE_SCOPES: ApiKeyScope[] = [
     description: "Allows creating knowledge base collections",
   },
   {
+    id: ApiKeyScopes.UPDATE_COLLECTION,
+    name: "Update Collection",
+    description: "Allows updating knowledge base collections",
+  },
+  {
     id: ApiKeyScopes.LIST_COLLECTIONS,
     name: "List Collections",
     description: "Allows listing all knowledge base collections",
