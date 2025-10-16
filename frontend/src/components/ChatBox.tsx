@@ -417,6 +417,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const scrollPositionRef = useRef<number>(0)
     const navigate = useNavigate()
     const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const uploadControllersRef = useRef<Map<string, AbortController>>(new Map())
 
     const [showReferenceBox, setShowReferenceBox] = useState(false)
     const [searchMode, setSearchMode] = useState<"citations" | "global">(
@@ -842,6 +843,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         )
 
         const uploadPromises = files.map(async (selectedFile) => {
+          // Create AbortController for this file upload
+          const controller = new AbortController()
+          uploadControllersRef.current.set(selectedFile.id, controller)
+
           try {
             const formData = new FormData()
             formData.append("attachment", selectedFile.file)
@@ -850,6 +855,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               {
                 method: "POST",
                 body: formData,
+                signal: controller.signal,
               },
             )
 
@@ -889,6 +895,8 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             })
             return null
           } finally {
+            // Clean up the controller reference
+            uploadControllersRef.current.delete(selectedFile.id)
             setUploadingFilesCount((prev) => prev - 1)
           }
         })
@@ -980,6 +988,32 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const removeFile = useCallback(async (id: string) => {
       const fileToRemove = selectedFiles.find((f) => f.id === id)
       
+      // If the file is currently uploading, abort the upload
+      if (fileToRemove?.uploading) {
+        const controller = uploadControllersRef.current.get(id)
+        if (controller) {
+          controller.abort()
+          uploadControllersRef.current.delete(id)
+          
+          // Update the uploading count immediately
+          setUploadingFilesCount((prev) => Math.max(0, prev - 1))
+          
+          // Update file state to show it was cancelled
+          setSelectedFiles((prev) =>
+            prev.map((f) =>
+              f.id === id
+                ? { ...f, uploading: false, uploadError: "Upload cancelled" }
+                : f,
+            ),
+          )
+          
+          toast({
+            title: "Upload cancelled",
+            description: `Upload for ${fileToRemove.file.name} was cancelled`,
+          })
+        }
+      }
+      
       // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
       if (fileToRemove?.metadata?.fileId) {
         try {
@@ -1007,7 +1041,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         }
         return prev.filter((f) => f.id !== id)
       })
-    }, [selectedFiles])
+    }, [selectedFiles, toast])
 
     const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
       fileInputRef,
