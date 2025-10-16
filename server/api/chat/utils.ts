@@ -177,35 +177,38 @@ export const getChannelIdsFromAgentPrompt = (agentPrompt: string) => {
 }
 
 export interface AppSelection {
-  // Existing required fields (backward compatibility)
+  // Required fields
   itemIds: string[] // For Slack: channelIds, for Gmail: message/thread IDs
   selectedAll: boolean
 
-  // New optional Gmail filters
-  from?: string[] // Accept any string values (email addresses)
-  to?: string[] // Accept any string values (email addresses)
-  cc?: string[] // Accept any string values (email addresses)
-  bcc?: string[] // Accept any string values (email addresses)
-  startDate?: number // Unix timestamp
-  endDate?: number // Unix timestamp
-
-  // New optional Slack filters
-  senderId?: string[] // Slack user IDs array (can contain single or multiple values)
+  // Multiple filters array
+  filters?: AppFilter[]
 }
 
-export interface AppFilters {
-  // Gmail filters
+export interface AppFilter {
+  id: number // Numeric identifier for this filter
+  // Gmail-specific filters
   from?: string[]
   to?: string[]
   cc?: string[]
   bcc?: string[]
+  // Slack-specific filters
+  senderId?: string[]
+  channelId?: string[]
+  // Common filters
+  timeRange?: {
+    startDate: number
+    endDate: number
+  }
+}
 
-  // Slack filters
-  senderId?: string[] // Slack user IDs
-
-  // common filters
-  startDate?: number // Unix timestamp
-  endDate?: number // Unix timestamp
+export interface AppFilters {
+  gmail?: {
+    filters?: AppFilter[]
+  }
+  slack?: {
+    filters?: AppFilter[]
+  }
 }
 
 export interface AppSelectionMap {
@@ -264,60 +267,15 @@ export function parseAppSelections(input: AppSelectionMap): ParsedResult {
       }
     }
 
-    // Extract app-specific filters
+    // Extract app-specific filters from new multiple filters format
     const filters: AppFilters = {}
 
-    // Gmail filters
-    if (app === Apps.Gmail) {
-      if (selection.from && selection.from.length > 0) {
-        const filteredFrom = selection.from.filter(
-          (email) => email && email.trim() !== "",
-        )
-        if (filteredFrom.length > 0) {
-          filters.from = filteredFrom
-        }
-      }
-      if (selection.to && selection.to.length > 0) {
-        const filteredTo = selection.to.filter(
-          (email) => email && email.trim() !== "",
-        )
-        if (filteredTo.length > 0) {
-          filters.to = filteredTo
-        }
-      }
-      if (selection.cc && selection.cc.length > 0) {
-        const filteredCc = selection.cc.filter(
-          (email) => email && email.trim() !== "",
-        )
-        if (filteredCc.length > 0) {
-          filters.cc = filteredCc
-        }
-      }
-      if (selection.bcc && selection.bcc.length > 0) {
-        const filteredBcc = selection.bcc.filter(
-          (email) => email && email.trim() !== "",
-        )
-        if (filteredBcc.length > 0) {
-          filters.bcc = filteredBcc
-        }
-      }
-      if (selection.startDate !== undefined) {
-        filters.startDate = selection.startDate
-      }
-      if (selection.endDate !== undefined) {
-        filters.endDate = selection.endDate
-      }
-    }
-
-    // Slack filters
-    if (app === Apps.Slack) {
-      if (selection.senderId && selection.senderId.length > 0) {
-        const filteredSenderId = selection.senderId.filter(
-          (id) => id && id.trim() !== "",
-        )
-        if (filteredSenderId.length > 0) {
-          filters.senderId = filteredSenderId
-        }
+    // Check for multiple filters format
+    if (selection.filters && selection.filters.length > 0) {
+      if (app === Apps.Gmail) {
+        filters.gmail = { filters: selection.filters }
+      } else if (app === Apps.Slack) {
+        filters.slack = { filters: selection.filters }
       }
     }
 
