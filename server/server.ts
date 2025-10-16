@@ -894,6 +894,7 @@ export const AppRoutes = app
   )
   .post("files/upload", handleFileUpload)
   .post("/files/upload-attachment", handleAttachmentUpload)
+  .post("/files/upload-attachment/cleanup", handleAttachmentUploadCleanup)
   .get("/attachments/:fileId", handleAttachmentServe)
   .get("/attachments/:fileId/thumbnail", handleThumbnailServe)
   .post("/files/delete", zValidator("json", handleAttachmentDeleteSchema), handleAttachmentDeleteApi)
