@@ -1468,6 +1468,11 @@ export const StartSlackIngestionApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Connector not found" })
     }
 
+    // SECURITY: Ensure connector belongs to current user/workspace to prevent cross-tenant access
+    if (connector.userId !== user.id || connector.workspaceId !== user.workspaceId) {
+      throw new HTTPException(403, { message: "Forbidden: connector does not belong to you" })
+    }
+
     // Call the main Slack ingestion function
     handleSlackIngestion({
       connectorId: connector.id,
@@ -1581,6 +1586,11 @@ export const IngestMoreChannelApi = async (c: Context) => {
     const connector = await getConnector(db, payload.connectorId)
     if (!connector) {
       throw new HTTPException(404, { message: "Connector not found" })
+    }
+
+    // SECURITY: Ensure connector belongs to current user/workspace to prevent cross-tenant access
+    if (connector.userId !== user.id || connector.workspaceId !== user.workspaceId) {
+      throw new HTTPException(403, { message: "Forbidden: connector does not belong to you" })
     }
 
     // Import ingestion functions for database operations

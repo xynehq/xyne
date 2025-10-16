@@ -64,6 +64,11 @@ export const GetIngestionStatusApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Connector not found" })
     }
 
+    // SECURITY: Ensure connector belongs to current user/workspace to prevent cross-tenant access
+    if (connector.userId !== user.id || connector.workspaceId !== user.workspaceId) {
+      throw new HTTPException(403, { message: "Forbidden: connector does not belong to you" })
+    }
+
     // Check for any active ingestion for this user+connector
     const activeIngestion = await getActiveIngestionForUser(
       db,
@@ -246,6 +251,11 @@ export const ResumeIngestionApi = async (c: Context) => {
     const connector = await getConnector(db, ingestion.connectorId)
     if (!connector) {
       throw new HTTPException(404, { message: "Connector not found" })
+    }
+
+    // SECURITY: Additional check - ensure connector belongs to current user/workspace (defense in depth)
+    if (connector.userId !== user.id || connector.workspaceId !== user.workspaceId) {
+      throw new HTTPException(403, { message: "Forbidden: connector does not belong to you" })
     }
 
     // Extract original ingestion parameters from stored metadata

@@ -1269,6 +1269,7 @@ export const handleSlackChannelIngestion = async (
     let existingChannelsToIngest = channelsToIngest
     let existingStartDate = startDate
     let existingEndDate = endDate
+    let existingIncludeBotMessages = includeBotMessages
 
     if (ingestionId) {
       // Check if this is a resume operation by examining existing state
@@ -1283,6 +1284,7 @@ export const handleSlackChannelIngestion = async (
           existingChannelsToIngest = state.channelsToIngest || channelsToIngest
           existingStartDate = state.startDate || startDate
           existingEndDate = state.endDate || endDate
+          existingIncludeBotMessages = state.includeBotMessage ?? includeBotMessages
 
           loggerWithChild({ email }).info(
             `Resuming Slack channel ingestion from channel index ${resumeFromChannelIndex} of ${existingChannelsToIngest.length}`,
@@ -1423,7 +1425,7 @@ export const handleSlackChannelIngestion = async (
                 channelsToIngest: existingChannelsToIngest,
                 startDate: existingStartDate,
                 endDate: existingEndDate,
-                includeBotMessage: includeBotMessages,
+                includeBotMessage: existingIncludeBotMessages,
                 currentChannelIndex: processedChannels, // Key for resumability
                 lastMessageTimestamp: globalLastMessageTimestamp, // Key for message-level resumability
                 lastUpdated: new Date().toISOString(),
@@ -1723,7 +1725,7 @@ export const handleSlackChannelIngestion = async (
           channelMap,
           existingStartDate,
           existingEndDate,
-          includeBotMessages,
+          existingIncludeBotMessages,
           messageCounters,
           checkCancellationOrPause,
           (timestamp: string) => {
@@ -1858,10 +1860,11 @@ export const handleSlackChannelIngestion = async (
             },
             ingestionState: {
               channelsToIngest: existingChannelsToIngest,
-              currentChannelIndex: channelsToIngest.length, // Completed all
+              currentChannelIndex: existingChannelsToIngest.length, // Completed all
               currentChannelId: null, // No current channel
               startDate: existingStartDate,
               endDate: existingEndDate,
+              includeBotMessage: existingIncludeBotMessages,
               lastUpdated: new Date().toISOString(),
             },
           },
