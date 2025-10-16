@@ -1,3 +1,10 @@
+## [3.18.1](https://github.com/xynehq/xyne/compare/v3.18.0...v3.18.1) (2025-10-16)
+
+
+### Bug Fixes
+
+* **eventsource:** Make EventSource creation in frontend more robust with retry mechanism ([#1113](https://github.com/xynehq/xyne/issues/1113)) ([9d1711c](https://github.com/xynehq/xyne/commit/9d1711c7cd2bd16cecf76cc36069aad5322f540d))
+
 # [3.18.0](https://github.com/xynehq/xyne/compare/v3.17.3...v3.18.0) (2025-10-16)
 
 
