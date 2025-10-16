@@ -1952,8 +1952,8 @@ export const MessageWithToolsApi = async (c: Context) => {
 
                   if (bestDocIndexes.length) {
                     bestDocIndexes.forEach((idx) => {
-                      const doc: MinimalAgentFragment = contexts[idx]
-                      if (doc) {
+                      if (idx >= 0 && idx < contexts.length) {
+                        const doc: MinimalAgentFragment = contexts[idx - 1]
                         const key = doc.id
                         if (!gatheredFragmentskeys.has(key)) {
                           gatheredFragments.push(doc)
@@ -1968,7 +1968,13 @@ export const MessageWithToolsApi = async (c: Context) => {
                   }
                 } catch (error) {
                   // adding all context if extracting best document fails
-                  gatheredFragments.push(...contexts)
+                  contexts.forEach((doc: MinimalAgentFragment) => {
+                    const key = doc.id
+                    if (!gatheredFragmentskeys.has(key)) {
+                      gatheredFragments.push(doc)
+                      gatheredFragmentskeys.add(key)
+                    }
+                  })
                 }
               }
 
