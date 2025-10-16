@@ -240,6 +240,7 @@ import {
   handleAttachmentServe,
   handleThumbnailServe,
   handleAttachmentDeleteApi,
+  handleAttachmentUploadCleanup,
 } from "@/api/files"
 import { z } from "zod" // Ensure z is imported if not already at the top for schemas
 import {
