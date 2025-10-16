@@ -111,7 +111,7 @@ export const updateWorkflowTemplate = async (
     .where(eq(workflowTemplate.id, id))
     .returning()
 
-  return selectWorkflowTemplateSchema.parse(updated)
+  return updated ? selectWorkflowTemplateSchema.parse(updated) : null
 }
 
 // Workflow Step Template Operations
@@ -159,7 +159,7 @@ export const getWorkflowStepTemplateById = async(
     .where(eq(workflowStepTemplate.id, id))
     .limit(1)
 
-  return selectWorkflowStepTemplateSchema.parse(step)
+  return step ? selectWorkflowStepTemplateSchema.parse(step) : null
 }
 
 export const getWorkflowStepTemplatesByTemplateId = async (
@@ -220,7 +220,7 @@ export const getWorkflowExecutionByIdWithChecks = async (
     ))
     .limit(1)
 
-  return selectWorkflowExecutionSchema.parse(execution)
+  return execution ? selectWorkflowExecutionSchema.parse(execution) : null
 }
 
 export const getWorkflowExecutionById = async (
@@ -235,7 +235,7 @@ export const getWorkflowExecutionById = async (
     ))
     .limit(1)
 
-  return selectWorkflowExecutionSchema.parse(execution)
+  return execution ? selectWorkflowExecutionSchema.parse(execution) : null
 }
 
 export const getAccessibleWorkflowExecutions = async (
@@ -269,7 +269,7 @@ export const updateWorkflowExecution = async (
     .where(eq(workflowExecution.id, id))
     .returning()
 
-  return selectWorkflowExecutionSchema.parse(updated)
+  return updated ? selectWorkflowExecutionSchema.parse(updated) : null
 }
 
 // Workflow Step Execution Operations
@@ -368,7 +368,7 @@ export const getWorkflowStepExecutionById = async (
     .where(eq(workflowStepExecution.id, id))
     .limit(1)
 
-  return selectWorkflowStepExecutionSchema.parse(stepExecution)
+  return stepExecution ? selectWorkflowStepExecutionSchema.parse(stepExecution) : null
 }
 
 export const updateWorkflowStepExecution = async (
@@ -398,5 +398,5 @@ export const updateWorkflowStepExecution = async (
     .where(eq(workflowStepExecution.id, id))
     .returning()
 
-  return selectWorkflowStepExecutionSchema.parse(updated)
+  return updated ? selectWorkflowStepExecutionSchema.parse(updated) : null
 }

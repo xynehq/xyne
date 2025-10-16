@@ -36,7 +36,7 @@ export const createWorkflowTool = async (
     })
     .returning()
 
-  return tool as SelectWorkflowTool
+  return selectWorkflowToolSchema.parse(tool)
 }
 
 export const getWorkflowToolById = async (
@@ -49,7 +49,7 @@ export const getWorkflowToolById = async (
     .where(eq(workflowTool.id, id))
     .limit(1)
 
-  return selectWorkflowToolSchema.parse(tool)
+  return tool ? selectWorkflowToolSchema.parse(tool) : null
 }
 
 export const getWorkflowToolByIdWithChecks = async (
@@ -68,7 +68,7 @@ export const getWorkflowToolByIdWithChecks = async (
     ))
     .limit(1)
 
-  return selectWorkflowToolSchema.parse(tool)
+  return tool ? selectWorkflowToolSchema.parse(tool) : null
 }
 
 export const getAccessibleWorkflowTools = async (
@@ -129,7 +129,7 @@ export const updateWorkflowTool = async (
     .where(eq(workflowTool.id, id))
     .returning()
 
-  return selectWorkflowToolSchema.parse(updated)
+  return updated ? selectWorkflowToolSchema.parse(updated) : null
 }
 
 // Note: The new schema doesn't have soft deletes (deletedAt field)
@@ -179,7 +179,7 @@ export const getToolExecutionById = async (
     .where(eq(toolExecution.id, id))
     .limit(1)
 
-  return selectToolExecutionSchema.parse(execution)
+  return execution ? selectToolExecutionSchema.parse(execution) : null
 }
 
 export const getToolExecutionsByWorkflowExecution = async (
@@ -222,7 +222,7 @@ export const updateToolExecution = async (
     .where(eq(toolExecution.id, id))
     .returning()
 
-  return selectToolExecutionSchema.parse(updated)
+  return updated ? selectToolExecutionSchema.parse(updated) : null
 }
 
 export const markToolExecutionStarted = async (
