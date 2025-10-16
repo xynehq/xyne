@@ -1468,11 +1468,6 @@ export const StartSlackIngestionApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Connector not found" })
     }
 
-    // SECURITY: Ensure connector belongs to current user/workspace to prevent cross-tenant access
-    if (connector.userId !== user.id || connector.workspaceId !== user.workspaceId) {
-      throw new HTTPException(403, { message: "Forbidden: connector does not belong to you" })
-    }
-
     // Call the main Slack ingestion function
     handleSlackIngestion({
       connectorId: connector.id,
@@ -1588,26 +1583,22 @@ export const IngestMoreChannelApi = async (c: Context) => {
       throw new HTTPException(404, { message: "Connector not found" })
     }
 
-    // SECURITY: Ensure connector belongs to current user/workspace to prevent cross-tenant access
-    if (connector.userId !== user.id || connector.workspaceId !== user.workspaceId) {
-      throw new HTTPException(403, { message: "Forbidden: connector does not belong to you" })
-    }
-
     // Import ingestion functions for database operations
     const { createIngestion, hasActiveIngestion } = await import("@/db/ingestion")
 
-    // Prevent concurrent ingestions - only one per user+connector
-    // This enforces business rule that prevents resource conflicts
-    const hasActive = await hasActiveIngestion(db, user.id, connector.id)
-    if (hasActive) {
-      throw new HTTPException(409, { 
-        message: "An ingestion is already in progress for this connector. Please wait for it to complete or cancel it first." 
-      })
-    }
+    // Prevent concurrent ingestions using database transaction to avoid race conditions
+    // This atomically checks for active ingestions and creates new one if none exist
+    const ingestion = await db.transaction(async (trx) => {
+      const hasActive = await hasActiveIngestion(trx, user.id, connector.id)
+      if (hasActive) {
+        throw new HTTPException(409, { 
+          message: "An ingestion is already in progress for this connector. Please wait for it to complete or cancel it first." 
+        })
+      }
 
-    // Create ingestion record with initial metadata for resumability
-    // All state needed for resuming is stored in the metadata field
-    const ingestion = await createIngestion(db, {
+      // Create ingestion record with initial metadata for resumability
+      // All state needed for resuming is stored in the metadata field
+      return await createIngestion(trx, {
       userId: user.id,
       connectorId: connector.id,
       workspaceId: connector.workspaceId,
@@ -1635,6 +1626,7 @@ export const IngestMoreChannelApi = async (c: Context) => {
           },
         },
       },
+      })
     })
 
     // Start background ingestion processing asynchronously

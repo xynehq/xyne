@@ -1483,10 +1483,12 @@ export const handleSlackChannelIngestion = async (
         !existenceMap[conversation.id!],
     )
 
-    // Skip already processed conversations for resumability
-    const conversationsToProcess = conversationsToInsert.slice(
-      resumeFromChannelIndex,
-    )
+    // Fix: Build conversationsToProcess from original ordering to prevent skipping channels
+    // resumeFromChannelIndex refers to position in existingChannelsToIngest, not conversationsToInsert
+    const channelsToResume = existingChannelsToIngest.slice(resumeFromChannelIndex)
+    const conversationsToProcess = channelsToResume
+      .map(channelId => conversationsToInsert.find(conv => conv.id === channelId))
+      .filter(Boolean) as typeof conversationsToInsert
 
     loggerWithChild({ email }).info(
       `Processing ${conversationsToProcess.length} channels (skipping ${resumeFromChannelIndex} already processed)`,
@@ -1495,11 +1497,12 @@ export const handleSlackChannelIngestion = async (
     loggerWithChild({ email: email }).info(
       `conversations to insert ${conversationsToProcess.length} (skipping ${resumeFromChannelIndex} already processed) and skipping ${conversations.length - conversationsToInsert.length} existing`,
     )
+    // Fix: Correct skip count calculation - don't double-count resume offset
+    // conversations.length - conversationsToInsert.length = already ingested
+    // resumeFromChannelIndex = channels processed in previous runs
     totalConversationsSkipped.inc(
       { team_id: team.id ?? team.name ?? "", email: email },
-      conversations.length -
-        conversationsToInsert.length +
-        resumeFromChannelIndex,
+      conversations.length - conversationsToInsert.length + resumeFromChannelIndex,
     )
     const user = await getAuthenticatedUserId(client)
     const teamMap = new Map<string, Team>()
@@ -1514,8 +1517,10 @@ export const handleSlackChannelIngestion = async (
     )
     // can be done concurrently, but can cause issues with ratelimits
     for (const conversation of conversationsToProcess) {
+      // Update conversationIndex to match position in existingChannelsToIngest
+      conversationIndex = existingChannelsToIngest.indexOf(conversation.id!)
       loggerWithChild({ email }).info(
-        `Processing channel ${conversationIndex + 1}/${conversationsToInsert.length}: ${conversation.name}`,
+        `Processing channel ${conversationIndex + 1}/${existingChannelsToIngest.length}: ${conversation.name}`,
       )
 
       // Check for cancellation/pause before processing each conversation
@@ -1777,10 +1782,9 @@ export const handleSlackChannelIngestion = async (
           status: OperationStatus.Success,
           email: email,
         })
-        conversationIndex++
         tracker.setCurrent(conversationIndex)
         loggerWithChild({ email }).info(
-          `Completed processing conversation ${conversation.name} (${conversationIndex}/${conversationsToInsert.length})`,
+          `Completed processing conversation ${conversation.name} (${conversationIndex + 1}/${existingChannelsToIngest.length})`,
         )
       } catch (error) {
         loggerWithChild({ email: email }).error(`Error inserting Conversation`)
