@@ -880,6 +880,12 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               throw new Error("No document ID returned from upload")
             }
           } catch (error) {
+            // Check if the error is due to abort
+            if (error instanceof Error && error.name === 'AbortError') {
+              // Upload was cancelled, don't show error message
+              return null
+            }
+            
             const errorMessage =
               error instanceof Error ? error.message : "Upload failed"
             setSelectedFiles((prev) =>
