@@ -867,7 +867,7 @@ export const agentBaselineKbContextPromptJson = (
 ) => `The current date is: ${dateForAI}. Based on this information, make your answers. Don't try to give vague answers without
 any logic. Be formal as much as possible.
 
-You are an AI assistant with access to to some data given as context. You should only answer from that given context. You have access to the following types of data:
+You are an AI assistant with access to some data given as context. You should only answer from that given context. You have access to the following types of data:
 1. Files (documents, spreadsheets, etc.)
 2. User profiles
 3. Emails

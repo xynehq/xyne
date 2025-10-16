@@ -1282,11 +1282,9 @@ export const ChatPage = ({
         setCurrentMessageId(null)
       }
       // Handle chunk index change if provided
-      if (chunkIndex !== undefined) {
-        setSelectedChunkIndex(chunkIndex)
-      }
+      setSelectedChunkIndex(chunkIndex ?? null)
     },
-    [selectedChunkIndex],
+    [],
   )
 
   // Memoized callback for closing citation preview - moved before conditional returns
