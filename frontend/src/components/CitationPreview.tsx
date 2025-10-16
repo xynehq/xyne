@@ -19,6 +19,7 @@ interface CitationPreviewProps {
   onBackToSources?: () => void
   showBackButton?: boolean
   documentOperationsRef?: React.RefObject<DocumentOperations>
+  onDocumentLoaded?: () => void
 }
 
 // Inner component that has access to DocumentOperations context
@@ -29,6 +30,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   onBackToSources,
   showBackButton = false,
   documentOperationsRef,
+  onDocumentLoaded,
 }) => {
   const [documentContent, setDocumentContent] = useState<Blob | null>(null)
   const [loading, setLoading] = useState(false)
@@ -123,7 +125,34 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     clearHighlights()
   }, [citation?.itemId, clearHighlights])
 
-  const getFileExtension = (filename: string): string => {
+  const getFileExtension = (mimeType: string, filename: string): string => {
+    if (mimeType === "application/pdf") {
+      return "pdf"
+    }
+    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      return "docx"
+    }
+    if (mimeType === "application/msword") {
+      return "doc"
+    }
+    if (mimeType === "text/markdown") {
+      return "md"
+    }
+    if (mimeType === "text/plain") {
+      return "txt"
+    }
+    if (mimeType === "application/vnd.ms-excel") {
+      return "xls"
+    }
+    if (mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+      return "xlsx"
+    }
+    if (mimeType === "text/csv") {
+      return "csv"
+    }
+    if (mimeType === "text/tsv") {
+      return "tsv"
+    }
     return filename.toLowerCase().split(".").pop() || ""
   }
 
@@ -131,7 +160,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     if (!documentContent || !citation) return null
 
     const fileName = citation.title || ""
-    const extension = getFileExtension(fileName)
+    const extension = getFileExtension(documentContent.type, fileName)
 
     // Create a File object from the blob
     const file = new File([documentContent], fileName, {
@@ -272,6 +301,13 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
         return "application/octet-stream"
     }
   }
+
+  // Notify parent when document is loaded and ready
+  useEffect(() => {
+    if (!loading && !error && documentContent && onDocumentLoaded && viewerElement) {
+      onDocumentLoaded()
+    }
+  }, [loading, error, documentContent, onDocumentLoaded, viewerElement])
 
   if (!isOpen) return null
 

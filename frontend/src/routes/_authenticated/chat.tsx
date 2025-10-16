@@ -412,6 +412,7 @@ export const ChatPage = ({
   )
   const [selectedChunkIndex, setSelectedChunkIndex] = useState<number | null>(null)
   const [cameFromSources, setCameFromSources] = useState(false)
+  const [isDocumentLoaded, setIsDocumentLoaded] = useState(false)
 
   // Compute disableRetry flag for retry buttons
   const disableRetry = isStreaming || retryIsStreaming || isSharedChat
@@ -1192,7 +1193,16 @@ export const ChatPage = ({
         return
       }
 
-      if (newChunkIndex !== null && selectedCitation?.itemId === documentId) {
+      if (selectedCitation?.itemId !== documentId) {
+        return
+      }
+
+      if (newChunkIndex === null) {
+        documentOperationsRef?.current?.clearHighlights?.()
+        return
+      }
+
+      if (newChunkIndex !== null) {
         try {
           const chunkContentResponse = await api.chunk[":cId"].files[
             ":docId"
@@ -1227,8 +1237,6 @@ export const ChatPage = ({
   
             if (documentOperationsRef?.current?.highlightText) {
               try {
-                // Add a small delay to ensure clearHighlights has completed
-                await new Promise(resolve => setTimeout(resolve, 50))
                 await documentOperationsRef.current.highlightText(
                   chunkContent.chunkContent,
                   newChunkIndex,
@@ -1258,10 +1266,10 @@ export const ChatPage = ({
   )
 
   useEffect(() => {
-    if (selectedChunkIndex !== null && selectedCitation) {
+    if (selectedCitation && isDocumentLoaded) {
       handleChunkIndexChange(selectedChunkIndex, selectedCitation?.itemId ?? "", selectedCitation?.docId ?? "")
     }
-  }, [selectedChunkIndex, selectedCitation, handleChunkIndexChange])
+  }, [selectedChunkIndex, selectedCitation, isDocumentLoaded, handleChunkIndexChange])
 
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
@@ -1298,13 +1306,24 @@ export const ChatPage = ({
     setSelectedCitation(null)
     setCameFromSources(false)
     setSelectedChunkIndex(null)
+    setIsDocumentLoaded(false)
   }, [])
+
+  // Callback for when document is loaded in CitationPreview
+  const handleDocumentLoaded = useCallback(() => {
+    setIsDocumentLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    setIsDocumentLoaded(false)
+  }, [selectedCitation])
 
   useEffect(() => {
     setIsCitationPreviewOpen(false)
     setSelectedCitation(null)
     setCameFromSources(false)
     setSelectedChunkIndex(null)
+    setIsDocumentLoaded(false)
   }, [chatId])
 
   // Handler for back to sources navigation
@@ -1711,6 +1730,7 @@ export const ChatPage = ({
         showBackButton={cameFromSources}
         onBackToSources={handleBackToSources}
         documentOperationsRef={documentOperationsRef}
+        onDocumentLoaded={handleDocumentLoaded}
       />
     </div>
   )
