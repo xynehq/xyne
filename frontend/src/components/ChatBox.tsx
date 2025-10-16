@@ -86,7 +86,6 @@ interface SelectedFile {
   uploadError?: string
   preview?: string // URL for image preview
   fileType?: FileType
-  
 }
 
 export const getFileIcon = (fileType: FileType | string | undefined) => {
@@ -424,7 +423,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       "citations",
     )
     const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
-      const fileAbortControllers = useRef<Map<string, AbortController>>(new Map());
+    const fileAbortControllers = useRef<Map<string, AbortController>>(new Map())
 
     // Unified function to enhance Google Sheets items with dummy "whole sheet" options
     const enhanceGoogleSheetsResults = useCallback(
@@ -842,7 +841,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           fileAbortControllers.current.set(file.id, new AbortController())
         })
 
-
         // Set all files to uploading state
         setSelectedFiles((prev) =>
           prev.map((f) =>
@@ -853,7 +851,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         )
 
         const uploadPromises = files.map(async (selectedFile) => {
-          const abortController = fileAbortControllers.current.get(selectedFile.id) 
+          const abortController = fileAbortControllers.current.get(
+            selectedFile.id,
+          )
           try {
             const formData = new FormData()
             formData.append("attachment", selectedFile.file)
@@ -882,7 +882,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         ...f,
                         uploading: false,
                         metadata,
-                        abortController: undefined,
+                        
                       }
                     : f,
                 ),
@@ -893,6 +893,18 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             }
           } catch (error) {
             if (error instanceof Error && error.name === "AbortError") {
+              setSelectedFiles((prev) =>
+              prev.map((f) =>
+                f.id === selectedFile.id
+                  ? {
+                      ...f,
+                      uploading: false,
+                      uploadError: errorMessage,
+                      
+                    }
+                  : f,
+              ),
+            )
               return null
             }
             const errorMessage =
@@ -904,7 +916,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       ...f,
                       uploading: false,
                       uploadError: errorMessage,
-                      abortController: undefined,
+                      
                     }
                   : f,
               ),
@@ -1006,9 +1018,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const removeFile = useCallback(
       async (id: string) => {
         const fileToRemove = selectedFiles.find((f) => f.id === id)
-        const abortController = fileAbortControllers.current.get(id);
+        const abortController = fileAbortControllers.current.get(id)
         if (fileToRemove?.uploading && abortController) {
-          abortController.abort();
+          abortController.abort()
         }
 
         // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
