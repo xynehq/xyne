@@ -318,7 +318,6 @@ export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
 export type TxnOrClient =
   | PgTransaction<any>
-  | PostgresJsDatabase<Record<string, never>>
   | PostgresJsDatabase<any>
 
 export type OAuthCredentials = {
