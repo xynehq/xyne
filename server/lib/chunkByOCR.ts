@@ -181,7 +181,6 @@ type SendPdfBatchOptions = {
 }
 
 // Placeholder implementation for integrating with the OCR service.
-// This uses the same endpoint as callLayoutParsingApi
 async function sendPdfOcrBatch(
   batch: PdfOcrBatch,
   { timeoutMs }: SendPdfBatchOptions,
@@ -216,7 +215,6 @@ async function sendPdfOcrBatch(
       )
     }
 
-    // TODO: handle the response payload if the OCR service returns useful data.
   } catch (error) {
     if ((error as Error).name === "AbortError") {
       throw new Error("OCR batch request aborted due to timeout")
@@ -227,7 +225,24 @@ async function sendPdfOcrBatch(
   }
 }
 
-function coerceStatusNumber(raw: unknown): number | undefined {
+function coerceStatusNumber(raw: unknown): boolean {
+  if (typeof raw === "number") {
+    return Number.isFinite(raw)
+  }
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (trimmed.length === 0) {
+      return false
+    }
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed)
+  }
+
+  return false
+}
+
+function extractStatusNumber(raw: unknown): number | undefined {
   if (typeof raw === "number") {
     if (Number.isFinite(raw)) {
       return raw
@@ -250,7 +265,7 @@ function coerceStatusNumber(raw: unknown): number | undefined {
 }
 
 function sanitizeIdleValue(raw: unknown): number {
-  const numericValue = coerceStatusNumber(raw)
+  const numericValue = extractStatusNumber(raw)
   if (numericValue === undefined) {
     return 0
   }
@@ -345,9 +360,9 @@ async function fetchIdleInstances(
 
       const payload = (await response.json()) as InstanceStatusPayload
       const idle = sanitizeIdleValue(payload.idle_instances)
-      const active = coerceStatusNumber(payload.active_instances)
-      const configured = coerceStatusNumber(payload.configured_instances)
-      const lastUpdated = coerceStatusNumber(payload.last_updated)
+      const active = extractStatusNumber(payload.active_instances)
+      const configured = extractStatusNumber(payload.configured_instances)
+      const lastUpdated = extractStatusNumber(payload.last_updated)
 
       metrics?.observe("ocr_dispatch.instances.idle", idle)
       if (active !== undefined) {
