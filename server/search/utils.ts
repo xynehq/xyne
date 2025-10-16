@@ -112,8 +112,7 @@ export async function getVespaIdsFromPrefixedItemIds(
         // Folder or file ID - will be cleaned by removePrefixesFromItemIds
         folderFileIds.push(itemId)
       } else {
-        // No prefix, assume it's a raw ID
-        folderFileIds.push(itemId)
+        Logger.error("Invalid collection item")
       }
     }
 
