@@ -51,7 +51,7 @@ export const FetchAllVespaDocs = async (c: Context) => {
                 null, // app filter
                 null, // entity filter
                 {
-                    limit: limit,
+                    limit: limit + offset,
                     offset: offset,
                     alpha: 0.5,
                     timestampRange: null,
@@ -90,7 +90,7 @@ export const FetchAllVespaDocs = async (c: Context) => {
                 null, // app filter
                 null, // entity filter
                 {
-                    limit: limit,
+                    limit: limit + offset,
                     offset: offset,
                     alpha: 0.5,
                     timestampRange: null,
