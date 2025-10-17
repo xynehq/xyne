@@ -67,43 +67,43 @@ export const FetchAllVespaDocs = async (c: Context) => {
             );
             console.log("Search executed successfully with term:", search, "Result count:", docs?.root?.children?.length || 0);
         } else {
-            // // Use getItems for listing all documents when no search term
-            // const allSchemasParams: GetItemsParams = {
-            //     schema: [
-            //         fileSchema,
-            //         userSchema,
-            //         mailSchema,
-            //         eventSchema,
-            //         mailAttachmentSchema,
-            //     ],
-            //     asc: false,
-            //     offset: offset,
-            //     limit: limit,
-            //     timestampRange: null,
-            //     email: sub,
-            // }
-            // docs = await getItems(allSchemasParams);
-            console.log("Executing search with term:", search, "for user:", sub);
-            docs = await searchVespa(
-                "a",
-                sub,
-                null, // app filter
-                null, // entity filter
-                {
-                    limit: limit + offset,
-                    offset: offset,
-                    alpha: 0.5,
-                    timestampRange: null,
-                    excludedIds: [],
-                    notInMailLabels: [],
-                    rankProfile: SearchModes.AI,
-                    requestDebug: false,
-                    span: null,
-                    maxHits: 10000,
-                    recencyDecayRate: 0.01,
-                    // orderBy: "desc" as const,
-                }
-            );
+            // Use getItems for listing all documents when no search term
+            const allSchemasParams: GetItemsParams = {
+                schema: [
+                    fileSchema,
+                    userSchema,
+                    mailSchema,
+                    eventSchema,
+                    mailAttachmentSchema,
+                ],
+                asc: false,
+                offset: offset,
+                limit: limit,
+                timestampRange: null,
+                email: sub,
+            }
+            docs = await getItems(allSchemasParams);
+            // console.log("Executing search with term:", search, "for user:", sub);
+            // docs = await searchVespa(
+            //     "a",
+            //     sub,
+            //     null, // app filter
+            //     null, // entity filter
+            //     {
+            //         limit: limit + offset,
+            //         offset: offset,
+            //         alpha: 0.5,
+            //         timestampRange: null,
+            //         excludedIds: [],
+            //         notInMailLabels: [],
+            //         rankProfile: SearchModes.AI,
+            //         requestDebug: false,
+            //         span: null,
+            //         maxHits: 10000,
+            //         recencyDecayRate: 0.01,
+            //         // orderBy: "desc" as const,
+            //     }
+            // );
 
         }
         
