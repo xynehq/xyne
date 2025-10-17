@@ -450,10 +450,7 @@ export const extractImageFileNames = (
   return { imageFileNames }
 }
 
-export const searchToCitation = (
-  result: VespaSearchResults,
-  chunkIndex?: number,
-): Citation => {
+export const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
   if (result.fields.sddocname === userSchema) {
     return {
@@ -535,7 +532,6 @@ export const searchToCitation = (
       entity: clFields.entity,
       itemId: clFields.itemId,
       clId: clFields.clId,
-      chunkIndex: chunkIndex,
     }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {
@@ -558,7 +554,8 @@ const searchToCitations = (results: VespaSearchResults[]): Citation[] => {
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
+export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
+export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
 
 export const processMessage = (
   text: string,

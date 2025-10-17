@@ -181,6 +181,7 @@ import {
   isValidApp,
   isValidEntity,
   collectFollowupContext,
+  textToKbItemCitationIndex,
 } from "./utils"
 import {
   getRecentChainBreakClassifications,
@@ -193,9 +194,6 @@ import {
 } from "@/db/attachment"
 import type { AttachmentMetadata } from "@/shared/types"
 import { parseAttachmentMetadata } from "@/utils/parseAttachment"
-import { isImageFile } from "shared/fileUtils"
-import { promises as fs } from "node:fs"
-import path from "node:path"
 import {
   getAgentUsageByUsers,
   getChatCountsByAgents,
@@ -468,21 +466,27 @@ const checkAndYieldCitations = async function* (
   baseIndex: number = 0,
   email: string,
   yieldedImageCitations: Set<number>,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
 ) {
   const text = splitGroupedCitationsWithSpaces(textInput)
   let match
   let imgMatch
+  let kbMatch = null
   while (
     (match = textToCitationIndex.exec(text)) !== null ||
-    (imgMatch = textToImageCitationIndex.exec(text)) !== null
+    (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
+    (isMsgWithKbItems &&
+      (kbMatch = textToKbItemCitationIndex.exec(text)) !== null)
   ) {
-    if (match) {
-      const citationIndex = parseInt(match[1], 10)
+    if (match || kbMatch) {
+      let citationIndex = 0
+      if (match) {
+        citationIndex = parseInt(match[1], 10)
+      } else if (kbMatch) {
+        citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
+      }
       if (!yieldedCitations.has(citationIndex)) {
-        const item = isMsgWithSources
-          ? results[baseIndex]
-          : results[citationIndex - baseIndex]
+        const item = results[citationIndex - baseIndex]
         if (item) {
           // TODO: fix this properly, empty citations making streaming broke
           const f = (item as any)?.fields
@@ -496,15 +500,13 @@ const checkAndYieldCitations = async function* (
           yield {
             citation: {
               index: citationIndex,
-              item: isMsgWithSources
-                ? searchToCitation(item as VespaSearchResults, citationIndex)
-                : searchToCitation(item as VespaSearchResults),
+              item: searchToCitation(item as VespaSearchResults),
             },
           }
           yieldedCitations.add(citationIndex)
         } else {
           loggerWithChild({ email: email }).error(
-            `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`
+            `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`,
           )
         }
       }
@@ -553,7 +555,7 @@ const checkAndYieldCitations = async function* (
             yieldedImageCitations.add(citationIndex)
           } else {
             loggerWithChild({ email: email }).error(
-              `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`
+              `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`,
             )
             continue
           }
@@ -595,7 +597,7 @@ async function* processIterator(
   previousResultsLength: number = 0,
   userRequestsReasoning?: boolean,
   email?: string,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
 ): AsyncIterableIterator<
   ConverseResponse & {
     citation?: { index: number; item: any }
@@ -624,7 +626,7 @@ async function* processIterator(
             previousResultsLength,
             email!,
             yieldedImageCitations,
-            isMsgWithSources,
+            isMsgWithKbItems,
           )
           yield { text: chunk.text, reasoning }
         } else {
@@ -650,7 +652,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
-              isMsgWithSources,
+              isMsgWithKbItems,
             )
             yield { text: token, reasoning }
           }
@@ -688,7 +690,7 @@ async function* processIterator(
               previousResultsLength,
               email!,
               yieldedImageCitations,
-              isMsgWithSources,
+              isMsgWithKbItems,
             )
             currentAnswer = parsed.answer
           }
@@ -1105,6 +1107,7 @@ export async function buildContext(
   userMetadata: UserMetadataType,
   startIndex: number = 0,
   builtUserQuery?: string,
+  isMsgWithKbItems?: boolean,
 ): Promise<string> {
   const contextPromises = results?.map(
     async (v, i) =>
@@ -1113,7 +1116,7 @@ export async function buildContext(
         userMetadata,
         maxSummaryCount,
         undefined,
-        undefined,
+        isMsgWithKbItems,
         builtUserQuery,
       )}`,
   )
@@ -1385,7 +1388,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
         collectionSelections: agentSpecificCollectionSelections,
-        selectedItem: selectedItem,//agentIntegration format (app_integrations format)
+        selectedItem: selectedItem, //agentIntegration format (app_integrations format)
       },
     )
   }
@@ -1482,6 +1485,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         userMetadata,
         0,
         message,
+        agentSpecificCollectionSelections.length > 0,
       )
 
       const queryRewriteSpan = rewriteSpan?.startSpan("query_rewriter")
@@ -1616,6 +1620,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           userMetadata,
           0,
           message,
+          agentSpecificCollectionSelections.length > 0,
         )
 
         const { imageFileNames } = extractImageFileNames(
@@ -1648,6 +1653,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
             agentPrompt,
             imageFileNames,
           },
+          agentSpecificCollectionSelections.length > 0,
+          agentSpecificCollectionSelections.length > 0,
         )
 
         const answer = yield* processIterator(
@@ -1656,6 +1663,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
           previousResultsLength,
           config.isReasoning && userRequestsReasoning,
           email,
+          agentSpecificCollectionSelections.length > 0,
         )
         if (answer) {
           ragSpan?.setAttribute("answer_found", true)
@@ -1810,6 +1818,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       userMetadata,
       startIndex,
       message,
+      agentSpecificCollectionSelections.length > 0,
     )
 
     const { imageFileNames } = extractImageFileNames(
@@ -1845,6 +1854,8 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         messages,
         imageFileNames,
       },
+      agentSpecificCollectionSelections.length > 0,
+      agentSpecificCollectionSelections.length > 0,
     )
 
     const answer = yield* processIterator(
@@ -1853,6 +1864,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
       previousResultsLength,
       config.isReasoning && userRequestsReasoning,
       email,
+      agentSpecificCollectionSelections.length > 0,
     )
 
     if (answer) {
@@ -1891,7 +1903,7 @@ async function* generateAnswerFromGivenContext(
   passedSpan?: Span,
   threadIds?: string[],
   attachmentFileIds?: string[],
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
@@ -2134,7 +2146,7 @@ async function* generateAnswerFromGivenContext(
       userMetadata,
       i < chunksPerDocument.length ? chunksPerDocument[i] : 0,
       true,
-      isMsgWithSources,
+      isMsgWithKbItems,
       message,
     )
     if (
@@ -2158,7 +2170,7 @@ async function* generateAnswerFromGivenContext(
         )
       }
     }
-    return isMsgWithSources ? content : `Index ${i + startIndex} \n ${content}`
+    return `Index ${i + startIndex} \n ${content}`
   })
 
   const resolvedContexts = contextPromises
@@ -2210,7 +2222,7 @@ async function* generateAnswerFromGivenContext(
       imageFileNames: finalImageFileNames,
     },
     true,
-    isMsgWithSources,
+    isMsgWithKbItems,
   )
 
   const answer = yield* processIterator(
@@ -2219,7 +2231,7 @@ async function* generateAnswerFromGivenContext(
     previousResultsLength,
     userRequestsReasoning,
     email,
-    isMsgWithSources,
+    isMsgWithKbItems,
   )
   if (answer) {
     generateAnswerSpan?.setAttribute("answer_found", true)
@@ -2904,6 +2916,7 @@ async function* processResultsForMetadata(
   email?: string,
   agentContext?: string,
   modelId?: string,
+  isMsgWithKbItems?: boolean,
 ) {
   if (app?.length == 1 && app[0] === Apps.GoogleDrive) {
     chunksCount = config.maxGoogleDriveSummary
@@ -2919,7 +2932,14 @@ async function* processResultsForMetadata(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
   )
-  const context = await buildContext(items, chunksCount, userMetadata, 0, input)
+  const context = await buildContext(
+    items,
+    chunksCount,
+    userMetadata,
+    0,
+    input,
+    isMsgWithKbItems,
+  )
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
@@ -2947,6 +2967,8 @@ async function* processResultsForMetadata(
       userMetadata,
       context,
       streamOptions,
+      isMsgWithKbItems,
+      isMsgWithKbItems,
     )
   }
 
@@ -2955,6 +2977,8 @@ async function* processResultsForMetadata(
     items,
     0,
     config.isReasoning && userRequestsReasoning,
+    email,
+    isMsgWithKbItems,
   )
 }
 
@@ -3291,7 +3315,14 @@ async function* generateMetadataQueryAnswer(
 
       pageSpan?.setAttribute(
         "context",
-        await buildContext(items, 20, userMetadata, 0, input),
+        await buildContext(
+          items,
+          20,
+          userMetadata,
+          0,
+          input,
+          agentSpecificCollectionSelections.length > 0,
+        ),
       )
       if (!items.length) {
         loggerWithChild({ email: email }).info(
@@ -3319,6 +3350,7 @@ async function* generateMetadataQueryAnswer(
         email,
         agentPrompt,
         modelId,
+        agentSpecificCollectionSelections.length > 0,
       )
 
       if (answer == null) {
@@ -3479,7 +3511,14 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute(
       "context",
-      await buildContext(items, 20, userMetadata, 0, input),
+      await buildContext(
+        items,
+        20,
+        userMetadata,
+        0,
+        input,
+        agentSpecificCollectionSelections.length > 0,
+      ),
     )
     span?.end()
     loggerWithChild({ email: email }).info(
@@ -3509,6 +3548,7 @@ async function* generateMetadataQueryAnswer(
       email,
       agentPrompt,
       modelId,
+      agentSpecificCollectionSelections.length > 0,
     )
     return
   } else if (
@@ -3628,7 +3668,14 @@ async function* generateMetadataQueryAnswer(
       )
       iterationSpan?.setAttribute(
         `context`,
-        await buildContext(items, 20, userMetadata, 0, input),
+        await buildContext(
+          items,
+          20,
+          userMetadata,
+          0,
+          input,
+          agentSpecificCollectionSelections.length > 0,
+        ),
       )
       iterationSpan?.end()
 
@@ -3661,6 +3708,7 @@ async function* generateMetadataQueryAnswer(
         email,
         agentPrompt,
         modelId,
+        agentSpecificCollectionSelections.length > 0,
       )
 
       if (answer == null) {
@@ -3939,7 +3987,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
   threadIds?: string[],
   attachmentFileIds?: string[],
   agentPrompt?: string,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
   modelId?: string,
   isValidPath?: boolean,
   folderIds?: string[],
@@ -3973,7 +4021,7 @@ export async function* UnderstandMessageAndAnswerForGivenContext(
     passedSpan,
     threadIds,
     attachmentFileIds,
-    isMsgWithSources,
+    isMsgWithKbItems,
     modelId,
     isValidPath,
     folderIds,
@@ -6986,14 +7034,18 @@ export const EnhancedMessageFeedbackApi = async (c: Context) => {
     // Debug logging
     loggerWithChild({ email: email }).info(
       `Enhanced feedback request received
-      ${JSON.stringify({
-        messageId,
-        type,
-        shareChat,
-        customFeedback: !!customFeedback,
-        selectedOptionsCount: selectedOptions?.length || 0,
-      }, null, 2)}
-      },`
+      ${JSON.stringify(
+        {
+          messageId,
+          type,
+          shareChat,
+          customFeedback: !!customFeedback,
+          selectedOptionsCount: selectedOptions?.length || 0,
+        },
+        null,
+        2,
+      )}
+      },`,
     )
 
     const message = await getMessageByExternalId(db, messageId)
