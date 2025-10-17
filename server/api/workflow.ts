@@ -5,6 +5,7 @@ import { WorkflowStatus, StepType, ToolType, ToolExecutionStatus } from "@/types
 import { type SelectAgent } from "../db/schema"
 import { type ExecuteAgentResponse } from "./agent/workflowAgentUtils"
 
+
 // Schema for workflow executions query parameters
 const listWorkflowExecutionsQuerySchema = z.object({
   id: z.string().optional(),
@@ -14,7 +15,7 @@ const listWorkflowExecutionsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional().default(10),
   page: z.coerce.number().min(1).optional().default(1),
 })
-import { ExecuteAgentForWorkflow } from "./agent/workflowAgentUtils"
+import { ExecuteAgentForWorkflow, executeAgentForWorkflowWithRag } from "./agent/workflowAgentUtils"
 import { db } from "@/db/client"
 import {
   workflowStepTemplate,
@@ -70,10 +71,7 @@ import {
   type AttachmentUploadResponse,
   type WorkflowFileUpload,
 } from "@/api/workflowFileHandler"
-import { getActualNameFromEnum } from "@/ai/modelConfig"
-import { getProviderByModel } from "@/ai/provider"
-import { Models } from "@/ai/types"
-import type { Message } from "@aws-sdk/client-bedrock-runtime"
+
 import { 
   createWorkflowTemplate, 
   getAccessibleWorkflowTemplates, 
@@ -383,7 +381,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
             message: `Root step input validation failed: ${validationResult.errors.join(", ")}`,
           })
         }
-        
+
       } else {
         // JSON validation (no files)
         const validationResult = validateFormData(
@@ -503,7 +501,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
                       if (key === JwtPayloadKey) {
                         return {
                           sub: user.email,
-                          workspaceId: workspaceExternalId 
+                          workspaceId: workspaceExternalId
                         }
                       }
                       return undefined
@@ -519,7 +517,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
 
 
                   if (attachmentResult && typeof attachmentResult === 'object' && 'attachments' in attachmentResult) {
-                    const attachments : AttachmentMetadata[] = attachmentResult.attachments
+                    const attachments: AttachmentMetadata[] = attachmentResult.attachments
                     if (Array.isArray(attachments) && attachments.length > 0) {
                       const attachmentId = attachments[0].fileId
                       finalProcessedData = {
@@ -691,7 +689,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       user.id
     )
 
-    
+
 
     // Create workflow execution
     const execution = await createWorkflowExecution(
@@ -1060,7 +1058,7 @@ const executeWorkflowChain = async (
           .returning()
         toolExecutionRecord = execution
       } catch (dbError) {
-        Logger.warn("Database insert failed for failed tool, creating minimal record:", dbError)
+        Logger.warn(`Database insert failed for failed tool, creating minimal record: ${dbError}`)
         const [execution] = await db
           .insert(toolExecution)
           .values({
@@ -1122,7 +1120,7 @@ const executeWorkflowChain = async (
       toolExecutionRecord = execution
     } catch (dbError) {
       // If database insert fails (e.g., unicode issues), sanitize the result and try again
-      Logger.warn("Database insert failed, sanitizing result:", dbError)
+      Logger.warn(`Database insert failed, sanitizing result: ${dbError}`)
 
       const sanitizedResult = JSON.parse(
         JSON.stringify(toolResult.result)
@@ -1150,8 +1148,7 @@ const executeWorkflowChain = async (
       } catch (secondError) {
         // If it still fails, create a minimal record
         Logger.error(
-          "Second database insert failed, creating minimal record:",
-          secondError,
+          `Second database insert failed, creating minimal record: ${secondError}`,
         )
         const [execution] = await db
           .insert(toolExecution)
@@ -1750,7 +1747,7 @@ const getExecutionContext = async (executionId: string): Promise<{
     }
 
     // Check if execution context was stored in metadata
-  
+
     const context = execution.metadata as any
     if (context.executionContext) {
       return context.executionContext
@@ -1788,7 +1785,7 @@ const executeWorkflowTool = async (
         const emailConfig = tool.config || {}
         const toEmail = emailConfig.to_email || emailConfig.recipients || []
         const fromEmail = emailConfig.from_email || "no-reply@xyne.io"
-        
+
         const contentType = emailConfig.content_type || "html"
         const execution = await getWorkflowExecutionById(
           db,
@@ -1837,7 +1834,7 @@ const executeWorkflowTool = async (
     <div class="content">
         <div class="header">
             <h2>🤖 Results of Workflow: ${workflowName} </h2>
-            <p>Generated on: ${new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"})}</p>
+            <p>Generated on: ${new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })}</p>
         </div>
         <div class="body-content">
             ${emailBody.replace(/\n/g, "<br>")}
@@ -1939,7 +1936,7 @@ const executeWorkflowTool = async (
         }
 
         try {
-          // Get execution context for user info
+          // Get execution context for user infon
           const executionContext = await getExecutionContext(executionId)
           if (!executionContext) {
             return {
@@ -2005,44 +2002,42 @@ const executeWorkflowTool = async (
               userQuery = prompt
             }
           }
-          const result: ExecuteAgentResponse = await ExecuteAgentForWorkflow({
+          const isExistingAgent = aiConfig.isExistingAgent
+          Logger.info(`Executing agent ${agentId} (existing: ${isExistingAgent}) for user ${userEmail} in workspace ${workspaceId}`)
+
+          const fullResult = await executeAgentForWorkflowWithRag({
             agentId,
             userQuery,
-            workspaceId,
             userEmail,
+            workspaceId,
             isStreamable: false,
             temperature,
             attachmentFileIds: imageAttachmentIds,
             nonImageAttachmentFileIds: documentAttachmentIds,
           })
 
-          if (!result.success) {
+          if (!fullResult.success) {
             return {
               status: "error",
               result: {
                 error: "Agent execution failed",
-                details: result.error,
+                details: fullResult.error,
               }
             }
           }
 
-          // Extract response from agent result
-          const agentResponse = result.type === 'streaming'
-            ? "Streaming response completed"
-            : result.response.text
 
           return {
             status: "success",
             result: {
-              aiOutput: agentResponse,
-              agentName: result.agentName,
-              model: result.modelId,
-              chatId: result.chatId,
+              aiOutput: fullResult.response,
+              agentName: aiConfig.agentName || "Unknown Agent",
+              model: aiConfig.modelId || "gpt-4o",
               inputType: aiConfig.inputType || "text",
               processedAt: new Date().toISOString(),
+              chatId: null
             }
           }
-
         } catch (error) {
           Logger.error(error, "ExecuteAgentForWorkflow failed in workflow")
           return {
@@ -2054,7 +2049,6 @@ const executeWorkflowTool = async (
             }
           }
         }
-
 
       default:
         return {
@@ -2139,7 +2133,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       db,
       c.get(JwtPayloadKey)
     )
-    
+
 
     let jwtPayload
     try {
@@ -2163,7 +2157,7 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
     const userId = user.id
 
     const requestData = await c.req.json()
-   
+
     // Create the main workflow template
     const template = await createWorkflowTemplate(
       db,
@@ -2226,51 +2220,71 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
 
       if (tool.type === "ai_agent") {
         try {
-          Logger.info(`Creating agent for AI agent tool: ${JSON.stringify(tool.value)}`)
+          Logger.info(`Processing AI agent tool: ${JSON.stringify(tool.value)}`)
 
-          // Extract agent data from tool configuration
-          const agentData: CreateAgentPayload = {
-            name: tool.value?.name || `Workflow Agent - ${template.name}`,
-            description: tool.value?.description || "Auto-generated agent for workflow execution",
-            prompt: tool.value?.systemPrompt || "You are a helpful assistant that processes workflow data.",
-            model: tool.value?.model || "googleai-gemini-2-5-flash", // Use model from tool config
-            isPublic: false, // Workflow agents are private by default
-            appIntegrations: [], // No app integrations for workflow agents
-            allowWebSearch: false, // Disable web search for workflow agents
-            isRagOn: false, // Disable RAG for workflow agents
-            uploadedFileNames: [], // No uploaded files for workflow agents
-            docIds: [], // No document IDs for workflow agents
-            userEmails: [] // No additional users for permissions
+          // Check if this is referencing an existing agent
+          if (tool.value?.isExistingAgent && tool.value?.agentId) {
+            // Reference existing agent - don't create new one
+            Logger.info(`Referencing existing agent: ${tool.value.agentId}`)
+
+            processedConfig = {
+              ...processedConfig,
+              inputType: "form",
+              agentId: tool.value.agentId,
+              agentName: tool.value.name,
+              isExistingAgent: true,
+              dynamicallyCreated: false
+            }
+
+            Logger.info(`Tool config updated with existing agent ID: ${tool.value.agentId}`)
+
+          } else {
+            // Create new agent for workflow (existing behavior)
+            Logger.info(`Creating new agent for workflow`)
+
+            const agentData: CreateAgentPayload = {
+              name: tool.value?.name || `Workflow Agent - ${template.name}`,
+              description: tool.value?.description || "Auto-generated agent for workflow execution",
+              prompt: tool.value?.systemPrompt || "You are a helpful assistant that processes workflow data.",
+              model: tool.value?.model || "googleai-gemini-2-5-flash",
+              isPublic: false,
+              appIntegrations: [],
+              allowWebSearch: false,
+              isRagOn: false,
+              uploadedFileNames: [],
+              docIds: [],
+              userEmails: []
+            }
+
+            Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
+
+            // Create the agent using createAgentForWorkflow
+            const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, user.workspaceId)
+
+            Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
+
+            processedConfig = {
+              ...processedConfig,
+              inputType: "form",
+              agentId: newAgent.externalId,
+              createdAgentId: newAgent.externalId,
+              agentName: newAgent.name,
+              isExistingAgent: false,
+              dynamicallyCreated: true
+            }
+
+            Logger.info(`Tool config updated with agent ID: ${newAgent.externalId}`)
           }
-
-          Logger.info(`Creating agent with data: ${JSON.stringify(agentData)}`)
-
-          // Create the agent using createAgentForWorkflow
-          const newAgent: SelectAgent = await createAgentForWorkflow(agentData, userId, user.workspaceId)
-
-          Logger.info(`Successfully created agent: ${newAgent.externalId} for workflow tool`)
-
-          // Store the agent ID in the tool config for later use
-          processedConfig = {
-            ...processedConfig,
-            inputType: "form",
-            agentId: newAgent.externalId, // ← This replaces the hardcoded agent ID
-            createdAgentId: newAgent.externalId, // Store backup reference
-            agentName: newAgent.name,
-            dynamicallyCreated: true // Flag to indicate this was auto-created
-          }
-
-          Logger.info(`Tool config updated with agent ID: ${newAgent.externalId}`)
 
         } catch (agentCreationError) {
-          Logger.error(agentCreationError, `Failed to create agent for workflow tool, using fallback config`)
+          Logger.error(agentCreationError, `Failed to process agent for workflow tool`)
 
-          // Fallback to original behavior if agent creation fails
           processedConfig = {
             ...processedConfig,
             inputType: "form",
             agentCreationFailed: true,
-            agentCreationError: agentCreationError instanceof Error ? agentCreationError.message : String(agentCreationError)
+            agentCreationError: agentCreationError instanceof Error ? agentCreationError.message :
+              String(agentCreationError)
           }
         }
       }
@@ -3237,7 +3251,7 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
   try {
     const { MODEL_CONFIGURATIONS } = await import("@/ai/modelConfig")
     const { AIProviders } = await import("@/ai/types")
-    
+
     // Get all VertexAI model enum values (includes both Claude and Gemini models)
     const vertexAIModelEnums = Object.entries(MODEL_CONFIGURATIONS)
       .filter(([_, config]) => config.provider === AIProviders.VertexAI)
@@ -3250,8 +3264,8 @@ export const GetVertexAIModelEnumsApi = async (c: Context) => {
         websearch: config.websearch,
         deepResearch: config.deepResearch,
         // Add model type for better categorization in frontend
-        modelType: enumValue.includes('gemini') ? 'gemini' : 
-                   enumValue.includes('claude') ? 'claude' : 'other',
+        modelType: enumValue.includes('gemini') ? 'gemini' :
+          enumValue.includes('claude') ? 'claude' : 'other',
       }))
       .sort((a, b) => {
         const typeOrder: Record<string, number> = { claude: 1, gemini: 2, other: 3 };

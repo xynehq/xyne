@@ -219,28 +219,93 @@ const appendReasoningData = (streamState: StreamState, data: string) => {
 export async function createAuthEventSource(url: string): Promise<EventSource> {
   return new Promise((resolve, reject) => {
     let triedRefresh = false
+    let retryCount = 0
+    const maxRetries = 3
+    let isResolved = false
+    let currentEventSource: EventSource | null = null
+
+    const cleanup = () => {
+      if (currentEventSource) {
+        currentEventSource.onopen = null
+        currentEventSource.onerror = null
+        if (currentEventSource.readyState !== EventSource.CLOSED) {
+          currentEventSource.close()
+        }
+      }
+    }
+
+    const tryRefreshAndRetry = async () => {
+      if (triedRefresh) {
+        // After refresh, try up to 3 more times before giving up
+        if (retryCount >= maxRetries) {
+          reject(new Error(`Connection failed after token refresh and ${maxRetries} retry attempts`))
+          return
+        }
+        
+        retryCount++
+        // Exponential backoff: 100ms, 200ms, 400ms
+        const delay = 100 * Math.pow(2, retryCount - 1)
+        setTimeout(() => make(), delay)
+        return
+      }
+      
+      triedRefresh = true
+      try {
+        const refresh = await fetch("/api/v1/refresh-token", {
+          method: "POST",
+          credentials: "include",
+        })
+        
+        if (refresh.ok) {
+          // Small delay before retry to avoid rapid reconnection
+          setTimeout(() => make(), 100)
+        } else {
+          reject(new Error("Token refresh failed"))
+        }
+      } catch (e) {
+        reject(new Error("Token refresh failed"))
+      }
+    }
 
     const make = () => {
-      const es = new EventSource(url, { withCredentials: true })
+      try {
+        cleanup() // Clean up any previous attempt
+        const es = new EventSource(url, { withCredentials: true })
+        currentEventSource = es
 
-      es.onopen = () => resolve(es)
+        // Set a timeout for the connection attempt
+        const connectionTimeout = setTimeout(() => {
+          if (!isResolved) {
+            cleanup()
+            tryRefreshAndRetry()
+          }
+        }, 5000) // 5 second timeout
 
-      es.onerror = async () => {
-        // es.close()
+        es.onopen = () => {
+          if (!isResolved) {
+            clearTimeout(connectionTimeout)
+            isResolved = true
+            resolve(es)
+          }
+        }
 
-        if (!triedRefresh) {
-          triedRefresh = true
-          // Attempt token refresh
-          const refresh = await fetch("/api/v1/refresh-token", {
-            method: "POST",
-            credentials: "include",
-          })
-          if (!refresh.ok) return reject(new Error("Token refresh failed"))
+        es.onerror = async (e) => {
+          clearTimeout(connectionTimeout)
+          
+          if (isResolved) {
+            // If already resolved, don't handle the error here
+            return
+          }
 
-          // Retry opening the stream
-          make()
-        } else {
-          reject(new Error("SSE connection failed after refresh"))
+          // Check if EventSource is in a failed state
+          if (es.readyState === EventSource.CLOSED) {
+            cleanup()
+            await tryRefreshAndRetry()
+          }
+        }
+      } catch (error) {
+        if (!isResolved) {
+          reject(new Error(`Failed to create EventSource: ${error instanceof Error ? error.message : 'Unknown error'}`))
         }
       }
     }
@@ -352,8 +417,8 @@ export const startStream = async (
   } catch (err) {
     console.error("Failed to create EventSource:", err)
     toast({
-      title: "Failed to create EventSource",
-      description: "Failed to create EventSource",
+      title: "Error",
+      description: "Something went wrong. Please try again.",
       variant: "destructive",
     })
     return
@@ -977,8 +1042,8 @@ export const useChatStream = (
       } catch (err) {
         console.error("Failed to create EventSource:", err)
         toast({
-          title: "Failed to create EventSource",
-          description: "Failed to create EventSource",
+          title: "Error",
+          description: "Something went wrong. Please try again.",
           variant: "destructive",
         })
         return

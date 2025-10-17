@@ -1,3 +1,87 @@
+## [3.18.7](https://github.com/xynehq/xyne/compare/v3.18.6...v3.18.7) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-213 Modified docker-compose files to fix PG not working ([#1123](https://github.com/xynehq/xyne/issues/1123)) ([82450af](https://github.com/xynehq/xyne/commit/82450af21ebc7ac7b9e1c1ffdc818cbc399f9786))
+
+## [3.18.6](https://github.com/xynehq/xyne/compare/v3.18.5...v3.18.6) (2025-10-17)
+
+
+### Bug Fixes
+
+* **zip-upload:** increased limit for upload ([#1124](https://github.com/xynehq/xyne/issues/1124)) ([7f2bc16](https://github.com/xynehq/xyne/commit/7f2bc16146a334097cc1c3ede92b64b8516ea1aa))
+
+## [3.18.5](https://github.com/xynehq/xyne/compare/v3.18.4...v3.18.5) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-152 attachment upload removal when chat is kb based ([#1069](https://github.com/xynehq/xyne/issues/1069)) ([3c84691](https://github.com/xynehq/xyne/commit/3c84691a59a9f6742e578401078843ebc10071b2))
+
+## [3.18.4](https://github.com/xynehq/xyne/compare/v3.18.3...v3.18.4) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-157 fixed attachement cancel while uploading ([#1119](https://github.com/xynehq/xyne/issues/1119)) ([d0ff988](https://github.com/xynehq/xyne/commit/d0ff98838a150b9867e416d7252ed0bc29a9c272))
+
+## [3.18.3](https://github.com/xynehq/xyne/compare/v3.18.2...v3.18.3) (2025-10-16)
+
+
+### Bug Fixes
+
+* **api-key-upload:** upload zip via curl ([#1121](https://github.com/xynehq/xyne/issues/1121)) ([1ff145c](https://github.com/xynehq/xyne/commit/1ff145c7dd6c18c6d922f990465c476819d2bcf1))
+
+## [3.18.2](https://github.com/xynehq/xyne/compare/v3.18.1...v3.18.2) (2025-10-16)
+
+
+### Bug Fixes
+
+* **pathSupport:** fix the permission check for path support of agent api ([#1120](https://github.com/xynehq/xyne/issues/1120)) ([cac541a](https://github.com/xynehq/xyne/commit/cac541af929f8f81f86fe7fa39aa69fa567f8cca))
+
+## [3.18.1](https://github.com/xynehq/xyne/compare/v3.18.0...v3.18.1) (2025-10-16)
+
+
+### Bug Fixes
+
+* **eventsource:** Make EventSource creation in frontend more robust with retry mechanism ([#1113](https://github.com/xynehq/xyne/issues/1113)) ([9d1711c](https://github.com/xynehq/xyne/commit/9d1711c7cd2bd16cecf76cc36069aad5322f540d))
+
+# [3.18.0](https://github.com/xynehq/xyne/compare/v3.17.3...v3.18.0) (2025-10-16)
+
+
+### Features
+
+* XYN-193 Calling history page ([#1103](https://github.com/xynehq/xyne/issues/1103)) ([79c6d3a](https://github.com/xynehq/xyne/commit/79c6d3a5f4d59beb335376396116606badbb1ba4))
+
+## [3.17.3](https://github.com/xynehq/xyne/compare/v3.17.2...v3.17.3) (2025-10-15)
+
+
+### Bug Fixes
+
+* **vespa-config:** increased heap size for vespa ([#1112](https://github.com/xynehq/xyne/issues/1112)) ([863f0b6](https://github.com/xynehq/xyne/commit/863f0b6f798b12cbd296fb86bdd0e24cdff7f62b))
+
+## [3.17.2](https://github.com/xynehq/xyne/compare/v3.17.1...v3.17.2) (2025-10-15)
+
+
+### Bug Fixes
+
+* XYNE-90 enabled chunk highlight for pdfs ([#1109](https://github.com/xynehq/xyne/issues/1109)) ([593e1fe](https://github.com/xynehq/xyne/commit/593e1fee8eb453389c87765db8d9a202bbfaad47))
+
+## [3.17.1](https://github.com/xynehq/xyne/compare/v3.17.0...v3.17.1) (2025-10-15)
+
+
+### Bug Fixes
+
+* **wsConnection:** resolve WebSocket connectivity with exponential backoff ([#1110](https://github.com/xynehq/xyne/issues/1110)) ([802c353](https://github.com/xynehq/xyne/commit/802c353d0d47baab690202a82b3af6c6e0ddb600))
+
+# [3.17.0](https://github.com/xynehq/xyne/compare/v3.16.3...v3.17.0) (2025-10-15)
+
+
+### Features
+
+* **cleanup-job-for-attachments:** initial commit ([#1066](https://github.com/xynehq/xyne/issues/1066)) ([ccc414e](https://github.com/xynehq/xyne/commit/ccc414ecff7a898b507bc7f53659bb59fe0ab195))
+
 ## [3.16.3](https://github.com/xynehq/xyne/compare/v3.16.2...v3.16.3) (2025-10-14)
 
 
