@@ -226,6 +226,11 @@ import {
   ServeWorkflowFileApi,
   GetGeminiModelEnumsApi,
   GetVertexAIModelEnumsApi,
+  TestJiraConnectionApi,
+  RegisterJiraWebhookApi,
+  GetJiraWebhooksApi,
+  DeleteJiraWebhookApi,
+  ReceiveJiraWebhookApi,
   createWorkflowTemplateSchema,
   createComplexWorkflowTemplateSchema,
   updateWorkflowTemplateSchema,
@@ -888,6 +893,9 @@ export const AppRoutes = app
   .post("/validate-token", handleAppValidation)
   .post("/app-refresh-token", handleAppRefreshToken) // To refresh the access token for mobile app
   .post("/refresh-token", getNewAccessRefreshToken)
+  // Webhook endpoints (public - no auth required)
+  .post("/webhook/jira/:webhookId", ReceiveJiraWebhookApi)
+  .post("/webhook-test/jira/:webhookId", ReceiveJiraWebhookApi)
   .use("*", AuthMiddleware)
   .use("*", honoMiddlewareLogger)
   .post(
@@ -1077,6 +1085,11 @@ export const AppRoutes = app
     UpdateWorkflowToolApi,
   )
   .delete("/workflow/tools/:toolId", DeleteWorkflowToolApi)
+  .post("/workflow/tools/jira/test-connection", TestJiraConnectionApi)
+  .post("/workflow/tools/jira/register-webhook", RegisterJiraWebhookApi)
+  .post("/workflow/tools/jira/webhooks", GetJiraWebhooksApi)
+  .post("/workflow/tools/jira/delete-webhook", DeleteJiraWebhookApi)
+  // Webhook routes moved to before AuthMiddleware (lines 892-893)
   .delete("/workflow/steps/:stepId", DeleteWorkflowStepTemplateApi)
   .put(
     "/workflow/steps/:stepId",
