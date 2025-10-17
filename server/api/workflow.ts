@@ -52,6 +52,9 @@ import {
 } from "drizzle-orm"
 
 import { type AttachmentMetadata } from "@/shared/types"
+import { webhookRegistry } from "@/services/webhookRegistry"
+import webhookIntegrationService from "@/services/webhookIntegrationService"
+import { hasWebhookTools, triggerWebhookReload } from "@/services/webhookReloadService"
 
 // Re-export schemas for server.ts
 export {
@@ -1051,7 +1054,7 @@ const executeAutomatedWorkflowSteps = async (
 }
 
 // Execute workflow chain - automatically execute steps in sequence
-const executeWorkflowChain = async (
+export const executeWorkflowChain = async (
   executionId: string,
   currentStepId: string,
   tools: any[],
@@ -2129,6 +2132,211 @@ const executeWorkflowTool = async (
           }
         }
 
+      case "http_request":
+        try {
+          const httpConfig = tool.config || {}
+          const httpValue = tool.value || {}
+          
+          // Extract configuration from both config and value objects
+          const url = httpValue.url || httpConfig.url
+          const method = (httpValue.method || httpConfig.method || "GET").toUpperCase()
+          const headers = { ...httpConfig.headers, ...httpValue.headers }
+          const queryParams = { ...httpConfig.queryParams, ...httpValue.queryParams }
+          const body = httpValue.body || httpConfig.body
+          const bodyType = httpValue.bodyType || httpConfig.bodyType || "json"
+          const authentication = httpConfig.authentication || httpValue.authentication || "none"
+          const authConfig = httpConfig.authConfig || httpValue.authConfig || {}
+          const timeout = httpConfig.timeout || httpValue.timeout || 30000
+          const followRedirects = httpConfig.followRedirects !== false
+
+          // Validate required fields
+          if (!url) {
+            return {
+              status: "error",
+              result: {
+                error: "URL is required for HTTP request",
+                config: { httpConfig, httpValue }
+              }
+            }
+          }
+
+          // Validate URL format
+          try {
+            new URL(url)
+          } catch (urlError) {
+            return {
+              status: "error",
+              result: {
+                error: "Invalid URL format",
+                url: url,
+                details: urlError instanceof Error ? urlError.message : String(urlError)
+              }
+            }
+          }
+
+          Logger.info(`Executing HTTP ${method} request to ${url}`)
+
+          // Prepare URL with query parameters
+          const urlObj = new URL(url)
+          Object.entries(queryParams).forEach(([key, value]) => {
+            if (value) {
+              urlObj.searchParams.append(key, String(value))
+            }
+          })
+
+          // Prepare headers
+          const requestHeaders: Record<string, string> = {
+            'User-Agent': 'Xyne-Workflow/1.0',
+            ...headers
+          }
+
+          // Handle authentication
+          if (authentication === "basic" && authConfig.username && authConfig.password) {
+            const credentials = btoa(`${authConfig.username}:${authConfig.password}`)
+            requestHeaders['Authorization'] = `Basic ${credentials}`
+          } else if (authentication === "bearer" && authConfig.token) {
+            requestHeaders['Authorization'] = `Bearer ${authConfig.token}`
+          } else if (authentication === "api_key" && authConfig.apiKey && authConfig.apiKeyHeader) {
+            requestHeaders[authConfig.apiKeyHeader] = authConfig.apiKey
+          }
+
+          // Prepare request body
+          let requestBody: string | undefined
+          if (body && ["POST", "PUT", "PATCH"].includes(method)) {
+            if (bodyType === "json") {
+              requestHeaders['Content-Type'] = 'application/json'
+              try {
+                // Validate JSON if it's supposed to be JSON
+                JSON.parse(body)
+                requestBody = body
+              } catch (jsonError) {
+                return {
+                  status: "error",
+                  result: {
+                    error: "Invalid JSON in request body",
+                    body: body,
+                    details: jsonError instanceof Error ? jsonError.message : String(jsonError)
+                  }
+                }
+              }
+            } else if (bodyType === "form") {
+              requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded'
+              requestBody = body
+            } else {
+              // Raw body type
+              requestBody = body
+            }
+          }
+
+          // Create AbortController for timeout
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+          try {
+            const startTime = Date.now()
+            
+            const response = await fetch(urlObj.toString(), {
+              method,
+              headers: requestHeaders,
+              body: requestBody,
+              signal: controller.signal,
+              redirect: followRedirects ? 'follow' : 'manual'
+            })
+
+            clearTimeout(timeoutId)
+            const endTime = Date.now()
+            const duration = endTime - startTime
+
+            // Get response headers
+            const responseHeaders: Record<string, string> = {}
+            response.headers.forEach((value, key) => {
+              responseHeaders[key] = value
+            })
+
+            // Get response body
+            let responseData: any
+            let responseText = ""
+            
+            try {
+              responseText = await response.text()
+              
+              // Try to parse as JSON if content-type suggests it
+              const contentType = response.headers.get('content-type') || ''
+              if (contentType.includes('application/json') || contentType.includes('text/json')) {
+                try {
+                  responseData = JSON.parse(responseText)
+                } catch {
+                  // If JSON parsing fails, keep as text
+                  responseData = responseText
+                }
+              } else {
+                responseData = responseText
+              }
+            } catch (bodyError) {
+              responseData = `Error reading response body: ${bodyError instanceof Error ? bodyError.message : String(bodyError)}`
+            }
+
+            const isSuccess = response.status >= 200 && response.status < 300
+
+            Logger.info(`HTTP ${method} request to ${url} completed with status ${response.status} in ${duration}ms`)
+
+            return {
+              status: isSuccess ? "success" : "error",
+              result: {
+                statusCode: response.status,
+                statusText: response.statusText,
+                headers: responseHeaders,
+                data: responseData,
+                url: urlObj.toString(),
+                method: method,
+                duration: duration,
+                success: isSuccess,
+                timestamp: new Date().toISOString(),
+                ...(responseText && { rawResponse: responseText.substring(0, 1000) }) // Truncate for logging
+              }
+            }
+
+          } catch (fetchError) {
+            clearTimeout(timeoutId)
+            
+            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+              Logger.error(`HTTP ${method} request to ${url} timed out after ${timeout}ms`)
+              return {
+                status: "error",
+                result: {
+                  error: "Request timeout",
+                  timeout: timeout,
+                  url: url,
+                  method: method
+                }
+              }
+            }
+
+            Logger.error(fetchError, `HTTP ${method} request to ${url} failed`)
+            return {
+              status: "error",
+              result: {
+                error: "HTTP request failed",
+                message: fetchError instanceof Error ? fetchError.message : String(fetchError),
+                url: url,
+                method: method
+              }
+            }
+          }
+
+        } catch (error) {
+          Logger.error(error, "HTTP request tool execution failed")
+          return {
+            status: "error",
+            result: {
+              error: "HTTP request tool execution failed",
+              message: error instanceof Error ? error.message : String(error),
+              config: tool.config,
+              value: tool.value
+            }
+          }
+        }
+
       default:
         return {
           status: "error",
@@ -2514,6 +2722,17 @@ export const CreateComplexWorkflowTemplateApi = async (c: Context) => {
       workflow_tools: createdTools,
     }
 
+    // Check if workflow contains webhook tools and reload webhooks if needed
+    if (hasWebhookTools(createdTools)) {
+      Logger.info("🔄 Workflow contains webhook tools, triggering webhook reload...")
+      const reloadResult = await triggerWebhookReload()
+      if (reloadResult.success) {
+        Logger.info(`✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`)
+      } else {
+        Logger.warn(`⚠️ Webhook reload failed: ${reloadResult.error}`)
+      }
+    }
+
     return c.json({
       success: true,
       data: completeTemplate,
@@ -2547,6 +2766,15 @@ export const UpdateWorkflowTemplateApi = async (c: Context) => {
       })
       .where(eq(workflowTemplate.id, templateId))
       .returning()
+
+    // Trigger webhook reload after template update (config might contain workflow changes)
+    Logger.info("🔄 Template updated, triggering webhook reload to ensure webhooks are current...")
+    const reloadResult = await triggerWebhookReload()
+    if (reloadResult.success) {
+      Logger.info(`✅ Webhooks reloaded successfully: ${reloadResult.count} webhooks active`)
+    } else {
+      Logger.warn(`⚠️ Webhook reload failed: ${reloadResult.error}`)
+    }
 
     return c.json({
       success: true,
@@ -2718,6 +2946,43 @@ export const CreateWorkflowToolApi = async (c: Context) => {
       })
       .returning()
 
+    // If this is a webhook tool, register the webhook
+    if (tool.type === ToolType.WEBHOOK && tool.config && tool.value) {
+      try {
+        const config = tool.config as any
+        const value = tool.value as any
+        
+        if (config.path || value.path) {
+          const webhookConfig = {
+            webhookUrl: value.webhookUrl || `http://localhost:3000/webhook${config.path || value.path}`,
+            httpMethod: config.httpMethod || 'POST',
+            path: config.path || value.path,
+            authentication: config.authentication || 'none',
+            selectedCredential: config.selectedCredential,
+            responseMode: config.responseMode || 'immediately',
+            options: config.options || {},
+            headers: config.headers || {},
+            queryParams: config.queryParams || {}
+          }
+          
+          // Get workflow template ID (simplified - in real implementation you'd get this from context)
+          const templateId = requestData.workflowTemplateId || 'default-template'
+          
+          await webhookRegistry.registerWebhook(
+            webhookConfig.path,
+            templateId,
+            tool.id,
+            webhookConfig
+          )
+          
+          Logger.info(`Registered webhook ${webhookConfig.path} for tool ${tool.id}`)
+        }
+      } catch (webhookError) {
+        Logger.error(webhookError, `Failed to register webhook for tool ${tool.id}`)
+        // Don't fail the tool creation if webhook registration fails
+      }
+    }
+
     return c.json({
       success: true,
       data: tool,
@@ -2802,6 +3067,52 @@ export const UpdateWorkflowToolApi = async (c: Context) => {
 
       return { tool: updatedTool, step: updatedStep }
     })
+
+    // If this is a webhook tool, update the webhook registration
+    if (result.tool.type === ToolType.WEBHOOK && result.tool.config && result.tool.value) {
+      try {
+        const config = result.tool.config as any
+        const value = result.tool.value as any
+        
+        if (config.path || value.path) {
+          const webhookConfig = {
+            webhookUrl: value.webhookUrl || `http://localhost:3000/webhook${config.path || value.path}`,
+            httpMethod: config.httpMethod || 'POST',
+            path: config.path || value.path,
+            authentication: config.authentication || 'none',
+            selectedCredential: config.selectedCredential,
+            responseMode: config.responseMode || 'immediately',
+            options: config.options || {},
+            headers: config.headers || {},
+            queryParams: config.queryParams || {}
+          }
+          
+          // Get workflow template ID (simplified - in real implementation you'd get this from context)
+          const templateId = requestData.workflowTemplateId || 'default-template'
+          
+          // Unregister old webhook first (if path changed)
+          if (existingTool[0] && existingTool[0].value) {
+            const oldValue = existingTool[0].value as any
+            if (oldValue.path && oldValue.path !== webhookConfig.path) {
+              await webhookRegistry.unregisterWebhook(oldValue.path)
+            }
+          }
+          
+          // Register new/updated webhook
+          await webhookRegistry.registerWebhook(
+            webhookConfig.path,
+            templateId,
+            result.tool.id,
+            webhookConfig
+          )
+          
+          Logger.info(`Updated webhook registration ${webhookConfig.path} for tool ${result.tool.id}`)
+        }
+      } catch (webhookError) {
+        Logger.error(webhookError, `Failed to update webhook for tool ${result.tool.id}`)
+        // Don't fail the tool update if webhook registration fails
+      }
+    }
 
     return c.json({
       success: true,
