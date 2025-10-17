@@ -84,7 +84,7 @@ import {
   getWorkflowTemplateByIdWithPublicCheck, 
   updateWorkflowTemplate,
   createWorkflowExecution,
-  createWorkflowStepExecutions,
+  createWorkflowStepExecutionsFromSteps,
 } from "@/db/workflow"
 import {
   getAccessibleWorkflowTools,
@@ -435,21 +435,7 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
       templateId
     )
 
-    // Create step executions for all template steps using bulk insert
-    const stepExecutionsData = steps.map((step) => ({
-      workflowExecutionId: execution.id,
-      workflowStepTemplateId: step.id,
-      name: step.name,
-      type: step.type as StepType,
-      parentStepId: step.parentStepId || undefined,
-      prevStepIds: step.prevStepIds as string[] || [],
-      nextStepIds: step.nextStepIds as string [] || [],
-      toolExecIds: [],
-      timeEstimate: step.timeEstimate || undefined,
-      metadata: step.metadata,
-    }))
-
-    const stepExecutions = await createWorkflowStepExecutions(db, stepExecutionsData)
+    const stepExecutions = await createWorkflowStepExecutionsFromSteps(db, execution.id, steps)
 
     // Find root step execution
     const rootStepExecution = stepExecutions.find(
@@ -580,6 +566,8 @@ export const ExecuteWorkflowWithInputApi = async (c: Context) => {
             submittedBy: "api",
             autoCompleted: true,
           },
+          startedAt: new Date(),
+          completedAt: new Date()
         }
       )
     }
@@ -722,21 +710,7 @@ export const ExecuteWorkflowTemplateApi = async (c: Context) => {
       }
     )
 
-    // Create step executions for all template steps using bulk insert
-    const stepExecutionsData = steps.map((step) => ({
-      workflowExecutionId: execution.id,
-      workflowStepTemplateId: step.id,
-      name: step.name,
-      type: step.type as StepType,
-      parentStepId: step.parentStepId || undefined,
-      prevStepIds: step.prevStepIds as string[] || [],
-      nextStepIds: step.nextStepIds as string[] || [],
-      toolExecIds: [], // Will be populated when tools are executed
-      timeEstimate: step.timeEstimate || undefined,
-      metadata: step.metadata,
-    }))
-
-    const stepExecutions = await createWorkflowStepExecutions(db, stepExecutionsData)
+    const stepExecutions = await createWorkflowStepExecutionsFromSteps(db, execution.id, steps)
 
     // Find root step (no parent)
     const rootStepExecution = stepExecutions.find((se) => {
@@ -1604,7 +1578,9 @@ export const SubmitWorkflowFormApi = async (c: Context) => {
           formData: formData,
           submittedAt: new Date().toISOString(),
           submittedBy: "demo",
-        }
+        },
+        startedAt: new Date(),
+        completedAt: new Date()
       }
     )
 

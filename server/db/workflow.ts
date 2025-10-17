@@ -92,7 +92,6 @@ export const getAccessibleWorkflowTemplates = async (
         eq(workflowTemplate.userId, userId),
       )
     ))
-    .orderBy(desc(workflowTemplate.createdAt))
 
   return z.array(selectWorkflowTemplateSchema).parse(templates)
 }
@@ -170,7 +169,6 @@ export const getWorkflowStepTemplatesByTemplateId = async (
     .select()
     .from(workflowStepTemplate)
     .where(eq(workflowStepTemplate.workflowTemplateId, workflowTemplateId))
-    .orderBy(workflowStepTemplate.createdAt)
 
   return z.array(selectWorkflowStepTemplateSchema).parse(steps)
 }
@@ -250,7 +248,6 @@ export const getAccessibleWorkflowExecutions = async (
       eq(workflowExecution.workspaceId, workspaceId),
       eq(workflowExecution.userId, userId),
     ))
-    .orderBy(desc(workflowExecution.createdAt))
 
   return z.array(selectWorkflowExecutionSchema).parse(executions)
 }
@@ -307,34 +304,26 @@ export const createWorkflowStepExecution = async (
   return selectWorkflowStepExecutionSchema.parse(stepExecution)
 }
 
-export const createWorkflowStepExecutions = async (
+export const createWorkflowStepExecutionsFromSteps = async (
   trx: TxnOrClient,
-  stepExecutionsData: Array<{
-    workflowExecutionId: string
-    workflowStepTemplateId: string
-    name: string
-    type: StepType
-    parentStepId?: string
-    prevStepIds?: string[]
-    nextStepIds?: string[]
-    toolExecIds?: string[]
-    timeEstimate?: number
-    metadata?: any
-  }>,
+  workflowExecutionId: string,
+  stepTemplates: SelectWorkflowStepTemplate[],
 ): Promise<SelectWorkflowStepExecution[]> => {
-  if (stepExecutionsData.length === 0) return []
+  if (stepTemplates.length === 0) return []
 
-  const insertValues = stepExecutionsData.map((data) => ({
-    workflowExecutionId: data.workflowExecutionId,
-    workflowStepTemplateId: data.workflowStepTemplateId,
-    name: data.name,
-    type: data.type,
-    parentStepId: data.parentStepId,
-    prevStepIds: data.prevStepIds || [],
-    nextStepIds: data.nextStepIds || [],
-    toolExecIds: data.toolExecIds || [],
-    timeEstimate: data.timeEstimate || 0,
-    metadata: data.metadata || {},
+  const insertValues = stepTemplates.map((step) => ({
+    workflowExecutionId,
+    workflowStepTemplateId: step.id,
+    name: step.name,
+    type: step.type,
+    status: WorkflowStatus.DRAFT, // Default status from table schema
+    parentStepId: step.parentStepId,
+    prevStepIds: step.prevStepIds as string[] || [],
+    nextStepIds: step.nextStepIds as string[] || [],
+    toolExecIds: [], // updated when tools execute
+    timeEstimate: step.timeEstimate || 0,
+    metadata: step.metadata || {},
+    completedBy: null, // No one has completed it yet
   }))
 
   const stepExecutions = await trx
@@ -353,7 +342,6 @@ export const getWorkflowStepExecutionsByExecution = async (
     .select()
     .from(workflowStepExecution)
     .where(eq(workflowStepExecution.workflowExecutionId, workflowExecutionId))
-    .orderBy(workflowStepExecution.createdAt)
   
   return z.array(selectWorkflowStepExecutionSchema).parse(results)
 }

@@ -7,7 +7,6 @@ import {
   type SelectToolExecution,
   type InsertWorkflowTool,
   type InsertToolExecution,
-  type SelectWorkflowExecution,
   selectWorkflowToolSchema,
   selectToolExecutionSchema,
 } from "@/db/schema"
@@ -83,7 +82,6 @@ export const getAccessibleWorkflowTools = async (
       eq(workflowTool.workspaceId, workspaceId),
       eq(workflowTool.userId, userId),
     ))
-    .orderBy(desc(workflowTool.createdAt))
   
   return z.array(selectWorkflowToolSchema).parse(results)
 }
@@ -95,7 +93,6 @@ export const getAllWorkflowTools = async (
   const results = await trx
     .select()
     .from(workflowTool)
-    .orderBy(desc(workflowTool.createdAt))
   
   return z.array(selectWorkflowToolSchema).parse(results)
 }
@@ -110,7 +107,6 @@ export const getWorkflowToolsByIds = async (
     .select()
     .from(workflowTool)
     .where(inArray(workflowTool.id, toolIds))
-    .orderBy(desc(workflowTool.createdAt))
   
   return z.array(selectWorkflowToolSchema).parse(results)
 }
@@ -154,6 +150,8 @@ export const createToolExecution = async (
     workflowExecutionId: string
     status?: ToolExecutionStatus
     result?: any
+    startedAt?: Date
+    completedAt?: Date
   },
 ): Promise<SelectToolExecution> => {
   const [execution] = await trx
@@ -163,6 +161,8 @@ export const createToolExecution = async (
       workflowExecutionId: data.workflowExecutionId,
       status: data.status || ToolExecutionStatus.PENDING,
       result: data.result,
+      startedAt: data.startedAt,
+      completedAt: data.completedAt
     })
     .returning()
 
@@ -190,7 +190,6 @@ export const getToolExecutionsByWorkflowExecution = async (
     .select()
     .from(toolExecution)
     .where(eq(toolExecution.workflowExecutionId, workflowExecutionId))
-    .orderBy(desc(toolExecution.createdAt))
   
   return z.array(selectToolExecutionSchema).parse(results)
 }
@@ -203,7 +202,6 @@ export const getToolExecutionsByTool = async (
     .select()
     .from(toolExecution)
     .where(eq(toolExecution.workflowToolId, workflowToolId))
-    .orderBy(desc(toolExecution.createdAt))
   
   return z.array(selectToolExecutionSchema).parse(results)
 }
