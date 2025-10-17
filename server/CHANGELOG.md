@@ -1,3 +1,10 @@
+## [3.18.8](https://github.com/xynehq/xyne/compare/v3.18.7...v3.18.8) (2025-10-17)
+
+
+### Bug Fixes
+
+* chat chunk highlight ([#1122](https://github.com/xynehq/xyne/issues/1122)) ([c48f04a](https://github.com/xynehq/xyne/commit/c48f04ad92f2e8257cc3a1cf95e06741f699c9b2))
+
 ## [3.18.7](https://github.com/xynehq/xyne/compare/v3.18.6...v3.18.7) (2025-10-17)
 
 
