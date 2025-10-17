@@ -21,7 +21,7 @@ import {
   selectWorkflowStepExecutionSchema,
 } from "@/db/schema"
 import { StepType, WorkflowStatus } from "@/types/workflowTypes"
-import z from "zod"
+import { z } from "zod"
 
 // Workflow Template Operations
 export const createWorkflowTemplate = async (

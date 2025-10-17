@@ -11,7 +11,7 @@ import {
   selectToolExecutionSchema,
 } from "@/db/schema"
 import { ToolType, ToolExecutionStatus } from "@/types/workflowTypes"
-import z from "zod"
+import { z } from "zod"
 
 // Tool Operations
 export const createWorkflowTool = async (
@@ -38,6 +38,7 @@ export const createWorkflowTool = async (
   return selectWorkflowToolSchema.parse(tool)
 }
 
+// doesn't perform user validation
 export const getWorkflowToolById = async (
   trx: TxnOrClient,
   id: string,
@@ -159,7 +160,7 @@ export const createToolExecution = async (
     .values({
       workflowToolId: data.workflowToolId,
       workflowExecutionId: data.workflowExecutionId,
-      status: data.status || ToolExecutionStatus.PENDING,
+      status: data.status,
       result: data.result,
       startedAt: data.startedAt,
       completedAt: data.completedAt
