@@ -1,3 +1,10 @@
+# [3.19.0](https://github.com/xynehq/xyne/compare/v3.18.8...v3.19.0) (2025-10-17)
+
+
+### Features
+
+* **slack-channel-resumability:** Added functionality to pause and resume the channel ingestion-1 ([4219d8b](https://github.com/xynehq/xyne/commit/4219d8b1f57ca73100b2c710a955178e97fb1303))
+
 ## [3.18.8](https://github.com/xynehq/xyne/compare/v3.18.7...v3.18.8) (2025-10-17)
 
 
