@@ -1,3 +1,10 @@
+## [3.18.6](https://github.com/xynehq/xyne/compare/v3.18.5...v3.18.6) (2025-10-17)
+
+
+### Bug Fixes
+
+* **zip-upload:** increased limit for upload ([#1124](https://github.com/xynehq/xyne/issues/1124)) ([7f2bc16](https://github.com/xynehq/xyne/commit/7f2bc16146a334097cc1c3ede92b64b8516ea1aa))
+
 ## [3.18.5](https://github.com/xynehq/xyne/compare/v3.18.4...v3.18.5) (2025-10-17)
 
 
