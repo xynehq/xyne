@@ -105,24 +105,31 @@ services:
       - VESPA_ALLOW_WRITE_AS_USER=true
 
   xyne-db:
-    image: postgres
+    image: postgres:15-alpine
     container_name: xyne-db
     environment:
       POSTGRES_USER: xyne
       POSTGRES_PASSWORD: xyne
       POSTGRES_DB: xyne
-    ports:
-      - "${XYNE_DB_PORT:-5432}:5432"
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     volumes:
       - ../server/xyne-data:/var/lib/postgresql/data
+    ports:
+      - "${XYNE_DB_PORT:-5432}:5432"
     networks:
       - xyne
-    restart: always
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U xyne"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U xyne -d xyne"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
 
 networks:
   xyne:
