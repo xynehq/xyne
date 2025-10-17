@@ -2434,3 +2434,41 @@ Without these connections, I can only provide general assistance and cannot acce
 
 Ensure that any mention of dates or times is expressed in the user's local time zone. Always respect the user's time zone.
 I'm still here to help with general questions, explanations, and tasks that don't require access to your personal workspace data. How can I assist you today?`
+
+export const extractBestDocumentsPrompt = (
+  query: string,
+  context: string[],
+) => {
+  return `
+You are an expert retrieval assistant designed to identify and select the most relevant and useful documents from a retrieved set of contexts.
+
+### Objective
+Given a **user query** and a list of **retrieved document contexts**, analyze each context carefully and choose the ones that best answer or contribute directly to the query. The goal is to keep only the most relevant and non-redundant documents that truly add value for answering the query.
+
+### Instructions
+1. **Comprehend the query** — understand its intent, entities, and desired information type.
+2. **Evaluate each context** — determine how directly and strongly it relates to the query.
+3. **Eliminate redundancy** — prefer diversity and complementary information over repetition.
+4. **Prioritize factual completeness and semantic relevance** — select documents that are specific, informative, and contextually aligned with the query.
+5. **Output** — Return a filtered subset of the most relevant contexts.
+
+### Input
+- Query: "${query}"
+- Retrieved Contexts:
+${context.map((c, i) => `  [${i + 1}] ${c}`).join("\n")}
+
+
+### Output Format
+
+Return **only** a JSON array of the most relevant document indexes, ordered by relevance.
+
+Wrap the output in <indexes> tags as shown below:
+
+<indexes>
+[2, 5, 7]
+<indexes>
+
+Now, return the array of indexes for the best matching documents.
+
+  `
+}
