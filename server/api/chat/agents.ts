@@ -140,6 +140,7 @@ import {
   type RunState as JAFRunState,
   type RunResult as JAFRunResult,
   type TraceEvent as JAFTraceEvent,
+  type TraceEvent,
 } from "@xynehq/jaf"
 // Replace LiteLLM provider with Xyne-backed JAF provider
 import { makeXyneJAFProvider } from "./jaf-provider"
@@ -1826,6 +1827,20 @@ export const MessageWithToolsApi = async (c: Context) => {
         for await (const evt of runStream<JAFAdapterCtx, string>(
           runState,
           runCfg,
+          async (event: TraceEvent) => {
+            if (event.type !== "before_tool_execution") return
+
+            const { args = {} } = event.data ?? {}
+            const docIds =
+              gatheredFragments?.map((v) => v.id).filter(Boolean) ?? []
+
+            // to exclude docs which already retrieved in prev iteration
+            const modifiedArgs = docIds.length
+              ? { ...args, excludedIds: docIds }
+              : args
+
+            return modifiedArgs
+          },
         )) {
           if (stream.closed) {
             wasStreamClosedPrematurely = true
@@ -1944,7 +1959,7 @@ export const MessageWithToolsApi = async (c: Context) => {
                     message,
                     contextStrings,
                     {
-                      modelId: config.defaultFastModel,
+                      modelId: config.defaultBestModel,
                       json: false,
                       stream: false,
                     },
