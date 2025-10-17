@@ -1,3 +1,10 @@
+## [3.18.5](https://github.com/xynehq/xyne/compare/v3.18.4...v3.18.5) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-152 attachment upload removal when chat is kb based ([#1069](https://github.com/xynehq/xyne/issues/1069)) ([3c84691](https://github.com/xynehq/xyne/commit/3c84691a59a9f6742e578401078843ebc10071b2))
+
 ## [3.18.4](https://github.com/xynehq/xyne/compare/v3.18.3...v3.18.4) (2025-10-17)
 
 
