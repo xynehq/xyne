@@ -423,6 +423,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       "citations",
     )
     const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
+    const fileAbortControllers = useRef<Map<string, AbortController>>(new Map())
 
     // Unified function to enhance Google Sheets items with dummy "whole sheet" options
     const enhanceGoogleSheetsResults = useCallback(
@@ -644,13 +645,15 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         (!selectedAgent || (selectedAgent && selectedAgent.isRagOn)))
 
     // Check if document is ready for chat based on upload status
-    const isDocumentReady = !uploadStatus || uploadStatus === UploadStatus.COMPLETED
-    
+    const isDocumentReady =
+      !uploadStatus || uploadStatus === UploadStatus.COMPLETED
+
     // Determine if send should be disabled
-    const isSendDisabled = isStreaming || 
-                          retryIsStreaming || 
-                          uploadingFilesCount > 0 ||
-                          !isDocumentReady
+    const isSendDisabled =
+      isStreaming ||
+      retryIsStreaming ||
+      uploadingFilesCount > 0 ||
+      !isDocumentReady
 
     // Helper function to get tooltip content for disabled send button
     const getSendButtonTooltipContent = (): string | undefined => {
@@ -831,6 +834,10 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
         setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
+       
+        files.forEach((file) => {
+          fileAbortControllers.current.set(file.id, new AbortController())
+        })
 
         // Set all files to uploading state
         setSelectedFiles((prev) =>
@@ -842,6 +849,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
         )
 
         const uploadPromises = files.map(async (selectedFile) => {
+          const abortController = fileAbortControllers.current.get(
+            selectedFile.id,
+          )
           try {
             const formData = new FormData()
             formData.append("attachment", selectedFile.file)
@@ -850,6 +860,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               {
                 method: "POST",
                 body: formData,
+                signal: abortController?.signal,
               },
             )
 
@@ -865,7 +876,11 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               setSelectedFiles((prev) =>
                 prev.map((f) =>
                   f.id === selectedFile.id
-                    ? { ...f, uploading: false, metadata }
+                    ? {
+                        ...f,
+                        uploading: false,
+                        metadata,
+                      }
                     : f,
                 ),
               )
@@ -874,12 +889,30 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               throw new Error("No document ID returned from upload")
             }
           } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") {
+              setSelectedFiles((prev) =>
+                prev.map((f) =>
+                  f.id === selectedFile.id
+                    ? {
+                        ...f,
+                        uploading: false,
+                        uploadError: errorMessage,
+                      }
+                    : f,
+                ),
+              )
+              return null
+            }
             const errorMessage =
               error instanceof Error ? error.message : "Upload failed"
             setSelectedFiles((prev) =>
               prev.map((f) =>
                 f.id === selectedFile.id
-                  ? { ...f, uploading: false, uploadError: errorMessage }
+                  ? {
+                      ...f,
+                      uploading: false,
+                      uploadError: errorMessage,
+                    }
                   : f,
               ),
             )
@@ -889,7 +922,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
             })
             return null
           } finally {
-            setUploadingFilesCount((prev) => prev - 1)
+            setUploadingFilesCount((prev) => Math.max(prev - 1, 0))
           }
         })
 
@@ -977,37 +1010,45 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return ext || "file"
     }
 
-    const removeFile = useCallback(async (id: string) => {
-      const fileToRemove = selectedFiles.find((f) => f.id === id)
-      
-      // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
-      if (fileToRemove?.metadata?.fileId) {
-        try {
-          const response = await api.files.delete.$post({
-            json: {
-              attachment: fileToRemove.metadata
+    const removeFile = useCallback(
+      async (id: string) => {
+        const fileToRemove = selectedFiles.find((f) => f.id === id)
+        const abortController = fileAbortControllers.current.get(id)
+        if (fileToRemove?.uploading && abortController) {
+          abortController.abort()
+          fileAbortControllers.current.delete(id)
+        }
+
+        // If the file has metadata with fileId (meaning it's already uploaded), delete it from the server
+        if (fileToRemove?.metadata?.fileId) {
+          try {
+            const response = await api.files.delete.$post({
+              json: {
+                attachment: fileToRemove.metadata,
+              },
+            })
+
+            if (!response.ok) {
+              const errorText = await response.text()
+              console.error(`Failed to delete attachment: ${errorText}`)
+              // Still remove from UI even if server deletion fails
             }
-          })
-          
-          if (!response.ok) {
-            const errorText = await response.text()
-            console.error(`Failed to delete attachment: ${errorText}`)
+          } catch (error) {
+            console.error("Error deleting attachment:", error)
             // Still remove from UI even if server deletion fails
           }
-        } catch (error) {
-          console.error('Error deleting attachment:', error)
-          // Still remove from UI even if server deletion fails
         }
-      }
-      
-      // Remove from UI
-      setSelectedFiles((prev) => {
-        if (fileToRemove?.preview) {
-          URL.revokeObjectURL(fileToRemove.preview)
-        }
-        return prev.filter((f) => f.id !== id)
-      })
-    }, [selectedFiles])
+
+        // Remove from UI
+        setSelectedFiles((prev) => {
+          if (fileToRemove?.preview) {
+            URL.revokeObjectURL(fileToRemove.preview)
+          }
+          return prev.filter((f) => f.id !== id)
+        })
+      },
+      [selectedFiles],
+    )
 
     const { handleFileSelect, handleFileChange } = createFileSelectionHandlers(
       fileInputRef,
@@ -2007,157 +2048,159 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       return () => document.removeEventListener("mousedown", handleOutsideClick)
     }, [showReferenceBox])
 
-    const handleSendMessage = useCallback(async (isFollowUp: boolean = false) => {
-      const activeSourceIds = Object.entries(selectedSources)
-        .filter(([, isSelected]) => isSelected)
-        .map(([id]) => id)
+    const handleSendMessage = useCallback(
+      async (isFollowUp: boolean = false) => {
+        const activeSourceIds = Object.entries(selectedSources)
+          .filter(([, isSelected]) => isSelected)
+          .map(([id]) => id)
 
-      let htmlMessage = inputRef.current?.innerHTML || ""
-      htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
-      htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "")
-      htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
+        let htmlMessage = inputRef.current?.innerHTML || ""
+        htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
+        htmlMessage = htmlMessage.replace(/(<br\s*\/?>\s*)+$/gi, "")
+        htmlMessage = htmlMessage.replace(/(&nbsp;|\s)+$/g, "")
 
-      let toolsListToSend: ToolsListItem[] | undefined = undefined
+        let toolsListToSend: ToolsListItem[] | undefined = undefined
 
-      // Build toolsList from all selected connectors
-      if (selectedConnectorIds.size > 0) {
-        const toolsListArray: ToolsListItem[] = []
+        // Build toolsList from all selected connectors
+        if (selectedConnectorIds.size > 0) {
+          const toolsListArray: ToolsListItem[] = []
 
-        // Include tools from all selected connectors
-        selectedConnectorIds.forEach((connectorId) => {
-          const toolsSet = selectedConnectorTools[connectorId]
+          // Include tools from all selected connectors
+          selectedConnectorIds.forEach((connectorId) => {
+            const toolsSet = selectedConnectorTools[connectorId]
 
-          if (toolsSet && toolsSet.size > 0) {
-            // Find the connector to get its internal connectorId
-            const connector = allConnectors.find((c) => c.id === connectorId)
-            if (connector) {
-              const toolsArray = Array.from(toolsSet)
-              toolsListArray.push({
-                connectorId: connector.connectorId.toString(), // Use internal DB id
-                tools: toolsArray,
-              })
-            }
-          }
-        })
-
-        // Only send toolsList if we actually have tools selected
-        if (
-          toolsListArray.length > 0 &&
-          toolsListArray.some((item) => item.tools.length > 0)
-        ) {
-          toolsListToSend = toolsListArray
-        }
-      }
-
-      // Handle Attachments Metadata
-      let attachmentsMetadata: AttachmentMetadata[] = []
-      if (selectedFiles.length > 0) {
-        if (uploadingFilesCount > 0) {
-          await new Promise<void>((resolve) => {
-            uploadCompleteResolver.current = resolve
-            if(uploadingFilesCount==0){
-              resolve();
-              uploadCompleteResolver.current=null
+            if (toolsSet && toolsSet.size > 0) {
+              // Find the connector to get its internal connectorId
+              const connector = allConnectors.find((c) => c.id === connectorId)
+              if (connector) {
+                const toolsArray = Array.from(toolsSet)
+                toolsListArray.push({
+                  connectorId: connector.connectorId.toString(), // Use internal DB id
+                  tools: toolsArray,
+                })
+              }
             }
           })
 
-        }
-        const alreadyUploadedMetadata = selectedFiles
-          .map((f) => f.metadata)
-          .filter((m): m is AttachmentMetadata => !!m)
-
-        attachmentsMetadata = alreadyUploadedMetadata
-      }
-
-      // Replace data-doc-id and data-reference-id with mailId
-      const tempDiv = document.createElement("div")
-      tempDiv.innerHTML = htmlMessage
-      const pills = tempDiv.querySelectorAll("a.reference-pill")
-
-      pills.forEach((pill) => {
-        const mailId = pill.getAttribute("data-mail-id")
-        const userMap = pill.getAttribute("user-map")
-        const threadId = pill.getAttribute("data-thread-id")
-        const docId =
-          pill.getAttribute("data-doc-id") ||
-          pill.getAttribute("data-reference-id")
-        if (userMap) {
-          try {
-            const parsedUserMap = JSON.parse(userMap)
-            if (user?.email && parsedUserMap[user.email]) {
-              pill.setAttribute(
-                "href",
-                `https://mail.google.com/mail/u/0/#inbox/${parsedUserMap[user.email]}`,
-              )
-            } else {
-              console.warn(
-                `No mapping found for user email: ${user?.email} in userMap.`,
-              )
-            }
-          } catch (error) {
-            console.error("Failed to parse userMap:", error)
+          // Only send toolsList if we actually have tools selected
+          if (
+            toolsListArray.length > 0 &&
+            toolsListArray.some((item) => item.tools.length > 0)
+          ) {
+            toolsListToSend = toolsListArray
           }
         }
 
-        if (mailId) {
-          pill.setAttribute("data-doc-id", mailId)
-          pill.setAttribute("data-reference-id", mailId)
-          pill.setAttribute("data-thread-id", threadId || "")
-        } else {
-          console.warn(
-            `No mailId found for pill with docId: ${docId}. Skipping replacement.`,
-          )
+        // Handle Attachments Metadata
+        let attachmentsMetadata: AttachmentMetadata[] = []
+        if (selectedFiles.length > 0) {
+          if (uploadingFilesCount > 0) {
+            await new Promise<void>((resolve) => {
+              uploadCompleteResolver.current = resolve
+              if (uploadingFilesCount == 0) {
+                resolve()
+                uploadCompleteResolver.current = null
+              }
+            })
+          }
+          const alreadyUploadedMetadata = selectedFiles
+            .map((f) => f.metadata)
+            .filter((m): m is AttachmentMetadata => !!m)
+
+          attachmentsMetadata = alreadyUploadedMetadata
         }
-      })
 
-      htmlMessage = tempDiv.innerHTML
+        // Replace data-doc-id and data-reference-id with mailId
+        const tempDiv = document.createElement("div")
+        tempDiv.innerHTML = htmlMessage
+        const pills = tempDiv.querySelectorAll("a.reference-pill")
 
-      // Prepare model configuration with capability flags
-      const modelConfig = {
-        model: selectedModel,
-        reasoning: selectedCapability === "reasoning",
-        websearch: selectedCapability === "websearch",
-        deepResearch: selectedCapability === "deepResearch",
-      }
+        pills.forEach((pill) => {
+          const mailId = pill.getAttribute("data-mail-id")
+          const userMap = pill.getAttribute("user-map")
+          const threadId = pill.getAttribute("data-thread-id")
+          const docId =
+            pill.getAttribute("data-doc-id") ||
+            pill.getAttribute("data-reference-id")
+          if (userMap) {
+            try {
+              const parsedUserMap = JSON.parse(userMap)
+              if (user?.email && parsedUserMap[user.email]) {
+                pill.setAttribute(
+                  "href",
+                  `https://mail.google.com/mail/u/0/#inbox/${parsedUserMap[user.email]}`,
+                )
+              } else {
+                console.warn(
+                  `No mapping found for user email: ${user?.email} in userMap.`,
+                )
+              }
+            } catch (error) {
+              console.error("Failed to parse userMap:", error)
+            }
+          }
 
-      handleSend(
-        htmlMessage,
-        attachmentsMetadata,
-        activeSourceIds.length > 0 ? activeSourceIds : undefined,
+          if (mailId) {
+            pill.setAttribute("data-doc-id", mailId)
+            pill.setAttribute("data-reference-id", mailId)
+            pill.setAttribute("data-thread-id", threadId || "")
+          } else {
+            console.warn(
+              `No mailId found for pill with docId: ${docId}. Skipping replacement.`,
+            )
+          }
+        })
+
+        htmlMessage = tempDiv.innerHTML
+
+        // Prepare model configuration with capability flags
+        const modelConfig = {
+          model: selectedModel,
+          reasoning: selectedCapability === "reasoning",
+          websearch: selectedCapability === "websearch",
+          deepResearch: selectedCapability === "deepResearch",
+        }
+
+        handleSend(
+          htmlMessage,
+          attachmentsMetadata,
+          activeSourceIds.length > 0 ? activeSourceIds : undefined,
+          persistedAgentId,
+          toolsListToSend,
+          JSON.stringify(modelConfig), // Send model config as JSON string
+          isFollowUp,
+        )
+
+        // Clear the input and attached files after sending
+        if (inputRef.current) {
+          inputRef.current.innerHTML = ""
+        }
+        setQuery("")
+
+        // Cleanup preview URLs before clearing files
+        const previewUrls = selectedFiles
+          .map((f) => f.preview)
+          .filter(Boolean) as string[]
+        cleanupPreviewUrls(previewUrls)
+        setSelectedFiles([])
+      },
+      [
+        selectedSources,
+        selectedConnectorIds,
+        selectedConnectorTools,
+        allConnectors,
+        selectedFiles,
         persistedAgentId,
-        toolsListToSend,
-        JSON.stringify(modelConfig), // Send model config as JSON string
-        isFollowUp,
-      )
-
-      // Clear the input and attached files after sending
-      if (inputRef.current) {
-        inputRef.current.innerHTML = ""
-      }
-      setQuery("")
-
-      // Cleanup preview URLs before clearing files
-      const previewUrls = selectedFiles
-        .map((f) => f.preview)
-        .filter(Boolean) as string[]
-      cleanupPreviewUrls(previewUrls)
-      setSelectedFiles([])
-    }, [
-      selectedSources,
-      selectedConnectorIds,
-      selectedConnectorTools,
-      allConnectors,
-      selectedFiles,
-      persistedAgentId,
-      selectedModel,
-      selectedCapability,
-      handleSend,
-      uploadFiles,
-      user,
-      setQuery,
-      setSelectedFiles,
-      cleanupPreviewUrls,
-    ])
+        selectedModel,
+        selectedCapability,
+        handleSend,
+        uploadFiles,
+        user,
+        setQuery,
+        setSelectedFiles,
+        cleanupPreviewUrls,
+      ],
+    )
 
     const handleSourceSelectionChange = (
       sourceId: string,
@@ -2862,7 +2905,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                         <button
                           onClick={() => removeFile(selectedFile.id)}
                           className="absolute top-1 right-1 bg-black bg-opacity-60 text-white rounded-full p-1 hover:bg-opacity-80 transition-opacity"
-                          disabled={selectedFile.uploading}
                         >
                           <X size={10} />
                         </button>
@@ -2918,7 +2960,6 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                           <button
                             onClick={() => removeFile(selectedFile.id)}
                             className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                            disabled={selectedFile.uploading}
                           >
                             <X size={12} />
                           </button>
@@ -3939,7 +3980,9 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
               </button>
             ) : (
               (() => {
-                const tooltipContent = isSendDisabled ? getSendButtonTooltipContent() : undefined;
+                const tooltipContent = isSendDisabled
+                  ? getSendButtonTooltipContent()
+                  : undefined
                 const button = (
                   <button
                     disabled={isSendDisabled}
@@ -3955,9 +3998,13 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
                       />
                     )}
                   </button>
-                );
+                )
 
-                return tooltipContent ? <SmartTooltip content={tooltipContent}>{button}</SmartTooltip> : button;
+                return tooltipContent ? (
+                  <SmartTooltip content={tooltipContent}>{button}</SmartTooltip>
+                ) : (
+                  button
+                )
               })()
             )}
           </div>
