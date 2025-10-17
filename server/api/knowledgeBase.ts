@@ -106,7 +106,7 @@ const { JwtPayloadKey } = config
 // Storage configuration for Knowledge Base feature files
 const KB_STORAGE_ROOT = join(process.cwd(), "storage", "kb_files")
 const MAX_FILE_SIZE = 100 // 100MB max file size
-const MAX_ZIP_FILE_SIZE = 25 // 25MB max zip file size
+const MAX_ZIP_FILE_SIZE = 35 // 35MB max zip file size
 
 // Initialize storage directory for Knowledge Base files
 ;(async () => {
@@ -524,7 +524,6 @@ export const GetCollectionNameForSharedAgentApi = async (c: Context) => {
     agentExternalId,
     user.workspaceId,
   )
-  
 
   if (!agent) {
     throw new HTTPException(404, { message: "Agent not found" })
@@ -1212,7 +1211,7 @@ export const UploadFilesApi = async (c: Context) => {
       const file = files[i]
       const ext = extname(file.name).toLowerCase()
 
-      if (ext === '.zip') {
+      if (ext === ".zip") {
         // Check zip file size before extraction
         const zipSizeMB = Math.round(file.size / 1024 / 1024)
         if (file.size > MAX_ZIP_FILE_SIZE * 1024 * 1024) {
@@ -1220,7 +1219,7 @@ export const UploadFilesApi = async (c: Context) => {
             `Zip file too large: ${file.name} (${zipSizeMB}MB). Maximum is ${MAX_ZIP_FILE_SIZE}MB`,
           )
           throw new HTTPException(400, {
-            message: `Zip file too large (${zipSizeMB}MB). Maximum size is ${MAX_ZIP_FILE_SIZE}MB`
+            message: `Zip file too large (${zipSizeMB}MB). Maximum size is ${MAX_ZIP_FILE_SIZE}MB`,
           })
         }
 
@@ -1287,7 +1286,7 @@ export const UploadFilesApi = async (c: Context) => {
     paths = extractedPaths
 
     // Validate file count - allow up to 3000 files for zip extractions
-    const maxFilesLimit = 3000
+    const maxFilesLimit = 10000
 
     if (files.length > maxFilesLimit) {
       throw new HTTPException(400, {
@@ -1332,7 +1331,7 @@ export const UploadFilesApi = async (c: Context) => {
       let storagePath = ""
       try {
         // Validate file size
-        try{
+        try {
           checkFileSize(file.size, MAX_FILE_SIZE)
         } catch (error) {
           uploadResults.push({
@@ -1742,7 +1741,7 @@ export const DeleteItemApi = async (c: Context) => {
               } catch (error) {
                 loggerWithChild({ email: userEmail }).error(
                   `Failed to delete file from Vespa: ${id}`,
-                  { error: getErrorMessage(error) }
+                  { error: getErrorMessage(error) },
                 )
               }
             }
@@ -1937,7 +1936,11 @@ export const GetChunkContentApi = async (c: Context) => {
     const chunkContent = resp.fields.chunks[index]
     let pageIndex: number | undefined
 
-    const isSheetFile = getFileType({ type: resp.fields.mimeType || "", name: resp.fields.fileName || "" }) === FileType.SPREADSHEET
+    const isSheetFile =
+      getFileType({
+        type: resp.fields.mimeType || "",
+        name: resp.fields.fileName || "",
+      }) === FileType.SPREADSHEET
     if (isSheetFile) {
       const sheetIndexMatch = docId.match(/_sheet_(\d+)$/)
       if (sheetIndexMatch) {
@@ -1952,7 +1955,7 @@ export const GetChunkContentApi = async (c: Context) => {
           ? pageNums[0]
           : 0
     }
-    
+
     if (!chunkContent) {
       throw new HTTPException(404, { message: "Chunk content not found" })
     }
