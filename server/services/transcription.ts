@@ -43,7 +43,7 @@ class TranscriptionService {
       Logger.info("Loading Whisper model...")
       this.transcriberPromise = pipeline(
         "automatic-speech-recognition",
-        "Xenova/whisper-tiny.en",
+        "Xenova/whisper-small", // Multilingual model that supports Hindi + Hinglish
         {
           quantized: true,
         },
@@ -134,7 +134,8 @@ class TranscriptionService {
         session.transcriber = await this.getTranscriber()
       }
 
-      // Transcribe
+      // Transcribe with multilingual support
+      // Note: whisper-small is multilingual by default and will auto-detect Hindi/English/Hinglish
       const result = await session.transcriber(concatenated, {
         chunk_length_s: 30,
         stride_length_s: 5,
