@@ -832,9 +832,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const uploadFiles = useCallback(
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
-        if (isKnowledgeBaseChat) {
-          return []
-        }
+       
         setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
 
@@ -917,9 +915,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [uploadingFilesCount])
     const processFiles = useCallback(
       (files: FileList | File[]) => {
-        if (isKnowledgeBaseChat) {
-          return
-        }
+       
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
           toast.error({
