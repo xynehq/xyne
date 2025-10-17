@@ -106,7 +106,7 @@ const { JwtPayloadKey } = config
 // Storage configuration for Knowledge Base feature files
 const KB_STORAGE_ROOT = join(process.cwd(), "storage", "kb_files")
 const MAX_FILE_SIZE = 100 // 100MB max file size
-const MAX_ZIP_FILE_SIZE = 35 // 25MB max zip file size
+const MAX_ZIP_FILE_SIZE = 35 // 35MB max zip file size
 
 // Initialize storage directory for Knowledge Base files
 ;(async () => {
