@@ -36,7 +36,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-    
+
   useEffect(() => {
     if (!citation || !isOpen) {
       setDocumentContent(null)
@@ -57,9 +57,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
             await api.cl[citation.clId].files[citation.itemId].content.$get()
 
           if (!response.ok) {
-            throw new Error(
-              `Failed to fetch document: ${response.statusText}`,
-            )
+            throw new Error(`Failed to fetch document: ${response.statusText}`)
           }
 
           const blob = await response.blob()
@@ -71,9 +69,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
           })
 
           if (!response.ok) {
-            throw new Error(
-              `Failed to fetch document: ${response.statusText}`,
-            )
+            throw new Error(`Failed to fetch document: ${response.statusText}`)
           }
 
           const blob = await response.blob()
@@ -83,9 +79,7 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
         }
       } catch (err) {
         console.error("Error loading document:", err)
-        setError(
-          err instanceof Error ? err.message : "Failed to load document",
-        )
+        setError(err instanceof Error ? err.message : "Failed to load document")
       } finally {
         setLoading(false)
       }
@@ -94,21 +88,33 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     loadDocument()
   }, [citation, isOpen])
 
-  const { highlightText, clearHighlights, scrollToMatch } =
-      useScopedFind(containerRef, {
-        documentId: citation?.itemId,
-      })
+  const { highlightText, clearHighlights, scrollToMatch } = useScopedFind(
+    containerRef,
+    {
+      documentId: citation?.itemId,
+    },
+  )
 
   // Expose the highlight functions via the document operations ref
   useEffect(() => {
     if (documentOperationsRef?.current) {
-      documentOperationsRef.current.highlightText = async (text: string, chunkIndex: number, pageIndex?: number, waitForTextLayer: boolean = false) => {
+      documentOperationsRef.current.highlightText = async (
+        text: string,
+        chunkIndex: number,
+        pageIndex?: number,
+        waitForTextLayer: boolean = false,
+      ) => {
         if (!containerRef.current) {
           return false
         }
 
         try {
-          const success = await highlightText(text, chunkIndex, pageIndex, waitForTextLayer)
+          const success = await highlightText(
+            text,
+            chunkIndex,
+            pageIndex,
+            waitForTextLayer,
+          )
           return success
         } catch (error) {
           console.error("Error calling highlightText:", error)
@@ -129,7 +135,10 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     if (mimeType === "application/pdf") {
       return "pdf"
     }
-    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    if (
+      mimeType ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ) {
       return "docx"
     }
     if (mimeType === "application/msword") {
@@ -144,7 +153,10 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     if (mimeType === "application/vnd.ms-excel") {
       return "xls"
     }
-    if (mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+    if (
+      mimeType ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ) {
       return "xlsx"
     }
     if (mimeType === "text/csv") {
@@ -166,18 +178,18 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
     const file = new File([documentContent], fileName, {
       type: documentContent.type || getDefaultMimeType(extension),
     })
-    
+
     switch (extension) {
       case "pdf":
         return (
           <div ref={containerRef} data-container-ref="true" className="h-full">
-            <PdfViewer 
-              key={citation.docId} 
-              source={file} 
-              className="h-full" 
-              style={{ height: "100%", overflow: "auto" }} 
-              scale={1.0} 
-              showNavigation={true} 
+            <PdfViewer
+              key={citation.docId}
+              source={file}
+              className="h-full"
+              style={{ height: "100%", overflow: "auto" }}
+              scale={1.0}
+              showNavigation={true}
               displayMode="continuous"
               documentOperationsRef={documentOperationsRef}
             />
@@ -221,44 +233,43 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
             />
           </div>
         )
-        case "xlsx":
-        case "xls":
-          return(
-            <div ref={containerRef} data-container-ref="true" className="h-full">
-              <ExcelViewer
-                key={citation.docId}
-                source={file}
-                className="h-full"
-                style={{ overflow: "visible" }}
-                documentOperationsRef={documentOperationsRef}
-              />
-            </div>
-          )
-          case "csv":
-          case "tsv":
-            return(
-              <div ref={containerRef} data-container-ref="true" className="h-full">
-                <CsvViewer
-                  key={citation.docId}
-                  source={file}
-                  className="h-full"
-                  style={{ overflow: "visible" }}
-                />
-              </div>
-            )
-            case "txt":
-            case "text":
-              return(
-                <div ref={containerRef} data-container-ref="true" className="h-full">
-                  <TxtViewer
-                    key={citation.docId}
-                    source={file}
-                    className="h-full"
-                    style={{ overflow: "visible" }}
-                  />
-                </div>
-              )
-            
+      case "xlsx":
+      case "xls":
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <ExcelViewer
+              key={citation.docId}
+              source={file}
+              className="h-full"
+              style={{ overflow: "visible" }}
+              documentOperationsRef={documentOperationsRef}
+            />
+          </div>
+        )
+      case "csv":
+      case "tsv":
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <CsvViewer
+              key={citation.docId}
+              source={file}
+              className="h-full"
+              style={{ overflow: "visible" }}
+            />
+          </div>
+        )
+      case "txt":
+      case "text":
+        return (
+          <div ref={containerRef} data-container-ref="true" className="h-full">
+            <TxtViewer
+              key={citation.docId}
+              source={file}
+              className="h-full"
+              style={{ overflow: "visible" }}
+            />
+          </div>
+        )
 
       default:
         // For other file types, try to display as text or show a generic message
@@ -304,7 +315,13 @@ const CitationPreview: React.FC<CitationPreviewProps> = ({
 
   // Notify parent when document is loaded and ready
   useEffect(() => {
-    if (!loading && !error && documentContent && onDocumentLoaded && viewerElement) {
+    if (
+      !loading &&
+      !error &&
+      documentContent &&
+      onDocumentLoaded &&
+      viewerElement
+    ) {
       onDocumentLoaded()
     }
   }, [loading, error, documentContent, onDocumentLoaded, viewerElement])

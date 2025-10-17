@@ -36,15 +36,16 @@ export const processMessage = (
       return `![image-citation:${citationKey}](image-citation:${citationKey})`
     },
   )
-  text = text.replace(
-    textToKbItemCitationIndex,
-    (_, citationKey) => {
-      const index = citationMap ? citationMap[parseInt(citationKey.split("_")[0], 10)] : parseInt(citationKey.split("_")[0], 10)
-      const chunkIndex = parseInt(citationKey.split("_")[1], 10)
-      const url = citationUrls[index]
-      return typeof index === "number" && typeof chunkIndex === "number" && url ? `[${index + 1}_${chunkIndex}](${url})` : ""
-    },
-  )
+  text = text.replace(textToKbItemCitationIndex, (_, citationKey) => {
+    const index = citationMap
+      ? citationMap[parseInt(citationKey.split("_")[0], 10)]
+      : parseInt(citationKey.split("_")[0], 10)
+    const chunkIndex = parseInt(citationKey.split("_")[1], 10)
+    const url = citationUrls[index]
+    return typeof index === "number" && typeof chunkIndex === "number" && url
+      ? `[${index + 1}_${chunkIndex}](${url})`
+      : ""
+  })
 
   if (citationMap) {
     return text.replace(textToCitationIndex, (match, num) => {

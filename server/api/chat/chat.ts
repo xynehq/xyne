@@ -475,11 +475,12 @@ const checkAndYieldCitations = async function* (
   while (
     (match = textToCitationIndex.exec(text)) !== null ||
     (imgMatch = textToImageCitationIndex.exec(text)) !== null ||
-    (isMsgWithKbItems && (kbMatch = textToKbItemCitationIndex.exec(text)) !== null)
+    (isMsgWithKbItems &&
+      (kbMatch = textToKbItemCitationIndex.exec(text)) !== null)
   ) {
     if (match || kbMatch) {
       let citationIndex = 0
-      if(match) {
+      if (match) {
         citationIndex = parseInt(match[1], 10)
       } else if (kbMatch) {
         citationIndex = parseInt(kbMatch[1].split("_")[0], 10)
@@ -505,7 +506,7 @@ const checkAndYieldCitations = async function* (
           yieldedCitations.add(citationIndex)
         } else {
           loggerWithChild({ email: email }).error(
-            `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`
+            `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`,
           )
         }
       }
@@ -554,7 +555,7 @@ const checkAndYieldCitations = async function* (
             yieldedImageCitations.add(citationIndex)
           } else {
             loggerWithChild({ email: email }).error(
-              `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`
+              `Found a citation index but could not find it in the search result: ${citationIndex}, ${results.length}`,
             )
             continue
           }
@@ -1387,7 +1388,7 @@ async function* generateIterativeTimeFilterAndQueryRewrite(
         dataSourceIds: agentSpecificDataSourceIds,
         channelIds: channelIds,
         collectionSelections: agentSpecificCollectionSelections,
-        selectedItem: selectedItem,//agentIntegration format (app_integrations format)
+        selectedItem: selectedItem, //agentIntegration format (app_integrations format)
       },
     )
   }
@@ -2931,7 +2932,14 @@ async function* processResultsForMetadata(
     "Document chunk size",
     `full_context maxed to ${chunksCount}`,
   )
-  const context = await buildContext(items, chunksCount, userMetadata, 0, input, isMsgWithKbItems)
+  const context = await buildContext(
+    items,
+    chunksCount,
+    userMetadata,
+    0,
+    input,
+    isMsgWithKbItems,
+  )
   const { imageFileNames } = extractImageFileNames(context, items)
   const streamOptions = {
     stream: true,
@@ -3307,7 +3315,14 @@ async function* generateMetadataQueryAnswer(
 
       pageSpan?.setAttribute(
         "context",
-        await buildContext(items, 20, userMetadata, 0, input, agentSpecificCollectionSelections.length > 0),
+        await buildContext(
+          items,
+          20,
+          userMetadata,
+          0,
+          input,
+          agentSpecificCollectionSelections.length > 0,
+        ),
       )
       if (!items.length) {
         loggerWithChild({ email: email }).info(
@@ -3496,7 +3511,14 @@ async function* generateMetadataQueryAnswer(
 
     span?.setAttribute(
       "context",
-      await buildContext(items, 20, userMetadata, 0, input, agentSpecificCollectionSelections.length > 0),
+      await buildContext(
+        items,
+        20,
+        userMetadata,
+        0,
+        input,
+        agentSpecificCollectionSelections.length > 0,
+      ),
     )
     span?.end()
     loggerWithChild({ email: email }).info(
@@ -3646,7 +3668,14 @@ async function* generateMetadataQueryAnswer(
       )
       iterationSpan?.setAttribute(
         `context`,
-        await buildContext(items, 20, userMetadata, 0, input, agentSpecificCollectionSelections.length > 0),
+        await buildContext(
+          items,
+          20,
+          userMetadata,
+          0,
+          input,
+          agentSpecificCollectionSelections.length > 0,
+        ),
       )
       iterationSpan?.end()
 
@@ -7005,14 +7034,18 @@ export const EnhancedMessageFeedbackApi = async (c: Context) => {
     // Debug logging
     loggerWithChild({ email: email }).info(
       `Enhanced feedback request received
-      ${JSON.stringify({
-        messageId,
-        type,
-        shareChat,
-        customFeedback: !!customFeedback,
-        selectedOptionsCount: selectedOptions?.length || 0,
-      }, null, 2)}
-      },`
+      ${JSON.stringify(
+        {
+          messageId,
+          type,
+          shareChat,
+          customFeedback: !!customFeedback,
+          selectedOptionsCount: selectedOptions?.length || 0,
+        },
+        null,
+        2,
+      )}
+      },`,
     )
 
     const message = await getMessageByExternalId(db, messageId)

@@ -1284,9 +1284,9 @@ export const baselineRAGJsonStream = (
           retrievedCtx,
         )
       } else {
-          params.systemPrompt = baselineFilesContextPromptJson(
-            userCtx,
-            indexToCitation(retrievedCtx),
+        params.systemPrompt = baselineFilesContextPromptJson(
+          userCtx,
+          indexToCitation(retrievedCtx),
         )
       }
     }

@@ -105,7 +105,10 @@ import {
   processMessage,
   createTableComponents,
 } from "@/utils/chatUtils.tsx"
-import { useDocumentOperations, DocumentOperationsProvider } from "@/contexts/DocumentOperationsContext"
+import {
+  useDocumentOperations,
+  DocumentOperationsProvider,
+} from "@/contexts/DocumentOperationsContext"
 
 export const THINKING_PLACEHOLDER = "Thinking"
 
@@ -410,7 +413,9 @@ export const ChatPage = ({
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(
     null,
   )
-  const [selectedChunkIndex, setSelectedChunkIndex] = useState<number | null>(null)
+  const [selectedChunkIndex, setSelectedChunkIndex] = useState<number | null>(
+    null,
+  )
   const [cameFromSources, setCameFromSources] = useState(false)
   const [isDocumentLoaded, setIsDocumentLoaded] = useState(false)
 
@@ -1183,11 +1188,7 @@ export const ChatPage = ({
 
   // Handle chunk index changes from CitationPreview
   const handleChunkIndexChange = useCallback(
-    async (
-      newChunkIndex: number | null,
-      documentId: string,
-      docId: string,
-    ) => {
+    async (newChunkIndex: number | null, documentId: string, docId: string) => {
       if (!documentId) {
         console.error("handleChunkIndexChange called without documentId")
         return
@@ -1234,7 +1235,7 @@ export const ChatPage = ({
             if (documentOperationsRef?.current?.clearHighlights) {
               documentOperationsRef.current.clearHighlights()
             }
-  
+
             if (documentOperationsRef?.current?.highlightText) {
               try {
                 await documentOperationsRef.current.highlightText(
@@ -1267,9 +1268,18 @@ export const ChatPage = ({
 
   useEffect(() => {
     if (selectedCitation && isDocumentLoaded) {
-      handleChunkIndexChange(selectedChunkIndex, selectedCitation?.itemId ?? "", selectedCitation?.docId ?? "")
+      handleChunkIndexChange(
+        selectedChunkIndex,
+        selectedCitation?.itemId ?? "",
+        selectedCitation?.docId ?? "",
+      )
     }
-  }, [selectedChunkIndex, selectedCitation, isDocumentLoaded, handleChunkIndexChange])
+  }, [
+    selectedChunkIndex,
+    selectedCitation,
+    isDocumentLoaded,
+    handleChunkIndexChange,
+  ])
 
   // Handler for citation clicks - moved before conditional returns
   const handleCitationClick = useCallback(
@@ -1804,7 +1814,11 @@ const CitationList = ({
   onCitationClick,
 }: {
   citations: Citation[]
-  onCitationClick?: (citation: Citation, chunkIndex?: number, fromSources?: boolean) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+  ) => void
 }) => {
   return (
     <ul className={`mt-2`}>
@@ -1850,7 +1864,11 @@ const Sources = ({
   showSources: boolean
   citations: Citation[]
   closeSources: () => void
-  onCitationClick?: (citation: Citation, chunkIndex?: number, fromSources?: boolean) => void
+  onCitationClick?: (
+    citation: Citation,
+    chunkIndex?: number,
+    fromSources?: boolean,
+  ) => void
 }) => {
   return showSources ? (
     <div

@@ -450,9 +450,7 @@ export const extractImageFileNames = (
   return { imageFileNames }
 }
 
-export const searchToCitation = (
-  result: VespaSearchResults,
-): Citation => {
+export const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
   if (result.fields.sddocname === userSchema) {
     return {
