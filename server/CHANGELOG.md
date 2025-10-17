@@ -1,3 +1,10 @@
+## [3.18.7](https://github.com/xynehq/xyne/compare/v3.18.6...v3.18.7) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-213 Modified docker-compose files to fix PG not working ([#1123](https://github.com/xynehq/xyne/issues/1123)) ([82450af](https://github.com/xynehq/xyne/commit/82450af21ebc7ac7b9e1c1ffdc818cbc399f9786))
+
 ## [3.18.6](https://github.com/xynehq/xyne/compare/v3.18.5...v3.18.6) (2025-10-17)
 
 
