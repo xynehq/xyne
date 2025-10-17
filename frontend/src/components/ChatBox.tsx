@@ -210,6 +210,7 @@ interface ChatBoxProps {
   overrideIsRagOn?: boolean
   hideButtons?: boolean // Add prop to hide mark step as done section
   uploadStatus?: UploadStatus
+  isKnowledgeBaseChat?: boolean 
 }
 
 const availableSources: SourceItem[] = [
@@ -377,6 +378,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
       overrideIsRagOn,
       hideButtons = false, // Destructure new prop with default value
       uploadStatus,
+      isKnowledgeBaseChat = false,
     } = props
     // Interface for fetched tools
     interface FetchedTool {
@@ -831,7 +833,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     const uploadFiles = useCallback(
       async (files: SelectedFile[]) => {
         if (files.length === 0) return []
-
+       
         setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
        
@@ -944,6 +946,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
     }, [uploadingFilesCount])
     const processFiles = useCallback(
       (files: FileList | File[]) => {
+       
         // Check attachment limit
         if (selectedFiles.length >= MAX_ATTACHMENTS) {
           toast.error({
@@ -2985,25 +2988,27 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
           )}
 
           <div className="flex ml-[16px] mr-[6px] mb-[6px] items-center space-x-3 pt-1 pb-1">
-            <SmartTooltip content="attachment">
-              <Attach
-                className={`${
-                  selectedFiles.length >= MAX_ATTACHMENTS
-                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                    : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
-                } transition-colors`}
-                onClick={
-                  selectedFiles.length >= MAX_ATTACHMENTS
-                    ? undefined
-                    : handleFileSelect
-                }
-                title={
-                  selectedFiles.length >= MAX_ATTACHMENTS
-                    ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
-                    : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
-                }
-              />
-            </SmartTooltip>
+            {!isKnowledgeBaseChat && (
+              <SmartTooltip content="attachment">
+                <Attach
+                  className={`${
+                    selectedFiles.length >= MAX_ATTACHMENTS
+                      ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                      : "text-[#464D53] dark:text-gray-400 cursor-pointer hover:text-[#2563eb] dark:hover:text-blue-400"
+                  } transition-colors`}
+                  onClick={
+                    selectedFiles.length >= MAX_ATTACHMENTS
+                      ? undefined
+                      : handleFileSelect
+                  }
+                  title={
+                    selectedFiles.length >= MAX_ATTACHMENTS
+                      ? `Maximum ${MAX_ATTACHMENTS} attachments allowed`
+                      : "Attach files (images, documents, spreadsheets, presentations, PDFs, text files)"
+                  }
+                />
+              </SmartTooltip>
+            )}
 
             {showAdvancedOptions && (
               <>
