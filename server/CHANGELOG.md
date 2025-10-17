@@ -1,3 +1,10 @@
+## [3.18.4](https://github.com/xynehq/xyne/compare/v3.18.3...v3.18.4) (2025-10-17)
+
+
+### Bug Fixes
+
+* XYNE-157 fixed attachement cancel while uploading ([#1119](https://github.com/xynehq/xyne/issues/1119)) ([d0ff988](https://github.com/xynehq/xyne/commit/d0ff98838a150b9867e416d7252ed0bc29a9c272))
+
 ## [3.18.3](https://github.com/xynehq/xyne/compare/v3.18.2...v3.18.3) (2025-10-16)
 
 
