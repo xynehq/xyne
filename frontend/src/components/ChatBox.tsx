@@ -834,9 +834,7 @@ export const ChatBox = React.forwardRef<ChatBoxRef, ChatBoxProps>(
 
         setUploadingFilesCount((prev) => prev + files.length)
         const uploadedMetadata: AttachmentMetadata[] = []
-        // const fileAbortControllers = new Map(
-        //   files.map((file) => [file.id, new AbortController()]),
-        // )
+       
         files.forEach((file) => {
           fileAbortControllers.current.set(file.id, new AbortController())
         })
