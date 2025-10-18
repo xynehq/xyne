@@ -21,7 +21,7 @@ export const slackListSchema = z.object({
     .optional()
     .default("50")
     .transform((value) => parseInt(value, 10))
-    .refine((value) => !isNaN(value) && value > 0 && value <= 100, {
+    .refine((value) => !isNaN(value) && value > 0, {
       message: "Limit must be a valid number between 1 and 100",
     }),
   offset: z
@@ -95,14 +95,9 @@ export const SlackEntitiesApi = async (c: Context) => {
         0,
       )
 
-      const transformedResults = VespaSearchResponseToSearchResult(
-        results,
-        { chunkDocument },
-        email,
-      )
 
       return c.json({
-        results: transformedResults.results || [],
+        results: results || [],
         query: searchParams.query.trim(),
         entity: searchParams.entity,
         operation: "search",
@@ -126,14 +121,9 @@ export const SlackEntitiesApi = async (c: Context) => {
         listParams.offset,
       )
 
-      const transformedResults = VespaSearchResponseToSearchResult(
-        results,
-        { chunkDocument },
-        email,
-      )
 
       return c.json({
-        results: transformedResults.results || [],
+        results: results || [],
         pagination: {
           limit: listParams.limit,
           offset: listParams.offset,

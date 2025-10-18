@@ -38,7 +38,6 @@ import {
   X as LucideX,
   RotateCcw,
   RefreshCw,
-  PlusCircle,
   Plus,
   Copy,
   ArrowLeft,
@@ -48,11 +47,14 @@ import {
   UserPlus,
   Star,
   Users,
+  User,
   Sparkles,
   ChevronLeft,
   ChevronRight,
   BookOpen,
   Eye,
+  SlidersHorizontal,
+  CalendarDays
 } from "lucide-react"
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useTheme } from "@/components/ThemeContext"
@@ -100,6 +102,10 @@ interface CustomBadgeProps {
   text: string
   onRemove: () => void
   icon?: React.ReactNode
+  appId?: string
+  filterValue?: string
+  onFilterChange?: (value: string) => void
+  filterIndex?: number
 }
 
 interface FetchedDataSource {
@@ -109,19 +115,1155 @@ interface FetchedDataSource {
   entity: string
 }
 
+interface DateRangePickerProps {
+  dateRange: { start: Date | null; end: Date | null }
+  setDateRange: React.Dispatch<React.SetStateAction<{ start: Date | null; end: Date | null }>>
+  currentMonth: Date
+  setCurrentMonth: React.Dispatch<React.SetStateAction<Date>>
+  onApply: () => void
+  onCancel: () => void
+}
 
-const CustomBadge: React.FC<CustomBadgeProps> = ({ text, onRemove, icon }) => {
+const DateRangePicker: React.FC<DateRangePickerProps> = ({
+  dateRange,
+  setDateRange,
+  currentMonth,
+  setCurrentMonth,
+  onApply,
+  onCancel,
+}) => {
+  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate()
+  const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay()
+  
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+  
+  const handleDateClick = (day: number) => {
+    const clickedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+    
+    if (!dateRange.start || (dateRange.start && dateRange.end)) {
+      // Start new selection
+      setDateRange({ start: clickedDate, end: null })
+    } else {
+      // Complete the range
+      if (clickedDate < dateRange.start) {
+        setDateRange({ start: clickedDate, end: dateRange.start })
+      } else {
+        setDateRange({ start: dateRange.start, end: clickedDate })
+      }
+    }
+  }
+  
+  const isDateInRange = (day: number) => {
+    if (!dateRange.start) return false
+    const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+    if (dateRange.end) {
+      return date >= dateRange.start && date <= dateRange.end
+    }
+    return date.getTime() === dateRange.start.getTime()
+  }
+  
+  const isDateSelected = (day: number) => {
+    const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+    return (dateRange.start && date.getTime() === dateRange.start.getTime()) ||
+           (dateRange.end && date.getTime() === dateRange.end.getTime())
+  }
+  
+  const previousMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))
+  }
+  
+  const nextMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))
+  }
+  
   return (
-    <div className="flex items-center justify-center bg-slate-100 dark:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium pl-2 pr-1 py-1 rounded-md border border-slate-200 dark:border-slate-500">
-      {icon && <span className="mr-1 flex items-center">{icon}</span>}
-      <span>{text}</span>
-      <LucideX
-        className="ml-1.5 h-3.5 w-3.5 cursor-pointer hover:text-red-500 dark:hover:text-red-400"
-        onClick={(e) => {
-          e.stopPropagation()
-          onRemove()
-        }}
-      />
+    <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
+      {/* Month/Year Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+        </h3>
+        <div className="flex gap-2">
+          <button
+            onClick={previousMonth}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+          >
+            <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          </button>
+          <button
+            onClick={nextMonth}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+          >
+            <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          </button>
+        </div>
+      </div>
+      
+      {/* Day Names */}
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {dayNames.map(day => (
+          <div key={day} className="text-center text-sm font-medium text-gray-500 dark:text-gray-400 py-2">
+            {day}
+          </div>
+        ))}
+      </div>
+      
+      {/* Calendar Days */}
+      <div className="grid grid-cols-7 gap-1">
+        {/* Empty cells for days before month starts */}
+        {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+          <div key={`empty-${i}`} />
+        ))}
+        
+        {/* Actual days */}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1
+          const inRange = isDateInRange(day)
+          const selected = isDateSelected(day)
+          
+          return (
+            <button
+              key={day}
+              onClick={() => handleDateClick(day)}
+              className={`
+                aspect-square p-2 text-sm rounded-full
+                ${selected ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900' : ''}
+                ${inRange && !selected ? 'bg-gray-200 dark:bg-gray-700' : ''}
+                ${!inRange && !selected ? 'hover:bg-gray-100 dark:hover:bg-gray-700' : ''}
+                text-gray-900 dark:text-gray-100
+              `}
+            >
+              {day}
+            </button>
+          )
+        })}
+      </div>
+      
+      {/* Action Buttons */}
+      <div className="flex gap-2 mt-4">
+        <button
+          onClick={onCancel}
+          className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onApply}
+          disabled={!dateRange.start || !dateRange.end}
+          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-gray-900 dark:bg-gray-100 dark:text-gray-900 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const CustomBadge: React.FC<CustomBadgeProps> = ({
+  text, 
+  onRemove, 
+  icon, 
+  appId,
+  filterValue,
+  onFilterChange,
+}) => {
+  const { toast } = useToast()
+  
+  // Only show filter input for Gmail and Slack
+  const showFilterInput = appId === 'gmail' || appId === 'slack'
+  
+  // State for filter dropdown
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false)
+  const [filterNavigationPath, setFilterNavigationPath] = useState<Array<{
+    id: string
+    name: string
+    type: "filter-root" | "people" | "channels" | "timeline"
+  }>>([])
+  
+  // Define filter options based on app
+  const getFilterOptions = () => {
+    if (appId === 'slack') {
+      return [
+        { label: 'People', value: '@people' },
+        { label: 'Channels', value: '#channel' },
+        { label: 'Timeline', value: '~timeline' }
+      ]
+    } else if (appId === 'gmail') {
+      return [
+        { label: 'People', value: '@people' },
+        { label: 'Timeline', value: '~timeline' }
+      ]
+    }
+    return []
+  }
+  
+  // State for Slack users
+  const [slackUsers, setSlackUsers] = useState<Array<{ id: string; name: string }>>([])
+  const [slackSearchQuery, setSlackSearchQuery] = useState('')
+  const [slackOffset, setSlackOffset] = useState(0)
+  const [slackHasMore, setSlackHasMore] = useState(true)
+  const [isLoadingSlackUsers, setIsLoadingSlackUsers] = useState(false)
+  const slackUsersContainerRef = useRef<HTMLDivElement>(null)
+  
+  // State for selected people
+  const [selectedPeople, setSelectedPeople] = useState<Set<string>>(new Set())
+
+  // State for Gmail people fields
+  const [gmailPeopleFields, setGmailPeopleFields] = useState<{
+    from: string[]
+    to: string[]
+    cc: string[]
+    bcc: string[]
+  }>({
+    from: [],
+    to: [],
+    cc: [],
+    bcc: []
+  })
+  
+  // State for current input values in Gmail people fields
+  const [gmailPeopleInputs, setGmailPeopleInputs] = useState<{
+    from: string
+    to: string
+    cc: string
+    bcc: string
+  }>({
+    from: '',
+    to: '',
+    cc: '',
+    bcc: ''
+  })
+
+  // State for Slack channels
+  const [slackChannels, setSlackChannels] = useState<Array<{ id: string; name: string }>>([])
+  const [slackChannelsSearchQuery, setSlackChannelsSearchQuery] = useState('')
+  const [slackChannelsOffset, setSlackChannelsOffset] = useState(0)
+  const [slackChannelsHasMore, setSlackChannelsHasMore] = useState(true)
+  const [isLoadingSlackChannels, setIsLoadingSlackChannels] = useState(false)
+  const slackChannelsContainerRef = useRef<HTMLDivElement>(null)
+  
+  // State for selected channels
+  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set())
+
+  // Parse existing filter values and initialize state
+  useEffect(() => {
+    if (!filterValue || !showFilterInput) return
+    
+    const filters = filterValue.split(', ').filter(f => f.trim())
+    
+    if (appId === 'gmail') {
+      // Parse Gmail filters
+      const newGmailFields = {
+        from: [] as string[],
+        to: [] as string[],
+        cc: [] as string[],
+        bcc: [] as string[]
+      }
+      
+      filters.forEach(filter => {
+        if (filter.startsWith('from:')) {
+          newGmailFields.from.push(filter.substring(5))
+        } else if (filter.startsWith('to:')) {
+          newGmailFields.to.push(filter.substring(3))
+        } else if (filter.startsWith('cc:')) {
+          newGmailFields.cc.push(filter.substring(3))
+        } else if (filter.startsWith('bcc:')) {
+          newGmailFields.bcc.push(filter.substring(4))
+        }
+      })
+      
+      setGmailPeopleFields(newGmailFields)
+      
+      // Parse timeline filters for Gmail
+      const timelineFilters = filters.filter(f => f.startsWith('~')).map(f => f.substring(1))
+      setSelectedTimelines(new Set(timelineFilters))
+      
+    } else if (appId === 'slack') {
+      // Parse Slack filters - timeline filters can be set immediately
+      const timelineFilters = filters.filter(f => f.startsWith('~')).map(f => f.substring(1))
+      
+      // For Slack people and channels, we need to wait for the API data to map names to IDs
+      // This will be handled in separate useEffect hooks below
+      setSelectedTimelines(new Set(timelineFilters))
+    }
+  }, [filterValue, appId, showFilterInput])
+
+  // Effect to map Slack user names to IDs when slackUsers data is available
+  useEffect(() => {
+    if (appId === 'slack' && filterValue && slackUsers.length > 0) {
+      const filters = filterValue.split(', ').filter(f => f.trim())
+      const peopleNames = filters.filter(f => f.startsWith('@')).map(f => f.substring(1))
+      
+      const newSelectedPeople = new Set<string>()
+      peopleNames.forEach(name => {
+        const user = slackUsers.find(u => u.name === name)
+        if (user) {
+          newSelectedPeople.add(user.id)
+        }
+      })
+      
+      setSelectedPeople(newSelectedPeople)
+    }
+  }, [slackUsers, filterValue, appId])
+
+  // Effect to parse Slack channel IDs from filter when available
+  useEffect(() => {
+    if (appId === 'slack' && filterValue) {
+      const filters = filterValue.split(', ').filter(f => f.trim())
+      const channelIds = filters.filter(f => f.startsWith('#')).map(f => f.substring(1))
+      
+      setSelectedChannels(new Set(channelIds))
+    }
+  }, [filterValue, appId])
+
+  // Fetch Slack users from API
+  const fetchSlackUsers = async (query: string = '', offset: number = 0, append: boolean = false) => {
+    if (appId !== 'slack') return
+    
+    setIsLoadingSlackUsers(true)
+    try {
+      const limit = offset + 50
+      const queryParams: any = {
+        entity: SlackEntity.User,
+        limit: limit.toString(),
+        offset: offset.toString(),
+      }
+      
+      // Add query parameter if search query exists
+      if (query && query.trim()) {
+        queryParams.query = query.trim()
+      }
+      
+      const response = await api.slack.entities.$get({
+        query: queryParams
+      });
+      
+      if (response.ok) {
+        const data = await response.json()
+        const users = data.results?.root?.children?.map((child: any) => ({
+          id: child.fields?.docId || child.id,
+          name: child.fields?.name || 'Unknown User',
+        })) || []
+        
+        if (append) {
+          setSlackUsers(prev => [...prev, ...users])
+        } else {
+          setSlackUsers(users)
+        }
+        
+        // Check if there are more users to load
+        const hasMore = users.length === 50
+        setSlackHasMore(hasMore)
+      } else {
+        toast.error({
+          title: 'Error',
+          description: 'Failed to fetch Slack users',
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching Slack users:', error)
+      toast.error({
+        title: 'Error',
+        description: 'An error occurred while fetching Slack users',
+      })
+    } finally {
+      setIsLoadingSlackUsers(false)
+    }
+  }
+
+  // Fetch Slack channels from API
+  const fetchSlackChannels = async (query: string = '', offset: number = 0, append: boolean = false) => {
+    if (appId !== 'slack') return
+    
+    setIsLoadingSlackChannels(true)
+    try {
+      const limit = offset + 50
+      const queryParams: any = {
+        entity: SlackEntity.Channel,
+        limit: limit.toString(),
+        offset: offset.toString(),
+      }
+      
+      // Add query parameter if search query exists
+      if (query && query.trim()) {
+        queryParams.query = query.trim()
+      }
+      
+      const response = await api.slack.entities.$get({
+        query: queryParams
+      });
+      
+      if (response.ok) {
+        const data = await response.json()
+        const channels = data.results?.root?.children?.map((child: any) => ({
+          id: child.fields?.docId || child.id,
+          name: child.fields?.name || 'Unknown Channel',
+        })) || []
+        
+        if (append) {
+          setSlackChannels(prev => [...prev, ...channels])
+        } else {
+          setSlackChannels(channels)
+        }
+        
+        // Check if there are more channels to load
+        const hasMore = channels.length === 50
+        setSlackChannelsHasMore(hasMore)
+      } else {
+        toast.error({
+          title: 'Error',
+          description: 'Failed to fetch Slack channels',
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching Slack channels:', error)
+      toast.error({
+        title: 'Error',
+        description: 'An error occurred while fetching Slack channels',
+      })
+    } finally {
+      setIsLoadingSlackChannels(false)
+    }
+  }
+
+  // Handle infinite scroll for Slack users
+  const handleSlackUsersScroll = useCallback(() => {
+    const container = slackUsersContainerRef.current
+    if (!container || isLoadingSlackUsers || !slackHasMore) return
+    
+    const { scrollTop, scrollHeight, clientHeight } = container
+    const scrollThreshold = 50 // pixels from bottom
+    
+    if (scrollHeight - scrollTop - clientHeight < scrollThreshold) {
+      const newOffset = slackOffset + 50
+      setSlackOffset(newOffset)
+      fetchSlackUsers(slackSearchQuery, newOffset, true)
+    }
+  }, [slackOffset, slackSearchQuery, isLoadingSlackUsers, slackHasMore, appId])
+
+  // Handle infinite scroll for Slack channels
+  const handleSlackChannelsScroll = useCallback(() => {
+    const container = slackChannelsContainerRef.current
+    if (!container || isLoadingSlackChannels || !slackChannelsHasMore) return
+    
+    const { scrollTop, scrollHeight, clientHeight } = container
+    const scrollThreshold = 50 // pixels from bottom
+    
+    if (scrollHeight - scrollTop - clientHeight < scrollThreshold) {
+      const newOffset = slackChannelsOffset + 50
+      setSlackChannelsOffset(newOffset)
+      fetchSlackChannels(slackChannelsSearchQuery, newOffset, true)
+    }
+  }, [slackChannelsOffset, slackChannelsSearchQuery, isLoadingSlackChannels, slackChannelsHasMore, appId])
+  
+  // Get icon for filter option
+  const getFilterIcon = (label: string) => {
+    switch (label) {
+      case 'People':
+        return <User className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+      case 'Channels':
+        return <span className="text-gray-600 dark:text-gray-400">#</span>
+      case 'Timeline':
+        return <CalendarDays className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+      default:
+        return null
+    }
+  }
+  
+  const handleFilterOptionSelect = (option: any) => {
+    if (option.label === 'People') {
+      setFilterNavigationPath([
+        { id: 'people', name: 'People', type: 'people' }
+      ])
+      // Load initial Slack users when opening People filter (only for Slack)
+      if (appId === 'slack' && slackUsers.length === 0) {
+        fetchSlackUsers('', 0, false)
+      }
+      // For Gmail, we don't need to fetch anything - just show the input fields
+    } else if (option.label === 'Channels') {
+      setFilterNavigationPath([
+        { id: 'channels', name: 'Channels', type: 'channels' }
+      ])
+      // Load initial Slack channels when opening Channels filter
+      if (appId === 'slack' && slackChannels.length === 0) {
+        fetchSlackChannels('', 0, false)
+      }
+    } else if (option.label === 'Timeline') {
+      setFilterNavigationPath([
+        { id: 'timeline', name: 'Timeline', type: 'timeline' }
+      ])
+    }
+  }
+  
+  // State for selected timelines (changed to Set for multi-selection)
+  const [selectedTimelines, setSelectedTimelines] = useState<Set<string>>(new Set())
+  
+  // State for custom date range picker
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
+    start: null,
+    end: null,
+  })
+  const [currentMonth, setCurrentMonth] = useState(new Date())
+
+  const handleTimelineSelect = (timelineOption: { label: string; value: string }) => {
+    // If "Custom date" is selected, show date picker instead
+    if (timelineOption.label === 'Custom date') {
+      setShowDatePicker(true)
+      return
+    }
+    // Toggle timeline selection in the set
+    setSelectedTimelines(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(timelineOption.label)) {
+        newSet.delete(timelineOption.label)
+      } else {
+        newSet.add(timelineOption.label)
+      }
+      return newSet
+    })
+    
+    // Update filter value with selected timelines
+    const updatedTimelines = new Set(selectedTimelines)
+    if (updatedTimelines.has(timelineOption.label)) {
+      updatedTimelines.delete(timelineOption.label)
+    } else {
+      updatedTimelines.add(timelineOption.label)
+    }
+    
+    // Build filter string from selected timelines
+    const selectedTimelineNames = Array.from(updatedTimelines).map(t => `~${t}`)
+    
+    // Preserve existing filters from current filterValue that aren't timeline filters
+    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
+    const existingNonTimelineFilters = currentFilters.filter(f => !f.startsWith('~'))
+    
+    // Combine new timeline filters with existing non-timeline filters
+    const combinedFilters = [...selectedTimelineNames, ...existingNonTimelineFilters]
+    
+    onFilterChange?.(combinedFilters.join(', '))
+    // Don't close dropdown - let user select multiple timelines
+  }
+  
+  const handlePersonSelect = (person: any) => {
+    // person.id is the docId from the API response
+    setSelectedPeople(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(person.id)) {
+        newSet.delete(person.id)
+      } else {
+        newSet.add(person.id)
+      }
+      return newSet
+    })
+    
+    // Update filter value with selected people names (for display)
+    const updatedPeople = new Set(selectedPeople)
+    if (updatedPeople.has(person.id)) {
+      updatedPeople.delete(person.id)
+    } else {
+      updatedPeople.add(person.id)
+    }
+    
+    // Build filter string from selected people (using names for display)
+    const selectedPeopleNames = slackUsers
+      .filter(u => updatedPeople.has(u.id))
+      .map(u => `@${u.name}`)
+    
+    // Preserve existing filters from current filterValue that aren't people filters
+    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
+    const existingNonPeopleFilters = currentFilters.filter(f => !f.startsWith('@'))
+    
+    // Combine new people filters with existing non-people filters
+    const combinedFilters = [...selectedPeopleNames, ...existingNonPeopleFilters]
+    
+    onFilterChange?.(combinedFilters.join(', '))
+    // Don't close dropdown - let user select multiple people
+  }
+
+  const handleChannelSelect = (channel: any) => {
+    // channel.id is the docId from the API response
+    setSelectedChannels(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(channel.id)) {
+        newSet.delete(channel.id)
+      } else {
+        newSet.add(channel.id)
+      }
+      return newSet
+    })
+    
+    // Update filter value with selected channel docIds
+    const updatedChannels = new Set(selectedChannels)
+    if (updatedChannels.has(channel.id)) {
+      updatedChannels.delete(channel.id)
+    } else {
+      updatedChannels.add(channel.id)
+    }
+    
+    // Build filter string from selected channels (using channel IDs)
+    const selectedChannelIds = Array.from(updatedChannels).map(id => `#${id}`)
+    
+    // Preserve existing filters from current filterValue that aren't channel filters
+    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
+    const existingNonChannelFilters = currentFilters.filter(f => !f.startsWith('#'))
+    
+    // Combine new channel filters with existing non-channel filters
+    const combinedFilters = [...selectedChannelIds, ...existingNonChannelFilters]
+    
+    onFilterChange?.(combinedFilters.join(', '))
+    // Don't close dropdown - let user select multiple channels
+  }
+  
+  return (
+    <div className="flex items-center gap-3 w-full">
+      {/* Fixed width section for app icon, name, and trash */}
+      <div className="flex items-center gap-3 text-slate-700 dark:text-slate-200 text-base font-normal w-[200px] flex-shrink-0">
+        {icon && <span className="flex items-center flex-shrink-0">{icon}</span>}
+        <span className="truncate flex-1">{text}</span>
+        <Trash2
+          className="h-4 w-4 cursor-pointer text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove()
+          }}
+        />
+      </div>
+      {/* Filter input takes remaining space */}
+      {showFilterInput && (
+        <div className="flex-1 relative">
+          <div className="flex items-center gap-2 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700">
+            <DropdownMenu
+              open={isFilterDropdownOpen}
+              onOpenChange={(open) => {
+                setIsFilterDropdownOpen(open)
+                if (!open) {
+                  setFilterNavigationPath([])
+                }
+              }}
+            >
+              <DropdownMenuTrigger asChild>
+                <SlidersHorizontal className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0 h-3.5 w-3.5 cursor-pointer" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-[440px] p-0 bg-gray-100 dark:bg-gray-800 rounded-xl"
+                align="start"
+              >
+                <div className="flex items-center justify-between px-4 py-2">
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center overflow-hidden max-w-[75%]">
+                      {filterNavigationPath.length > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (filterNavigationPath.length === 1) {
+                              setFilterNavigationPath([])
+                            } else {
+                              setFilterNavigationPath(prev => prev.slice(0, -1))
+                            }
+                          }}
+                          className="p-0 h-auto w-auto text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mr-2 flex-shrink-0"
+                        >
+                          <ChevronLeft size={12} />
+                        </Button>
+                      )}
+                      {filterNavigationPath.length > 0 ? (
+                        <div className="flex items-center text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap overflow-hidden">
+                          <span
+                            className="cursor-pointer hover:text-gray-800 dark:hover:text-gray-100 text-xs whitespace-nowrap flex-shrink-0"
+                            onClick={() => {
+                              setFilterNavigationPath([])
+                            }}
+                          >
+                            FILTERS
+                          </span>
+                          {filterNavigationPath.map((item, index) => (
+                            <React.Fragment key={`${item.id}-${index}`}>
+                              <span className="mx-2 flex-shrink-0">/</span>
+                              <span
+                                className={`max-w-[60px] truncate ${index < filterNavigationPath.length - 1 ? "cursor-pointer hover:text-gray-800 dark:hover:text-gray-100" : "font-medium"}`}
+                                title={item.name}
+                              >
+                                {item.name}
+                              </span>
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="p-0 text-xs text-gray-600 dark:text-gray-300">
+                          FILTERS
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white dark:bg-gray-900 max-h-72 min-h-72 overflow-y-auto rounded-lg mx-1 mb-1">
+                  {filterNavigationPath.length === 0 ? (
+                    // Main filter menu
+                    <>
+                      {getFilterOptions().map((option) => (
+                        <DropdownMenuItem
+                          key={option.value}
+                          onSelect={(e) => {
+                            e.preventDefault()
+                            handleFilterOptionSelect(option)
+                          }}
+                          className="flex items-center justify-between cursor-pointer text-sm py-2.5 px-4 hover:!bg-transparent focus:!bg-transparent data-[highlighted]:!bg-transparent"
+                        >
+                          <div className="flex items-center">
+                            <span className="mr-2 flex items-center">
+                              {getFilterIcon(option.label)}
+                            </span>
+                            <span className="text-gray-700 dark:text-gray-200">
+                              {option.label}
+                            </span>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'people' ? (
+                    // People selection view - different for Gmail vs Slack
+                    appId === 'gmail' ? (
+                      // Gmail People fields (From, To, CC, BCC)
+                      <div className="px-4 py-3 space-y-3">
+                        {(['from', 'to', 'cc', 'bcc'] as const).map((field) => (
+                          <div key={field} className="space-y-2">
+                            <label className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase">
+                              {field}
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder={`Enter ${field} address`}
+                                value={gmailPeopleInputs[field]}
+                                onChange={(e) => {
+                                  setGmailPeopleInputs(prev => ({
+                                    ...prev,
+                                    [field]: e.target.value
+                                  }))
+                                }}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation()
+                                  if (e.key === 'Enter' && gmailPeopleInputs[field].trim()) {
+                                    // Add email on Enter key
+                                    const email = gmailPeopleInputs[field].trim()
+                                    setGmailPeopleFields(prev => ({
+                                      ...prev,
+                                      [field]: [...prev[field], email]
+                                    }))
+                                    setGmailPeopleInputs(prev => ({
+                                      ...prev,
+                                      [field]: ''
+                                    }))
+                                    
+                                    // Update filter value
+                                    const allFields = {
+                                      ...gmailPeopleFields,
+                                      [field]: [...gmailPeopleFields[field], email]
+                                    }
+                                    const filterParts: string[] = []
+                                    if (allFields.from.length > 0) filterParts.push(...allFields.from.map(e => `from:${e}`))
+                                    if (allFields.to.length > 0) filterParts.push(...allFields.to.map(e => `to:${e}`))
+                                    if (allFields.cc.length > 0) filterParts.push(...allFields.cc.map(e => `cc:${e}`))
+                                    if (allFields.bcc.length > 0) filterParts.push(...allFields.bcc.map(e => `bcc:${e}`))
+                                    
+                                    // Preserve existing timeline filters from the current filterValue
+                                    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
+                                    const existingTimelineFilters = currentFilters.filter(f => f.startsWith('~'))
+                                    const combinedFilters = [...filterParts, ...existingTimelineFilters]
+                                    
+                                    onFilterChange?.(combinedFilters.join(', '))
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+                              />
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const email = gmailPeopleInputs[field].trim()
+                                  if (email) {
+                                    setGmailPeopleFields(prev => ({
+                                      ...prev,
+                                      [field]: [...prev[field], email]
+                                    }))
+                                    setGmailPeopleInputs(prev => ({
+                                      ...prev,
+                                      [field]: ''
+                                    }))
+                                    
+                                    // Update filter value
+                                    const allFields = {
+                                      ...gmailPeopleFields,
+                                      [field]: [...gmailPeopleFields[field], email]
+                                    }
+                                    const filterParts: string[] = []
+                                    if (allFields.from.length > 0) filterParts.push(...allFields.from.map(e => `from:${e}`))
+                                    if (allFields.to.length > 0) filterParts.push(...allFields.to.map(e => `to:${e}`))
+                                    if (allFields.cc.length > 0) filterParts.push(...allFields.cc.map(e => `cc:${e}`))
+                                    if (allFields.bcc.length > 0) filterParts.push(...allFields.bcc.map(e => `bcc:${e}`))
+                                    
+                                    // Preserve existing timeline filters from the current filterValue
+                                    const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
+                                    const existingTimelineFilters = currentFilters.filter(f => f.startsWith('~'))
+                                    const combinedFilters = [...filterParts, ...existingTimelineFilters]
+                                    
+                                    onFilterChange?.(combinedFilters.join(', '))
+                                  }
+                                }}
+                                className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
+                            {/* Display added emails as pills */}
+                            {gmailPeopleFields[field].length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {gmailPeopleFields[field].map((email, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-2.5 py-1 rounded-md text-xs"
+                                  >
+                                    <span>{email}</span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        // Remove this email
+                                        const newEmails = gmailPeopleFields[field].filter((_, i) => i !== idx)
+                                        setGmailPeopleFields(prev => ({
+                                          ...prev,
+                                          [field]: newEmails
+                                        }))
+                                        
+                                        // Update filter value
+                                        const allFields = {
+                                          ...gmailPeopleFields,
+                                          [field]: newEmails
+                                        }
+                                        const filterParts: string[] = []
+                                        if (allFields.from.length > 0) filterParts.push(...allFields.from.map(e => `from:${e}`))
+                                        if (allFields.to.length > 0) filterParts.push(...allFields.to.map(e => `to:${e}`))
+                                        if (allFields.cc.length > 0) filterParts.push(...allFields.cc.map(e => `cc:${e}`))
+                                        if (allFields.bcc.length > 0) filterParts.push(...allFields.bcc.map(e => `bcc:${e}`))
+                                        
+                                        // Preserve existing timeline filters from the current filterValue
+                                        const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
+                                        const existingTimelineFilters = currentFilters.filter(f => f.startsWith('~'))
+                                        const combinedFilters = [...filterParts, ...existingTimelineFilters]
+                                        
+                                        onFilterChange?.(combinedFilters.join(', '))
+                                      }}
+                                      className="hover:bg-gray-200 dark:hover:bg-gray-600 rounded-sm p-0.5"
+                                    >
+                                      <LucideX className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      // Slack People selection (existing code)
+                      <>
+                        <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center">
+                            <input
+                              type="text"
+                              placeholder="Search"
+                              value={slackSearchQuery}
+                              onChange={(e) => {
+                                const newQuery = e.target.value
+                                setSlackSearchQuery(newQuery)
+                                // Reset offset and fetch with new query
+                                setSlackOffset(0)
+                                fetchSlackUsers(newQuery, 0, false)
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+                            />
+                          </div>
+                        </div>
+                        <div 
+                          ref={slackUsersContainerRef}
+                          onScroll={handleSlackUsersScroll}
+                          className="px-2 max-h-60 overflow-y-auto"
+                        >
+                          {isLoadingSlackUsers && slackUsers.length === 0 ? (
+                            <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
+                              Loading users...
+                            </div>
+                          ) : slackUsers.length === 0 ? (
+                            <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
+                              No users found
+                            </div>
+                          ) : (
+                            <>
+                              {slackUsers.map((person) => (
+                                <DropdownMenuItem
+                                  key={person.id}
+                                  onSelect={(e) => {
+                                    e.preventDefault()
+                                    handlePersonSelect(person)
+                                  }}
+                                  className="flex items-center cursor-pointer text-sm py-2 px-2 hover:!bg-gray-100 dark:hover:!bg-gray-700 focus:!bg-gray-100 dark:focus:!bg-gray-700 data-[highlighted]:!bg-gray-100 dark:data-[highlighted]:!bg-gray-700 rounded"
+                                >
+                                  <input 
+                                    type="checkbox" 
+                                    className="mr-3" 
+                                    checked={selectedPeople.has(person.id)}
+                                    onChange={() => {}}
+                                  />
+                                  <span className="text-gray-700 dark:text-gray-200">{person.name}</span>
+                                </DropdownMenuItem>
+                              ))}
+                              {isLoadingSlackUsers && (
+                                <div className="text-center py-2 text-sm text-gray-500 dark:text-gray-400">
+                                  Loading more...
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )
+                  ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'channels' ? (
+                    // Channels selection view
+                    <>
+                      <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center">
+                          <input
+                            type="text"
+                            placeholder="Search"
+                            value={slackChannelsSearchQuery}
+                            onChange={(e) => {
+                              const newQuery = e.target.value
+                              setSlackChannelsSearchQuery(newQuery)
+                              // Reset offset and fetch with new query
+                              setSlackChannelsOffset(0)
+                              fetchSlackChannels(newQuery, 0, false)
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+                          />
+                        </div>
+                      </div>
+                      <div 
+                        ref={slackChannelsContainerRef}
+                        onScroll={handleSlackChannelsScroll}
+                        className="px-2 max-h-60 overflow-y-auto"
+                      >
+                        {isLoadingSlackChannels && slackChannels.length === 0 ? (
+                          <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
+                            Loading channels...
+                          </div>
+                        ) : slackChannels.length === 0 ? (
+                          <div className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
+                            No channels found
+                          </div>
+                        ) : (
+                          <>
+                            {slackChannels.map((channel) => (
+                              <DropdownMenuItem
+                                key={channel.id}
+                                onSelect={(e) => {
+                                  e.preventDefault()
+                                  handleChannelSelect(channel)
+                                }}
+                                className="flex items-center cursor-pointer text-sm py-2 px-2 hover:!bg-gray-100 dark:hover:!bg-gray-700 focus:!bg-gray-100 dark:focus:!bg-gray-700 data-[highlighted]:!bg-gray-100 dark:data-[highlighted]:!bg-gray-700 rounded"
+                              >
+                                <input 
+                                  type="checkbox" 
+                                  className="mr-3" 
+                                  checked={selectedChannels.has(channel.id)}
+                                  onChange={() => {}}
+                                />
+                                <span className="text-gray-700 dark:text-gray-200">{channel.name}</span>
+                              </DropdownMenuItem>
+                            ))}
+                            {isLoadingSlackChannels && (
+                              <div className="text-center py-2 text-sm text-gray-500 dark:text-gray-400">
+                                Loading more...
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </>
+                  ) : filterNavigationPath[filterNavigationPath.length - 1]?.type === 'timeline' ? (
+                    // Timeline selection view
+                    <>
+                      {!showDatePicker ? (
+                        <div className="px-2 max-h-60 overflow-y-auto">
+                          {[
+                            { label: 'Last week', value: 'last_week' },
+                            { label: 'Last month', value: 'last_month' },
+                            { label: 'Last 7 days', value: 'last_7_days' },
+                            { label: 'Last 14 days', value: 'last_14_days' },
+                            { label: 'Custom date', value: 'custom_date' }
+                          ].map((timelineOption) => (
+                            <DropdownMenuItem
+                              key={timelineOption.value}
+                              onSelect={(e) => {
+                                e.preventDefault()
+                                handleTimelineSelect(timelineOption)
+                              }}
+                              className="flex items-center cursor-pointer text-sm py-2 px-2 hover:!bg-gray-100 dark:hover:!bg-gray-700 focus:!bg-gray-100 dark:focus:!bg-gray-700 data-[highlighted]:!bg-gray-100 dark:data-[highlighted]:!bg-gray-700 rounded"
+                            >
+                              <input 
+                                type="checkbox" 
+                                className="mr-3" 
+                                checked={selectedTimelines.has(timelineOption.label)}
+                                onChange={() => {}}
+                              />
+                              <span className="text-gray-700 dark:text-gray-200">{timelineOption.label}</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </div>
+                      ) : (
+                        // Date Range Picker
+                        <div className="p-4">
+                          <DateRangePicker
+                            dateRange={dateRange}
+                            setDateRange={setDateRange}
+                            currentMonth={currentMonth}
+                            setCurrentMonth={setCurrentMonth}
+                            onApply={() => {
+                              if (dateRange.start && dateRange.end) {
+                                const formatDate = (date: Date) => {
+                                  const day = String(date.getDate()).padStart(2, '0')
+                                  const month = String(date.getMonth() + 1).padStart(2, '0')
+                                  const year = date.getFullYear()
+                                  return `${day}/${month}/${year}`
+                                }
+                                
+                                const dateRangeString = `${formatDate(dateRange.start)} → ${formatDate(dateRange.end)}`
+                                
+                                // Add to selected timelines
+                                setSelectedTimelines(prev => {
+                                  const newSet = new Set(prev)
+                                  newSet.add(dateRangeString)
+                                  return newSet
+                                })
+                                
+                                // Build filter string
+                                const selectedPeopleNames = slackUsers
+                                  .filter(u => selectedPeople.has(u.id))
+                                  .map(u => `@${u.name}`)
+                                
+                                const selectedChannelIds = Array.from(selectedChannels).map(id => `#${id}`)
+                                
+                                const updatedTimelines = new Set(selectedTimelines)
+                                updatedTimelines.add(dateRangeString)
+                                const selectedTimelineNames = Array.from(updatedTimelines).map(t => `~${t}`)
+                                
+                                // Preserve existing Gmail people filters from the current filterValue
+                                const currentFilters = filterValue?.split(', ').filter(f => f.trim()) || []
+                                const existingGmailFilters = currentFilters.filter(f => 
+                                  f.startsWith('from:') || f.startsWith('to:') || f.startsWith('cc:') || f.startsWith('bcc:')
+                                )
+                                
+                                const combinedNames = [...existingGmailFilters, ...selectedPeopleNames, ...selectedChannelIds, ...selectedTimelineNames].join(', ')
+                                onFilterChange?.(combinedNames)
+                                
+                                // Reset date picker
+                                setShowDatePicker(false)
+                                setDateRange({ start: null, end: null })
+                              }
+                            }}
+                            onCancel={() => {
+                              setShowDatePicker(false)
+                              setDateRange({ start: null, end: null })
+                            }}
+                          />
+                        </div>
+                      )}
+                    </>
+                  ) : null}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="flex-1 flex flex-wrap items-center gap-1.5">
+              {/* Display selected filters as badges */}
+              {filterValue && filterValue.split(', ').filter(part => part.trim()).map((part, idx) => (
+                <div
+                  key={idx}
+                  className="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-2.5 py-1 rounded-md text-sm"
+                >
+                  <span>{part}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      // Remove this filter from the list
+                      const parts = filterValue.split(', ').filter(p => p.trim())
+                      const newParts = parts.filter((_, i) => i !== idx)
+                      onFilterChange?.(newParts.join(', '))
+                      
+                      // Also remove from appropriate state based on filter type
+                      if (part.startsWith('from:') || part.startsWith('to:') || part.startsWith('cc:') || part.startsWith('bcc:')) {
+                        // Gmail people filter
+                        const [fieldType, email] = part.split(':')
+                        const field = fieldType as 'from' | 'to' | 'cc' | 'bcc'
+                        setGmailPeopleFields(prev => ({
+                          ...prev,
+                          [field]: prev[field].filter(e => e !== email)
+                        }))
+                      } else if (part.startsWith('@')) {
+                        const personToRemove = slackUsers.find(u => `@${u.name}` === part)
+                        if (personToRemove) {
+                          setSelectedPeople(prev => {
+                            const newSet = new Set(prev)
+                            newSet.delete(personToRemove.id)
+                            return newSet
+                          })
+                        }
+                      } else if (part.startsWith('#')) {
+                        const channelToRemove = slackChannels.find(c => `#${c.id}` === part)
+                        if (channelToRemove) {
+                          setSelectedChannels(prev => {
+                            const newSet = new Set(prev)
+                            newSet.delete(channelToRemove.id)
+                            return newSet
+                          })
+                        }
+                      } else if (part.startsWith('~')) {
+                        // Remove timeline filter
+                        const timelineToRemove = part.substring(1) // Remove the ~ prefix
+                        setSelectedTimelines(prev => {
+                          const newSet = new Set(prev)
+                          newSet.delete(timelineToRemove)
+                          return newSet
+                        })
+                      }
+                    }}
+                    className="hover:bg-gray-200 dark:hover:bg-gray-600 rounded-sm p-0.5"
+                  >
+                    <LucideX className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {/* Input field for adding more filters */}
+              {(!filterValue || filterValue.split(', ').filter(n => n.trim()).length === 0) && (
+                <input
+                  type="text"
+                  placeholder='Add filters'
+                  className="flex-1 bg-transparent border-0 outline-none text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 min-w-[100px]"
+                  readOnly
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -378,6 +1520,8 @@ function AgentComponent() {
   const [selectedIntegrations, setSelectedIntegrations] = useState<
     Record<string, boolean>
   >({})
+  // State for managing multiple filters per app (Gmail and Slack)
+  const [appFilters, setAppFilters] = useState<Record<string, string[]>>({})
   const [isIntegrationMenuOpen, setIsIntegrationMenuOpen] = useState(false)
   const [selectedEntities, setSelectedEntities] = useState<FetchedDataSource[]>(
     [],
@@ -1156,6 +2300,7 @@ function AgentComponent() {
     setShouldHighlightPrompt(false)
     cleanupPromptGenerationEventSource()
     setSelectedEntities([])
+    setAppFilters({})
   }
 
   const handleCreateNewAgent = () => {
@@ -1663,6 +2808,107 @@ function AgentComponent() {
       } else if (editingAgent.isPublic) {
         setSelectedUsers([]) // Clear users for public agents
       }
+      
+      // Load existing filters from appIntegrations
+      if (editingAgent.appIntegrations && typeof editingAgent.appIntegrations === 'object') {
+        const appIntegrations = editingAgent.appIntegrations as Record<string, any>
+        const loadedFilters: Record<string, string[]> = {}
+        
+        // Check for Gmail filters
+        if (appIntegrations.gmail?.filters && Array.isArray(appIntegrations.gmail.filters)) {
+          const gmailFilterStrings: string[] = []
+          
+          for (const filter of appIntegrations.gmail.filters) {
+            const filterParts: string[] = []
+            
+            // Add from emails
+            if (filter.from && Array.isArray(filter.from)) {
+              filterParts.push(...filter.from.map((email: string) => `from:${email}`))
+            }
+            
+            // Add to emails
+            if (filter.to && Array.isArray(filter.to)) {
+              filterParts.push(...filter.to.map((email: string) => `to:${email}`))
+            }
+            
+            // Add cc emails
+            if (filter.cc && Array.isArray(filter.cc)) {
+              filterParts.push(...filter.cc.map((email: string) => `cc:${email}`))
+            }
+            
+            // Add bcc emails
+            if (filter.bcc && Array.isArray(filter.bcc)) {
+              filterParts.push(...filter.bcc.map((email: string) => `bcc:${email}`))
+            }
+            
+            // Add time range
+            if (filter.timeRange) {
+              const { startDate, endDate } = filter.timeRange
+              // Convert timestamps to readable format
+              const start = new Date(startDate * 1000)
+              const end = new Date(endDate * 1000)
+              const formatDate = (date: Date) => {
+                const day = String(date.getDate()).padStart(2, '0')
+                const month = String(date.getMonth() + 1).padStart(2, '0')
+                const year = date.getFullYear()
+                return `${day}/${month}/${year}`
+              }
+              filterParts.push(`~${formatDate(start)} → ${formatDate(end)}`)
+            }
+            
+            if (filterParts.length > 0) {
+              gmailFilterStrings.push(filterParts.join(', '))
+            }
+          }
+          
+          if (gmailFilterStrings.length > 0) {
+            loadedFilters.gmail = gmailFilterStrings
+          }
+        }
+        
+        // Check for Slack filters
+        if (appIntegrations.slack?.filters && Array.isArray(appIntegrations.slack.filters)) {
+          const slackFilterStrings: string[] = []
+          
+          for (const filter of appIntegrations.slack.filters) {
+            const filterParts: string[] = []
+            
+            // Add sender IDs (would need to be converted to names via API)
+            if (filter.senderId && Array.isArray(filter.senderId)) {
+              filterParts.push(...filter.senderId.map((id: string) => `@${id}`))
+            }
+            
+            // Add channel IDs (docIds)
+            if (filter.channelId && Array.isArray(filter.channelId)) {
+              filterParts.push(...filter.channelId.map((id: string) => `#${id}`))
+            }
+            
+            // Add time range
+            if (filter.timeRange) {
+              const { startDate, endDate } = filter.timeRange
+              const start = new Date(startDate * 1000)
+              const end = new Date(endDate * 1000)
+              const formatDate = (date: Date) => {
+                const day = String(date.getDate()).padStart(2, '0')
+                const month = String(date.getMonth() + 1).padStart(2, '0')
+                const year = date.getFullYear()
+                return `${day}/${month}/${year}`
+              }
+              filterParts.push(`~${formatDate(start)} → ${formatDate(end)}`)
+            }
+            
+            if (filterParts.length > 0) {
+              slackFilterStrings.push(filterParts.join(', '))
+            }
+          }
+          
+          if (slackFilterStrings.length > 0) {
+            loadedFilters.slack = slackFilterStrings
+          }
+        }
+        
+        setAppFilters(loadedFilters)
+      }
     }
   }, [editingAgent, viewMode, users])
 
@@ -1708,12 +2954,118 @@ function AgentComponent() {
   }
 
   const handleSaveAgent = async () => {
+    // Helper function to parse filter strings into structured filter objects
+    const parseFilters = (filterStrings: string[], appId: string) => {
+      const filters: any[] = []
+      let filterId = 1
+      
+      for (const filterString of filterStrings) {
+        if (!filterString || !filterString.trim()) continue
+        
+        const filterParts = filterString.split(', ').filter(p => p.trim())
+        const filter: any = { id: filterId++ }
+        
+        // Parse Gmail people filters (from:, to:, cc:, bcc:)
+        const fromEmails: string[] = []
+        const toEmails: string[] = []
+        const ccEmails: string[] = []
+        const bccEmails: string[] = []
+        
+        // Parse Slack filters (people and channels) - store docIds
+        const senderIds: string[] = []
+        const channelIds: string[] = []
+        
+        // Parse timeline filters
+        let timeRange: { startDate: number; endDate: number } | undefined
+        
+        for (const part of filterParts) {
+          if (part.startsWith('from:')) {
+            fromEmails.push(part.substring(5))
+          } else if (part.startsWith('to:')) {
+            toEmails.push(part.substring(3))
+          } else if (part.startsWith('cc:')) {
+            ccEmails.push(part.substring(3))
+          } else if (part.startsWith('bcc:')) {
+            bccEmails.push(part.substring(4))
+          } else if (part.startsWith('@')) {
+            // Slack person - the display format is @name, but we need to extract the docId
+            // Since we're saving, we need to convert the display name back to docId
+            // The filter string contains display names, but we need to store docIds
+            // For now, we'll store the name and let the backend handle the conversion
+            // Or we can extract the docId from the filter value if it was stored there
+            const personName = part.substring(1)
+            // Store the name for now - ideally we'd have a mapping
+            senderIds.push(personName)
+          } else if (part.startsWith('#')) {
+            // Slack channel - similar to person, store the name
+            const channelName = part.substring(1)
+            channelIds.push(channelName)
+          } else if (part.startsWith('~')) {
+            // Parse timeline filters
+            const timelineValue = part.substring(1)
+            const now = Date.now()
+            const dayInMs = 24 * 60 * 60 * 1000
+            
+            if (timelineValue === 'Last week') {
+              timeRange = {
+                startDate: Math.floor((now - 7 * dayInMs) / 1000),
+                endDate: Math.floor(now / 1000)
+              }
+            } else if (timelineValue === 'Last month') {
+              timeRange = {
+                startDate: Math.floor((now - 30 * dayInMs) / 1000),
+                endDate: Math.floor(now / 1000)
+              }
+            } else if (timelineValue === 'Last 7 days') {
+              timeRange = {
+                startDate: Math.floor((now - 7 * dayInMs) / 1000),
+                endDate: Math.floor(now / 1000)
+              }
+            } else if (timelineValue === 'Last 14 days') {
+              timeRange = {
+                startDate: Math.floor((now - 14 * dayInMs) / 1000),
+                endDate: Math.floor(now / 1000)
+              }
+            } else if (timelineValue.includes('→')) {
+              // Custom date range format: "DD/MM/YYYY → DD/MM/YYYY"
+              const [startStr, endStr] = timelineValue.split('→').map(s => s.trim())
+              const parseDate = (dateStr: string) => {
+                const [day, month, year] = dateStr.split('/').map(Number)
+                return Math.floor(new Date(year, month - 1, day).getTime() / 1000)
+              }
+              timeRange = {
+                startDate: parseDate(startStr),
+                endDate: parseDate(endStr)
+              }
+            }
+          }
+        }
+        
+        // Add parsed fields to filter object
+        if (fromEmails.length > 0) filter.from = fromEmails
+        if (toEmails.length > 0) filter.to = toEmails
+        if (ccEmails.length > 0) filter.cc = ccEmails
+        if (bccEmails.length > 0) filter.bcc = bccEmails
+        if (senderIds.length > 0) filter.senderId = senderIds
+        if (channelIds.length > 0) filter.channelId = channelIds
+        if (timeRange) filter.timeRange = timeRange
+        
+        // Only add filter if it has at least one field
+        if (Object.keys(filter).length > 1) {
+          filters.push(filter)
+        }
+      }
+      
+      return filters.length > 0 ? filters : undefined
+    }
+    
     // Build the new simplified appIntegrations structure
     const appIntegrationsObject: Record<
       string,
       {
         itemIds: string[]
         selectedAll: boolean
+        filters?: any[]
       }
     > = {}
 
@@ -1801,10 +3153,24 @@ function AgentComponent() {
         }
         // For other integrations, use the integration ID as key
         else {
-          appIntegrationsObject[integrationId] = {
+          const integrationConfig: {
+            itemIds: string[]
+            selectedAll: boolean
+            filters?: any[]
+          } = {
             itemIds: [],
             selectedAll: true,
           }
+          
+          // Add filters if they exist for this integration (Gmail or Slack)
+          if (appFilters[integrationId] && appFilters[integrationId].length > 0) {
+            const parsedFilters = parseFilters(appFilters[integrationId], integrationId)
+            if (parsedFilters) {
+              integrationConfig.filters = parsedFilters
+            }
+          }
+          
+          appIntegrationsObject[integrationId] = integrationConfig
         }
       }
     }
@@ -1845,6 +3211,9 @@ function AgentComponent() {
       // Only include userEmails for private agents
       userEmails: isPublic ? [] : selectedUsers.map((user) => user.email),
     }
+
+    console.log('Agent Payload:', agentPayload)
+    
 
     try {
       let response
@@ -2052,12 +3421,18 @@ function AgentComponent() {
       id: string
       name: string
       icon: React.ReactNode
-      type?: "file" | "folder" | "integration" | "cl"
+      type?: "file" | "folder" | "integration" | "cl" | "grouped-parent"
       clId?: string
       clName?: string
+      children?: Array<{
+        id: string
+        name: string
+        icon: React.ReactNode
+        type?: "file" | "folder"
+      }>
     }> = []
 
-    // Add regular integrations (excluding Google Drive which is handled separately)
+    // Add regular integrations (excluding Google Drive and Collections which are handled separately)
     for (const integration of allAvailableIntegrations) {
       if (
         selectedIntegrations[integration.id] &&
@@ -2071,49 +3446,59 @@ function AgentComponent() {
       }
     }
 
-    // Handle Google Drive items
-    if (
-      selectedIntegrations["googledrive"] 
-    ) {
-      if(selectedItemsInGoogleDrive.size === 0){
-        const googleDriveIntegration = allAvailableIntegrations.find(
-          (int) => int.id === "googledrive",
-        )
-        if (googleDriveIntegration) {
+    // Handle Google Drive items - grouped display
+    if (selectedIntegrations["googledrive"]) {
+      const googleDriveIntegration = allAvailableIntegrations.find(
+        (int) => int.id === "googledrive",
+      )
+      
+      if (googleDriveIntegration) {
+        if (selectedItemsInGoogleDrive.size === 0) {
+          // No specific items selected, show just Google Drive
           result.push({
             ...googleDriveIntegration,
             type: "integration",
           })
-        }
-      }
-      else{
+        } else {
+          // Specific items selected, show grouped display
+          const children: Array<{
+            id: string
+            name: string
+            icon: React.ReactNode
+            type?: "file" | "folder"
+          }> = []
 
-      
-      // If specific Google Drive items are selected, show individual file/folder pills
-      for (const itemId of selectedItemsInGoogleDrive) {
-        const item = selectedItemDetailsInGoogleDrive[itemId]
-        if (item) {
-          // Handle both search results and direct navigation results
-          const itemTitle =
-            item.fields?.title ||
-            item.fields?.name ||
-            item.title ||
-            item.name ||
-            "Untitled"
-          const itemEntity = item.fields?.entity || item.entity
-          const isFolder = itemEntity === DriveEntity.Folder
+          for (const itemId of selectedItemsInGoogleDrive) {
+            const item = selectedItemDetailsInGoogleDrive[itemId]
+            if (item) {
+              const itemTitle =
+                item.fields?.title ||
+                item.fields?.name ||
+                item.title ||
+                item.name ||
+                "Untitled"
+              const itemEntity = item.fields?.entity || item.entity
+              const isFolder = itemEntity === DriveEntity.Folder
+
+              children.push({
+                id: `googledrive_${itemId}`,
+                name: itemTitle,
+                icon: getDriveEntityIcon(itemEntity),
+                type: isFolder ? "folder" : "file",
+              })
+            }
+          }
 
           result.push({
-            id: `googledrive_${itemId}`,
-            name: itemTitle,
-            icon: getDriveEntityIcon(itemEntity),
-            type: isFolder ? "folder" : "file",
+            ...googleDriveIntegration,
+            type: "grouped-parent",
+            children,
           })
         }
       }
     }
-    } 
 
+    // Handle Collections - grouped display
     allAvailableIntegrations.forEach((integration) => {
       if (
         integration.id.startsWith("cl_") &&
@@ -2123,32 +3508,42 @@ function AgentComponent() {
         const selectedItems = selectedItemsInCollection[clId] || new Set()
 
         if (selectedItems.size === 0) {
+          // No specific items selected, show just the collection
           result.push({
             ...integration,
             type: "cl",
           })
         } else {
+          // Specific items selected, show grouped display
           const itemDetails = selectedItemDetailsInCollection[clId] || {}
+          const children: Array<{
+            id: string
+            name: string
+            icon: React.ReactNode
+            type?: "file" | "folder"
+          }> = []
 
           selectedItems.forEach((itemId) => {
             const item = itemDetails[itemId]
             if (item) {
-              // Use the name from the mapping if available, otherwise use the item name
               const displayName =
                 integrationIdToNameMap[itemId]?.name || item.name
-
-              // Determine the icon based on the type from the mapping or the item type
               const itemType = integrationIdToNameMap[itemId]?.type || item.type
               const itemIcon = getItemIcon(itemType)
-              result.push({
+              
+              children.push({
                 id: `${clId}_${itemId}`,
                 name: displayName,
                 icon: itemIcon,
                 type: item.type,
-                clId: clId,
-                clName: integration.name,
               })
             }
+          })
+
+          result.push({
+            ...integration,
+            type: "grouped-parent",
+            children,
           })
         }
       }
@@ -3164,42 +4559,32 @@ function AgentComponent() {
                 </div>
 
                 <div className="w-full">
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-3">
                     Visibility
                   </Label>
-                  <div className="mt-3 space-y-3">
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="radio"
-                        id="private"
-                        name="visibility"
-                        checked={!isPublic}
-                        onChange={() => setIsPublic(false)}
-                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
-                      />
-                      <Label
-                        htmlFor="private"
-                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
-                      >
-                        Private (only shared users can access)
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="radio"
-                        id="public"
-                        name="visibility"
-                        checked={isPublic}
-                        onChange={() => setIsPublic(true)}
-                        className="w-4 h-4 text-slate-600 border-gray-300 focus:ring-slate-500"
-                      />
-                      <Label
-                        htmlFor="public"
-                        className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
-                      >
-                        Public (all workspace members can access)
-                      </Label>
-                    </div>
+                  <div className="inline-flex rounded-xl bg-gray-100 dark:bg-slate-700 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsPublic(false)}
+                      className={`px-6 py-2 text-sm font-medium rounded-xl transition-colors ${
+                        !isPublic
+                          ? "bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                      }`}
+                    >
+                      Private
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPublic(true)}
+                      className={`px-6 py-2 text-sm font-medium rounded-xl transition-colors ${
+                        isPublic
+                          ? "bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 shadow-sm"
+                          : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                      }`}
+                    >
+                      Public
+                    </button>
                   </div>
                 </div>
 
@@ -3224,43 +4609,133 @@ function AgentComponent() {
                         />
                       </div> */}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[48px] bg-white dark:bg-slate-700">
-                    {currentSelectedIntegrationObjects.length === 0 && (
-                      <span className="text-gray-400 dark:text-gray-400 text-sm">
-                        Add integrations..
-                      </span>
-                    )}
-                    {currentSelectedIntegrationObjects.map((integration) => (
-                      <CustomBadge
-                        key={integration.id}
-                        text={integration.name}
-                        icon={integration.icon}
-                        onRemove={() =>
-                          handleRemoveSelectedIntegration(integration.id)
+                  {currentSelectedIntegrationObjects.length > 0 && (
+                    <div className="flex flex-col gap-2 mt-3">
+                      {currentSelectedIntegrationObjects.map((integration) => {
+                        // Check if this is a grouped parent (Collections or Google Drive with children)
+                        if (integration.type === "grouped-parent" && integration.children && integration.children.length > 0) {
+                          return (
+                            <div key={integration.id} className="flex flex-col gap-2">
+                              {/* Parent header - fixed width section */}
+                              <div className="flex items-center gap-3 w-full">
+                                <div className="flex items-center gap-3 text-slate-700 dark:text-slate-200 text-base font-normal w-[200px] flex-shrink-0">
+                                  {integration.icon && <span className="flex items-center flex-shrink-0">{integration.icon}</span>}
+                                  <span className="truncate flex-1">{integration.name}</span>
+                                  <Trash2
+                                    className="h-4 w-4 cursor-pointer text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleRemoveSelectedIntegration(integration.id)
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              {/* Children items - aligned with parent, one per row */}
+                              <div className="flex flex-col gap-2 ml-[216px]">
+                                {integration.children.map((child) => (
+                                  <div key={child.id} className="flex items-center gap-2">
+                                    {child.icon && <span className="flex items-center flex-shrink-0">{child.icon}</span>}
+                                    <span className="text-sm text-gray-700 dark:text-gray-200 truncate">{child.name}</span>
+                                    <Trash2
+                                      className="h-3 w-3 cursor-pointer text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleRemoveSelectedIntegration(child.id)
+                                      }}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
                         }
-                      />
-                    ))}
-                    <DropdownMenu
-                      open={isIntegrationMenuOpen}
-                      onOpenChange={(open) => {
-                        setIsIntegrationMenuOpen(open)
-                        if (!open) {
-                          setNavigationPath([])
-                          setCurrentItems([])
-                          setDropdownSearchQuery("") // Clear search when closing dropdown
-                        }
-                      }}
-                    >
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="ml-auto p-1 h-7 w-7 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                        >
-                          <PlusCircle size={20} />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
+                        
+                        // Regular badge for non-grouped items
+                        const filters = appFilters[integration.id] || ['']
+                        const showFilterInput = integration.id === 'gmail' || integration.id === 'slack'
+                        
+                        return (
+                          <div key={integration.id} className="flex flex-col gap-2 w-full">
+                            {filters.map((filter, index) => (
+                              <CustomBadge
+                                key={`${integration.id}-${index}`}
+                                text={index === 0 ? integration.name : ''}
+                                icon={index === 0 ? integration.icon : undefined}
+                                appId={integration.id}
+                                filterValue={filter}
+                                filterIndex={index}
+                                onFilterChange={(value) => {
+                                  setAppFilters(prev => {
+                                    const newFilters = [...(prev[integration.id] || [''])]
+                                    newFilters[index] = value
+                                    return {
+                                      ...prev,
+                                      [integration.id]: newFilters
+                                    }
+                                  })
+                                }}
+                                onRemove={() => {
+                                  if (index === 0 && filters.length === 1) {
+                                    // Remove the entire integration
+                                    handleRemoveSelectedIntegration(integration.id)
+                                  } else {
+                                    // Remove just this filter
+                                    setAppFilters(prev => {
+                                      const newFilters = [...(prev[integration.id] || [''])]
+                                      newFilters.splice(index, 1)
+                                      return {
+                                        ...prev,
+                                        [integration.id]: newFilters.length > 0 ? newFilters : ['']
+                                      }
+                                    })
+                                  }
+                                }}
+                              />
+                            ))}
+                            {/* Add Filter button - shown once per app after all filters */}
+                            {showFilterInput && (
+                              <div className="ml-[216px]">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setAppFilters(prev => ({
+                                      ...prev,
+                                      [integration.id]: [...(prev[integration.id] || ['']), '']
+                                    }))
+                                  }}
+                                  className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                                >
+                                  <Plus size={14} />
+                                  <span>Add Filter</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  <DropdownMenu
+                    open={isIntegrationMenuOpen}
+                    onOpenChange={(open) => {
+                      setIsIntegrationMenuOpen(open)
+                      if (!open) {
+                        setNavigationPath([])
+                        setCurrentItems([])
+                        setDropdownSearchQuery("") // Clear search when closing dropdown
+                      }
+                    }}
+                  >
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-fit px-4 py-2 h-auto text-sm font-medium text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 rounded-3xl hover:bg-gray-50 dark:hover:bg-slate-700 mt-3"
+                      >
+                        <Plus size={16} className="mr-2" />
+                        Add App
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
                         className="w-[440px] p-0 bg-gray-100 dark:bg-gray-800 rounded-xl"
                         align="start"
                       >
@@ -4339,11 +5814,6 @@ function AgentComponent() {
                         </div>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Collections appear in the submenu when selecting
-                    integrations.
-                  </p>
                 </div>
 
                 {isRagOn && (
