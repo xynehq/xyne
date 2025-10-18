@@ -396,7 +396,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         let attempts = 0
         const maxAttempts = 100 // 5 seconds max wait
         while (!isFullyReady(pageNumber) && attempts < maxAttempts) {
-          console.log("Waiting for page to be ready", pageNumber)
           await new Promise(resolve => setTimeout(resolve, 50))
           attempts++
         }
