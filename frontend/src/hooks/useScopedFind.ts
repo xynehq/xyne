@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react"
-import { api } from "@/api"
 import { useDocumentOperations } from "@/contexts/DocumentOperationsContext"
+import { findHighlightMatches, type HighlightMatch as ClientHighlightMatch } from "@/utils/textHighlighting"
 
 type Options = {
   caseSensitive?: boolean
@@ -10,35 +10,17 @@ type Options = {
   documentId?: string // Document ID for caching
 }
 
-type HighlightMatch = {
-  startIndex: number
-  endIndex: number
-  length: number
-  similarity: number
-  highlightedText: string
-  originalLine?: string
-  processedLine?: string
-}
-
-type HighlightResponse = {
-  success: boolean
-  matches?: HighlightMatch[]
-  totalMatches?: number
-  message?: string
-  debug?: any
-}
+// Cache duration constant - defined at module scope to prevent re-declaration on each render
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
 type CacheEntry = {
-  response: HighlightResponse
+  matches: ClientHighlightMatch[]
   timestamp: number
 }
 
 type HighlightCache = {
   [key: string]: CacheEntry
 }
-
-// Cache duration constant - defined at module scope to prevent re-declaration on each render
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
 export function useScopedFind(
   containerRef: React.RefObject<HTMLElement>,
@@ -109,9 +91,9 @@ export function useScopedFind(
     return text
   }, [])
 
-  // Create highlight marks based on backend response
+  // Create highlight marks based on client-side response
   const createHighlightMarks = useCallback(
-    (container: HTMLElement, match: HighlightMatch): HTMLElement[] => {
+    (container: HTMLElement, match: ClientHighlightMatch): HTMLElement[] => {
       const marks: HTMLElement[] = []
 
       try {
@@ -392,7 +374,7 @@ export function useScopedFind(
 
         // Check cache first (only if safe)
         const cachedEntry = canUseCache ? cacheRef.current[cacheKey] : undefined
-        let result: HighlightResponse
+        let matches: ClientHighlightMatch[]
 
         if (
           cachedEntry &&
@@ -401,56 +383,41 @@ export function useScopedFind(
           if (debug) {
             console.log("Using cached result for key:", cacheKey)
           }
-          result = cachedEntry.response
+          matches = cachedEntry.matches
         } else {
           if (debug) {
-            console.log("Cache miss, making API call for key:", cacheKey)
+            console.log("Cache miss, computing highlights client-side for key:", cacheKey)
           }
 
-          const response = await api.highlight.$post({
-            json: {
-              chunkText: text,
-              documentContent: containerText,
-              options: {
-                caseSensitive,
-              },
-            },
-          })
+          // Use client-side highlighting instead of API call
+          const result = findHighlightMatches(text, containerText, { caseSensitive })
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
+          if (debug) {
+            console.log("Client-side highlighting result:", result)
           }
 
-          result = await response.json()
+          if (!result.success || !result.matches || result.matches.length === 0) {
+            if (debug) {
+              console.log("No matches found:", result.message)
+            }
+            return false
+          }
+
+          matches = result.matches
 
           // Only cache successful responses and only when safe
-          if (result.success && canUseCache) {
+          if (canUseCache) {
             cacheRef.current[cacheKey] = {
-              response: result,
+              matches,
               timestamp: Date.now(),
             }
 
             if (debug) {
               console.log("Cached successful result for key:", cacheKey)
             }
-          } else if (result.success && !canUseCache && debug) {
+          } else if (!canUseCache && debug) {
             console.log("Skipping cache write (no documentId)")
-          } else {
-            if (debug) {
-              console.log("Not caching failed response for key:", cacheKey)
-            }
           }
-        }
-
-        if (debug) {
-          console.log("Backend response:", result)
-        }
-
-        if (!result.success || !result.matches || result.matches.length === 0) {
-          if (debug) {
-            console.log("No matches found:", result.message)
-          }
-          return false
         }
 
         // Create highlight marks for all matches
@@ -458,7 +425,7 @@ export function useScopedFind(
         let longestMatchIndex = 0
         let longestMatchLength = 0
 
-        result.matches.forEach((match, matchIndex) => {
+        matches.forEach((match, matchIndex) => {
           const marks = createHighlightMarks(root, match)
           marks.forEach((mark) => {
             mark.setAttribute("data-match-index", matchIndex.toString())
@@ -473,7 +440,7 @@ export function useScopedFind(
 
         if (debug) {
           console.log(
-            `Created ${allMarks.length} highlight marks from ${result.matches.length} matches`,
+            `Created ${allMarks.length} highlight marks from ${matches.length} matches`,
           )
           console.log(
             `Longest match index: ${longestMatchIndex} with length: ${longestMatchLength}`,
