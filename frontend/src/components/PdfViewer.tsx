@@ -16,18 +16,27 @@ const MemoizedPage = memo(({
   pageNumber, 
   scale, 
   loading, 
-  error 
+  error,
+  onRenderSuccess,
+  onRenderTextLayerSuccess,
+  onRenderAnnotationLayerSuccess
 }: {
   pageNumber: number
   scale: number
   loading: React.ReactNode
   error: React.ReactNode
+  onRenderSuccess?: () => void
+  onRenderTextLayerSuccess?: () => void
+  onRenderAnnotationLayerSuccess?: () => void
 }) => (
   <Page
     pageNumber={pageNumber}
     scale={scale}
     renderTextLayer
     renderAnnotationLayer
+    onRenderSuccess={onRenderSuccess}
+    onRenderTextLayerSuccess={onRenderTextLayerSuccess}
+    onRenderAnnotationLayerSuccess={onRenderAnnotationLayerSuccess}
     loading={loading}
     error={error}
     className="shadow-lg"
@@ -88,6 +97,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   // Height map: precomputed heights for all pages at current scale
   const [heightMap, setHeightMap] = useState<number[]>([])
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
+  
+  // Page readiness tracking for all layers using ref for real-time access
+  const pageReadyRef = useRef<Record<number, {canvas?: boolean; text?: boolean; anno?: boolean}>>({})
+  
+  // Helper functions for page readiness tracking
+  const mark = (page: number, key: "canvas" | "text" | "anno") => {
+    const current = pageReadyRef.current[page] ?? {}
+    pageReadyRef.current[page] = {...current, [key]: true}
+  }
+
+  const isFullyReady = (page: number) => {
+    const state = pageReadyRef.current[page]
+    const ready = !!state?.canvas && !!state?.text && !!state?.anno
+    return ready
+  }
   
   // Create a simple, readable key for the Document component
   const documentKey = useMemo(() => {
@@ -359,8 +383,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   useEffect(() => {
     if (documentOperationsRef?.current) {
       documentOperationsRef.current.goToPage = async (pageIndex?: number) => {
-        if (pageIndex !== undefined) {
-          goToPage(pageIndex)
+        if (pageIndex === undefined || pageIndex < 0) {
+          return
+        }
+        // Convert 0-based index to 1-based page number
+        const pageNumber = pageIndex + 1
+        if(currentVisiblePage !== pageNumber) {
+          goToPage(pageNumber)
+        }
+        
+        // Wait for the specific page to be ready
+        let attempts = 0
+        const maxAttempts = 100 // 5 seconds max wait
+        while (!isFullyReady(pageNumber) && attempts < maxAttempts) {
+          console.log("Waiting for page to be ready", pageNumber)
+          await new Promise(resolve => setTimeout(resolve, 50))
+          attempts++
         }
       }
     }
@@ -440,6 +478,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     setPageDimensions(null)
     setHeightMap([])
     setPdfDocument(null)
+    pageReadyRef.current = {} // Reset page readiness tracking
   }, [documentKey, initialPage])
 
 
@@ -619,6 +658,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 scale={scale}
                 renderTextLayer
                 renderAnnotationLayer
+                onRenderSuccess={() => mark(pageNumber, "canvas")}
+                onRenderTextLayerSuccess={() => {
+                  // ensure it's actually painted:
+                  requestAnimationFrame(() => mark(pageNumber, "text"))
+                }}
+                onRenderAnnotationLayerSuccess={() => {
+                  requestAnimationFrame(() => mark(pageNumber, "anno"))
+                }}
                 loading={
                   <div className="flex items-center justify-center p-8">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -666,6 +713,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                           <MemoizedPage
                             pageNumber={pageNum}
                             scale={scale}
+                            onRenderSuccess={() => mark(pageNum, "canvas")}
+                            onRenderTextLayerSuccess={() => {
+                              // ensure it's actually painted:
+                              requestAnimationFrame(() => mark(pageNum, "text"))
+                            }}
+                            onRenderAnnotationLayerSuccess={() => {
+                              requestAnimationFrame(() => mark(pageNum, "anno"))
+                            }}
                             loading={
                               <div className="flex items-center justify-center h-full">
                                 <div className="text-center">
