@@ -13,8 +13,15 @@ import {
   type InsertWorkflowTemplate,
   type InsertWorkflowExecution,
   type InsertWorkflowStepExecution,
+  insertWorkflowStepTemplateSchema,
+  selectWorkflowStepTemplateSchema,
+  type InsertWorkflowStepTemplate,
+  insertWorkflowExecutionSchema,
+  selectWorkflowExecutionSchema,
+  selectWorkflowStepExecutionSchema,
 } from "@/db/schema"
-import { StepType } from "@/types/workflowTypes"
+import { StepType, WorkflowStatus } from "@/types/workflowTypes"
+import { z } from "zod"
 
 // Workflow Template Operations
 export const createWorkflowTemplate = async (
@@ -47,6 +54,7 @@ export const createWorkflowTemplate = async (
   return selectWorkflowTemplateSchema.parse(template)
 }
 
+// Get template and validate (allow access to user's own or public templates)
 export const getWorkflowTemplateByIdWithPublicCheck = async (
   trx: TxnOrClient,
   id: string,
@@ -84,9 +92,8 @@ export const getAccessibleWorkflowTemplates = async (
         eq(workflowTemplate.userId, userId),
       )
     ))
-    .orderBy(desc(workflowTemplate.createdAt))
 
-  return templates as SelectWorkflowTemplate[]
+  return z.array(selectWorkflowTemplateSchema).parse(templates)
 }
 
 export const updateWorkflowTemplate = async (
@@ -103,7 +110,7 @@ export const updateWorkflowTemplate = async (
     .where(eq(workflowTemplate.id, id))
     .returning()
 
-  return updated ? (updated as SelectWorkflowTemplate) : null
+  return updated ? selectWorkflowTemplateSchema.parse(updated) : null
 }
 
 // Workflow Step Template Operations
@@ -121,7 +128,7 @@ export const createWorkflowStepTemplate = async (
     timeEstimate?: number
     metadata?: any
   },
-): Promise<SelectWorkflowStepTemplate> => {
+): Promise<InsertWorkflowStepTemplate> => {
   const [step] = await trx
     .insert(workflowStepTemplate)
     .values({
@@ -138,10 +145,23 @@ export const createWorkflowStepTemplate = async (
     })
     .returning()
 
-  return step as SelectWorkflowStepTemplate
+  return insertWorkflowStepTemplateSchema.parse(step)
 }
 
-export const getWorkflowStepTemplatesByTemplate = async (
+export const getWorkflowStepTemplateById = async(
+  trx: TxnOrClient,
+  id: string,
+): Promise<SelectWorkflowStepTemplate | null> => {
+  const [step] = await trx
+    .select()
+    .from(workflowStepTemplate)
+    .where(eq(workflowStepTemplate.id, id))
+    .limit(1)
+
+  return step ? selectWorkflowStepTemplateSchema.parse(step) : null
+}
+
+export const getWorkflowStepTemplatesByTemplateId = async (
   trx: TxnOrClient,
   workflowTemplateId: string,
 ): Promise<SelectWorkflowStepTemplate[]> => {
@@ -149,9 +169,8 @@ export const getWorkflowStepTemplatesByTemplate = async (
     .select()
     .from(workflowStepTemplate)
     .where(eq(workflowStepTemplate.workflowTemplateId, workflowTemplateId))
-    .orderBy(workflowStepTemplate.createdAt)
 
-  return steps as SelectWorkflowStepTemplate[]
+  return z.array(selectWorkflowStepTemplateSchema).parse(steps)
 }
 
 // Workflow Execution Operations
@@ -164,6 +183,7 @@ export const createWorkflowExecution = async (
     name: string
     description?: string
     metadata?: any
+    status?: WorkflowStatus
   },
 ): Promise<SelectWorkflowExecution> => {
   const [execution] = await trx
@@ -175,13 +195,14 @@ export const createWorkflowExecution = async (
       name: data.name,
       description: data.description,
       metadata: data.metadata || {},
+      status: data.status,
     })
     .returning()
 
-  return execution as SelectWorkflowExecution
+  return selectWorkflowExecutionSchema.parse(execution)
 }
 
-export const getWorkflowExecutionById = async (
+export const getWorkflowExecutionByIdWithChecks = async (
   trx: TxnOrClient,
   id: string,
   workspaceId: number,
@@ -197,10 +218,25 @@ export const getWorkflowExecutionById = async (
     ))
     .limit(1)
 
-  return execution ? (execution as SelectWorkflowExecution) : null
+  return execution ? selectWorkflowExecutionSchema.parse(execution) : null
 }
 
-export const getAllWorkflowExecutions = async (
+export const getWorkflowExecutionById = async (
+  trx: TxnOrClient,
+  id: string,
+): Promise<SelectWorkflowExecution | null> => {
+  const [execution] = await trx
+    .select()
+    .from(workflowExecution)
+    .where(and(
+      eq(workflowExecution.id, id),
+    ))
+    .limit(1)
+
+  return execution ? selectWorkflowExecutionSchema.parse(execution) : null
+}
+
+export const getAccessibleWorkflowExecutions = async (
   trx: TxnOrClient,
   workspaceId: number,
   userId: number,
@@ -212,9 +248,8 @@ export const getAllWorkflowExecutions = async (
       eq(workflowExecution.workspaceId, workspaceId),
       eq(workflowExecution.userId, userId),
     ))
-    .orderBy(desc(workflowExecution.createdAt))
 
-  return executions as SelectWorkflowExecution[]
+  return z.array(selectWorkflowExecutionSchema).parse(executions)
 }
 
 export const updateWorkflowExecution = async (
@@ -231,7 +266,7 @@ export const updateWorkflowExecution = async (
     .where(eq(workflowExecution.id, id))
     .returning()
 
-  return updated ? ({ ...updated, metadata: updated.metadata as any }) : null
+  return updated ? selectWorkflowExecutionSchema.parse(updated) : null
 }
 
 // Workflow Step Execution Operations
@@ -266,7 +301,37 @@ export const createWorkflowStepExecution = async (
     })
     .returning()
 
-  return stepExecution as SelectWorkflowStepExecution
+  return selectWorkflowStepExecutionSchema.parse(stepExecution)
+}
+
+export const createWorkflowStepExecutionsFromSteps = async (
+  trx: TxnOrClient,
+  workflowExecutionId: string,
+  stepTemplates: SelectWorkflowStepTemplate[],
+): Promise<SelectWorkflowStepExecution[]> => {
+  if (stepTemplates.length === 0) return []
+
+  const insertValues = stepTemplates.map((step) => ({
+    workflowExecutionId,
+    workflowStepTemplateId: step.id,
+    name: step.name,
+    type: step.type,
+    status: WorkflowStatus.DRAFT, // Default status from table schema
+    parentStepId: step.parentStepId,
+    prevStepIds: step.prevStepIds as string[] || [],
+    nextStepIds: step.nextStepIds as string[] || [],
+    toolExecIds: [], // updated when tools execute
+    timeEstimate: step.timeEstimate || 0,
+    metadata: step.metadata || {},
+    completedBy: null, // No one has completed it yet
+  }))
+
+  const stepExecutions = await trx
+    .insert(workflowStepExecution)
+    .values(insertValues)
+    .returning()
+
+  return z.array(selectWorkflowStepExecutionSchema).parse(stepExecutions)
 }
 
 export const getWorkflowStepExecutionsByExecution = async (
@@ -277,9 +342,8 @@ export const getWorkflowStepExecutionsByExecution = async (
     .select()
     .from(workflowStepExecution)
     .where(eq(workflowStepExecution.workflowExecutionId, workflowExecutionId))
-    .orderBy(workflowStepExecution.createdAt)
   
-  return results.map(result => ({ ...result, metadata: result.metadata as any }))
+  return z.array(selectWorkflowStepExecutionSchema).parse(results)
 }
 
 export const getWorkflowStepExecutionById = async (
@@ -292,7 +356,7 @@ export const getWorkflowStepExecutionById = async (
     .where(eq(workflowStepExecution.id, id))
     .limit(1)
 
-  return stepExecution ? ({ ...stepExecution, metadata: stepExecution.metadata as any }) : null
+  return stepExecution ? selectWorkflowStepExecutionSchema.parse(stepExecution) : null
 }
 
 export const updateWorkflowStepExecution = async (
@@ -322,5 +386,5 @@ export const updateWorkflowStepExecution = async (
     .where(eq(workflowStepExecution.id, id))
     .returning()
 
-  return updated ? ({ ...updated, metadata: updated.metadata as any }) : null
+  return updated ? selectWorkflowStepExecutionSchema.parse(updated) : null
 }
