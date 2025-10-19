@@ -316,7 +316,9 @@ export type SaaSJob = {
 
 export type SaaSOAuthJob = Omit<SaaSJob, "userId" | "workspaceId">
 
-export type TxnOrClient = PgTransaction<any> | PostgresJsDatabase
+export type TxnOrClient =
+  | PgTransaction<any>
+  | PostgresJsDatabase<any>
 
 export type OAuthCredentials = {
   data: {
@@ -563,6 +565,9 @@ export const ingestMoreChannelSchema = z.object({
 })
 export const startSlackIngestionSchema = z.object({
   connectorId: z.number(),
+})
+export const startGoogleIngestionSchema = z.object({
+  connectorId: z.string(),
 })
 
 export type EntityType =

@@ -110,7 +110,10 @@ import {
   ConnectorNotCreated,
   NoUserFound,
 } from "@/errors"
-import { handleGoogleServiceAccountIngestion } from "@/integrations/google"
+import {
+  handleGoogleOAuthIngestion,
+  handleGoogleServiceAccountIngestion,
+} from "@/integrations/google"
 import { scopes } from "@/integrations/google/config"
 import { ServiceAccountIngestMoreUsers } from "@/integrations/google"
 import { handleSlackChannelIngestion } from "@/integrations/slack/channelIngest"
@@ -137,6 +140,7 @@ import { CustomServiceAuthProvider } from "@/integrations/microsoft/utils"
 import { KbItemsSchema, type VespaSchema } from "@xyne/vespa-ts"
 import { GetDocument } from "@/search/vespa"
 import { getCollectionFilesVespaIds } from "@/db/knowledgeBase"
+import { replaceSheetIndex } from "@/search/utils"
 
 const Logger = getLogger(Subsystem.Api).child({ module: "admin" })
 const loggerWithChild = getLoggerWithChild(Subsystem.Api, { module: "admin" })
@@ -1446,7 +1450,7 @@ export const AddStdioMCPConnector = async (c: Context) => {
 export const StartSlackIngestionApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   // @ts-ignore - Assuming payload is validated by zValidator
-  const payload = c.req.valid("json") as { connectorId: string }
+  const payload = c.req.valid("json") as { connectorId: number }
 
   try {
     const userRes = await getUserByEmail(db, sub)
@@ -1459,7 +1463,7 @@ export const StartSlackIngestionApi = async (c: Context) => {
     }
     const [user] = userRes
 
-    const connector = await getConnector(db, parseInt(payload.connectorId))
+    const connector = await getConnector(db, payload.connectorId)
     if (!connector) {
       throw new HTTPException(404, { message: "Connector not found" })
     }
@@ -1494,11 +1498,67 @@ export const StartSlackIngestionApi = async (c: Context) => {
   }
 }
 
+export const StartGoogleIngestionApi = async (c: Context) => {
+  const { sub } = c.get(JwtPayloadKey)
+  // @ts-ignore - Assuming payload is validated by zValidator
+  const payload = c.req.valid("json") as { connectorId: string }
+  try {
+    const userRes = await getUserByEmail(db, sub)
+    if (!userRes || !userRes.length) {
+      loggerWithChild({ email: sub }).error(
+        { sub },
+        "No user found for sub in StartGoogleIngestionApi",
+      )
+      throw new NoUserFound({})
+    }
+    const [user] = userRes
+
+    const connector = await getConnectorByExternalId(
+      db,
+      payload.connectorId,
+      user.id,
+    )
+    if (!connector) {
+      throw new HTTPException(404, { message: "Connector not found" })
+    }
+
+    // Call the main Google ingestion function
+    handleGoogleOAuthIngestion({
+      connectorId: connector.id,
+      app: connector.app as Apps,
+      externalId: connector.externalId,
+      authType: connector.authType as AuthType,
+      email: sub,
+    }).catch((error) => {
+      loggerWithChild({ email: sub }).error(
+        error,
+        `Background Google ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+      )
+    })
+
+    return c.json({
+      success: true,
+      message: "Regular Google ingestion started.",
+    })
+  } catch (error: any) {
+    loggerWithChild({ email: sub }).error(
+      error,
+      `Error starting regular Google ingestion: ${getErrorMessage(error)}`,
+    )
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: `Failed to start regular Google ingestion: ${getErrorMessage(error)}`,
+    })
+  }
+}
+// API endpoint for starting resumable Slack channel ingestion
+// Creates an ingestion record and starts background processing
+// Returns immediate response while ingestion runs in sync-server
 export const IngestMoreChannelApi = async (c: Context) => {
   const { sub } = c.get(JwtPayloadKey)
   // @ts-ignore
   const payload = c.req.valid("json") as {
-    connectorId: string
+    connectorId: number
     channelsToIngest: string[]
     startDate: string
     endDate: string
@@ -1506,27 +1566,102 @@ export const IngestMoreChannelApi = async (c: Context) => {
   }
 
   try {
+    // Validate user exists and has access
+    const userRes = await getUserByEmail(db, sub)
+    if (!userRes || !userRes.length) {
+      loggerWithChild({ email: sub }).error(
+        { sub },
+        "No user found for sub in IngestMoreChannelApi",
+      )
+      throw new NoUserFound({})
+    }
+    const [user] = userRes
+
+    // Validate connector exists and user has access
+    const connector = await getConnector(db, payload.connectorId)
+    if (!connector) {
+      throw new HTTPException(404, { message: "Connector not found" })
+    }
+
+    // Import ingestion functions for database operations
+    const { createIngestion, hasActiveIngestion } = await import("@/db/ingestion")
+
+    // Prevent concurrent ingestions using database transaction to avoid race conditions
+    // This atomically checks for active ingestions and creates new one if none exist
+    const ingestion = await db.transaction(async (trx) => {
+      const hasActive = await hasActiveIngestion(trx, user.id, connector.id)
+      if (hasActive) {
+        throw new HTTPException(409, { 
+          message: "An ingestion is already in progress for this connector. Please wait for it to complete or cancel it first." 
+        })
+      }
+
+      // Create ingestion record with initial metadata for resumability
+      // All state needed for resuming is stored in the metadata field
+      return await createIngestion(trx, {
+      userId: user.id,
+      connectorId: connector.id,
+      workspaceId: connector.workspaceId,
+      status: "pending",
+      metadata: {
+        slack: {
+          // Data sent to frontend via WebSocket for progress display
+          websocketData: {
+            connectorId: connector.externalId,
+            progress: {
+              totalChannels: payload.channelsToIngest.length,
+              processedChannels: 0,
+              totalMessages: 0,
+              processedMessages: 0,
+            },
+          },
+          // Internal state data for resumability
+          ingestionState: {
+            channelsToIngest: payload.channelsToIngest,
+            startDate: payload.startDate,
+            endDate: payload.endDate,
+            includeBotMessage: payload.includeBotMessage,
+            currentChannelIndex: 0,  // Resume from this channel
+            lastUpdated: new Date().toISOString(),
+          },
+        },
+      },
+      })
+    })
+
+    // Start background ingestion processing asynchronously
+    // Ingestion runs in sync-server while API returns immediately
     const email = sub
-    const resp = await handleSlackChannelIngestion(
-      parseInt(payload.connectorId),
+    handleSlackChannelIngestion(
+      connector.id,
       payload.channelsToIngest,
       payload.startDate,
       payload.endDate,
       email,
       payload.includeBotMessage,
-    )
+      ingestion.id,  // Pass ingestion ID for progress tracking
+    ).catch((error) => {
+      loggerWithChild({ email: sub }).error(
+        error,
+        `Background Slack channel ingestion failed for connector ${connector.id}: ${getErrorMessage(error)}`,
+      )
+    })
+
+    // Return immediate success response to frontend
+    // Actual progress will be communicated via WebSocket
     return c.json({
       success: true,
-      message: "Successfully ingested the channels",
+      message: "Slack channel ingestion started.",
+      ingestionId: ingestion.id,
     })
   } catch (error) {
     loggerWithChild({ email: sub }).error(
       error,
-      "Failed to ingest Slack channels",
+      "Failed to start Slack channel ingestion",
     )
-    return c.json({
-      success: false,
-      message: getErrorMessage(error),
+    if (error instanceof HTTPException) throw error
+    throw new HTTPException(500, {
+      message: `Failed to start Slack channel ingestion: ${getErrorMessage(error)}`,
     })
   }
 }
@@ -2106,7 +2241,7 @@ export const GetKbVespaContent = async (c: Context) => {
 
     const rawData = await c.req.json()
     const validatedData = getDocumentSchema.parse(rawData)
-    const { docId, schema: rawSchema } = validatedData
+    const { docId, sheetIndex, schema: rawSchema } = validatedData
     const validSchemas = [KbItemsSchema]
     if (!validSchemas.includes(rawSchema)) {
       throw new HTTPException(400, {
@@ -2119,12 +2254,20 @@ export const GetKbVespaContent = async (c: Context) => {
         message: `Document with id ${docId} not found in the system.`,
       })
     }
+
+    const rawVespaDocId = collectionFile[0].vespaDocId
+    if (!rawVespaDocId) {
+      throw new HTTPException(500, {
+        message: "Document Vespa ID is missing in the system.",
+      })
+    }
+    const vespaDocId = replaceSheetIndex(rawVespaDocId, sheetIndex ?? 0)
     // console.log("Fetched Vespa Doc ID:", vespaDocId)
     const schema = rawSchema as VespaSchema
 
     const documentData = await GetDocument(
       schema,
-      collectionFile[0].vespaDocId!,
+      vespaDocId,
     )
 
     if (!documentData || !("fields" in documentData) || !documentData.fields) {

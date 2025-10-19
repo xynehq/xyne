@@ -17,8 +17,7 @@ const DEFAULT_LAYOUT_PARSING_VISUALIZE = false
 const LAYOUT_PARSING_API_PATH = "/v2/models/layout-parsing/infer"
 const DEFAULT_MAX_PAGES_PER_LAYOUT_REQUEST = 100
 const TEXT_CHUNK_OVERLAP_CHARS = 32
-const USE_SEQUENTIAL_BATCH_PROCESSING=true
-
+const USE_SEQUENTIAL_BATCH_PROCESSING = true
 
 type LayoutParsingBlock = {
   block_label?: string
@@ -139,7 +138,10 @@ function trimChunkToByteLimit(content: string, byteLimit: number): string {
 
   let endIndex = content.length
 
-  while (endIndex > 0 && getByteLength(content.slice(0, endIndex)) > byteLimit) {
+  while (
+    endIndex > 0 &&
+    getByteLength(content.slice(0, endIndex)) > byteLimit
+  ) {
     endIndex -= 1
   }
 
@@ -322,9 +324,11 @@ async function callLayoutParsingApi(
   buffer: Buffer,
   fileName: string,
 ): Promise<LayoutParsingApiPayload> {
-  const baseUrl = (process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL).replace(/\/+$/, '')
-  
-  const apiUrl = baseUrl + '/' + LAYOUT_PARSING_API_PATH.replace(/^\/+/, '')
+  const baseUrl = (
+    process.env.LAYOUT_PARSING_BASE_URL || DEFAULT_LAYOUT_PARSING_BASE_URL
+  ).replace(/\/+$/, "")
+
+  const apiUrl = baseUrl + "/" + LAYOUT_PARSING_API_PATH.replace(/^\/+/, "")
   const fileType = DEFAULT_LAYOUT_PARSING_FILE_TYPE
   const visualize = DEFAULT_LAYOUT_PARSING_VISUALIZE
   const timeoutMs = Number.parseInt(
@@ -407,17 +411,25 @@ async function callLayoutParsingApi(
     return result
   } catch (error) {
     // Log the layout parsing API failure with context
-    Logger.error(error, `Layout parsing API call failed for file: ${fileName}`, {
-      fileName,
-      fileSize: buffer.length,
-      apiUrl,
-    })
-    
+    Logger.error(
+      error,
+      `Layout parsing API call failed for file: ${fileName}`,
+      {
+        fileName,
+        fileSize: buffer.length,
+        apiUrl,
+      },
+    )
+
     // Re-throw with enhanced error message for better debugging
     if (error instanceof Error) {
-      throw new Error(`Layout parsing API failed for "${fileName}": ${error.message}`)
+      throw new Error(
+        `Layout parsing API failed for "${fileName}": ${error.message}`,
+      )
     } else {
-      throw new Error(`Layout parsing API failed for "${fileName}": Unknown error occurred`)
+      throw new Error(
+        `Layout parsing API failed for "${fileName}": Unknown error occurred`,
+      )
     }
   } finally {
     if (timer) {
@@ -521,7 +533,11 @@ async function splitPdfIntoBatches(
 
   const batches: Buffer[] = []
 
-  for (let startPage = 0; startPage < totalPages; startPage += maxPagesPerBatch) {
+  for (
+    let startPage = 0;
+    startPage < totalPages;
+    startPage += maxPagesPerBatch
+  ) {
     const endPage = Math.min(startPage + maxPagesPerBatch, totalPages)
     const pageCount = endPage - startPage
 
@@ -563,7 +579,7 @@ function mergeLayoutParsingResults(
     // Adjust page indices to maintain correct ordering across batches
     const adjustedResults = layoutResults.map((layout, localPageIndex) => ({
       ...layout,
-      // We don't need to modify the layout structure itself since 
+      // We don't need to modify the layout structure itself since
       // transformLayoutParsingResults handles page indexing correctly
     }))
 
@@ -601,8 +617,7 @@ async function processBatchesConcurrently(
       Logger.info("Completed PDF batch", {
         fileName,
         batchIndex,
-        layoutResultsCount:
-          batchResult.layoutParsingResults?.length ?? 0,
+        layoutResultsCount: batchResult.layoutParsingResults?.length ?? 0,
       })
       return batchResult
     }),
@@ -623,7 +638,7 @@ async function processBatchesSequentially(
   for (let index = 0; index < batches.length; index++) {
     const batch = batches[index]
     const batchIndex = index + 1
-    
+
     Logger.info("Processing PDF batch sequentially", {
       fileName,
       batchIndex,
@@ -639,8 +654,7 @@ async function processBatchesSequentially(
     Logger.info("Completed PDF batch sequentially", {
       fileName,
       batchIndex,
-      layoutResultsCount:
-        batchResult.layoutParsingResults?.length ?? 0,
+      layoutResultsCount: batchResult.layoutParsingResults?.length ?? 0,
     })
 
     batchResults.push(batchResult)
@@ -686,7 +700,9 @@ export async function chunkByOCRFromBuffer(
           fileName,
           totalPages,
           batches: batches.length,
-          processingMode: USE_SEQUENTIAL_BATCH_PROCESSING ? 'sequential' : 'concurrent',
+          processingMode: USE_SEQUENTIAL_BATCH_PROCESSING
+            ? "sequential"
+            : "concurrent",
         })
 
         const batchResults = USE_SEQUENTIAL_BATCH_PROCESSING
@@ -696,17 +712,19 @@ export async function chunkByOCRFromBuffer(
         finalApiResult = mergeLayoutParsingResults(batchResults)
         Logger.info("Merged batch results", {
           totalBatches: batches.length,
-          layoutResultsCount:
-            finalApiResult.layoutParsingResults?.length || 0,
+          layoutResultsCount: finalApiResult.layoutParsingResults?.length || 0,
         })
       } else {
         finalApiResult = await callLayoutParsingApi(buffer, fileName)
       }
     } catch (error) {
-      Logger.warn("Failed to analyze PDF for batching, processing as single file", {
-        fileName,
-        error: (error as Error).message,
-      })
+      Logger.warn(
+        "Failed to analyze PDF for batching, processing as single file",
+        {
+          fileName,
+          error: (error as Error).message,
+        },
+      )
       finalApiResult = await callLayoutParsingApi(buffer, fileName)
     }
   } else {
@@ -788,18 +806,25 @@ export async function chunkByOCR(
         const overlap = lastTextChunk.slice(-TEXT_CHUNK_OVERLAP_CHARS)
         if (overlap && !chunkContent.startsWith(overlap)) {
           const needsSeparator =
-            !/\s$/.test(overlap) && chunkContent.length > 0 && !/^\s/.test(chunkContent)
+            !/\s$/.test(overlap) &&
+            chunkContent.length > 0 &&
+            !/^\s/.test(chunkContent)
           chunkContent = `${overlap}${needsSeparator ? " " : ""}${chunkContent}`
         }
       }
 
       chunkContent = trimChunkToByteLimit(chunkContent, chunkSizeLimit)
 
+      const pageNumbersArray = Array.from(currentPageNumbers).sort(
+        (a, b) => a - b,
+      )
+      const blockLabelsArray = Array.from(new Set(currentBlockLabels))
+
       chunks.push(chunkContent)
       chunks_map.push({
         chunk_index: globalSeq.value,
-        page_numbers: Array.from(currentPageNumbers).sort((a, b) => a - b),
-        block_labels: Array.from(new Set(currentBlockLabels)),
+        page_numbers: pageNumbersArray,
+        block_labels: blockLabelsArray,
       })
 
       globalSeq.value += 1
@@ -820,7 +845,6 @@ export async function chunkByOCR(
 
   for (const pageNumber of pageKeys) {
     const blocks = ocrResponse[String(pageNumber)] ?? []
-    currentPageNumbers.add(pageNumber)
 
     for (const block of blocks) {
       if (block.block_label === "image") {
@@ -900,6 +924,7 @@ export async function chunkByOCR(
         globalSeq.value += 1
 
         currentTextBuffer += `${currentTextBuffer ? " " : ""}[IMG#${block.image_index}]`
+        currentPageNumbers.add(pageNumber)
       } else {
         const normalizedText = normalizeBlockContent(block)
         if (!normalizedText) {
@@ -912,18 +937,19 @@ export async function chunkByOCR(
           getByteLength(normalizedText)
 
         if (projectedSize > chunkSizeLimit) {
-          addChunk(true) // Preserve page numbers when chunking mid-page
+          addChunk(false) // Don't preserve page numbers - start fresh
         }
 
         currentTextBuffer += (currentTextBuffer ? " " : "") + normalizedText
         currentBlockLabels.push(block.block_label)
+        currentPageNumbers.add(pageNumber)
       }
     }
   }
 
   if (currentTextBuffer.trim()) {
     Logger.debug("Adding final text chunk")
-    addChunk(false) // Clear page numbers for final chunk
+    addChunk(false) // Don't preserve page numbers for final chunk
   }
 
   const chunks_pos = chunks_map.map((metadata) => metadata.chunk_index)

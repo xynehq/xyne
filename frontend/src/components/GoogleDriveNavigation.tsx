@@ -3,9 +3,8 @@ import { ChevronRight } from "lucide-react"
 import { Apps, DriveEntity } from "shared/types"
 import { getIcon } from "@/lib/common"
 import { api } from "@/api"
-import {VespaFile} from "shared/types"
+import { VespaFile } from "shared/types"
 
-// Utility function to check if an item is selected either directly or through parent inheritance
 function isItemSelectedWithInheritance(
   itemId: string,
   selectedItemsInGoogleDrive: Set<string>,
@@ -17,8 +16,6 @@ function isItemSelectedWithInheritance(
   }>,
   selectedIntegrations: Record<string, boolean>,
 ): boolean {
-  
-
   if (selectedItemsInGoogleDrive.has(itemId)) {
     return true
   }
@@ -27,14 +24,12 @@ function isItemSelectedWithInheritance(
     hasGoogleDriveSelected && selectedItemsInGoogleDrive.size === 0
 
   if (isGoogleDriveSelectAll) return true
- 
+
   const parentFolders = navigationPath
     .filter((pathItem) => pathItem.type === "drive-folder")
     .map((pathItem) => pathItem.id)
 
- 
   for (const parentFolderId of parentFolders) {
-
     for (const selectedItemId of selectedItemsInGoogleDrive) {
       const selectedItemDetail =
         selectedItemDetailsInGoogleDrive[selectedItemId]
@@ -42,7 +37,6 @@ function isItemSelectedWithInheritance(
         const selectedDocId =
           selectedItemDetail.fields?.docId || selectedItemDetail.docId
         if (selectedDocId === parentFolderId) {
-         
           return true
         }
       }
@@ -124,7 +118,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
   setSelectedIntegrations,
   selectedIntegrations,
 }) => {
-  const sortedItems= useMemo(() => {
+  const sortedItems = useMemo(() => {
     return sortDriveItems(currentItems)
   }, [currentItems])
 
@@ -234,12 +228,24 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
                 const itemEntity = result.entity
                 const itemTitle = result.title || result.name || "Untitled"
                 const isFolder = itemEntity === DriveEntity.Folder
+                const isDirectlySelected =
+                  selectedItemsInGoogleDrive.has(itemDocId)
+                const isInheritedFromParent = isItemSelectedWithInheritance(
+                  itemDocId,
+                  selectedItemsInGoogleDrive,
+                  selectedItemDetailsInGoogleDrive,
+                  navigationPath,
+                  selectedIntegrations,
+                )
+                const finalIsSelected =
+                  isDirectlySelected || isInheritedFromParent
+                const isDisabled = isInheritedFromParent && !isDirectlySelected
 
                 const handleFolderNavigation = () => {
-                  if (isFolder && result.fields?.docId) {
+                  if (isFolder && result?.docId) {
                     // Clear search query and results when navigating
                     setDropdownSearchQuery("")
-                    navigateToDriveFolder(result.fields.docId, itemTitle)
+                    navigateToDriveFolder(result?.docId, itemTitle)
                   }
                 }
 
@@ -250,6 +256,8 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
                   >
                     <input
                       type="checkbox"
+                      checked={finalIsSelected}
+                      disabled={isDisabled}
                       onChange={(e) => {
                         e.stopPropagation()
 
@@ -305,7 +313,6 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
               </div>
             ) : sortedItems.length > 0 ? (
               sortedItems.map((item: any) => {
-               
                 const itemDocId = item.fields?.docId
                 const itemEntity = item.fields?.entity
                 const itemTitle =
@@ -316,7 +323,7 @@ export const GoogleDriveNavigation: React.FC<GoogleDriveNavigationProps> = ({
                 const isDirectlySelected =
                   selectedItemsInGoogleDrive.has(itemDocId)
                 const isInheritedFromParent = isItemSelectedWithInheritance(
-                  item,
+                  itemDocId,
                   selectedItemsInGoogleDrive,
                   selectedItemDetailsInGoogleDrive,
                   navigationPath,

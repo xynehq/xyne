@@ -37,123 +37,144 @@ import { chunkSheetWithHeaders } from "@/sheetChunk"
 
 // Utility function to extract header from chunks and remove headers from each chunk
 const extractHeaderAndDataChunks = (
-  chunks_summary: (string | { chunk: string; score: number; index: number })[] | undefined,
+  chunks_summary:
+    | (string | { chunk: string; score: number; index: number })[]
+    | undefined,
+  matchfeatures?: any,
+): {
+  chunks_summary: (string | { chunk: string; score: number; index: number })[]
   matchfeatures?: any
-): { 
-  chunks_summary: (string | { chunk: string; score: number; index: number })[];
-  matchfeatures?: any;
 } => {
   if (!chunks_summary || chunks_summary.length === 0) {
-    return { chunks_summary: [], matchfeatures };
+    return { chunks_summary: [], matchfeatures }
   }
 
   // Find the header from the first chunk
-  let headerChunk = '';
+  let headerChunk = ""
   if (chunks_summary.length > 0) {
-    const firstChunk = typeof chunks_summary[0] === "string" ? chunks_summary[0] : chunks_summary[0].chunk;
-    const lines = firstChunk.split('\n');
-    if (lines.length > 0 && lines[0].includes('\t')) {
-      headerChunk = lines[0]; // Extract the header line
+    const firstChunk =
+      typeof chunks_summary[0] === "string"
+        ? chunks_summary[0]
+        : chunks_summary[0].chunk
+    const lines = firstChunk.split("\n")
+    if (lines.length > 0 && lines[0].includes("\t")) {
+      headerChunk = lines[0] // Extract the header line
     }
   }
-  
+
   // Process all chunks: remove header from each and keep only data rows
-  const processedChunks: (string | { chunk: string; score: number; index: number })[] = [];
-  let newMatchfeatures = matchfeatures;
-  
+  const processedChunks: (
+    | string
+    | { chunk: string; score: number; index: number }
+  )[] = []
+  let newMatchfeatures = matchfeatures
+
   // Add header as first chunk if found, using the same structure as original
   if (headerChunk) {
     if (typeof chunks_summary[0] === "string") {
-      processedChunks.push(headerChunk);
+      processedChunks.push(headerChunk)
     } else {
       processedChunks.push({
         chunk: headerChunk,
         score: 1,
         index: 0,
-      });
+      })
     }
 
-     // Update matchfeatures to include the header chunk score
-     if (newMatchfeatures) {
-        const existingCells = newMatchfeatures.chunk_scores?.cells || {};
-        const scores = Object.values(existingCells) as number[];
-        const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
-        // Create new chunk_scores that match the new chunks
-        const newChunkScores: Record<string, number> = {}
-        newChunkScores["0"] = maxScore + 1
-        Object.entries(existingCells).forEach(([idx, score]) => {
-          newChunkScores[(parseInt(idx) + 1).toString()] = score as number
-        })
-       
-       newMatchfeatures = {
-         ...newMatchfeatures,
-         chunk_scores: {
-           cells: newChunkScores
-         }
-       };
-     }
+    // Update matchfeatures to include the header chunk score
+    if (newMatchfeatures) {
+      const existingCells = newMatchfeatures.chunk_scores?.cells || {}
+      const scores = Object.values(existingCells) as number[]
+      const maxScore = scores.length > 0 ? Math.max(...scores) : 0
+      // Create new chunk_scores that match the new chunks
+      const newChunkScores: Record<string, number> = {}
+      newChunkScores["0"] = maxScore + 1
+      Object.entries(existingCells).forEach(([idx, score]) => {
+        newChunkScores[(parseInt(idx) + 1).toString()] = score as number
+      })
+
+      newMatchfeatures = {
+        ...newMatchfeatures,
+        chunk_scores: {
+          cells: newChunkScores,
+        },
+      }
+    }
   }
-  
+
   // Process each original chunk: remove header and add data rows
   for (let i = 0; i < chunks_summary.length; i++) {
-    const originalChunk = chunks_summary[i];
-    const chunkContent = typeof originalChunk === "string" ? originalChunk : originalChunk.chunk;
-    const lines = chunkContent.split('\n');
-    
+    const originalChunk = chunks_summary[i]
+    const chunkContent =
+      typeof originalChunk === "string" ? originalChunk : originalChunk.chunk
+    const lines = chunkContent.split("\n")
+
     // Skip the first line (header) and keep only data rows
-    const dataRows = lines.slice(1).filter(line => line.trim().length > 0);
+    const dataRows = lines.slice(1).filter((line) => line.trim().length > 0)
     if (dataRows.length > 0) {
-      const dataContent = dataRows.join('\n');
-      
+      const dataContent = dataRows.join("\n")
+
       if (typeof originalChunk === "string") {
-        processedChunks.push(dataContent);
+        processedChunks.push(dataContent)
       } else {
         processedChunks.push({
           chunk: dataContent,
           score: originalChunk.score,
-          index: originalChunk.index
-        });
+          index: originalChunk.index,
+        })
       }
     }
   }
-  
-  return { chunks_summary: processedChunks, matchfeatures: newMatchfeatures };
-};
+
+  return { chunks_summary: processedChunks, matchfeatures: newMatchfeatures }
+}
 
 // Utility function to process sheet queries for spreadsheet files
 const processSheetQuery = async (
-  chunks_summary: (string | { chunk: string; score: number; index: number })[] | undefined,
+  chunks_summary:
+    | (string | { chunk: string; score: number; index: number })[]
+    | undefined,
   query: string,
-  matchfeatures: any
+  matchfeatures: any,
 ): Promise<{
-  chunks_summary: { chunk: string; score: number; index: number }[];
-  matchfeatures: any;
-  maxSummaryChunks: number;
+  chunks_summary: { chunk: string; score: number; index: number }[]
+  matchfeatures: any
+  maxSummaryChunks: number
 } | null> => {
   const duckDBResult = await querySheetChunks(
-    chunks_summary?.map((c) => typeof c === "string" ? c : c.chunk) || [], 
-    query
+    chunks_summary?.map((c) => (typeof c === "string" ? c : c.chunk)) || [],
+    query,
   )
-  
+
   // If DuckDB query failed (null means not metric-related or SQL generation failed), return null to fallback to original approach
   if (!duckDBResult) {
-    return null;
+    return null
   }
-  
+
   // Create metadata chunk with query information (excluding data)
-  const metadataChunk = JSON.stringify({
-    assumptions: duckDBResult.assumptions,
-    schema_fragment: duckDBResult.schema_fragment
-  }, null, 2)
-  
+  const metadataChunk = JSON.stringify(
+    {
+      assumptions: duckDBResult.assumptions,
+      schema_fragment: duckDBResult.schema_fragment,
+    },
+    null,
+    2,
+  )
+
   // Use chunkSheetWithHeaders to chunk the 2D array data
-  const dataChunks = chunkSheetWithHeaders(duckDBResult.data.rows, {headerRows: 1})
-  
+  const dataChunks = chunkSheetWithHeaders(duckDBResult.data.rows, {
+    headerRows: 1,
+  })
+
   // Combine metadata chunk with data chunks
   const allChunks = [metadataChunk, ...dataChunks]
-  
-  const newChunksSummary = allChunks.map((c, idx) => ({chunk: c, score: 0, index: idx}))
-  
+
+  const newChunksSummary = allChunks.map((c, idx) => ({
+    chunk: c,
+    score: 0,
+    index: idx,
+  }))
+
   // Update matchfeatures to correspond to the new chunks
   let newMatchfeatures = matchfeatures
   if (matchfeatures) {
@@ -162,20 +183,20 @@ const processSheetQuery = async (
     allChunks.forEach((_, idx) => {
       newChunkScores[idx.toString()] = 0 // All new chunks get score 0
     })
-    
+
     // Update the matchfeatures with new chunk_scores
     newMatchfeatures = {
       ...matchfeatures,
       chunk_scores: {
-        cells: newChunkScores
-      }
+        cells: newChunkScores,
+      },
     }
   }
-  
+
   return {
     chunks_summary: newChunksSummary,
     matchfeatures: newMatchfeatures,
-    maxSummaryChunks: allChunks.length
+    maxSummaryChunks: allChunks.length,
   }
 }
 
@@ -249,7 +270,7 @@ const constructFileContext = (
 
   return `App: ${fields.app}
 Entity: ${fields.entity}
-Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
+Title: ${fields.title ? `Title: ${fields.title}` : ""}${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}${typeof fields.updatedAt === "number" && isFinite(fields.updatedAt) ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
 ${fields.owner ? `Owner: ${fields.owner}` : ""}
 ${fields.parentId ? `parent FolderId: ${fields.parentId}` : ""}
 ${fields.ownerEmail ? `Owner Email: ${fields.ownerEmail}` : ""}
@@ -316,7 +337,7 @@ const constructMailContext = (
   }
 
   return `App: ${fields.app}
-Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
+Entity: ${fields.entity}${typeof fields.timestamp === "number" && isFinite(fields.timestamp) ? `\nSent: ${getRelativeTime(fields.timestamp)}  (${new Date(fields.timestamp).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
 ${fields.subject ? `Subject: ${fields.subject}` : ""}
 ${fields.from ? `From: ${fields.from}` : ""}
 ${fields.to ? `To: ${fields.to.join(", ")}` : ""}
@@ -348,7 +369,7 @@ const constructSlackMessageContext = (
     Username: ${fields.username}
     Message: ${fields.text}
     ${fields.threadId ? "it's a message thread" : ""}
-    ${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimezone})})` : ""}
+    ${typeof fields.createdAt === "number" && isFinite(fields.createdAt) ? `\n    Time: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimezone })})` : ""}
     User is part of Workspace: ${fields.teamName}
     vespa relevance score: ${relevance}`
 }
@@ -380,7 +401,7 @@ ${
   typeof fields.createdAt === "number" && isFinite(fields.createdAt)
     ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(
         fields.createdAt,
-      ).toLocaleString("en-US", {timeZone: userTimezone})})`
+      ).toLocaleString("en-US", { timeZone: userTimezone })})`
     : ""
 }
 vespa relevance score: ${relevance}`
@@ -432,7 +453,7 @@ const constructMailAttachmentContext = (
 Entity: ${fields.entity}
 ${
   typeof fields.timestamp === "number" && isFinite(fields.timestamp)
-    ? `\nSent: ${getRelativeTime(fields.timestamp)} (${new Date(fields.timestamp).toLocaleString("en-US", {timeZone: userTimeZone})})`
+    ? `\nSent: ${getRelativeTime(fields.timestamp)} (${new Date(fields.timestamp).toLocaleString("en-US", { timeZone: userTimeZone })})`
     : ""
 }
 ${fields.filename ? `Filename: ${fields.filename}` : ""}
@@ -460,7 +481,7 @@ ${
     ? `\nStart Time: ${
         !fields.defaultStartTime
           ? new Date(fields.startTime).toUTCString() +
-            `(${new Date(fields.startTime).toLocaleString("en-US", {timeZone: userTimeZone})})`
+            `(${new Date(fields.startTime).toLocaleString("en-US", { timeZone: userTimeZone })})`
           : `No start time specified but date is ${new Date(fields.startTime)}`
       }`
     : ""
@@ -470,7 +491,7 @@ ${
     ? `\nEnd Time: ${
         !fields.defaultStartTime
           ? new Date(fields.endTime).toUTCString() +
-            `(${new Date(fields.endTime).toLocaleString("en-US", {timeZone: userTimeZone})})`
+            `(${new Date(fields.endTime).toLocaleString("en-US", { timeZone: userTimeZone })})`
           : `No end time specified but date is ${new Date(fields.endTime)}`
       }`
     : ""
@@ -697,12 +718,12 @@ const constructDataSourceFileContext = (
   ${fields.fileSize ? `File Size: ${fields.fileSize} bytes` : ""}
   ${
     typeof fields.createdAt === "number" && isFinite(fields.createdAt)
-      ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", {timeZone: userTimeZone})})`
+      ? `\nCreated: ${getRelativeTime(fields.createdAt)} (${new Date(fields.createdAt).toLocaleString("en-US", { timeZone: userTimeZone })})`
       : ""
   }
   ${
     typeof fields.updatedAt === "number" && isFinite(fields.updatedAt)
-      ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", {timeZone: userTimeZone})})`
+      ? `\nUpdated At: ${getRelativeTime(fields.updatedAt)} (${new Date(fields.updatedAt).toLocaleString("en-US", { timeZone: userTimeZone })})`
       : ""
   }
   ${fields.uploadedBy ? `Uploaded By: ${fields.uploadedBy}` : ""}
@@ -716,9 +737,8 @@ const constructCollectionFileContext = (
   relevance: number,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
 ): string => {
- 
   if (!maxSummaryChunks && !isSelectedFiles) {
     maxSummaryChunks = fields.chunks_summary?.length
   }
@@ -745,8 +765,7 @@ const constructCollectionFileContext = (
   }
 
   let content = ""
-  if (isMsgWithSources && fields.chunks_pos_summary) {
-    // When user has selected one file to chat with, use original chunk positions
+  if (isMsgWithKbItems && fields.chunks_pos_summary) {
     content = chunks
       .map((v) => {
         const originalIndex = fields.chunks_pos_summary?.[v.index] ?? v.index
@@ -779,13 +798,12 @@ const constructCollectionFileContext = (
       ? fields.image_chunks_summary?.length
       : 5
 
-
   if (fields.matchfeatures) {
+    const summaryStrings =
+      fields.image_chunks_summary?.map((c) =>
+        typeof c === "string" ? c : c.chunk,
+      ) || []
 
-    const summaryStrings = fields.image_chunks_summary?.map((c) =>
-      typeof c === "string" ? c : c.chunk,
-    ) || []
-    
     imageChunks = getSortedScoredImageChunks(
       fields.matchfeatures,
       fields.image_chunks_pos_summary as number[],
@@ -794,7 +812,7 @@ const constructCollectionFileContext = (
     )
   } else {
     const imageChunksPos = fields.image_chunks_pos_summary as number[]
-  
+
     imageChunks =
       fields.image_chunks_summary?.map((chunk, idx) => {
         const result = {
@@ -807,10 +825,9 @@ const constructCollectionFileContext = (
   }
 
   let imageContent = imageChunks
-      .slice(0, maxImageChunks)
-      .map((v) => v.chunk)
-      .join("\n")
-
+    .slice(0, maxImageChunks)
+    .map((v) => v.chunk)
+    .join("\n")
 
   return `Source: Knowledge Base
 File: ${fields.fileName || "N/A"}
@@ -850,7 +867,12 @@ export const answerMetadataContextMap = (
       searchResult.relevance,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance, dateForAI, userTimeZone)
+    return constructEventContext(
+      searchResult.fields,
+      searchResult.relevance,
+      dateForAI,
+      userTimeZone,
+    )
   } else {
     throw new Error(
       `Invalid search result type: ${searchResult.fields.sddocname}`,
@@ -889,36 +911,58 @@ export const answerContextMap = async (
   userMetadata: UserMetadataType,
   maxSummaryChunks?: number,
   isSelectedFiles?: boolean,
-  isMsgWithSources?: boolean,
+  isMsgWithKbItems?: boolean,
   query?: string,
 ): Promise<AiContext> => {
-  if(searchResult.fields.sddocname === fileSchema || searchResult.fields.sddocname === dataSourceFileSchema || searchResult.fields.sddocname === KbItemsSchema || searchResult.fields.sddocname === mailAttachmentSchema) {
+  if (
+    searchResult.fields.sddocname === fileSchema ||
+    searchResult.fields.sddocname === dataSourceFileSchema ||
+    searchResult.fields.sddocname === KbItemsSchema ||
+    searchResult.fields.sddocname === mailAttachmentSchema
+  ) {
     let mimeType
-    if(searchResult.fields.sddocname === mailAttachmentSchema) {
+    if (searchResult.fields.sddocname === mailAttachmentSchema) {
       mimeType = searchResult.fields.fileType
     } else {
       mimeType = searchResult.fields.mimeType
     }
-    if(mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    if (
+      mimeType ===
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
       mimeType === "application/vnd.ms-excel" ||
-      mimeType === "text/csv") {
-        const result = extractHeaderAndDataChunks(searchResult.fields.chunks_summary, searchResult.fields.matchfeatures);
-        searchResult.fields.chunks_summary = result.chunks_summary;
-        if (result.matchfeatures) {
-          searchResult.fields.matchfeatures = result.matchfeatures;
+      mimeType === "text/csv"
+    ) {
+      const result = extractHeaderAndDataChunks(
+        searchResult.fields.chunks_summary,
+        searchResult.fields.matchfeatures,
+      )
+      searchResult.fields.chunks_summary = result.chunks_summary
+      if (result.matchfeatures) {
+        searchResult.fields.matchfeatures = result.matchfeatures
+      }
+
+      if (query) {
+        const sheetResult = await processSheetQuery(
+          searchResult.fields.chunks_summary,
+          query,
+          searchResult.fields.matchfeatures,
+        )
+        if (sheetResult) {
+          const {
+            chunks_summary,
+            matchfeatures,
+            maxSummaryChunks: newMaxSummaryChunks,
+          } = sheetResult
+          searchResult.fields.chunks_summary = chunks_summary
+          searchResult.fields.matchfeatures = matchfeatures
+          maxSummaryChunks = newMaxSummaryChunks
+        } else {
+          maxSummaryChunks = Math.min(
+            searchResult.fields.chunks_summary?.length || 0,
+            100,
+          )
         }
-        
-        if (query) {
-          const sheetResult = await processSheetQuery(searchResult.fields.chunks_summary, query, searchResult.fields.matchfeatures)
-          if (sheetResult) {
-            const { chunks_summary, matchfeatures, maxSummaryChunks: newMaxSummaryChunks } = sheetResult
-            searchResult.fields.chunks_summary = chunks_summary
-            searchResult.fields.matchfeatures = matchfeatures
-            maxSummaryChunks = newMaxSummaryChunks
-          } else {
-            maxSummaryChunks = Math.min(searchResult.fields.chunks_summary?.length || 0, 100)
-          }
-        }
+      }
     }
   }
   if (searchResult.fields.sddocname === fileSchema) {
@@ -940,7 +984,12 @@ export const answerContextMap = async (
       isSelectedFiles,
     )
   } else if (searchResult.fields.sddocname === eventSchema) {
-    return constructEventContext(searchResult.fields, searchResult.relevance, userMetadata.dateForAI, userMetadata.userTimezone)
+    return constructEventContext(
+      searchResult.fields,
+      searchResult.relevance,
+      userMetadata.dateForAI,
+      userMetadata.userTimezone,
+    )
   } else if (searchResult.fields.sddocname === mailAttachmentSchema) {
     return constructMailAttachmentContext(
       searchResult.fields,
@@ -975,7 +1024,7 @@ export const answerContextMap = async (
       searchResult.relevance,
       maxSummaryChunks,
       isSelectedFiles,
-      isMsgWithSources,
+      isMsgWithKbItems,
     )
   } else {
     throw new Error(

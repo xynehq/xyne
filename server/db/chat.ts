@@ -15,7 +15,7 @@ import {
 import { createId } from "@paralleldrive/cuid2"
 import type { TxnOrClient } from "@/types"
 import { z } from "zod"
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm"
+import { and, asc, desc, eq, gte, lte, isNull } from "drizzle-orm"
 
 export const insertChat = async (
   trx: TxnOrClient,
@@ -229,4 +229,30 @@ export const getAllChatsForDashboard = async (
     .where(and(...conditions))
     .orderBy(desc(chats.createdAt))
   return z.array(selectPublicChatSchema).parse(chatsArr)
+}
+
+export const getInactiveChats = async (
+  trx: TxnOrClient,
+  inactiveSince: Date,
+  limit: number,
+  offset: number,
+): Promise<Array<{ id: number; externalId: string; email: string; updatedAt: Date }>> => {
+  const inactiveChats = await trx
+    .select({
+      id: chats.id,
+      externalId: chats.externalId,
+      email: chats.email,
+      updatedAt: chats.updatedAt,
+    })
+    .from(chats)
+    .where(
+      and(
+        lte(chats.updatedAt, inactiveSince),
+        isNull(chats.deletedAt),
+      ),
+    )
+    .orderBy(asc(chats.updatedAt), asc(chats.id))
+    .limit(limit)
+    .offset(offset)
+  return inactiveChats
 }

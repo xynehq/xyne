@@ -97,10 +97,20 @@ export const updateAgentSchema = createAgentSchema.partial().extend({
 export type UpdateAgentPayload = z.infer<typeof updateAgentSchema>
 
 export const GetAgentApi = async (c: Context) => {
-  let email = ""
+  const { email, workspaceExternalId, via_apiKey } = getAuth(c)
+
+  if (via_apiKey) {
+    const apiKeyScopes =
+      safeGet<{ scopes?: string[] }>(c, "config")?.scopes || []
+    if (!apiKeyScopes.includes(ApiKeyScopes.READ_AGENT)) {
+      return c.json(
+        { message: "API key does not have scope to read agent details" },
+        403,
+      )
+    }
+  }
+
   try {
-    const { sub, workspaceId: workspaceExternalId } = c.get(JwtPayloadKey)
-    email = sub
     const agentExternalId = c.req.param("agentExternalId")
 
     const userAndWorkspace = await getUserAndWorkspaceByEmail(

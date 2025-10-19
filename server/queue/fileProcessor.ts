@@ -257,9 +257,10 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
         metadata: JSON.stringify({
           originalFileName: file.originalName || file.fileName,
           uploadedBy: file.uploadedByEmail || "system",
-          chunksCount: processingResult.chunks.length,
+          chunksCount: processingResult.chunks.length + processingResult.image_chunks.length,
           imageChunksCount: processingResult.image_chunks.length,
           processingMethod: getBaseMimeType(file.mimeType || "text/plain"),
+          ...(processingResult.processingMethod && { pdfProcessingMethod: processingResult.processingMethod }),
           lastModified: Date.now(),
           ...(('sheetName' in processingResult) && {
             sheetName: (processingResult as SheetProcessingResult).sheetName,
@@ -282,14 +283,24 @@ async function processFileJob(jobData: FileProcessingJob, startTime: number) {
       totalChunksCount += processingResult.chunks.length + processingResult.image_chunks.length
     }
 
-    // Update status to completed
+    // Update status to completed with processing method metadata
     const chunksCount = totalChunksCount
+    
+    // Prepare metadata for database record - use last processing result for method info
+    const lastResult = processingResults[processingResults.length - 1]
+    const dbMetadata = {
+      chunksCount,
+      imageChunksCount: processingResults.reduce((sum, r) => sum + r.image_chunks.length, 0),
+      ...(lastResult.processingMethod && { pdfProcessingMethod: lastResult.processingMethod }),
+    }
+
     await db
       .update(collectionItems)
       .set({
         vespaDocId: newVespaDocId,
         uploadStatus: UploadStatus.COMPLETED,
         statusMessage: `Successfully processed: ${chunksCount} chunks extracted from ${file.fileName}`,
+        metadata: dbMetadata,
         processedAt: new Date(),
         updatedAt: new Date(),
       })

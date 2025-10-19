@@ -37,11 +37,12 @@ import {
   KnowledgeBaseEntity,
   MailAttachmentEntity,
   WebSearchEntity,
+  type MailParticipant,
 } from "@xyne/vespa-ts/types"
 import type { z } from "zod"
 import { getDocumentOrSpreadsheet } from "@/integrations/google/sync"
 import config from "@/config"
-import type { Intent, UserQuery, QueryRouterLLMResponse } from "@/ai/types"
+import type { UserQuery, QueryRouterLLMResponse } from "@/ai/types"
 import {
   AgentReasoningStepType,
   OpenAIError,
@@ -79,9 +80,9 @@ const MAX_FILES = 12
 
 export function collectFollowupContext(
   messages: SelectMessage[],
-  maxHops = 12
+  maxHops = 12,
 ): WorkingSet {
-  const startIdx = messages.length - 1;
+  const startIdx = messages.length - 1
   const ws: WorkingSet = {
     fileIds: [],
     attachmentFileIds: [],
@@ -92,8 +93,8 @@ export function collectFollowupContext(
   let hops = 0
 
   // Extract chain breaks to understand conversation boundaries
-  const chainBreaks = extractChainBreakClassifications(messages);
-  const chainBreakIndices = new Set(chainBreaks.map(cb => cb.messageIndex));
+  const chainBreaks = extractChainBreakClassifications(messages)
+  const chainBreakIndices = new Set(chainBreaks.map((cb) => cb.messageIndex))
 
   for (let i = startIdx; i >= 0 && hops < maxHops; i--, hops++) {
     const m = messages[i]
@@ -129,13 +130,17 @@ export function collectFollowupContext(
     }
 
     // 3) sourceIds from assistant messages
-    if (Array.isArray(m.sources) && m.sources.length > 0 && ws.fileIds.length < MAX_FILES) {
+    if (
+      Array.isArray(m.sources) &&
+      m.sources.length > 0 &&
+      ws.fileIds.length < MAX_FILES
+    ) {
       for (const source of m.sources) {
         if (!seen.has(`f:${source.docId}`)) {
-          ws.fileIds.push(source.docId);
-          ws.carriedFromMessageIds.push(m.externalId);
-          seen.add(`f:${source.docId}`);
-          if (ws.fileIds.length >= MAX_FILES) break;
+          ws.fileIds.push(source.docId)
+          ws.carriedFromMessageIds.push(m.externalId)
+          seen.add(`f:${source.docId}`)
+          if (ws.fileIds.length >= MAX_FILES) break
         }
       }
     }
@@ -502,10 +507,7 @@ export const extractImageFileNames = (
   return { imageFileNames }
 }
 
-export const searchToCitation = (
-  result: VespaSearchResults,
-  chunkIndex?: number,
-): Citation => {
+export const searchToCitation = (result: VespaSearchResults): Citation => {
   const fields = result.fields
   if (result.fields.sddocname === userSchema) {
     return {
@@ -587,7 +589,6 @@ export const searchToCitation = (
       entity: clFields.entity,
       itemId: clFields.itemId,
       clId: clFields.clId,
-      chunkIndex: chunkIndex,
     }
   } else if (result.fields.sddocname === chatContainerSchema) {
     return {
@@ -610,7 +611,8 @@ const searchToCitations = (results: VespaSearchResults[]): Citation[] => {
 }
 
 export const textToCitationIndex = /\[(\d+)\]/g
-export const textToImageCitationIndex = /\[(\d+_\d+)\]/g
+export const textToImageCitationIndex = /(?<!K)\[(\d+_\d+)\]/g
+export const textToKbItemCitationIndex = /K\[(\d+_\d+)\]/g
 
 export const processMessage = (
   text: string,
@@ -1099,11 +1101,11 @@ export const getCitationToImage = async (
   }
 }
 
-export function extractNamesFromIntent(intent: any): Intent {
+export function extractNamesFromIntent(intent: any): MailParticipant {
   if (!intent || typeof intent !== "object") return {}
 
-  const result: Intent = {}
-  const fieldsToCheck = ["from", "to", "cc", "bcc", "subject"] as const
+  const result: MailParticipant = {}
+  const fieldsToCheck = ["from", "to", "cc", "bcc"] as const
 
   for (const field of fieldsToCheck) {
     if (Array.isArray(intent[field]) && intent[field].length > 0) {
