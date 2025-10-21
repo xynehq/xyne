@@ -863,46 +863,61 @@ export function createToolParams(
   return params
 }
 
+// Common parameter definitions that can be reused across tools
+export const commonParams = {
+  query: {
+    name: "query",
+    type: "string",
+    required: false,
+    description: `Search terms for finding relevant content. Use specific keywords to locate documents, messages, or data.
+       - query should be keywords focused to retrieve the most relevant content from corpus.
+       - don't apply filters in the query like "from:sahebjot" or "subject:meeting".
+       - 
+       `,
+  },
+  limit: {
+    name: "limit",
+    type: "number",
+    required: false,
+    description: `Maximum number of results to return. Default to ${config.VespaPageSize}`,
+  },
+  offset: {
+    name: "offset",
+    type: "number",
+    required: false,
+    description:
+      "Number of results to skip from the beginning, useful for pagination.",
+  },
+  sortBy: {
+    name: "sortBy",
+    type: "asc | desc",
+    required: false,
+    description:
+      "Sort order of the results. Accepts 'asc' for ascending or 'desc' for descending order.",
+  },
+  timeRange: {
+    name: "timeRange",
+    type: "object",
+    required: false,
+    description: `Filter results based on a specific time range. Example: { startTime: ${config.llmTimeFormat}, endTime: ${config.llmTimeFormat} }`,
+  },
+} as const
+
 export const searchGlobalTool: ToolDefinition = {
   name: "searchGlobal",
   description:
     "Searches across all available data sources globally. Returns a list of results matching the provided query, with optional controls for sorting, pagination, and filtering by time range.",
   params: [
     {
-      name: "query",
-      type: "string",
+      ...commonParams.query,
       required: true,
       description: `The search query string that specifies what you want to find.
-         - query should be keywords focus to retireve the most relevant content from corpus.`,
+         - query should be keywords focus to retrieve the most relevant content from corpus.`,
     },
-    {
-      name: "limit",
-      type: "number",
-      required: false,
-      description:
-        "Maximum number of results to return. Default behavior is to return 10 results.",
-    },
-    {
-      name: "sortBy",
-      type: "asc | desc",
-      required: false,
-      description:
-        "Sort order of the results. Accepts 'asc' for ascending or 'desc' for descending order.",
-    },
-    {
-      name: "offset",
-      type: "number",
-      required: false,
-      description:
-        "Number of results to skip from the beginning, useful for pagination.",
-    },
-    {
-      name: "timeRange",
-      type: "object",
-      required: false,
-      description:
-        "Filter results based on a specific time range. Example: { start: '2025-01-01', end: '2025-12-31' }",
-    },
+    { ...commonParams.limit },
+    { ...commonParams.sortBy },
+    { ...commonParams.offset },
+    { ...commonParams.timeRange },
   ],
 }
 
@@ -921,36 +936,16 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
            - query should be keywords focus to retireve the most relevant content from corpus.
           `,
       },
-      {
-        name: "limit",
-        type: "number",
-        required: false,
-        description: "Maximum number of email results to return default is 20.",
-      },
-      {
-        name: "offset",
-        type: "number",
-        required: false,
-        description: "Number of results to skip, for pagination.",
-      },
-      {
-        name: "sortBy",
-        type: "asc | desc",
-        required: false,
-        description: "Sort order of results. Accepts 'asc' or 'desc'.",
-      },
+      { ...commonParams.limit },
+      { ...commonParams.sortBy },
+      { ...commonParams.offset },
+      { ...commonParams.timeRange },
       {
         name: "labels",
         type: "string[]",
         required: false,
         description:
           "Filter emails by Gmail labels. labels are 'IMPORTANT', 'STARRED', 'UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS', 'DRAFT', 'SENT', 'INBOX', 'SPAM', 'TRASH'.",
-      },
-      {
-        name: "timeRange",
-        type: "object",
-        required: false,
-        description: `Filter emails within a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
       },
       {
         name: "isAttachmentRequired",
@@ -991,35 +986,15 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         required: false,
         description: "Filter files by owner",
       },
-      {
-        name: "limit",
-        type: "number",
-        required: false,
-        description: "Maximum number of files to return.",
-      },
-      {
-        name: "sortBy",
-        type: "string",
-        required: false,
-        description: "Sort order of results. Accepts 'asc' or 'desc'.",
-      },
-      {
-        name: "offset",
-        type: "number",
-        required: false,
-        description: "Number of results to skip, for pagination.",
-      },
+      { ...commonParams.limit },
+      { ...commonParams.sortBy },
+      { ...commonParams.offset },
+      { ...commonParams.timeRange },
       {
         name: "filetype",
         type: "string[]",
         required: false,
         description: `Filter files by type (e.g., ${Object.values(DriveEntity).map((e) => `- ${e}\n`)}).`,
-      },
-      {
-        name: "timeRange",
-        type: "object",
-        required: false,
-        description: `Filter files within a specific time range.  Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
       },
     ],
   },
@@ -1048,30 +1023,10 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         description:
           "Filter events by status. available status to select: ['confirmed', 'tentative', 'cancelled'].",
       },
-      {
-        name: "limit",
-        type: "number",
-        required: false,
-        description: "Maximum number of events to return.",
-      },
-      {
-        name: "sortBy",
-        type: "string",
-        required: false,
-        description: "Sort order of results. Accepts 'asc' or 'desc'.",
-      },
-      {
-        name: "offset",
-        type: "number",
-        required: false,
-        description: "Number of results to skip, for pagination.",
-      },
-      {
-        name: "timeRange",
-        type: "object",
-        required: false,
-        description: `Filter events within a specific time range.  Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
-      },
+      { ...commonParams.limit },
+      { ...commonParams.sortBy },
+      { ...commonParams.offset },
+      { ...commonParams.timeRange },
     ],
   },
   [GoogleApps.Contacts]: {
@@ -1086,18 +1041,8 @@ export const googleTools: Record<GoogleApps, ToolDefinition> = {
         description:
           "Search terms for contact names, companies, email addresses, or phone numbers. can also use names or organization keywords for broad matching.",
       },
-      {
-        name: "limit",
-        type: "number",
-        required: false,
-        description: "Maximum number of contacts to return.",
-      },
-      {
-        name: "offset",
-        type: "number",
-        required: false,
-        description: "Number of results to skip, for pagination.",
-      },
+      { ...commonParams.limit },
+      { ...commonParams.offset },
     ],
   },
 }
@@ -1112,13 +1057,7 @@ export const slackTools: Record<SlackTools, ToolDefinition> = {
     description:
       "Unified tool to retrieve Slack messages with flexible filtering options. Can search by channel, user, time rang, or any combination. Automatically includes thread messages when found. Use this single tool for all Slack message retrieval needs.",
     params: [
-      {
-        name: "query",
-        description: `The search query string that specifies what messages you want to fid.
-         - query should be keywords focus to retireve the most relevant messages from corpus.`,
-        type: "string",
-        required: false,
-      },
+      { ...commonParams.query },
       {
         name: "channelName",
         description: "Name of specific channel to search within",
@@ -1127,38 +1066,14 @@ export const slackTools: Record<SlackTools, ToolDefinition> = {
       },
       {
         name: "user",
-        description:
-          "Name or Email of specific user whose messages to retrieve",
         type: "string",
         required: false,
+        description: "Name or Email of specific user to filter by.",
       },
-      {
-        name: "limit",
-        type: "number",
-        required: false,
-        description:
-          "Maximum number of results to return. Default behavior is to return 10 results.",
-      },
-      {
-        name: "sortBy",
-        type: "asc | desc",
-        required: false,
-        description:
-          "Sort order of the results. Accepts 'asc' for ascending or 'desc' for descending order.",
-      },
-      {
-        name: "offset",
-        type: "number",
-        required: false,
-        description:
-          "Number of results to skip from the beginning, useful for pagination.",
-      },
-      {
-        name: "timeRange",
-        type: "object",
-        required: false,
-        description: `Filter results based on a specific time range. Example: { startTime:${config.llmTimeFormat} , endTime: ${config.llmTimeFormat} }`,
-      },
+      { ...commonParams.limit },
+      { ...commonParams.sortBy },
+      { ...commonParams.offset },
+      { ...commonParams.timeRange },
     ],
   },
   [SlackTools.GetSlackUserInfo]: {
